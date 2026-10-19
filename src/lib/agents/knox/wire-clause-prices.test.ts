@@ -4,11 +4,12 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { runFreeSpecialists } from "./specialists";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
-import { checkWireClausePrice, wireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { checkWireClausePrice, domesticWireClausePrices, wireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { institutionValue } from "@/lib/data-store/fee-stats";
 
 const family = JSON.parse(readFileSync(new URL("./__fixtures__/family-wire-inline-directions.json", import.meta.url), "utf8"));
 const newHeights = "Wire Out/Wire In | $15.00 Per Transaction Outgoing/$5 Per Transaction Incoming";
+const newHeightsSource = JSON.parse(readFileSync(new URL("./__fixtures__/new-heights-wire-inline-directions.json", import.meta.url), "utf8"));
 
 describe("own post-price wire directions (#2021)", () => {
   it("keeps Family's hash-bound incoming10 and outgoing20 with their own inline direction", () => {
@@ -25,9 +26,14 @@ describe("own post-price wire directions (#2021)", () => {
   });
 
   it("retains both actual slash-joined directions from the #2021 source row", () => {
-    const rows = runFreeSpecialists(newHeights).candidates;
-    expect(rows.some(row => row.canonicalHint === "wire_domestic_outgoing" && row.amount === 15)).toBe(true);
-    expect(rows.some(row => row.canonicalHint === "wire_domestic_incoming" && row.amount === 5)).toBe(true);
+    expect(createHash("sha256").update(newHeightsSource.normalizedText).digest("hex")).toBe(newHeightsSource.textSHA256);
+    for (const text of [newHeights, newHeightsSource.normalizedText]) {
+      const rows = runFreeSpecialists(text).candidates;
+      expect(rows.some(row => row.canonicalHint === "wire_domestic_outgoing" && row.amount === 15)).toBe(true);
+      expect(rows.some(row => row.canonicalHint === "wire_domestic_incoming" && row.amount === 5)).toBe(true);
+      expect(checkFeeAgainstSource(text, "Wire In", 5, ".", "wire_domestic_incoming").ok).toBe(true);
+      expect(checkFeeAgainstSource(text, "Wire Out", 15, ".", "wire_domestic_outgoing").ok).toBe(true);
+    }
   });
 
   it("leaves Family's unresolved international35/45 scope outside new admission authority", () => {
@@ -58,5 +64,44 @@ describe("own post-price wire directions (#2021)", () => {
     }
     expect(checkWireClausePrice(family.normalizedText, "Incoming Wires", 10, "wire_domestic_incoming", "\\mincoming\\M")?.ok).toBe(true);
     expect(checkWireClausePrice(family.normalizedText, "Incoming Wires", 10, "wire_domestic_incoming", "notary")).not.toMatchObject({ ok: true });
+  });
+
+  it("does not select an unscoped domestic tier over another ordinary same-direction price", () => {
+    const pair = "Wire Transfer Fee | $10 on Incoming Wires / $20 on Outgoing Domestic";
+    for (const ordinary of [
+      "Incoming Wires | $12 per wire",
+      "Domestic incoming wire transfer | $12",
+      "Wire Transfer Fees\nIncoming | $12 per wire",
+      "Outgoing Domestic Wire Transfer | $25",
+      "Wire Transfer Fee | $12 on Incoming Wires / $25 on Outgoing Domestic",
+    ]) {
+      for (const text of [pair + "\n" + ordinary, ordinary + "\n" + pair]) {
+        expect(domesticWireClausePrices(text)).toEqual([]);
+        expect(checkWireClausePrice(text, "Incoming Wires", 10, "wire_domestic_incoming", ".")).toBeNull();
+        expect(runFreeSpecialists(text).candidates.some(row => row.ownedPolicy && row.canonicalHint.startsWith("wire_"))).toBe(false);
+      }
+    }
+  });
+
+  it("rejects unsupported price syntax, units and direction ambiguity without inventing a price", () => {
+    for (const text of [
+      "Wire Transfer Fee | $10 on Incoming Wires / $20-$25 on Outgoing Domestic",
+      "Wire Transfer Fee | $10 on Incoming Wires / $20 on Outgoing Domestic if under age18",
+      "Wire Transfer Fee | $10 on Incoming Wires / $20 per month on Outgoing Domestic",
+      "Wire Transfer Fee | $10 on Incoming Outgoing / $20 on Outgoing Domestic",
+      "Wire Transfer Fee | $0 on Incoming Wires / $20 on Outgoing Domestic",
+      "International Wire Transfer Fee | $10 on Incoming Domestic / $20 on Outgoing Domestic",
+    ]) expect(wireClausePrices(text), text).toEqual([]);
+  });
+
+  it("does not turn an age or account section's literal pair into new standard-tier authority", () => {
+    const first = "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic";
+    const second = "Wire In/Wire Out | $5 Per Transaction Incoming/$10 Per Transaction Outgoing";
+    for (const heading of ["Youth Checking (ages18andunder)", "Senior Accounts", "Student Fees"]) {
+      const text = heading + "\n" + first + "\nOther services\n" + second;
+      expect(domesticWireClausePrices(text)).toEqual([]);
+      expect(checkWireClausePrice(text, "Incoming Wires", 5, "wire_domestic_incoming", ".")).toBeNull();
+      expect(domesticWireClausePrices(text + "\nGeneral Fees\n" + first)).toHaveLength(2);
+    }
   });
 });

@@ -17,6 +17,8 @@ const CATEGORIES: ReadonlySet<string> = new Set([
 ]);
 const MAX_LINE = 700;
 const MAX_ROWS = 60;
+const SCHEDULE_HEADING = /^(?:fee schedule|fees(?: (?:and|&) charges)?|(?:standard|regular|general) (?:fees|services?))\s*:?$/i;
+const ELIGIBILITY_HEADING = /\b(?:ages?|youth|senior|junior|student|minor|teen|checking|(?:savings|business|commercial|club|reward|premier) accounts?)\b|\b(?:under|over)\s+\d/i;
 
 function nameKey(value: string): string {
   return value.replace(/[*_]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -89,6 +91,54 @@ export function wireClausePrices(text: string): WireClausePrice[] {
   return result;
 }
 
+/**
+ * New domestic authority is not a tier selector. Another explicit same-direction
+ * domestic price anywhere in the document makes this physical pair ambiguous.
+ * The legacy reader retains its prior behavior; no price or audience is chosen here.
+ */
+export function domesticWireClausePrices(text: string): WireClausePrice[] {
+  const parsed = wireClausePrices(text);
+  const rows = parsed.filter(row => CATEGORIES.has(row.canonicalKey));
+  const handled = new Set(parsed.map(row => row.lineIndex));
+  const lines = text.split(/\r?\n/);
+  const ambiguous = new Set<number>();
+  for (const row of rows) {
+    let restrictedSection = false;
+    for (const [index, line] of lines.slice(0, row.lineIndex).entries()) {
+      const heading = line.trim();
+      const following: string[] = [];
+      for (let at = index + 1; at < lines.length && following.length < 2; at++) {
+        if (lines[at].trim()) following.push(lines[at].trim());
+      }
+      const startsFeeBlock = following[0]?.includes("$") ||
+        /^(?:service|fee type|description)\s*\|\s*(?:fee|amount)$/i.test(following[0] ?? "") ||
+        (following[1]?.includes("$") && !/[$|%]/.test(following[0] ?? ""));
+      if (SCHEDULE_HEADING.test(heading)) restrictedSection = false;
+      else if (startsFeeBlock && heading.length <= 100 && !/[$|%]/.test(heading) && ELIGIBILITY_HEADING.test(heading)) restrictedSection = true;
+    }
+    // A literal price pair does not establish a standard price for a restricted
+    // account section. Only an explicit general schedule heading resets that scope.
+    if (restrictedSection) ambiguous.add(row.lineIndex);
+    if (rows.some(other => other.canonicalKey === row.canonicalKey && other.amount !== row.amount)) {
+      ambiguous.add(row.lineIndex);
+    }
+    const direction = row.canonicalKey.endsWith("_incoming") ? /\b(?:incoming|inbound)\b/i : /\b(?:outgoing|outbound)\b/i;
+    for (const [index, line] of lines.entries()) {
+      if (handled.has(index) || !direction.test(line) || !line.includes("$")) continue;
+      // A literal wire label or its immediate unpriced wire heading supplies the service.
+      const prior = lines.slice(0, index).filter(value => value.trim()).at(-1) ?? "";
+      if (!/\bwires?\b/i.test(line) && (!/\bwires?\b/i.test(prior) || prior.includes("$"))) continue;
+      const geo = geography(line);
+      if (geo === "intl") continue;
+      const amounts = [...line.matchAll(MONEY)].map(match => Number(match[1].replace(/,/g, "")));
+      if (geo === false || amounts.some(amount => Number.isFinite(amount) && amount !== row.amount)) {
+        ambiguous.add(row.lineIndex);
+      }
+    }
+  }
+  return rows.filter(row => !ambiguous.has(row.lineIndex));
+}
+
 export type WireClauseCheck = { ok: true; sourceLine: string } | { ok: false; reason: "amount_not_the_fee" | "category_not_in_text" };
 
 /** Shared own-clause witness; incomplete/repeated ordinary rows make no exhaustive refusal. */
@@ -103,7 +153,7 @@ export function checkWireClausePrice(
   // A generic reader asking for that literal international price keeps its existing verdict.
   if (category == null && allRows.some(row => row.canonicalKey.startsWith("wire_intl_") && row.amount === amount &&
       row.aliases.some(alias => nameKey(alias) === key))) return null;
-  const rows = allRows.filter(row => CATEGORIES.has(row.canonicalKey));
+  const rows = domesticWireClausePrices(text);
   const named = rows.filter(row => row.aliases.some(alias => nameKey(alias) === key));
   if (named.length === 0) return null;
   const own = named.filter(row => category == null || category === row.canonicalKey);

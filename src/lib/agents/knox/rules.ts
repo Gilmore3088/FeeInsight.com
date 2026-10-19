@@ -12,7 +12,7 @@ export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
-import { wireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -2479,7 +2479,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     candidates: scoped.map((fee) => ({ ...fee, frequency: null, confidence: 0.98, waivable: false })),
     held: [],
   };
-  const wires = wireClausePrices(text).filter(row => row.canonicalKey.startsWith("wire_domestic_"));
+  const wires = domesticWireClausePrices(text);
   const wireLines = new Set(wires.map(row => row.sourceLine));
   const otherPrices = text.split("\n").filter(line => !wireLines.has(line.trim())).join("\n");
   for (const row of wires) {
