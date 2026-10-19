@@ -49,8 +49,17 @@ const MODEL_ROWS = [
   { name: "bad address fee", category_key: "account_research", count: 20 },
 ];
 
+/** These release fixtures keep the selected raw row unchanged while verification locks it. */
+function currentRawLock(text: string, values: unknown[], rows: Array<Record<string, unknown>>) {
+  return text.includes("FOR UPDATE OF fr")
+    ? rows.filter((row) => row.fee_raw_id === values[0])
+    : null;
+}
+
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const locked = currentRawLock(templateText(strings), values, rows);
+    if (locked !== null) return Promise.resolve(locked);
     if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     if (templateText(strings).includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
     if (templateText(strings).includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
@@ -522,6 +531,8 @@ describe("releasing the recorded v17 passes", () => {
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
+      const locked = currentRawLock(text, values, rows);
+      if (locked !== null) return Promise.resolve(locked);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
       if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
@@ -535,7 +546,8 @@ describe("releasing the recorded v17 passes", () => {
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       }
       return Promise.resolve([]);
-    });
+    }) as DbMock;
+    db.unsafe = vi.fn((fragment: string) => fragment);
     const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
     expect(result).toMatchObject({ ...expected, recordedPasses: 1, wouldRelease: 1, releaseByCategory: { stop_payment: 1 } });
     const attempts = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
@@ -554,8 +566,10 @@ describe("releasing the recorded v17 passes", () => {
       row({ fee_raw_id: 2 }),
     ];
     const writes: string[] = [];
-    const db = vi.fn((strings: TemplateStringsArray) => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
+      const locked = currentRawLock(text, values, rows);
+      if (locked !== null) return Promise.resolve(locked);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
@@ -566,7 +580,8 @@ describe("releasing the recorded v17 passes", () => {
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       }
       return Promise.resolve([]);
-    });
+    }) as DbMock;
+    db.unsafe = vi.fn((fragment: string) => fragment);
     const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
     expect(result).toMatchObject({ acts: true, recordedPasses: 2, wouldRelease: 1, released: 1, held: { "release_check:category_not_in_text": 1 } });
     expect(result.heldExamples[0]).toMatchObject({ feeRawId: 3, reason: "release_check:category_not_in_text" });
@@ -629,6 +644,8 @@ describe("releasing the recorded v17 passes", () => {
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
+      const locked = currentRawLock(text, values, rows);
+      if (locked !== null) return Promise.resolve(locked);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
@@ -639,7 +656,8 @@ describe("releasing the recorded v17 passes", () => {
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       }
       return Promise.resolve([]);
-    });
+    }) as DbMock;
+    db.unsafe = vi.fn((fragment: string) => fragment);
     const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
     expect(result).toMatchObject({ released: 1, held: { "release_check:no_source_text": 1 } });
     const attempted = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
