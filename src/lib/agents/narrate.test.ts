@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { narrateEvent, narrateStepFinished } from "./narrate";
 
 describe("narrateStepFinished", () => {
+  it("independently discloses unknown returned-response costs without calling them zero", () => {
+    expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 1, cost_microusd: 220, unknown_cost_responses: 1 }))
+      .toContain("$0.00 in known estimates; cost unavailable for 1 returned response");
+    expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 2, cost_microusd: 0, unknown_cost_responses: 2 }))
+      .toContain("cost unavailable for 2 returned responses");
+  });
   it("separates pending selected-identity deferrals from already published or ineligible fees",()=>{
     expect(narrateStepFinished('publish',{processed_verified_fees:3,published_fees:0,skipped_verified_fees:3,identity_deferred_verified_fees:3},'GA'))
       .toBe('Published 0 fees in GA: 3 deferred after selected verification or identity changed (still pending).');

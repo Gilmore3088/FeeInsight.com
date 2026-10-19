@@ -76,9 +76,13 @@ function narrateFinished(
           : stepKey === "extract-paid" ? "extract fees" : "review disputed fees";
       const processed = n(detail, "processed");
       const dollars = (n(detail, "cost_microusd") / 1_000_000).toFixed(2);
+      const unknownCosts = n(detail, "unknown_cost_responses");
+      const costSummary = unknownCosts > 0
+        ? `$${dollars} in known estimates; cost unavailable for ${count(unknownCosts, "returned response")}`
+        : `$${dollars}`;
       if (detail.budget_stopped === true && processed === 0) return `Paid pass to ${job} ${scope} did not run: ${String(detail.budget_reason ?? "budget cap")}.`;
       if (processed === 0) return `Paid pass to ${job} ${scope}: nothing the free passes left.`;
-      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for $${dollars}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
+      return `Paid pass to ${job} ${scope}: ${n(detail, "succeeded")} of ${processed} succeeded for ${costSummary}${detail.budget_stopped === true ? `; then stopped: ${String(detail.budget_reason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`;
     }
     case "discover":
     case "rescue": {

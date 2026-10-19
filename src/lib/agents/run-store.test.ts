@@ -19,6 +19,7 @@ const {
   runMagellanFetchMock,
   runPublicDiscoveryAuditMock,
   runRosettaReadMock,
+  runRosettaPaidReadMock,
   runRegistryStepMock,
 } = vi.hoisted(() => {
   const tx = vi.fn() as TxMock;
@@ -40,6 +41,7 @@ const {
     runMagellanFetchMock: vi.fn(),
     runPublicDiscoveryAuditMock: vi.fn(),
     runRosettaReadMock: vi.fn(),
+    runRosettaPaidReadMock: vi.fn(),
     runRegistryStepMock: vi.fn(),
   };
 });
@@ -150,6 +152,9 @@ vi.mock("@/lib/agents/public-discovery", () => ({
 vi.mock("@/lib/agents/rosetta/read", () => ({
   runRosettaRead: runRosettaReadMock,
 }));
+vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
+
+import { narrateStepFinished } from "./narrate";
 
 import {
   cancelAgentRun,
@@ -387,6 +392,39 @@ describe("agentic run store", () => {
       dryRun: false,
       results: [],
     });
+  });
+
+  it.each([
+    { label: "mixed", processed: 2, succeeded: 1, failed: 1, costMicrousd: 220, unknownCostResponses: 1, budgetStopped: false },
+    { label: "all unknown", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },
+    { label: "known zero", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 0, budgetStopped: false },
+    { label: "rejected unknown", processed: 1, succeeded: 0, failed: 1, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },
+    { label: "pre-call denied", processed: 0, succeeded: 0, failed: 0, costMicrousd: 0, unknownCostResponses: 0, budgetStopped: true },
+  ])("saves the actual paid dispatch $label cost contract and independently narrates its saved detail", async (fixture) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const paidStep = [{ ...queuedStepRows[0], step_key: "read-paid", agent_name: "rosetta", title: "Read paid" }];
+    const run = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: paidStep }); installTxMocks(paidStep, run);
+    runRosettaPaidReadMock.mockReset().mockResolvedValue({ ...fixture, selected: 2, budgetReason: fixture.budgetStopped ? "Owned fixture cap" : null,
+      dryRun: false, results: [{ cost_microusd: fixture.unknownCostResponses ? null : 0 }] });
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    expect(runRosettaPaidReadMock).toHaveBeenCalledTimes(1);
+    const finish = txMock.mock.calls.find((call) => templateText(call[0]).includes("'step.finished'"))!;
+    const detail = JSON.parse(finish.at(-1) as string);
+    const summary = String(finish.at(-2));
+    expect(detail).toMatchObject({ processed: fixture.processed, failed: fixture.failed, cost_microusd: fixture.costMicrousd,
+      unknown_cost_responses: fixture.unknownCostResponses, known_cost_subtotal_microusd: fixture.costMicrousd });
+    const narrated = narrateStepFinished("read-paid", detail);
+    if (fixture.unknownCostResponses) {
+      expect(summary).toContain("known estimates; cost unavailable for 1 returned response");
+      expect(narrated).toContain("known estimates; cost unavailable for 1 returned response");
+      expect(detail.sample_results[0].cost_microusd).toBeNull();
+    } else if (fixture.budgetStopped) {
+      expect(summary).toContain("Paid pass skipped"); expect(narrated).toContain("did not run");
+    } else {
+      expect(summary).toContain("for $0.00"); expect(narrated).toContain("for $0.00");
+      expect(narrated).not.toContain("unavailable");
+    }
   });
 
   it("creates a visible blocked run shell without any legacy backend call when execution is disabled", async () => {

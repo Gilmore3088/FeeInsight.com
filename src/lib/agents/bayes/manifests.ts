@@ -320,6 +320,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   DISCOVERY_METHOD_VERSION: "The discovery selector searches banks last checked by an older method; its normal runs apply the new guessed-path memory, with no separate replay.",
   SITE_SEARCH_STRATEGY: "Reporting-only version: future query receipts distinguish unchecked hits from rejected ones; historical receipts are not rewritten or replayed.",
   ROSETTA_DOCUMENT_ACCESS_VERSION: "Logging-only strategy for failures before a reader runs; existing reader versions and retry windows decide eligibility, with no separate replay.",
+  ROSETTA_PAID_READ_VERSION: "Prospective response/usage policy v2 only: the paid selector excludes old settled attempts on the same bytes irrespective of version. Historical truncation and usage remain unverified; no replay or provider work is authorized.",
   // v1 (#1868): the first LEI match rules. Every institution is checked by the gleif registry's
   // lei-match partitions in bounded batches; nothing was matched under an earlier version.
   LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
