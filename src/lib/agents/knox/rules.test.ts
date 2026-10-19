@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, headingName, readUnderHeading, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
 import { researchSplitTarget } from "@/lib/fee-fold";
@@ -1788,5 +1788,17 @@ describe("v80 (#2032): rows named by the heading above them", () => {
 
   it("files another bank's ATMs named in more than one word", () => {
     expect(classifyFeeText("Direct S/C-Fee (non-Beacon Bank ATMs)")).toBe("atm_non_network");
+    expect(classifyFeeText("non-cash vending machines")).not.toBe("atm_non_network");
+  });
+
+  it("keeps box sizes and figure lines as they were", () => {
+    expect(readUnderHeading("3x10 ..... $40.00", "Safe Deposit Box").map((fee) => fee.feeName)).not.toContain("Safe Deposit Box: 3x");
+    expect(headingName("Checking Plus1")).toBeUndefined();
+    expect(headingName("Money Orders1,4")).toBe("Money Orders");
+  });
+
+  it("reads a Domestic line as a wire subheading only within the heading's reach", () => {
+    const far = read("Wire Transfers\nNotes about wires follow\nmore notes\nmore notes\nmore notes\nmore notes\nInternational\nOutgoing ...............$40.00");
+    expect(far.map((fee) => fee[0])).not.toContain("International Wire Transfers: Outgoing");
   });
 });

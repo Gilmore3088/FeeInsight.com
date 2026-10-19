@@ -944,7 +944,8 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
  */
 function clauseCutName(name: string, canonicalKey: string): string | null {
   const head = nameBeforeSentenceClauses(name);
-  if (!head || classifyFeeText(head) !== canonicalKey || !checkFeeCategory(canonicalKey, head).ok) return null;
+  // The clause must not change what the name reads as ("Wire Transfer Outgoing, including international").
+  if (!head || classifyFeeText(head) !== canonicalKey || classifyFeeText(name) !== canonicalKey || !checkFeeCategory(canonicalKey, head).ok) return null;
   return dropsCondition(name, head, canonicalKey) ? null : head;
 }
 
