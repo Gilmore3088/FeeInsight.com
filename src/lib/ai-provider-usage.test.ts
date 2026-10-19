@@ -58,7 +58,9 @@ import {
   recordProviderUsage,
   trackAnthropicRequest,
   WEB_SEARCH_COST_MICROUSD,
+  observedProviderUsage,
 } from "./ai-provider-usage";
+import { IncompleteProviderResponseError, ProviderResponseBudgetError } from "./ai-response-budget";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -70,6 +72,39 @@ describe("AI provider usage", () => {
     controlMock.mockReset().mockResolvedValue({ enabled: true });
     stopMock.mockReset().mockResolvedValue({ enabled: false });
     budgetMock.mockReset().mockResolvedValue({ allowed: true, policyId: 1 });
+  });
+
+  it("keeps missing totals unknown and actual zero observed", () => {
+    expect(observedProviderUsage(undefined)).toBeUndefined();
+    expect(observedProviderUsage({})).toBeUndefined();
+    for (const inputTokens of [NaN, Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(observedProviderUsage({ inputTokens, outputTokens: 0 })).toBeUndefined();
+    }
+    expect(observedProviderUsage({ inputTokens: undefined, outputTokens: undefined })).toBeUndefined();
+    expect(observedProviderUsage({ inputTokens: 0, outputTokens: 0 })).toMatchObject({ inputTokens: 0, outputTokens: 0 });
+    expect(observedProviderUsage({ inputTokens: 20, outputTokens: 2,
+      inputTokenDetails: { noCacheTokens: 7, cacheReadTokens: 10, cacheWriteTokens: 3 } }))
+      .toMatchObject({ inputTokens: 7, outputTokens: 2, cacheReadInputTokens: 10, cacheCreationInputTokens: 3 });
+  });
+  it.each([undefined, { inputTokens: 0, outputTokens: 0 }, { inputTokens: 7, outputTokens: 2 }])("records one incomplete receipt with honest observed usage %j", async (observed) => {
+    const failure = new IncompleteProviderResponseError("length", observed);
+    await expect(trackAnthropicRequest({ model: "claude-haiku-4-5", agent: "hamilton", operation: "fixture", agentRunId: 7,
+      metadata: { original_context: "preserved" } }, async () => { throw failure; })).rejects.toBe(failure);
+    const inserts = sqlMock.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO ai_api_usage_events"));
+    expect(inserts).toHaveLength(1); const row = inserts[0];
+    expect(row.slice(5, 9)).toEqual(["failed", 1, observed?.inputTokens ?? 0, observed?.outputTokens ?? 0]);
+    expect(row[11]).toBe(observed ? (observed.inputTokens + observed.outputTokens * 5) : null);
+    expect(JSON.parse(row.at(-1))).toMatchObject({ original_context: "preserved", response_complete: false,
+      usage_observation: observed ? "observed" : "unknown", ...(observed ? {} : { token_counts_are_placeholders: true }) });
+    expect(sqlMock.mock.calls.some((call) => templateText(call[0]).includes("UPDATE agent_runs"))).toBe(false);
+    expect(stopMock).not.toHaveBeenCalled();
+  });
+  it("raw transport failure records NULL estimate rather than a zero charge and never opens the billing stop", async () => {
+    const error = new ProviderResponseBudgetError("json_bytes");
+    await expect(trackAnthropicRequest({ model: "claude-haiku-4-5", agent: "knox", operation: "fixture" }, async () => { throw error; })).rejects.toBe(error);
+    const insert = sqlMock.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO ai_api_usage_events"))!;
+    expect(insert[11]).toBeNull(); expect(JSON.parse(insert.at(-1))).toMatchObject({ usage_observation: "unknown", token_counts_are_placeholders: true });
+    expect(stopMock).not.toHaveBeenCalled();
   });
 
   it("estimates model-family spend in microdollars", () => {

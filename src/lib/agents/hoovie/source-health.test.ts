@@ -151,10 +151,10 @@ describe("buildSourceHealthReport", () => {
   it("gives the brief only the sources that are not fresh", () => {
     expect(sourceHealthLines(report)).toEqual([
       "Public data: 4 of 5 sources not fresh (1 failed, 1 empty, 1 stale, 1 skipped).",
-      "- failing: failed, 1 partition failed: timeout; never succeeded",
-      "- never: empty, nothing loaded yet; never succeeded",
+      "- failing: failed, 1 partition failed: timeout; no nonempty load recorded",
+      "- never: empty, nothing loaded yet; no nonempty load recorded",
       "- old: stale, last success 290 days ago; a monthly source is stale after 45",
-      "- held: skipped, held until James confirms the data terms; last success 2026-10-17",
+      "- held: skipped, held until James confirms the data terms; last nonempty load 2026-10-17; last successful check 2026-10-17",
     ]);
     expect(sourceHealthLines(null)).toEqual([]);
   });
@@ -162,8 +162,8 @@ describe("buildSourceHealthReport", () => {
   it("always names failed and empty sources, and caps the rest", () => {
     const lines = sourceHealthLines(report, 2);
     expect(lines.slice(1)).toEqual([
-      "- failing: failed, 1 partition failed: timeout; never succeeded",
-      "- never: empty, nothing loaded yet; never succeeded",
+      "- failing: failed, 1 partition failed: timeout; no nonempty load recorded",
+      "- never: empty, nothing loaded yet; no nonempty load recorded",
       "- and 2 more on /admin/data",
     ]);
     expect(BRIEF_SOURCE_LINES).toBeGreaterThan(0);
@@ -176,7 +176,7 @@ describe("buildSourceHealthReport", () => {
     const detail = sourceHealthDetail(report) as { sources: Array<Record<string, unknown>>; counts: unknown };
     expect(detail.counts).toEqual(report.counts);
     expect(detail.sources[0]).toEqual({
-      source: "failing", status: "failed", reason: "1 partition failed: timeout", cadence: "quarterly", last_success_at: null, latest_period: null,
+      source: "failing", status: "failed", reason: "1 partition failed: timeout", cadence: "quarterly", last_success_at: null, last_attempt_at: null, last_loaded_at: null, latest_period: null,
     });
   });
 });
@@ -206,4 +206,36 @@ describe("readSourceHealth", () => {
     expect(calls.every((text) => /^\s*SELECT/.test(text))).toBe(true);
     // The scheduler's module graph is large; loading it the first time is slow.
   }, 60_000);
+});
+
+it("keeps recorded empty-source causes distinct without overriding holds or failures",()=>{
+  const missing=feed("missing",{lastSuccessAt:NOW.toISOString(),emptyReason:"No confirmed download URL",emptyPartition:"current"});
+  const weight=feed("weight",{lastSuccessAt:NOW.toISOString(),emptyReason:"No single survey weight",emptyPartition:"current"});
+  expect(sourceHealth(contract("missing"),missing,null,NOW).reason).toContain("latest empty check current: No confirmed download URL");
+  expect(sourceHealth(contract("weight"),weight,null,NOW).reason).toContain("No single survey weight");
+  expect(sourceHealth(contract("weight"),weight,"licence held",NOW).reason).toBe("licence held");
+  const failed={...weight,failed:1,lastFailedAt:NOW.toISOString(),lastSuccessAt:null,lastError:"HTTP 400"};
+  expect(sourceHealth(contract("weight"),failed,null,NOW).status).toBe("failed");
+  expect(sourceHealth(contract("weight"),failed,null,NOW).reason).not.toContain("survey weight");
+});
+
+it("redacts and bounds empty-check evidence without inventing a legacy reason",()=>{
+  const current=feed("x",{lastSuccessAt:NOW.toISOString(),emptyReason:`UserID=secret\n${"x".repeat(400)}`,emptyPartition:"current"});
+  const reason=sourceHealth(contract("x"),current,null,NOW).reason;
+  expect(reason).toContain("UserID=***");
+  expect(reason).not.toContain("secret");
+  expect(reason).not.toContain("\n");
+  expect(reason.length).toBeLessThan(260);
+  expect(sourceHealth(contract("legacy"),feed("legacy",{lastSuccessAt:NOW.toISOString()}),null,NOW).reason)
+    .toBe("every load so far came back empty");
+});
+
+it("does not grade a load fresh while upstream geographies remain explicitly unavailable",()=>{
+  const record=feed("bea",{succeeded:1,lastSuccessAt:NOW.toISOString(),lastLoadedAt:NOW.toISOString(),partial:1,
+    partialReason:"MSA code 101; supported state/county rows loaded"});
+  const health=sourceHealth(contract("bea"),record,null,NOW);
+  expect(health.status).toBe("failed");
+  expect(health.reason).toContain("partially loaded");
+  expect(health.reason).toContain("MSA code 101");
+  expect(health.lastLoadedAt).toBe(NOW.toISOString());
 });

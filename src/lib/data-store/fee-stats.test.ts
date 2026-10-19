@@ -352,7 +352,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
-    expect(STATS_METHOD_VERSION).toBe(15);
+    expect(STATS_METHOD_VERSION).toBe(17);
   });
 
   it("switched off, selects no keys and counts each charter", () => {
@@ -429,6 +429,7 @@ describe("statistics population descriptions (#1924)", () => {
       "no_business_schedule",
       "safe_deposit_rent_only",
       "one_charging_basis",
+      "literal_charging_units",
     ]);
     for (const f of filters) {
       expect(Object.keys(f).sort()).toEqual(["key", "label"]);

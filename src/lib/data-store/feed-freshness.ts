@@ -18,7 +18,16 @@ export interface RegistryFeedFreshness {
   source: string;
   /** Newest partition that loaded rows (e.g. 2026Q2, 2026, 202608, current). */
   latestPeriod: string | null;
+  /** Last successful check, including a nonblocked empty response. */
   lastSuccessAt: string | null;
+  /** Latest recorded attempt (including claims and failures); absent on historical snapshots. */
+  lastAttemptAt?: string | null;
+  /** Latest retained receipt that actually loaded rows; absent on historical snapshots. */
+  lastLoadedAt?: string | null;
+  emptyReason?: string | null;
+  emptyPartition?: string | null;
+  partial?: number;
+  partialReason?: string | null;
   nextAttemptAt: string | null;
   failed: number;
   scheduled: number;
@@ -84,8 +93,17 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
            MAX(fetched_at) FILTER (
              WHERE status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source'))
            ) AS last_success_at,
+           MAX(updated_at) AS last_attempt_at,
+           (ARRAY_AGG(COALESCE(detail->>'empty_reason',detail->>'reason',detail->>'problem') ORDER BY updated_at DESC)
+             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source')))[1] AS empty_reason,
+           (ARRAY_AGG(partition_key ORDER BY updated_at DESC)
+             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source')))[1] AS empty_partition,
+           MAX(fetched_at) FILTER (WHERE status = 'succeeded' AND row_count > 0) AS last_loaded_at,
            MIN(next_attempt_after) FILTER (WHERE status IN ('scheduled', 'failed')) AS next_attempt_at,
            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
+           COUNT(*) FILTER (WHERE status = 'succeeded' AND detail->>'partial' = 'true')::int AS partial,
+           (ARRAY_AGG(detail->>'partial_reason' ORDER BY updated_at DESC)
+             FILTER (WHERE status = 'succeeded' AND detail->>'partial' = 'true'))[1] AS partial_reason,
            COUNT(*) FILTER (WHERE status = 'scheduled')::int AS scheduled,
            (ARRAY_AGG(last_error ORDER BY updated_at DESC) FILTER (WHERE status = 'failed' AND last_error IS NOT NULL))[1] AS last_error,
            COUNT(*) FILTER (WHERE status = 'empty' AND detail ? 'missing_source')::int AS blocked,
@@ -101,8 +119,14 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
     source: String(r.source),
     latestPeriod: r.latest_period ? String(r.latest_period) : null,
     lastSuccessAt: iso(r.last_success_at),
+    lastAttemptAt: iso(r.last_attempt_at),
+    lastLoadedAt: iso(r.last_loaded_at),
+    emptyReason: r.empty_reason ? String(r.empty_reason) : null,
+    emptyPartition: r.empty_partition ? String(r.empty_partition) : null,
     nextAttemptAt: iso(r.next_attempt_at),
     failed: Number(r.failed),
+    partial: Number(r.partial ?? 0),
+    partialReason: r.partial_reason ? String(r.partial_reason) : null,
     scheduled: Number(r.scheduled),
     lastError: r.last_error ? String(r.last_error) : null,
     blocked: Number(r.blocked ?? 0),

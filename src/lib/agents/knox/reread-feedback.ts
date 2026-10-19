@@ -647,6 +647,7 @@ export async function consumeRereadRequests(
         institution_id: request.institutionId as number,
         source_url: request.sourceUrl,
         text_hash: request.textHash,
+        normalized_text: texts.get(Number(request.documentTextId)) ?? undefined,
       };
       const candidate = decision.candidate as ExtractedFeeCandidate;
       try {

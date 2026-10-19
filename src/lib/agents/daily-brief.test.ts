@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { briefRecipients, buildDailyBrief, storageWarningLines } from "./daily-brief";
+import { briefRecipients, buildDailyBrief, dailyBriefEmail, storageWarningLines } from "./daily-brief";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import type { RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
@@ -98,7 +98,7 @@ describe("buildDailyBrief", () => {
       ],
     });
     expect(brief.subject).toBe("Atlas daily brief: pipeline running, 260 institutions published");
-    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 1 failed. Busiest: Magellan (412), Rosetta (260), Knox (260).");
+    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 1 failed, 0 blocked. Busiest by completed steps: Magellan (412), Rosetta (260), Knox (260).");
     expect(brief.lines[1]).toBe("Since yesterday: +20 fee URLs, +223 documents read, +21 institutions published.");
     expect(brief.lines[2]).toContain("260 of 8,750 institutions have sourced fees");
     expect(brief.lines[3]).toContain("Needs you:");
@@ -109,7 +109,7 @@ describe("buildDailyBrief", () => {
     const brief = buildDailyBrief({ health: { ...health, runs_failed_24h: 0 }, funnel, previous: null, stepsByAgent: {}, feed24h: [] });
     expect(brief.lines).toContain("Nothing is stuck. Nothing needs you.");
     expect(brief.lines.some((line) => line.startsWith("Since"))).toBe(false);
-    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 0 failed.");
+    expect(brief.lines[0]).toBe("What ran: 14 runs finished, 0 failed, 0 blocked.");
   });
 
   it("names the date when the last brief was not yesterday", () => {
@@ -148,8 +148,8 @@ describe("morning brief", () => {
       },
     });
     expect(brief.subject).toBe("Morning brief: 1 thing needs you, pipeline running");
-    expect(brief.lines[0]).toBe("1 thing needs you.\n- Reply overdue by 4 hours: Pat Lee");
-    expect(brief.lines).toContain("Spend: $8.35 so far today of the $75 daily cap; $23.27 this month of $500.");
+    expect(brief.lines[0]).toBe("1 thing needs you.\n- Reply overdue by 4 hours: Pat Lee. Open lead: https://feeinsight.com/admin/leads");
+    expect(brief.lines).toContain("Spend: $8.35 so far today of the $75 daily cap; $23.27 this month of $500 ($476.73 remaining).");
   });
 
   it("says plainly when nothing needs you", () => {
@@ -168,15 +168,15 @@ describe("morning brief", () => {
   it("emails Atlas's storage warnings when there are any (Oct 18)", () => {
     const storage = { alerts: ["area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held"], at: "2026-10-05T12:17:00Z" };
     const brief = buildDailyBrief({ ...base, needsYou: [], storage });
-    expect(brief.subject).toBe("Morning brief: storage warning, pipeline running");
-    expect(brief.lines[0]).toBe("Storage warning.\n- Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
+    expect(brief.subject).toBe("Morning brief: 1 thing needs you, storage warning, pipeline running");
+    expect(brief.lines[0]).toBe("1 thing needs you.\n- Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
 
     const busy = buildDailyBrief({
       ...base,
       needsYou: [{ id: "lead:1", severity: "critical", area: "Customers", title: "Reply overdue", detail: "", href: "/admin/leads", action: "Open lead" }],
       storage,
     });
-    expect(busy.subject).toBe("Morning brief: 1 thing needs you, storage warning, pipeline running");
+    expect(busy.subject).toBe("Morning brief: 2 things need you, storage warning, pipeline running");
     expect(busy.lines[0]).toContain("- Storage: area_statistics is 2,100 MB");
 
     const older = buildDailyBrief({ ...base, storage });
@@ -202,8 +202,8 @@ describe("morning brief", () => {
     const section = brief.lines.find((line) => line.startsWith("Public data:"));
     expect(section).toBe([
       "Public data: 2 of 3 sources not fresh (1 failed, 1 empty).",
-      "- hmda: failed, 1 partition failed: HTTP 503 from ffiec.cfpb.gov; last success 2026-09-01",
-      "- fr-y9c: empty, www.ffiec.gov refused production's request; never succeeded",
+      "- hmda: failed, 1 partition failed: HTTP 503 from ffiec.cfpb.gov; last nonempty load 2026-09-01; last successful check 2026-09-01",
+      "- fr-y9c: empty, www.ffiec.gov refused production's request; no nonempty load recorded",
     ].join("\n"));
 
     const busy = buildDailyBrief({
@@ -234,5 +234,50 @@ describe("morning brief", () => {
     expect(briefRecipients({})).toEqual({ to: "hello@bankfeeindex.com", cc: ["jlgilmore2@gmail.com"] });
     expect(briefRecipients({ ATLAS_BRIEF_CC: "" })).toEqual({ to: "hello@bankfeeindex.com", cc: [] });
     expect(briefRecipients({ ATLAS_BRIEF_TO: "jlgilmore2@gmail.com" }).cc).toEqual([]);
+  });
+});
+
+describe("actionable morning brief", () => {
+  const base = { health, funnel, previous: null, stepsByAgent: {}, feed24h: [] };
+  it("counts the health and storage warnings plus shown and omitted decisions", () => {
+    const needsYou = Array.from({length:7},(_,i)=>({id:`failure:step:registry-source-${i}`, severity:"critical" as const,
+      area:"Agents" as const,title:`Source ${i} failing`,detail:"HTTP 400: invalid geography",href:"/admin/atlas/details",action:"See failures"}));
+    const brief = buildDailyBrief({...base,health:{...health,overdue_state_lanes:38,runs_blocked_24h:4}, needsYou,
+      storage:{alerts:["financial history needs a budget"],at:"2026-10-19T12:17:00Z"}});
+    expect(brief.lines[0]).toMatch(/^9 things need you\./);
+    expect(brief.lines[0]).toContain("38 state lanes are overdue");
+    expect(brief.lines[0]).toContain("Hoovie: Source 0 failing — HTTP 400: invalid geography");
+    expect(brief.lines[0]).toContain("See failures: https://feeinsight.com/admin/atlas/details");
+    expect(brief.lines[0]).toContain("and 1 more in the console");
+    expect(brief.lines[0]).not.toContain("Source 6 failing");
+    expect(brief.lines[1]).toContain("1 failed, 4 blocked");
+  });
+
+  it("bounds/redacts evidence, escapes HTML and creates only same-site admin links", () => {
+    const brief = buildDailyBrief({...base,needsYou:[{id:"failure:step:extract",severity:"critical",area:"Agents",
+      title:"<script>alert(1)</script>", detail:`UserID=secret-key\n${"x".repeat(500)}<img src=x>`,href:"//evil.test",action:"Review"}]});
+    const email = dailyBriefEmail(brief);
+    expect(brief.lines[0]).toContain("Knox:");
+    expect(brief.lines[0]).not.toContain("secret-key");
+    expect(brief.lines[0]).toContain("UserID=***");
+    expect(brief.lines[0]).toContain("…");
+    expect(brief.lines[0]).toContain("Review: https://feeinsight.com/admin");
+    expect(brief.lines[0].split("\n")).toHaveLength(2);
+    expect(email.html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(email.html).not.toContain("<script>");
+    expect(email.html).toContain('href="https://feeinsight.com/admin"');
+    expect(email.html).not.toContain("evil.test");
+    expect(dailyBriefEmail({subject:"test",lines:["Publisher returned https://:::: and https://evil.test/admin"]}).html)
+      .not.toContain('href="https://evil.test');
+  });
+
+  it("does not describe an empty check as a nonempty load", () => {
+    const sources = buildSourceHealthReport({contracts:[contract("empty", "annual")],
+      feeds:[feed("empty",{lastSuccessAt:"2026-10-19T12:00:00Z",lastAttemptAt:"2026-10-19T12:00:00Z",lastLoadedAt:null})],
+      skips:new Map(),now:new Date("2026-10-19T13:00:00Z")});
+    const brief = buildDailyBrief({...base,needsYou:[],sources});
+    const text = brief.lines.join("\n");
+    expect(text).toContain("last attempt 2026-10-19; no nonempty load recorded; last successful check 2026-10-19");
+    expect(text).not.toContain("last success 2026-10-19");
   });
 });

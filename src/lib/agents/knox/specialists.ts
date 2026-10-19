@@ -24,6 +24,9 @@ import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percen
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
+import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
+import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -134,7 +137,13 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 // neighboring paid/returned row cannot donate its price. Stale-read floor remains v78.
 // v84 (#2209): bounded returned/paid-item policy paragraphs keep literal tier/exception scope;
 // dollar totals of a fee count fail the shared source check. Existing re-read floors stay settled.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 84 } as const;
+// v85 (#2240/#2241): explicit stacked fee labels own their prices; an own annual
+// overdraft-program charge stays held instead of losing its period on the paid-item path.
+// v86 (#2259): repeated monthly price prose without one literal account owner stays
+// eligibility-held; paid and minimal-row callers share the source-bearing writer gate.
+// v87 (#2248): new raw lineage keeps literal own charging units and full conditions;
+// known special units leave mixed-unit comparisons. Historical raw metadata stays settled.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 87 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -293,6 +302,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
   const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
   const windows = priceWindows(legacyText);
+  const stackedPrices = stackedFeePrices(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
     { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(legacyText, extractCandidatesFromText(text)) },
     // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
@@ -341,6 +351,26 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
       // v74: a footnote number glued to the front of the name comes off (`withoutLeadingFootnoteMark`).
       const feeName = tidyUnmarkedName(read.feeName, text, institutionName);
+      const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
+      if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
+        const row: HeldFeeCandidate = {
+          shape: "periodic_program",
+          feeName,
+          amount: read.amount,
+          amountMax: null,
+          percent: null,
+          frequency: "annual",
+          canonicalHint: read.canonicalHint,
+          excerpt: ownPrices[0].ownText,
+          ownedPolicy: true,
+        };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
       const checked = selfCheck(text, feeName, read.amount, read.canonicalHint);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
@@ -450,7 +480,14 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
-  // #2209: preserve literal age/product prices without pooling them into standard benchmarks.
+  const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
+  for (const candidate of candidates) {
+    const owners = monthlyOwnerReview(candidate);
+    if (!owners) continue;
+    candidate.eligibilityReview = true;
+    candidate.linkedConditions = [candidate.linkedConditions, owners].filter(Boolean).join("\n\n");
+  }
+  // #2209/#2259: preserve literal product prices without pooling them into standard benchmarks.
   // This explicit shape is not one of the automatic range/name/source promoters' inputs.
   for (let at = candidates.length - 1; at >= 0; at--) {
     const read = candidates[at];
@@ -491,5 +528,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     if (!duplicate) rates.push(rate);
     return false;
   });
-  return { candidates, held: stillHeld, rates, runs, dropped };
+  const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
+    ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
+  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped };
 }
