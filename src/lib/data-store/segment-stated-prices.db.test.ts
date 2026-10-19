@@ -74,6 +74,14 @@ describe.skipIf(!connection)("segment stated prices in PostgreSQL (#1993)", () =
     expect(bank.fee_published_ids).toEqual([11,12]);
   });
 
+  it("retains a zero median from unequal source-row weighting alongside its paid source price", async () => {
+    await db`UPDATE published_fee_catalog SET amount=0 WHERE id=11`;
+    await db`INSERT INTO published_fee_catalog SELECT * FROM published_fee_catalog WHERE id=11`;
+    const bank = (await getSegmentFeeValues(filter, "money_order", null)).values.find(v => v.institution_id === 1)!;
+    expect(bank.amount).toBe(0);
+    expect(bank.several).toEqual({ low:0, high:5, fees:[{name:"Personal money order",amount:0},{name:"Postal money order",amount:5}] });
+  });
+
   it("retains overdraft's highest-tier policy instead of inventing a new range policy", async () => {
     await db`UPDATE published_fee_catalog SET fee_category='overdraft' WHERE institution_id=1`;
     const bank = (await getSegmentFeeValues(filter,"overdraft",null)).values[0];

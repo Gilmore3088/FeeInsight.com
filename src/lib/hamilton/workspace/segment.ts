@@ -241,15 +241,18 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
     });
   }
   if (seg.zeroCount > 0) {
-    const zeros = seg.members.filter((m) => m.amount === 0).slice(0, 4).map((m) => m.institutionName);
+    const zeroMembers = seg.members.filter((m) => m.amount === 0);
+    const zeros = zeroMembers.slice(0, 4).map((m) => m.institutionName);
     const more = seg.zeroCount > zeros.length ? ` and ${count(seg.zeroCount - zeros.length)} more` : "";
-    out.push({ text: `${count(seg.zeroCount)} charge $0: ${zeros.join(", ")}${more}.`, source, sampleSize: seg.zeroCount });
+    out.push({ text: zeroMembers.some(m => m.several)
+      ? `${count(seg.zeroCount)} have a $0 value in group statistics: ${zeros.join(", ")}${more}. Their stated prices are listed in the table.`
+      : `${count(seg.zeroCount)} charge $0: ${zeros.join(", ")}${more}.`, source, sampleSize: seg.zeroCount });
   }
   const priced = seg.members.filter((m) => m.amount > 0);
   if (priced.length > 0) {
     const top = [...priced].sort((a, b) => b.amount - a.amount)[0];
     const urls = feeScheduleUrls(top.documentUrls);
-    out.push({ text: priced.some(m => m.several)
+    out.push({ text: seg.members.some(m => m.several)
       ? `${top.institutionName} lists ${statedFeeLabel(top.amount, top.several, money)}; the table keeps each named fee.`
       : `The highest is ${top.institutionName} at ${money(top.amount)}.`,
     source: { ...source, url: urls.length === 1 ? urls[0] : undefined } });

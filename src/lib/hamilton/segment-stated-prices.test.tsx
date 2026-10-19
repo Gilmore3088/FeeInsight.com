@@ -7,7 +7,10 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }), usePat
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { IntelligenceView, type Loaded } from "@/components/hamilton/intelligence/IntelligenceWorkspace";
 import { marketBoardBriefInput } from "@/components/hamilton/intelligence/market-board-brief";
+import { keyFiguresFor } from "@/components/hamilton/memo/answer-memo";
 import { buildSegmentResearch, segmentClaims, segmentExhibit } from "./workspace/segment";
+import { buildFeeAnswer } from "./workspace/answer";
+import { overdraftResearch } from "./workspace/test-fixtures";
 import type { SegmentMember } from "./workspace/types";
 
 const several = { low: 1.65, high: 5, fees: [{ name: "Personal money order", amount: 1.65 }, { name: "Postal money order", amount: 5 }] };
@@ -99,5 +102,58 @@ describe("Intelligence named prices (#1993)", () => {
     expect(JSON.stringify(row.rows)).not.toContain("$3.33");
     for (const url of member.documentUrls) expect(JSON.stringify(row.rows)).toContain(url);
     expect(row.note).not.toContain("Each amount links to the schedule it was read from");
+  });
+});
+
+describe("actual segment answer narratives (#1993)", () => {
+  const mixedZero = { ...member, amount: 0, several: { low: 0, high: 5, fees: [{ name: "Free order", amount: 0 }, { name: "Paid order", amount: 5 }] } };
+  const make = (members: SegmentMember[], current: number | null = null) => buildSegmentResearch({ segment, feeCategory: "money_order", institutionsInSegment: members.length, members, current, ownInSegment: false });
+  const answer = (members: SegmentMember[], current: number) => buildFeeAnswer(overdraftResearch({ feeCategory: "money_order", displayName: "Money order", current, segment: make(members, current) }), { focus: "competitors" });
+
+  it("keeps a zero statistical value distinct from a mixed bank's charge", () => {
+    const claims = segmentClaims(make([mixedZero]), "money_order", null).map(c => c.text).join(" ");
+    expect(claims).not.toContain("1 charge $0:");
+    expect(claims).toContain("$0 value in group statistics");
+    const html = renderToStaticMarkup(<SegmentTable data={make([mixedZero])} own={null} ownLabel="Subject" />);
+    expect(html).not.toContain(">Charge $0<");
+    expect(html).toContain("Group values at $0");
+    expect(make([mixedZero]).zeroCount).toBe(1);
+  });
+
+  it("considers a zero-median range before naming another price highest", () => {
+    const single = { ...member, institutionId: 2, institutionName: "Single Bank", amount: 4, several: undefined };
+    const text = segmentClaims(make([mixedZero, single]), "money_order", null).map(c => c.text).join(" ");
+    expect(text).not.toContain("The highest is Single Bank at $4");
+  });
+
+  it.each([0, 3.325, 6])("labels mixed-range market comparisons as statistics at a current value of %s", current => {
+    const single = { ...member, institutionId: 2, institutionName: "Single Bank", amount: 4, several: undefined };
+    const lines = answer([member, single], current).storyline!.lenses.market.map(c => c.text).join(" ");
+    expect(lines).toContain("In group statistics");
+    expect(lines).not.toMatch(/charge less|charges more|highest is|lowest is|charge the same/);
+    expect(lines).toContain("stated prices");
+  });
+
+  it("does not equate a matching median with every bank stating the current price", () => {
+    const result = answer([{ ...member, amount: 3, several: { low: 1, high: 5, fees: [{ name: "A", amount: 1 }, { name: "B", amount: 5 }] } }], 3);
+    expect(result.storyline!.lenses.market.map(c => c.text).join(" ")).not.toContain("charge the same $3");
+  });
+
+  it("labels zero captions and shared range key figures as statistics without changing their values", () => {
+    const story = answer([mixedZero], 3).storyline!;
+    expect(story.exhibits.find(e => e.exhibit.kind === "segment_table")?.actionTitle).toContain("$0 value in group statistics");
+    const exhibit = segmentExhibit(make([member]), "money_order", 3, "Subject")!;
+    expect(keyFiguresFor(exhibit)).toEqual([
+      { value: "$3", label: "Subject" },
+      { value: "$3.33 to $3.33", label: "Range of institution values in group statistics (1 institution)" },
+      { value: "0 of 1", label: "Values below Subject in group statistics" },
+    ]);
+  });
+
+  it("preserves ordinary true-zero and single-price answer prose", () => {
+    const zero = { ...mixedZero, institutionName: "Free Bank", several: undefined };
+    expect(segmentClaims(make([zero]), "money_order", null).map(c => c.text)).toContain("1 charge $0: Free Bank.");
+    const single = { ...member, institutionName: "Single Bank", amount: 4, several: undefined };
+    expect(answer([single], 0).storyline!.lenses.market[0].text).toContain("the highest is Single Bank ($4)");
   });
 });

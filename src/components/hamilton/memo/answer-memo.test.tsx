@@ -65,7 +65,7 @@ describe("competitor range key figures with several fees (#1931)", () => {
       ],
       sources: [],
     });
-    expect(figures).toContainEqual({ value: "$162.50 to $170", label: "Range across 2 named institutions" });
-    expect(figures).toContainEqual({ value: "0 of 2", label: "Charge less than Subject" });
+    expect(figures).toContainEqual({ value: "$162.50 to $170", label: "Range of institution values in group statistics (2 institutions)" });
+    expect(figures).toContainEqual({ value: "0 of 2", label: "Values below Subject in group statistics" });
   });
 });

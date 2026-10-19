@@ -161,7 +161,7 @@ export function SegmentTable({
           <dd className={`text-lg text-warm-900 ${ANSWER_TYPE.num}`}>{data.members.length.toLocaleString("en-US")}</dd>
         </div>
         <div>
-          <dt className="text-xs text-warm-600">Charge $0</dt>
+          <dt className="text-xs text-warm-600">{data.members.some(m => m.amount === 0 && m.several) ? "Group values at $0" : "Charge $0"}</dt>
           <dd className={`text-lg text-warm-900 ${ANSWER_TYPE.num}`}>{data.zeroCount}</dd>
         </div>
         <div>
