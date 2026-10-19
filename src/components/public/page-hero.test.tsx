@@ -19,3 +19,10 @@ describe("PageHero", () => {
     expect(renderToStaticMarkup(<PageHero title="T" aside={<div>card</div>} />)).toContain("lg:grid-cols-");
   });
 });
+
+describe("PageHero crumbs", () => {
+  it("wraps breadcrumbs in a Breadcrumb nav", () => {
+    const html = renderToStaticMarkup(<PageHero title="T" crumbs={<a href="/about">About</a>} />);
+    expect(html).toMatch(/<nav aria-label="Breadcrumb"[^>]*><a href="\/about">About<\/a><\/nav>/);
+  });
+});

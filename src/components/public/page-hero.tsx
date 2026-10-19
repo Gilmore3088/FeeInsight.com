@@ -32,25 +32,29 @@ export function PageHero({
   children?: ReactNode;
   /** The right column on desktop. */
   aside?: ReactNode;
-  /** Breadcrumbs above the eyebrow. */
+  /** Breadcrumb links above the eyebrow; rendered inside a Breadcrumb nav. */
   crumbs?: ReactNode;
 }) {
   return (
     <section className={`fi-page-hero ${homeSerif.variable} relative isolate text-white`} aria-labelledby={id}>
       <div
-        className={`${PAGE_HERO_WRAP} grid gap-8 pb-16 pt-9 sm:pb-20 lg:pt-14 ${aside ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12" : ""}`}
+        className={`${PAGE_HERO_WRAP} grid gap-8 pb-16 pt-9 sm:pb-20 lg:pb-24 lg:pt-14 ${aside ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-center lg:gap-12" : ""}`}
       >
         <div className={`min-w-0 ${aside ? "" : "max-w-[46rem]"}`}>
-          {crumbs ? <div className="mb-4 text-[13px] text-[#c9d6de] [&_a]:text-white [&_a:hover]:underline">{crumbs}</div> : null}
+          {crumbs ? (
+            <nav aria-label="Breadcrumb" className="mb-4 flex flex-wrap items-center gap-x-2 text-[13px] text-[#c9d6de] [&_a]:inline-flex [&_a]:min-h-11 [&_a]:items-center [&_a]:text-white [&_a:hover]:underline">
+              {crumbs}
+            </nav>
+          ) : null}
           {eyebrow ? <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#c9d6de]">{eyebrow}</p> : null}
           <h1
             id={id}
-            className="mt-3 text-[36px] !font-medium leading-[1.06] tracking-[-0.025em] text-white sm:text-[48px] lg:text-[56px]"
+            className="mt-3 break-words text-[36px] !font-medium leading-[1.06] tracking-[-0.025em] text-white sm:text-[48px] lg:text-[56px]"
             style={{ fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" }}
           >
             {title}
           </h1>
-          {lede ? <div className="mt-5 max-w-[40rem] text-[17px] leading-[1.5] text-[#e0e9ee] sm:text-[19px]">{lede}</div> : null}
+          {lede ? <div className="mt-5 max-w-[40rem] text-pretty text-[17px] leading-[1.5] text-[#e0e9ee] sm:text-[19px]">{lede}</div> : null}
           {children ? <div className="mt-7">{children}</div> : null}
         </div>
         {aside ? <div className="min-w-0">{aside}</div> : null}
