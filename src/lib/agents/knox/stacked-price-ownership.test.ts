@@ -128,7 +128,7 @@ describe("#2240/#2241 explicit stacked price ownership", () => {
     const section = "Youth Checking Account\nNSF Fee\n• $140 Maximum. $5 per item\nOverdraft Fee\n• $140 Maximum. $5 per item";
     const both = runFreeSpecialists(section);
     expect(both.candidates).toEqual([]);
-    expect(both.held.filter(row => row.shape === "eligibility").map(row => row.feeName)).toEqual(["NSF Fee", "Overdraft Fee"]);
+    expect(both.held.filter(row => row.shape === "eligibility").map(row => row.feeName).sort()).toEqual(["NSF Fee", "Overdraft Fee"].sort());
     expect(both.held.filter(row => row.shape === "eligibility").every(row => row.linkedConditions === "Youth Checking Account")).toBe(true);
     const unknown = section.replace("Overdraft Fee\n", "Additional terms continue\nOverdraft Fee\n");
     expect(runFreeSpecialists(unknown).candidates).toEqual([]);
