@@ -144,7 +144,7 @@ export async function appendLiveAuditEvent<T>(db: SqlTag, context: LiveAuditCont
 export async function latestLiveAuditDraw(db: SqlTag = sql, day?: string): Promise<LiveAuditDrawEvent | null> {
   const [row] = await db<Row[]>`
     SELECT e.id,e.created_at,CASE WHEN octet_length(e.detail::text)<=${LIMITS.drawBytes} THEN e.detail ELSE NULL END AS detail,
-      (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.draw} AND r.agent_name='atlas' AND r.run_kind='workflow'
+      (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.draw} AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow'
        AND r.params_json->>'source'='atlas.scoreboard') AS valid
     FROM agent_run_events e LEFT JOIN agent_run_steps s ON s.id=e.step_id LEFT JOIN agent_runs r ON r.id=e.agent_run_id
     WHERE e.event_type=${EVENTS.draw} AND (${day ?? null}::text IS NULL OR e.detail->>'day'=${day ?? null})
@@ -222,9 +222,9 @@ export async function readLiveAuditProgress(db:SqlTag,origin:LiveAuditDrawEvent)
   ), limits AS (SELECT count(*) AS n,COALESCE(sum(bytes),0) AS bytes FROM headers)
   SELECT h.id,h.created_at,h.agent_run_id,h.step_id,CASE WHEN l.n<=500 AND l.bytes<=${LIMITS.drawBytes} AND h.bytes<=${LIMITS.eventBytes} THEN h.detail ELSE NULL END AS detail,
     CASE WHEN octet_length(c.detail::text)<=8192 THEN c.detail ELSE NULL END AS claim_detail,c.agent_run_id AS claim_run_id,c.step_id AS claim_step_id,
-    (cs.agent_run_id=c.agent_run_id AND cs.step_key=${STEPS.observe} AND cr.agent_name='atlas' AND cr.run_kind='workflow'
+    (cs.agent_run_id=c.agent_run_id AND cs.step_key=${STEPS.observe} AND cs.agent_name='atlas' AND cr.agent_name='atlas' AND cr.run_kind='workflow'
       AND cr.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND c.created_at<=h.created_at) AS claim_valid,
-    (s.agent_run_id=h.agent_run_id AND s.step_key=${STEPS.observe} AND r.agent_name='atlas' AND r.run_kind='workflow'
+    (s.agent_run_id=h.agent_run_id AND s.step_key=${STEPS.observe} AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow'
       AND r.params_json->>'source'=${LIVE_AUDIT_SOURCE}) AS valid
   FROM headers h CROSS JOIN limits l LEFT JOIN agent_run_steps s ON s.id=h.step_id LEFT JOIN agent_runs r ON r.id=h.agent_run_id
   LEFT JOIN agent_run_events c ON c.id=CASE WHEN h.detail->>'claimId' ~ '^[1-9][0-9]{0,17}$' THEN (h.detail->>'claimId')::bigint ELSE 0 END
@@ -268,7 +268,7 @@ export async function claimLiveAuditChunk(options:{db?:SqlTag;context:LiveAuditC
     if(now.getTime()>=Date.parse(origin.detail.deadline))return null;
     const progress=await readLiveAuditProgress(tx,origin);if(!progress.valid||progress.cursor>=origin.detail.groups.length)return null;
     const [row]=await tx<Row[]>`SELECT e.id,CASE WHEN octet_length(e.detail::text)<=8192 THEN e.detail ELSE NULL END AS detail,
-      (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.observe} AND r.agent_name='atlas' AND r.run_kind='workflow'
+      (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.observe} AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow'
        AND r.params_json->>'source'=${LIVE_AUDIT_SOURCE} AND e.agent_run_id::text=e.detail->>'ownerRunId'
        AND e.step_id::text=e.detail->>'ownerStepId') AS valid
       FROM agent_run_events e LEFT JOIN agent_run_steps s ON s.id=e.step_id LEFT JOIN agent_runs r ON r.id=e.agent_run_id
@@ -326,7 +326,7 @@ export async function settleLiveAuditChunk(options:{db?:SqlTag;context:LiveAudit
       SELECT r.id,s.id,$3,'completed','Live-source observation chunk.',p.detail,clock_timestamp()
       FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id CROSS JOIN payload p
       WHERE r.id=$4 AND s.id=$5 AND r.status='running' AND s.status='running' AND s.step_key=$6
-        AND r.agent_name='atlas' AND r.run_kind='workflow' AND r.params_json->>'source'=$7
+        AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow' AND r.params_json->>'source'=$7
         AND clock_timestamp()<$8::timestamptz AND clock_timestamp()<$9::timestamptz
       RETURNING id`,[boundedAuditJson(expected,LIMITS.drawBytes),boundedAuditJson(chunk,LIMITS.eventBytes),EVENTS.chunk,context.runId,context.stepId,STEPS.observe,LIVE_AUDIT_SOURCE,claim.leaseUntil,draw.deadline,boundedAuditJson(policies,LIMITS.policiesBytes)]);
     const id=dbId(result?.id);if(id&&options.afterInsert)await options.afterInsert(tx,id);

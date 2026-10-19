@@ -135,7 +135,7 @@ export async function requestLiveSourceCaptures(db:DB,context:LiveAuditContext,d
       FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id
       CROSS JOIN jsonb_array_elements(${boundedAuditJson(requests,LIMITS.eventBytes)}::jsonb)q(value)
       WHERE r.id=${context.runId} AND s.id=${context.stepId} AND s.step_key=${STEPS.observe}
-        AND r.agent_name='atlas' AND r.run_kind='workflow' AND r.params_json->>'source'='deming.live_source_audit'
+        AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow' AND r.params_json->>'source'='deming.live_source_audit'
         AND r.status='running' AND s.status='running' RETURNING id`;
     if(inserted.length!==requests.length)throw new Error("live_audit_capture_admission_not_persisted");
     return inserted.map(r=>Number(r.id));
@@ -238,7 +238,7 @@ export async function expireLiveCaptureEpisodes(db:DB,context:LiveAuditContext):
       FROM agent_runs r JOIN agent_run_steps s ON s.agent_run_id=r.id
       CROSS JOIN jsonb_array_elements(${boundedAuditJson(dispositions,LIMITS.eventBytes)}::jsonb)q(value)
       WHERE r.id=${context.runId} AND s.id=${context.stepId} AND s.step_key=${STEPS.archive}
-        AND r.run_kind='workflow' AND r.agent_name IN ('atlas','magellan') AND r.params_json->>'source'='deming.live_source_audit'
+        AND s.agent_name='atlas' AND r.run_kind='workflow' AND r.agent_name IN ('atlas','magellan') AND r.params_json->>'source'='deming.live_source_audit'
         AND r.status='running' AND s.status='running' RETURNING id`;
     if(inserted.length!==dispositions.length)throw new Error("live_audit_expiry_not_persisted");
     return inserted.length;

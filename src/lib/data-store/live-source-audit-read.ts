@@ -11,7 +11,7 @@ async function captureCounts(db:DB,drawId:number,now:Date):Promise<LiveAuditSumm
     AND e.detail->>'drawId'=${String(drawId)} ORDER BY e.id LIMIT 501),
     limits AS(SELECT count(*) AS n,COALESCE(sum(bytes),0) AS bytes FROM headers)
     SELECT e.id,e.created_at,CASE WHEN l.n<=500 AND l.bytes<=4194304 AND e.bytes<=8192 THEN e.detail ELSE NULL END AS detail,
-      (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.observe} AND r.agent_name='atlas' AND r.run_kind='workflow'
+      (s.agent_run_id=e.agent_run_id AND s.step_key=${STEPS.observe} AND s.agent_name='atlas' AND r.agent_name='atlas' AND r.run_kind='workflow'
        AND r.params_json->>'source'='deming.live_source_audit') AS valid,
       e.id AS request_id
     FROM headers e CROSS JOIN limits l LEFT JOIN agent_run_steps s ON s.id=e.step_id LEFT JOIN agent_runs r ON r.id=e.agent_run_id`;
@@ -87,12 +87,13 @@ export async function archiveLiveSourceAudit(db:DB,context:LiveAuditContext,draw
     const summary={...result.component.summary,archiveState:"archived" as const};
     const previous=snapshot?readHistoricalLiveSourceAudit(snapshot.detail):null;
     if(previous?.archive&&auditHash({...previous.summary,componentAsOf:""})===auditHash({...summary,componentAsOf:""}))return true;
-    let archive;
-    try{archive=compactLiveAuditArchive(origin.id,origin.detail,result.progress,now,summary);}
+    let archive,component:LiveAuditComponent;
+    try{archive=compactLiveAuditArchive(origin.id,origin.detail,result.progress,now,summary);
+      component={summary,archive,archiveEventId:Number.MAX_SAFE_INTEGER};
+      if(!validateLiveAuditComponent(component))throw new Error("live_audit_archive_validation");
+    }
     catch{await appendLiveAuditEvent(tx,context,EVENTS.final,{protocol:1,series:LIVE_SOURCE_AUDIT_SERIES,drawId,day:origin.detail.day,state:"final_unarchived",reason:"compact_payload_cap",at:now.toISOString()});return false;}
     if(!snapshot){await appendLiveAuditEvent(tx,context,EVENTS.final,{protocol:1,series:LIVE_SOURCE_AUDIT_SERIES,drawId,day:origin.detail.day,state:"final_unarchived",reason:"snapshot_missing",at:now.toISOString()});return false;}
-    const component:LiveAuditComponent={summary,archive,archiveEventId:Number.MAX_SAFE_INTEGER};
-    if(!validateLiveAuditComponent(component))throw new Error("live_audit_archive_validation");
     const expected=[...result.currentState].map(([id,value])=>({id,state_hash:value.stateHash}));
     const updated=await tx.unsafe<Row[]>(`WITH expected AS MATERIALIZED(SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(id bigint,state_hash text)),
       current_state AS MATERIALIZED(SELECT expected.id,expected.state_hash=${LIVE_AUDIT_CURRENT_STATE_SQL} AS matches

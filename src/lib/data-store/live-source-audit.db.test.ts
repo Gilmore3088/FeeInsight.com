@@ -316,6 +316,17 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.capture}`)[0].n).toBe(3);
   });
 
+  it("binds observation, claim and draw history to their actual step agents",async()=>{
+    const {origin,ctx}=await observed();expect((await readLiveAuditProgress(appDb()!,origin)).valid).toBe(true);
+    await db`UPDATE agent_run_steps SET agent_name='magellan' WHERE id=${ctx.stepId}`;
+    expect((await readLiveAuditProgress(appDb()!,origin)).valid).toBe(false);expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+    await db`UPDATE agent_run_steps SET agent_name='atlas' WHERE id=${ctx.stepId}`;
+    expect((await readLiveAuditProgress(appDb()!,origin)).valid).toBe(true);
+    const [drawStep]=await db`SELECT step_id FROM agent_run_events WHERE id=${origin.id}`;
+    await db`UPDATE agent_run_steps SET agent_name='magellan' WHERE id=${drawStep.step_id}`;
+    expect(await latestLiveAuditDraw(appDb())).toMatchObject({valid:false});expect(await readLiveSourceAudit(appDb()!)).toBeNull();
+  });
+
   it("consumes a not-configured capture as terminal blocked with no HTTP or source/fee mutation",async()=>{
     const {origin,ctx}=await observed();const [id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
     const fetchImpl=vi.fn();const worker=await context(LIVE_AUDIT_STEPS.capture);
