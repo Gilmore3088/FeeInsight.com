@@ -826,6 +826,55 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     evidence: "Beacon's consumer fee schedule (doc 37581) prices \"Legal Process Fee, per occurrence ... $125.00\" and \"Subpoena Research Fee, per hour ... $75.00\"; the $20 is a loan-servicing document request from consumer-loan-servicing-fee-schedule." },
 ];
 
+/**
+ * Re-reads of a hand takedown (#1905 triage, Oct 19). A takedown rejects only that one verified row,
+ * so when Knox reads the same line again (a newer copy of the page, or the page at a new address),
+ * the same wrong fee publishes again: Navy Federal's #1765 and #1905 takedowns (154638-154640) came
+ * back from its Oct 19 re-read (doc 37977), TD's #1774 "Monthly fee" (152525) from its checking page
+ * at a new address (doc 37065), and one #1772 and one #1755 row the same way.
+ *
+ * So every listed entry whose fault is in the line itself also names the line: a live row at the
+ * same institution with the same name (case, spaces and punctuation aside) and amount is the same
+ * wrong fee and comes down with the entry's reason, its verified row rejected. Which entries:
+ *   - `wrong_amount` and `not_a_fee`: the line under any category;
+ *   - `wrong_category`: only under the listed category, since a re-file to the right one is the fix;
+ *   - never `duplicate` (the line is the kept fee's) or `not_on_schedule` (the fault is the
+ *     document: Texas Capital's #1880 lines published again from its current PDF, doc 37594, may be
+ *     right there).
+ *
+ * Dry run, prod read-only, Oct 19: 6 live rows match (154157, 154638, 154639, 154640, 153311,
+ * 152525), all published after their entry came down. Off, the step reports them (`returns`) and
+ * writes nothing; on, they come down with the listed takedowns.
+ */
+export const HAND_TAKEDOWN_RETURNS_LIVE = false;
+const RETURN_KINDS: ReadonlySet<HandTakedown["kind"]> = new Set(["wrong_amount", "not_a_fee", "wrong_category"]);
+
+/** Pure: a fee name compared without case, spaces or punctuation. */
+export function lineKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** Pure: the live rows that re-read a listed line (see `HAND_TAKEDOWN_RETURNS_LIVE`), never a listed row itself. */
+export function planHandTakedownReturns(live: LiveTakedownRow[], list: readonly HandTakedown[] = HAND_TAKEDOWNS): PlannedHandTakedown[] {
+  const listed = new Set(list.map((entry) => entry.feePublishedId));
+  const planned: PlannedHandTakedown[] = [];
+  const seen = new Set<number>();
+  for (const row of [...live].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
+    const id = Number(row.fee_published_id);
+    if (listed.has(id) || seen.has(id)) continue;
+    const entry = list.find((candidate) =>
+      RETURN_KINDS.has(candidate.kind) &&
+      candidate.institutionId === Number(row.institution_id) &&
+      sameAmount(row.amount, candidate.amount) &&
+      lineKey(candidate.feeName) === lineKey(row.fee_name) &&
+      (candidate.kind !== "wrong_category" || candidate.canonicalFeeKey === row.canonical_fee_key));
+    if (!entry) continue;
+    seen.add(id);
+    planned.push({ feePublishedId: id, feeVerifiedId: row.lineage_ref == null ? null : Number(row.lineage_ref), reason: `${entry.reason} (re-read of #${entry.feePublishedId})` });
+  }
+  return planned;
+}
+
 export interface LiveTakedownRow {
   fee_published_id: number | string;
   lineage_ref: number | string | null;
@@ -848,6 +897,9 @@ export interface HandTakedownResult {
   skipped: Array<{ feePublishedId: number; reason: string }>;
   /** Listed waiting verified rows rejected (`HAND_WAITING_REJECTIONS`); on a dry run, those it would reject. */
   waitingRejected: number[];
+  /** Live re-reads of a listed line (`HAND_TAKEDOWN_RETURNS_LIVE`): taken down when on, else what it would take down. */
+  returns: PlannedHandTakedown[];
+  returnsLive: boolean;
   /** A failed read or write (nothing written); also a `step.warning` run event. */
   error: string | null;
 }
@@ -897,18 +949,21 @@ export async function applyHandTakedowns(
   db: SqlTag,
   options: {
     runId: number; stepId?: number | null; batchId: string; dryRun: boolean;
-    list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[];
+    list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[]; returnsLive?: boolean;
   },
 ): Promise<HandTakedownResult> {
   const list = options.list ?? HAND_TAKEDOWNS;
   const waiting = options.waiting ?? HAND_WAITING_REJECTIONS;
-  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], error: null };
+  const returnsLive = options.returnsLive ?? HAND_TAKEDOWN_RETURNS_LIVE;
+  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], returns: [], returnsLive, error: null };
   if (list.length === 0 && waiting.length === 0) return result;
   // Each listed row, and each live row an entry waits on (`requiresLive`).
   const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
   const waitingIds = [...new Set(waiting.map((entry) => entry.feeVerifiedId))];
   let live: LiveTakedownRow[] = [];
   let pending: Array<{ fee_verified_id: number | string; institution_id: number | string }> = [];
+  let returnCandidates: LiveTakedownRow[] = [];
+  const returnInstitutions = [...new Set(list.filter((entry) => RETURN_KINDS.has(entry.kind)).map((entry) => entry.institutionId))];
   try {
     if (ids.length > 0) {
       live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
@@ -930,17 +985,33 @@ export async function applyHandTakedowns(
            )
       `);
     }
+    // Every live row at a listed institution, for re-reads of a listed line.
+    if (returnInstitutions.length > 0) {
+      returnCandidates = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
+        SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount
+          FROM published_fee_records fp
+         WHERE fp.institution_id = ANY(${returnInstitutions}::bigint[])
+           AND fp.rolled_back_at IS NULL
+           AND fp.amount IS NOT NULL
+      `);
+    }
   } catch (error) {
     console.error("hand takedowns read failed:", error);
     return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns read", error }) };
   }
   const plan = planHandTakedowns(live, list);
   result.skipped = plan.skipped;
+  // A listed row coming down in this step is never also a re-read.
+  const planned = new Set(plan.takenDown.map((item) => item.feePublishedId));
+  result.returns = planHandTakedownReturns(returnCandidates, list).filter((item) => !planned.has(item.feePublishedId));
+  const returns = returnsLive ? result.returns : [];
   const waitingPlan = pending
     .filter((row) => waiting.some((entry) => entry.feeVerifiedId === Number(row.fee_verified_id) && entry.institutionId === Number(row.institution_id)))
     .map((row) => Number(row.fee_verified_id));
   if (options.dryRun) return { ...result, takenDown: plan.takenDown, waitingRejected: waitingPlan };
-  if (plan.takenDown.length === 0 && waitingPlan.length === 0) return result;
+  // Switch off with nothing else to write: the step's detail carries the would-be re-reads.
+  if (plan.takenDown.length === 0 && waitingPlan.length === 0 && returns.length === 0) return result;
+  const takenReturns: PlannedHandTakedown[] = [];
 
   try {
     await inSavepoint(db, async (scope) => {
@@ -971,6 +1042,29 @@ export async function applyHandTakedowns(
           `;
         }
         result.takenDown.push(item);
+      }
+      for (const item of returns) {
+        const updated = await scope<{ fee_published_id: number | string }[]>`
+          UPDATE published_fee_records
+             SET rolled_back_at = NOW(),
+                 rolled_back_by_batch_id = ${options.batchId},
+                 rolled_back_reason = ${item.reason}
+           WHERE fee_published_id = ${item.feePublishedId}
+             AND rolled_back_at IS NULL
+          RETURNING fee_published_id
+        `;
+        if (updated.length === 0) continue;
+        if (item.feeVerifiedId != null) {
+          await scope`
+            UPDATE verified_fee_observations
+               SET review_status = 'rejected',
+                   outlier_flags = CASE WHEN outlier_flags ? ${HAND_TAKEDOWN_FLAG} THEN outlier_flags
+                                        ELSE COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${HAND_TAKEDOWN_FLAG}::text) END
+             WHERE fee_verified_id = ${item.feeVerifiedId}
+               AND review_status IN ('verified', 'approved')
+          `;
+        }
+        takenReturns.push(item);
       }
       const feedback: FeedbackRow[] = result.takenDown.map((item) => {
         const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
@@ -1009,10 +1103,11 @@ export async function applyHandTakedowns(
         `;
         if (rejected.length > 0) result.waitingRejected.push(feeVerifiedId);
       }
-      if (result.takenDown.length > 0 || result.waitingRejected.length > 0) {
-        const message = result.waitingRejected.length > 0
+      if (result.takenDown.length > 0 || result.waitingRejected.length > 0 || takenReturns.length > 0) {
+        const message = (result.waitingRejected.length > 0
           ? `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text and rejected ${result.waitingRejected.length} waiting cop${result.waitingRejected.length === 1 ? "y" : "ies"}`
-          : `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`;
+          : `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`)
+          + (takenReturns.length > 0 ? `, and ${takenReturns.length} re-read(s) of a listed line` : "");
         await scope`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
@@ -1025,6 +1120,8 @@ export async function applyHandTakedowns(
                 fee_verified_id: feeVerifiedId,
                 reason: waiting.find((entry) => entry.feeVerifiedId === feeVerifiedId)!.reason,
               })),
+              returns_live: returnsLive,
+              returns: (returnsLive ? takenReturns : result.returns).map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),
             })}::jsonb
           )
         `;
@@ -1032,9 +1129,10 @@ export async function applyHandTakedowns(
     });
   } catch (error) {
     console.error("hand takedowns write failed:", error);
-    return { ...result, takenDown: [], waitingRejected: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
+    return { ...result, takenDown: [], waitingRejected: [], returns: returnsLive ? [] : result.returns, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
-  if (result.takenDown.length > 0) invalidatePublicReadCache();
+  if (returnsLive) result.returns = takenReturns;
+  if (result.takenDown.length > 0 || takenReturns.length > 0) invalidatePublicReadCache();
   return result;
 }
 
