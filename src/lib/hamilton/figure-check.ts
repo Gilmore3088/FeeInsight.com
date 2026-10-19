@@ -74,15 +74,13 @@ interface PayloadNumber {
 /** Every finite number in the payload with the key it sits under (numeric strings included). */
 export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
   const found: PayloadNumber[] = [];
-  const namedRate = /ratio|pct|percent|roa|roe|margin|yield|share|growth/i;
   const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0) => {
     if (found.length >= MAX_PAYLOAD_NUMBERS || depth > 12) return;
     const number = numericPayloadValue(value);
     if (number !== null) {
       const scale = unit === undefined ? undefined : dollarUnitScale(unit);
       // A container's financial caption describes its dollar fields, not its named ratios.
-      const rateField = (unit === undefined && namedRate.test(key))
-        || (typeof unit === "string" && /dollar amounts/i.test(unit) && RATE_KEY.test(key));
+      const rateField = typeof unit === "string" && /dollar amounts/i.test(unit) && RATE_KEY.test(key);
       if (typeof value === "string" && value.includes("$") && scale === null) return;
       found.push({
         key, value: number,

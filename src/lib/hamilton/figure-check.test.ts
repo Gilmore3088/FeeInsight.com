@@ -105,4 +105,8 @@ describe("explicit monetary units and compacted evidence (#2274)",()=>{
     expect(checkNarrativeFigures("Income was $0.",{value:0,unit:"thousands_dollars"}).unmatched).toEqual([]);
     expect(checkNarrativeFigures("Income was $4 thousand.",{units:"thousands_dollars",institution_id:4,employee_count:4}).unmatched).toEqual(["$4 thousand"]);
   });
+  it("preserves legacy unannotated dollar growth fields and explicit monetary growth units", () => {
+    expect(checkNarrativeFigures("Deposit growth was $1,234.", { deposit_growth: 1234 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Deposit growth was $1.234 million.", { deposit_growth: 1234, unit: "thousands_dollars" }).unmatched).toEqual([]);
+  });
 });
