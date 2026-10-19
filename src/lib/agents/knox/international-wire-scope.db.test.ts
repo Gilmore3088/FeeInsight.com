@@ -132,6 +132,76 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     excerpt: "invented incoming standard applicability", waivable: false });
   const flag = "knox_eligibility:international_wire";
 
+  async function historicalVerified(tx: Db, f: Seed, name: string, amount: number, category: string) {
+    const note = `Knox deterministic extraction from Rosetta artifact #${f.textId}. canonical_hint=${category}; text_hash=${f.hash}; calibrated_confidence=0.98; excerpt="${name} | $${amount}"`;
+    const [{ fee_raw_id: rawId }] = await tx`INSERT INTO raw_fee_observations
+      (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,
+       extraction_confidence,extraction_note,outlier_flags,fee_audience,fee_treatment)
+      VALUES (${f.institutionId},${f.documentId},${f.source.sourceURL},'knox',gen_random_uuid(),${name},${amount},'per_item',
+       .95,${note},${JSON.stringify([`canonical_hint:${category}`])}::jsonb,'unknown','charged') RETURNING fee_raw_id`;
+    const [{ fee_verified_id: verifiedId }] = await tx`INSERT INTO verified_fee_observations
+      (fee_raw_id,institution_id,source_url,verified_by_agent_event_id,canonical_fee_key,fee_name,amount,frequency,
+       extraction_confidence,review_status,outlier_flags,fee_audience,fee_treatment)
+      VALUES (${rawId},${f.institutionId},${f.source.sourceURL},gen_random_uuid(),${category},${name},${amount},'per_item',
+       .95,'verified','["agentic_darwin_verified"]'::jsonb,'unknown','charged') RETURNING fee_verified_id`;
+    return { rawId: Number(rawId), verifiedId: Number(verifiedId) };
+  }
+
+  it("unwired publication adapter derives current verified/source facts even for a minimal direct identity", async () => rollback(async tx => {
+    const { withInternationalPublicationWrite } = await import("../hamilton/international-publication");
+    const f = await seed(tx, pdf);
+    await sourceBackedDepth(tx, f);
+    const v = await historicalVerified(tx, f, "International Wire Outgoing", 45, "wire_intl_outgoing");
+    const result = await withInternationalPublicationWrite(tx, { feeVerifiedId: v.verifiedId }, async (scope, actual) => {
+      expect(actual).toMatchObject({ fee_verified_id: String(v.verifiedId), canonical_fee_key: "wire_intl_outgoing", amount: 45 });
+      return publish.insertPublishedFee(scope, { runId: f.runId, batchId: `agentic-run-${f.runId}`, row: actual! });
+    });
+    expect(result).toMatchObject({ kind: "written" });
+    expect((await live(tx, f)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount))).toEqual([45]);
+  }));
+
+  it("unwired publication adapter defers legacy verified generic and wrong-direction rows without judging them", async () => rollback(async tx => {
+    const { withInternationalPublicationWrite } = await import("../hamilton/international-publication");
+    for (const [source, name, amount, category] of [[html, "International Wire Transfer Fee", 35, "wire_intl_outgoing"],
+      [pdf, "International Wire Outgoing", 45, "wire_intl_incoming"]] as const) {
+      const f = await seed(tx, source);
+      const v = await historicalVerified(tx, f, name, amount, category);
+      const [before] = await tx`SELECT * FROM verified_fee_observations WHERE fee_verified_id=${v.verifiedId}`;
+      const write = vi.fn(async () => { throw new Error("Unproven source may not reach publication"); });
+      expect(await withInternationalPublicationWrite(tx, { feeVerifiedId: v.verifiedId }, write)).toMatchObject({ kind: "deferred" });
+      expect(await withInternationalPublicationWrite(tx, { feeVerifiedId: v.verifiedId }, write)).toMatchObject({ kind: "deferred" });
+      expect(write).not.toHaveBeenCalled();
+      expect((await tx`SELECT * FROM verified_fee_observations WHERE fee_verified_id=${v.verifiedId}`)[0]).toEqual(before);
+      expect(await tx`SELECT id FROM pipeline_attempts WHERE input_fingerprint=${`verified:${v.verifiedId}`} AND stage='publish' AND strategy='publish.rules'`).toHaveLength(0);
+    }
+  }));
+
+  it("keeps an unavailable original peer market-comparable and defers instead of proving false clearance", async () => rollback(async tx => {
+    const { withInternationalPublicationWrite } = await import("../hamilton/international-publication");
+    const { countsInMarketComparison } = await import("@/lib/market-eligibility");
+    const old = await seed(tx, fixture.historicalHtml);
+    await sourceBackedDepth(tx, old);
+    const v = await historicalVerified(tx, old, "International Wire Transfer Fee", 35, "wire_intl_outgoing");
+    await tx`INSERT INTO published_fee_records
+      (lineage_ref,institution_id,source_url,published_by_adversarial_event_id,canonical_fee_key,fee_name,amount,
+       frequency,amount_kind,fee_audience,fee_treatment,published_at)
+      VALUES (${v.verifiedId},${old.institutionId},${old.source.sourceURL},gen_random_uuid(),'wire_intl_outgoing',
+       'International Wire Transfer Fee',35,'per_item','flat','unknown','charged',NOW()-interval '1 day')`;
+    await tx`UPDATE raw_fee_observations SET extraction_note='legacy original witness unavailable' WHERE fee_raw_id=${v.rawId}`;
+    const f = await seed(tx, pdf, old.institutionId, true);
+    const fresh = await historicalVerified(tx, f, "International Wire Outgoing", 45, "wire_intl_outgoing");
+    const [oldPublic] = await tx`SELECT * FROM published_fee_catalog WHERE fee_raw_id=${v.rawId}`;
+    expect(oldPublic).toBeDefined();
+    expect(countsInMarketComparison({ category: oldPublic.fee_category, amount: Number(oldPublic.amount),
+      audience: oldPublic.fee_audience, sourced: oldPublic.source_document_id != null, sourceUrl: oldPublic.source_url,
+      feeName: oldPublic.fee_name, accountProduct: oldPublic.account_product_type,
+      sourceLine: oldPublic.conditions, frequency: oldPublic.frequency })).toBe(true);
+    const write = vi.fn(async () => { throw new Error("Unavailable original peer may not disappear from comparison"); });
+    expect(await withInternationalPublicationWrite(tx, { feeVerifiedId: fresh.verifiedId }, write)).toMatchObject({ kind: "deferred", detail: { reason: "live_scope_conflict" } });
+    expect(write).not.toHaveBeenCalled();
+    expect((await live(tx, f)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount))).toEqual([35]);
+  }));
+
   it("rederives private direction provenance at both common writers, not model flags or excerpts", async () => rollback(async tx => {
     const { emptyTakedownLessons } = await import("./takedown-lessons");
     for (const learning of [false, true]) {

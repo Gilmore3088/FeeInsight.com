@@ -28,6 +28,13 @@ const comparable = (row: InternationalPublicationFacts) => countsInMarketCompari
   sourceLine: row.sourceLine, frequency: row.frequency,
 });
 
+/** Public comparison/identity facts only; original-source availability cannot erase a peer. */
+export function potentialInternationalPublicationPeer(candidate: InternationalPublicationFacts,
+  peer: InternationalPublicationFacts): boolean {
+  return comparable(candidate) && peer.category === candidate.category && peer.amount !== candidate.amount
+    && sameProduct(peer.product, candidate.product) && overlap(peer.audience, candidate.audience) && comparable(peer);
+}
+
 /**
  * A nonsettling prospective publication decision. This neither rewrites old rows nor
  * interprets their generic price as an incoming/outgoing price or a new numeric bound.
@@ -38,9 +45,8 @@ export function internationalPublicationPolicy(candidate: InternationalPublicati
   if (!candidate.sourced || reviewInternationalDirection(candidate.scope, candidate.category).kind !== "admit")
     return { kind: "deferred", reason: "candidate_scope_unproven", conflictingPublishedIds: [] };
   if (!comparable(candidate)) return { kind: "ready" };
-  const conflicts = peers.filter(peer => peer.category === candidate.category && peer.amount !== candidate.amount
-    && sameProduct(peer.product, candidate.product) && overlap(peer.audience, candidate.audience)
-    && comparable(peer) && reviewInternationalDirection(peer.scope, peer.category).kind !== "admit")
+  const conflicts = peers.filter(peer => potentialInternationalPublicationPeer(candidate, peer)
+    && reviewInternationalDirection(peer.scope, peer.category).kind !== "admit")
     .map(peer => peer.publishedId!).filter(Number.isSafeInteger).sort((a, b) => a - b);
   return conflicts.length ? { kind: "deferred", reason: "live_scope_conflict", conflictingPublishedIds: conflicts }
     : { kind: "ready" };
