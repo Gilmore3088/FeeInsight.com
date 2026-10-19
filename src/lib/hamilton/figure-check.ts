@@ -1,3 +1,5 @@
+import { dollarUnitScale, dollarsFromUnit, numericPayloadValue, percentageUnitScale } from "./monetary-units";
+
 /**
  * Numerical consistency check for dollar amounts and percentages in an AI narrative.
  * This is not claim verification: it does not bind a number to its institution, fee,
@@ -63,18 +65,48 @@ const NOT_A_FIGURE = /(^|_)(id|ids|count|counts|year|quarter|district|rank|versi
 interface PayloadNumber {
   key: string;
   value: number;
+  /** Base dollars, null for explicit nonmoney, absent for legacy unannotated values. */
+  dollars?: number | null;
+  /** Percent multiplier, null for explicit nonrates, absent for legacy named ratios/rates. */
+  rateMultiplier?: number | null;
 }
 
 /** Every finite number in the payload with the key it sits under (numeric strings included). */
 export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
   const found: PayloadNumber[] = [];
-  const visit = (value: unknown, key: string) => {
-    if (found.length >= MAX_PAYLOAD_NUMBERS) return;
-    if (typeof value === "number" && Number.isFinite(value)) found.push({ key, value });
-    else if (typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value.trim())) found.push({ key, value: Number(value) });
-    else if (Array.isArray(value)) value.forEach((item) => visit(item, key));
-    else if (value && typeof value === "object") {
-      for (const [childKey, child] of Object.entries(value)) visit(child, childKey);
+  const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0) => {
+    if (found.length >= MAX_PAYLOAD_NUMBERS || depth > 12) return;
+    const number = numericPayloadValue(value);
+    if (number !== null) {
+      const scale = unit === undefined ? undefined : dollarUnitScale(unit);
+      // A container's financial caption describes its dollar fields, not its named ratios.
+      const rateField = typeof unit === "string" && /dollar amounts/i.test(unit) && RATE_KEY.test(key);
+      if (typeof value === "string" && value.includes("$") && scale === null) return;
+      found.push({
+        key, value: number,
+        ...(unit !== undefined ? { dollars: dollarsFromUnit(number, unit), rateMultiplier: percentageUnitScale(unit) } : {}),
+        ...(rateField && scale !== null ? { dollars: null, rateMultiplier: undefined } : {}),
+      });
+    } else if (typeof value === "string") {
+      const text = value.trim();
+      if (text.length <= 1_000_000 && (text.startsWith("{") || text.startsWith("["))) {
+        try {
+          visit(JSON.parse(text), key, unit, depth + 1);
+        } catch { /* Plain or malformed text is not numeric evidence. */ }
+      }
+    } else if (Array.isArray(value)) {
+      for (const item of value) {
+        if (found.length >= MAX_PAYLOAD_NUMBERS) break;
+        visit(item, key, unit, depth + 1);
+      }
+    } else if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      const own = Object.hasOwn(record, "unit") ? record.unit
+        : Object.hasOwn(record, "units") ? record.units : unit;
+      for (const [childKey, child] of Object.entries(record)) {
+        if (found.length >= MAX_PAYLOAD_NUMBERS) break;
+        visit(child, childKey, own, depth + 1);
+      }
     }
   };
   visit(data, "");
@@ -88,7 +120,7 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
  */
 function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]): number[] {
   const usable = numbers.filter((n) => !NOT_A_FIGURE.test(n.key));
-  const money = usable.filter((n) => MONEY_KEY.test(n.key)).map((n) => n.value);
+  const money = usable.filter((n) => MONEY_KEY.test(n.key) && n.dollars !== null).map((n) => n.dollars ?? n.value);
   const candidates = new Set<number>();
   if (kind === "usd") {
     for (const a of money) {
@@ -96,9 +128,13 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
       for (const b of money) if (a !== b) candidates.add(Math.abs(a - b));
     }
   } else {
-    for (const n of usable.filter((item) => RATE_KEY.test(item.key))) {
-      candidates.add(Math.abs(n.value));
-      if (Math.abs(n.value) <= 1) candidates.add(Math.abs(n.value) * 100);
+    for (const n of usable) {
+      if (n.rateMultiplier !== undefined) {
+        if (n.rateMultiplier !== null) candidates.add(Math.abs(n.value) * n.rateMultiplier);
+      } else if (RATE_KEY.test(n.key)) {
+        candidates.add(Math.abs(n.value));
+        if (Math.abs(n.value) <= 1) candidates.add(Math.abs(n.value) * 100);
+      }
     }
     for (const a of money) {
       for (const b of money) if (a !== b && b !== 0) candidates.add(Math.abs(((a - b) / b) * 100));
