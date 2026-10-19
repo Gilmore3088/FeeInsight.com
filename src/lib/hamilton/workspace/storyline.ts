@@ -178,6 +178,7 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
         .map((l) => ({ label: l.scope === "national" ? "National median" : `${l.label} median`, scope: l.scope, value: l.median as number, n: l.n })),
     ],
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
+    note: peerGroupNote(research),
   };
   return {
     key: "position",
@@ -634,12 +635,14 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
-/** Which peers these are: the saved group, or the one Hamilton picked, with its filters. */
-function peerGroupNote(research: FeeResearch): string {
+/** Which peers these are: the saved group, or the one Hamilton picked, with its filters and size (#2046). */
+export function peerGroupNote(research: FeeResearch): string {
   const who = research.peerGroupSaved ? "Saved peer group" : "Peer group picked by Hamilton";
-  // The label's widening clause ("; only 3 of ... publish this fee") is left to the source note.
-  const note = `${who}: ${research.peerLabel.split(";")[0].trim()}.`;
-  return words(note) <= MAX_NOTE_WORDS ? note : `${who}.`;
+  const size = research.peerGroupSize ? ` (${count(research.peerGroupSize)} institutions)` : "";
+  // The label's thin-fee clause ("; only 3 of them publish this fee") is left to the title.
+  const note = `${who}: ${research.peerLabel.split(";")[0].trim()}${size}.`;
+  if (words(note) <= MAX_NOTE_WORDS) return note;
+  return size ? `${who}${size}.` : `${who}.`;
 }
 
 /** Every local competitor by name with its fee and source: a list question about the market. */

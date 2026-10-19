@@ -332,6 +332,14 @@ describe("storyline", () => {
     expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.note).toBeUndefined();
   });
 
+  it("names the one peer group and how many institutions it holds on the position exhibit (#2046)", () => {
+    const story = buildFeeAnswer(research({ peerGroupSize: 38 })).storyline!;
+    const position = story.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    expect(position.exhibit.kind === "fee_position" && position.exhibit.note).toMatch(/^Peer group picked by Hamilton: .+ \(38 institutions\)\.$|^Peer group picked by Hamilton \(38 institutions\)\.$/);
+    const saved = buildFeeAnswer(research({ peerGroupSize: 6, peerGroupSaved: true, peerLabel: "Lancaster rivals" })).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    expect(saved.exhibit.kind === "fee_position" && saved.exhibit.note).toBe("Saved peer group: Lancaster rivals (6 institutions).");
+  });
+
   it("drops a long competitor name rather than run past a storyline line's 20 words", () => {
     const base = research();
     const local = base.localCompetitors!.map((c, i) => (i === 0 ? { ...c, institutionName: "Second Federal Savings and Loan Association of Philadelphia", amount: 40 } : c));
