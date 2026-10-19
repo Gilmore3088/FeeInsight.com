@@ -135,11 +135,14 @@ const NAMED_OWN_ATM = /\b[Aa][Tt]\s+(?!(?:ATMS?|ANY|AN|ALL|THE|OUR|OTHER|ANOTHER
 /**
  * v74: a savings club's withdrawal ("Holiday Account Early Withdrawal" $10, 154134, 152985) is not
  * closing the account. None of the 50 types holds it, and 315 live fees read so (prod, read-only,
- * Oct 19), so the rule waits on James: `CLUB_WITHDRAWAL_LIVE` off counts them and refuses none.
- * James's two listed rows are hand takedowns (hand-takedowns.ts).
+ * Oct 19), so the rule waited on James. v75 (#2023): James chose "Take down" (Oct 19, 01:42 UTC)
+ * after a read-only check of 25 of the 313 still live against their stored text found every one a
+ * per-withdrawal club charge ("Christmas Club early withdrawal | $20 per w/d"), none a closing fee.
+ * James's two listed rows are hand takedowns (hand-takedowns.ts). Set false to stop refusing them.
  */
-export const CLUB_WITHDRAWAL_LIVE = false; // 315 live fees would fail; waits on James (#2023)
-export const CLUB_WITHDRAWAL = /^(?![\s\S]*\bclos(?:e|ed|es|ing|ure)\b)[\s\S]*\b(?:holiday|christmas|xmas|vacation|club|seasonal)\b[\s\S]*\bwithdraw/i;
+export const CLUB_WITHDRAWAL_LIVE = true;
+// A name that also prices a certificate ("Christmas Club & CD Early Withdrawal Fee") keeps early closure's own fee.
+export const CLUB_WITHDRAWAL = /^(?![\s\S]*\b(?:clos(?:e|ed|es|ing|ure)|cds?|certificates?)\b)(?:[\s\S]*\b(?:holiday|christmas|xmas|vacation|club|seasonal)\b[\s\S]*\bwithdraw|[\s\S]*\bwithdraw[\s\S]*\b(?:holiday|christmas|xmas|vacation)\b)/i;
 /** v74: withdrawals over a count ("Excessive IRA Withdrawals" $15, 154163) are not the IRA's closing fee. */
 const IRA_EXCESS_WITHDRAWALS = /\bexcess(?:ive)?\s+ira\s+withdrawals?\b|\bira\s+withdrawals?\s+(?:over|in\s+excess|beyond)\b/i;
 /** v74: shipping or ordering foreign currency ("Foreign Currency – Expedited Shipping" $15, 154166) is not a rushed card. */
@@ -797,7 +800,9 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v74 (Oct 19, James's 20 live defects): category rules for research, rushed cards and IRA
 // termination, and new refusals for bill pay, non-network ATM, deposited item return and early
 // closure; see each rule's v74 note. Counts in the PR (#1026 ledger).
-export const CATEGORY_GUARD_VERSION = 74;
+// v75 (Oct 19, #2023, James's "Take down"): `CLUB_WITHDRAWAL_LIVE` on, so a club or holiday account's
+// withdrawal fails early closure; the live ones go to the second look and come down.
+export const CATEGORY_GUARD_VERSION = 75;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

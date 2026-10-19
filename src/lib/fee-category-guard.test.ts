@@ -879,11 +879,12 @@ describe("checkFeeCategory", () => {
       "Wire Transfers: Early Account Closure Fee",
       "Checking & Savings Early Closing (Within 90 days of opening account)",
       "Card Account Closure",
-      "Christmas Club Early Withdrawal/Transfer",
       "Early closing of share draft VISA debit card",
     ]) {
       expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
     }
+    // v75 (#2023): a club's withdrawal is not closing the account.
+    expect(checkFeeCategory("early_closure", "Christmas Club Early Withdrawal/Transfer").ok).toBe(false);
   });
 
   it("v53: a business account's wire price is not the consumer wire price", () => {
@@ -1531,7 +1532,6 @@ describe("guard v69 (Oct 17)", () => {
       "Early closure of CD (fee to close prior to maturity)",
       "CD Early Withdrawal Penalty",
       "Christmas Club & CD Early Withdrawal Fee",
-      "Christmas/Vacation Club early withdrawal (1 per year allowed)",
       "HSA Account Closure Fee",
       "IRA Early Withdrawal Processing Fee",
     ]) {
@@ -1986,11 +1986,22 @@ describe("guard v74 (#2018): James's 20-defect register", () => {
     }
   });
 
-  it("leaves club withdrawals in early closure while the switch is off (315 live fees wait on James)", () => {
-    expect(CLUB_WITHDRAWAL_LIVE).toBe(false);
+  it("v75 (#2023, James's \"Take down\"): a club withdrawal fails early closure; closing a club stays", () => {
+    expect(CLUB_WITHDRAWAL_LIVE).toBe(true);
     expect(CLUB_WITHDRAWAL.test("Holiday Account Early Withdrawal")).toBe(true);
     expect(CLUB_WITHDRAWAL.test("Christmas Club closed early")).toBe(false);
-    expect(checkFeeCategory("early_closure", "Holiday Account Early Withdrawal")).toEqual({ ok: true });
+    // Names from the Oct 19 sample of live rows.
+    for (const name of ["Holiday Account Early Withdrawal", "Christmas Club early withdrawal", "Unscheduled Club Withdrawal",
+      "Early Christmas Club Withdrawal", "Vacation Club Withdrawal/Transfer Fee", "Club Accounts Early Withdrawal",
+      "Early Withdrawal From Holiday Club"]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+    }
+    // A line that also prices a certificate's early withdrawal (early closure's own fee) stays.
+    expect(checkFeeCategory("early_closure", "Christmas Club & CD Early Withdrawal Fee").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "Christmas/Vacation Club early withdrawal (1 per year allowed)").ok).toBe(false);
+    for (const name of ["Early Christmas Club Closing", "Christmas Club closed early", "Early Account Closure within 90 days", "Account closed within 180 days"]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
+    }
   });
 });
 

@@ -238,9 +238,22 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 152916, lineage_ref: 46342, institution_id: 7756, canonical_fee_key: "check_image", fee_name: "Members enrolled in Mobile or Online Banking have unlimited access to check copies", amount: "2.00" },
   { fee_published_id: 144344, lineage_ref: 174279, institution_id: 7756, canonical_fee_key: "check_image", fee_name: "Copy of Member Check", amount: "2.00" },
   { fee_published_id: 152612, lineage_ref: 188765, institution_id: 54, canonical_fee_key: "atm_non_network", fee_name: "Other out-of-network ATMs", amount: "0.00" },
+  // #2022: Natbank's fees from National Bank of Canada's Canadian pages, live on prod, read-only, Oct 19.
+  { fee_published_id: 127400, lineage_ref: 143892, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "2.50" },
+  { fee_published_id: 127468, lineage_ref: 143964, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Connected monthly fee", amount: "15.95" },
+  { fee_published_id: 127469, lineage_ref: 143965, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "The Total monthly fee", amount: "28.95" },
+  { fee_published_id: 127470, lineage_ref: 143966, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Minimalist monthly fee", amount: "3.95" },
+  { fee_published_id: 127401, lineage_ref: 143893, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Bill payment service", amount: "2.00" },
+  { fee_published_id: 127402, lineage_ref: 143894, institution_id: 2675, canonical_fee_key: "paper_statement", fee_name: "Paper statement", amount: "3.50" },
+  { fee_published_id: 127403, lineage_ref: 143895, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Withdrawal for bill payment", amount: "1.25" },
+  { fee_published_id: 127404, lineage_ref: 143896, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Withdrawal, transfer, and withdrawal for bill payment", amount: "2.50" },
+  { fee_published_id: 127405, lineage_ref: 143897, institution_id: 2675, canonical_fee_key: "nsf", fee_name: "and returned or rejected due to insufficient funds", amount: "10.00" },
+  { fee_published_id: 127406, lineage_ref: 143898, institution_id: 2675, canonical_fee_key: "nsf", fee_name: "And returned or rejected due to insufficient funds", amount: "5.00" },
+  { fee_published_id: 127407, lineage_ref: 143899, institution_id: 2675, canonical_fee_key: "od_protection_transfer", fee_name: "Overdraft protection", amount: "5.00" },
+  { fee_published_id: 127408, lineage_ref: 143900, institution_id: 2675, canonical_fee_key: "overdraft", fee_name: "Transaction that leads to or increases overdraft", amount: "5.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691, 154182, 154134, 152985, 154075, 154076, 154101, 152916, 152612];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691, 154182, 154134, 152985, 154075, 154076, 154101, 152916, 152612, 127400, 127468, 127469, 127470, 127401, 127402, 127403, 127404, 127405, 127406, 127407, 127408];
 
 // The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
 const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
@@ -391,6 +404,19 @@ describe("hand takedowns (James, Oct 16)", () => {
       [154101, "source_mismatch: #2018"],
       [152916, "duplicate of #144344 (#2018)"],
       [152612, "source_mismatch: #2018"],
+      // #2022: Natbank's fees from National Bank of Canada's Canadian pages (Oct 19).
+      [127400, "source_mismatch: #2022"],
+      [127468, "source_mismatch: #2022"],
+      [127469, "source_mismatch: #2022"],
+      [127470, "source_mismatch: #2022"],
+      [127401, "source_mismatch: #2022"],
+      [127402, "source_mismatch: #2022"],
+      [127403, "source_mismatch: #2022"],
+      [127404, "source_mismatch: #2022"],
+      [127405, "source_mismatch: #2022"],
+      [127406, "source_mismatch: #2022"],
+      [127407, "source_mismatch: #2022"],
+      [127408, "source_mismatch: #2022"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -554,6 +580,18 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 154101, feeVerifiedId: 193183, reason: "source_mismatch: #2018" },
         { feePublishedId: 152916, feeVerifiedId: 46342, reason: "duplicate of #144344 (#2018)" },
         { feePublishedId: 152612, feeVerifiedId: 188765, reason: "source_mismatch: #2018" },
+        { feePublishedId: 127400, feeVerifiedId: 143892, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127468, feeVerifiedId: 143964, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127469, feeVerifiedId: 143965, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127470, feeVerifiedId: 143966, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127401, feeVerifiedId: 143893, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127402, feeVerifiedId: 143894, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127403, feeVerifiedId: 143895, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127404, feeVerifiedId: 143896, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127405, feeVerifiedId: 143897, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127406, feeVerifiedId: 143898, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127407, feeVerifiedId: 143899, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127408, feeVerifiedId: 143900, reason: "source_mismatch: #2022" },
       ],
       skipped: [],
     });
