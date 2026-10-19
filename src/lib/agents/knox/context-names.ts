@@ -177,6 +177,7 @@ export function contextFees(text: string): ExtractedFeeCandidate[] {
       ...(row.eligibilityRestricted ? { eligibilityReview: true as const } : {}) }] : [];
   });
   for (const row of capFirstItemPrices(text)) {
+    if (row.producerScopeUnknown) continue;
     const hint = classifyPatternKey(row.label);
     if (hint !== "nsf" && hint !== "overdraft") continue;
     const read = candidate(row.label, row.amount, hint, row.ownText);

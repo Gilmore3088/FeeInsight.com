@@ -125,6 +125,15 @@ describe("#2240/#2241 explicit stacked price ownership", () => {
         shape: "eligibility", amount: 5, linkedConditions: heading,
       }));
     }
+    const section = "Youth Checking Account\nNSF Fee\n• $140 Maximum. $5 per item\nOverdraft Fee\n• $140 Maximum. $5 per item";
+    const both = runFreeSpecialists(section);
+    expect(both.candidates).toEqual([]);
+    expect(both.held.filter(row => row.shape === "eligibility").map(row => row.feeName)).toEqual(["NSF Fee", "Overdraft Fee"]);
+    expect(both.held.filter(row => row.shape === "eligibility").every(row => row.linkedConditions === "Youth Checking Account")).toBe(true);
+    const unknown = section.replace("Overdraft Fee\n", "Additional terms continue\nOverdraft Fee\n");
+    expect(runFreeSpecialists(unknown).candidates).toEqual([]);
+    const reset = section.replace("Overdraft Fee\n", "Standard Fees\nOverdraft Fee\n");
+    expect(runFreeSpecialists(reset).candidates).toContainEqual(expect.objectContaining({ feeName: "Overdraft Fee", amount: 5 }));
   });
 
   it("requires a complete literal item-price clause and never borrows a neighbor, threshold or other category", () => {

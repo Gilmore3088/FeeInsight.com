@@ -55,19 +55,35 @@ export interface CapFirstItemPrice {
   ownText: string;
   lineIndex: number;
   eligibilityContext?: string;
+  producerScopeUnknown?: true;
 }
 
 const ELIGIBILITY_HEADING = /\b(?:ages?|youth|senior|junior|student|minor|teen|checking|(?:savings|business|commercial|club|reward|premier) accounts?)\b|\b(?:under|over)\s+\d/i;
+const STANDARD_SECTION = /^(?:fees (?:and|&) charges|(?:standard|regular|general) (?:fees(?: (?:and|&) charges)?|services?))\s*:?$/i;
 
-function eligibilityBefore(lines: string[], labelAt: number): string | undefined {
-  const scope: string[] = [];
-  // A short unpriced section may qualify the label below it. Never search through a
-  // preceding price, borrow a downstream paragraph, or turn inferred product ownership into fact.
-  for (let i = labelAt - 1; i >= Math.max(0, labelAt - 3); i--) {
-    if (/\$/.test(lines[i]) || lines[i].length > MAX_LABEL_CHARS) break;
-    if (ELIGIBILITY_HEADING.test(lines[i])) scope.unshift(lines[i]);
+type EligibilityScope = { eligibilityContext?: string; producerScopeUnknown?: true };
+
+function eligibilityScopes(lines: string[]): EligibilityScope[] {
+  const result: EligibilityScope[] = [];
+  let section: string | undefined;
+  let unknown = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const pricedLabel = boundedLabel(line) && (priceLine(lines[i + 1] ?? "") || CAP_FIRST_ITEM.test(lines[i + 1] ?? ""));
+    if (STANDARD_SECTION.test(line)) {
+      section = undefined;
+      unknown = false;
+    } else if (!line.includes("$") && line.length <= MAX_LABEL_CHARS && ELIGIBILITY_HEADING.test(line) && !pricedLabel) {
+      section = line;
+      unknown = false;
+    } else if (section && !pricedLabel && !priceLine(line) && !CAP_FIRST_ITEM.test(line)) {
+      // Unknown prose/new headings cannot silently end a restricted section and authorize
+      // a standard price. Stop this producer path until an explicit section is established.
+      unknown = true;
+    }
+    result.push(section ? unknown ? { producerScopeUnknown: true } : { eligibilityContext: section } : {});
   }
-  return scope.length ? scope.join(" | ") : undefined;
+  return result;
 }
 
 /**
@@ -76,6 +92,7 @@ function eligibilityBefore(lines: string[], labelAt: number): string | undefined
  */
 export function capFirstItemPrices(text: string): CapFirstItemPrice[] {
   const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const scopes = eligibilityScopes(lines);
   const rows: CapFirstItemPrice[] = [];
   for (let i = 0; i + 1 < lines.length; i++) {
     const label = lines[i];
@@ -86,10 +103,9 @@ export function capFirstItemPrices(text: string): CapFirstItemPrice[] {
     const maximum = Number(match[1].replace(/,/g, ""));
     const amount = Number(match[2].replace(/,/g, ""));
     if (amount <= 0 || maximum < amount) continue;
-    const eligibilityContext = eligibilityBefore(lines, i);
     rows.push({ label, canonicalKey: /^overdraft\b/i.test(label) ? "overdraft" : "nsf",
       maximum, amount, ownText: `${label} | ${lines[i + 1]}`, lineIndex: i,
-      ...(eligibilityContext ? { eligibilityContext } : {}) });
+      ...scopes[i] });
   }
   return rows;
 }
