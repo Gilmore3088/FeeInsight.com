@@ -26,7 +26,8 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
       canonical_fee_key text, fee_name text, amount numeric, variant_type text, frequency text,
       fee_audience text, amount_kind text DEFAULT 'flat', rate_percent numeric, rate_min_amount numeric,
       rate_max_amount numeric, rate_basis text, published_at timestamptz, rolled_back_at timestamptz,
-      rolled_back_reason text, rolled_back_by_batch_id text, quarantined_at timestamptz)`;
+      rolled_back_reason text, rolled_back_by_batch_id text, quarantined_at timestamptz,
+      lineage_ref bigint, source_url text)`;
     await db`CREATE TEMP TABLE agent_run_events (agent_run_id bigint, event_type text, status text, message text, detail jsonb)`;
   });
   afterAll(async () => { if (db) await db.end(); });
@@ -121,8 +122,31 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
     expect(copies.map((copy) => Number(copy.fee_published_id))).toEqual([held === 1 ? 2 : 1]);
   });
 
-  it.each(["hold", "closure"])("rechecks a committed %s on the target after the UPDATE snapshot", async (change) => {
+  it("handles the bounded 500-target batch with a shared keeper", async () => {
+    await db`INSERT INTO published_fee_records (fee_published_id, institution_id, canonical_fee_key, fee_name,
+      amount, frequency, fee_audience, published_at)
+      SELECT id, 42, 'coin_counting', 'Coin Counting', 5, 'per_item', 'consumer', '2026-10-01'::timestamptz
+        FROM generate_series(1, 502) id`;
+    expect(await run()).toHaveLength(500);
+    expect(await live()).toEqual([{ fee_published_id: "501", fee_audience: "consumer" }, { fee_published_id: "502", fee_audience: "consumer" }]);
+    expect((await db`SELECT detail FROM agent_run_events`)[0].detail).toMatchObject({ collapsed: 500 });
+  });
+
+  it.each([
+    ["hold", 1, false], ["closure", 1, false], ["audience", 1, false], ["frequency", 1, false],
+    ["amount", 1, false], ["variant", 1, false], ["rate_basis", 1, false], ["lineage", 1, false],
+    ["source", 1, false], ["hold", 2, false], ["closure", 2, false], ["audience", 2, false],
+    ["lineage", 2, false], ["source", 2, false], ["hold", 3, false], ["audience", 3, false],
+    ["audience", 1, true],
+  ] as const)("rechecks committed %s on pair member %i; unrelated pair: %s", async (change, changedId, unrelated) => {
     await seed("consumer", "consumer");
+    if (changedId === 3) await db`INSERT INTO published_fee_records (fee_published_id, institution_id,
+      canonical_fee_key, fee_name, amount, frequency, fee_audience, published_at)
+      VALUES (3, 42, 'coin_counting', 'Coin Counting', 5, 'per_item', 'consumer', '2026-10-03')`;
+    if (unrelated) await db`INSERT INTO published_fee_records (fee_published_id, institution_id,
+      canonical_fee_key, fee_name, amount, frequency, fee_audience, published_at) VALUES
+      (10, 42, 'coin_counting', 'Other Coin Fee', 5, 'per_item', 'consumer', '2026-10-01'),
+      (11, 42, 'coin_counting', 'Other Coin Fee', 5, 'per_item', 'consumer', '2026-10-02')`;
     const schema = `exact_duplicate_${randomBytes(8).toString("hex")}`;
     await db`CREATE SCHEMA ${db(schema)}`;
     await db`CREATE TABLE ${db(schema)}.published_fee_records (LIKE pg_temp.published_fee_records INCLUDING ALL)`;
@@ -136,17 +160,28 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
     const canCommit = new Promise<void>((resolve) => { release = resolve; });
     const hasLock = new Promise<void>((resolve) => { locked = resolve; });
     const writerPid = new Promise<number>((resolve) => { started = resolve; });
-    const holding = holder.begin(async (tx) => {
+    const holding = holder.begin(async (scope) => {
+      const tx = scope as unknown as typeof db;
       await tx`SET LOCAL search_path TO ${tx(schema)}`;
-      if (change === "hold") await tx`UPDATE published_fee_records SET quarantined_at = NOW() WHERE fee_published_id = 1`;
-      else await tx`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'operator_closed' WHERE fee_published_id = 1`;
+      // Every case blocks the writer on target 1; the keeper may change while it waits.
+      await tx`SELECT fee_published_id FROM published_fee_records WHERE fee_published_id = 1 FOR UPDATE`;
+      if (change === "hold") await tx`UPDATE published_fee_records SET quarantined_at = NOW() WHERE fee_published_id = ${changedId}`;
+      else if (change === "closure") await tx`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'operator_closed' WHERE fee_published_id = ${changedId}`;
+      else if (change === "audience") await tx`UPDATE published_fee_records SET fee_audience = 'business' WHERE fee_published_id = ${changedId}`;
+      else if (change === "frequency") await tx`UPDATE published_fee_records SET frequency = 'annual' WHERE fee_published_id = ${changedId}`;
+      else if (change === "amount") await tx`UPDATE published_fee_records SET amount = 6 WHERE fee_published_id = ${changedId}`;
+      else if (change === "variant") await tx`UPDATE published_fee_records SET variant_type = 'premium' WHERE fee_published_id = ${changedId}`;
+      else if (change === "lineage") await tx`UPDATE published_fee_records SET lineage_ref = 99 WHERE fee_published_id = ${changedId}`;
+      else if (change === "source") await tx`UPDATE published_fee_records SET source_url = 'https://example.test/new-copy' WHERE fee_published_id = ${changedId}`;
+      else await tx`UPDATE published_fee_records SET rate_basis = 'balance' WHERE fee_published_id = ${changedId}`;
       locked();
       await canCommit;
     });
     let writing: Promise<unknown> | undefined;
     try {
       await hasLock;
-      writing = writer.begin(async (tx) => {
+      writing = writer.begin(async (scope) => {
+        const tx = scope as unknown as typeof db;
         await tx`SET LOCAL search_path TO ${tx(schema)}`;
         const [{ pid }] = await tx`SELECT pg_backend_pid() AS pid`;
         started(pid);
@@ -162,11 +197,17 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
       expect(blocked).toBe(true);
       release();
       await holding;
-      expect(await writing).toEqual([]);
-      const [row] = await db`SELECT quarantined_at, rolled_back_at, rolled_back_reason FROM ${db(schema)}.published_fee_records WHERE fee_published_id = 1`;
-      if (change === "hold") { expect(row.quarantined_at).not.toBeNull(); expect(row.rolled_back_at).toBeNull(); }
-      else expect(row.rolled_back_reason).toBe("operator_closed");
-      expect(await db`SELECT 1 FROM ${db(schema)}.agent_run_events`).toHaveLength(0);
+      expect(await writing).toEqual(unrelated ? [expect.objectContaining({ feePublishedId: 10, keptFeePublishedId: 11 })] : []);
+      const [target] = await db`SELECT rolled_back_at, rolled_back_reason FROM ${db(schema)}.published_fee_records WHERE fee_published_id = 1`;
+      if (change === "closure" && changedId === 1) expect(target.rolled_back_reason).toBe("operator_closed");
+      else expect(target.rolled_back_at).toBeNull();
+      const [changed] = await db`SELECT * FROM ${db(schema)}.published_fee_records WHERE fee_published_id = ${changedId}`;
+      if (change === "hold") expect(changed.quarantined_at).not.toBeNull();
+      if (change === "closure") expect(changed.rolled_back_reason).toBe("operator_closed");
+      if (change === "audience") expect(changed.fee_audience).toBe("business");
+      const events = await db`SELECT detail FROM ${db(schema)}.agent_run_events`;
+      if (unrelated) expect(events.map((row) => row.detail)).toMatchObject([{ collapsed: 1 }]);
+      else expect(events).toHaveLength(0);
     } finally {
       release();
       await Promise.allSettled([holding, writing]);

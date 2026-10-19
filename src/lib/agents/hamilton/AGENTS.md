@@ -767,8 +767,10 @@ retained rather than silently relabelled or erased. Amount kind, rate basis, rat
 and rate value also belong to the exact key. Within one identity the existing frequency
 classes/unstated-frequency preference remain, then the newest copy wins. The live-copy
 selector, pure decision, batch grouping and in-step map use this same identity. Quarantined
-rows are neither collapse candidates nor exact-copy witnesses, and the final UPDATE checks
-the target's hold/closure again. The separate operator-hold insert guard retains its
+rows are neither collapse candidates nor exact-copy witnesses. The final UPDATE locks both
+members of every selected pair in ID order and compares the complete locked target/keeper
+states against their selected states, including lineage and operator actions. Any intervening
+change skips that pair; only actual UPDATE RETURNING rows count. The separate operator-hold insert guard retains its
 conservative overlapping-audience policy; near-name and page-copy rules are unchanged.
 
 Publish retains v3 fingerprints, so previously skipped rows and closed duplicate history

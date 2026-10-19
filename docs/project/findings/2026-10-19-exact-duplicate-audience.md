@@ -26,7 +26,10 @@ Variant, amount kind, dollar/rate value, rate basis and rate floor/cap remain pa
 the represented exact identity. Existing per-event frequency aliases, the preference
 for a stated frequency and conflicts between stated frequency classes remain in force.
 Quarantined rows are excluded as collapse targets/keepers and exact-copy witnesses;
-the final UPDATE rechecks hold/closure state before counting any actual change. The
+the final UPDATE locks both members in ID order and compares their current complete
+states against the selected target/keeper states. A changed audience, applicability,
+lineage, source, hold or closure makes the pair wait for a later sweep, preserving
+timestamp precision inside PostgreSQL. It counts only actual returned changes. The
 separate insert-time operator hold continues to protect overlapping applicability.
 Unrelated near-name and page-copy policies have not been expanded.
 
@@ -61,8 +64,12 @@ unknown/null equivalence, true in-step twins, dry runs, unrelated audience frequ
 conflicts and variant/rate applicability in the step-copy map. Real PostgreSQL tests
 run the actual live-copy selector and collapse SELECT/UPDATE, with audience matrix,
 true-duplicate controls, represented value/frequency/variant/basis/bounds and held rows.
-Two-connection regressions wait for an actual blocked UPDATE, commit a hold or closure
-on its target, and verify that the resumed statement changes/counts nothing. These
-tests are explicitly listed in CI's `E2E_TESTS`.
+Two-connection regressions wait for an actual blocked UPDATE, then commit target
+identity/lineage/source/hold/closure changes or keeper identity/lineage/source/hold/closure
+changes. Eight added cases failed against the prior candidate before the guard; the
+guarded statement preserves changed pairs and reports only an unaffected pair's actual
+closure. Shared-keeper races and the 500-target batch limit are covered. These tests
+are explicitly listed in CI's `E2E_TESTS`. The pair guard does not claim serialization
+against newly inserted fee lines outside the selected pairs.
 
 No new provider call, runtime surface, production write or replay was used for validation.

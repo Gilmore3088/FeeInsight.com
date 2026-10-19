@@ -106,14 +106,40 @@ export async function collapsePublishedDuplicates(
         );
       }
       return scope.unsafe<DuplicateRow[]>(
-        `UPDATE published_fee_records fp
+        // Candidate selection uses this statement's snapshot. A concurrent correction or
+        // operator action can commit while we wait for its row lock, so freeze both selected
+        // row states, lock every pair member in ID order, then compare the locked current
+        // states. JSON stays inside Postgres (including timestamp precision and lineage).
+        // A changed pair waits for a later sweep rather than being retargeted mid-decision.
+        `WITH selected_pairs AS MATERIALIZED (
+           SELECT dup.*, to_jsonb(target) AS target_state, to_jsonb(keeper) AS keeper_state
+             FROM (${duplicates}) dup
+             JOIN published_fee_records target ON target.fee_published_id = dup.fee_published_id
+             JOIN published_fee_records keeper ON keeper.fee_published_id = dup.kept_fee_published_id
+         ), locked AS MATERIALIZED (
+           SELECT current.*
+             FROM published_fee_records current
+             JOIN (
+               SELECT fee_published_id FROM selected_pairs
+               UNION
+               SELECT kept_fee_published_id FROM selected_pairs
+             ) members ON members.fee_published_id = current.fee_published_id
+            ORDER BY current.fee_published_id
+              FOR UPDATE OF current
+         )
+         UPDATE published_fee_records fp
             SET rolled_back_at = NOW(),
                 rolled_back_by_batch_id = $${params.length + 1},
                 rolled_back_reason = '${DUPLICATE_COLLAPSE_REASON_PREFIX}' || dup.kept_fee_published_id::text
-           FROM (${duplicates}) dup
+           FROM selected_pairs dup
+           JOIN locked target ON target.fee_published_id = dup.fee_published_id
+           JOIN locked keeper ON keeper.fee_published_id = dup.kept_fee_published_id
           WHERE fp.fee_published_id = dup.fee_published_id
             AND fp.rolled_back_at IS NULL
             AND fp.quarantined_at IS NULL
+            AND to_jsonb(target) = dup.target_state
+            AND to_jsonb(keeper) = dup.keeper_state
+            AND to_jsonb(fp) = dup.target_state
         RETURNING fp.fee_published_id, dup.kept_fee_published_id, fp.institution_id,
                   fp.canonical_fee_key, fp.fee_name, fp.amount`,
         [...params, options.batchId],
