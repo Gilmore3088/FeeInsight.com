@@ -433,6 +433,8 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
               feesReadOn={collectedOn}
               terms={terms}
               observations={observations}
+              cohortRead={cohortRows !== null}
+              feesSparse={sparse}
             />
           )}
 

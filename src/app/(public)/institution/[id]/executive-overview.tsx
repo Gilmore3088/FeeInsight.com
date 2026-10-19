@@ -1,54 +1,145 @@
 import { PRODUCT_NAME } from "@/lib/constants";
+import { formatAbsoluteDate } from "@/lib/public-stats";
 import { CountUp, type CountUnit } from "./count-up";
 import type { CohortDistribution } from "./fee-share-cohort";
-import { ordinal } from "./fee-share-cohort";
+import { MIN_COHORT_PEERS, ordinal } from "./fee-share-cohort";
 import type { FeeIncomeTerms } from "./financial-units";
 import { formatReportQuarter } from "./financial-units";
-import { entityLabel, ledgerProvenance, metricDefs, quarterEndLabel, shareName, type MetricDef } from "./overview-metrics";
+import { ledgerProvenance, metricDefs, quarterEndLabel, shareName } from "./overview-metrics";
 import { pct, type Observation } from "./overview-observations";
 import type { CompareCounts } from "./profile-view";
 import { Provenance, type ProvenanceRow } from "./provenance";
 import { QuarterChart } from "./quarter-chart";
 import { SOURCE_NAMES } from "./ledger-fields";
-import { latestOf, type Ledger, type LedgerMetric } from "./quarterly-ledger";
+import { latestOf, type Ledger, type LedgerMetric, type LedgerSource } from "./quarterly-ledger";
+import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import { SERIF } from "./profile-serif";
 
 const H2 = "text-[36px] font-medium leading-[1.04] tracking-[-0.02em] text-ink sm:text-[54px]";
 const OVERVIEW_QUARTERS = 10;
 
+/** The card's source line: the filing, short, then the date it covers. */
+const SOURCE_SHORT: Record<LedgerSource, string> = {
+  ffiec: "FFIEC call report",
+  fdic: "FDIC call report data",
+  ncua: "NCUA 5300 call report",
+};
+
 interface Card {
   key: string;
   label: string;
   value: { n: number; unit: CountUnit } | null;
-  /** Shown in place of a value: "Not reported", "Insufficient sample". */
+  /** Short words in place of a value: "Not reported", "Not enough peers". */
   empty?: string;
-  context?: string | null;
-  asOf: string | null;
-  entity: string;
-  details: ProvenanceRow[];
-  href?: string;
+  /** One short line under the value: the period, the comparison, or why there is no value. */
+  qualifier: string | null;
+  /** One quiet line pinned to the card bottom: where the figure comes from and its date. */
+  source: string | null;
+  action?: { href: string; label: string };
 }
 
+/** One row of the shared "How these figures are measured" drawer. */
+interface MeasureRow {
+  key: string;
+  metric: string;
+  measure: string | null;
+  calculation: string | null;
+  source: string | null;
+  fields: string | null;
+  period: string | null;
+  periodNote: string | null;
+  retrieved: string | null;
+}
+
+/**
+ * Every card has the same four parts on a shared subgrid (label, value, qualifier, source), so
+ * values and source lines line up across a row whatever the label length.
+ */
 function MetricCard({ card }: { card: Card }) {
   return (
-    <li className="flex min-w-0 flex-col rounded-xl border border-border bg-surface-0 p-4">
-      <p className="text-[12px] font-semibold uppercase tracking-[0.1em] text-ink-muted">{card.label}</p>
-      <p className="mt-2 text-[30px] font-medium leading-none tracking-[-0.01em] text-ink sm:text-[34px]" style={SERIF}>
-        {card.value ? <CountUp value={card.value.n} unit={card.value.unit} /> : <span className="text-[20px] text-ink-muted">{card.empty ?? "Not reported"}</span>}
+    <li
+      data-card={card.key}
+      className="row-span-4 grid min-w-0 grid-rows-subgrid gap-y-0 rounded-xl border border-border bg-surface-0 p-4"
+    >
+      <p className="text-[12px] font-semibold uppercase leading-snug tracking-[0.1em] text-ink-muted">{card.label}</p>
+      <div className="mt-2 flex items-end">
+        {card.value ? (
+          <p className="text-[30px] font-medium leading-none tracking-[-0.01em] text-ink [font-variant-numeric:tabular-nums] sm:text-[34px]" style={SERIF}>
+            <CountUp value={card.value.n} unit={card.value.unit} />
+          </p>
+        ) : (
+          <p className="text-[15px] font-semibold leading-snug text-ink-soft">{card.empty ?? "Not reported"}</p>
+        )}
+      </div>
+      <div className="mt-2 flex flex-col items-start">
+        {card.qualifier && <p className="text-[13px] leading-snug text-ink-soft [font-variant-numeric:tabular-nums]">{card.qualifier}</p>}
+        {card.action && (
+          <a
+            href={card.action.href}
+            className="mt-1 inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          >
+            {card.action.label}
+          </a>
+        )}
+      </div>
+      <p className="mt-3 self-end border-t border-border pt-3 text-[12px] leading-snug text-ink-muted [font-variant-numeric:tabular-nums]">
+        {card.source ?? "Not on file"}
       </p>
-      {card.context && <p className="mt-2 text-[13px] leading-snug text-ink-soft [font-variant-numeric:tabular-nums]">{card.context}</p>}
-      <p className="mt-auto pt-3 text-[12px] leading-snug text-ink-muted">
-        {[card.asOf, card.entity].filter(Boolean).join(" · ")}
-      </p>
-      <Provenance rows={card.details} />
-      {card.href && (
-        <a href={card.href} className="-mt-1 inline-flex min-h-11 items-center text-[13px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
-          See the fees
-        </a>
-      )}
     </li>
   );
 }
+
+/** The cards' sources and caveats, once, in one collapsed drawer under the row. */
+function MeasuresDrawer({ note, rows }: { note: string; rows: MeasureRow[] }) {
+  return (
+    <details className="group/measures mt-3 rounded-xl border border-border bg-surface-0">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 text-[13px] font-medium text-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className="text-[9px] transition-transform group-open/measures:rotate-90">
+          &#9654;
+        </span>
+        How these figures are measured
+      </summary>
+      <div className="border-t border-border px-4 pb-4 pt-3">
+        <p className="max-w-[72ch] text-[13px] leading-relaxed text-ink-soft">{note}</p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[56rem] border-collapse text-left text-[13px] leading-snug">
+            <thead>
+              <tr className="border-b border-border text-[12px] font-semibold uppercase tracking-[0.08em] text-ink-muted">
+                <th scope="col" className="w-[15%] py-2 pr-4 font-semibold">Metric</th>
+                <th scope="col" className="w-[36%] py-2 pr-4 font-semibold">Measure and calculation</th>
+                <th scope="col" className="w-[21%] py-2 pr-4 font-semibold">Source and fields</th>
+                <th scope="col" className="w-[16%] py-2 pr-4 font-semibold">Period</th>
+                <th scope="col" className="w-[12%] py-2 font-semibold">Retrieved</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key} className="border-b border-border align-top last:border-b-0">
+                  <th scope="row" className="py-3 pr-4 font-medium text-ink">{row.metric}</th>
+                  <td className="py-3 pr-4">
+                    <p className="text-ink-soft">{row.measure ?? "Not on file"}</p>
+                    {row.calculation && <p className="mt-1 text-ink-muted">{row.calculation}</p>}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <p className="text-ink-soft">{row.source ?? "Not on file"}</p>
+                    {row.fields && <p className="mt-1 text-[12px] text-ink-muted [font-family:var(--fi-font-mono)]">{row.fields}</p>}
+                  </td>
+                  <td className="py-3 pr-4">
+                    <p className="whitespace-nowrap text-ink-soft [font-variant-numeric:tabular-nums]">{row.period ?? "Not on file"}</p>
+                    {row.periodNote && <p className="mt-1 whitespace-nowrap text-ink-muted [font-variant-numeric:tabular-nums]">{row.periodNote}</p>}
+                  </td>
+                  <td className="whitespace-nowrap py-3 text-ink-soft [font-variant-numeric:tabular-nums]">{row.retrieved ?? "Not recorded"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+  );
+}
+
+const pick = (rows: ProvenanceRow[], label: string): string | null => rows.find((r) => r.label === label)?.value ?? null;
 
 export function cohortLabel(kind: "bank" | "credit_union", sizeRange: string | null): string {
   const noun = kind === "credit_union" ? "credit unions" : "banks";
@@ -65,6 +156,8 @@ export function ExecutiveOverview({
   feesReadOn,
   terms,
   observations,
+  cohortRead = false,
+  feesSparse = false,
 }: {
   institutionName: string;
   ledger: Ledger;
@@ -76,85 +169,112 @@ export function ExecutiveOverview({
   feesReadOn: string | null;
   terms: FeeIncomeTerms;
   observations: Observation[];
+  /** The size cohort was read for the quarter, so a missing distribution means too few peers. */
+  cohortRead?: boolean;
+  /** Fewer verified fees than the page compares, so the fee card has no count. */
+  feesSparse?: boolean;
 }) {
   const defs = metricDefs(terms, ledger.filer);
-  const level = ledger.filer === "credit_union" ? "Credit union" : "Bank level";
-  const entity = entityLabel(institutionName, ledger.filer);
+  const peerNoun = ledger.filer === "credit_union" ? "credit unions" : "banks";
+  const retrieved = ledger.retrievedAt ? formatAbsoluteDate(ledger.retrievedAt) : null;
 
-  const ledgerCard = (metric: LedgerMetric, label: string, def: MetricDef = defs[metric]): Card => {
+  const cards: Card[] = [];
+  const rows: MeasureRow[] = [];
+
+  const addLedger = (metric: LedgerMetric, label: string) => {
+    const def = defs[metric];
     const latest = latestOf(ledger, metric);
-    return {
+    const quarterEnd = latest ? quarterEndLabel(latest.quarter.reportDate) : null;
+    cards.push({
       key: metric,
       label,
       value: latest ? { n: latest.value.value, unit: def.unit === "percent" ? "percent" : "dollars" } : null,
-      context: latest && def.flow ? `${latest.quarter.quarter}, one quarter` : null,
-      asOf: latest ? quarterEndLabel(latest.quarter.reportDate) : null,
-      entity: level,
-      details: latest ? ledgerProvenance({ ledger, def, quarters: [latest.quarter], institutionName }) : [],
-    };
+      qualifier: latest ? `${latest.quarter.quarter}, ${def.flow ? "one quarter" : "quarter end"}` : null,
+      source: latest ? `${SOURCE_SHORT[latest.value.source]} · ${quarterEnd}` : null,
+    });
+    const prov = latest ? ledgerProvenance({ ledger, def, quarters: [latest.quarter], institutionName }) : [];
+    rows.push({
+      key: metric,
+      metric: label,
+      measure: def.measure,
+      calculation: pick(prov, "Calculation"),
+      source: pick(prov, "Source"),
+      fields: pick(prov, "Fields"),
+      period: latest?.quarter.quarter ?? null,
+      periodNote: quarterEnd ? `Quarter ended ${quarterEnd}` : null,
+      retrieved: latest ? retrieved : null,
+    });
   };
 
+  addLedger("assets", "Total assets");
+  addLedger("revenue", "Revenue");
+  addLedger("serviceCharges", terms.amount);
+
+  // The share card. No distribution means either too few peers reported a share (the cohort was
+  // read) or the cohort could not be read for this quarter; the card says which.
   const cohortQuarter = cohort ? formatReportQuarter(cohort.reportDate) : null;
-  const shareCard: Card = {
+  const shareLabel = `${shareName(terms)} of revenue`;
+  cards.push({
     key: "share",
-    label: `${shareName(terms)} of revenue`,
+    label: shareLabel,
     value: cohort?.subject ? { n: cohort.subject.sharePct, unit: "percent" } : null,
-    empty: cohort ? "Not reported" : "Insufficient sample",
-    context:
-      cohort && cohortName
-        ? `Median ${pct(cohort.median)} for ${cohort.peers.length.toLocaleString("en-US")} ${cohortName}${
-            cohort.percentileRank !== null ? `; ${ordinal(cohort.percentileRank)} percentile` : ""
-          }`
-        : null,
-    asOf: cohort ? `${cohortQuarter}${cohort.source === "ncua" ? ", year to date" : ""}` : null,
-    entity: level,
-    details: cohort
-      ? [
-          { label: "Source", value: SOURCE_NAMES[cohort.source] },
-          { label: "Entity", value: entity },
-          { label: "Period", value: `${cohortQuarter} (quarter ended ${quarterEndLabel(cohort.reportDate)})` },
-          { label: "Measure", value: defs.sharePct.measure },
-          {
-            label: "Calculation",
-            value:
-              cohort.source === "ncua"
-                ? "Year to date through the quarter. Cohort median and percentile computed from every peer's own share."
-                : "One quarter, as reported. Cohort median and percentile computed from every peer's own share.",
-          },
-          { label: "Fields", value: cohort.source === "ncua" ? "Account 131 / (Account 115 + Account 117)" : "ISERCHGQ / (NIMQ + NONIIQ)" },
-          { label: "Cohort", value: cohortName ? `${cohort.peers.length.toLocaleString("en-US")} ${cohortName} reporting a share above 0%, itself left out` : null },
-        ]
-      : [],
-  };
+    empty: cohort ? "Not reported" : cohortRead ? "Not enough peers" : "Not available",
+    qualifier: cohort
+      ? cohort.percentileRank !== null
+        ? `${ordinal(cohort.percentileRank)} percentile; peer median ${pct(cohort.median)}`
+        : `Peer median ${pct(cohort.median)}`
+      : cohortRead
+        ? `Fewer than ${MIN_COHORT_PEERS} ${peerNoun} its size reported a share`
+        : "Peer figures could not be read",
+    source: cohort
+      ? `${SOURCE_SHORT[cohort.source]} · ${quarterEndLabel(cohort.reportDate)}`
+      : null,
+  });
+  rows.push({
+    key: "share",
+    metric: shareLabel,
+    measure: defs.sharePct.measure,
+    calculation: cohort
+      ? `${cohort.source === "ncua" ? "Year to date through the quarter." : "One quarter, as reported."} Median and percentile from each of ${cohort.peers.length.toLocaleString("en-US")} ${cohortName ?? "peers"} reporting a share above 0%, this one left out.`
+      : `Shown when at least ${MIN_COHORT_PEERS} ${peerNoun} of its size report a share above 0%.`,
+    source: cohort ? SOURCE_NAMES[cohort.source] : null,
+    fields: cohort ? (cohort.source === "ncua" ? "Account 131 / (Account 115 + Account 117)" : "ISERCHGQ / (NIMQ + NONIIQ)") : null,
+    period: cohortQuarter,
+    periodNote: cohort ? (cohort.source === "ncua" ? "Year to date" : `Quarter ended ${quarterEndLabel(cohort.reportDate)}`) : null,
+    retrieved: null,
+  });
 
   const place = counts?.level === "state" && stateName ? stateName : "U.S.";
-  const feeCard: Card = {
+  const feeLabel = `Fees above the ${place} median`;
+  cards.push({
     key: "fees",
-    label: `Fees above the ${place} median`,
+    label: feeLabel,
     value: counts ? { n: counts.above, unit: "count" } : null,
-    empty: "Insufficient sample",
-    context: counts ? `of ${counts.compared} comparable published fees; ${counts.below} below, ${counts.same} about the same (within 1% of the median)` : null,
-    asOf: feesReadOn ? `Schedule read ${feesReadOn}` : null,
-    entity: "Published fee schedule",
-    details: counts
-      ? [
-          { label: "Source", value: `${institutionName}'s published fee schedule; ${PRODUCT_NAME} medians` },
-          { label: "Entity", value: institutionName },
-          { label: "Period", value: feesReadOn ? `Schedule read ${feesReadOn}` : null },
-          { label: "Measure", value: `Published fees above the ${place} median for the same fee` },
-          { label: "Calculation", value: "Within 1% of the median counts as about the same. Business-only fees are left out." },
-        ]
-      : [],
-    href: counts ? "#compare-heading" : undefined,
-  };
+    empty: feesSparse ? "Too few fees" : "None compared",
+    qualifier: counts
+      ? `of ${counts.compared} compared; ${counts.below} below, ${counts.same} about the same`
+      : feesSparse
+        ? `Fewer than ${MIN_VERIFIED_FEES_FOR_OFFER} verified fees on file`
+        : "No fee has a median to compare",
+    source: feesReadOn ? `Fee schedule read ${feesReadOn}` : null,
+    action: counts ? { href: "#compare-heading", label: "See the fees" } : undefined,
+  });
+  rows.push({
+    key: "fees",
+    metric: feeLabel,
+    measure: `Published fees above the ${place} median for the same fee`,
+    calculation: "Within 1% of the median counts as about the same. Business-only fees are left out.",
+    source: `${institutionName}'s published fee schedule; ${PRODUCT_NAME} medians`,
+    fields: null,
+    period: "Current schedule",
+    periodNote: null,
+    retrieved: feesReadOn,
+  });
 
-  const cards: Card[] = [
-    ledgerCard("assets", "Total assets"),
-    ledgerCard("revenue", "Revenue"),
-    ledgerCard("serviceCharges", terms.amount),
-    shareCard,
-    feeCard,
-  ];
+  const note =
+    ledger.filer === "credit_union"
+      ? `Call-report figures are for ${institutionName}, from NCUA 5300 call reports. Revenue is interest income plus noninterest income.`
+      : `Call-report figures are for ${institutionName} at the bank level, not its holding company. Revenue is net interest income plus noninterest income.`;
 
   const trend = ledger.quarters.filter((q) => q.values.serviceCharges).slice(-OVERVIEW_QUARTERS);
   const trendPoints = trend.map((q) => ({ reportDate: q.reportDate, quarter: q.quarter, value: q.values.serviceCharges?.value ?? null }));
@@ -165,16 +285,12 @@ export function ExecutiveOverview({
       <h2 id="overview-heading" className={H2} style={SERIF}>
         Overview
       </h2>
-      <p className="mt-3 text-[13px] text-ink-muted">
-        {ledger.filer === "credit_union"
-          ? "Revenue is interest income plus noninterest income, from NCUA 5300 call reports."
-          : "Revenue is net interest income plus noninterest income. Call-report figures are for the bank, not its holding company."}
-      </p>
-      <ul className="mt-6 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-5">
+      <ul className="mt-6 grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
         {cards.map((card) => (
           <MetricCard key={card.key} card={card} />
         ))}
       </ul>
+      <MeasuresDrawer note={note} rows={rows} />
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
         <figure className="min-w-0 rounded-xl border border-border bg-surface-0 p-4 sm:p-5">

@@ -45,7 +45,7 @@ describe("overview and financial performance", () => {
     window.matchMedia ??= ((media: string) => ({ matches: true, media, addEventListener() {}, removeEventListener() {} })) as never;
   });
 
-  it("renders the cards with date, entity level and Details, and says when a value is missing", () => {
+  const renderOverview = (props: Partial<Parameters<typeof ExecutiveOverview>[0]> = {}) =>
     render(
       <ExecutiveOverview
         institutionName="Subject Bank"
@@ -54,20 +54,79 @@ describe("overview and financial performance", () => {
         cohortName="banks with $1B to $10B in assets"
         counts={null}
         stateName="Florida"
-        feesReadOn={null}
+        feesReadOn="Oct 17, 2026"
         terms={feeIncomeTerms("fdic")}
         observations={[]}
+        cohortRead
+        {...props}
       />,
     );
+
+  it("gives every card the same four parts and keeps the provenance out of the cards", () => {
+    const { container } = renderOverview();
     const cards = screen.getAllByRole("listitem");
     expect(cards).toHaveLength(5);
+    for (const card of cards) {
+      expect(card.className).toContain("grid-rows-subgrid");
+      expect(card.children).toHaveLength(4);
+      expect(card.querySelector("details")).toBeNull();
+    }
     expect(within(cards[0]).getByText("$4.4B")).toBeTruthy();
-    expect(within(cards[0]).getByText(/Jun 30, 2026 · Bank level/)).toBeTruthy();
-    expect(within(cards[0]).getByText("RCON2170")).toBeTruthy();
+    expect(within(cards[0]).getByText("Q2 2026, quarter end")).toBeTruthy();
+    expect(within(cards[0]).getByText("FFIEC call report · Jun 30, 2026")).toBeTruthy();
     expect(within(cards[2]).getByText("$5.7M")).toBeTruthy();
-    expect(within(cards[2]).getByText(/Standalone quarter/)).toBeTruthy();
-    expect(within(cards[3]).getByText(/Median 0.7% for 12 banks/)).toBeTruthy();
-    expect(within(cards[4]).getByText("Insufficient sample")).toBeTruthy();
+    expect(within(cards[2]).getByText("Q2 2026, one quarter")).toBeTruthy();
+    expect(within(cards[3]).getByText(/percentile; peer median 0.7%/)).toBeTruthy();
+    expect(within(cards[4]).getByText("None compared")).toBeTruthy();
+    expect(within(cards[4]).getByText("Fee schedule read Oct 17, 2026")).toBeTruthy();
+    // The intro line is gone: the bank-level note appears once, inside the drawer.
+    expect(screen.getAllByText(/not its holding company/)).toHaveLength(1);
+    expect(container.querySelectorAll("details")).toHaveLength(2); // the drawer and the chart's Details
+  });
+
+  it("puts every metric's provenance in one collapsed drawer table", () => {
+    renderOverview();
+    const drawer = screen.getByText("How these figures are measured").closest("details") as HTMLDetailsElement;
+    expect(drawer.open).toBe(false);
+    expect(within(drawer).getByText(/Subject Bank at the bank level, not its holding company/)).toBeTruthy();
+    const table = within(drawer).getByRole("table");
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
+      "Metric",
+      "Measure and calculation",
+      "Source and fields",
+      "Period",
+      "Retrieved",
+    ]);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => within(r).getByRole("rowheader").textContent)).toEqual([
+      "Total assets",
+      "Revenue",
+      "Service-charge income",
+      "Service-charge share of revenue",
+      "Fees above the U.S. median",
+    ]);
+    expect(within(rows[0]).getByText("RCON2170").className).toContain("--fi-font-mono");
+    expect(within(rows[1]).getByText("RIAD4074 + RIAD4079")).toBeTruthy();
+    expect(within(rows[1]).getByText(/Standalone quarter/)).toBeTruthy();
+    expect(within(rows[1]).getByText("Quarter ended Jun 30, 2026")).toBeTruthy();
+    expect(within(rows[4]).getByText("Oct 17, 2026")).toBeTruthy();
+  });
+
+  it("says why the share card has no value", () => {
+    renderOverview({ cohort: null, cohortName: null, cohortRead: true, feesSparse: true });
+    const cards = screen.getAllByRole("listitem");
+    expect(within(cards[3]).getByText("Not enough peers")).toBeTruthy();
+    expect(within(cards[3]).getByText("Fewer than 10 banks its size reported a share")).toBeTruthy();
+    expect(within(cards[4]).getByText("Too few fees")).toBeTruthy();
+    expect(within(cards[4]).getByText("Fewer than 5 verified fees on file")).toBeTruthy();
+  });
+
+  it("gives the fee card one action when fees were compared", () => {
+    renderOverview({ counts: { above: 16, below: 5, same: 3, compared: 24, level: "state" } });
+    const card = screen.getAllByRole("listitem")[4];
+    expect(within(card).getByText("Fees above the Florida median")).toBeTruthy();
+    expect(within(card).getByText("of 24 compared; 5 below, 3 about the same")).toBeTruthy();
+    expect(within(card).getByRole("link", { name: "See the fees" }).getAttribute("href")).toBe("#compare-heading");
   });
 
   it("names the cohort with its size and lists its members", () => {
