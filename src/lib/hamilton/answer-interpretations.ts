@@ -471,6 +471,11 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
 
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
 export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
+  // The written-answer boundary reconstructs this verdict from its observed reads.
+  // It applies to both regulators, including when contradictions leave no usable facts.
+  if (record(data)?.filed_peer_income_conflict === true) {
+    return ["Conflicting filed financial peer reads need to be refreshed before presenting this answer. Keep the selected institution, source, quarter and peer filters consistent."];
+  }
   const evidence = evidenceFrom(data);
   if (!evidence.ncua && !evidence.financialPeerComparison) return [];
   const problems = new Set<string>();

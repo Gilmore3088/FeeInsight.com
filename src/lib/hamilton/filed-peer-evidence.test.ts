@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
 import { feeIncomeAgainstPeers } from "@/lib/research/fee-income-peers";
 import { compactToolResult } from "@/lib/research/tool-output";
-import { filedPeerIncomeEvidence } from "./filed-peer-evidence";
+import { filedPeerIncomeEvidence, filedPeerIncomeEvidenceResult } from "./filed-peer-evidence";
 import { writtenAnswerCheck } from "./answer-save";
 import { writtenAnswerEvidence } from "./written-answer-evidence";
 
@@ -120,5 +120,153 @@ describe("server-observed filed financial peer evidence (#2332)", () => {
     replace(conflicting, "output.comparison.filters.assetTiers", ["regional"]);
     expect(filedPeerIncomeEvidence([first, conflicting], 1)).toEqual([]);
     expect(filedPeerIncomeEvidence([peerRead(5, "ncua"), peerRead(5, "fdic")], 1)).toEqual([]);
+  });
+
+  it.each([
+    ["state order", "states", "states", ["VA", "MD"], ["MD", "VA"]],
+    ["state case and duplicates", "states", "states", ["VA", "MD"], ["md", "va", "VA"]],
+    ["explicit institution order and duplicates", "peer_institution_ids", "institutionIds", [2, 3, 4, 5, 6], [6, 5, 4, 3, 2, 2]],
+    ["asset tier order and duplicates", "asset_tiers", "assetTiers", ["regional", "large"], ["large", "regional", "regional"]],
+    ["district order and duplicates", "fed_districts", "fedDistricts", [5, 9], [9, 5, 5]],
+    ["absent versus empty institution filter", "peer_institution_ids", "institutionIds", undefined, []],
+    ["absent versus empty asset tiers", "asset_tiers", "assetTiers", undefined, []],
+    ["absent versus empty districts", "fed_districts", "fedDistricts", undefined, []],
+    ["absent versus empty states", "states", "states", undefined, []],
+  ])("uses one cohort for equivalent %s, holding either conflicting median", (_name, inputKey, outputKey, firstValues, secondValues) => {
+    const first = peerRead();
+    const second = peerRead();
+    replace(first, `input.${inputKey}`, firstValues);
+    replace(first, `output.comparison.filters.${outputKey}`, firstValues);
+    replace(second, `input.${inputKey}`, secondValues);
+    replace(second, `output.comparison.filters.${outputKey}`, secondValues);
+    const originalFilters = structuredClone(second.output);
+    expect(filedPeerIncomeEvidence([first, second], 1)).toEqual(filedPeerIncomeEvidence([first], 1));
+    const context = { institutionId: 1, toolResults: [first, second] };
+    expect(writtenAnswerCheck(answer, [first.output, second.output], question, context).passed).toBe(true);
+    expect(second.output).toEqual(originalFilters); // Canonicalization does not rewrite tool evidence.
+
+    replace(second, "output.peer_median_service_charge_income", 999);
+    expect(filedPeerIncomeEvidence([first, second], 1)).toEqual([]);
+    for (const median of ["$300,000", "$999,000"]) {
+      const result = writtenAnswerCheck(`Q2 2026 broad fee income was $30.032 million, versus a peer median of ${median}.`, [first.output, second.output], question, context);
+      expect(result.figureCheck.unmatched).toEqual([]);
+      expect(result.passed).toBe(false);
+      expect(result.problems).toContainEqual(expect.stringContaining("Conflicting filed financial peer reads"));
+    }
+  });
+
+  it("ignores filter property insertion order without merging genuinely different cohorts", () => {
+    const first = peerRead();
+    const second = peerRead();
+    replace(second, "output.comparison.filters", { states: ["VA"], charterType: "credit_union" });
+    expect(filedPeerIncomeEvidence([first, second], 1)).toHaveLength(1);
+    replace(second, "input.states", ["VA", "MD"]);
+    replace(second, "output.comparison.filters.states", ["VA", "MD"]);
+    replace(second, "output.peer_median_service_charge_income", 999);
+    expect(filedPeerIncomeEvidence([first, second], 1)).toHaveLength(2);
+  });
+
+  it.each(["ncua", "fdic"] as const)("uses one effective %s cohort for omitted and explicit canonical charter", (source) => {
+    const implicit = peerRead(5, source);
+    const explicit = peerRead(5, source);
+    replace(implicit, "input.charter_type", undefined);
+    replace(implicit, "output.comparison.filters.charterType", undefined);
+    expect(filedPeerIncomeEvidence([implicit, explicit], 1)).toEqual(filedPeerIncomeEvidence([explicit], 1));
+    const context = { institutionId: 1, toolResults: [implicit, explicit] };
+    const label = source === "ncua" ? "broad fee income" : "deposit service charge income";
+    expect(writtenAnswerCheck(`Q2 2026 ${label} was $30.032 million, versus a peer median of $300,000.`, [implicit.output, explicit.output], question, context).passed).toBe(true);
+    replace(explicit, "output.peer_median_service_charge_income", 999);
+    expect(filedPeerIncomeEvidence([implicit, explicit], 1)).toEqual([]);
+    for (const median of ["$300,000", "$999,000"]) {
+      const result = writtenAnswerCheck(`Q2 2026 ${label} was $30.032 million, versus a peer median of ${median}.`, [implicit.output, explicit.output], question, context);
+      expect(result.figureCheck.unmatched).toEqual([]);
+      expect(result.passed).toBe(false);
+      expect(result.problems).toContainEqual(expect.stringContaining("Conflicting filed financial peer reads"));
+    }
+    // Within each observed read, an omitted filter still cannot claim an explicit output filter.
+    replace(implicit, "output.comparison.filters.charterType", source === "ncua" ? "credit_union" : "bank");
+    expect(filedPeerIncomeEvidence([implicit], 1)).toEqual([]);
+  });
+
+  it.each(["ncua", "fdic"] as const)("holds either conflicting %s median before source-specific interpretation checks", (source) => {
+    const first = peerRead(5, source);
+    const second = peerRead(5, source);
+    replace(first, "input.states", ["VA", "MD"]);
+    replace(first, "output.comparison.filters.states", ["VA", "MD"]);
+    replace(second, "input.states", ["md", "va", "VA"]);
+    replace(second, "output.comparison.filters.states", ["MD", "VA"]);
+    expect(filedPeerIncomeEvidenceResult([first, second], 1)).toEqual({
+      observations: filedPeerIncomeEvidence([first], 1), conflicting: false,
+    });
+    replace(second, "output.peer_median_service_charge_income", 999);
+    expect(filedPeerIncomeEvidenceResult([first, second], 1)).toEqual({ observations: [], conflicting: true });
+    const context = { institutionId: 1, toolResults: [first, second] };
+    expect(writtenAnswerEvidence([first.output, second.output], context)).toMatchObject({
+      validated_filed_peer_income: [], filed_peer_income_conflict: true,
+    });
+    const label = source === "ncua" ? "broad fee income" : "deposit service charge income";
+    for (const median of ["$300,000", "$999,000"]) {
+      const result = writtenAnswerCheck(`Q2 2026 ${label} was $30.032 million, versus a peer median of ${median}.`, [first.output, second.output], question, context);
+      expect(result.figureCheck.unmatched).toEqual([]);
+      expect(result.passed).toBe(false);
+      expect(result.problems).toContainEqual(expect.stringContaining("Conflicting filed financial peer reads"));
+    }
+  });
+
+  it.each(["ncua", "fdic"] as const)("holds conflicting selected %s subject income even across distinct cohorts", (source) => {
+    const first = peerRead(5, source);
+    const second = peerRead(5, source);
+    replace(second, "input.asset_tiers", ["regional"]);
+    replace(second, "output.comparison.filters.assetTiers", ["regional"]);
+    replace(second, "output.subject.service_charge_income", 30_033);
+    expect(filedPeerIncomeEvidenceResult([first, second], 1)).toEqual({ observations: [], conflicting: true });
+    for (const income of ["$30.032 million", "$30.033 million"]) {
+      const result = writtenAnswerCheck(`Q2 2026 fee income was ${income}.`, [first.output, second.output], question, { institutionId: 1, toolResults: [first, second] });
+      expect(result.figureCheck.unmatched).toEqual([]);
+      expect(result.passed).toBe(false);
+      expect(result.problems).toContainEqual(expect.stringContaining("Conflicting filed financial peer reads"));
+    }
+  });
+
+  it("holds conflicting canonical sources for the selected subject without trusting embedded conflict verdicts", () => {
+    const bank = peerRead(5, "fdic");
+    const creditUnion = peerRead(5, "ncua");
+    expect(filedPeerIncomeEvidenceResult([bank, creditUnion], 1)).toEqual({ observations: [], conflicting: true });
+    const fake = { ...bank.output, filed_peer_income_conflict: true };
+    expect(writtenAnswerEvidence([fake])).toMatchObject({ validated_filed_peer_income: [], filed_peer_income_conflict: false });
+    const validRead = { ...bank, output: fake };
+    expect(writtenAnswerCheck("Q2 2026 deposit service charge income was $30.032 million.", [fake], question, {
+      institutionId: 1, toolResults: [validRead],
+    }).passed).toBe(true);
+    const reads = [bank, creditUnion].map((read) => ({ ...read, output: { ...read.output, filed_peer_income_conflict: false } }));
+    const result = writtenAnswerCheck("The financial reads need a refresh.", reads.map((read) => read.output), question, { institutionId: 1, toolResults: reads });
+    expect(result.passed).toBe(false);
+    expect(result.problems).toContainEqual(expect.stringContaining("Conflicting filed financial peer reads"));
+  });
+
+  it.each(["ncua", "fdic"] as const)("retains legitimate distinct %s cohorts and their medians without a conflict verdict", (source) => {
+    const first = peerRead(5, source);
+    const second = peerRead(5, source);
+    const charter = source === "ncua" ? "credit_union" : "bank";
+    const rows: FiledFeeIncome[] = Array.from({ length: 11 }, (_, index) => {
+      const income = index === 0 ? 30_032 : index <= 5 ? index * 100 : (index - 5) * 200;
+      return {
+        institution_id: index + 1, institution_name: `Synthetic ${index + 1}`,
+        charter_type: charter, financial_source: source, report_date: "2026-06-30",
+        state_code: index <= 5 ? "VA" : "MD", asset_size_tier: "regional", fed_district: 5,
+        total_assets: 20_000_000, service_charge_income: income, fee_income_ratio: income / 2000,
+      };
+    });
+    first.output = feeIncomeAgainstPeers(rows, 1, { charterType: charter, states: ["VA"] });
+    replace(second, "input.states", ["MD"]);
+    second.output = feeIncomeAgainstPeers(rows, 1, { charterType: charter, states: ["MD"] });
+    expect(filedPeerIncomeEvidenceResult([first, second], 1)).toMatchObject({ observations: expect.any(Array), conflicting: false });
+    expect(filedPeerIncomeEvidence([first, second], 1)).toHaveLength(2);
+    const label = source === "ncua" ? "broad fee income" : "deposit service charge income";
+    for (const median of ["$300,000", "$600,000"]) {
+      expect(writtenAnswerCheck(`Q2 2026 ${label} was $30.032 million, versus a peer median of ${median}.`, [first.output, second.output], question, {
+        institutionId: 1, toolResults: [first, second],
+      }).passed).toBe(true);
+    }
   });
 });

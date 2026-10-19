@@ -1,7 +1,7 @@
 import { deriveNcuaAnswerEvidence, type NcuaAnswerDerivation, type NcuaDerivationInput } from "./answer-derivations";
 import type { HamiltonBriefingEvidence } from "./institution-briefing";
 import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
-import { filedPeerIncomeEvidence } from "./filed-peer-evidence";
+import { filedPeerIncomeEvidenceResult } from "./filed-peer-evidence";
 
 /** Server-observed tool reads, never calculations supplied by a model or browser. */
 export interface AnswerToolEvidence {
@@ -80,13 +80,16 @@ export function writtenAnswerEvidence(
   context: WrittenAnswerEvidenceContext = {},
 ): unknown {
   const calculated = calculationLedger(context.toolResults ?? []);
+  const filedPeers = filedPeerIncomeEvidenceResult(context.toolResults ?? [], context.institutionId ?? null);
   return {
     selected_institution_id: context.institutionId ?? null,
     briefing_evidence: context.briefingEvidence ?? [],
     // Full input provenance remains in the tool results/model context. These candidates are
     // re-created by our deterministic reader, rather than trusting a returned calculation.
     validated_calculations: calculated.prompt.derivations,
-    validated_filed_peer_income: filedPeerIncomeEvidence(context.toolResults ?? [], context.institutionId ?? null),
+    validated_filed_peer_income: filedPeers.observations,
+    // Never take a conflict verdict from model/browser-supplied output-shaped data.
+    filed_peer_income_conflict: filedPeers.conflicting,
     tool_evidence: context.toolResults?.length
       ? context.toolResults.map((read) => ({ ...read, output: withoutEmbeddedDerivations(read.output) }))
       : toolOutputs.map((output) => withoutEmbeddedDerivations(output)),

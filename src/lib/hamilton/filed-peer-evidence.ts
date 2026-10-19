@@ -12,6 +12,11 @@ const monetaryFieldsMatch = (value: RecordValue, field: string) =>
   (!Object.hasOwn(value, "unit") || value.unit === monetaryUnit)
   && (!Object.hasOwn(value, "period_basis") || value.period_basis === "standalone_quarter")
   && (!Object.hasOwn(record(value.field_units) ?? {}, field) || record(value.field_units)?.[field] === monetaryUnit);
+const normalizedFilterValues = (values: unknown[], key: string) =>
+  [...new Set(values.map((value) => key === "states" ? String(value).toUpperCase() : String(value)))].sort();
+/** The key's validated canonical source already fixes charter, whether explicitly filtered or not. */
+const canonicalFilters = (filters: RecordValue) =>
+  ["institutionIds", "states", "assetTiers", "fedDistricts"].map((key) => normalizedFilterValues((filters[key] ?? []) as unknown[], key));
 
 function sameFilters(input: RecordValue, filters: RecordValue): boolean {
   if (Object.keys(filters).some((key) => !["institutionIds", "states", "assetTiers", "fedDistricts", "charterType"].includes(key))) return false;
@@ -27,8 +32,7 @@ function sameFilters(input: RecordValue, filters: RecordValue): boolean {
       : outputKey === "fedDistricts" ? Number.isInteger(value) && Number(value) >= 1 && Number(value) <= 12
         : typeof value === "string" && (outputKey !== "states" || value.length === 2);
     if (!before.every(valid) || !after.every(valid)) return false;
-    const normalized = (values: unknown[]) => [...new Set(values.map((value) => outputKey === "states" ? String(value).toUpperCase() : String(value)))].sort();
-    if (JSON.stringify(normalized(before)) !== JSON.stringify(normalized(after))) return false;
+    if (JSON.stringify(normalizedFilterValues(before, outputKey)) !== JSON.stringify(normalizedFilterValues(after, outputKey))) return false;
   }
   return (input.charter_type ?? null) === (filters.charterType ?? null);
 }
@@ -44,16 +48,22 @@ export interface FiledPeerIncomeEvidence {
   minimum_median_count: number;
 }
 
+export interface FiledPeerIncomeEvidenceResult {
+  observations: FiledPeerIncomeEvidence[];
+  /** Conflicting, otherwise valid server reads require a fresh read before any answer. */
+  conflicting: boolean;
+}
+
 /** Never accept a tool-output-shaped object without the actual observed read and selected identity. */
-export function filedPeerIncomeEvidence(reads: readonly AnswerToolEvidence[], institutionId: number | null): FiledPeerIncomeEvidence[] {
-  if (institutionId !== null && !positiveId(institutionId)) return [];
+export function filedPeerIncomeEvidenceResult(reads: readonly AnswerToolEvidence[], institutionId: number | null): FiledPeerIncomeEvidenceResult {
+  if (institutionId !== null && !positiveId(institutionId)) return { observations: [], conflicting: false };
   if (institutionId === null) {
     // A named institution can arrive through the observed tool without a selected
     // workspace. Multiple peer-tool subjects do not choose a subject for the reader.
     const ids = new Set(reads.filter((read) => read.toolName === "queryFeeRevenueCorrelation")
       .map((read) => record(read.input)).filter((input) => input?.view === "peers")
       .map((input) => input?.institution_id).filter(positiveId));
-    if (ids.size !== 1) return [];
+    if (ids.size !== 1) return { observations: [], conflicting: false };
     institutionId = [...ids][0];
   }
   const observations = new Map<string, FiledPeerIncomeEvidence | null>();
@@ -116,11 +126,19 @@ export function filedPeerIncomeEvidence(reads: readonly AnswerToolEvidence[], in
     const values = subjectValues.get(observation.report_date) ?? new Set<number>();
     values.add(subjectUsd);
     subjectValues.set(observation.report_date, values);
-    const key = JSON.stringify([source, comparison.report_date, filters]);
+    const key = JSON.stringify([source, comparison.report_date, canonicalFilters(filters)]);
     if (!observations.has(key)) observations.set(key, observation);
     else if (JSON.stringify(observations.get(key)) !== JSON.stringify(observation)) observations.set(key, null);
   }
-  const retained = [...observations.values()].filter((value): value is FiledPeerIncomeEvidence => value !== null);
-  if (sources.size > 1) return [];
-  return retained.filter((value) => subjectValues.get(value.report_date)?.size === 1);
+  const conflicting = sources.size > 1 || [...observations.values()].some((value) => value === null)
+    || [...subjectValues.values()].some((values) => values.size > 1);
+  return {
+    observations: conflicting ? [] : [...observations.values()].filter((value): value is FiledPeerIncomeEvidence => value !== null),
+    conflicting,
+  };
+}
+
+/** Observation-only callers retain the existing conservative array contract. */
+export function filedPeerIncomeEvidence(reads: readonly AnswerToolEvidence[], institutionId: number | null): FiledPeerIncomeEvidence[] {
+  return filedPeerIncomeEvidenceResult(reads, institutionId).observations;
 }
