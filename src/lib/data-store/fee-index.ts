@@ -1507,7 +1507,8 @@ export async function getSegmentFeeValues(
   const categories = capCategory ? [feeCategory, capCategory] : [feeCategory];
   const rows = (await sql.unsafe(
     `WITH seg AS (${segmentSql})
-     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
+     SELECT ef.id, ef.fee_name, ef.frequency, ef.fee_audience,
+            ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
             ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
             ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
@@ -1518,6 +1519,10 @@ export async function getSegmentFeeValues(
         AND ${STATS_ROW_FILTER}`,
     [...params, categories] as never[],
   )) as {
+    id: number | string;
+    fee_name: string | null;
+    frequency: string | null;
+    fee_audience: string | null;
     fee_category: string;
     amount: number | string | null;
     institution_id: number | string;
@@ -1550,6 +1555,8 @@ export async function getSegmentFeeValues(
       fee_published_ids: feeIdsOf(own),
       document_urls: [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))],
       published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
+      fee_records: peerFeeRecords(own),
+      ...severalField(feeCategory, own, amount),
       total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),
       charter_type: first?.charter_type ?? null,
       ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),

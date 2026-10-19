@@ -583,7 +583,7 @@ export type Exhibit =
       ownLabel: string;
       /** deposits: the institution's deposits in the bank's market counties (FDIC Summary of Deposits), local competitors only. */
       /** several: the institution states several different fees here; amount is then their median and the row shows this range (#1931). */
-      items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
+      items: { name: string; amount: number; url: string | null; documentUrls?: string[]; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
       /** The competitors beyond the charted largest, lowest fee first; the page lists them under "Show N more" (#2036). */

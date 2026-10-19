@@ -13,6 +13,7 @@ import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { plainName, proseFeeName } from "./names";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { feeScheduleUrls, statedFeeLabel } from "@/lib/own-fee";
 import type { AskSegment, Exhibit, Fact, SegmentMember, SegmentResearch, SourceRef } from "./types";
 import { segmentLabel, shortSegmentLabel } from "@/lib/segment-words";
 
@@ -247,12 +248,16 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
   const priced = seg.members.filter((m) => m.amount > 0);
   if (priced.length > 0) {
     const top = [...priced].sort((a, b) => b.amount - a.amount)[0];
-    out.push({ text: `The highest is ${top.institutionName} at ${money(top.amount)}.`, source: { ...source, url: top.documentUrls[0] } });
+    const urls = feeScheduleUrls(top.documentUrls);
+    out.push({ text: priced.some(m => m.several)
+      ? `${top.institutionName} lists ${statedFeeLabel(top.amount, top.several, money)}; the table keeps each named fee.`
+      : `The highest is ${top.institutionName} at ${money(top.amount)}.`,
+    source: { ...source, url: urls.length === 1 ? urls[0] : undefined } });
   }
   const largest = seg.members.slice(0, 3);
   if (largest.length > 0) {
     out.push({
-      text: `The largest by assets: ${largest.map((m) => `${plainName(m.institutionName)} (${money(m.amount)})`).join(", ")}.`,
+      text: `The largest by assets: ${largest.map((m) => `${plainName(m.institutionName)} (${statedFeeLabel(m.amount, m.several, money)})`).join(", ")}.`,
       source,
     });
   }
@@ -283,7 +288,11 @@ export function segmentExhibit(seg: SegmentResearch, feeCategory: string, curren
   const items = seg.members
     .slice(0, MAX_SEGMENT_EXHIBIT)
     .sort((a, b) => a.amount - b.amount || a.institutionName.localeCompare(b.institutionName))
-    .map((m) => ({ name: m.institutionName, amount: m.amount, url: m.documentUrls[0] ?? null }));
+    .map((m) => {
+      const documentUrls = feeScheduleUrls(m.documentUrls);
+      return { name: m.institutionName, amount: m.amount, url: documentUrls.length === 1 ? documentUrls[0] : null,
+        documentUrls, ...(m.several ? { several: m.several } : {}) };
+    });
   return {
     kind: "competitor_range",
     title: `${capitalize(name)} fees at the ${items.length} largest ${shortSegmentLabel({ ...seg.segment, largest: null })}`,
