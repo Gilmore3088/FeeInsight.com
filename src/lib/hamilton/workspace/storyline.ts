@@ -482,24 +482,27 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
   const fin = research.institutionFinancials;
   const rows: { label: string; low: number; high: number; evidenceLevel: "institution" }[] = [];
   const sources: SourceRef[] = [];
+  // Each row names its four quarters when the two figures cover different ones (#2034).
+  const samePeriod = !!line && fin?.latestTtm != null && fin.quarterEnd === line.quarterEnd;
   if (line) {
-    rows.push({ label: line.combinedWith ? `${line.label}, with ${line.combinedWith}` : line.label, low: line.annualIncome, high: line.annualIncome, evidenceLevel: "institution" });
+    const label = line.combinedWith ? `${line.label}, with ${line.combinedWith}` : line.label;
+    rows.push({ label: samePeriod || !fin ? label : `${label}, four quarters to ${longDate(line.quarterEnd)}`, low: line.annualIncome, high: line.annualIncome, evidenceLevel: "institution" });
     sources.push({ ...line.source, asOf: line.quarterEnd });
   }
   if (fin?.latestTtm != null) {
-    rows.push({ label: `${fin.label}, last four quarters`, low: fin.latestTtm, high: fin.latestTtm, evidenceLevel: "institution" });
+    rows.push({ label: line && !samePeriod ? `${fin.label}, four quarters to ${longDate(fin.quarterEnd)}` : `${fin.label}, last four quarters`, low: fin.latestTtm, high: fin.latestTtm, evidenceLevel: "institution" });
     sources.push({ ...fin.sourceRef, asOf: fin.quarterEnd });
   }
   if (rows.length === 0) return null;
   const missing =
     line === null
-      ? `The latest filing has no ${name} income line; this is all ${fin?.source === "ncua" ? "fee income" : "service charges"}.`
+      ? `No current ${name} income line is on file; the figure is all ${fin?.source === "ncua" ? "fee income" : "service charges"}.`
       : undefined;
   // A share needs both figures from the same four quarters (#2034).
   const actionTitle = line
-    ? fin?.latestTtm && fin.quarterEnd === line.quarterEnd
-      ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin.latestTtm) * 100)}% of all service charges.`
-      : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income.`
+    ? samePeriod
+      ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin!.latestTtm!) * 100)}% of all service charges.`
+      : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} in ${name} income in the year to ${longDate(line.quarterEnd)}.`
     : `${subjectPossessive(research)} ${fin!.source === "ncua" ? "fee income" : "service charges"} came to ${formatDollarsInWords(fin!.latestTtm!)} in the year to ${longDate(fin!.quarterEnd)}.`;
   return {
     key: "money",
