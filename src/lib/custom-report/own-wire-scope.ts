@@ -24,7 +24,47 @@ const INCOMING = /\b(?:incoming|inbound|in\s+coming|receiv(?:ed|ing)|entrantes?)
 const OUTGOING = /\b(?:outgoing|outbound|out\s+going|send(?:ing)?|sent|salientes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-:]?\s*out\b|^\s*out\s*$/i;
 const MAX_ROW = 2_000;
 const WIRE_WORDS = /^(?:(?:international|foreign|intl|int['’]?l|domestic|incoming|outgoing|inbound|outbound|in|out|wires?|transfers?|fees?|charges?|and|or|each|per|item|on)\s*)+$/i;
-const clean = (text: string) => text.replace(/^[•●▪‣*-]\s*/, "").replace(/\s+/g, " ").trim();
+const clean = (text: string) => text.replace(/\*\*|__/g, "").replace(/^[•●▪‣*-]\s*/, "").replace(/\s+/g, " ").trim();
+const LEADING_PRICE = /^\$\s*(?:\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/;
+const SIMPLE_PRICE = /^\$\s*[\d,.]+\s*(?:(?:per\s+|\/)wire|each|per item)?\s*$/i;
+const TRAILING_LEADER = /(?:(?:\.\s*){3,}|…)\s*$/;
+
+type PhysicalRow = { cells: string[]; sourceLine: string; lineIndex: number };
+
+/** Only literal label/price geometry, after price admission; no inferred fee or scope. */
+function physicalRows(lines: string[]): PhysicalRow[] {
+  const result: PhysicalRow[] = [];
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const sourceLine = lines[lineIndex].trim();
+    if (!sourceLine || sourceLine.length > MAX_ROW) continue;
+    const cells = sourceLine.split("|").map(clean).filter(Boolean);
+    result.push({ cells, sourceLine, lineIndex });
+    if (cells.length !== 1) continue;
+    const cell = cells[0];
+    const dollars = [...cell.matchAll(MONEY)];
+    // A trailing dot-leader name owns the next leading price. A preceding price belongs
+    // to the previous row, never to that trailing name.
+    const lastPrice = dollars.at(-1);
+    const name = lastPrice ? clean(cell.slice(lastPrice.index! + lastPrice[0].length)) : cell;
+    const leaderName = TRAILING_LEADER.test(name);
+    if (dollars.length && !leaderName) continue;
+    let nextIndex = lineIndex + 1;
+    while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex++;
+    // One explicit display-label note can separate its own name and price (not prose).
+    if (!dollars.length && /^\(Fee shown (?:when charged )?as [^$|]+\)$/i.test(clean(lines[nextIndex] ?? ""))) {
+      nextIndex++;
+      while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex++;
+    }
+    if (nextIndex - lineIndex > 6) continue;
+    const next = clean(lines[nextIndex] ?? "");
+    const price = next.match(LEADING_PRICE)?.[0];
+    if (!price || (!leaderName && !SIMPLE_PRICE.test(next))) continue;
+    const label = name.replace(/(?:\.\s*){3,}|…/g, " ").trim();
+    if (!label || /[$|]/.test(label)) continue;
+    result.push({ cells: [label, leaderName ? price : next], sourceLine: lines.slice(lineIndex, nextIndex + 1).join("\n").trim(), lineIndex });
+  }
+  return result;
+}
 
 /** Equivalent literal wire vocabulary, without erasing account/service qualifiers. */
 function labelKey(value: string): string {
@@ -48,21 +88,29 @@ function facts(own: string): { geography: WireGeography; directions: WireDirecti
     directions: [...(incoming ? ["incoming" as const] : []), ...(outgoing ? ["outgoing" as const] : [])] };
 }
 
-function headingBefore(lines: string[], at: number, admittedZero: boolean): string | null {
+function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow>, at: number, admittedZero: boolean): string | null {
   let visited = 0;
+  let geographyChild: string | null = null;
   for (let index = at - 1; index >= 0 && at - index <= 14 && visited < 8; index--) {
     const line = clean(lines[index]);
     if (!line) continue;
     visited++;
-    const words = line.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
-    if (!line.includes("$") && !line.includes("|") && line.length <= 100 && /\bwires?\b/i.test(line) && WIRE_WORDS.test(words)) return line;
+    const left = clean(line.split("|").find(cell => cell.trim()) ?? "");
+    const words = left.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
+    if (!/\$|\b(?:free|no charge|no fee)\b/i.test(line) && left.length <= 100 && /\bwires?\b/i.test(left) && WIRE_WORDS.test(words)) return geographyChild ? `${left}\n${geographyChild}` : left;
+    if (/^(?:international|domestic)$/i.test(line)) { geographyChild ??= line; continue; }
     // Only consecutive simple rows can remain under the nearest literal wire heading.
-    const cells = line.split("|").map(clean);
-    const price = cells.at(-1) ?? "";
-    const label = cells.slice(0, -1).join(" ");
-    const simplePrice = /^\$\s*[\d,.]+\s*(?:per wire|each|per item)?\s*$/i.test(price)
-      || (admittedZero && /^(?:free|no charge|no fee)\s*(?:per wire|each|per item)?\s*$/i.test(price));
-    if (!(cells.length === 2 && WIRE_WORDS.test(label) && simplePrice)) break;
+    const prior = rows.get(index);
+    const inlinePrice = [...line.matchAll(MONEY)][0];
+    const price = prior?.cells[1] ?? (inlinePrice ? line.slice(inlinePrice.index) : "");
+    const label = (prior?.cells[0] ?? (inlinePrice ? line.slice(0, inlinePrice.index) : "")).replace(/(?:\.\s*){3,}|…/g, " ").replace(/\b(incoming|outgoing)[1-3](?:,[1-3])?(?=\s|$)/gi, "$1").replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
+    const simplePrice = SIMPLE_PRICE.test(price) || (admittedZero && /^(?:free|no charge|no fee)\s*(?:per wire|each|per item)?\s*$/i.test(price));
+    const directedLabel = WIRE_WORDS.test(label) || /^(?:(?:USD|US Dollars?|Foreign Currency)\s+)?(?:Incoming|Outgoing)$/i.test(label);
+    if (directedLabel && simplePrice) continue;
+    // In a stacked table the prior price line is followed backwards by its explicit label.
+    if (SIMPLE_PRICE.test(line) && index > 0 && [rows.get(index - 1), rows.get(index - 2)].some(row => row
+      && WIRE_WORDS.test(row.cells[0]) && row.sourceLine.endsWith(lines[index].trim()))) continue;
+    break;
   }
   return null;
 }
@@ -73,7 +121,8 @@ function headingBefore(lines: string[], at: number, admittedZero: boolean): stri
  */
 export function sourceOwnedWireScope(text: string, feeName: string, admittedAmount: number): OwnWireScope {
   if (!Number.isFinite(admittedAmount) || admittedAmount < 0) return { kind: "unresolved", reason: "missing_owner" };
-  const key = labelKey(feeName), lines = text.split(/\r?\n/);
+  const key = labelKey(feeName), lines = text.split(/\r?\n/), rows = physicalRows(lines);
+  const simpleRows = new Map(rows.filter(row => row.cells.length === 2).map(row => [row.lineIndex, row]));
   if (!key) return { kind: "unresolved", reason: "missing_owner" };
   const found: Extract<OwnWireScope, { kind: "owned" }>[] = [];
   let unsupported = false;
@@ -84,12 +133,9 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
     if (!scope) { unsupported = true; continue; }
     found.push({ kind: "owned", ...scope, ownText: clause.ownText, sourceLine: clause.sourceLine, lineIndex: clause.lineIndex });
   }
-  for (const [lineIndex, raw] of lines.entries()) {
+  for (const { lineIndex, cells, sourceLine } of rows) {
     if (literalClauses.some(row => row.lineIndex === lineIndex)) continue;
-    const sourceLine = raw.trim();
-    if (sourceLine.length > MAX_ROW) continue;
-    const cells = sourceLine.split("|").map(clean);
-    const heading = headingBefore(lines, lineIndex, admittedAmount === 0);
+    const heading = headingBefore(lines, simpleRows, lineIndex, admittedAmount === 0);
     for (const [cellIndex, cell] of cells.entries()) {
       const dollars = [...cell.matchAll(MONEY)];
       // Factual ownership for an ALREADY admitted zero; no numeric admission is added.
@@ -104,9 +150,13 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
         ownText = `${label} | ${cell}`;
       }
       const combined = heading ? `${heading}: ${label}` : label;
-      if (labelKey(label) !== key && labelKey(combined) !== key) continue;
-      if (prices.length !== 1 || /%/.test(ownText)) { unsupported = true; continue; }
       const after = clean(cell.slice(price.index! + price[0].length));
+      const prefixes = heading ? [heading, heading.split("\n").reverse().join(" ")] : [];
+      const aliases = [label, ...prefixes.map(prefix => `${prefix}: ${label}`)];
+      // Some existing readers name the noun printed immediately after this own price.
+      if (/^per\s+wire\b/i.test(after)) aliases.push(...aliases.map(alias => `${alias} wire`));
+      if (!aliases.some(alias => labelKey(alias) === key)) continue;
+      if (prices.length !== 1 || /%/.test(ownText)) { unsupported = true; continue; }
       if (zeroMarker && (!/^(?:(?:per wire|each|per item)[.!]?)?\s*$/i.test(after)
         || cells.slice(cellIndex + 1).some(next => next.length > 0))) { unsupported = true; continue; }
       const tailScope = INTERNATIONAL.test(after) || DOMESTIC.test(after) || INCOMING.test(after) || OUTGOING.test(after);

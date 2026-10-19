@@ -163,6 +163,28 @@ describe("source-owned international wire scope, independent of price admission 
       .toEqual({ kind: "unresolved", reason: "unsupported_shape" });
   });
 
+  it.each([
+    ["Wire Transfers\nDomestic Incoming ........ $15.00 per wire\nInternational Incoming ........ $15.00 per wire\nDomestic Outgoing (client only) ........ $25.00 per wire\nInternational Outgoing (client only) ........ $45.00 per wire", "International Outgoing (client only) wire", 45],
+    ["Wire Transfers\nDomestic\nIncoming ........ $15.00\nOutgoing ........ $30.00\nInternational\nUSD Outgoing ........ $40.00\nForeign Currency Outgoing ........ $25.00", "International Wire Transfers: USD Outgoing", 40],
+    ["Wire Transfers\nIncoming Domestic\n$15.00\nOutgoing International\n$45.00\nDormant Account Fee\nGift Cards\n$3.50", "Wire Transfers: Outgoing International", 45],
+    ["Wire Transfer (outgoing)........\n$20.00 Wire Transfer Agreement (WPIN) Replacement Fee ........\n$10.00 Outgoing International Wire (in foreign currency) ........\n$50.00 Garnishments ........\n$100.00 Levies ........\n$20.00", "Outgoing International Wire (in foreign currency)", 50],
+    ["Money Orders | $5.00 per item | Multiple fees will not be assessed for any item identified as previously\nWire Transfer Fees | being returned NSF.\nDomestic Outgoing | $35.00 per wire | 10. Account type no longer offered.\nInternational Outgoing | $50.00 per wire | 11. Service assisted refers to transactions processed with bank staff.", "Wire Transfer Fees: International Outgoing", 50],
+  ] as const)("preserves existing literal directed physical geometry: %s", (text, name, amount) => {
+    expect(sourceOwnedWireScope(text, name, amount)).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });
+    expect(reviewInternationalDirection(sourceOwnedWireScope(text, name, amount), "wire_intl_outgoing").kind).toBe("admit");
+  });
+
+  it.each([
+    ["Wire Transfers\nNotes about wires follow\nmore notes\nmore notes\nmore notes\nmore notes\nInternational\nOutgoing ........ $40.00", "International Wire Transfers: Outgoing", 40],
+    ["Wire Transfers\nInternational\nGift Cards\nOutgoing | $40", "International Wire Transfers: Outgoing", 40],
+    ["Outgoing International\nIncoming International\n$45.00", "Outgoing International", 45],
+    ["Outgoing International Wire ........\n$50.00\nOutgoing International Wire ........\n$50.00", "Outgoing International Wire", 50],
+    ["$10.00 Outgoing International Wire ........\n$50.00 Garnishments ........", "Outgoing International Wire", 10],
+    ["International Incoming ........ $15.00 per item", "International Incoming wire", 15],
+  ] as const)("does not extend those layouts across missing owners or unrelated boundaries: %s", (text, name, amount) => {
+    expect(sourceOwnedWireScope(text, name, amount).kind).toBe("unresolved");
+  });
+
   it("can bind an explicit literal zero without inferring a price from scope", () => {
     expect(reviewInternationalDirection(sourceOwnedWireScope("International Wire Incoming | $0", "International Wire Incoming", 0), "wire_intl_incoming").kind).toBe("admit");
     expect(sourceOwnedWireScope("International Wire Incoming", "International Wire Incoming", 0).kind).toBe("unresolved");
