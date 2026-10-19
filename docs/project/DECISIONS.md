@@ -3,6 +3,29 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-19
+
+**Fix the input and the process, not the output.** James, 2026-10-19 04:04 UTC, in the project
+chat: "we don't fix the output, we fix the input and the process. And only then do we validate and
+fix the output ... if we fix one and this is a problem for others, that means we're just gonna have
+to fix one at a time." When a fee error is found, the first fix goes to the pipeline step that
+caused it: discovery and document capture (Magellan), text conversion (Rosetta), extraction or
+categorisation (Knox) or verification and classification (Darwin). That fixes the whole class of
+error. Then the affected institutions are re-run and the output is validated. A one-off data fix
+(an admin correction, hold or re-file) is allowed only as the last step after the process fix,
+never instead of it. This sits beside the 2026-10-15 rule that a holding or re-filing rule ships
+with its Darwin live re-check. It is in CLAUDE.md "Standing rules" and
+AGENTS.md "How work runs".
+
+**The Product menu is three cards, and Hamilton's card names it.** James, 2026-10-19, in the
+"Product menu" thread: "Every fee" overclaimed ("it wont be possible to get every fee"), and the
+workspace is called Hamilton. He picked three cards: Bank Fee Index (Find your institution,
+National index), Market Benchmarks (state and district data, Reports) and a navy Hamilton card
+with "See plans" and "Ask for a demo", with no "Pro workspace" label. This narrows the 2026-10-15
+rule below: Hamilton's name, in text and without its mark, appears on its Product menu card and in
+the phone drawer. It still never appears as a top-level header item or in the footer, and its mark
+stays inside the workspace. `src/components/nav-items.test.ts` pins it.
+
 ## 2026-10-17
 
 **The homepage carries no standalone report promotion.** James, 2026-10-17 18:16, reviewing the
@@ -1275,3 +1298,22 @@ a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/
 #1729, #1700, #1564, #1624, #1647, #1631, #1629, #1589, #1558, #1529, #1506, #1486, #1461, #1429),
 15 had no submitted GitHub review, which the Oct 14 "Reviewed" rule requires. Migrations,
 production-data changes and the other gated actions in CLAUDE.md still need his yes.
+
+**James's fee checking is one weekly live batch, nothing more.** James, 2026-10-19 03:48-03:49 UTC
+(project thread "James's to-do checklist"): "I'm fucking chasing my tail trying to validate individual
+fees every fucking day", "I gave you four live batches of data yesterday. How is that not good
+enough?", then "I'm happy to do a live batch of a hundred every week, but I don't wanna then be asked
+to do ten more." At 03:52 he asked for whatever size is statistically sound, sampled across areas,
+sizes and institutions; at 03:53 he rejected a few fees per institution ("We have fifty fees that
+we track"), and at 03:54 he set the size at 50 institutions a week. His only recurring check is a
+weekly Claude in Chrome live batch of 50 whole institutions, run as five prompts of 10: every
+published fee on each page against the bank's own current schedule, plus any of the 50 tracked
+categories on the schedule but missing from the page. The 50 are a fresh random draw each week
+across big banks, community banks and credit unions and the four Census regions (about 750 fees,
+roughly +/-3-4 points at 65% accuracy). The data quality lane supplies the draw and takes every miss
+with its error type; James sees the score, not the misses.
+That batch is the accuracy measurement against the 99.5% target, and the data
+quality lane works from what it finds. No lane asks him to confirm answer
+keys, press Confirm on rows, or check more fees by hand on top of it. A person's bank-level Confirm
+on an answer key covers every row on it (`feeCheckedBy` in `src/lib/data-store/answer-key.ts`), so
+he is never asked to re-press it.

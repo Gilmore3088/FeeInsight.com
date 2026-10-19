@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
 import { buildAskResponse, parseAsk } from "./ask";
 import { evaluateFourRoles } from "./four-roles";
@@ -83,7 +84,14 @@ describe("storyline", () => {
     const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
     expect(local.actionTitle).toBe("9 of 16 competitors in your market charge less than your $3; their range is $1 to $4.");
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.items.length).toBe(12);
-    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("The 12 largest by local deposits of 16.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("Charted: the 12 largest by local deposits.");
+    // Every competitor counted stays listable (#2036): the four smallest, lowest fee first.
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.rest?.map((r) => r.name)).toEqual(["Rival 13", "Rival 14", "Rival 15", "Rival 16"]);
+    // Past the 100-row cap the note names the total and stays within a note's 16 words.
+    const many = Array.from({ length: 120 }, (_, i) => ({ ...template, institutionId: 600 + i, institutionName: `Rival ${i + 1}`, amount: 2 + (i % 5) }));
+    const big = buildFeeAnswer({ ...base, current: 3, localCompetitors: many }).storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.note).toBe("Charted: the 12 largest by local deposits; 88 more listed, of 120.");
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.rest?.length).toBe(88);
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.allAmounts?.length).toBe(16);
     const lens = answer.storyline!.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]).join(" ")
       + " " + JSON.stringify(answer);
@@ -116,11 +124,60 @@ describe("storyline", () => {
     expect([archetypeOf(0), archetypeOf(10), archetypeOf(15), archetypeOf(30), archetypeOf(30.5)]).toEqual(["zero_od", "low_capped", "low_capped", "mid", "premium"]);
   });
 
+  describe("missing, $0 and charged stay apart (#2035)", () => {
+    it("counts only a charge above $0 as charging, and shows a $0 as no fee", () => {
+      const zeroNsf = { ...structure!, rows: structure!.rows.map((r) => (r.institutionId === 3 || r.institutionId === 4 ? { ...r, values: { ...r.values, nsf: 0 } } : r)) };
+      const story = buildFeeAnswer(research({ structure: zeroNsf }), { story: { structure: true } }).storyline!;
+      const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
+      expect(matrix.actionTitle).toBe("Of 6 peers: 2 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+      if (matrix.exhibit.kind !== "structure_matrix") throw new Error("expected a matrix");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 3")?.cells[1]).toBe("No fee ($0)");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 5")?.cells[1]).toBeNull();
+    });
+
+    it("keeps a $0 daily cap as $0, and counts a row whose several fees include a charge", () => {
+      const rows = structure!.rows.map((r) =>
+        r.institutionId === 1 && !r.own
+          ? { ...r, values: { ...r.values, od_daily_cap: 0 } }
+          : r.institutionId === 5 && !r.own
+            ? { ...r, values: { ...r.values, nsf: 0 }, several: { nsf: { low: 0, high: 32, fees: [{ name: "NSF, first", amount: 0 }, { name: "NSF, later", amount: 32 }] } } }
+            : r,
+      );
+      const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
+      const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
+      expect(matrix.actionTitle).toBe("Of 6 peers: 5 charge an NSF fee, 2 a transfer fee, 0 a daily cap.");
+      if (matrix.exhibit.kind !== "structure_matrix") throw new Error("expected a matrix");
+      const cap = matrix.exhibit.columns.indexOf("Daily cap");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[cap]).toBe("$0");
+    });
+
+    it("says the bank's schedule lists no such fee, with the schedule and its date, never a $0", () => {
+      const r = research({ current: null, ownRows: [], subjectName: "Space Coast Federal Credit Union", ownSchedule: { documentUrl: "https://example.org/fees.pdf", readAt: "2026-10-09" } });
+      const answer = buildFeeAnswer(r);
+      expect(answer.headline).toBe("Space Coast Federal Credit Union's schedule lists no overdraft fee; 16 peers' median is $29.50.");
+      expect(answer.claims[0]).toMatchObject({
+        text: "Space Coast Federal Credit Union's fee schedule, read October 9, 2026, lists no overdraft fee.",
+        source: { url: "https://example.org/fees.pdf", asOf: "2026-10-09" },
+      });
+      expect(JSON.stringify(answer)).not.toMatch(/not in the index/);
+      const none = buildFeeAnswer(research({ current: null, ownRows: [], subjectName: "Space Coast Federal Credit Union", ownSchedule: null }));
+      expect(none.headline).toBe("Space Coast Federal Credit Union has no fee schedule on file; 16 peers' median is $29.50.");
+      // Not read: the older wording stands.
+      expect(buildFeeAnswer(research({ current: null, ownRows: [] })).headline).toMatch(/is not in the index yet/);
+    });
+
+    it("never says \"item item\"", () => {
+      expect(feeItem("overdraft")).toBe("overdraft item");
+      expect(feeItem("NSF / returned item")).toBe("NSF / returned item");
+      expect(feeItem("NSF / returned item", true)).toBe("NSF / returned items");
+    });
+  });
+
   it("shows fee structure beyond the price, with blanks where a schedule shows nothing", () => {
     const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
     expect(story.kind).toBe("structure");
     const matrix = story.exhibits[0];
-    expect(matrix.actionTitle).toBe("Of 6 peers: 4 publish an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 6 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows[0]).toMatchObject({ name: "Example Valley Credit Union", own: true, cells: ["$32", "$32", null, null, null] });
       expect(matrix.exhibit.rows).toHaveLength(7);
@@ -143,9 +200,22 @@ describe("storyline", () => {
     expect(money.actionTitle).toBe("Your fee income came to $209 thousand in the year to June 30, 2026.");
     if (money.exhibit.kind === "money_at_stake") {
       expect(money.exhibit.rows).toEqual([{ label: "Fee income (NCUA 5300), last four quarters", low: 209_400, high: 209_400, evidenceLevel: "institution" }]);
-      expect(money.exhibit.note).toBe("NCUA reports no overdraft income line; this is all fee income.");
+      expect(money.exhibit.note).toBe("No current overdraft income line is on file; the figure is all fee income.");
     }
     expect(story.lenses.finance.some((f) => /\$209 thousand/.test(f.text))).toBe(true);
+  });
+
+  it("gives the fee's share of service charges only when both figures cover the same four quarters (#2034)", () => {
+    const line = (quarterEnd: string) => ({
+      annualIncome: 120_000,
+      label: "Overdraft fee income (NCUA 5300)",
+      quarterEnd,
+      source: { label: "NCUA 5300 call report", table: "institution_financial_records" },
+    });
+    const title = (quarterEnd: string) =>
+      buildFeeAnswer(research({ revenueLine: line(quarterEnd) }), { story: { wantsDecision: true } }).storyline!.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!.actionTitle;
+    expect(title("2026-06-30")).toMatch(/% of all service charges\.$/);
+    expect(title("2026-03-31")).toBe("Your filing shows $120 thousand in overdraft income in the year to March 31, 2026.");
   });
 
   it("prices each option off the filed fee line at today's item count, labelled as such", () => {
@@ -245,11 +315,21 @@ describe("storyline", () => {
     const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
     const matrix = story.exhibits[0];
     // The counts stay one per institution.
-    expect(matrix.actionTitle).toBe("Of 6 peers: 4 publish an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 6 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 2")?.cells[1]).toBe("$20 to $30 (NSF item $20; NSF ACH $30)");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[1]).toBe("$25");
     }
+  });
+
+  it("keeps every institution in the structure table, with no \"Showing 12 of 14\" note (#2036)", () => {
+    const peer = structure!.rows.find((r) => !r.own)!;
+    const others = Array.from({ length: 14 }, (_, i) => ({ ...peer, institutionId: 900 + i, name: `Local ${i + 1}` }));
+    const rows = [structure!.rows.find((r) => r.own)!, ...others];
+    const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
+    const matrix = story.exhibits[0];
+    expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.rows.length).toBe(15);
+    expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.note).toBeUndefined();
   });
 
   it("drops a long competitor name rather than run past a storyline line's 20 words", () => {
@@ -413,5 +493,115 @@ describe("storyline: checking lineup", () => {
   it("shows no lineup when the bank publishes none", () => {
     const story = buildFeeAnswer(research({ lineup: null })).storyline!;
     expect(story.exhibits.some((e) => e.exhibit.title.startsWith("Checking lineup"))).toBe(false);
+  });
+});
+
+describe("list questions (#2033)", () => {
+  // Invented figures for tests only.
+  const coverage: FeeResearch["peerGroup"] = {
+    total: 20,
+    missing: [
+      { institutionId: 501, institutionName: "Quiet Ridge Credit Union", stateCode: "TN", totalAssets: 900_000, hasSchedule: true },
+      { institutionId: 502, institutionName: "No Schedule Credit Union", stateCode: "TN", totalAssets: 400_000, hasSchedule: false },
+    ],
+  };
+
+  it("reads list wording as a list, and leaves comparisons alone", () => {
+    expect(parseAsk("list peers' overdraft fees").list).toBe(true);
+    expect(parseAsk("show me every peer's NSF fee").list).toBe(true);
+    expect(parseAsk("which credit unions charge an overdraft fee?").list).toBe(true);
+    expect(parseAsk("what do our competitors charge for overdraft?").list).toBe(true);
+    expect(parseAsk("compare our NSF fee with peers").list).toBe(false);
+    expect(parseAsk("How does our overdraft pricing compare in our market?").list).toBe(false);
+  });
+
+  it("reads the other ways people ask for the rows, and not comparisons, changes or whole-schedule questions", () => {
+    for (const q of [
+      "show me peers' overdraft fees",
+      "What are our peers' overdraft fees?",
+      "Which of our peers charge an overdraft fee?",
+      "what are competitors charging for NSF",
+      "show me every peer's NSF fee",
+    ]) expect(parseAsk(q).list, q).toBe(true);
+    for (const q of [
+      "How does our overdraft fee compare to all of our peers?",
+      "Are we higher than all our competitors on NSF?",
+      "Which banks have eliminated NSF fees?",
+      "What is our list price vs peers for overdraft?",
+      "Which banks charge more than us for overdraft, and should we raise ours?",
+      "list all our fees vs peers",
+      "show all our fees vs peers",
+    ]) expect(parseAsk(q).list, q).toBe(false);
+  });
+
+  it("answers with every peer by name, the ones with no fee on file too, and nothing else", () => {
+    const r = research({ peerGroup: coverage, peerGroupSaved: false });
+    const story = buildFeeAnswer(r, { story: { list: true } }).storyline!;
+    expect(story.kind).toBe("list");
+    expect(story.governingThought).toBe(`${r.peers.length} of 20 peers publish an overdraft fee; the median is $29.50.`);
+    expect(story.exhibits).toHaveLength(1);
+    const x = story.exhibits[0].exhibit;
+    if (x.kind !== "peer_list") throw new Error("expected a peer list");
+    expect(x.rows[0]).toMatchObject({ own: true, institutionName: r.institutionName, amount: 32, status: "published" });
+    const peers = x.rows.filter((row) => !row.own);
+    expect(peers.filter((row) => row.status === "published")).toHaveLength(r.peers.length);
+    // Largest first across both kinds of row; the fixture's publishing peers have no assets on file, so they follow.
+    expect(peers.slice(0, 2).map((row) => [row.institutionName, row.status])).toEqual([
+      ["Quiet Ridge Credit Union", "not_on_schedule"],
+      ["No Schedule Credit Union", "no_schedule"],
+    ]);
+    expect(x.unlisted).toBe(20 - r.peers.length - 2);
+    expect(x.note).toMatch(/^Peer group picked by Hamilton: /);
+    expect([story.situation, story.complication, story.lenses.finance, story.lenses.market, story.watch].every((l) => l.length === 0)).toBe(true);
+    expect(story.options).toBeUndefined();
+    expect(story.keyFigures.map((k) => k.label)).toEqual(["Your overdraft fee", "Peer median", "Peers publishing one"]);
+  });
+
+  it("names a saved peer group as saved", () => {
+    const story = buildFeeAnswer(research({ peerGroupSaved: true }), { story: { list: true } }).storyline!;
+    const x = story.exhibits[0].exhibit;
+    expect(x.kind === "peer_list" && x.note).toMatch(/^Saved peer group: /);
+  });
+
+  it("lists every local competitor when the question is about the market", () => {
+    const r = research();
+    const story = buildFeeAnswer(r, { focus: "competitors", story: { list: true } }).storyline!;
+    const x = story.exhibits[0].exhibit;
+    if (x.kind !== "peer_list") throw new Error("expected a peer list");
+    expect(x.rows.filter((row) => !row.own)).toHaveLength(r.localCompetitors!.length);
+    expect(story.governingThought).toBe("3 local competitors publish an overdraft fee; they charge $25 to $35.");
+  });
+
+  it("says one peer and one competitor in the singular", () => {
+    const base = research();
+    const one = buildFeeAnswer(research({ peers: base.peers.slice(0, 1), band: null }), { story: { list: true } }).storyline!;
+    expect(one.governingThought).toBe("1 peer publishes an overdraft fee.");
+    expect(one.exhibits[0].exhibit.title).toBe("Overdraft fee of 1 peer, largest institutions first");
+    const local = buildFeeAnswer(research({ localCompetitors: base.localCompetitors!.slice(0, 1) }), { focus: "competitors", story: { list: true } }).storyline!;
+    expect(local.governingThought).toMatch(/^1 local competitor publishes an overdraft fee; it charges \$/);
+  });
+
+  it("marks a fee that is on the schedule but not counted, and lists the bank's several stated fees", () => {
+    const r = research({
+      current: null,
+      ownRows: [
+        { ...research().ownRows[0], id: 1, feeName: "Overdraft fee, tier 1", amount: 25 },
+        { ...research().ownRows[0], id: 2, feeName: "Overdraft fee, tier 2", amount: 35 },
+      ],
+      peerGroup: { total: 20, missing: [{ institutionId: 503, institutionName: "Business Only Bank", stateCode: "TN", totalAssets: 500_000, hasSchedule: true, uncounted: true }] },
+    });
+    const x = buildFeeAnswer(r, { story: { list: true } }).storyline!.exhibits[0].exhibit;
+    if (x.kind !== "peer_list") throw new Error("expected a peer list");
+    expect(x.rows[0]).toMatchObject({ own: true, amount: 25, amountText: "$25 to $35 (Overdraft fee, tier 1 $25; Overdraft fee, tier 2 $35)" });
+    expect(x.rows.find((row) => row.institutionId === 503)?.status).toBe("not_counted");
+  });
+
+  it("passes the four roles and leads the short answer with the count", () => {
+    const r = research({ peerGroup: coverage });
+    const response = buildAskResponse({ question: "list peers' overdraft fees", intent: parseAsk("list peers' overdraft fees"), research: r, memory: [] });
+    expect(response.answer?.storyline?.kind).toBe("list");
+    expect(response.shortAnswer).toBe(response.answer?.storyline?.governingThought);
+    const roles = evaluateFourRoles(response.answer!);
+    expect(roles.roles.filter((role) => !role.pass)).toEqual([]);
   });
 });

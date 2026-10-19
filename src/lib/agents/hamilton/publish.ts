@@ -21,7 +21,7 @@ import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-gua
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
-import { dropsCondition, isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { dropsCondition, isCutoffName, nameBeforeSentenceClauses, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -924,7 +924,7 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
   // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
   // ("GUASFCU charges a") is not published as it is.
-  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
+  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey) && !clauseCutName(name, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
@@ -934,6 +934,19 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
     return { code: "condition_only_name", reason: "Name is only a parenthetical condition; the fee it belongs to is in another cell" };
   }
   return null;
+}
+
+/**
+ * A name whose cut-off shape is only a comma clause after it ("Stop Payment, all items including ACH
+ * and bill pay") publishes under the name before the clause, when that still names the row's own
+ * category and the cut drops no condition. Beacon's $30 stop payment and $125 legal process fee were
+ * held as `cutoff_name` for this (verified 191900, 191887; Oct 19).
+ */
+function clauseCutName(name: string, canonicalKey: string): string | null {
+  const head = nameBeforeSentenceClauses(name);
+  // The clause must not change what the name reads as ("Wire Transfer Outgoing, including international").
+  if (!head || classifyFeeText(head) !== canonicalKey || classifyFeeText(name) !== canonicalKey || !checkFeeCategory(canonicalKey, head).ok) return null;
+  return dropsCondition(name, head, canonicalKey) ? null : head;
 }
 
 const CONDITION_ONLY_NAME = /^\s*\([^()]*\)\s*$/;
@@ -970,6 +983,8 @@ export function publishedFeeName(name: string, canonicalKey: string): string {
     // $7,500)" went live as "Minimum Balance Fee" (107240, 9 Oct) beside the $1,000 and $2,500
     // lines it is not. Retidy v15's `dropsCondition` is the same bar.
     if (retidied && checkFeeCategory(canonicalKey, retidied).ok && !dropsCondition(current, retidied, canonicalKey)) return retidied;
+    const clauseless = isCutoffName(current) ? clauseCutName(current, canonicalKey) : null;
+    if (clauseless) return clauseless;
   }
   // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
   const repaired = repairNameShape(stripFootnoteMarks(current));

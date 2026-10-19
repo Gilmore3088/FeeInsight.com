@@ -29,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.18.4";
+export const WORKSPACE_ENGINE_VERSION = "1.19.3";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -220,6 +220,8 @@ export interface PeerValue {
   amount: number;
   /** Deposits held in the bank's market counties (FDIC Summary of Deposits), dollars; local competitors only. */
   marketDeposits?: number | null;
+  /** Total assets in thousands of dollars; peers only, absent on older payloads. */
+  totalAssets?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
   /** The published fee rows behind `amount`, so a saved answer records them (H03-T09); absent on older payloads. */
@@ -400,6 +402,13 @@ export interface FeeResearch {
   current: number | null;
   peerLabel: string;
   peers: PeerValue[];
+  /** True when `peers` is the bank's own saved peer group; false when Hamilton picked it. Absent on older payloads. */
+  peerGroupSaved?: boolean;
+  /**
+   * Everyone in the chosen peer group, loaded for a list question (#2033), so the list names the
+   * peers with no value for the fee too. Absent when not loaded.
+   */
+  peerGroup?: PeerGroupCoverage | null;
   band: { p25: number; median: number; p75: number; n: number } | null;
   bands: PriceBand[];
   /**
@@ -423,6 +432,12 @@ export interface FeeResearch {
    * `current` (each row's schedule document and the event that verified it).
    */
   ownRows: OwnFeeRow[];
+  /**
+   * When the bank has no row for this fee: its main schedule in the index (the document most of
+   * its fees were read from) and when it was read, so a missing fee reads as "not listed on its
+   * schedule" (#2035). Null when no schedule is on file; absent when not read.
+   */
+  ownSchedule?: { documentUrl: string | null; readAt: string | null } | null;
   /** Industry deposit service charge income, newest quarter first (eight quarters), as on the Briefing. */
   nationalIncomeSeries: MarketIncome[];
   /** The bank's total deposit service charge income, as context for this fee. */
@@ -445,6 +460,24 @@ export interface FeeResearch {
    */
   rates?: RateResearch | null;
   provenance: Provenance;
+}
+
+/** The chosen peer group's institutions that publish no value for the fee, beside those that do. */
+export interface PeerGroupCoverage {
+  /** Institutions the group's filters take in, the asking bank left out. */
+  total: number;
+  /** Those with no value for the fee, largest first, up to the read's limit. */
+  missing: {
+    institutionId: number;
+    institutionName: string;
+    stateCode: string | null;
+    /** Thousands of dollars. */
+    totalAssets: number | null;
+    /** True when the index counts other fees from its schedule (the fee was not found on it); false when it holds no schedule. */
+    hasSchedule: boolean;
+    /** True when the fee is on its schedule but the peer figures do not count it (business-only, unsourced). */
+    uncounted?: boolean;
+  }[];
 }
 
 /** One of the bank's own fees stated as a rate. */
@@ -549,6 +582,8 @@ export type Exhibit =
       items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
+      /** The competitors beyond the charted largest, lowest fee first; the page lists them under "Show N more" (#2036). */
+      rest?: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       sources: SourceRef[];
       note?: string;
     }

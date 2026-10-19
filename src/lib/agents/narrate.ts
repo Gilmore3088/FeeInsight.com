@@ -262,10 +262,13 @@ function narrateFinished(
     }
     case "atlas-city-repair": {
       const found = n(detail, "candidates");
-      if (found === 0) return "Atlas found no credit union city cut at 15 characters to restore.";
+      // #2022: hand-checked fee links ride the same step.
+      const links = (detail.hand_links ?? null) as Detail | null;
+      const linkNote = links && n(links, "repaired") > 0 ? ` Pointed ${count(n(links, "repaired"), "institution")} at its own fee page, as checked by hand.` : "";
+      if (found === 0) return `Atlas found no credit union city cut at 15 characters to restore.${linkNote}`;
       return n(detail, "repaired") > 0
-        ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.`
-        : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).`;
+        ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.${linkNote}`
+        : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).${linkNote}`;
     }
     case "atlas-storage-retention": {
       const size = detail.database_mb == null ? "could not read the database size" : `measured the database at ${count(n(detail, "database_mb"), "MB", "MB")}`;

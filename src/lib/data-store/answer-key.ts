@@ -122,6 +122,18 @@ export function isPersonChecked(row: Pick<AnswerKeyInstitution, "status" | "conf
   return row.status === "confirmed" && !MACHINE_ANSWER_KEYERS.has(row.confirmed_by ?? "");
 }
 
+/**
+ * Who checked one fee row. A person's bank-level confirmation covers every row on the key, so a
+ * row a Claude thread keyed (`knox-hand-key`) counts as that person's once they confirm the bank.
+ */
+export function feeCheckedBy(
+  feeConfirmedBy: string | null,
+  institution: Pick<AnswerKeyInstitution, "status" | "confirmed_by">,
+): string | null {
+  if (MACHINE_ANSWER_KEYERS.has(feeConfirmedBy ?? "") && isPersonChecked(institution)) return institution.confirmed_by;
+  return feeConfirmedBy;
+}
+
 /** Banks a person still has to check, shortest key first, so each one is a quick read. */
 export function banksToCheck<T extends Pick<AnswerKeyInstitution, "status" | "confirmed_by" | "fee_count" | "id">>(rows: readonly T[]): T[] {
   return rows.filter((row) => !isPersonChecked(row)).sort((a, b) => a.fee_count - b.fee_count || a.id - b.id);
@@ -438,15 +450,21 @@ export async function saveAnswerKeyDocument(
   `;
 }
 
-/** "Confirm all": the document and every fee row, by this person, now. */
+/**
+ * "Confirm all": the document and every fee row, by this person, now. A row a Claude thread
+ * confirmed (`knox-hand-key`) is re-stamped to the person too, so feedback sync reads it as
+ * human-checked; a row another person already confirmed keeps its confirmer.
+ */
 export async function confirmAnswerKeyInstitution(answerKeyId: number, actor: string, db: SqlTag = sql): Promise<void> {
+  const machineKeyers = [...MACHINE_ANSWER_KEYERS];
   await db.begin(async (txRaw) => {
     const tx = txRaw as unknown as SqlTag;
     await tx`
       UPDATE answer_key_fees
-         SET status = 'confirmed', uncertain = false, confirmed_by = COALESCE(confirmed_by, ${actor}),
-             confirmed_at = COALESCE(confirmed_at, NOW()), updated_at = NOW()
-       WHERE answer_key_institution_id = ${answerKeyId} AND status <> 'confirmed'
+         SET status = 'confirmed', uncertain = false, confirmed_by = ${actor},
+             confirmed_at = NOW(), updated_at = NOW()
+       WHERE answer_key_institution_id = ${answerKeyId}
+         AND (status <> 'confirmed' OR confirmed_by IS NULL OR confirmed_by = ANY(${machineKeyers}::text[]))
     `;
     await tx`
       UPDATE answer_key_institutions

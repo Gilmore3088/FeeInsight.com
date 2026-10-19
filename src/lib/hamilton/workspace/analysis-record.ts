@@ -17,6 +17,7 @@ const FOCUS: Record<StorylineKind, AnalysisFocus> = {
   price_test: "Pricing",
   board_decision: "Pricing",
   trend: "Trend",
+  list: "Peer Position",
 };
 
 export function analysisFocusFor(storyline: Storyline): AnalysisFocus {

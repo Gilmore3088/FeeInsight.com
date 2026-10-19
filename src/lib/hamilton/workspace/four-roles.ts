@@ -178,6 +178,8 @@ function exhibitPoints(exhibit: Exhibit): number {
       return exhibit.rows.length;
     case "archetype_map":
       return exhibit.archetypes.reduce((sum, a) => sum + a.count, 0);
+    case "peer_list":
+      return exhibit.rows.length;
   }
 }
 

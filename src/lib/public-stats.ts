@@ -65,7 +65,6 @@ export const UNAVAILABLE_PUBLIC_STATS: PublicStatsSummary = {
   complete: false,
 };
 
-
 const NUMBER = new Intl.NumberFormat("en-US");
 
 export function formatCount(n: number): string {

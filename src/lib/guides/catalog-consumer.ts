@@ -657,7 +657,7 @@ export const CONSUMER_GUIDES: Guide[] = [
               { feature: "Monthly limit", question: "How many withdrawals, or how many dollars of fees, are free or reimbursed each month?" },
               { feature: "Networks", question: "Which surcharge-free networks can I use?" },
               { feature: "Account requirements", question: "Does the ATM benefit need a minimum balance, direct deposit or a premium account?" },
-              { feature: "International ATM fee", question: "What does a withdrawal abroad cost, before any percentage?", category: "card_foreign_txn" },
+              { feature: "International ATM fee", question: "What does a withdrawal abroad cost, before any percentage?", category: "atm_international" },
               { feature: "Monthly maintenance", question: "What does the account cost each month?", category: "monthly_maintenance" },
             ],
             compare: {
@@ -1074,7 +1074,7 @@ export const CONSUMER_GUIDES: Guide[] = [
         blocks: [
           {
             type: "paragraph",
-            text: "Across the institutions in the Bank Fee Index, the median flat charge for using a card or an ATM abroad is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing. Most cards charge a percentage instead, which these flat figures leave out.",
+            text: "Across the institutions in the Bank Fee Index, the median flat charge for using a card abroad is {{card_foreign_txn.median}}, with a range from {{card_foreign_txn.min}} to {{card_foreign_txn.max}}, and {{card_foreign_txn.zero_count}} institutions charging nothing. Most cards charge a percentage instead, which these flat figures leave out.",
           },
           {
             type: "paragraph",

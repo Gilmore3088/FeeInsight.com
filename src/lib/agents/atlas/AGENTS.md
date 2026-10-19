@@ -55,6 +55,13 @@ by the same guarded update only while the stored city is still the cut. On by Ja
 (Oct 15). The cut city's public page redirects permanently to the full one once no institution
 keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
 
+Hand-checked fee links (`hand-link-repair.ts`, #2022) ride the same step: each `HAND_LINK_REPAIRS`
+entry (Natbank 2675 on Oct 19: from National Bank of Canada's business accounts page to Natbank's
+own U.S. accounts page) writes the website and fee link only while the fee link is still the listed
+old one, moves the profile's canonical link unless a correction locked it, takes the bank's own
+pages off `rejected_source_urls` and sets the wrong pages aside there. Step detail `hand_links`.
+On by James's decision (Oct 19, "Do all three"). Add later checks to the list, never edit a past one.
+
 ## Storage watch and retention (`storage-retention.ts`)
 
 `atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database

@@ -879,11 +879,12 @@ describe("checkFeeCategory", () => {
       "Wire Transfers: Early Account Closure Fee",
       "Checking & Savings Early Closing (Within 90 days of opening account)",
       "Card Account Closure",
-      "Christmas Club Early Withdrawal/Transfer",
       "Early closing of share draft VISA debit card",
     ]) {
       expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
     }
+    // v75 (#2023): a club's withdrawal is not closing the account.
+    expect(checkFeeCategory("early_closure", "Christmas Club Early Withdrawal/Transfer").ok).toBe(false);
   });
 
   it("v53: a business account's wire price is not the consumer wire price", () => {
@@ -1531,7 +1532,6 @@ describe("guard v69 (Oct 17)", () => {
       "Early closure of CD (fee to close prior to maturity)",
       "CD Early Withdrawal Penalty",
       "Christmas Club & CD Early Withdrawal Fee",
-      "Christmas/Vacation Club early withdrawal (1 per year allowed)",
       "HSA Account Closure Fee",
       "IRA Early Withdrawal Processing Fee",
     ]) {
@@ -1808,7 +1808,7 @@ describe("guard v71: non-customer cards named in several words, and ATM transact
 });
 
 describe("guard v72 (#1788): international ATM fees, add-ons, sustained overdrafts, incoming wires", () => {
-  it("re-files an ATM used outside the U.S. to International ATM & Card", () => {
+  it("re-files an ATM used outside the U.S. to International ATM (#2037: its own type again)", () => {
     for (const name of [
       "Non-PNC Bank ATM Fee (All Other Countries)",
       "Foreign Country ATM Cash Activity Fees",
@@ -1817,8 +1817,8 @@ describe("guard v72 (#1788): international ATM fees, add-ons, sustained overdraf
       "Over 8 withdrawals per month per account outside the US8: Excessive non-UNFCU/Co-op/Allpoint network ATM transactions",
     ]) {
       expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
-      expect(refileCategory("atm_non_network", name)).toBe("card_foreign_txn");
-      expect(checkFeeCategory("card_foreign_txn", name)).toEqual({ ok: true });
+      expect(refileCategory("atm_non_network", name)).toBe("atm_international");
+      expect(checkFeeCategory("atm_international", name)).toEqual({ ok: true });
     }
   });
 
@@ -1986,11 +1986,22 @@ describe("guard v74 (#2018): James's 20-defect register", () => {
     }
   });
 
-  it("leaves club withdrawals in early closure while the switch is off (315 live fees wait on James)", () => {
-    expect(CLUB_WITHDRAWAL_LIVE).toBe(false);
+  it("v75 (#2023, James's \"Take down\"): a club withdrawal fails early closure; closing a club stays", () => {
+    expect(CLUB_WITHDRAWAL_LIVE).toBe(true);
     expect(CLUB_WITHDRAWAL.test("Holiday Account Early Withdrawal")).toBe(true);
     expect(CLUB_WITHDRAWAL.test("Christmas Club closed early")).toBe(false);
-    expect(checkFeeCategory("early_closure", "Holiday Account Early Withdrawal")).toEqual({ ok: true });
+    // Names from the Oct 19 sample of live rows.
+    for (const name of ["Holiday Account Early Withdrawal", "Christmas Club early withdrawal", "Unscheduled Club Withdrawal",
+      "Early Christmas Club Withdrawal", "Vacation Club Withdrawal/Transfer Fee", "Club Accounts Early Withdrawal",
+      "Early Withdrawal From Holiday Club"]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+    }
+    // A line that also prices a certificate's early withdrawal (early closure's own fee) stays.
+    expect(checkFeeCategory("early_closure", "Christmas Club & CD Early Withdrawal Fee").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "Christmas/Vacation Club early withdrawal (1 per year allowed)").ok).toBe(false);
+    for (const name of ["Early Christmas Club Closing", "Christmas Club closed early", "Early Account Closure within 90 days", "Account closed within 180 days"]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
+    }
   });
 });
 
@@ -1999,5 +2010,50 @@ describe("guard v74: an excess withdrawal that names IRA only to exclude it", ()
     const name = "Excessive Withdrawal/Transfer -- Savings and other non-club accounts, excluding IRA/Cert";
     expect(refileCategory("ira_termination", name)).not.toBe("ira_administration");
     expect(refileCategory("ira_termination", "IRA withdrawals over 2 per year")).toBe("ira_administration");
+  });
+});
+
+// Live names from prod (Oct 19 2026).
+describe("guard v76 (#2037, James's \"Split\"): International ATM is its own type again", () => {
+  it("re-files an ATM used abroad filed as the card's foreign transaction fee", () => {
+    for (const name of [
+      "International ATM Withdrawal Fee",
+      "Non–Wells Fargo ATMs outside the U.S.",
+      "Non-IBC ATM locations (outside the U.S.): Withdrawal",
+      "International ATM balance inquiry",
+      "Visa assessed surcharge/access fee for ATM or manual cash disbursement transactions initiated outside of the U.S. region",
+    ]) {
+      expect(checkFeeCategory("card_foreign_txn", name).ok, name).toBe(false);
+      expect(refileCategory("card_foreign_txn", name), name).toBe("atm_international");
+      expect(checkFeeCategory("atm_international", name), name).toEqual({ ok: true });
+    }
+  });
+
+  it("keeps card purchases, one price for ATM and debit card use abroad, and ATM lines naming no place abroad", () => {
+    for (const name of [
+      "Foreign Transaction Fee",
+      "International ATM/Debit Card Transaction",
+      "ATM/Visa Debit Foreign Transactions",
+      "ATM Card & VISA® Debit Card Fees: International Fee",
+      "ATM – Surcharge for Foreign Transactions",
+    ]) {
+      expect(checkFeeCategory("card_foreign_txn", name), name).toEqual({ ok: true });
+    }
+    // "ATM Foreign Transaction Fee" is another bank's ATM at home, as before.
+    expect(refileCategory("card_foreign_txn", "ATM Foreign Transaction Fee")).toBe("atm_non_network");
+  });
+
+  it("places what the retired fold rule placed: a domestic or both-ways line, a card line, and no-fee lines", () => {
+    expect(refileCategory("atm_international", "International ATM Withdrawal Fee")).toBe("atm_international");
+    expect(refileCategory("atm_international", "ATM Inquiry (any non-international ATM)")).toBe("atm_non_network");
+    expect(refileCategory("atm_international", "ATMs inside United States & internationally")).toBe("atm_non_network");
+    expect(refileCategory("atm_international", "International ATM/Debit Card Transaction")).toBe("card_foreign_txn");
+    expect(checkFeeCategory("atm_international", "Allpoint ATM Transactions – Domestic/International").ok).toBe(false);
+    expect(checkFeeCategory("atm_international", "ATM: non-RCU or non- ATMs outside U.S. excluded)").ok).toBe(false);
+    expect(checkFeeCategory("atm_international", "Foreign ATM Transaction Fee").ok).toBe(false);
+  });
+
+  it("refuses a dollar amount on a line that states a rate", () => {
+    expect(checkFeeCategory("atm_international", "International ATM withdrawal 1% of amount", { amount: 1 }).ok).toBe(false);
   });
 });

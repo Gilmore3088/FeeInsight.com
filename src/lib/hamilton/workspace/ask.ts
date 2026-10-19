@@ -17,11 +17,12 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
-import { proseFeeName } from "./names";
+import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
 import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
+import { asksWholeSchedule } from "./schedule";
 import type {
   AskObjective,
   AskSegment,
@@ -111,6 +112,8 @@ export interface AskIntent {
   structure?: boolean;
   /** The question asks about rules, regulators or compliance. */
   regulation?: boolean;
+  /** The question asks for a list ("list peers' overdraft fees"), so the answer is the named rows (#2033). */
+  list?: boolean;
 }
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
@@ -124,6 +127,26 @@ export function pricesIn(question: string): number[] {
   if (ELIMINATE.test(question) && !out.includes(0)) out.push(0);
   return out.slice(0, MAX_TESTED_PRICES);
 }
+
+/**
+ * A request for the rows themselves (#2033): "list peers' overdraft fees", "show me every peer's
+ * NSF fee", "show me peers' overdraft fees", "which of our peers charge a wire fee", "what are our
+ * peers' NSF fees", "what do our competitors charge". A comparison ("compare to all of our
+ * peers") or a change ("which banks have eliminated NSF fees") is not a list.
+ */
+const LIST_QUESTION = new RegExp(
+  [
+    String.raw`\blist(?:s|ing)?\b(?! price)`,
+    String.raw`\bshow (?:me )?(?:all|every|each)\b`,
+    String.raw`\bshow (?:me )?(?:our |my |the )?(?:peers|competitors)['’]`,
+    String.raw`\bwhich (?:of (?:our|my|the) )?(?:banks|credit unions|institutions|peers|competitors) (?:charge|publish|still charge)\b`,
+    String.raw`\bname (?:the|our|my|all|every) (?:peers|competitors)\b`,
+    String.raw`\b(?:each|every) (?:peer|competitor)['’]s\b`,
+    String.raw`\ball (?:of )?(?:our |my |the )?(?:peers|competitors)['’](?:\s|$)`,
+    String.raw`\bwhat (?:are|do|does) (?:our |my |the )?(?:peers|competitors)(?:['’]s?\s| (?:charge|charging)\b)`,
+  ].join("|"),
+  "i",
+);
 
 /** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
 const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
@@ -139,6 +162,9 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
     regulation: REGULATION_QUESTION.test(question),
+    // A question that also asks what to do ("which banks charge more, and should we raise ours?")
+    // gets the decision, and one about every fee ("list all our fees vs peers") the schedule overview.
+    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || !asksWholeSchedule(question)),
   };
 }
 
@@ -188,7 +214,7 @@ export function testedPricesQuestion(feeCategory: string): ClarifyingQuestion {
 
 function currentAmountQuestion(feeCategory: string, subject?: { subjectName?: string }): ClarifyingQuestion {
   return {
-    prompt: `${subject?.subjectName ? `What does ${subject.subjectName}` : "What do you"} charge for one ${proseFeeName(feeCategory)} item today?`,
+    prompt: `${subject?.subjectName ? `What does ${subject.subjectName}` : "What do you"} charge for one ${feeItem(proseFeeName(feeCategory))} today?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.current_amount`,
   };
@@ -419,12 +445,13 @@ function respond(input: AskInput): AskResponse {
 
   const answer = buildFeeAnswer(research, {
     focus: intent.focus,
-    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure, regulation: intent.regulation },
+    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure, regulation: intent.regulation, list: intent.list },
   });
   const section = intent.focus === "competitors" ? "competitors" : intent.focus === "trend" ? "economy" : "position";
   return {
     kind: "research",
-    shortAnswer: answer.headline,
+    // A list answer leads with its count, as the page does (#2033).
+    shortAnswer: answer.storyline?.kind === "list" ? answer.storyline.governingThought : answer.headline,
     pageChange: { screen: "research", feeCategory: fee, section },
     facts: answer.claims,
     question: answer.question ?? undefined,
