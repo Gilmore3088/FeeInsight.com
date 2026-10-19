@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
+import Ajv from "ajv";
 import { describe, expect, it } from "vitest";
 import { API_ERROR_CODES } from "@/lib/api-v1";
 import { GET } from "./route";
@@ -11,7 +12,7 @@ describe("/api/v1/openapi.json", () => {
   it("keeps query parameters out of path keys", async () => {
     const spec = await (await GET()).json();
     const paths = Object.keys(spec.paths);
-    expect(paths).toEqual(["/fees", "/index", "/institutions", "/revenue", "/fee-changes", "/branches", "/market", "/peers", "/rate-fees"]);
+    expect(paths).toEqual(["/fees", "/index", "/institutions", "/revenue", "/fee-changes", "/branches", "/market", "/hamilton-context", "/peers", "/rate-fees"]);
     const institutionParams = spec.paths["/institutions"].get.parameters.map(
       (p: { name?: string }) => p.name,
     );
@@ -56,8 +57,65 @@ describe("/api/v1/openapi.json matches the routes", () => {
 
     expect(spec.components.responses.RateLimited.headers).toHaveProperty("Retry-After");
     expect(spec["x-rateLimit"].description).toContain("60 calls a minute");
-    for (const path of Object.values(spec.paths) as { get: { responses: Record<string, unknown> } }[]) {
-      expect(path.get.responses).toHaveProperty("304");
+    for (const [name, path] of Object.entries(spec.paths) as [string, { get: { responses: Record<string, unknown> } }][]) {
+      if (name === "/hamilton-context") {
+        expect(path.get.responses).not.toHaveProperty("304");
+      } else {
+        expect(path.get.responses).toHaveProperty("304");
+      }
     }
+  });
+
+  it("documents private holder context with no query parameters and no sensitive account fields", async () => {
+    const spec = await (await GET()).json();
+    const context = spec.paths["/hamilton-context"].get;
+    expect(context.parameters).toEqual([]);
+    expect(context.responses["200"].headers["Cache-Control"].schema.enum).toEqual(["private, no-store"]);
+    expect(context.responses["403"].$ref).toBe("#/components/responses/AccountContextRequired");
+    expect(context.responses["503"].$ref).toBe("#/components/responses/ContextUnavailable");
+
+    const ajv = new Ajv({ strict: false });
+    const validate = ajv.compile({
+      ...context.responses["200"].content["application/json"].schema,
+      components: spec.components,
+    });
+    const empty = { institution: null, institution_source: "none", peer_sets: [], active_peer_set_id: null, note: "No defaults saved.", attribution: { text: "Source: Bank Fee Index", url: "https://feeinsight.com" } };
+    expect(validate(empty), ajv.errorsText(validate.errors)).toBe(true);
+    const saved = {
+      ...empty,
+      institution: { id: 2466, name: "Gateway Bank" },
+      institution_source: "manual",
+      active_peer_set_id: 31,
+      peer_sets: [{
+        id: 31, name: "Selected workspace peers", scope: "workspace", workspace_institution_id: 2466,
+        is_default: true, filters: { charter_type: "bank", asset_tiers: ["community_mid"], fed_districts: [9], states: ["MN"], institution_ids: [12, 48] },
+      }],
+    };
+    expect(validate(saved), ajv.errorsText(validate.errors)).toBe(true);
+    expect(validate({ ...saved, institution_source: "account" })).toBe(true);
+    expect(validate({ ...saved, active_peer_set_id: "31" })).toBe(false);
+    expect(validate({ ...saved, peer_sets: [{ ...saved.peer_sets[0], filters: { states: "MN" } }] })).toBe(false);
+    for (const field of ["user_id", "email", "billing"]) expect(validate({ ...saved, [field]: "private" })).toBe(false);
+    expect(validate({ ...saved, peer_sets: [{ ...saved.peer_sets[0], created_by: 99 }] })).toBe(false);
+  });
+
+  it("documents optional peer defaults, explicit saved selection, and the source of each comparison", async () => {
+    const spec = await (await GET()).json();
+    const peers = spec.paths["/peers"].get;
+    const parameters = Object.fromEntries(peers.parameters.map((parameter: { name: string }) => [parameter.name, parameter]));
+    expect(parameters.institution_id.required).not.toBe(true);
+    expect(parameters.saved_peer_set_id.schema).toMatchObject({ type: "integer", minimum: 1 });
+    expect(parameters.use_saved_context.schema).toEqual({ type: "boolean", default: true });
+    expect(peers.responses["200"].content["application/json"].schema.required).toContain("context");
+    expect(peers.responses["403"].$ref).toBe("#/components/responses/AccountContextRequired");
+    expect(peers.responses["404"].description).toContain("not authorized");
+
+    const ajv = new Ajv({ strict: false });
+    const validate = ajv.compile({ ...spec.components.schemas.PeerComparisonContext });
+    expect(validate({ institution_source: "saved", peer_source: "saved", saved_peer_set_id: 31, saved_peer_set_name: "Regional bank peers" })).toBe(true);
+    expect(validate({ institution_source: "explicit", peer_source: "default", saved_peer_set_id: null, saved_peer_set_name: null })).toBe(true);
+    expect(validate({ institution_source: "account", peer_source: "explicit", saved_peer_set_id: null, saved_peer_set_name: null })).toBe(true);
+    expect(validate({ institution_source: "manual", peer_source: "saved", saved_peer_set_id: 31, saved_peer_set_name: "Regional bank peers" })).toBe(false);
+    expect(validate({ institution_source: "saved", peer_source: "saved", saved_peer_set_id: "31", saved_peer_set_name: "Regional bank peers" })).toBe(false);
   });
 });

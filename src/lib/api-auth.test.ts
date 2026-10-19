@@ -47,7 +47,7 @@ describe("validateApiKey on subscriber keys", () => {
     seatStillCovered.mockResolvedValue(true);
     const result = await validateApiKey(request());
     expect(seatStillCovered).toHaveBeenCalledWith(12, 7);
-    expect(result).toMatchObject({ valid: true, organizationId: 9, keyId: 1 });
+    expect(result).toMatchObject({ valid: true, organizationId: 9, keyId: 1, subscriberUserId: 12 });
   });
 
   it("stops a removed seat's key", async () => {
@@ -79,6 +79,16 @@ describe("validateApiKey on subscriber keys", () => {
     const revoked = await validateApiKey(request());
     expect(revoked).toMatchObject({ valid: false, code: "key_revoked" });
     expect(revoked.error).toMatch(/revoked\. Make a new key on your account page/);
+  });
+
+  it("does not bind unknown subscriber key names to the payer private settings", async () => {
+    queue({ ...KEY, slug: "pro-user-7", name: "Custom integration" }, ACTIVE);
+    expect(await validateApiKey(request())).toMatchObject({ valid: true, subscriberUserId: null });
+  });
+
+  it.each(["Pro subscription", "Pro user 7"])("binds the recognized payer key %s to its holder", async (name) => {
+    queue({ ...KEY, slug: "pro-user-7", name }, ACTIVE);
+    expect(await validateApiKey(request())).toMatchObject({ valid: true, subscriberUserId: 7 });
   });
 
   it("leaves hand-made partner keys alone", async () => {

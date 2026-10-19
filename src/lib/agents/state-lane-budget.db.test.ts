@@ -110,6 +110,38 @@ describe.skipIf(!connection)("capped state-lane continuation in isolated Postgre
   });
   const steps = (id: number) => db`SELECT step_key,status FROM agent_run_steps WHERE agent_run_id=${id} ORDER BY sequence,id`;
 
+  it("gives the oldest idle lane a fresh tick before maintenance, then serves the other lane", async () => {
+    const maintenance = await seed("fetch", "workflow", false);
+    await db`UPDATE agent_runs SET params_json='{"source":"hamilton.publish_sweeps"}'::jsonb WHERE id=${maintenance.run.id}`;
+    const older = await seed("fetch", "workflow_lane", false);
+    const newer = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '30 minutes' WHERE id=${older.run.id}`;
+    await db`UPDATE agent_runs SET started_at=now()-interval '20 minutes' WHERE id=${newer.run.id}`;
+    for (const expected of [older, newer, maintenance]) {
+      const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+      expect(out.results.map(row => row.runId)).toEqual([expected.run.id]);
+    }
+  });
+
+  it("measures lane inactivity from its last completed step instead of its launch", async () => {
+    const maintenance = await seed("fetch", "workflow", false);
+    await db`UPDATE agent_runs SET params_json='{"source":"hamilton.publish_sweeps"}'::jsonb WHERE id=${maintenance.run.id}`;
+    const lane = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '1 day' WHERE id=${lane.run.id}`;
+    await db`INSERT INTO agent_run_steps(agent_run_id,step_key,agent_name,title,status,sequence,completed_at)
+      VALUES(${lane.run.id},'read','rosetta','Already read','completed',0,now())`;
+    const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+    expect(out.results.map(row => row.runId)).toEqual([maintenance.run.id]);
+  });
+
+  it("retains customer-report priority ahead of an idle lane", async () => {
+    const report = await seed("fetch", "report", false);
+    const lane = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '1 day' WHERE id=${lane.run.id}`;
+    const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+    expect(out.results.map(row => row.runId)).toEqual([report.run.id]);
+  });
+
   it.each(passes)("skips capped %s and runs the free tail with durable zero-cost receipts", async (key) => {
     const run = await seed(key);
     const result = await executeQueuedAgentRuns({ allowProviderSteps: false, maxStepsPerRun: 10 });

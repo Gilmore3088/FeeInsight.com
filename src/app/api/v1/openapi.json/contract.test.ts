@@ -9,12 +9,26 @@ import { searchInstitutions } from "@/lib/data-store/search";
 import { getInstitutionBenchmark, type InstitutionBenchmark } from "@/lib/data-store/benchmark-export";
 import { getRegulatoryWatch, type RegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { listPublishedFeeRows } from "@/lib/data-store/published-fee-rows";
+import { getPeerComparison } from "@/lib/data-store/peer-comparison";
+import { getV1HamiltonContext, getV1SavedPeerSet } from "@/lib/api-v1-hamilton-context";
 import { GET as getFees } from "../fees/route";
 import { GET as getInstitutions } from "../institutions/route";
+import { GET as getHamiltonContext } from "../hamilton-context/route";
+import { GET as getPeers } from "../peers/route";
 import { GET as getSpec } from "./route";
 
 vi.mock("@/lib/api-v1-auth", () => ({ authorizeV1: vi.fn() }));
 vi.mock("@/lib/api-usage", () => ({ logApiUsage: vi.fn(() => Promise.resolve()) }));
+vi.mock("@/lib/api-hardening/audit", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api-hardening/audit")>(),
+  recordApiRouteAuditEvent: vi.fn(() => Promise.resolve()),
+}));
+vi.mock("@/lib/api-v1-hamilton-context", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/api-v1-hamilton-context")>(),
+  getV1HamiltonContext: vi.fn(),
+  getV1SavedPeerSet: vi.fn(),
+}));
+vi.mock("@/lib/data-store/peer-comparison", () => ({ MAX_CHOSEN_PEERS: 25, getPeerComparison: vi.fn() }));
 vi.mock("@/lib/data-store", () => ({
   getFeeCategoryDetail: vi.fn(),
   getInstitutionById: vi.fn(),
@@ -113,7 +127,7 @@ describe("OpenAPI response contracts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(authorizeV1).mockResolvedValue({
-      auth: { valid: true, organizationId: 3, tier: "pro" }, user: null,
+      auth: { valid: true, organizationId: 3, tier: "pro", subscriberUserId: 12 }, user: null,
       organizationId: 3, keyId: 1, anonymousId: null, paid: true,
       rateLimit: { allowed: true, limit: 10_000, remaining: 9_999, reset: new Date("2026-11-01T00:00:00Z") },
     });
@@ -200,6 +214,41 @@ describe("OpenAPI response contracts", () => {
     expect(responseValidator("/institutions")({ ...body, rule_changes: [{ ...body.rule_changes[0], all_fees: "false" }] })).toBe(false);
     vi.mocked(getRegulatoryWatch).mockResolvedValue({ ...watch, state: null, market: null, peer_actions: [], fee_focus: [], agencies_loaded: [], rule_changes: [], as_of: null });
     assertValid("/institutions", await (await getInstitutions(request())).json());
+  });
+
+  it("validates private Hamilton context serialized by the actual handler", async () => {
+    vi.mocked(getV1HamiltonContext).mockResolvedValue({
+      institution: { id: 12, name: "Example Bank" }, institution_source: "manual", active_peer_set_id: 31,
+      peer_sets: [{ id: 31, name: "Selected peers", scope: "personal", workspace_institution_id: null,
+        is_default: true, filters: { institution_ids: [13, 14], states: ["MN"] } }],
+    });
+    const response = await getHamiltonContext(new NextRequest("https://feeinsight.com/api/v1/hamilton-context"));
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(response.headers.has("ETag")).toBe(false);
+    assertValid("/hamilton-context", body);
+    expect(body).not.toHaveProperty("user_id");
+    expect(responseValidator("/hamilton-context")({ ...body, peer_sets: [{ ...body.peer_sets[0], created_by: 12 }] })).toBe(false);
+  });
+
+  it("validates comparison context added by the actual peers handler", async () => {
+    vi.mocked(getV1SavedPeerSet).mockResolvedValue({
+      id: 31, name: "Selected peers", created_by: "12", created_at: "2026-10-19", tiers: null,
+      districts: null, charter_type: null, states: null, institution_ids: [13, 14], institution_id: null, is_default: true,
+    });
+    vi.mocked(getPeerComparison).mockResolvedValue({
+      institution: { id: 12, name: "Example Bank", state: null, charter_type: "bank", asset_tier: null, fed_district: null },
+      peer_group: { basis: "chosen", label: "Chosen institutions", peers_with_fees: 2 },
+      min_peers: 5, categories: [], rate_fees: [],
+    } as never);
+    const response = await getPeers(new NextRequest("https://feeinsight.com/api/v1/peers?institution_id=12&saved_peer_set_id=31"));
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    assertValid("/peers", body);
+    expect(body.peer_group.label).toBe("Selected peers");
+    expect(body.context).toEqual({ institution_source: "explicit", peer_source: "saved", saved_peer_set_id: 31, saved_peer_set_name: "Selected peers" });
+    expect(responseValidator("/peers")({ ...body, context: { ...body.context, saved_peer_set_id: "31" } })).toBe(false);
   });
 
   it.each(["/institutions", "/rate-fees"])("accepts supported updated_since forms for %s", (path) => {

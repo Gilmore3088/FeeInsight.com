@@ -14,9 +14,10 @@ describe("navItemsFor", () => {
     expect(navItemsFor(null).map((i) => i.label)).toContain("Pricing");
   });
 
-  it("shows signed-out visitors Product, Reports, Resources and Pricing", () => {
+  it("gives signed-out visitors a direct For consumers entry alongside the business navigation", () => {
     const items = navItemsFor(null);
-    expect(items.map((i) => i.label)).toEqual(["Product", "Reports", "Resources", "Pricing"]);
+    expect(items.map((i) => i.label)).toEqual(["Product", "Reports", "Resources", "For consumers", "Pricing"]);
+    expect(items.find((i) => i.label === "For consumers")?.href).toBe("/for-consumers");
     expect(items.find((i) => i.label === "Reports")?.href).toBe("/reports");
     expect(items.find((i) => i.label === "Pricing")?.href).toBe("/subscribe");
     expect(items.map((i) => i.label)).not.toContain("Request your report");
@@ -53,7 +54,7 @@ describe("navItemsFor", () => {
     for (const href of ["/institutions", "/fees", "/research", "/guides", "/for-institutions#hamilton", "/subscribe", "/reports"]) {
       expect(hrefs).toContain(href);
     }
-    expect(RESOURCES_NAV.map((i) => i.label)).toEqual(["Guides", "Methodology", "Data sources", "API", "Submit a fee source"]);
+    expect(RESOURCES_NAV.map((i) => i.label)).toEqual(["Consumer guides", "Methodology", "Data sources", "API", "Submit a fee source"]);
   });
 
   it("points the navy CTA at the institution search and the Pro button at the plans", () => {
@@ -66,7 +67,11 @@ describe("navItemsFor", () => {
     expect(MOBILE_NAV_SECTIONS.map((s) => [s.heading ?? null, s.items.map((i) => i.label)])).toEqual([
       ["Product", ["Find your institution", "Bank Fee Index", "Market Benchmarks", "Hamilton"]],
       [null, ["Reports", "Pricing"]],
-      ["Resources", ["Guides", "Methodology", "API"]],
+      ["For consumers", ["Consumer home", "Consumer guides", "Find your bank or credit union"]],
+      ["Resources", ["Methodology", "API"]],
     ]);
+    const consumerSection = MOBILE_NAV_SECTIONS.find((section) => section.heading === "For consumers");
+    expect(consumerSection?.items.map((item) => item.href)).toEqual(["/for-consumers", "/guides", "/institutions"]);
+    expect(MOBILE_NAV_SECTIONS.flatMap((section) => section.items).filter((item) => item.href === "/guides")).toHaveLength(1);
   });
 });

@@ -4068,12 +4068,14 @@ export async function executeQueuedAgentRuns({
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
-           EXTRACT(EPOCH FROM NOW() - COALESCE(
-             (SELECT MAX(done.completed_at) FROM agent_run_steps done WHERE done.agent_run_id = r.id),
-             r.started_at)) * 1000 AS idle_ms
+           EXTRACT(EPOCH FROM NOW() - progress.last_work_at) * 1000 AS idle_ms
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(MAX(done.completed_at), r.started_at) AS last_work_at
+          FROM agent_run_steps done WHERE done.agent_run_id = r.id
+      ) progress ON true
      WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.status = 'queued'
        AND (${scope === null}::boolean OR (
@@ -4140,7 +4142,9 @@ export async function executeQueuedAgentRuns({
               OR s.step_key = ANY(${[...TICK_EXCLUDED_STEP_KEYS]}::text[])
             )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page. Then a guard
+     -- Report runs go first: someone pressed Generate and is watching the page. An idle
+     -- state lane gets the next fresh tick before maintenance can consume its publication room.
+     -- Then a guard
      -- catch-up run. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
@@ -4149,6 +4153,11 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              (r.run_kind = 'workflow_lane'
+                AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
+              CASE WHEN r.run_kind = 'workflow_lane'
+                     AND progress.last_work_at < NOW() - INTERVAL '15 minutes'
+                   THEN progress.last_work_at END ASC NULLS LAST,
               -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
               -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
               -- Growth's stale-outreach withdrawal (growth/withdraw.ts) is one short step, at most

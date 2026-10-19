@@ -14,6 +14,8 @@ export interface ApiKeyValidation {
   tier: string;
   /** The api_keys row that was accepted; set only when `valid`. */
   keyId?: number | null;
+  /** Authenticated subscriber key holder, never the payer inferred from a partner key. */
+  subscriberUserId?: number | null;
   error?: string;
   /** Set together with `error`. */
   code?: ApiKeyErrorCode;
@@ -78,6 +80,7 @@ export async function validateApiKey(
   // A Pro subscriber's key works only while their subscription does (cancel stops it), and
   // a team seat's key only while that person still holds a seat on the payer's workspace.
   const subscriberId = subscriberUserIdFromSlug(row.slug);
+  let subscriberHolderId: number | null = null;
   if (subscriberId !== null) {
     const holderId = subscriberKeyUserId(row.name) ?? subscriberId;
     const users = await sql<{
@@ -118,6 +121,9 @@ export async function validateApiKey(
         code: "seat_removed",
       };
     }
+    // Only issued per-person names and the known legacy payer key bind private context.
+    // Other keys keep their existing public-data access without inheriting the payer's settings.
+    subscriberHolderId = subscriberKeyUserId(row.name) ?? (row.name === "Pro subscription" ? subscriberId : null);
   }
 
   const lastUsedTask = sql`
@@ -133,5 +139,6 @@ export async function validateApiKey(
     organizationId: row.organization_id,
     tier: row.tier ?? "pro",
     keyId: row.id == null ? null : Number(row.id),
+    subscriberUserId: subscriberHolderId,
   };
 }

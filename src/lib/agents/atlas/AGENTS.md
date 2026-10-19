@@ -14,6 +14,9 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Every operator action needs a durable run/event receipt.
 - Every blocked state needs a concrete next safe action.
 - Scheduled advancement must remain deterministic and idempotent.
+- A state lane with no finished step for 15 minutes gets a fresh tick ahead of maintenance,
+  longest idle first. Customer reports remain first. Finishing any step resets that priority;
+  old launch dates alone do not promote a busy lane. Deadlines and publish serialization still apply.
 - A capped state lane whose next step is an optional paid pass still enters the tick when
   deterministic work follows: the executor records the paid skip and advances the free work.
   Mandatory paid jobs and paid-only lanes stay queued; operator pauses and scope guards still apply.

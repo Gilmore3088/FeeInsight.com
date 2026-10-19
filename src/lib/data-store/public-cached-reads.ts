@@ -1,6 +1,7 @@
 import { cachedPublicRead } from "./public-read-cache";
 import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getStateMarketFees } from "./state-markets";
+import { getStateLocalEconomy } from "./local-economy";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
 import { getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
@@ -15,6 +16,7 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
+import { getNationalIndicators, isEmptyNationalIndicators } from "./economic-context";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
 import {
@@ -84,6 +86,12 @@ export const getDistrictStatsCached = cachedPublicRead("district-stats", getDist
 export const getCityMarketCached = cachedPublicRead("city-market-v4", getCityMarket);
 // v3: cities carry the middle of their branch coordinates, for the state map, with the spellings of one city folded.
 export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v3", getStateMarketCities);
+/**
+ * The city explorer's county figures (Census ACS, BLS QCEW). A failed read throws and is not
+ * cached; an empty answer means nothing is loaded for the state and is cached like any other, so
+ * an empty table never turns into a database read on every render.
+ */
+export const getStateLocalEconomyCached = cachedPublicRead("state-local-economy-v1", getStateLocalEconomy, () => false);
 export const getStateMarketFeesCached = cachedPublicRead("state-market-fees-v3", getStateMarketFees, (r) => r.length === 0);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
@@ -142,6 +150,12 @@ export const getDistrictFeeIndexesCached = cachedPublicRead(
  * (market-eligibility.ts). One entry per market (the U.S., each state, each district).
  */
 export const getComparableMarketIndexCached = cachedPublicRead("comparable-market-index-v1", getComparableMarketIndex);
+/** The research hub's national indicator strip (BLS unemployment and CPI, Fed Board funds rate). */
+export const getNationalIndicatorsCached = cachedPublicRead(
+  "national-indicators-v1",
+  getNationalIndicators,
+  isEmptyNationalIndicators,
+);
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
 /**

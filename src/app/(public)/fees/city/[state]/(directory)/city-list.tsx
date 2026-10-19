@@ -57,7 +57,7 @@ export function CityList({ cities, stateName }: { cities: CityLink[]; stateName:
         A city lists the banks and credit unions with a branch there. An institution&apos;s fee schedule may apply across
         all its branches, not only this city.
       </p>
-      <ul className="mt-4 grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="mt-4 grid grid-cols-1 gap-x-6 sm:grid-cols-2">
         {sorted.map((c) => (
           <li key={c.href} className="border-b border-border" hidden={collapsed && !largest.has(c.href)}>
             <Link href={c.href} className="flex min-h-11 flex-col justify-center py-2 text-ink hover:text-brick">

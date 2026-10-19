@@ -709,9 +709,9 @@ async function writeCandidate(
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     // Keep a referenced count cap in the lineage evidence, before excerptOf's
     // final price-unit text so downstream frequency cannot borrow its day.
-    (options.candidate.ownedBullet && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
+    ((options.candidate.ownedBullet || options.candidate.ownedPolicy) && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
-    `excerpt="${options.candidate.ownedBullet ? options.candidate.excerpt : ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
+    `excerpt="${options.candidate.ownedBullet || options.candidate.ownedPolicy ? options.candidate.excerpt : ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
   // The dedupe index is (document, lowercased fee name, amount, audience, line share), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
@@ -928,7 +928,8 @@ export async function insertHeldCandidate(
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
-    `excerpt="${held.excerpt.slice(0, 180)}"`;
+    (held.ownedPolicy && held.linkedConditions ? `linked_conditions="${held.linkedConditions}"; ` : "") +
+    `excerpt="${held.ownedPolicy ? held.excerpt : held.excerpt.slice(0, 180)}"`;
   const inserted = await db`
     INSERT INTO raw_fee_observations (
       institution_id,
@@ -942,7 +943,7 @@ export async function insertHeldCandidate(
       frequency,
       extraction_note,
       outlier_flags,
-      source, fee_audience, audience_evidence, fee_treatment
+      source, fee_audience, audience_evidence, fee_treatment, line_share, conditions
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -956,7 +957,8 @@ export async function insertHeldCandidate(
       ${held.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
+      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
+      ${held.lineShare ?? ""}, ${held.ownedPolicy ? [held.excerpt, held.linkedConditions].filter(Boolean).join(" ") : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id
