@@ -248,7 +248,7 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     const old = await seed(tx, fixture.historicalHtml);
     await sourceBackedDepth(tx, old);
     const excerpt = "International Wire Transfer Fee | $35.00";
-    const note = `Knox read Rosetta artifact #${old.textId}. canonical_hint=wire_intl_outgoing; text_hash=${old.hash}; excerpt="${excerpt}"`;
+    const note = `Knox deterministic extraction from Rosetta artifact #${old.textId}. canonical_hint=wire_intl_outgoing; text_hash=${old.hash}; calibrated_confidence=0.98; excerpt="${excerpt}"`;
     const [{ fee_raw_id: rawId }] = await tx`INSERT INTO raw_fee_observations
       (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,extraction_confidence,extraction_note,outlier_flags,fee_audience,fee_treatment)
       VALUES (${old.institutionId},${old.documentId},${old.source.sourceURL},'knox',gen_random_uuid(),'International Wire Transfer Fee',35,'per_item',.95,${note},
