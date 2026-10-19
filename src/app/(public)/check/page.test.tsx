@@ -131,20 +131,69 @@ describe("Fee Check page schema", () => {
     expect(getComparableMarketIndexCached).toHaveBeenCalledWith({ kind: "state", code: "FL" });
   });
 
-  it("gives an empty verified-fee result an accurate message and institution-aware source intake", async () => {
+  it("uses the first repeated query value for the answer and metadata", async () => {
+    const searchParams = Promise.resolve({ id: ["323", "857"], q: ["Bank", "Trust"], near: ["Tampa, FL", "Miami, FL"] });
+    const page = await CheckPage({ searchParams });
+    const answer = findAnswer(page)!;
+    expect(answer.props).toMatchObject({ id: 323, near: "Tampa, FL" });
+    const metadata = await generateMetadata({ searchParams });
+    expect(metadata.robots).toEqual({ index: false, follow: true });
+    expect(metadata.alternates?.canonical).toBe(CHECK_URL);
+  });
+
+  it("renders repeated search text without treating its array as a string", async () => {
+    const searchParams = Promise.resolve({ q: ["Bank", "Trust"] });
+    await expect(CheckPage({ searchParams })).resolves.toBeDefined();
+    expect((await generateMetadata({ searchParams })).robots).toEqual({ index: false, follow: true });
+  });
+
+  it("uses empty repeated values consistently as the unfiltered landing", async () => {
+    const searchParams = Promise.resolve({ id: [], q: ["", "Bank"], near: [] });
+    const page = await CheckPage({ searchParams });
+    expect(findAnswer(page)).toBeUndefined();
+    expect((await generateMetadata({ searchParams })).robots).toBeUndefined();
+  });
+
+  it("limits the light focus context to navy breadcrumb and example links", async () => {
+    const page = await CheckPage({ searchParams: Promise.resolve({}) });
+    const hero = findElement(page, PageHero) as ReactElement<{ crumbs: ReactNode; children: ReactNode }>;
+    const crumbs = new DOMParser().parseFromString(renderToStaticMarkup(<>{hero.props.crumbs}</>), "text/html");
+    const consumerLink = crumbs.querySelector('a[href="/for-consumers"]');
+    expect(consumerLink).not.toBeNull();
+    expect(consumerLink?.closest(".fi-on-navy")).not.toBeNull();
+    const children = new DOMParser().parseFromString(renderToStaticMarkup(<>{hero.props.children}</>), "text/html");
+    const example = children.querySelector('a[href="/check?id=323"]');
+    expect(example).not.toBeNull();
+    expect(example?.closest(".fi-on-navy")).not.toBeNull();
+    // The light example card is a separate aside, so its links retain their existing dark focus.
+    expect(isValidElement<{ className?: string }>(hero.props.crumbs) && hero.props.crumbs.props.className).toContain("contents");
+  });
+
+  it.each([0, 5])("gives an empty comparison accurate wording and source intake with %i verified but noncomparable fees", async (feeCount) => {
     vi.mocked(getPublicInstitutionForPage).mockResolvedValue({
       id: 857,
       institution_name: "Example & Trust",
-      fee_count: 3,
-      published_fee_count: 3,
+      fee_count: Math.max(3, feeCount),
+      published_fee_count: Math.max(3, feeCount),
       state_code: "IN",
     } as Awaited<ReturnType<typeof getPublicInstitutionForPage>>);
-    vi.mocked(getVisibleFeesForPage).mockResolvedValue([]);
+    vi.mocked(getVisibleFeesForPage).mockResolvedValue(Array.from({ length: feeCount }, (_, i) => ({
+      id: i + 1,
+      institution_id: 857,
+      fee_name: "Business account fee",
+      fee_category: "monthly_maintenance",
+      fee_audience: "business",
+      amount: 20,
+      review_status: "approved",
+    } as Awaited<ReturnType<typeof getVisibleFeesForPage>>[number])));
+    vi.mocked(isVerifiedFee).mockReturnValue(true);
     const page = await CheckPage({ searchParams: Promise.resolve({ id: "857" }) });
     const answer = findAnswer(page)!;
     const result = await (answer.type as (props: typeof answer.props) => Promise<ReactElement>)(answer.props);
     const document = new DOMParser().parseFromString(renderToStaticMarkup(result), "text/html");
-    expect(document.body.textContent).toContain("No verified consumer fees are available to compare for Example & Trust yet.");
+    expect(document.body.textContent).toContain(feeCount === 0
+      ? "No verified consumer fees are available to compare for Example & Trust yet."
+      : "No consumer fee comparison is available for Example & Trust yet.");
     expect(document.body.textContent).not.toContain("has not published fees");
     const intake = [...document.querySelectorAll("a")].find((link) => link.textContent?.trim() === "Send a fee schedule");
     expect(intake).toBeDefined();

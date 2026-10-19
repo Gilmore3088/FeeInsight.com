@@ -53,13 +53,18 @@ import { AvoidChips, HamiltonEmployeeBand, ResultStat } from "./check-result";
 import { CHECK_DESCRIPTION, CHECK_TITLE, CHECK_URL, CheckJsonLd } from "./check-jsonld";
 
 interface PageProps {
-  searchParams: Promise<{ id?: string; q?: string; near?: string }>;
+  searchParams: Promise<{ id?: string | string[]; q?: string | string[]; near?: string | string[] }>;
+}
+
+/** Next returns repeated query keys as arrays; use their first value consistently. */
+function firstSearchValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const params = await searchParams;
   // One indexable page; an answer for one institution lives canonically on its profile.
-  const hasInput = Boolean(params.id || params.q);
+  const hasInput = Boolean(firstSearchValue(params.id) || firstSearchValue(params.q));
   return {
     title: CHECK_TITLE,
     description: CHECK_DESCRIPTION,
@@ -92,8 +97,9 @@ function fallbackTo<T>(label: string, fallback: T) {
 
 export default async function CheckPage({ searchParams }: PageProps) {
   const params = await searchParams;
-  const id = parseCheckId(params.id);
-  const query = (params.q ?? "").trim();
+  const id = parseCheckId(firstSearchValue(params.id));
+  const query = (firstSearchValue(params.q) ?? "").trim();
+  const near = firstSearchValue(params.near) ?? "";
   const stats = await getPublicStatsSummary();
 
   const landing = id === null && query.length < 2;
@@ -111,7 +117,7 @@ export default async function CheckPage({ searchParams }: PageProps) {
       <div className="relative z-20">
         <PageHero
           eyebrow="Fee check"
-          crumbs={<><Link href="/for-consumers">For consumers</Link><span aria-hidden="true">/</span><span aria-current="page">Fee Check</span></>}
+          crumbs={<span className="fi-on-navy contents"><Link href="/for-consumers">For consumers</Link><span aria-hidden="true">/</span><span aria-current="page">Fee Check</span></span>}
           title={<>How do your bank&apos;s fees compare?</>}
           lede={
             stats.institutionsLabel === UNAVAILABLE_LABEL
@@ -134,7 +140,7 @@ export default async function CheckPage({ searchParams }: PageProps) {
 
       <div className={`${homeSerif.variable} ${PAGE_HERO_WRAP} pb-12 pt-8 sm:pb-16 sm:pt-10`}>
         {id !== null ? (
-          <CheckAnswer id={id} near={params.near ?? ""} refreshedOn={stats.refreshedOn} />
+          <CheckAnswer id={id} near={near} refreshedOn={stats.refreshedOn} />
         ) : query.length >= 2 ? (
           <CheckMatches query={query} />
         ) : (
@@ -149,7 +155,7 @@ export default async function CheckPage({ searchParams }: PageProps) {
 function ExampleChips({ skip }: { skip: number | null }) {
   const shown = EXAMPLES.filter((example) => example.id !== skip);
   return (
-    <div className="mt-4">
+    <div className="fi-on-navy mt-4">
       <p className="text-[13px] font-semibold text-[#c9d6de]">{skip ? "Or try" : "Try"}</p>
       <ul className="mt-2 flex flex-wrap gap-2">
         {shown.map((example) => (
@@ -369,7 +375,7 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
   const sparseLine = !hasFees
     ? `No verified consumer fees are available to compare for ${inst.institution_name} yet.`
     : rows.length === 0
-      ? `${publishedCount.toLocaleString("en-US")} published ${publishedCount === 1 ? "fee" : "fees"}, none yet with a market median to compare against.`
+      ? `No consumer fee comparison is available for ${inst.institution_name} yet.`
       : thin
         ? `Only ${verifiedFees.length} of its fees are published so far; the comparison covers those.`
         : null;
@@ -387,7 +393,7 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
       <CheckAnswerFocus targetId="answer-heading" />
       <section
         aria-labelledby="answer-heading"
-        className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,820px)] lg:gap-12"
+        className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] xl:gap-12"
       >
         <div className={`min-w-0 space-y-6 ${PAGE_HEADER}`}>
           <div>
@@ -418,7 +424,7 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
             <Link href={`/institution/${id}`} className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
               {publishedCount > 0 ? `All ${publishedCount.toLocaleString("en-US")} fees` : "Its profile"}
             </Link>
-            {thin && (
+            {(thin || rows.length === 0) && (
               <Link
                 href={buildInstitutionProfileLinks({ institutionId: id, institutionName: inst.institution_name }).submitSourceHref}
                 className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}

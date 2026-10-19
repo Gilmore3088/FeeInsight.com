@@ -121,23 +121,25 @@ export function HamiltonEmployeeBand({ name, placement }: { name: string; placem
   return (
     <aside
       aria-label="For bank and credit union teams"
-      className="flex flex-col items-center gap-3 rounded-xl border border-border bg-surface-0 px-4 py-3 text-center shadow-fi-1 sm:flex-row sm:justify-between sm:text-left"
+      className="@container rounded-xl border border-border bg-surface-0 px-4 py-3 text-center shadow-fi-1"
     >
-      <p className="flex min-w-0 items-center gap-3 text-[15px] font-semibold text-ink sm:mx-0">
-        <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick">
-          <Landmark className="size-[18px]" strokeWidth={1.75} />
-        </span>
-        <span className="min-w-0">Work at {name}?</span>
-      </p>
-      <TrackLink
-        event="upgrade_click"
-        eventProps={{ placement }}
-        href={PRO_PLANS_NAV.href}
-        className="fi-btn fi-btn-brick inline-flex min-h-11 shrink-0 items-center gap-2 px-5 text-[14px]"
-      >
-        Explore Hamilton
-        <ArrowRight aria-hidden="true" className="size-4" />
-      </TrackLink>
+      <div className="flex w-full min-w-0 flex-col items-center gap-3 @[32rem]:flex-row @[32rem]:justify-between @[32rem]:text-left">
+        <p className="flex min-w-0 items-center gap-3 text-[15px] font-semibold text-ink">
+          <span aria-hidden="true" className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick">
+            <Landmark className="size-[18px]" strokeWidth={1.75} />
+          </span>
+          <span className="min-w-0 break-words">Work at {name}?</span>
+        </p>
+        <TrackLink
+          event="upgrade_click"
+          eventProps={{ placement }}
+          href={PRO_PLANS_NAV.href}
+          className="fi-btn fi-btn-brick inline-flex min-h-11 shrink-0 items-center gap-2 px-5 text-[14px]"
+        >
+          Explore Hamilton
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </TrackLink>
+      </div>
     </aside>
   );
 }
