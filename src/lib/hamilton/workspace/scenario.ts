@@ -13,6 +13,7 @@
  */
 
 import { proseFeeName } from "./names";
+import { midRankPercentile } from "@/lib/percentile";
 import {
   WORKSPACE_ENGINE_VERSION,
   type ClarifyingQuestion,
@@ -62,16 +63,10 @@ export function spanOf(lo: string, hi: string): string {
   return lo === hi ? lo : `${lo} to ${hi}`;
 }
 
-/** Mid-rank percentile: share of peers below the price plus half of those equal to it. */
+/** The shared mid-rank percentile (#2048), once enough peers publish the fee to place a price. */
 export function pricePosition(price: number, peers: number[]): number | null {
   if (peers.length < MIN_PEERS_FOR_POSITION) return null;
-  let below = 0;
-  let same = 0;
-  for (const p of peers) {
-    if (Math.abs(p - price) <= SAME_PRICE_TOLERANCE) same++;
-    else if (p < price) below++;
-  }
-  return Math.round(((below + same / 2) / peers.length) * 100);
+  return midRankPercentile(price, peers);
 }
 
 export function annualItemsQuestion(feeCategory: string, institutionName?: string): ClarifyingQuestion {

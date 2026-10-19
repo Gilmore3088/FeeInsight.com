@@ -7,6 +7,7 @@
  * Decision support only: nothing here says to raise, lower or drop a fee.
  */
 
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { revenueLineName } from "./revenue";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
@@ -270,6 +271,7 @@ function positionExhibit(research: FeeResearch, name: string): Exhibit | null {
     own: research.current,
     ownLabel: research.institutionName,
     band: { label: research.peerLabel, p25: band.p25, median: band.median, p75: band.p75, n: band.n },
+    ...(research.current !== null && band.n >= MIN_PEERS_FOR_POSITION ? { method: PERCENTILE_METHOD } : {}),
     markers,
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
     note: "Shaded: the middle half of peers. Each marker is a market's median and its institution count.",

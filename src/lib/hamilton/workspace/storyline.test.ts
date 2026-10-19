@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
 import { buildAskResponse, parseAsk } from "./ask";
@@ -338,6 +339,13 @@ describe("storyline", () => {
     expect(position.exhibit.kind === "fee_position" && position.exhibit.note).toMatch(/^Peer group picked by Hamilton: .+ \(38 institutions\)\.$|^Peer group picked by Hamilton \(38 institutions\)\.$/);
     const saved = buildFeeAnswer(research({ peerGroupSize: 6, peerGroupSaved: true, peerLabel: "Lancaster rivals" })).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
     expect(saved.exhibit.kind === "fee_position" && saved.exhibit.note).toBe("Saved peer group: Lancaster rivals (6 institutions).");
+  });
+
+  it("names the percentile method wherever the position exhibit places a price (#2048)", () => {
+    const position = buildFeeAnswer(research()).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    expect(position.exhibit.kind === "fee_position" && position.exhibit.method).toBe(PERCENTILE_METHOD);
+    const noOwn = buildFeeAnswer(research({ current: null })).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position");
+    expect(noOwn?.exhibit.kind === "fee_position" ? noOwn.exhibit.method : undefined).toBeUndefined();
   });
 
   it("drops a long competitor name rather than run past a storyline line's 20 words", () => {

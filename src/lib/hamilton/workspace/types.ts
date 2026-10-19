@@ -564,6 +564,8 @@ export type Exhibit =
       markers: ExhibitMarker[];
       sources: SourceRef[];
       note?: string;
+      /** How the percentile beside it is figured (#2048); set when the exhibit places a price. */
+      method?: string;
     }
   | {
       kind: "trend";
