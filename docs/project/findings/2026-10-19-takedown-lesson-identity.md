@@ -9,12 +9,14 @@ The confirmation did not identify the normalized text the checker originally jud
 
 **Initial evidence.** At unchanged `aa680f2d95927467e1f797df02e5cfd8f0f02a87`, a controlled actual
 function probe failed two cross-product/unknown-owner isolation assertions and passed two controls.
-An independent actual old-loader SQL fixture failed three assertions: a foreign-product live
-sibling hid a lesson, same-price category/product lessons collapsed, and distinct exact decimal
-keys collapsed. Two controls passed. These fixtures prove the key/query defect; they are not
-production counts, real Alpha-product provenance or supported future-witness positives. Real
-production-schema amounts are numeric(12,2); exact fractional-key precision is separately tested
-in the pure matcher rather than claimed as stored sub-cent data.
+The actual old-loader SQL fixture failed three assertions with two independent identity defects:
+a foreign-product live sibling hid a lesson, and same-price category/product lessons collapsed.
+The third assertion repeats the product-collapse defect: its CTAS table retains numeric(12,2),
+so inputs 1.651/1.654 had already become 1.65/1.65 before loading. It is not independent evidence
+of sub-cent loss in stored SQL. Two controls passed. The original failed fixture/log are retained.
+These fixtures are not production counts, real Alpha-product provenance or supported future-witness
+positives. The old pure key's `toFixed(2)` and the new pure `exactAmount` controls establish exact-key
+semantics separately; no production sub-cent amount or stored precision repair is claimed.
 
 **Process fix.** The limit guard captures its bounded full selected publication/verification/raw
 state and the raw observation's exact Rosetta artifact/hash before `limitGuardVerdict`. Its
