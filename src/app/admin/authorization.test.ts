@@ -45,7 +45,7 @@ vi.mock("@/lib/data-store/agent-console", () => ({
 }));
 vi.mock("@/lib/agents/flow", () => ({
   getFlowSnapshot: fixture.dataRead,
-  getFlowWaiting: fixture.dataRead,
+  getFlowWaitingWithin: fixture.dataRead,
 }));
 vi.mock("@/lib/data-store/content-drafts", () => ({ getContentDraft: fixture.dataRead }));
 vi.mock("@/lib/data-store/guides", () => ({
