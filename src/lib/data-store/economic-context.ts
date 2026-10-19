@@ -252,10 +252,3 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
     district_research: districtResearch,
   };
 }
-
-export function isEmptyEconomicContext(ctx: StateEconomicContext): boolean {
-  return (
-    !ctx.state_unemployment && !ctx.state_payrolls && !ctx.national_unemployment && !ctx.fed_funds && !ctx.cpi_all_items &&
-    !ctx.cpi_bank_services && !ctx.beige_book && ctx.regulatory.length === 0
-  );
-}
