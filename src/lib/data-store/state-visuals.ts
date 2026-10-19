@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 
 /**
  * Data behind the State Index report's charts: every institution's own fee for the featured
@@ -78,9 +78,11 @@ async function countyFeeRows(code: string, sodYear: number, feeCategory: string)
              CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
                   ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amt
         FROM published_fee_catalog ef
+        JOIN institution_sources ct ON ct.id = ef.institution_id
        WHERE ef.fee_category = ${feeCategory}
          AND ef.amount IS NOT NULL AND ef.amount >= 0
          AND ${sql.unsafe(statsRowFilter("ef"))}
+         AND ${sql.unsafe(activeInstitutionFilter("ct"))}
        GROUP BY ef.institution_id
     ), b AS (
       SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, COALESCE(d.deposits, 0) AS deposits
@@ -139,9 +141,11 @@ export async function getCountyFeeMap(stateCode: string, feeCategory: string): P
                CASE WHEN ${feeCategory} = 'overdraft' THEN MAX(ef.amount)
                     ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amt
           FROM published_fee_catalog ef
+          JOIN institution_sources ct ON ct.id = ef.institution_id
          WHERE ef.fee_category = ${feeCategory}
            AND ef.amount IS NOT NULL AND ef.amount >= 0
            AND ${sql.unsafe(statsRowFilter("ef"))}
+           AND ${sql.unsafe(activeInstitutionFilter("ct"))}
          GROUP BY ef.institution_id
       ), b AS (
         SELECT lpad(d.county_fips::text, 5, '0') AS fips, d.institution_id, SUM(COALESCE(d.deposits, 0)) AS deposits
@@ -185,6 +189,7 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
          AND f.amount IS NOT NULL AND f.amount >= 0
          AND f.fee_category = ANY(${fees}::text[])
          AND ${sql.unsafe(statsRowFilter("f"))}
+         AND ${sql.unsafe(activeInstitutionFilter("s"))}
        GROUP BY f.institution_id, s.institution_name, s.charter_type, f.fee_category`,
     sql<{ y: unknown }[]>`SELECT MAX(year) AS y FROM institution_branch_deposits WHERE state = ${code}`,
   ]);
@@ -220,9 +225,11 @@ export async function getStateVisualsData(stateCode: string): Promise<StateVisua
       ), od AS (
         SELECT ef.institution_id, MAX(ef.amount) AS amt
           FROM published_fee_catalog ef
+          JOIN institution_sources ct ON ct.id = ef.institution_id
          WHERE ef.fee_category = 'overdraft'
            AND ef.amount IS NOT NULL AND ef.amount >= 0
            AND ${sql.unsafe(statsRowFilter("ef"))}
+           AND ${sql.unsafe(activeInstitutionFilter("ct"))}
          GROUP BY ef.institution_id
       )
       SELECT t.institution_id, s.institution_name AS name, s.state_code AS hq_state, t.deposits, t.branches, od.amt AS overdraft

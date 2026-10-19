@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { boundedSearchTerm } from "@/lib/api-hardening/query-caps";
-import { statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
   getFeePublicationStatus,
@@ -516,7 +516,8 @@ export async function getLargestInstitutions(params: { charter_type?: string; li
 export async function getInstitutionStateDirectorySummaries(params: {
   charter_type?: string;
 } = {}): Promise<InstitutionStateDirectorySummary[]> {
-  const conditions = ["ct.state_code IS NOT NULL", "btrim(ct.state_code) <> ''"];
+  // The same institutions as the directory's "Institutions monitored" figure (#2190).
+  const conditions = ["ct.state_code IS NOT NULL", "btrim(ct.state_code) <> ''", activeInstitutionFilter("ct")];
   const queryParams: string[] = [];
 
   if (params.charter_type) {

@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { cityKey, foldCitySpellings } from "@/lib/geo/city-names";
 import { readerFeeConditions } from "@/lib/fee-conditions";
@@ -225,7 +225,8 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
           SELECT s.id, s.institution_name, s.charter_type, s.city, s.state_code, s.fee_schedule_url,
                  EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved') AS has_fees
             FROM institution_sources s
-           WHERE s.id = ANY(${ids}::bigint[])` as unknown as Promise<Record<string, unknown>[]>)
+           WHERE s.id = ANY(${ids}::bigint[])
+             AND ${sql.unsafe(activeInstitutionFilter("s"))}` as unknown as Promise<Record<string, unknown>[]>)
       : Promise.resolve([] as Record<string, unknown>[]),
     ids.length
       ? (sql.unsafe(
@@ -236,7 +237,9 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
                     ROW_NUMBER() OVER (PARTITION BY ef.institution_id, ef.fee_category ORDER BY ef.amount, ef.id) AS rn,
                     COUNT(*) OVER (PARTITION BY ef.institution_id, ef.fee_category) AS n
                FROM published_fee_catalog ef
+               JOIN institution_sources ct ON ct.id = ef.institution_id
               WHERE ef.institution_id = ANY($1::bigint[])
+                AND ${activeInstitutionFilter("ct")}
                 AND ef.fee_category = ANY($2::text[])
                 AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
                 AND ${statsRowFilter("ef")}
@@ -496,7 +499,7 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
   const year = await latestSodYear();
   // One row per spelling; the fold counts institutions once per city in foldStateMarketCities.
   const rows = (await sql`
-    WITH branches AS (
+    WITH all_branches AS (
       SELECT UPPER(city) AS city, institution_id, msa_name, latitude, longitude
         FROM institution_branch_deposits
        WHERE year = ${year} AND state = ${state} AND city IS NOT NULL AND city <> ''
@@ -505,8 +508,18 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
         FROM credit_union_branches
        WHERE state = ${state} AND city IS NOT NULL AND city <> ''
     ),
+    -- The regulator's inactive institutions are left out, as every public count does (#2190);
+    -- a branch with no institution on file still counts as a branch.
+    branches AS (
+      SELECT a.* FROM all_branches a
+        LEFT JOIN institution_sources ct ON ct.id = a.institution_id
+       WHERE ${sql.unsafe(activeInstitutionFilter("ct"))}
+    ),
     published AS (
-      SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'
+      SELECT DISTINCT ef.institution_id
+        FROM published_fee_catalog ef
+        JOIN institution_sources ct ON ct.id = ef.institution_id
+       WHERE ef.review_status = 'approved' AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     )
     SELECT b.city,
            ARRAY_AGG(DISTINCT b.institution_id) FILTER (WHERE b.institution_id IS NOT NULL) AS institution_ids,
