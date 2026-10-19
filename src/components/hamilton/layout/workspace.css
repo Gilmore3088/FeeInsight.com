@@ -101,3 +101,12 @@
 .hamilton-workspace .recharts-default-tooltip { border-color:var(--fi-border) !important; border-radius:8px; color:var(--fi-ink); }
 .hamilton-workspace :is(button,a,input,textarea,select,summary) { transition:background-color .15s,border-color .15s,color .15s; }
 @media(prefers-reduced-motion:reduce) { .hamilton-workspace :is(button,a,input,textarea,select,summary) { transition:none; } }
+
+/* The context bar (#2043): the subject leads, then the peer group, the account and the switch. */
+.workspace-subject { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 12px; min-width:0; }
+.workspace-subject strong { font-size:15px; color:var(--fi-ink); }
+.workspace-tag { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--fi-border); color:var(--fi-muted); background:var(--fi-surface-200); white-space:nowrap; }
+.workspace-switch { display:flex; flex-wrap:wrap; align-items:center; gap:4px 16px; margin-left:auto; }
+.workspace-switch button { color:var(--fi-brick); text-decoration:underline; background:none; border:0; padding:0; font:inherit; cursor:pointer; }
+.workspace-switch-picker { flex-basis:100%; max-width:420px; font-size:13px; }
+@media(max-width:900px) { .workspace-switch { margin-left:0; } }

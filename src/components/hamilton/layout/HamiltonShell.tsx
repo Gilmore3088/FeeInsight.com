@@ -17,6 +17,7 @@ import { hamiltonNavigationSelection, isHamiltonSubjectPath } from "@/lib/hamilt
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { loadHamiltonNavigationInstitution } from "@/lib/hamilton/navigation-institution-action";
 import { HamiltonNavigationProvider } from "./hamilton-navigation-context";
+import { institutionFacts } from "@/lib/hamilton/institution-facts";
 
 interface HamiltonShellProps {
   initialRequestPath: string;
@@ -91,8 +92,8 @@ export function HamiltonShell({
     && (!selection.research || selection.research.scope.kind === "local");
   const seededInstitution = canUseSeed && !selection.invalid && seedId && institutionContext.name
     && (selection.artifact || !selection.institutionId || selection.institutionId === seedId)
-    ? { id: seedId, name: institutionContext.name } : null;
-  const [resolved, setResolved] = useState<{ requestKey: string; institution: { id: string; name: string } | null } | null>(null);
+    ? { id: seedId, name: institutionContext.name, facts: institutionFacts({ stateCode: institutionContext.stateCode, charterType: institutionContext.type, segment: institutionContext.assetTier }) } : null;
+  const [resolved, setResolved] = useState<{ requestKey: string; institution: { id: string; name: string; facts?: string | null } | null } | null>(null);
   const candidateId = selection.institutionId;
   const seededName = seededInstitution?.name;
   useEffect(() => {
@@ -162,6 +163,9 @@ export function HamiltonShell({
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
           homeHref={homeId != null ? `/pro/research?instId=${homeId}` : undefined}
           researchLabel={marketScope ?? researchLabel}
+          researchFacts={marketScope || !researchLabel ? null : currentInstitution?.facts ?? null}
+          researchIsMarket={Boolean(marketScope)}
+          subjectNotLinked={!marketScope && Boolean(researchLabel) && !isHome && accountContext?.status === "identified"}
           researchIsHome={!marketScope && isHome}
           peerLabel={peerContext}
         />
