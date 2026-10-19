@@ -90,14 +90,15 @@ export const getAtmNetworkMentionsCached = cachedPublicRead(
  * One demo institution's profile and visible catalog fees, for the fee-check example that /check and
  * /consumer show to every visitor (Capital City Bank). Read once per publish instead of per request;
  * the answer for a visitor's own institution keeps the per-request profile reads. Dates come back as
- * ISO strings (the cache round-trips JSON), which the date formatters accept.
+ * ISO strings (the cache round-trips JSON), which the date formatters accept. A missing institution or
+ * one with no visible fees is never cached, so a blip cannot pin an empty example.
  */
 export const getCheckExampleInputsCached = cachedPublicRead("check-example-inputs-v1", async (id: number) => {
   const inst = await getPublicInstitutionById(id);
   if (!inst) return null;
   const fees = (await getFeesByInstitution(id)).filter((fee) => fee.review_status !== "rejected");
   return JSON.parse(JSON.stringify({ inst, fees })) as { inst: typeof inst; fees: typeof fees };
-});
+}, (value) => !value || value.fees.length === 0);
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);

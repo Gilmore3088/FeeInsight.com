@@ -125,7 +125,7 @@ export function CheckExample({ example, layout = "wide" }: { example: CheckExamp
 
   if (layout === "card") {
     return (
-      <figure className="min-w-0 rounded-2xl bg-paper p-4 text-left text-ink shadow-fi-2 sm:p-6">
+      <figure className="min-w-0 rounded-2xl bg-paper p-3 text-left text-ink shadow-fi-2 sm:p-6">
         <figcaption className="min-w-0">
           {label}
           {counts && (

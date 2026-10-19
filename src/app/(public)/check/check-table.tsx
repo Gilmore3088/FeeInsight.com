@@ -69,7 +69,7 @@ function Gap({ row, band }: { row: CheckRow; band: CheckBand | null }) {
 /** "Florida banks and credit unions, 412 institutions: median $7, middle 50% $5 to $10." */
 function PopulationLine({ name, band }: { name: string; band: CheckBand }) {
   return (
-    <p className="text-[12px] leading-snug text-ink-muted sm:mx-0 sm:text-left">
+    <p className="text-[12px] leading-snug text-ink-muted @[40rem]:mx-0 @[40rem]:text-left">
       {name}, {band.institutions.toLocaleString("en-US")} institutions: median{" "}
       <span className="font-mono tabular-nums">{money(band.median)}</span>, middle 50%{" "}
       <span className="font-mono tabular-nums">
@@ -83,17 +83,17 @@ function PopulationLine({ name, band }: { name: string; band: CheckBand }) {
 /** The summary grid: fee, its prices, the compared median, the U.S. median when the compared one is the state's, and the gap. */
 function gridOf(withUs: boolean): string {
   return withUs
-    ? "grid-cols-[minmax(0,1fr)_8.5rem] sm:grid-cols-[minmax(0,1fr)_8rem_5rem_5rem_7rem]"
-    : "grid-cols-[minmax(0,1fr)_8.5rem] sm:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem]";
+    ? "grid-cols-[minmax(0,1fr)_8.5rem] @[40rem]:grid-cols-[minmax(0,1fr)_8rem_5rem_5rem_7rem]"
+    : "grid-cols-[minmax(0,1fr)_8.5rem] @[40rem]:grid-cols-[minmax(0,1fr)_9rem_6rem_8.5rem]";
 }
 
 /** "$7.00" over "3,412 in U.S.": a median with the count behind it. */
 function MedianCell({ band, place, srLabel }: { band: CheckBand | null; place: string; srLabel: string }) {
   return (
-    <span className="col-start-2 text-right text-[12px] text-ink-muted sm:col-start-auto sm:text-[13px]">
+    <span className="col-start-2 text-right text-[12px] text-ink-muted @[40rem]:col-start-auto @[40rem]:text-[13px]">
       {band ? (
         <>
-          <span className="sm:sr-only">{srLabel} </span>
+          <span className="@[40rem]:sr-only">{srLabel} </span>
           <span className="font-mono tabular-nums text-ink">{money(band.median)}</span>
           <span className="block text-[11px]">
             {band.institutions.toLocaleString("en-US")} in {place}
@@ -101,7 +101,7 @@ function MedianCell({ band, place, srLabel }: { band: CheckBand | null; place: s
         </>
       ) : (
         <>
-          <span className="sm:sr-only">{srLabel} </span>
+          <span className="@[40rem]:sr-only">{srLabel} </span>
           <span>No median</span>
         </>
       )}
@@ -132,7 +132,7 @@ function Row({
     <li className="border-t border-border first:border-t-0">
       <details className="group">
         <summary
-          className={`grid min-h-11 cursor-pointer list-none ${gridOf(withUs)} items-baseline gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-paper sm:px-5 [&::-webkit-details-marker]:hidden`}
+          className={`grid min-h-11 cursor-pointer list-none ${gridOf(withUs)} items-baseline gap-x-3 gap-y-0.5 px-4 py-3 hover:bg-paper @[40rem]:px-5 [&::-webkit-details-marker]:hidden`}
         >
           <span className="flex min-w-0 items-baseline gap-2 text-[14px] text-ink">
             <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
@@ -165,15 +165,15 @@ function Row({
               srLabel={`${ref?.level === "state" ? (stateCode ?? "State") : "U.S."} median`}
             />
           )}
-          <span className="col-start-2 text-right text-[13px] sm:col-start-auto">
-            {gapLabel && <span className="text-[12px] text-ink-muted sm:sr-only">{gapLabel}</span>}
+          <span className="col-start-2 text-right text-[13px] @[40rem]:col-start-auto">
+            {gapLabel && <span className="text-[12px] text-ink-muted @[40rem]:sr-only">{gapLabel}</span>}
             <Gap row={row} band={ref?.band ?? null} />
             {row.comparedAt && (
               <span className="block text-[11px] text-ink-muted">{row.comparedAt}</span>
             )}
           </span>
         </summary>
-        <div className="space-y-2 px-4 pb-4 sm:px-5">
+        <div className="space-y-2 px-4 pb-4 @[40rem]:px-5">
           <div className="space-y-1">
             {row.state && <RangeBar label={stateCode ?? "State"} band={row.state} row={row} domain={domain} />}
             {row.nation && <RangeBar label="U.S." band={row.nation} row={row} domain={domain} />}
@@ -199,7 +199,11 @@ function Row({
   );
 }
 
-/** The headline fees; each row opens to its prices, market bars, populations, source and guide. */
+/**
+ * The headline fees; each row opens to its prices, market bars, populations, source and guide.
+ * The columns follow the table's own width (a container query at 40rem), not the viewport, so it
+ * stacks to two columns in a narrow place such as a page hero's right column on desktop.
+ */
 export function CheckTable({
   rows,
   stateCode,
@@ -218,16 +222,16 @@ export function CheckTable({
   const withUs = stateCode !== null && rows.some((row) => row.nation !== null);
   const gapHead = withUs && rows.every((row) => row.state !== null) ? `Vs ${stateCode} median` : "Compared vs median";
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
+    <div className="@container overflow-hidden rounded-xl border border-border bg-surface-0 shadow-fi-1">
       <div
         aria-hidden="true"
-        className={`grid ${gridOf(withUs)} gap-x-3 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted sm:px-5`}
+        className={`grid ${gridOf(withUs)} gap-x-3 border-b border-border bg-paper px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-muted @[40rem]:px-5`}
       >
         <span>Fee</span>
         <span className="text-right">Its prices</span>
-        <span className="hidden text-right sm:block">{medianHead}</span>
-        {withUs && <span className="hidden text-right sm:block">U.S. median</span>}
-        <span className="hidden text-right sm:block">{gapHead}</span>
+        <span className="hidden text-right @[40rem]:block">{medianHead}</span>
+        {withUs && <span className="hidden text-right @[40rem]:block">U.S. median</span>}
+        <span className="hidden text-right @[40rem]:block">{gapHead}</span>
       </div>
       <ul>
         {rows.map((row) => (
