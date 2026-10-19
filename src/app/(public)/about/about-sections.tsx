@@ -48,7 +48,7 @@ export function AboutProducts() {
               {p.name}
             </h3>
             <p className="mt-2 flex-1 text-[15px] leading-relaxed text-ink-soft">{p.role}</p>
-            <Link href={p.link.href} className={`mt-2 ${TEXT_LINK}`}>
+            <Link href={p.link.href} className={`mt-2 self-start ${TEXT_LINK}`}>
               {p.link.label}
             </Link>
           </article>

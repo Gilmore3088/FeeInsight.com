@@ -123,8 +123,8 @@ export const METHODOLOGY_LINK = { href: "/methodology", label: "Read the methodo
  * What each coverage figure means, from the code that computes it (src/lib/public-stats.ts):
  * "monitored" is every row of institution_sources (the FDIC and NCUA roster, closed
  * institutions included); "with published fees" is an institution with at least one approved
- * fee in published_fee_catalog; "data refreshed" is the newest approved fee's created_at, so it
- * dates the index, not each schedule.
+ * fee in published_fee_catalog; "data refreshed" is the newest approved fee's created_at, or the
+ * last successful schedule fetch when no fee has a date, so it dates the index, not each schedule.
  */
 export const COVERAGE_NOTES = [
   {
@@ -137,7 +137,7 @@ export const COVERAGE_NOTES = [
   },
   {
     term: "Data refreshed",
-    line: "The last day a fee was added to the index. It is not the date every schedule was last checked.",
+    line: "When the index last took in new data, usually the day a fee was last added. It is not the date every schedule was last checked.",
   },
 ] as const;
 
