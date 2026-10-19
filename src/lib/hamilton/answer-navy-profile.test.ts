@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import retained from "./test-fixtures/navy-comparable-peers-4003.json";
 import operandRetained from "./test-fixtures/navy-comparable-peers-017b.json";
 import exclusiveRetained from "./test-fixtures/navy-comparable-peers-2ce4.json";
+import summaryRetained from "./test-fixtures/navy-comparable-peers-f1c9.json";
 import { writtenAnswerCheck } from "./answer-save";
 import { HAMILTON_INTERPRETATION_INSTRUCTION } from "./answer-interpretations";
 import { profileQuarterCalculations } from "./profile-quarter-evidence";
@@ -177,6 +178,8 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
     "Broad NCUA fee income includes overdraft fees but does not isolate their amount.",
     "This is not overdraft-only income or bank deposit service charges.",
     "This is not overdraft income alone.",
+    "This is broad member fee income, not overdraft-only income.",
+    "This is broad member fee income, not overdraft income alone.",
     "Separate overdraft income is not reported in the available evidence.",
     "Overdraft income cannot be determined from this broad total.",
     "Broad NCUA fee income does not exclude overdraft fees.",
@@ -192,6 +195,9 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
     "All 25 reported, but coverage alone cannot establish a strong benchmark; nevertheless the financial benchmark is reliable.",
     "All 25 financial filers reported, so the financial benchmark is strong; published prices are separate.",
     "This is not overdraft income or bank deposit service charges.",
+    "This is broad member fee income, not overdraft income.",
+    "This is broad member fee income and not overdraft income.",
+    "This is broad member fee income, but not overdraft income.",
     "Broad fee income excludes overdraft fees.",
     "Overdraft income is excluded from broad NCUA fee income.",
     "Broad income does not exclude overdraft fees, but the broad total excludes overdraft income.",
@@ -206,6 +212,26 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
   it("instructs generation to separate coverage from quality and preserve overdraft inclusion", () => {
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("not a strong, reliable, robust or representative benchmark");
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("Broad NCUA fee income includes overdraft fees");
+  });
+});
+
+describe("retained Navy summary overdraft qualifier (#2381)", () => {
+  const context = summaryRetained.context as WrittenAnswerEvidenceContext;
+  const outputs = summaryRetained.context.toolResults.map((read) => read.output);
+  const check = (answer: string) => writtenAnswerCheck(answer, outputs, summaryRetained.question, context);
+
+  it("holds the exact captured answer specifically for its unqualified summary exclusion", () => {
+    const checked = check(summaryRetained.answer);
+    expect(checked.figureCheck).toEqual({ checked: 13, unmatched: [] });
+    expect(checked.passed).toBe(false);
+    expect(checked.problems).toEqual([expect.stringContaining("includes overdraft fees")]);
+  });
+
+  it("passes a test-only copy qualifying just the summary and keeps the original intact", () => {
+    const qualified = summaryRetained.answer.replace("This is broad member fee income, not overdraft income.", "This is broad member fee income, not overdraft-only income.");
+    expect(check(qualified)).toMatchObject({ passed: true, problems: [], figureCheck: { checked: 13, unmatched: [] } });
+    expect(summaryRetained.answer).toContain("This is broad member fee income, not overdraft income.");
+    expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("Retain the qualifier in every section, including summary bullets");
   });
 });
 

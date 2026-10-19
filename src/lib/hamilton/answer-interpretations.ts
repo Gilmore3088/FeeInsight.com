@@ -14,7 +14,7 @@ SOURCE MEANING:
 - NCUA dividends on shares are reported year-to-date expense, not evidence of cash paid. Keep the expense label even when the question says "paid".
 - State period limits as observations, not advice: "This is a six-month total; no full-year estimate is established." Do not tell the reader that they "should" or "should not" annualize it.
 - A current fee schedule is a price, not realized revenue or a historical record of prices, waivers, refunds or charged items. A $0 overdraft price cannot establish zero overdraft income or zero paying members in a prior period. Broad fee income cannot identify either figure; say unavailable unless a dedicated reported line answers it.
-- Broad NCUA fee income includes overdraft fees among other member-service and membership fees. Say "not overdraft-only income" or "overdraft income cannot be isolated from this total"; never say this broad line is not overdraft income or excludes overdraft fees.
+- Broad NCUA fee income includes overdraft fees among other member-service and membership fees. Say "not overdraft-only income" or "overdraft income cannot be isolated from this total"; never say this broad line is not overdraft income or excludes overdraft fees. Retain the qualifier in every section, including summary bullets; a later precise definition does not repair an earlier exclusion.
 - A cross-sectional peer median describes the filers for that date. Do not call changes between separately selected quarterly peer populations growth, outperformance, keeping pace or falling behind. A common comparable cohort, including merger treatment, is needed first. You may report the current median, its date and coverage.
 - Do not invent a reason for an unqueried peer filter. A nationwide sample does not establish that a Fed-district group would be too small. Read the exact district and otherwise matching group first, or say its coverage has not been checked.
 - A missing, unreported or unusable overdraft figure in the available evidence does not establish that NCUA's filing has no overdraft line or field. Describe the evidence's missing usable figure; do not infer absence from the publisher's schema.
@@ -480,7 +480,7 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
     const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
     if (!clause || (/^(?:how|what|which|could|can|would|does|do)\b/i.test(clause) && clause.endsWith("?"))) continue;
     if (broadIncome) {
-      const exclusions = clause.matchAll(/\b(?:is|was)\s+not\s+(?:an?\s+)?overdraft\s+(?:income|revenue)\b|\b(?:excludes?|excluding|does not include|doesn't include|contains? no)\s+(?:any\s+)?overdraft(?:\s+(?:fees?|income|revenue))?\b|\boverdraft(?:\s+(?:fees?|income|revenue))?\s+(?:(?:is|are|was|were)\s+)?excluded\s+from\s+(?:broad\s+)?(?:NCUA\s+)?fee income\b/gi);
+      const exclusions = clause.matchAll(/\bnot\s+(?:an?\s+)?overdraft\s+(?:income|revenue)\b|\b(?:excludes?|excluding|does not include|doesn't include|contains? no)\s+(?:any\s+)?overdraft(?:\s+(?:fees?|income|revenue))?\b|\boverdraft(?:\s+(?:fees?|income|revenue))?\s+(?:(?:is|are|was|were)\s+)?excluded\s+from\s+(?:broad\s+)?(?:NCUA\s+)?fee income\b/gi);
       for (const exclusion of exclusions) {
         const prefix = clause.slice(0, exclusion.index);
         const local = prefix.split(/[;,]|\b(?:and|but|yet|however|while|nevertheless)\b/i).at(-1) ?? "";
