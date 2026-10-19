@@ -316,7 +316,8 @@ describe.skipIf(!connection)("International wire source applicability, real norm
       (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,
        extraction_confidence,extraction_note,conditions,outlier_flags,fee_audience,fee_treatment)
       VALUES (${f.institutionId},${f.documentId},${source.sourceURL},'knox',gen_random_uuid(),${name},${amount},'per_item',.95,
-      ${note},${note},'["needs_darwin_verification","canonical_hint:wire_intl_outgoing"]'::jsonb,'unknown','charged') RETURNING fee_raw_id`;
+      ${note},${note},${JSON.stringify(["needs_darwin_verification", "canonical_hint:wire_intl_outgoing", ...(amount === 0 ? ["knox_review:zero"] : [])])}::jsonb,
+      'unknown',${amount === 0 ? "no_charge" : "charged"}) RETURNING fee_raw_id`;
     const held = await import("../darwin/release-held");
     const review = await import("../darwin/release-review");
     const { recordAttempt } = await import("../learning/attempts");
