@@ -446,15 +446,16 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
   });
   it("rolls back a failed restore write, reports failure, and leaves the pair pending for normal retry", async () => {
     await restorableMonthlyFee();
+    type TransactionScope = typeof db & { savepoint: (work:(inner:TransactionScope)=>Promise<unknown>)=>Promise<unknown> };
     await db.begin(async(transaction)=>{
-      const tx=transaction as unknown as typeof db;
-      function failReverification(scope: typeof db): Db {
+      const tx=transaction as unknown as TransactionScope;
+      function failReverification(scope: TransactionScope): Db {
         const wrapped=async(strings:TemplateStringsArray,...values:postgres.ParameterOrJSON<never>[])=>{
           if(strings.join(' ').includes("outlier_flags = outlier_flags -")) await scope`SELECT 1/0`;
           return scope(strings,...values);
         };
         return Object.assign(wrapped,{unsafe:scope.unsafe.bind(scope),
-          savepoint:(work:(inner:Db)=>Promise<unknown>)=>scope.savepoint(inner=>work(failReverification(inner as unknown as typeof db))),
+          savepoint:(work:(inner:Db)=>Promise<unknown>)=>scope.savepoint(inner=>work(failReverification(inner))),
         }) as unknown as Db;
       }
       expect(await run(false,failReverification(tx))).toMatchObject({ restored:0, proposedRestores:1,
