@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useId, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { StateMarketMap } from "@/lib/geo/state-market-map";
 import { cityMatches } from "@/lib/geo/city-names";
 import { StateCityMap, type CityMarker } from "@/components/public/state-city-map";
@@ -43,6 +43,10 @@ function useExplorer(): Explorer {
  * spellings already folded (`src/lib/geo/city-names.ts`), and the search folds what the reader
  * types the same way.
  */
+/** The address never changes under the page except through `select`, which also sets state. */
+const noSubscription = () => () => {};
+const askedCity = () => new URLSearchParams(window.location.search).get("city")?.toLowerCase() ?? "";
+
 export function StateExplorer({
   map,
   cities,
@@ -54,25 +58,24 @@ export function StateExplorer({
   stateName: string;
   children: ReactNode;
 }) {
-  const [selected, setSelected] = useState(cities[0]?.key ?? "");
-  const [query, setQuery] = useState("");
   const byKey = useMemo(() => new Map(cities.map((c) => [c.key, c])), [cities]);
 
-  // The page is cached and the same for every address, so a shared link's ?city= is applied
-  // here, once, in the browser.
-  useEffect(() => {
-    const asked = new URLSearchParams(window.location.search).get("city")?.toLowerCase();
-    const found = asked ? (byKey.get(asked) ?? cities.find((c) => cityMatches(asked, c.name) && cityMatches(c.name, asked))) : undefined;
-    if (found) setSelected(found.key);
-    if (found) setQuery(found.name);
-    // Only the address the page opened with; later choices write it themselves.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // The page is cached and the same for every address, so a shared link's ?city= is read here,
+  // in the browser (the server render sees none). A reader's own choice then takes over.
+  const asked = useSyncExternalStore(noSubscription, askedCity, () => "");
+  const fromAddress = useMemo(
+    () => (asked ? (byKey.get(asked) ?? cities.find((c) => cityMatches(asked, c.name) && cityMatches(c.name, asked))) : undefined),
+    [asked, byKey, cities],
+  );
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [typed, setQuery] = useState<string | null>(null);
+  const selected = chosen ?? fromAddress?.key ?? cities[0]?.key ?? "";
+  const query = typed ?? fromAddress?.name ?? "";
 
   function select(key: string) {
     const city = byKey.get(key);
     if (!city) return;
-    setSelected(key);
+    setChosen(key);
     setQuery(city.name);
     try {
       const url = new URL(window.location.href);
