@@ -18,7 +18,8 @@ partial, subject to the same empty/NO_TEXT, fee-page and prior-text-yield checks
 completed artifact means usable source text, never exhaustive or faithful transcription
 proof. Refusal, pause, unconfigured stop sequence, absent/unknown stop reason and unrequested
 tool/result content settle as `rejected` before successful text/table/profile writes or
-low-yield handling. No semantic continuation, paid retry or token increase is added.
+low-yield handling. No semantic continuation, extra call for a rejected native reason or
+token increase is added.
 The attempt binds selected source/run/step, produced text hash and separately retained
 text hash when a better earlier artifact stays. Version2 does not reopen historical settled
 paid attempts on the same bytes; no global reader version or history replay changes.
@@ -27,7 +28,7 @@ For this opt-in only, accepted replies validate actual base usage totals before 
 Observed zero stays zero; valid cache/search counts remain part of the estimate. Missing or
 malformed totals have unknown observation and NULL estimated cost; an unpriced model keeps
 observed counts with NULL estimated cost. Typed rejected replies retain the same honest
-observed/unknown accounting. Paid results, saved step detail and independent narration
+observed/unknown accounting. When required persistence succeeds, paid results, saved step detail and independent narration
 carry a known estimate subtotal plus the number of returned replies with unavailable cost.
 The non-null attempt cost column has an explicitly marked zero placeholder for those
 replies, excluded from playbook folding so it cannot lower learned mean cost. This cohort
@@ -43,6 +44,16 @@ exactly-once billing guarantee; one emitted receipt can contain up to three unch
 transport attempts. No provider/model/prompt/key, package, schema, budget/control or live
 source/provider setting changes are part of this fix.
 
+At this reviewed source, the existing storage boundary remains non-atomic under open
+#1050/#1048. The provider
+receipt is recorded before the artifact writes; a successfully committed receipt survives
+a later text-write error, without a second provider event. That error rejects the reader
+before its normal paid result, settled attempt and saved success summary are returned.
+A failed first artifact write retains the prior artifact and can leave the source eligible
+for a later paid run. An error in a later table/profile statement can leave earlier
+autocommit artifact writes in place. No claim of global no-retry, atomic artifact/attempt
+settlement or recovery from storage failure is made here.
+
 **Guard:** `src/lib/agents/rosetta/paid-read.integration.test.ts` exercises the actual installed
 SDK, factory, bounded transport, tracker and reader against intercepted synthetic JSON:
 usable partials, unresolved native reasons, mixed/bare tool results, malformed text, ordinary
@@ -53,6 +64,10 @@ write sinks. It makes no provider/network or database request.
 loopback production-schema fixture. Real text/table/profile/attempt/ledger writes prove
 partial lineage, prior-good preservation, settled selection without another paid call,
 known-zero versus unknown playbook behavior and the unchanged incurred predicate.
+Known/unknown returned-response cases use an owned-schema failing text-INSERT trigger to
+prove the already committed ledger receipt/run counter survives, prior text/profile stay,
+no normal paid attempt is written and a later dry selection remains eligible. These SQL
+responses use the existing injected creator; actual-SDK controls are the separate suite.
 `src/lib/provider-usage-accounting.db.test.ts` preserves existing observed/unknown/zero
 accounting and budget/run controls.
 

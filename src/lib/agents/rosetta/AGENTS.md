@@ -180,7 +180,8 @@ Rosetta owns source text normalization.
     latter are explicitly `ok_partial`; a completed stored text means a usable artifact,
     not an exhaustive PDF transcription. Refusal, paused/tool work, unconfigured stop
     sequences, absent/unknown stop reasons and unexpected tool/result blocks settle as
-    `rejected` before text/profile/table writes. No semantic continuation or retry runs.
+    `rejected` before text/profile/table writes. No semantic continuation or retry is added
+    for those native response reasons.
     Attempts bind the selected source hash, produced text hash and separately retained
     text hash when a better prior text stays. This scoped version bump does not reopen
     settled attempts on the same bytes.
@@ -191,6 +192,11 @@ Rosetta owns source text normalization.
     replies are therefore absent from that strategy's learned mean. Usage ledger cost is
     NULL. Pre-call budget denials are not unknown returned responses. Generic paid tools,
     no-return transport uncertainty and the existing incurred-spend predicate stay unchanged.
+    Persistence remains non-atomic (#1050/#1048): a successfully committed usage receipt
+    survives a later artifact-write failure, but that error can prevent the normal paid
+    result/attempt/summary. A first text-write failure retains earlier text and can leave
+    later paid selection eligible; later subwrite failures can leave partial artifact
+    updates. This policy adds no atomic settlement or global no-retry guarantee.
   - Fees that hold up (`text-survival.ts`, learning plan steps 1 to 4). At most once per
     `TEXT_SURVIVAL_REFRESH_HOURS` (20) the read step judges each document's current
     completed text by the published fees Knox pulled from it since that text first

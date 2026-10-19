@@ -191,4 +191,47 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     expect(denied.create).not.toHaveBeenCalled();
     expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy = ${PAID_READ_STRATEGY}`).toHaveLength(0);
   });
+
+  it.each([
+    { label: "known", usage: known, cost: 220, observation: "observed" },
+    { label: "unknown", usage: { input_tokens: "invalid", output_tokens: 20 }, cost: null, observation: "unknown" },
+  ])("retains a committed $label provider receipt when the first text write fails; settlement may remain eligible", async (fixture) => {
+    const selected = await seed(text);
+    const [beforeArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    const create = vi.fn(async () => ({ content: [{ type: "text", text: `${text}\nWire transfer fee | $25.00` }],
+      stop_reason: "end_turn", usage: fixture.usage }) as never);
+    // Provider steps use autocommit statements. Fail the first artifact statement,
+    // after the real tracker has already committed its independent usage receipt.
+    await state.client.unsafe(`CREATE FUNCTION "${schema}".fail_paid_text_write() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'owned text persistence failure' USING ERRCODE = 'P0001'; END $$`);
+    try {
+      await state.client.unsafe(`CREATE TRIGGER fail_paid_text_write BEFORE INSERT ON "${schema}".agent_source_texts
+        FOR EACH ROW EXECUTE FUNCTION "${schema}".fail_paid_text_write()`);
+      await expect(runRosettaPaidRead({ db: sql, runId: 900, stepId: 4, create, stateCode: "ZX",
+        fetchImpl: async () => new Response(pdf, { headers: { "content-type": "application/pdf" } }), pageCounter: async () => 2 }))
+        .rejects.toMatchObject({ code: "P0001", message: "owned text persistence failure" });
+    } finally {
+      await state.client.unsafe(`DROP TRIGGER IF EXISTS fail_paid_text_write ON "${schema}".agent_source_texts`);
+      await state.client.unsafe(`DROP FUNCTION "${schema}".fail_paid_text_write()`);
+    }
+    expect(create).toHaveBeenCalledTimes(1);
+    expect((await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
+    expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+    const events = await sql`SELECT status, estimated_cost_microusd, metadata FROM ai_api_usage_events`;
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ status: "completed", metadata: { usage_observation: fixture.observation,
+      token_counts_are_placeholders: fixture.observation === "unknown", source_document_id: selected.document } });
+    expect(events[0].estimated_cost_microusd === null ? null : Number(events[0].estimated_cost_microusd)).toBe(fixture.cost);
+    const [runRow] = await sql`SELECT actual_provider_calls, actual_estimated_cost_microusd FROM agent_runs WHERE id = 900`;
+    expect(runRow.actual_provider_calls).toBe(1); expect(Number(runRow.actual_estimated_cost_microusd)).toBe(fixture.cost ?? 0);
+    expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy IN (${PAID_READ_STRATEGY}, 'read.page_check', 'read.table_rows')`).toHaveLength(0);
+    // The rejected promise supplies no normal paid result/summary to the caller.
+    // A later selection may still be due: this is not durable atomic settlement.
+    const laterCreate = vi.fn(); const laterFetch = vi.fn();
+    const later = await runRosettaPaidRead({ db: sql, runId: 900, stateCode: "ZX", dryRun: true,
+      create: laterCreate, fetchImpl: laterFetch });
+    expect(later).toMatchObject({ selected: 1, processed: 0, dryRun: true });
+    expect(laterCreate).not.toHaveBeenCalled(); expect(laterFetch).not.toHaveBeenCalled();
+  });
 });
