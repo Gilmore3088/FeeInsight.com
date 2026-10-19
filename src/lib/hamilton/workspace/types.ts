@@ -29,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.18.4";
+export const WORKSPACE_ENGINE_VERSION = "1.19.0";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -220,6 +220,8 @@ export interface PeerValue {
   amount: number;
   /** Deposits held in the bank's market counties (FDIC Summary of Deposits), dollars; local competitors only. */
   marketDeposits?: number | null;
+  /** Total assets in thousands of dollars; peers only, absent on older payloads. */
+  totalAssets?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
   /** The published fee rows behind `amount`, so a saved answer records them (H03-T09); absent on older payloads. */
@@ -400,6 +402,13 @@ export interface FeeResearch {
   current: number | null;
   peerLabel: string;
   peers: PeerValue[];
+  /** True when `peers` is the bank's own saved peer group; false when Hamilton picked it. Absent on older payloads. */
+  peerGroupSaved?: boolean;
+  /**
+   * Everyone in the chosen peer group, loaded for a list question (#2033), so the list names the
+   * peers with no value for the fee too. Absent when not loaded.
+   */
+  peerGroup?: PeerGroupCoverage | null;
   band: { p25: number; median: number; p75: number; n: number } | null;
   bands: PriceBand[];
   /**
@@ -445,6 +454,22 @@ export interface FeeResearch {
    */
   rates?: RateResearch | null;
   provenance: Provenance;
+}
+
+/** The chosen peer group's institutions that publish no value for the fee, beside those that do. */
+export interface PeerGroupCoverage {
+  /** Institutions the group's filters take in, the asking bank left out. */
+  total: number;
+  /** Those with no value for the fee, largest first, up to the read's limit. */
+  missing: {
+    institutionId: number;
+    institutionName: string;
+    stateCode: string | null;
+    /** Thousands of dollars. */
+    totalAssets: number | null;
+    /** True when the index holds other fees from its schedule (the fee was not found on it); false when it holds no schedule. */
+    hasSchedule: boolean;
+  }[];
 }
 
 /** One of the bank's own fees stated as a rate. */

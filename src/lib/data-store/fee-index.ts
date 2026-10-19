@@ -1254,6 +1254,8 @@ export interface PeerFeeValue {
    * read. Absent when the institution counts as itself (always, while the rule is off).
    */
   counted_as?: number;
+  /** Total assets in thousands of dollars, for a peer list; absent where a reader does not load them. */
+  total_assets?: number | null;
 }
 
 /** One published_fee_catalog row behind a peer's value. */
@@ -1305,7 +1307,7 @@ export async function getPeerFeeValues(
   if (categories.length === 0 || filterSets.length === 0) return filterSets.map(() => new Map());
   const rows = await sql.unsafe(
     `SELECT ef.id, ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
-            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code, ct.asset_size,
             ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
             ef.fee_name, ef.frequency, ef.fee_audience, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
@@ -1324,6 +1326,7 @@ export async function getPeerFeeValues(
     fee_name: string | null;
     frequency: string | null;
     fee_audience: string | null;
+    asset_size?: number | string | null;
   })[];
   const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
   const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
@@ -1362,12 +1365,74 @@ export async function getPeerFeeValues(
           fee_records: peerFeeRecords(own),
           ...severalField(category, own, amount),
           ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
+          ...(row && row.asset_size !== undefined ? { total_assets: row.asset_size === null ? null : Number(row.asset_size) } : {}),
         });
       }
       result.set(category, values.sort((a, b) => a.amount - b.amount));
     }
     return result;
   });
+}
+
+/** An institution in a peer group, whether or not it publishes the fee asked about. */
+export interface PeerGroupMember {
+  institution_id: number;
+  institution_name: string;
+  state_code: string | null;
+  /** Thousands of dollars. */
+  total_assets: number | null;
+  /** Whether the index holds any approved fee from its schedule, so a missing fee can say which. */
+  has_schedule: boolean;
+}
+
+/**
+ * Every active institution a peer group's filters take in, largest first, so a peer list can
+ * name the peers that publish no value for the fee as well as those that do. `total` counts all
+ * of them; `members` stops at `limit`. The asking institution is left out, as it is of its peers.
+ */
+export async function getPeerGroupMembers(
+  filters: PeerFilterSet,
+  excludeInstitutionId: number,
+  limit = 200,
+): Promise<{ total: number; members: PeerGroupMember[] }> {
+  const ids = peerInstitutionIds(filters);
+  const params = [
+    excludeInstitutionId,
+    ids,
+    ids ? null : filters.charter_type ?? null,
+    ids ? null : filters.state_code ?? null,
+    ids ? null : filters.states?.length ? filters.states : null,
+    ids ? null : filters.asset_tiers?.length ? filters.asset_tiers : null,
+    ids ? null : filters.fed_districts?.length ? filters.fed_districts : null,
+    limit,
+  ];
+  const rows = (await sql.unsafe(
+    `SELECT ct.id, ct.institution_name, ct.state_code, ct.asset_size,
+            EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.review_status = 'approved') AS has_schedule,
+            COUNT(*) OVER ()::int AS total
+       FROM institution_sources ct
+      WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'
+        AND ct.id <> $1::int
+        AND ($2::int[] IS NULL OR ct.id = ANY($2::int[]))
+        AND ($3::text IS NULL OR ct.charter_type = $3)
+        AND ($4::text IS NULL OR ct.state_code = $4)
+        AND ($5::text[] IS NULL OR ct.state_code = ANY($5::text[]))
+        AND ($6::text[] IS NULL OR ct.asset_size_tier = ANY($6::text[]))
+        AND ($7::int[] IS NULL OR ct.fed_district = ANY($7::int[]))
+      ORDER BY ct.asset_size DESC NULLS LAST, ct.id
+      LIMIT $8::int`,
+    params as never[],
+  )) as { id: number | string; institution_name: string; state_code: string | null; asset_size: number | string | null; has_schedule: boolean; total: number }[];
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    members: rows.map((r) => ({
+      institution_id: Number(r.id),
+      institution_name: r.institution_name,
+      state_code: r.state_code ?? null,
+      total_assets: r.asset_size === null || r.asset_size === undefined ? null : Number(r.asset_size),
+      has_schedule: Boolean(r.has_schedule),
+    })),
+  };
 }
 
 export interface SegmentFilter {

@@ -111,6 +111,8 @@ export interface AskIntent {
   structure?: boolean;
   /** The question asks about rules, regulators or compliance. */
   regulation?: boolean;
+  /** The question asks for a list ("list peers' overdraft fees"), so the answer is the named rows (#2033). */
+  list?: boolean;
 }
 
 /** Dollar amounts a question names: "$25", "$32.50", "25 dollars". */
@@ -124,6 +126,13 @@ export function pricesIn(question: string): number[] {
   if (ELIMINATE.test(question) && !out.includes(0)) out.push(0);
   return out.slice(0, MAX_TESTED_PRICES);
 }
+
+/**
+ * A request for the rows themselves (#2033): "list peers' overdraft fees", "show me every peer's
+ * NSF fee", "which credit unions charge a wire fee", "what do our competitors charge".
+ */
+const LIST_QUESTION =
+  /\b(?:list|lists|listing)\b|\bshow (?:me )?(?:all|every|each)\b|\bwhich (?:banks|credit unions|institutions|peers|competitors)\b|\bname (?:the|our|my|all|every) (?:peers|competitors)\b|\b(?:each|every|all)(?: of)? (?:our |my |the )?(?:peers|competitors)\b|\bwhat (?:do|does) (?:our |my |the )?(?:peers|competitors) charge\b/i;
 
 /** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
 const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
@@ -139,6 +148,7 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
     regulation: REGULATION_QUESTION.test(question),
+    list: LIST_QUESTION.test(question),
   };
 }
 
@@ -419,12 +429,13 @@ function respond(input: AskInput): AskResponse {
 
   const answer = buildFeeAnswer(research, {
     focus: intent.focus,
-    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure, regulation: intent.regulation },
+    story: { tested: intent.tested, wantsDecision: intent.wantsOpinion || !!input.objective, structure: intent.structure, regulation: intent.regulation, list: intent.list },
   });
   const section = intent.focus === "competitors" ? "competitors" : intent.focus === "trend" ? "economy" : "position";
   return {
     kind: "research",
-    shortAnswer: answer.headline,
+    // A list answer leads with its count, as the page does (#2033).
+    shortAnswer: answer.storyline?.kind === "list" ? answer.storyline.governingThought : answer.headline,
     pageChange: { screen: "research", feeCategory: fee, section },
     facts: answer.claims,
     question: answer.question ?? undefined,

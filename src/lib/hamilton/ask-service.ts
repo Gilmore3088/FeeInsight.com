@@ -377,7 +377,7 @@ export async function answerAsk(user: Asker, body: AskBody): Promise<AskResult> 
     resolvedAsk.schedule && !resolvedAsk.schedule.top && (await ownScheduleQueued(account, institutionId))
       ? withOwnScheduleNote(resolvedAsk.schedule)
       : resolvedAsk.schedule;
-  const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers }) : null;
+  const loadedResearch = intent.feeCategory ? await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, listPeers: intent.list, ...peers }) : null;
   const research = loadedResearch ? { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName } : null;
   if (intent.feeCategory && !research) return { status: 404, body: { error: "That institution could not be loaded." } };
 
@@ -622,7 +622,7 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     );
     if (!intent.feeCategory) return { status: 200, body: { status: "unavailable", reason: "Name a fee and Hamilton will write it up." } };
     feeCategory = intent.feeCategory;
-    const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, ...peers });
+    const loadedResearch = await getFeeResearch(institutionId, intent.feeCategory, new Date(), { segment: intent.segment, listPeers: intent.list, ...peers });
     if (!loadedResearch) return { status: 404, body: { error: "That institution could not be loaded." } };
     const research = { ...loadedResearch, subjectName: institution.name || loadedResearch.institutionName };
     factEvidence = buildFeeResearchEvidence(research);
@@ -633,6 +633,8 @@ export async function answerAskMemo(user: Asker, body: AskBody): Promise<AskMemo
     storyline = (await withResearchIdentity(response, identity, question, feeCategory, account)).answer?.storyline ?? undefined;
   }
   if (!storyline) return { status: 200, body: { status: "unavailable", reason: "There is no storyline to write up for this question." } };
+  // A list is answered by its rows; the page never asks, and a paid memo is not written over one (#2033).
+  if (storyline.kind === "list") return { status: 200, body: { status: "unavailable", reason: "A list needs no write-up." } };
 
   const usage: MemoUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
   const result = await writeStorylineMemo(storyline, question, { institutionId, identityContext: identity, factEvidence, usage });

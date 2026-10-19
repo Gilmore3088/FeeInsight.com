@@ -13,6 +13,7 @@ import {
   getInstitutionOwnFees,
   getOwnFeesForInstitutions,
   getPeerFeeValues,
+  getPeerGroupMembers,
   getSegmentFeeValues,
   catalogStamp,
   type PeerFeeValue,
@@ -91,6 +92,7 @@ import {
   type MarketLayerScope,
   type AskSegment,
   type OwnFeeRow,
+  type PeerGroupCoverage,
   type PeerValue,
   type RateResearch,
   type SegmentResearch,
@@ -106,6 +108,8 @@ export const REGULATION_NEWS_WINDOW_DAYS = 365;
 
 interface CategoryPeers {
   label: string;
+  /** The bank's own saved peer group was used, not one Hamilton picked. */
+  saved?: boolean;
   /** The filters of the peer group chosen, for its dataset stamp. */
   filters?: HamiltonPeerFilters;
   values: PeerFeeValue[];
@@ -176,7 +180,7 @@ export function choosePeers(
           : options.activeFirst
             ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
             : `${peerLabel(filters)}; ${ownCount === 0 ? "none" : `only ${ownCount}`} of ${peerLabel(candidates[0])} publish this fee`;
-        chosen.set(category, { label, filters, values });
+        chosen.set(category, { label, filters, values, saved: Boolean(options.activeFirst) && index === 0 });
         break;
       }
     }
@@ -280,6 +284,7 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
     sourceDocumentIds: v.source_document_ids,
     documentUrls: v.document_urls,
     publishedAt: v.published_at,
+    ...(v.total_assets !== undefined ? { totalAssets: v.total_assets } : {}),
     ...(v.several ? { several: v.several } : {}),
     ...(v.fee_published_ids?.length ? { feePublishedIds: v.fee_published_ids } : {}),
     ...(v.counted_as !== undefined ? { countedAs: v.counted_as } : {}),
@@ -1001,11 +1006,27 @@ async function loadRates(institutionId: number, feeCategory: string, asOf: strin
   }
 }
 
+/** The group's institutions with no value for the fee; null when the read fails, so the list still shows. */
+async function loadPeerGroupCoverage(filters: HamiltonPeerFilters, institutionId: number, peers: PeerValue[]): Promise<PeerGroupCoverage | null> {
+  try {
+    const group = await getPeerGroupMembers(filters, institutionId);
+    const listed = new Set(peers.map((p) => p.institutionId));
+    return {
+      total: group.total,
+      missing: group.members
+        .filter((m) => !listed.has(m.institution_id))
+        .map((m) => ({ institutionId: m.institution_id, institutionName: m.institution_name, stateCode: m.state_code, totalAssets: m.total_assets, hasSchedule: m.has_schedule })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
   now = new Date(),
-  options: { segment?: AskSegment | null } & EnginePeerOptions = {},
+  options: { segment?: AskSegment | null; listPeers?: boolean } & EnginePeerOptions = {},
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
@@ -1036,6 +1057,8 @@ export async function getFeeResearch(
   const layers = [...feeLayers(base, feeCategory), ...(local.layer ? [local.layer] : [])];
   const chosen = base.peers.get(feeCategory);
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
+  // A list question names the whole group, so the peers with no value for the fee are read too.
+  const peerGroup = options.listPeers && chosen?.filters ? await loadPeerGroupCoverage(chosen.filters, institutionId, peers) : undefined;
   const sorted = countedAmounts(peers);
   const band = sorted.length > 0
     ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
@@ -1071,6 +1094,8 @@ export async function getFeeResearch(
     current,
     peerLabel: chosen?.label ?? base.peerLabel,
     peers,
+    peerGroupSaved: chosen?.saved ?? false,
+    ...(peerGroup !== undefined ? { peerGroup } : {}),
     band,
     bands: priceBands(sorted, current),
     layers,

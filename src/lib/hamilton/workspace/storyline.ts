@@ -14,14 +14,14 @@ import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import { formatRatePercent } from "@/lib/percent-fees";
-import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
+import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { isFederalRelease, isWireFact } from "./wire";
-import type { ArchetypeKey, KeyFigure, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
-import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, SegmentMember, SourceRef } from "./types";
+import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
+import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, PeerValue, SegmentMember, SourceRef } from "./types";
 
 /** How the question reads, as far as the storyline needs it. */
 export interface StoryIntent {
@@ -34,6 +34,8 @@ export interface StoryIntent {
   structure?: boolean;
   /** The question asks about rules or regulators, so the finance lens names the bank's own regulator. */
   regulation?: boolean;
+  /** The question asks for a list, so the answer is the named rows and nothing else (#2033). */
+  list?: boolean;
 }
 
 export const MIN_STORY_EXHIBITS = 3;
@@ -507,6 +509,141 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
+// ─── The list a list question asks for (#2033) ───────────────────────────────
+
+function listedRow(p: PeerValue): PeerListRow {
+  return {
+    institutionId: p.institutionId,
+    institutionName: p.institutionName,
+    stateCode: p.stateCode,
+    totalAssets: p.totalAssets ?? null,
+    amount: p.amount,
+    ...(p.several ? { amountText: statedFeeText(p.amount, p.several, money) } : {}),
+    status: "published",
+    documentUrl: p.documentUrls[0] ?? null,
+    publishedAt: p.publishedAt?.slice(0, 10) ?? null,
+  };
+}
+
+/** Largest first, as the segment table orders them; a row with no assets on file goes last. */
+function byAssets(a: PeerListRow, b: PeerListRow): number {
+  return (b.totalAssets ?? -1) - (a.totalAssets ?? -1) || a.institutionName.localeCompare(b.institutionName);
+}
+
+/** The bank's own row, first and marked, when it publishes the fee. */
+function ownListRow(research: FeeResearch): PeerListRow[] {
+  if (research.current === null) return [];
+  const own = research.ownRows[0];
+  return [{
+    institutionId: research.institutionId,
+    institutionName: subjectName(research),
+    stateCode: null,
+    totalAssets: null,
+    amount: research.current,
+    status: "published",
+    documentUrl: own?.documentUrl ?? own?.sourceUrl ?? null,
+    publishedAt: own?.publishedAt?.slice(0, 10) ?? null,
+    own: true,
+  }];
+}
+
+/**
+ * Every institution in the peer group by name: those publishing the fee with it and its source,
+ * then those with none on file and why. The governing thought counts them, so the title only
+ * says how the rows are ordered.
+ */
+function peerListPiece(research: FeeResearch, name: string): Piece | null {
+  const published = research.peers.map(listedRow).sort(byAssets);
+  const coverage = research.peerGroup ?? null;
+  const missing: PeerListRow[] = (coverage?.missing ?? []).map((m) => ({
+    institutionId: m.institutionId,
+    institutionName: m.institutionName,
+    stateCode: m.stateCode,
+    totalAssets: m.totalAssets,
+    amount: null,
+    status: m.hasSchedule ? "not_on_schedule" : "no_schedule",
+    documentUrl: null,
+    publishedAt: null,
+  }));
+  if (published.length === 0 && missing.length === 0) return null;
+  const n = published.length;
+  const total = coverage ? Math.max(coverage.total, n) : null;
+  const median = research.band && research.band.n >= MIN_PEERS_FOR_POSITION ? `; the median is ${money(research.band.median)}` : "";
+  const actionTitle =
+    total !== null && total > n
+      ? `${count(n)} of ${count(total)} peers publish ${article(name)} ${name} fee${median}.`
+      : `${count(n)} peers publish ${article(name)} ${name} fee${median}.`;
+  const unlisted = total !== null ? Math.max(0, total - n - missing.length) : 0;
+  const rows = [...published, ...missing.sort(byAssets)];
+  return {
+    key: "peerList",
+    actionTitle,
+    exhibit: {
+      kind: "peer_list",
+      title: `${capitalize(name)} fees of ${count(rows.length + unlisted)} peers, largest first`,
+      feeLabel: `${capitalize(name)} fee`,
+      rows: [...ownListRow(research), ...rows],
+      unlisted,
+      sources: [feeSource(research)],
+      note: peerGroupNote(research),
+    },
+  };
+}
+
+/** Which peers these are: the saved group, or the one Hamilton picked, with its filters. */
+function peerGroupNote(research: FeeResearch): string {
+  const who = research.peerGroupSaved ? "Saved peer group" : "Peer group picked by Hamilton";
+  // The label's widening clause ("; only 3 of ... publish this fee") is left to the source note.
+  const note = `${who}: ${research.peerLabel.split(";")[0].trim()}.`;
+  return words(note) <= MAX_NOTE_WORDS ? note : `${who}.`;
+}
+
+/** Every local competitor by name with its fee and source: a list question about the market. */
+function localListPiece(research: FeeResearch, name: string): Piece | null {
+  const list = research.localCompetitors ?? [];
+  if (list.length === 0) return null;
+  const amounts = list.map((p) => p.amount);
+  return {
+    key: "localList",
+    actionTitle: `${count(list.length)} local competitors publish ${article(name)} ${name} fee; they charge ${spanOf(money(Math.min(...amounts)), money(Math.max(...amounts)))}.`,
+    exhibit: {
+      kind: "peer_list",
+      title: `${capitalize(name)} fees of ${count(list.length)} local competitors`,
+      feeLabel: `${capitalize(name)} fee`,
+      // Local competitors arrive largest deposits first; that order is kept.
+      rows: [...ownListRow(research), ...list.map(listedRow)],
+      unlisted: 0,
+      sources: [feeSource(research)],
+      note: "Largest deposits in the market first.",
+    },
+  };
+}
+
+/** A list answer's figures: the bank's own fee, the median and how many publish one. */
+function listKeyFigures(research: FeeResearch, name: string, piece: Piece): KeyFigure[] {
+  const out: KeyFigure[] = [];
+  const own = research.ownRows[0];
+  if (research.current !== null) {
+    out.push({
+      value: money(research.current),
+      label: `${subjectPossessive(research)} ${name} fee`,
+      source: { label: `${subjectPossessive(research)} published fee schedule`, table: "published_fee_catalog", url: own?.documentUrl ?? own?.sourceUrl ?? undefined, asOf: own?.publishedAt?.slice(0, 10) ?? null },
+    });
+  }
+  const local = piece.key === "localList";
+  if (!local && research.band && research.band.n >= MIN_PEERS_FOR_POSITION) {
+    out.push({ value: money(research.band.median), label: "Peer median", source: feeSource(research), n: research.band.n });
+  }
+  const rows = piece.exhibit.kind === "peer_list" ? piece.exhibit.rows.filter((r) => !r.own) : [];
+  const publishing = rows.filter((r) => r.status === "published").length;
+  out.push({
+    value: local || rows.length === publishing ? count(publishing) : `${count(publishing)} of ${count(rows.length + (piece.exhibit.kind === "peer_list" ? piece.exhibit.unlisted : 0))}`,
+    label: local ? "Competitors publishing one" : "Peers publishing one",
+    source: feeSource(research),
+  });
+  return out;
+}
+
 function trendPiece(research: FeeResearch): Piece | null {
   const fin = research.institutionFinancials;
   if (!fin || fin.quarters.length < 2) return null;
@@ -531,6 +668,7 @@ function trendPiece(research: FeeResearch): Piece | null {
 export function storylineKind(research: FeeResearch, intent: StoryIntent): StorylineKind {
   if (segmentLed(research)) return "segment";
   if ((intent.tested ?? []).length > 0) return "price_test";
+  if (intent.list) return "list";
   if (intent.wantsDecision) return "board_decision";
   if (intent.structure) return "structure";
   if (intent.focus === "trend") return "trend";
@@ -544,6 +682,8 @@ const ORDER: Record<StorylineKind, string[]> = {
   board_decision: ["position", "money", "lineup", "rate", "archetype", "changes", "local", "structure"],
   structure: ["structure", "lineup", "archetype", "position", "rate", "local", "changes"],
   trend: ["trend", "money", "changes", "position", "rate", "local"],
+  // One exhibit: the list itself (buildStoryline picks the peers or the market).
+  list: ["peerList", "localList"],
 };
 
 function pieces(research: FeeResearch, name: string): Record<string, () => Piece | null> {
@@ -558,6 +698,8 @@ function pieces(research: FeeResearch, name: string): Record<string, () => Piece
     changes: () => changePiece(research, name),
     money: () => moneyPiece(research, name),
     trend: () => trendPiece(research),
+    peerList: () => peerListPiece(research, name),
+    localList: () => localListPiece(research, name),
     rate: () => ratePiece(research, name),
   };
 }
@@ -902,10 +1044,37 @@ function watch(research: FeeResearch, name: string, intent: StoryIntent = {}): F
   return [...out, ...news].slice(0, 3);
 }
 
+/**
+ * A list question's answer (#2033): the count as the governing thought, three figures and the
+ * named rows. No call report, regulation, lenses or options: the reader asked for the list.
+ */
+function listStoryline(research: FeeResearch, name: string, builders: Record<string, () => Piece | null>, intent: StoryIntent): Storyline | null {
+  const keys = intent.focus === "competitors" ? ["localList", "peerList"] : ["peerList", "localList"];
+  let piece: Piece | null = null;
+  for (const key of keys) {
+    piece = builders[key]?.() ?? null;
+    if (piece) break;
+  }
+  if (!piece) return null;
+  return {
+    kind: "list",
+    governingThought: piece.actionTitle,
+    situation: [],
+    complication: [],
+    keyFigures: listKeyFigures(research, name, piece),
+    // The governing thought states the count, so the exhibit's own line is its title.
+    exhibits: [{ id: `list-${piece.key}`, number: 1, actionTitle: piece.exhibit.title, exhibit: piece.exhibit }],
+    lenses: { finance: [], market: [] },
+    defaultView: "market",
+    watch: [],
+  };
+}
+
 export function buildStoryline(research: FeeResearch, answer: HamiltonAnswer, intent: StoryIntent = {}): Storyline | null {
   const name = proseFeeName(research.feeCategory);
   const kind = storylineKind(research, intent);
   const builders = pieces(research, name);
+  if (kind === "list") return listStoryline(research, name, builders, intent);
   const chosen: Piece[] = [];
   for (const key of ORDER[kind]) {
     if (chosen.length >= MAX_STORY_EXHIBITS) break;

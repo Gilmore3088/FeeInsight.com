@@ -9,6 +9,7 @@ import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { ANSWER_TYPE, dayDate, figureSize, fmtMoney, fmtSignedMoney, SERIF } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
 import { IncomeSplitChart, incomeSplitOf } from "./income-split";
+import { PeerList } from "./peer-list";
 
 const th = ANSWER_TYPE.th;
 
@@ -24,6 +25,14 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     return (
       <div className="break-inside-avoid">
         <ExhibitView exhibit={x} number={number} title={item.actionTitle} />
+        {takeaway}
+      </div>
+    );
+  }
+  if (x.kind === "peer_list") {
+    return (
+      <div className="break-inside-avoid">
+        <PeerList exhibit={x} title={item.actionTitle} number={number} />
         {takeaway}
       </div>
     );
