@@ -311,7 +311,8 @@ describe.skipIf(!connection)("Symbolic lesser-of source eligibility in actual Po
       const [rawBefore] = await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`;
       const recheck = await (await import("../hamilton/rules-recheck")).rollBackUnreproducedFees(tx, {
         runId: f.runId, institutionId: f.institutionId, dryRun: false, batchId: `agentic-run-${f.runId}` });
-      expect(recheck.error).toBeUndefined();
+      expect(recheck.documentsChecked).toBe(1);
+      expect(recheck.liveFeesChecked).toBe(1);
       expect(recheck.rollbacks).toEqual([]);
       expect(recheck.disputed).toContainEqual(expect.objectContaining({ feePublishedId: Number(publishedId), amount: 10 }));
       expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`)[0]).toEqual(rawBefore);
