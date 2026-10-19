@@ -17,8 +17,9 @@ import {
   type HmdaPanel,
 } from "@/lib/regulatory/hmda";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
+import { readFdicIdentityHolds, lockFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
 import { HMDA_ORDINARY_IDENTITY_WRITES_ENABLED } from "@/lib/agents/hoovie/hmda-repair-release";
-import { matchHmdaIdentities, summarizeHmdaMatching, type HmdaInstitutionIdentity, type HmdaIdentityMatch, type HmdaMatchingSummary } from "@/lib/regulatory/hmda-identity";
+import { heldHmdaAnnualLinks, matchHmdaIdentities, summarizeHmdaMatching, type HmdaInstitutionIdentity, type HmdaIdentityMatch, type HmdaMatchingSummary } from "@/lib/regulatory/hmda-identity";
 import { lockHmdaYear } from "./hmda-lock";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
@@ -402,11 +403,29 @@ export async function runRegistryHmda(options: RegistryHmdaOptions): Promise<Reg
     const db = raw as unknown as RegistryDb;
     if (dryRun) await db`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
     await db`SET LOCAL statement_timeout = '15s'`;
-    if (!dryRun) await lockHmdaYear(db, year);
+    if (!dryRun) {
+      await lockHmdaYear(db, year);
+      await db`LOCK TABLE institution_sources,institution_lei_links IN SHARE MODE`;
+      await lockFdicIdentityHolds(db);
+    }
+    const institutions = emptyReason === null ? await readInstitutionIdentities(db) : [];
+    const identityHolds = emptyReason === null ? await readFdicIdentityHolds(db) : [];
     const matches = emptyReason === null
       ? matchHmdaIdentities(leis.map((lei) => ({ lei, rssdId: panel.lenders.get(lei)?.rssdId ?? null,
-        sourceConflict: panel.conflictingLeis?.includes(lei) })), await readInstitutionIdentities(db))
+        sourceConflict: panel.conflictingLeis?.includes(lei) })), institutions, identityHolds)
       : [];
+    // A held legacy annual ID must not be copied into newly ingested state cells while
+    // identity cleanup remains release-disabled. Preserve the whole partition for review.
+    if (!dryRun && !HMDA_ORDINARY_IDENTITY_WRITES_ENABLED && emptyReason === null) {
+      const annual = await db`SELECT lei, institution_id FROM hmda_lenders
+        WHERE activity_year=${year} AND lei::text=ANY(${leis}::text[])`;
+      const preserved = annual.map((row) => ({ lei: String(row.lei).trim(),
+        institutionId: row.institution_id == null ? null : Number(row.institution_id) }));
+      if (matches.some((row) => row.reason === "fdic_identity_hold")
+        || heldHmdaAnnualLinks(preserved, institutions, identityHolds).length > 0) {
+        throw new Error("HMDA partition is affected by durable FDIC identity holds; identity writes remain disabled pending review");
+      }
+    }
     const matching = summarizeHmdaMatching(matches);
     const base: RegistryHmdaResult = {
       source: HMDA_SOURCE,

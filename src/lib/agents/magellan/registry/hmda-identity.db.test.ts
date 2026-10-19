@@ -6,6 +6,7 @@ import { strToU8, zipSync } from "fflate";
 import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { fdicIdentityHoldFingerprint, type FdicIdentityHoldInput } from "@/lib/data-store/fdic-identity-holds";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 import { runRegistryHmda } from "./hmda";
 import type { RegistryDb } from "./partitions";
@@ -51,12 +52,18 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
     await db`CREATE TABLE institution_sources (id bigint PRIMARY KEY, lei text, rssd_id text,
       source text, cert_number text, registry_synced_at timestamptz)`;
     await db.unsafe(migrationFragment("20270110000063_institution_lei_links.sql", "CREATE TABLE IF NOT EXISTS public.institution_lei_links"));
+    await db.unsafe("DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;\nEND $$;");
+    await db.unsafe(migrationFragment("20261019163933_fdic_identity_conflict_holds.sql", "CREATE TABLE public.institution_identity_holds"));
     await db.unsafe(migrationFragment("20270110000058_public_data_loaders.sql", "CREATE TABLE IF NOT EXISTS public.hmda_lenders", "-- hmda_apor_rates:"));
     await db.unsafe(migrationFragment("20261003142709_regulatory_registry.sql", "CREATE TABLE IF NOT EXISTS public.registry_ingest_partitions", "CREATE INDEX IF NOT EXISTS registry_ingest_partitions_due_idx"));
   });
 
   beforeEach(async () => {
     release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = true;
+    // Isolated fixture reset only: production holds expose no mutation/clear path.
+    await db`ALTER TABLE institution_identity_holds DISABLE TRIGGER USER`;
+    try { await db`TRUNCATE institution_identity_holds RESTART IDENTITY`; }
+    finally { await db`ALTER TABLE institution_identity_holds ENABLE TRIGGER USER`; }
     await db`TRUNCATE institution_sources, institution_lei_links, hmda_lenders,
       hmda_lender_originations, hmda_lender_loan_costs, registry_ingest_partitions RESTART IDENTITY CASCADE`;
   });
@@ -67,6 +74,17 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
       await db.end();
     }
   });
+
+  async function insertHold(over: Partial<FdicIdentityHoldInput> = {}) {
+    const input: FdicIdentityHoldInput = { certificate: "42", institutionId: 1, reason: "stored_lei_conflict",
+      storedLei: A, implicatedLeis: [A, B], reportedLeis: [B], ownerCertificates: ["42"],
+      evidence: { reported_value: B }, ...over };
+    await db`INSERT INTO institution_identity_holds (fingerprint,certificate,institution_id,reason,stored_lei,
+      implicated_leis,reported_leis,owner_certificates,evidence,source_url,source_sha256,observed_at,agent_run_id)
+      VALUES (${fdicIdentityHoldFingerprint(input)},${input.certificate},${input.institutionId},${input.reason},${input.storedLei},
+        ${input.implicatedLeis},${input.reportedLeis},${input.ownerCertificates},${JSON.stringify(input.evidence)}::jsonb,
+        'https://api.fdic.gov/banks/institutions',${"b".repeat(64)},'2026-10-19T00:00:00Z',901)`;
+  }
 
   function fixtureFetch(year: number, state: string, loans: Loan[], panel: Array<{ lei: string; rssd: string; parent?: string; holder?: string }> = []) {
     const csv = [
@@ -110,6 +128,7 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
     return JSON.stringify({
       institutions: [...await db`SELECT * FROM institution_sources ORDER BY id`],
       links: [...await db`SELECT * FROM institution_lei_links ORDER BY institution_id`],
+      holds: [...await db`SELECT * FROM institution_identity_holds ORDER BY id`],
       lenders: [...await db`SELECT * FROM hmda_lenders ORDER BY activity_year, lei`],
       originations: [...await db`SELECT * FROM hmda_lender_originations ORDER BY id`],
       costs: [...await db`SELECT * FROM hmda_lender_loan_costs ORDER BY id`],
@@ -269,6 +288,16 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
           AND classid = 2253 AND objid = 2025 AND granted) THEN
           RAISE EXCEPTION 'year lock missing during HMDA write';
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'relation' AND pid = pg_backend_pid()
+          AND relation = 'institution_identity_holds'::regclass AND mode = 'ShareLock' AND granted) THEN
+          RAISE EXCEPTION 'durable identity hold lock missing during HMDA write';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='relation' AND pid=pg_backend_pid()
+          AND relation='institution_sources'::regclass AND mode='ShareLock' AND granted)
+          OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='relation' AND pid=pg_backend_pid()
+          AND relation='institution_lei_links'::regclass AND mode='ShareLock' AND granted) THEN
+          RAISE EXCEPTION 'canonical identity lock missing during HMDA write';
+        END IF;
         RETURN NULL;
       END $$`);
     for (const table of ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"]) {
@@ -383,6 +412,72 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
     expect(diagnostic.identity).toMatchObject({ status: "ambiguous", candidateIds: [1, 9], reason: expectedReason });
   });
 
+  it.each(["own LEI", "canonical LEI", "respondent RSSD"])("honors durable FDIC holds through %s in every HMDA table", async (kind) => {
+    await db`INSERT INTO institution_sources (id, lei, rssd_id, source, cert_number)
+      VALUES (1, ${kind === "own LEI" ? A : null}, '480228', 'fdic', '42')`;
+    if (kind === "canonical LEI") await db`INSERT INTO institution_lei_links (institution_id,status,lei,match_basis)
+      VALUES (1,'linked',${A},'fdic_cert')`;
+    await insertHold();
+    const lenderLei = kind === "respondent RSSD" ? C : A;
+    const { result } = await run({ year: 2023, loans: [{ lei: lenderLei }], panel: [{ lei: lenderLei, rssd: "480228" }] });
+    expect(result.matching).toMatchObject({ matched: 0, ambiguous: 1, reasons: { fdic_identity_hold: 1 } });
+    const rows = await identities();
+    expect(rows.lenders[0]).toMatchObject({ institution_id: null, match_method: null, reason: "fdic_identity_hold" });
+    expect(rows.originations[0].institution_id).toBeNull();
+    expect(rows.costs[0].institution_id).toBeNull();
+    const [diagnostic] = await db`SELECT raw_json->'feeinsight_identity' AS identity FROM hmda_lenders`;
+    expect(diagnostic.identity).toMatchObject({ identityHolds: [{ certificate: "42", reason: "stored_lei_conflict",
+      sourceUrl: "https://api.fdic.gov/banks/institutions", sourceSha256: "b".repeat(64), agentRunId: 901 }],
+      canonicalSnapshots: [{ id: 1, identityHolds: [{ certificate: "42" }] }] });
+  });
+
+  it("preserves a held linked partition while identity writes are off and clears every state only when released", async () => {
+    await db`INSERT INTO institution_sources (id, lei, source, cert_number) VALUES (1, ${A}, 'fdic', '42')`;
+    await run({ state: "MD", loans: [{ lei: A }] });
+    await insertHold();
+    release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = false;
+    const before = await snapshot();
+    await expect(run({ state: "CA", loans: [{ lei: A }] })).rejects.toThrow(/durable FDIC identity holds.*disabled/);
+    expect(await snapshot()).toBe(before);
+    const preview = await run({ state: "CA", loans: [{ lei: A }], dryRun: true });
+    expect(preview.result.matching).toMatchObject({ matched: 0, ambiguous: 1 });
+    expect(await snapshot()).toBe(before);
+
+    release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = true;
+    const released = await run({ state: "CA", loans: [{ lei: A }] });
+    expect(released.result).toMatchObject({ matchedLenders: 0, propagatedOriginationRows: 1, propagatedCostRows: 1 });
+    const rows = await identities();
+    expect(rows.lenders[0]).toMatchObject({ institution_id: null, reason: "fdic_identity_hold" });
+    expect(rows.originations).toHaveLength(2);
+    expect(rows.costs).toHaveLength(2);
+    for (const table of [rows.originations, rows.costs]) expect(table.every((row) => row.institution_id === null)).toBe(true);
+  });
+
+  it("refuses a held historical annual association that no longer appears in fresh matching", async () => {
+    await db`INSERT INTO institution_sources (id,lei,source,cert_number) VALUES (1,${C},'fdic','42')`;
+    await run({ state: "MD", loans: [{ lei: C }] });
+    await db`UPDATE institution_sources SET lei=${A} WHERE id=1`;
+    await insertHold();
+    release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = false;
+    const before = await snapshot();
+    // The retired panel supplies no RSSD and C is absent from every current canonical key.
+    const preview = await run({ state: "CA", loans: [{ lei: C }], dryRun: true });
+    expect(preview.result.matching).toMatchObject({ matched: 0, unmatched: 1, ambiguous: 0 });
+    await expect(run({ state: "CA", loans: [{ lei: C }] })).rejects.toThrow(/durable FDIC identity holds.*disabled/);
+    expect(await snapshot()).toBe(before);
+    expect((await db`SELECT institution_id::int AS institution_id FROM hmda_lenders WHERE lei=${C}`)[0].institution_id).toBe(1);
+    expect(await db`SELECT id FROM hmda_lender_originations WHERE state_code='CA'`).toHaveLength(0);
+  });
+
+  it("reads holds for untracked certificate owners globally in a read-only preview", async () => {
+    await db`INSERT INTO institution_sources (id, lei) VALUES (1, ${A})`;
+    await insertHold({ institutionId: null, certificate: "999", ownerCertificates: ["999"] });
+    const before = await snapshot();
+    const { result } = await run({ loans: [{ lei: A }], dryRun: true });
+    expect(result.matching).toMatchObject({ matched: 0, ambiguous: 1, reasons: { fdic_identity_hold: 1 } });
+    expect(await snapshot()).toBe(before);
+  });
+
   it("does not choose one conflicting historical panel row even when the lender has an own LEI", async () => {
     await db`INSERT INTO institution_sources (id, lei, rssd_id) VALUES (1, ${A}, '480228')`;
     const { result } = await run({ year: 2023, loans: [{ lei: A }], panel: [
@@ -424,7 +519,7 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
     expect(await snapshot()).toBe(before);
   });
 
-  it.each(["institution_sources", "institution_lei_links"])("fails before writes if %s is unavailable, rather than reporting zero coverage", async (table) => {
+  it.each(["institution_sources", "institution_lei_links", "institution_identity_holds"])("fails before writes if %s is unavailable, rather than reporting zero coverage", async (table) => {
     await db`INSERT INTO institution_sources (id, lei) VALUES (1, ${A})`;
     const before = await snapshot();
     await db`ALTER TABLE ${db(table)} RENAME TO identity_table_unavailable`;

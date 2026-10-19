@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { matchHmdaIdentities, normalizeHmdaRssd, planHmdaIdentityRepair, summarizeHmdaMatching, type HmdaInstitutionIdentity } from "./hmda-identity";
+import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
+import { heldHmdaAnnualLinks, matchHmdaIdentities, normalizeHmdaRssd, planHmdaIdentityRepair, summarizeHmdaMatching, type HmdaInstitutionIdentity } from "./hmda-identity";
 
 const A = "549300OSSFHX7ABQ2Y81";
 const B = "5493001KJTIIGC8Y1R12";
 const C = "254900B5PW4JPZAQI721";
+const hold = (over: Partial<FdicIdentityHold> = {}): FdicIdentityHold => ({
+  id: 12, fingerprint: "a".repeat(64), certificate: "42", institutionId: 7, reason: "stored_lei_conflict",
+  storedLei: A, implicatedLeis: [A, B], reportedLeis: [B], ownerCertificates: ["42"],
+  sourceUrl: "https://api.fdic.gov/banks/institutions", sourceSha256: "b".repeat(64),
+  observedAt: "2026-10-19T00:00:00Z", agentRunId: 901, evidence: { reported_value: B }, ...over,
+});
 const bank = (id: number, lei: string | null, rssdId: string | null = null): HmdaInstitutionIdentity => ({ id, lei, rssdId });
 const match = (institutions: HmdaInstitutionIdentity[], rssdId: string | null = null) => matchHmdaIdentities([{ lei: A, rssdId }], institutions)[0];
 
@@ -51,7 +58,7 @@ describe("HMDA exact institution identity", () => {
     } }]);
     expect(row).toMatchObject({ status: "ambiguous", reason: "canonical_lei_conflict" });
     expect(row.canonicalSnapshots).toEqual([{
-      id: 8, lei: A, rssdId: "480228", source: "fdic", certNumber: "42", registrySyncedAt: null,
+      id: 8, lei: A, rssdId: "480228", source: "fdic", certNumber: "42", registrySyncedAt: null, identityHolds: [],
       leiLink: { status: "linked", lei: B, basis: "fdic_cert", candidates: [], matchKey: "42",
         sourceUrl: "https://api.gleif.org/record", checkedAt: "2026-10-18T00:00:00Z" },
     }]);
@@ -125,6 +132,65 @@ describe("HMDA exact institution identity", () => {
     expect(match([{ ...bank(1, A), leiLink: { status: "ambiguous", lei: null, basis: "rssd", candidates: [A, B] } }])).toMatchObject({ status: "ambiguous", institutionId: null });
   });
 
+  it.each(["own LEI", "canonical LEI", "respondent RSSD"])("does not bypass a durable FDIC hold through %s", (kind) => {
+    const institution: HmdaInstitutionIdentity = bank(7, kind === "own LEI" ? A : null, "480228");
+    if (kind === "canonical LEI") institution.leiLink = { status: "linked", lei: A, basis: "fdic_cert" };
+    const row = matchHmdaIdentities([{ lei: A, rssdId: kind === "respondent RSSD" ? "480228" : null }], [institution], [hold()])[0];
+    expect(row).toMatchObject({ status: "ambiguous", reason: "fdic_identity_hold", institutionId: null,
+      candidateIds: [7], identityHolds: [hold()], canonicalSnapshots: [{ id: 7, identityHolds: [hold()] }] });
+  });
+
+  it("holds a publisher certificate before it has a tracked institution owner", () => {
+    const institution = { ...bank(7, null, "480228"), source: "fdic", certNumber: "00042" };
+    const row = matchHmdaIdentities([{ lei: C, rssdId: "480228" }], [institution], [hold({ institutionId: null })])[0];
+    expect(row).toMatchObject({ status: "ambiguous", reason: "fdic_identity_hold", candidateIds: [7] });
+    expect(row.canonicalSnapshots[0].identityHolds).toHaveLength(1);
+    // A certificate belongs to the named publisher; an NCUA key of the same spelling is not an FDIC certificate.
+    expect(matchHmdaIdentities([{ lei: C, rssdId: "480228" }], [{ ...institution, source: "ncua" }], [hold({ institutionId: null })])[0])
+      .toMatchObject({ status: "matched", institutionId: 7, method: "rssd" });
+  });
+
+  it("blocks every implicated LEI globally, including another owner's otherwise unique key", () => {
+    const stored = hold({ institutionId: null, certificate: "999" });
+    const row = matchHmdaIdentities([{ lei: A, rssdId: null }], [bank(8, A)], [stored])[0];
+    expect(row).toMatchObject({ status: "ambiguous", reason: "fdic_identity_hold", candidateIds: [8], identityHolds: [stored] });
+  });
+
+  it("preserves inactive held owners and competing candidates in the decision snapshot", () => {
+    const stored = hold({ institutionId: 9 });
+    const row = matchHmdaIdentities([{ lei: A, rssdId: null }], [bank(8, A), bank(9, null)], [stored])[0];
+    expect(row).toMatchObject({ status: "ambiguous", candidateIds: [8, 9], reason: "fdic_identity_hold" });
+    expect(row.canonicalSnapshots.every((candidate) => candidate.identityHolds.length === 1)).toBe(true);
+  });
+
+  it("does not let an unrelated lender LEI bypass a held institution or implicated own key by RSSD", () => {
+    for (const institutions of [[bank(7, null, "480228")], [bank(8, B, "480228")]]) {
+      const row = matchHmdaIdentities([{ lei: C, rssdId: "480228" }], institutions, [hold()])[0];
+      expect(row).toMatchObject({ status: "ambiguous", institutionId: null, reason: "fdic_identity_hold" });
+    }
+  });
+
+  it.each(["institution ID", "certificate", "own LEI", "linked LEI", "review candidate"])("holds a historical annual link by its current %s even without a fresh candidate", (kind) => {
+    const institution: HmdaInstitutionIdentity = { ...bank(7, kind === "own LEI" ? A : null), source: "fdic",
+      certNumber: kind === "certificate" ? "42" : "99" };
+    if (kind === "linked LEI") institution.leiLink = { status: "linked", lei: A, basis: "fdic_cert" };
+    if (kind === "review candidate") institution.leiLink = { status: "ambiguous", lei: null, basis: "rssd", candidates: [A] };
+    const stored = hold({ institutionId: kind === "institution ID" ? 7 : 8 });
+    expect(matchHmdaIdentities([{ lei: C, rssdId: null }], [institution], [stored])[0])
+      .toMatchObject({ status: "unmatched", candidateIds: [] });
+    expect(heldHmdaAnnualLinks([{ lei: C, institutionId: 7 }], [institution], [stored]))
+      .toMatchObject([{ lei: C, institutionId: 7, identityHolds: [stored] }]);
+  });
+
+  it("freezes durable reason and evidence separately from replaceable publisher receipts", () => {
+    const stored = hold();
+    const row = matchHmdaIdentities([{ lei: A, rssdId: null }], [bank(7, A)], [stored])[0];
+    stored.implicatedLeis.push(C); stored.reportedLeis.push(C); stored.ownerCertificates.push("99");
+    stored.evidence.reported_value = C;
+    expect(row.identityHolds).toEqual([hold()]);
+    expect(row.canonicalSnapshots[0].identityHolds).toEqual([hold()]);
+  });
+
   it("does not treat a missing LEI as an alias for a valid respondent", () => {
     expect(matchHmdaIdentities([{ lei: "bad", rssdId: "480228" }], [bank(1, A, "480228")])[0]).toMatchObject({ status: "unmatched", reason: "invalid_lei" });
   });
@@ -147,6 +213,12 @@ describe("bounded HMDA matching review plan", () => {
     const values = input(); const before = JSON.stringify(values);
     expect(planHmdaIdentityRepair(values)).toMatchObject({ mode: "review_only", writes: 0, lenderRows: 1, aggregateRows: 18, proposedLenderChanges: 1, rows: [{ beforeInstitutionId: null, institutionId: 7, states: ["DC", "MD", "VA"] }] });
     expect(JSON.stringify(values)).toBe(before);
+  });
+
+  it("includes durable holds in review planning and proposes no held link", () => {
+    const result = planHmdaIdentityRepair({ ...input(), identityHolds: [hold()] });
+    expect(result).toMatchObject({ proposedLenderChanges: 0, summary: { matched: 0, ambiguous: 1 },
+      rows: [{ changes: false, reason: "fdic_identity_hold", identityHolds: [hold()] }] });
   });
 
   it("requires a single valid year and explicit distinct LEIs", () => {

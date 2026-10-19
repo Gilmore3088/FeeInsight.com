@@ -122,6 +122,11 @@ describe("registry hmda run", () => {
     const readAt = statements.findIndex((s) => s.text.includes("FROM institution_sources s"));
     expect(lockAt).toBeGreaterThanOrEqual(0);
     expect(readAt).toBeGreaterThan(lockAt);
+    const holdLockAt = statements.findIndex((s) => s.text.includes("LOCK TABLE institution_identity_holds IN SHARE MODE"));
+    const canonicalLockAt = statements.findIndex((s) => s.text.includes("LOCK TABLE institution_sources,institution_lei_links IN SHARE MODE"));
+    expect(canonicalLockAt).toBeGreaterThan(lockAt);
+    expect(holdLockAt).toBeGreaterThan(canonicalLockAt);
+    expect(readAt).toBeGreaterThan(holdLockAt);
   });
 
   it("does not propagate annual identities while ordinary identity rollout is disabled", async () => {

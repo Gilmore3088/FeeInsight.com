@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { sql } from "@/lib/data-store/connection";
 import {
   fetchFdicActiveInstitutions,
@@ -7,7 +8,8 @@ import {
 } from "@/lib/regulatory/fdic";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { normalizeLei } from "@/lib/regulatory/gleif";
-import { FDIC_OWN_LEI_WRITES_ENABLED } from "@/lib/agents/hoovie/hmda-repair-release";
+import { FDIC_IDENTITY_HOLD_WRITES_ENABLED, FDIC_OWN_LEI_WRITES_ENABLED } from "@/lib/agents/hoovie/hmda-repair-release";
+import { persistFdicIdentityHolds, readFdicIdentityHolds, type FdicIdentityHoldInput } from "@/lib/data-store/fdic-identity-holds";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -80,52 +82,139 @@ interface FdicLeiIdentityReport {
     lei: string;
     certificates: string[];
     reported_values: Array<{ certificate: string; value: string }>;
+    preserved_values: Array<{ certificate: string; value: string; institution_id: number | null; regulatory_status: string | null }>;
   }>;
   conflicts: FdicLeiConflict[];
+  certificate_conflicts: Array<{ certificate: string; reported_leis: string[]; reported_values: unknown[] }>;
+  /** SHA-256 of sorted, key-canonicalized raw rows, not the HTTP envelope bytes. */
+  logical_snapshot_sha256: string;
+  hold_proposals: number;
+  durable_holds_inserted: number;
+}
+
+interface KnownFdicInstitution { id: number | null; status: string | null; lei: string | null }
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value !== null && typeof value === "object") {
+    return `{${Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
 }
 
 /** Check the entire downloaded universe before separating tracked banks or write chunks. */
-function prepareLeiIdentity(records: Array<Record<string, unknown>>, active: FdicInstitutionRow[]) {
+export function prepareFdicLeiIdentity(
+  records: Array<Record<string, unknown>>,
+  active: FdicInstitutionRow[],
+  known: ReadonlyMap<string, KnownFdicInstitution>,
+) {
   const owners = new Map<string, Map<string, Set<string>>>();
+  const certificates = new Map<string, { leis: Set<string>; values: unknown[]; missing: boolean }>();
   for (const record of records) {
     const lei = normalizeLei(record.LEI);
     const certificate = String(record.CERT ?? "").trim();
-    if (!lei || !/^\d+$/.test(certificate)) continue;
+    if (!/^\d+$/.test(certificate)) continue;
+    const facts = certificates.get(certificate) ?? { leis: new Set<string>(), values: [], missing: false };
+    facts.values.push(record.LEI ?? null);
+    if (lei) facts.leis.add(lei);
+    else facts.missing = true;
+    certificates.set(certificate, facts);
+    if (!lei) continue;
     const byCertificate = owners.get(lei) ?? new Map<string, Set<string>>();
     const values = byCertificate.get(certificate) ?? new Set<string>();
     values.add(String(record.LEI));
     byCertificate.set(certificate, values);
     owners.set(lei, byCertificate);
   }
+  // Preserved own keys still count as owners when the active file no longer includes
+  // their certificate. Ignoring closed/missing owners could transfer their LEI to a new bank.
+  const preservedOwners = new Map<string, Array<{ certificate: string; value: string; institution_id: number | null; regulatory_status: string | null }>>();
+  for (const [certificate, row] of known) {
+    const lei = normalizeLei(row.lei);
+    if (!lei || !/^\d+$/.test(certificate)) continue;
+    preservedOwners.set(lei, [...(preservedOwners.get(lei) ?? []), { certificate, value: row.lei!,
+      institution_id: row.id, regulatory_status: row.status }]);
+  }
   const duplicateLeis = [...owners.entries()]
-    .filter(([, certificates]) => certificates.size > 1)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([lei, certificates]) => ({
       lei,
-      certificates: [...certificates.keys()].sort(),
+      certificates: [...new Set([...certificates.keys(), ...(preservedOwners.get(lei) ?? []).map((row) => row.certificate)])].sort(),
       reported_values: [...certificates.entries()].sort(([a], [b]) => a.localeCompare(b))
         .flatMap(([certificate, values]) => [...values].sort().map((value) => ({ certificate, value }))),
-    }));
-  const held = new Set(duplicateLeis.map((entry) => entry.lei));
+      preserved_values: [...(preservedOwners.get(lei) ?? [])].sort((a, b) => a.certificate.localeCompare(b.certificate)),
+    })).filter((row) => row.certificates.length > 1);
+  const sharedLeis = new Set(duplicateLeis.map((entry) => entry.lei));
+  const held = new Set(sharedLeis);
+  const certificateConflicts = [...certificates.entries()]
+    .filter(([, facts]) => facts.leis.size > 1 || (facts.leis.size > 0 && facts.missing))
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([certificate, facts]) => ({ certificate, reported_leis: [...facts.leis].sort(), reported_values: facts.values }));
+  const heldCertificates = new Set(certificateConflicts.map((entry) => entry.certificate));
+  const conflicts: FdicLeiConflict[] = [];
+  const holds: FdicIdentityHoldInput[] = [];
+  const appendHold = (certificate: string, reason: FdicIdentityHoldInput["reason"], reported: string[],
+    ownerCertificates: string[], evidence: Record<string, unknown>) => {
+    const stored = known.get(certificate);
+    const storedLei = normalizeLei(stored?.lei);
+    const implicatedLeis = [...new Set([...reported, ...(storedLei ? [storedLei] : [])])].sort();
+    if (implicatedLeis.length === 0) return;
+    holds.push({ certificate, institutionId: stored?.id ?? null, reason, storedLei,
+      implicatedLeis, reportedLeis: reported, ownerCertificates, evidence: { ...evidence, stored_raw_lei: stored?.lei ?? null } });
+    heldCertificates.add(certificate);
+    for (const lei of implicatedLeis) held.add(lei);
+  };
+  for (const duplicate of duplicateLeis) {
+    for (const certificate of duplicate.certificates) {
+      appendHold(certificate, "shared_lei", [duplicate.lei], duplicate.certificates, { ...duplicate });
+    }
+  }
+  for (const conflict of certificateConflicts) {
+    appendHold(conflict.certificate, "source_certificate_conflict", conflict.reported_leis,
+      [conflict.certificate], { ...conflict });
+  }
+  for (const [certificate, facts] of certificates) {
+    const stored = known.get(certificate)?.lei;
+    const storedLei = normalizeLei(stored);
+    const different = [...facts.leis].filter((lei) => stored?.trim() && storedLei !== lei).sort();
+    for (const reportedLei of different) {
+      conflicts.push({ certificate, stored_lei: stored!, reported_lei: reportedLei });
+    }
+    if (different.length > 0) {
+      appendHold(certificate, "stored_lei_conflict", [...facts.leis].sort(), [certificate],
+        { reported_values: facts.values, stored_raw_lei: stored });
+    }
+  }
   // Keep the fetched records untouched; the receipt retains ambiguous source values and owners.
-  const rows = active.map((row) => row.lei && held.has(row.lei) ? { ...row, lei: null } : row);
+  // Repeated certificate rows must not make UPDATE FROM choose one arbitrarily.
+  const seen = new Set<string>();
+  const rows = active.filter((row) => {
+    if (seen.has(row.cert)) return false;
+    seen.add(row.cert);
+    return true;
+  }).map((row) => row.lei && (held.has(row.lei) || heldCertificates.has(row.cert)) ? { ...row, lei: null } : row);
   const report: FdicLeiIdentityReport = {
     reported_institutions: active.filter((row) => row.lei !== null).length,
     unique_source_institutions: rows.filter((row) => row.lei !== null).length,
-    shared_source_institutions: active.filter((row) => row.lei !== null && held.has(row.lei)).length,
+    shared_source_institutions: active.filter((row) => row.lei !== null && sharedLeis.has(row.lei)).length,
     duplicate_leis: duplicateLeis,
-    conflicts: [],
+    conflicts,
+    certificate_conflicts: certificateConflicts,
+    logical_snapshot_sha256: createHash("sha256").update(`[${records.map(canonicalJson).sort().join(",")}]`).digest("hex"),
+    hold_proposals: holds.length,
+    durable_holds_inserted: 0,
   };
-  return { rows, report };
+  return { rows, report, holds };
 }
 
-async function loadKnownCerts(db: RegistryDb): Promise<Map<string, { status: string | null; lei: string | null }>> {
-  const rows = await db<{ cert_number: string; regulatory_status: string | null; lei: string | null }[]>`
-    SELECT cert_number, regulatory_status, lei
+async function loadKnownCerts(db: RegistryDb): Promise<Map<string, KnownFdicInstitution>> {
+  const rows = await db<{ id: number; cert_number: string; regulatory_status: string | null; lei: string | null }[]>`
+    SELECT cert_number, regulatory_status, lei, id
       FROM institution_sources
      WHERE source = 'fdic' AND cert_number IS NOT NULL
   `;
-  return new Map(rows.map((row) => [String(row.cert_number), { status: row.regulatory_status ?? null, lei: row.lei?.trim() || null }]));
+  return new Map(rows.map((row) => [String(row.cert_number), { id: row.id == null ? null : Number(row.id), status: row.regulatory_status ?? null, lei: row.lei || null }]));
 }
 
 async function updateExisting(
@@ -302,14 +391,23 @@ export async function runRegistryFdicUniverse(
 ): Promise<RegistryFdicUniverseResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
+  if (!dryRun && FDIC_OWN_LEI_WRITES_ENABLED && !FDIC_IDENTITY_HOLD_WRITES_ENABLED) {
+    throw new Error("FDIC own-LEI propagation requires durable conflict holds; refusing identity writes.");
+  }
+  if (!dryRun && FDIC_IDENTITY_HOLD_WRITES_ENABLED && (!Number.isSafeInteger(options.runId) || Number(options.runId) <= 0)) {
+    throw new Error("FDIC durable identity holds require an owned run-ledger run.");
+  }
 
+  const observedAt = new Date().toISOString();
   const page = await fetchFdicActiveInstitutions(options.fetchOptions);
   const parsedActive = page.rows
     .map(parseFdicInstitution)
     .filter((row): row is FdicInstitutionRow => row !== null && row.active);
-  const { rows: active, report: leiIdentity } = prepareLeiIdentity(page.rows, parsedActive);
   const known = await loadKnownCerts(db);
-  const activeCerts = new Set(active.map((row) => row.cert));
+  const prepared = prepareFdicLeiIdentity(page.rows, parsedActive, known);
+  const active = prepared.rows;
+  // Identity evidence from a row with a missing profile field still proves the certificate exists.
+  const activeCerts = new Set(page.rows.map((row) => String(row.CERT).trim()));
 
   const existing = active.filter((row) => known.has(row.cert));
   const fresh = active.filter((row) => !known.has(row.cert));
@@ -340,41 +438,61 @@ export async function runRegistryFdicUniverse(
     lookupsSkipped: Math.max(0, missing.length - toLookup.length),
     banksDistrictChanged: 0,
     othersDistrictChanged: 0,
-    leiIdentity,
+    leiIdentity: prepared.report,
     dryRun,
   };
   if (dryRun) {
-    leiIdentity.conflicts = existing.flatMap((row) => {
-      const storedLei = known.get(row.cert)?.lei;
-      return storedLei && row.lei && storedLei.toUpperCase() !== row.lei
-        ? [{ certificate: row.cert, stored_lei: storedLei, reported_lei: row.lei }] : [];
-    });
     return { ...result, insertedInstitutions: fresh.length, deactivatedInstitutions: closed.length };
   }
-  if (active.length === 0) {
+  if (page.rows.length === 0) {
     // An empty active list is an upstream failure, never a reason to deactivate everyone.
     throw new Error("FDIC returned no active institutions; refusing to sync the universe.");
   }
 
-  for (const group of chunk(existing, UPDATE_CHUNK)) {
-    const counts = await updateExisting(db, group);
-    result.updatedInstitutions += counts.updated;
-    result.banksDistrictChanged += counts.districtChanged;
-    result.leiIdentity.conflicts.push(...counts.leiConflicts);
-  }
-  for (const group of chunk(fresh, UPDATE_CHUNK)) {
-    result.insertedInstitutions += await insertNew(db, group);
-  }
-  result.deactivatedInstitutions = await deactivate(db, closed);
-  result.othersDistrictChanged = await deriveOtherDistricts(db);
+  const writeUniverse = async (tx: RegistryDb) => {
+    let writable = active;
+    let currentKnown = known;
+    if (FDIC_IDENTITY_HOLD_WRITES_ENABLED) {
+      // Same order as the repair executor. A newly observed hold cannot race an identity write.
+      await tx`SET LOCAL statement_timeout = '15s'`;
+      await tx`SET LOCAL lock_timeout = '2s'`;
+      await tx`LOCK TABLE institution_sources IN SHARE ROW EXCLUSIVE MODE`;
+      await tx`LOCK TABLE institution_identity_holds IN ROW EXCLUSIVE MODE`;
+      currentKnown = await loadKnownCerts(tx);
+      const current = prepareFdicLeiIdentity(page.rows, parsedActive, currentKnown);
+      result.leiIdentity = current.report;
+      result.leiIdentity.durable_holds_inserted = await persistFdicIdentityHolds(tx, current.holds, {
+        sourceUrl: page.url, sourceSha256: current.report.logical_snapshot_sha256,
+        observedAt, agentRunId: Number(options.runId),
+      });
+      const durable = await readFdicIdentityHolds(tx);
+      const heldCertificates = new Set(durable.map((hold) => hold.certificate));
+      const heldInstitutions = new Set(durable.flatMap((hold) => hold.institutionId === null ? [] : [hold.institutionId]));
+      const heldLeis = new Set(durable.flatMap((hold) => hold.implicatedLeis));
+      writable = current.rows.map((row) => row.lei && (heldCertificates.has(row.cert) || heldLeis.has(row.lei)
+        || heldInstitutions.has(currentKnown.get(row.cert)?.id ?? -1)) ? { ...row, lei: null } : row);
+    }
+    const currentExisting = writable.filter((row) => currentKnown.has(row.cert));
+    const currentFresh = writable.filter((row) => !currentKnown.has(row.cert));
+    result.existingMatched = currentExisting.length;
+    for (const group of chunk(currentExisting, UPDATE_CHUNK)) {
+      const counts = await updateExisting(tx, group);
+      result.updatedInstitutions += counts.updated;
+      result.banksDistrictChanged += counts.districtChanged;
+    }
+    for (const group of chunk(currentFresh, UPDATE_CHUNK)) {
+      result.insertedInstitutions += await insertNew(tx, group);
+    }
+    result.deactivatedInstitutions = await deactivate(tx, closed);
+    result.othersDistrictChanged = await deriveOtherDistricts(tx);
 
-  await recordRegistryPartition(db, {
+    await recordRegistryPartition(tx, {
     source: FDIC_UNIVERSE_SOURCE,
     partitionKey: FDIC_UNIVERSE_PARTITION,
     status: "succeeded",
     rowCount: active.length,
-    matchedCount: existing.length,
-    unmatchedCount: fresh.length,
+    matchedCount: currentExisting.length,
+    unmatchedCount: currentFresh.length,
     insertedCount: result.insertedInstitutions,
     sourceUrl: page.url,
     runId: options.runId ?? null,
@@ -388,9 +506,16 @@ export async function runRegistryFdicUniverse(
       others_district_changed: result.othersDistrictChanged,
       parser_version: FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION,
       own_lei_writes_enabled: FDIC_OWN_LEI_WRITES_ENABLED,
+      identity_hold_writes_enabled: FDIC_IDENTITY_HOLD_WRITES_ENABLED,
       lei_identity: result.leiIdentity,
     },
   });
+  };
+  if (FDIC_IDENTITY_HOLD_WRITES_ENABLED) {
+    await db.begin(async (tx) => writeUniverse(tx as unknown as RegistryDb));
+  } else {
+    await writeUniverse(db);
+  }
 
   return result;
 }

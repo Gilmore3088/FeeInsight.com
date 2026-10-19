@@ -178,6 +178,37 @@ describe("FDIC institution parser", () => {
 });
 
 describe("FDIC client", () => {
+  it.each([
+    {}, { data: [] }, { meta: { total: 1 } }, { meta: { total: -1 }, data: [] },
+    { meta: { total: "0" }, data: [] }, { meta: { total: 1 }, data: [{}] },
+    { meta: { total: 1 }, data: [{ data: [] }] },
+    { meta: { total: 2 }, data: [{ data: { CERT: 1, ACTIVE: 1 } }] },
+    { meta: { total: 1 }, data: [{ data: { ACTIVE: 1 } }] },
+    { meta: { total: 1 }, data: [{ data: { CERT: 1, ACTIVE: 0 } }] },
+    { meta: { total: 150001 }, data: [] },
+  ])("rejects incomplete or malformed active identity snapshots %#", async (body) => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+    await expect(fetchFdicActiveInstitutions({ fetchImpl, backoffMs: 0 })).rejects.toThrow("incomplete identity snapshot");
+  });
+
+  it("rejects a changing total between active-universe pages", async () => {
+    const first = Array.from({ length: 10000 }, (_, i) => ({ data: { CERT: i + 1, ACTIVE: 1 } }));
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ meta: { total: 10001 }, data: first }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ meta: { total: 10000 }, data: [] }), { status: 200 }));
+    await expect(fetchFdicActiveInstitutions({ fetchImpl, backoffMs: 0 })).rejects.toThrow("total changed");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns every page only after the reported active total is complete", async () => {
+    const first = Array.from({ length: 10000 }, (_, i) => ({ data: { CERT: i + 1, ACTIVE: 1 } }));
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ meta: { total: 10001 }, data: first }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ meta: { total: 10001 }, data: [{ data: { CERT: 10001, ACTIVE: 1 } }] }), { status: 200 }));
+    expect((await fetchFdicActiveInstitutions({ fetchImpl, backoffMs: 0 })).rows).toHaveLength(10001);
+    expect(new URL(String(fetchImpl.mock.calls[1][0])).searchParams.get("offset")).toBe("10000");
+  });
+
   it("requests own LEI alongside exact FDIC and RSSD identifiers", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ meta: { total: 0 }, data: [] }), { status: 200 }));
     await fetchFdicActiveInstitutions({ fetchImpl, backoffMs: 0 });

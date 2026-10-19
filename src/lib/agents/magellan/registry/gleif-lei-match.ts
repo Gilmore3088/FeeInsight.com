@@ -1,3 +1,5 @@
+import { readFdicIdentityHolds, lockFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
+import { FDIC_IDENTITY_HOLD_REASON } from "@/lib/regulatory/gleif-identity-holds";
 import { getLeiLinkCoverage, type LeiLinkCoverage } from "@/lib/data-store/locations-gleif-aggregates";
 import {
   GLEIF_LEI_MATCH_PARTITIONS,
@@ -18,6 +20,7 @@ import {
   proposeByKey,
   proposeByNameState,
   proposeOwnLei,
+  vetoLeiLink,
   type KeyBasis,
   type LeiLinkRow,
   type LeiMatchBasis,
@@ -116,7 +119,7 @@ const ACTIVE_INSTITUTIONS = `s.source IN ('fdic', 'ncua') AND COALESCE(s.regulat
 
 function toUniverse(rows: Array<Record<string, unknown>>): LeiUniverseInstitution[] {
   const s = (v: unknown) => (v === null || v === undefined ? null : String(v));
-  return rows.map((r) => ({ id: Number(r.id), source: String(r.source), lei: s(r.lei), rssd: s(r.rssd_id), cert: s(r.cert_number), charter: s(r.ncua_charter_id), name: s(r.institution_name), state: s(r.state_code) }));
+  return rows.map((r) => ({ id: Number(r.id), source: String(r.source), lei: s(r.lei), linkedLei: s(r.linked_lei ?? r.link_lei), identityLeis: Array.isArray(r.candidate_leis) ? r.candidate_leis.map(String) : [], rssd: s(r.rssd_id), cert: s(r.cert_number), charter: s(r.ncua_charter_id), name: s(r.institution_name), state: s(r.state_code) }));
 }
 
 function toLinks(rows: Array<Record<string, unknown>>): Map<number, LeiLinkRow> {
@@ -138,8 +141,8 @@ function toLinks(rows: Array<Record<string, unknown>>): Map<number, LeiLinkRow> 
 
 async function readUniverse(db: RegistryDb): Promise<LeiUniverseInstitution[]> {
   const rows = await bounded(db, (tx) => tx`
-    SELECT s.id, s.source, s.lei, s.rssd_id, s.cert_number, s.ncua_charter_id, s.institution_name, s.state_code
-      FROM institution_sources s
+    SELECT s.id, s.source, s.lei, l.lei AS linked_lei, l.candidate_leis, s.rssd_id, s.cert_number, s.ncua_charter_id, s.institution_name, s.state_code
+      FROM institution_sources s LEFT JOIN institution_lei_links l ON l.institution_id=s.id
      WHERE ${tx.unsafe(ACTIVE_INSTITUTIONS)}
   `);
   return toUniverse([...(rows as unknown as Array<Record<string, unknown>>)]);
@@ -159,8 +162,22 @@ async function readLinks(db: RegistryDb): Promise<Map<number, LeiLinkRow>> {
 async function writeLinks(db: RegistryDb, rows: LeiLinkRow[], sourceUrl: string | null, runId: number | null, nameOnly: boolean): Promise<number> {
   let written = 0;
   for (const part of chunk(rows, WRITE_CHUNK)) {
-    const payload = part.map((r) => ({ institution_id: r.institutionId, status: r.status, lei: r.lei, match_basis: r.basis, match_key: r.key, candidate_leis: r.candidates, reason: r.reason }));
-    const result = await bounded(db, (tx) => tx`
+    const result = await bounded(db, async (tx) => {
+      await tx`SET LOCAL lock_timeout = '2s'`;
+      // Serialize canonical crosswalk writers before taking the hold snapshot. A veto
+      // computed before an ON CONFLICT wait must not overwrite newly held candidates.
+      await tx`LOCK TABLE institution_sources IN SHARE MODE`;
+      await tx`LOCK TABLE institution_lei_links IN SHARE ROW EXCLUSIVE MODE`;
+      await lockFdicIdentityHolds(tx);
+      const holds = await readFdicIdentityHolds(tx);
+      const canonical = await tx`SELECT s.id, s.source, s.cert_number, s.lei, l.lei AS linked_lei, l.candidate_leis FROM institution_sources s LEFT JOIN institution_lei_links l ON l.institution_id=s.id WHERE s.id IN ${tx(part.map((row) => row.institutionId))}`;
+      const safe = part.map((row) => {
+        const inst = canonical.find((candidate) => Number(candidate.id) === row.institutionId);
+        if (!inst) throw new Error("GLEIF canonical institution disappeared before write");
+        return vetoLeiLink(row, { id: row.institutionId, source: String(inst.source), cert: inst.cert_number == null ? null : String(inst.cert_number), lei: inst.lei == null ? null : String(inst.lei), linkedLei: inst.linked_lei == null ? null : String(inst.linked_lei), identityLeis: Array.isArray(inst.candidate_leis) ? inst.candidate_leis.map(String) : [] }, holds);
+      });
+      const payload = safe.map((r) => ({ institution_id: r.institutionId, status: r.status, lei: r.lei, match_basis: r.basis, match_key: r.key, candidate_leis: r.candidates, reason: r.reason }));
+      return tx`
       INSERT INTO institution_lei_links
         (institution_id, status, lei, match_basis, match_key, candidate_leis, reason, source_url, agent_run_id, checked_at)
       SELECT r.institution_id, r.status, r.lei, r.match_basis, r.match_key,
@@ -181,8 +198,10 @@ async function writeLinks(db: RegistryDb, rows: LeiLinkRow[], sourceUrl: string 
       WHERE ${nameOnly}::boolean = FALSE
          OR institution_lei_links.match_basis IS NULL
          OR institution_lei_links.match_basis = 'name_state'
+         OR EXCLUDED.reason = ${FDIC_IDENTITY_HOLD_REASON}
       RETURNING 1
-    `);
+    `;
+    });
     written += [...(result as unknown as unknown[])].length;
   }
   return written;
@@ -311,17 +330,18 @@ function base(options: LeiMatchOptions, basis: KeyBasis | "name_state"): LeiMatc
 async function runKeyMatch(options: LeiMatchOptions, basis: KeyBasis): Promise<LeiMatchResult> {
   const { db } = options;
   let out = base(options, basis);
+  const holds = await bounded(db, (tx) => readFdicIdentityHolds(tx));
   const universe = await readUniverse(db);
   const existing = await readLinks(db);
   const rounds: Array<Map<number, LeiProposal>> = [];
-  if (basis === "rssd") rounds.push(proposeOwnLei(universe));
+  if (basis === "rssd") rounds.push(proposeOwnLei(universe, holds));
 
   const authorities = await authoritiesFor(basis, options);
   const startAt = await walkResume(db, options.partitionKey);
   let walk: WalkResult | null = null;
   if (authorities.found.length > 0) {
     walk = await walkAuthorities(authorities.found, options, startAt);
-    const byKey = proposeByKey(universe, walk.entities, basis, new Set(authorities.found.map((a) => a.id)));
+    const byKey = proposeByKey(universe, walk.entities, basis, new Set(authorities.found.map((a) => a.id)), holds);
     // A partial walk cannot say a key has no record, so it only adds links.
     if (!walk.complete) for (const [id, p] of byKey) if (p.kind === "none") byKey.delete(id);
     rounds.push(byKey);
@@ -336,6 +356,7 @@ async function runKeyMatch(options: LeiMatchOptions, basis: KeyBasis): Promise<L
       if (!p) continue;
       row = mergeLeiLink(row, p, inst.id) ?? row;
     }
+    if (row) row = vetoLeiLink(row, inst, holds);
     if (row && row !== before) changed.push(row);
   }
   const toWrite = changed.slice(0, KEY_WRITE_CAP);
@@ -392,6 +413,7 @@ async function keyMatchHasRun(db: RegistryDb): Promise<boolean> {
 
 async function runNameMatch(options: LeiMatchOptions): Promise<LeiMatchResult> {
   const { db } = options;
+  const holds = await bounded(db, (tx) => readFdicIdentityHolds(tx));
   let out = base(options, "name_state");
   // Key links first, so the name search spends its calls only on institutions no key linked.
   if (!(await keyMatchHasRun(db))) {
@@ -423,14 +445,14 @@ async function runNameMatch(options: LeiMatchOptions): Promise<LeiMatchResult> {
     if (i > 0) await sleep(options.spacingMs ?? DEFAULT_SPACING_MS);
     let proposal: LeiProposal;
     if (!inst.name || !inst.state) {
-      proposal = proposeByNameState(inst, []);
+      proposal = proposeByNameState(inst, [], holds);
     } else {
       const url = nameStateSearchUrl(inst.name, inst.state);
       firstUrl ??= url;
       try {
         const read = parseLeiRecords(await registryFetchJson<unknown>(url, options.fetchOptions));
         if (!read.valid) throw new Error("no data array");
-        proposal = proposeByNameState(inst, read.entities);
+        proposal = proposeByNameState(inst, read.entities, holds);
       } catch (error) {
         errorCount += 1;
         if (errorExamples.length < 10) errorExamples.push(`${inst.id}: ${error instanceof Error ? error.message : String(error)}`);
@@ -441,7 +463,7 @@ async function runNameMatch(options: LeiMatchOptions): Promise<LeiMatchResult> {
     const before = existing.get(inst.id) ?? null;
     // Every searched institution is written, so its check date moves on even when nothing changed.
     const row = mergeLeiLink(before, proposal, inst.id) ?? before;
-    if (row) toWrite.push(row);
+    if (row) toWrite.push(vetoLeiLink(row, inst, holds));
   }
   if (batch.length > 0 && errorCount === batch.length) throw new Error(`Every GLEIF name search failed: ${errorExamples.slice(0, 3).join("; ")}`);
   out = {

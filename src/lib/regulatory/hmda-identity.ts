@@ -1,5 +1,6 @@
 import { normalizeLei } from "./gleif";
 import { normalizeKey } from "./gleif-lei-match";
+import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
 
 /** Exact identifiers only. Parent IDs, names and name/state LEI proposals are never lender identity. */
 export interface HmdaInstitutionIdentity {
@@ -49,6 +50,7 @@ export interface HmdaCanonicalSnapshot {
   source: string | null;
   certNumber: string | null;
   registrySyncedAt: string | null;
+  identityHolds: FdicIdentityHold[];
   leiLink: {
     status: string;
     lei: string | null;
@@ -69,6 +71,7 @@ export interface HmdaIdentityMatch {
   candidateIds: number[];
   evidence: HmdaIdentityEvidence[];
   canonicalSnapshots: HmdaCanonicalSnapshot[];
+  identityHolds: FdicIdentityHold[];
 }
 
 const KEY_BASES = new Set(["own_lei", "rssd", "fdic_cert", "ncua_charter"]);
@@ -87,9 +90,64 @@ function add(index: Candidates, key: string | null, id: number): void {
   index.set(key, ids);
 }
 
+function createHmdaHoldIndex(identityHolds: readonly FdicIdentityHold[]) {
+  const holds = identityHolds.map((hold) => ({ ...hold,
+    implicatedLeis: [...hold.implicatedLeis], reportedLeis: [...hold.reportedLeis],
+    ownerCertificates: [...hold.ownerCertificates], evidence: structuredClone(hold.evidence),
+  }));
+  const holdsByLei = new Map<string, FdicIdentityHold[]>();
+  const holdsByCertificate = new Map<string, FdicIdentityHold[]>();
+  const holdsByInstitution = new Map<number, FdicIdentityHold[]>();
+  for (const hold of holds) {
+    if (hold.institutionId !== null) holdsByInstitution.set(hold.institutionId, [...(holdsByInstitution.get(hold.institutionId) ?? []), hold]);
+    const certificate = normalizeKey(hold.certificate);
+    if (certificate) holdsByCertificate.set(certificate, [...(holdsByCertificate.get(certificate) ?? []), hold]);
+    for (const raw of hold.implicatedLeis) {
+      const lei = normalizeLei(raw);
+      if (lei) holdsByLei.set(lei, [...(holdsByLei.get(lei) ?? []), hold]);
+    }
+  }
+  return {
+    forLei(lei: string | null) { return lei ? holdsByLei.get(lei) ?? [] : []; },
+    forInstitution(institution: HmdaInstitutionIdentity) {
+      const own = normalizeLei(institution.lei);
+      const link = institution.leiLink;
+      const candidateLeis = [own, normalizeLei(link?.lei), ...(link?.candidates ?? []).map(normalizeLei)]
+        .filter((lei): lei is string => lei !== null);
+      const certificate = institution.source === "fdic" ? normalizeKey(institution.certNumber) : null;
+      const institutionHolds = [...new Map([
+        ...(holdsByInstitution.get(institution.id) ?? []),
+        ...(certificate ? holdsByCertificate.get(certificate) ?? [] : []),
+        ...candidateLeis.flatMap((lei) => holdsByLei.get(lei) ?? []),
+      ].map((hold) => [hold.id, hold])).values()].sort((a, b) => a.id - b.id);
+      return institutionHolds;
+    },
+  };
+}
+
+/** The preserved annual foreign key remains a matching route while ordinary identity writes are off. */
+export function heldHmdaAnnualLinks(
+  lenders: readonly { lei: string; institutionId: number | null }[],
+  institutions: readonly HmdaInstitutionIdentity[],
+  identityHolds: readonly FdicIdentityHold[],
+): Array<{ lei: string; institutionId: number | null; identityHolds: FdicIdentityHold[] }> {
+  const holdIndex = createHmdaHoldIndex(identityHolds);
+  const byId = new Map(institutions.map((institution) => [institution.id, institution]));
+  return lenders.flatMap((lender) => {
+    const institution = lender.institutionId === null ? null : byId.get(lender.institutionId)
+      ?? { id: lender.institutionId, lei: null, rssdId: null };
+    const relevant = [...new Map([
+      ...holdIndex.forLei(normalizeLei(lender.lei)),
+      ...(institution ? holdIndex.forInstitution(institution) : []),
+    ].map((hold) => [hold.id, hold])).values()].sort((a, b) => a.id - b.id);
+    return relevant.length ? [{ ...lender, identityHolds: relevant }] : [];
+  });
+}
+
 export function matchHmdaIdentities(
   lenders: readonly HmdaLenderIdentity[],
   institutions: readonly HmdaInstitutionIdentity[],
+  identityHolds: readonly FdicIdentityHold[] = [],
 ): HmdaIdentityMatch[] {
   const byLei: Candidates = new Map();
   const byRssd: Candidates = new Map();
@@ -97,6 +155,8 @@ export function matchHmdaIdentities(
   const leiEvidence = new Map<string, HmdaIdentityEvidence[]>();
   const rssdEvidence = new Map<string, HmdaIdentityEvidence[]>();
   const snapshots = new Map<number, HmdaCanonicalSnapshot>();
+  // Keep held owners in every uniqueness index; filtering can make a shared key look unique.
+  const holdIndex = createHmdaHoldIndex(identityHolds);
   const capture = (index: Map<string, HmdaIdentityEvidence[]>, key: string | null, value: HmdaIdentityEvidence) => {
     if (key) index.set(key, [...(index.get(key) ?? []), value]);
   };
@@ -104,6 +164,7 @@ export function matchHmdaIdentities(
     if (!Number.isSafeInteger(institution.id) || institution.id < 1) throw new Error("Invalid canonical institution ID");
     const own = normalizeLei(institution.lei);
     const link = institution.leiLink;
+    const institutionHolds = holdIndex.forInstitution(institution);
     snapshots.set(institution.id, {
       id: institution.id,
       lei: institution.lei,
@@ -111,6 +172,7 @@ export function matchHmdaIdentities(
       source: institution.source ?? null,
       certNumber: institution.certNumber ?? null,
       registrySyncedAt: institution.registrySyncedAt ?? null,
+      identityHolds: institutionHolds,
       leiLink: link ? {
         status: link.status,
         lei: link.lei,
@@ -160,11 +222,17 @@ export function matchHmdaIdentities(
     const rssd = normalizeHmdaRssd(lender.rssdId);
     const leiIds = lei ? byLei.get(lei) ?? new Set<number>() : new Set<number>();
     const rssdIds = rssd ? byRssd.get(rssd) ?? new Set<number>() : new Set<number>();
-    const candidateIds = [...new Set([...leiIds, ...rssdIds])].sort((a, b) => a - b);
+    const globalHolds = holdIndex.forLei(lei);
+    const heldOwners = globalHolds.map((hold) => hold.institutionId)
+      .filter((id): id is number => id !== null && snapshots.has(id));
+    const candidateIds = [...new Set([...leiIds, ...rssdIds, ...heldOwners])].sort((a, b) => a - b);
     const evidence = [...(lei ? leiEvidence.get(lei) ?? [] : []), ...(rssd ? rssdEvidence.get(rssd) ?? [] : [])];
     const canonicalSnapshots = candidateIds.map((id) => snapshots.get(id)!);
-    const base = { lei: lender.lei, institutionId: null, method: null, candidateIds, evidence, canonicalSnapshots };
+    const relevantHolds = [...new Map([...globalHolds, ...canonicalSnapshots.flatMap((row) => row.identityHolds)]
+      .map((hold) => [hold.id, hold])).values()].sort((a, b) => a.id - b.id);
+    const base = { lei: lender.lei, institutionId: null, method: null, candidateIds, evidence, canonicalSnapshots, identityHolds: relevantHolds };
     if (!lei) return { ...base, status: "unmatched", reason: "invalid_lei" };
+    if (relevantHolds.length > 0) return { ...base, status: "ambiguous", reason: "fdic_identity_hold" };
     if (lender.sourceConflict) return { ...base, status: "ambiguous", reason: "panel_identity_conflict" };
     if (blockedLeis.has(lei)) return { ...base, status: "ambiguous", reason: "canonical_lei_conflict" };
     // A unique RSSD is not permission to ignore the candidate's contradictory or unresolved
@@ -239,6 +307,7 @@ export function planHmdaIdentityRepair(input: {
   leis: string[];
   lenders: HmdaRepairLender[];
   institutions: HmdaInstitutionIdentity[];
+  identityHolds?: FdicIdentityHold[];
   cells: HmdaRepairCellCount[];
 }) {
   if (!Number.isInteger(input.year) || input.year < 2018 || input.year > 2100) throw new Error("Invalid HMDA repair year");
@@ -257,7 +326,7 @@ export function planHmdaIdentityRepair(input: {
   });
   const aggregateRows = selected.reduce((sum, { cell }) => sum + cell.originationRows + cell.costRows, 0);
   if (aggregateRows > HMDA_REPAIR_MAX_CELLS) throw new Error(`HMDA repair exceeds ${HMDA_REPAIR_MAX_CELLS} aggregate rows across all states`);
-  const matches = matchHmdaIdentities(selected.map(({ lender }) => lender), input.institutions);
+  const matches = matchHmdaIdentities(selected.map(({ lender }) => lender), input.institutions, input.identityHolds);
   const rows = selected.map(({ lender, cell }, index) => ({
     ...matches[index],
     beforeInstitutionId: lender.institutionId,

@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import type { RegistryDb } from "@/lib/agents/magellan/registry/partitions";
 import { lockHmdaYear } from "@/lib/agents/magellan/registry/hmda-lock";
 import { matchHmdaIdentities, normalizeHmdaRssd, type HmdaInstitutionIdentity, type HmdaIdentityMatch } from "@/lib/regulatory/hmda-identity";
+import { readFdicIdentityHolds, lockFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
 import { HMDA_REPAIR_MANIFEST, HMDA_REPAIR_MANIFEST_DIGEST, hashHmdaJson } from "./hmda-repair-manifest";
 import { HMDA_REPAIR_WRITES_ENABLED } from "./hmda-repair-release";
 import { readHmdaRepairSource, type HmdaRepairSource } from "./hmda-repair-source";
@@ -104,7 +105,7 @@ async function proposedMatches(tx: RegistryDb, before: HmdaRepairSnapshot): Prom
     const proposal = HMDA_REPAIR_MANIFEST.cohort.find((item) => item.institutionId === row.id);
     return proposal ? { ...row, lei: proposal.lei } : row;
   });
-  const matches = matchHmdaIdentities(before.lenders.map((row) => ({ lei: String(row.lei), rssdId: row.rssd_id == null ? null : String(row.rssd_id) })), canonical);
+  const matches = matchHmdaIdentities(before.lenders.map((row) => ({ lei: String(row.lei), rssdId: row.rssd_id == null ? null : String(row.rssd_id) })), canonical, await readFdicIdentityHolds(tx));
   if (matches.length !== HMDA_REPAIR_MANIFEST.fixedBounds.annualLenders || matches.some((row) => row.status !== "matched" || row.method !== "lei"
     || row.institutionId !== HMDA_REPAIR_MANIFEST.cohort.find((item) => item.lei === row.lei)?.institutionId)) throw new Error("HMDA repair matching result differs from review");
   return matches;
@@ -190,6 +191,7 @@ export async function executeHmdaIdentityRepair(input: { db?: RegistryDb; runId:
       // Prevent phantom child inserts and ownership changes by writers outside the year protocol.
       // Readers remain available; this bounded transaction fails after 2s instead of waiting indefinitely.
       await tx`LOCK TABLE institution_sources,institution_lei_links,hmda_lenders,hmda_lender_originations,hmda_lender_loan_costs IN SHARE ROW EXCLUSIVE MODE`;
+      await lockFdicIdentityHolds(tx);
     }
     const before = await snapshot(tx);
     if (params.mode !== "preview") {

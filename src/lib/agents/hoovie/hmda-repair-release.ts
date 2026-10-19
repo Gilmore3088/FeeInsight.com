@@ -5,5 +5,7 @@
  */
 export const HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = false;
 export const FDIC_OWN_LEI_WRITES_ENABLED = false;
+/** Durable evidence collection also needs separate schema/data authorization. */
+export const FDIC_IDENTITY_HOLD_WRITES_ENABLED = false;
 /** Enabling apply/rollback needs separate production authorization and reviewed release. */
 export const HMDA_REPAIR_WRITES_ENABLED = false;

@@ -32,7 +32,7 @@ The idempotency key combines the manifest digest and mode; rollback also include
 
 ## Review before enabling writes
 
-Keep the write gate disabled until the exact deployed head, manifest, authorization scope and fresh preview have been reviewed. The ordinary FDIC LEI and HMDA identity rollout gates are separate and remain disabled; enabling the bounded pilot does not authorize their broader rollout.
+Keep the write gate disabled until the exact deployed head, manifest, authorization scope and fresh preview have been reviewed. The ordinary FDIC LEI, durable FDIC hold collection and HMDA identity rollout gates are separate and remain disabled; enabling the bounded pilot does not authorize their broader rollout. The #2266 hold schema is now a deployment prerequisite: preview and apply read all unresolved holds, and any held institution, certificate or implicated LEI disqualifies the pilot. Missing hold schema is an error. The migration itself requires separate authorization and has not been applied to production.
 
 Any added, missing, changed or ambiguously owned row aborts the bounded operation. Source facts and timestamps remain unchanged. Rollback requires separate authorization and its own ledger run; it restores only the recorded before-images while every current post-image still agrees with the original apply receipt. It refuses to overwrite later work.
 

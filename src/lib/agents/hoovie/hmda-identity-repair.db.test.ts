@@ -6,6 +6,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import reviewedManifest from "../../../../docs/project/evidence/2026-10-19-hmda-rerun-manifest.json";
+import { fdicIdentityHoldFingerprint, type FdicIdentityHoldInput } from "@/lib/data-store/fdic-identity-holds";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 import type { RegistryDb } from "../magellan/registry/partitions";
 
@@ -68,6 +69,8 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
       && !line.includes("api_budget_policies") && !line.includes("parent_agent"));
     for (const line of constraintLines) await db.unsafe(line.replaceAll("public.", ""));
     await db`INSERT INTO agent_registry (agent_name, display_name, role) VALUES ('hoovie', 'Hoovie', 'data')`;
+    await db.unsafe("DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;\nEND $$;");
+    await db.unsafe(migrationFragment("20261019163933_fdic_identity_conflict_holds.sql", "CREATE TABLE public.institution_identity_holds"));
   });
 
   afterAll(async () => {
@@ -94,7 +97,7 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
 
   async function wholeEstate() {
     const all: Record<string, unknown> = {};
-    for (const table of ["institution_sources", "institution_lei_links", "hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs", "agent_run_events"]) {
+    for (const table of ["institution_sources", "institution_lei_links", "institution_identity_holds", "hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs", "agent_run_events"]) {
       all[table] = (await db`SELECT to_jsonb(t) AS row FROM ${db(table)} t ORDER BY to_jsonb(t)::text`).map((item) => item.row);
     }
     return stableJson(all);
@@ -127,6 +130,18 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
       ON CONFLICT (id) DO UPDATE SET status = 'running', input_payload = EXCLUDED.input_payload`;
   }
 
+  async function insertHold(over: Partial<FdicIdentityHoldInput> = {}) {
+    const bank = manifest.cohort[0];
+    const input: FdicIdentityHoldInput = { certificate: bank.certificate, institutionId: bank.institutionId,
+      reason: "stored_lei_conflict", storedLei: null, implicatedLeis: [bank.lei, OUTSIDE_LEI],
+      reportedLeis: [OUTSIDE_LEI], ownerCertificates: [bank.certificate], evidence: { review: "unresolved" }, ...over };
+    await db`INSERT INTO institution_identity_holds (fingerprint,certificate,institution_id,reason,stored_lei,
+      implicated_leis,reported_leis,owner_certificates,evidence,source_url,source_sha256,observed_at,agent_run_id)
+      VALUES (${fdicIdentityHoldFingerprint(input)},${input.certificate},${input.institutionId},${input.reason},${input.storedLei},
+        ${input.implicatedLeis},${input.reportedLeis},${input.ownerCertificates},${JSON.stringify(input.evidence)}::jsonb,
+        'https://api.fdic.gov/banks/institutions',${"b".repeat(64)},'2026-10-19T00:00:00Z',901)`;
+  }
+
   async function execute(parameters = params(), database = db) {
     vi.resetModules();
     vi.doMock("./hmda-repair-manifest", () => ({ HMDA_REPAIR_MANIFEST: manifest,
@@ -142,6 +157,10 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
   }
 
   beforeEach(async () => {
+    // Isolated fixture reset only: production holds expose no mutation/clear path.
+    await db`ALTER TABLE institution_identity_holds DISABLE TRIGGER USER`;
+    try { await db`TRUNCATE institution_identity_holds RESTART IDENTITY`; }
+    finally { await db`ALTER TABLE institution_identity_holds ENABLE TRIGGER USER`; }
     await db`TRUNCATE agent_run_events, agent_run_steps, agent_runs, institution_lei_links,
       hmda_lenders, hmda_lender_originations, hmda_lender_loan_costs, institution_sources RESTART IDENTITY CASCADE`;
     writesEnabled = true;
@@ -276,6 +295,24 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
     expect(await wholeEstate()).toBe(before);
   });
 
+  it.each(["selected institution", "publisher certificate", "globally implicated LEI"])("rejects durable FDIC holds for %s in preview and apply", async (kind) => {
+    const selected = manifest.cohort[0];
+    await insertHold(kind === "selected institution" ? { implicatedLeis: [OUTSIDE_LEI] }
+      : kind === "publisher certificate" ? { institutionId: null, implicatedLeis: [OUTSIDE_LEI] }
+        : { institutionId: null, certificate: "999999", ownerCertificates: ["999999"] });
+    const before = await wholeEstate();
+    for (const mode of ["preview", "apply"] as const) {
+      const parameters = params(mode); await ledger(parameters);
+      const current = await wholeEstate();
+      await expect(execute(parameters)).rejects.toThrow(/match|conflict|canonical|identity/i);
+      expect(await wholeEstate()).toBe(current);
+    }
+    // The hold itself survives the failed repair; source/fee rows never changed.
+    expect((await db`SELECT COUNT(*)::int AS n FROM institution_identity_holds`)[0].n).toBe(1);
+    expect((await db`SELECT lei FROM institution_sources WHERE id=${selected.institutionId}`)[0].lei).toBeNull();
+    expect(before).toContain('"institution_identity_holds"');
+  });
+
   it.each(["accepted key disagrees with own LEI", "ambiguous review candidate", "selected institution key conflict"])("holds canonical conflict: %s", async (kind) => {
     const selected = kind === "selected institution key conflict";
     const institutionId = selected ? manifest.cohort[0].institutionId : 99999;
@@ -363,6 +400,25 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
     } finally { release(); await execution; await writer.end(); }
     expect((await snapshot()).originations).toHaveLength(85);
     expect(await db`SELECT id FROM hmda_lender_originations WHERE state_code = 'ZZ'`).toHaveLength(0);
+  });
+
+  it("holds durable conflict evidence stable through every bounded source-data write", async () => {
+    await db.unsafe(`CREATE FUNCTION require_durable_hold_lock() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype='relation' AND pid=pg_backend_pid()
+          AND relation='institution_identity_holds'::regclass AND mode='ShareLock' AND granted) THEN
+          RAISE EXCEPTION 'durable identity hold lock missing during bounded write';
+        END IF;
+        RETURN NULL;
+      END $$`);
+    const tables = ["institution_sources", "hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"];
+    for (const table of tables) await db.unsafe(`CREATE TRIGGER require_durable_hold_lock
+      BEFORE UPDATE ON ${table} FOR EACH STATEMENT EXECUTE FUNCTION require_durable_hold_lock()`);
+    try { await expect(execute()).resolves.toMatchObject({ detail: { writes: 144 } }); }
+    finally {
+      for (const table of tables) await db.unsafe(`DROP TRIGGER require_durable_hold_lock ON ${table}`);
+      await db.unsafe("DROP FUNCTION require_durable_hold_lock()");
+    }
   });
 
   it("rolls back every mutation when the receipt cannot be saved", async () => {

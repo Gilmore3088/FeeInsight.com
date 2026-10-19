@@ -12,7 +12,7 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     cadence: "irregular",
     grain: ["institution"],
     linkKeys: ["fdic-cert", "rssd", "lei"],
-    tables: ["institution_sources"],
+    tables: ["institution_sources", "institution_identity_holds"],
   },
   {
     // magellan/registry/fdic-financials.ts, regulatory/fdic.ts (api.fdic.gov/banks)
