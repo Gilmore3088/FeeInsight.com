@@ -66,6 +66,14 @@ describe("figures that are not the data's to trace (#1425)", () => {
       ["Banks with $5 billion in assets charge $30.", ["$5 billion"]],
     ] as const) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual(unmatched);
   });
+
+  it("keeps an explicitly defined asset range when a follow-up names the same peer group", () => {
+    const definition = "The group is credit unions with $10 billion to $50 billion in assets. ";
+    expect(checkNarrativeFigures(definition + "How does fee income compare with peers in the $10 billion to $50 billion group?", {}).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("How does fee income compare with peers in the $10 billion to $50 billion group?", {}).unmatched).toEqual(["$10 billion", "$50 billion"]);
+    expect(checkNarrativeFigures(definition + "The credit union earned $10 billion in fee income.", {}).unmatched).toEqual(["$10 billion"]);
+    expect(checkNarrativeFigures(definition + "How does income compare with peers in the $1 billion to $10 billion group?", {}).unmatched).toEqual(["$1 billion", "$10 billion"]);
+  });
 });
 
 describe("explicit monetary units and compacted evidence (#2274)",()=>{

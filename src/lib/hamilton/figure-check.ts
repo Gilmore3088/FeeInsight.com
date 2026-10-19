@@ -208,6 +208,8 @@ const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
  */
 function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
   const accepted = new Set<NarrativeFigure>();
+  const definedRanges = new Set<string>();
+  const references: Array<{ a: NarrativeFigure; b: NarrativeFigure; range: string }> = [];
   const ordered = [...figures].sort((a, b) => a.index - b.index);
   for (let i = 0; i < ordered.length; i++) {
     const a = ordered[i];
@@ -215,9 +217,15 @@ function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<Narrati
     const aEnd = a.index + a.raw.length;
     const b = ordered[i + 1];
     if (b && isTierBound(b) && RANGE_JOIN.test(text.slice(aEnd, b.index))) {
-      if (SIZE_AFTER.test(text.slice(b.index + b.raw.length, b.index + b.raw.length + 30))) {
+      const after = text.slice(b.index + b.raw.length, b.index + b.raw.length + 30);
+      const range = `${a.value}:${b.value}`;
+      if (SIZE_AFTER.test(after)) {
         accepted.add(a);
         accepted.add(b);
+        definedRanges.add(range);
+      } else if (/^\s*group\b/i.test(after)
+        && /\bpeers?\s+(?:in|within)\s+(?:the\s+)?$/i.test(text.slice(Math.max(0, a.index - 40), a.index))) {
+        references.push({ a, b, range });
       }
       i++;
       continue;
@@ -225,6 +233,11 @@ function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<Narrati
     const before = text.slice(Math.max(0, a.index - 40), a.index);
     const after = text.slice(aEnd, aEnd + 30);
     if (ASSETS_THRESHOLD_BEFORE.test(before) || (THRESHOLD_BEFORE.test(before) && SIZE_AFTER.test(after))) accepted.add(a);
+  }
+  // A repeated peer-group name keeps its previously stated asset dimension.
+  // This never turns the same bound used as fee income or a fee price into data.
+  for (const { a, b, range } of references) {
+    if (definedRanges.has(range)) { accepted.add(a); accepted.add(b); }
   }
   return accepted;
 }
