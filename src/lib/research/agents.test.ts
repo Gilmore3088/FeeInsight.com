@@ -144,6 +144,16 @@ describe("getHamilton", () => {
     }
   });
 
+  it("separates filed-income peer eligibility from price/income correlation coverage (#2332)", async () => {
+    for (const role of ["pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(config.systemPrompt).toContain("compares filed financial income for the reader's saved peer set without requiring published fee schedules");
+      expect(config.systemPrompt).toContain("fewer than five comparable peers cannot be repaired by substituting a different group");
+      expect(config.systemPrompt).toContain("correlation views require at least three eligible published fee categories");
+      expect(config.systemPrompt).not.toContain("if it refuses for fee coverage");
+    }
+  });
+
   it("limits sample-maturity labels to verified fee prices, separately from financial filing coverage", async () => {
     const config = await getHamilton("pro");
     expect(config.systemPrompt).toContain("Verified fee-price benchmarks state sample maturity");

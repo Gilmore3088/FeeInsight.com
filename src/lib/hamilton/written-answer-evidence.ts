@@ -1,6 +1,7 @@
 import { deriveNcuaAnswerEvidence, type NcuaAnswerDerivation, type NcuaDerivationInput } from "./answer-derivations";
 import type { HamiltonBriefingEvidence } from "./institution-briefing";
 import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
+import { filedPeerIncomeEvidence } from "./filed-peer-evidence";
 
 /** Server-observed tool reads, never calculations supplied by a model or browser. */
 export interface AnswerToolEvidence {
@@ -85,6 +86,7 @@ export function writtenAnswerEvidence(
     // Full input provenance remains in the tool results/model context. These candidates are
     // re-created by our deterministic reader, rather than trusting a returned calculation.
     validated_calculations: calculated.prompt.derivations,
+    validated_filed_peer_income: filedPeerIncomeEvidence(context.toolResults ?? [], context.institutionId ?? null),
     tool_evidence: context.toolResults?.length
       ? context.toolResults.map((read) => ({ ...read, output: withoutEmbeddedDerivations(read.output) }))
       : toolOutputs.map((output) => withoutEmbeddedDerivations(output)),

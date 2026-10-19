@@ -25,7 +25,8 @@ const QUARTERLY_FINANCIALS = `(
      WHERE inf.source IN ('fdic', 'ncua')
   )`;
 
-export interface FeeRevenueCorrelation {
+/** Filed financial income, independent of whether a published fee schedule is available. */
+export interface FiledFeeIncome {
   institution_id: number;
   institution_name: string;
   charter_type: string;
@@ -40,9 +41,49 @@ export interface FeeRevenueCorrelation {
   total_assets: number | null;
   service_charge_income: number | null;
   fee_income_ratio: number | null;
+}
+
+export interface FeeRevenueCorrelation extends FiledFeeIncome {
   avg_fee: number;
   fee_count: number;
   median_overdraft: number | null;
+}
+
+/**
+ * Financial-only peers use filed income, not fee-schedule collection coverage. Keep the
+ * source, latest canonical filing and NCUA quarter conversion identical to correlation reads.
+ * The peer adapter applies the subject's exact quarter and saved filters before aggregation.
+ */
+export async function getFiledFeeIncomeData(source?: FinancialSource): Promise<FiledFeeIncome[]> {
+  const rows = await sql`
+    SELECT ct.id AS institution_id, ct.institution_name, ct.charter_type,
+           ct.state_code, ct.asset_size_tier, ct.fed_district,
+           ifin.report_date, ifin.source AS financial_source,
+           ifin.total_assets, ifin.service_charge_income,
+           CASE WHEN ifin.total_assets > 0
+                THEN ROUND((ifin.service_charge_income * 1.0 / ifin.total_assets * 10000)::numeric, 2)
+                ELSE NULL END AS fee_income_ratio
+    FROM institution_sources ct
+    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+      AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
+        OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
+      AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
+    WHERE ct.charter_type IN ('bank', 'credit_union')
+      AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+        OR ct.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+      AND ifin.service_charge_income IS NOT NULL
+    ORDER BY ifin.total_assets DESC NULLS LAST, ct.id
+  ` as FiledFeeIncome[];
+
+  return rows.map((row) => ({
+    ...row,
+    institution_id: Number(row.institution_id),
+    fed_district: row.fed_district === null || row.fed_district === undefined ? null : Number(row.fed_district),
+    report_date: row.report_date === null || row.report_date === undefined ? null : String(row.report_date).slice(0, 10),
+    total_assets: row.total_assets === null ? null : Number(row.total_assets),
+    service_charge_income: row.service_charge_income === null ? null : Number(row.service_charge_income),
+    fee_income_ratio: row.fee_income_ratio === null ? null : Number(row.fee_income_ratio),
+  }));
 }
 
 export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRevenueCorrelation[]> {

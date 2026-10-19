@@ -68,6 +68,26 @@ const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source
 function evidenceFrom(data: unknown): Evidence {
   const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [], quarterIncomes: [], peerMultipliers: [], quarterCalculations: [], canonicalSources: new Map(), broadIncomeIds: new Set(), financialPeerComparison: false };
   const root = record(data);
+  // This collection is reconstructed only from the server's observed filing-peer
+  // reads and selected institution, never arbitrary tool-output-shaped comparisons.
+  if (Array.isArray(root?.validated_filed_peer_income)) for (const value of root.validated_filed_peer_income) {
+    const income = record(value);
+    if (!income || (income.source !== "ncua" && income.source !== "fdic") || !Number.isSafeInteger(income.institution_id)
+      || (root?.selected_institution_id !== null && income.institution_id !== root?.selected_institution_id) || typeof income.report_date !== "string"
+      || finite(income.subject_income_usd) === null) continue;
+    const id = String(income.institution_id);
+    const sources = result.canonicalSources.get(id) ?? new Set<"fdic" | "ncua">();
+    sources.add(income.source);
+    result.canonicalSources.set(id, sources);
+    result.financialPeerComparison = true;
+    if (income.source !== "ncua") continue;
+    result.ncua = true;
+    result.broadIncomeIds.add(id);
+    result.quarterIncomes.push({ institutionId: id, period: income.report_date, value: Number(income.subject_income_usd), role: "subject" });
+    if (finite(income.peer_median_income_usd) !== null && Number(income.peer_count) >= Number(income.minimum_median_count)) {
+      result.quarterIncomes.push({ institutionId: id, period: income.report_date, value: Number(income.peer_median_income_usd), role: "peer_median" });
+    }
+  }
   // Only server-computed candidates, never a tool's arbitrary ratio-like numeric fields.
   if (Array.isArray(root?.validated_calculations)) for (const value of root.validated_calculations.slice(0, 40)) {
     const calculation = record(value);

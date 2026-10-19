@@ -10,7 +10,9 @@ vi.mock("./connection", () => ({
   }),
 }));
 
-import { getCharterFeeRevenueSummary, getFeeRevenueData, getTierFeeRevenueSummary } from "./fee-revenue";
+import { getCharterFeeRevenueSummary, getFeeRevenueData, getFiledFeeIncomeData, getTierFeeRevenueSummary } from "./fee-revenue";
+import { feeIncomeAgainstPeers } from "@/lib/research/fee-income-peers";
+import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 
 const connection = process.env.E2E_DATABASE_URL;
 describe.skipIf(!connection)("fee-revenue eligibility and source parity in isolated PostgreSQL", () => {
@@ -80,6 +82,7 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     for (const id of [1, 2, 3, 4, 5, 101, 102]) await threeFees(id);
 
     const allInstitutions = await getFeeRevenueData();
+    const allFinancials = await getFiledFeeIncomeData();
     const allTiers = await getTierFeeRevenueSummary();
     const allCharters = await getCharterFeeRevenueSummary();
     expect(allInstitutions.map((row) => Number(row.institution_id)).sort((a, b) => a - b)).toEqual([1, 2, 101, 102]);
@@ -90,6 +93,7 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
       financial_source: "ncua", report_date: "2026-03-31", service_charge_income: "125",
     });
     for (const source of ["fdic", "ncua"] as const) {
+      expect(ordered(await getFiledFeeIncomeData(source))).toEqual(ordered(allFinancials.filter((row) => row.financial_source === source)));
       expect(ordered(await getFeeRevenueData(source))).toEqual(ordered(allInstitutions.filter((row) => row.financial_source === source)));
       expect(ordered(await getTierFeeRevenueSummary(source))).toEqual(ordered(allTiers.filter((row) => row.financial_source === source)));
       expect(ordered(await getCharterFeeRevenueSummary(source))).toEqual(ordered(allCharters.filter((row) => row.financial_source === source)));
@@ -132,5 +136,90 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     expect(await getCharterFeeRevenueSummary(source)).toEqual([
       expect.objectContaining({ financial_source: source, charter_type: charter, institution_count: 2, avg_fee_amount: 16.67 }),
     ]);
+  });
+
+  it.each([
+    ["ncua", "credit_union", 0], ["fdic", "bank", 100],
+  ] as const)("compares %s filed income without fee schedules while preserving correlation eligibility (#2332)", async (source, charter, offset) => {
+    const id = (index: number) => offset + index;
+    for (let index = 1; index <= 6; index++) {
+      await institution(id(index), charter, source, "2026-06-30", index === 2 ? (source === "ncua" ? 100 : 0) : index * 100);
+    }
+    // The subject has no fee rows. Other valid peers have zero, one, two or three categories.
+    await fee(id(2), "overdraft", 20);
+    await fee(id(3), "overdraft", 20);
+    await fee(id(3), "nsf", 10);
+    await threeFees(id(4));
+    await institution(id(7), charter, source, "2026-03-31", 900);
+    await institution(id(8), charter, source === "ncua" ? "fdic" : "ncua");
+    await institution(id(9), "unknown", source);
+    // A newer noncanonical filing must not displace the subject's canonical June quarter.
+    await db`INSERT INTO institution_financial_records VALUES
+      (${id(1)}, ${source === "ncua" ? "fdic" : "ncua"}, '2026-09-30', 99999999, 999999)`;
+    // Do not fall back to an older complete quarter when the latest canonical income is missing.
+    await institution(id(11), charter, source);
+    await db`INSERT INTO institution_financial_records VALUES (${id(11)}, ${source}, '2026-09-30', 20000000, NULL)`;
+    if (source === "ncua") {
+      await institution(id(10), charter, source);
+      await db`DELETE FROM pg_temp.institution_financial_records WHERE institution_id = ${id(10)} AND report_date = '2026-03-31'`;
+      await threeFees(id(10)); // More price coverage cannot replace the missing prior YTD.
+    }
+
+    const financials = await getFiledFeeIncomeData(source);
+    expect(financials.map((row) => row.institution_id).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7].map(id));
+    expect(financials.find((row) => row.institution_id === id(1))).toMatchObject({
+      financial_source: source, charter_type: charter, report_date: "2026-06-30",
+      total_assets: 20_000_000, service_charge_income: source === "ncua" ? 0 : 100,
+    });
+    expect(financials.find((row) => row.institution_id === id(2))).toMatchObject({
+      service_charge_income: 0, fee_income_ratio: 0, fed_district: 5,
+    });
+    expect(financials.every((row) => !("avg_fee" in row) && !("fee_count" in row))).toBe(true);
+    const comparable = feeIncomeAgainstPeers(financials, id(1), { states: ["VA"], charterType: charter, assetTiers: ["regional"], fedDistricts: [5] });
+    expect(comparable).toMatchObject({
+      peer_count: 5, quarter: "2026-06-30",
+      peer_median_service_charge_income: source === "ncua" ? 300 : 400,
+      comparison: { sample_size: 5, subject_included: false, population_basis: "filed_financials", fee_schedule_coverage_required: false },
+    });
+    const thin = feeIncomeAgainstPeers(financials, id(1), { institutionIds: [2, 3, 4, 5].map(id) });
+    expect(thin).toMatchObject({ peer_count: 4, peer_median_service_charge_income: null, peer_median_income_per_10k_assets: null });
+    // The three actual price/income correlations retain their three-category gate unchanged.
+    expect((await getFeeRevenueData(source)).map((row) => Number(row.institution_id))).toEqual([id(4)]);
+    expect(await getTierFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 1 })]);
+    expect(await getCharterFeeRevenueSummary(source)).toEqual([expect.objectContaining({ institution_count: 1 })]);
+  });
+
+  it("preserves missing asset ratios rather than coercing them to zero in filing-only rows", async () => {
+    await institution(1, "credit_union", "ncua");
+    await db`UPDATE pg_temp.institution_financial_records SET total_assets = NULL WHERE institution_id = 1 AND report_date = '2026-06-30'`;
+    expect(await getFiledFeeIncomeData("ncua")).toEqual([expect.objectContaining({
+      institution_id: 1, service_charge_income: 250, total_assets: null, fee_income_ratio: null,
+    })]);
+  });
+
+  it("compares PenFed's filed Q2 income with deliberately absent test-only schedule coverage", async () => {
+    // Official NCUA March/June 2026 ACCT_131, rounded to the core reader's $000 storage:
+    // https://ncua.gov/files/publications/analysis/call-report-data-2026-03.zip
+    // https://ncua.gov/files/publications/analysis/call-report-data-2026-06.zip
+    // Zero schedule rows and the five peers below are synthetic test conditions, not live coverage.
+    await institution(4382, "credit_union", "ncua", "2026-06-30", 57_262);
+    await db`UPDATE pg_temp.institution_sources SET institution_name = 'Pentagon Federal Credit Union' WHERE id = 4382`;
+    await db`UPDATE pg_temp.institution_financial_records SET total_assets = 29196093 WHERE institution_id = 4382 AND report_date = '2026-06-30'`;
+    await db`UPDATE pg_temp.institution_financial_records SET service_charge_income = 27230, total_assets = 29396724 WHERE institution_id = 4382 AND report_date = '2026-03-31'`;
+    for (let id = 1; id <= 5; id++) await institution(id, "credit_union", "ncua", "2026-06-30", 250 + id * 100);
+
+    expect(await getFeeRevenueData("ncua")).toEqual([]);
+    const result = feeIncomeAgainstPeers(await getFiledFeeIncomeData("ncua"), 4382, {
+      charterType: "credit_union", assetTiers: ["regional"],
+    });
+    expect(result).toMatchObject({
+      quarter: "2026-06-30", subject: { institution_id: 4382, service_charge_income: 30_032, income_per_10k_assets: 10.29 },
+      peer_count: 5, peer_median_service_charge_income: 450,
+      comparison: { financial_source: "ncua", population_basis: "filed_financials", subject_included: false, fee_schedule_coverage_required: false },
+    });
+    const question = "How much fee income did PenFed report for Q2 2026?";
+    const context = { institutionId: 4382, toolResults: [{ toolName: "queryFeeRevenueCorrelation", input: { view: "peers", institution_id: 4382, charter_type: "credit_union", asset_tiers: ["regional"] }, output: result }] };
+    expect(writtenAnswerCheck("PenFed reported $30.032 million in broad fee income for Q2 2026.", [result], question, context)).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("PenFed reported $57.262 million in broad fee income for Q2 2026.", [result], question, context).passed).toBe(false);
   });
 });

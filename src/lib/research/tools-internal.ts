@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDistrictStats, getStateStats } from "@/lib/data-store/geographic";
 import { getLatestBeigeBook } from "@/lib/data-store/fed";
 import {
+  getFiledFeeIncomeData,
   getFeeRevenueData,
   getTierFeeRevenueSummary,
   getCharterFeeRevenueSummary,
@@ -99,7 +100,7 @@ export const queryStateData = tool({
 
 export const queryFeeRevenueCorrelation = tool({
   description:
-    "Returns correlation between published fee schedules and separately defined bank deposit service charges or NCUA broad credit-union fee income. Financial outputs are partitioned by canonical source and charter, never pooled. Views: peers (one institution's fee income against a same-quarter, same-source, same-charter peer group), institutions (per-institution), by_tier (asset tier summary per source), by_charter (separate bank and CU groups). When: fee income compared with peers, revenue dependency questions, fee-to-income analysis. For peers, pass institution_id and the peer group's filters (the reader's saved peer set when there is one). Combine with: queryNationalData, queryNationalData(health) for ROA/efficiency context.",
+    "Returns filed income comparisons or correlation between published fee schedules and separately defined bank deposit service charges or NCUA broad credit-union fee income. Financial outputs are partitioned by canonical source and charter, never pooled. Views: peers (one institution's filed fee income against a same-quarter, same-source, same-charter peer group, without requiring a published fee schedule), institutions (per-institution price/income correlation), by_tier (asset tier correlation summary per source), by_charter (separate bank and CU correlation groups). The three correlation views require at least three eligible published fee categories per institution; peers does not. When: fee income compared with peers, revenue dependency questions, fee-to-income analysis. For peers, pass institution_id and the peer group's filters (the reader's saved peer set when there is one). Combine with: queryNationalData, queryNationalData(health) for ROA/efficiency context.",
   inputSchema: z.object({
     view: z
       .enum(["peers", "institutions", "by_tier", "by_charter"])
@@ -126,7 +127,7 @@ export const queryFeeRevenueCorrelation = tool({
     }
     if (view === "peers") {
       if (!institution_id) return { view: "peers", error: "Pass institution_id for the institution being compared." };
-      return feeIncomeAgainstPeers(await getFeeRevenueData(source), institution_id, {
+      return feeIncomeAgainstPeers(await getFiledFeeIncomeData(source), institution_id, {
         institutionIds: peer_institution_ids,
         states: states?.map((state) => state.toUpperCase()),
         charterType: charter_type,
@@ -142,6 +143,11 @@ export const queryFeeRevenueCorrelation = tool({
             : await getTierFeeRevenueSummary(financialSource);
         return {
           ...financialGroup(financialSource),
+          population_basis: "fee_price_income_correlation",
+          eligibility: {
+            minimum_published_fee_categories: 3,
+            definition: "At least three distinct approved, sourced fee categories eligible under the published-fee statistics contract, with computable canonical standalone-quarter income",
+          },
           income_per_10k_assets: {
             fields: ["fee_income_ratio", "avg_fee_income_ratio"],
             definition: "Standalone-quarter income divided by reported total assets, multiplied by 10,000; not fee income as a share of revenue",
