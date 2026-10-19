@@ -135,7 +135,7 @@ Apply the evidence framing rules of your base role: state the sample behind each
 export function buildMonitorModeSuffix(): string {
   return `
 
-MONITOR MODE — ACTIVE
+ALERTS AND WATCHES MODE — ACTIVE
 You are answering a question from the Alerts and watches screen. The user is reviewing live signals and alerts about their competitive fee position.
 
 RESPONSE RULES:
