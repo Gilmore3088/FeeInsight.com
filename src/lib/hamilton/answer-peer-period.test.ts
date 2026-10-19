@@ -189,6 +189,9 @@ describe("actual Navy peer-answer failures (#2355)", () => {
     "The gap mostly reflects size, not pricing.",
     "The peer gap reflects size difference, not how Navy prices its fees.",
     "The income difference is driven by scale.",
+    "The dollar lead mostly reflects size, not pricing.",
+    "The dollar rank comes from scale.",
+    "Its ranking is explained by assets.",
     "The only true size peer group has just two credit unions.",
     "The sole valid cohort is the chosen tier.",
   ])("holds unsupported interpretation: %s", (answer) => {
@@ -200,6 +203,8 @@ describe("actual Navy peer-answer failures (#2355)", () => {
     "The figures cannot establish that the gap reflects size.",
     "The size band is not the only valid peer group.",
     "A broad size band and nearest-in-assets peers answer different stated cohort definitions.",
+    "The figures cannot establish that the dollar lead reflects size.",
+    "The dollar ranking is not evidence that size explains the lead.",
   ])("allows bounded scope and explicit limits: %s", (answer) => {
     expect(checkAnswerInterpretations(answer, actualEvidence)).toEqual([]);
   });
@@ -293,5 +298,28 @@ describe("actual Navy peer-answer failures (#2355)", () => {
   it("keeps the source hold and internal account-code rejection intact", () => {
     expect(HELD_ANSWER_MESSAGE).toBe("This answer didn't pass Hamilton's source check, so it isn't shown. Ask again, or name one fee to compare.");
     expect(writtenAnswerCheck("NCUA ACCT_131 reported $297.36 million.", actualReads.map((read) => read.output)).passed).toBe(false);
+  });
+
+  it("keeps selected-bank quarters valid with ancillary NCUA metadata without disabling selected-CU checks (#2369)", () => {
+    const bankComparison = financialPeerComparison({ source: "fdic", reportDate: "2026-06-30", tier: "regional", minimumAssetsUsd: 1e10, maximumAssetsUsd: 250e9, subjectIncluded: true, eligibleCount: 25, reportedCount: 25, ratioReportedCount: 25, minimumMedianCount: 5 });
+    const bankRead = { toolName: "getInstitution", input: { id: 123 }, output: {
+      identity: { id: 123, name: "Test Bank", charter_type: "bank" },
+      peer_ranking: { source: "fdic", units: "thousands of dollars", sc_income: 153080, peer_median_sc: 11125, peer_count: 25, comparison: bankComparison },
+    } };
+    const background = { toolName: "listData", input: {}, output: { source: "ncua", publisher: "NCUA (5300 call report)" } };
+    const text = "Test Bank reported $153.08 million of deposit service charge income in Q2 2026.";
+    const question = "How much service charge income did Test Bank report in Q2 2026?";
+    for (const reads of [[bankRead], [bankRead, background]]) {
+      expect(writtenAnswerCheck(text, reads.map((read) => read.output), question, { institutionId: 123, toolResults: reads })).toMatchObject({ passed: true, problems: [], figureCheck: { unmatched: [] } });
+    }
+    const creditUnionRead = { ...quarterEvidence.tool_evidence[0], output: {
+      identity: { id: 4956, name: "Navy Federal", charter_type: "credit_union" },
+      peer_ranking: { ...quarterEvidence.tool_evidence[0].output.peer_ranking, source: "ncua", units: "thousands of dollars" },
+    } };
+    const reads = [creditUnionRead, bankRead, ...actualReads];
+    const result = writtenAnswerCheck("Navy Federal earned $297.36 million in Q2 2026.", reads.map((read) => read.output), "How much fee income did Navy Federal report in Q2 2026?", { institutionId: 4956, toolResults: reads });
+    expect(result.figureCheck.unmatched).toEqual([]);
+    expect(result.passed).toBe(false);
+    expect(result.problems.join(" ")).toContain("standalone-quarter");
   });
 });
