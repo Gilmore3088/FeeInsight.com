@@ -117,7 +117,7 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // ("Mortgage satisfaction fee (varies)", Citadel FCU) a price with a name after it is that name's. A
 // bare price still goes to the name above, and so does any price under a name that runs on ("...
 // Savings Account per"). The stale-read floor stays at v78: no page is read again for this alone.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 79 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 80 } as const;
 
 export interface SpecialistRun {
   strategy: string;

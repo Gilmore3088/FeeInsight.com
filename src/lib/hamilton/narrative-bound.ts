@@ -28,6 +28,7 @@ import { proseFeeName } from "./workspace/names";
 import {
   claimBindingMatches,
   medianOf,
+  normalizeFrequency,
   type HamiltonDerivedFact,
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
@@ -154,7 +155,7 @@ function conflictGroups(facts: HamiltonEvidenceFact[]): Map<string, HamiltonEvid
   const groups = new Map<string, HamiltonEvidenceFact[]>();
   for (const fact of facts) {
     const key = [fact.scope.institutionId, fact.scope.feeCategory, fact.scope.product?.trim().toLowerCase(),
-      fact.frequency?.trim().toLowerCase(), fact.unit].join("|");
+      normalizeFrequency(fact.frequency), fact.unit].join("|");
     groups.set(key, [...(groups.get(key) ?? []), fact]);
   }
   const conflicts = new Map<string, HamiltonEvidenceFact[]>();

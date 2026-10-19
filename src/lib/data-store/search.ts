@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { boundedSearchTerm } from "@/lib/api-hardening/query-caps";
 import { statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
@@ -235,12 +236,16 @@ export async function searchInstitutions(params: {
 
   if (params.query && params.query.trim().length >= 2) {
     // The same name match as the typeahead, so "M&T" or "US Bank" finds the same banks on Enter.
-    const { pattern, squashed, aliases } = institutionSearchPatterns(params.query);
-    conditions.push(`(ct.institution_name ~* $${paramIdx + 1}
-      OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $${paramIdx + 2}
-      OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
-    queryParams.push(pattern, squashed, aliases);
-    paramIdx += 3;
+    // Bounded like the typeahead: at most 100 characters, at least two letters or digits.
+    const term = boundedSearchTerm(params.query);
+    if (term) {
+      const { pattern, squashed, aliases } = institutionSearchPatterns(term);
+      conditions.push(`(ct.institution_name ~* $${paramIdx + 1}
+        OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $${paramIdx + 2}
+        OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
+      queryParams.push(pattern, squashed, aliases);
+      paramIdx += 3;
+    }
   }
   if (params.state_code) {
     paramIdx++;
@@ -400,9 +405,16 @@ const NAME_MATCH = `(ct.institution_name ~* $1
   OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $4
   OR ct.institution_name ILIKE ANY($5::text[]))`;
 
+/** An autocomplete list is a handful of suggestions: 1 to 25 rows, whatever a caller passes. */
+export const AUTOCOMPLETE_MAX_ROWS = 25;
+function clampAutocompleteLimit(limit: number): number {
+  return Number.isFinite(limit) ? Math.min(Math.max(1, Math.floor(limit)), AUTOCOMPLETE_MAX_ROWS) : 8;
+}
+
 export async function autocompleteInstitutions(query: string, limit = 8): Promise<InstitutionSearchResult[]> {
-  if (!query || query.trim().length < 2) return [];
-  const term = query.trim();
+  // Bounded and literal: at most 100 characters, at least two letters or digits.
+  const term = boundedSearchTerm(query);
+  if (!term) return [];
   const { pattern, squashed, aliases } = institutionSearchPatterns(term);
   const rows = await sql.unsafe<InstitutionSearchRow[]>(
     `${searchQualityCte(`SELECT ct.id FROM institution_sources ct WHERE ${NAME_MATCH}`)}
@@ -446,7 +458,7 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
       ) DESC,
       ct.institution_name ASC
     LIMIT $3`,
-    [pattern, term, limit, squashed, aliases],
+    [pattern, term, clampAutocompleteLimit(limit), squashed, aliases],
   );
   return rows.map(mapInstitutionSearchRow);
 }

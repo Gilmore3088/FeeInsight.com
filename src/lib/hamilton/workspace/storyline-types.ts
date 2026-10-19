@@ -11,7 +11,7 @@
 
 import type { EvidenceLevel, Exhibit, Fact, SegmentMember, SourceRef } from "./types";
 
-export type StorylineKind = "position" | "segment" | "price_test" | "trend" | "structure" | "board_decision";
+export type StorylineKind = "position" | "segment" | "price_test" | "trend" | "structure" | "board_decision" | "list";
 
 export type StorylineView = "finance" | "market";
 
@@ -130,7 +130,44 @@ export interface ArchetypeMapExhibit extends ExhibitBase {
   ownKey: ArchetypeKey | null;
 }
 
+/** One institution in a peer list: its published fee, or why there is none. */
+export interface PeerListRow {
+  institutionId: number;
+  institutionName: string;
+  stateCode: string | null;
+  /** Thousands of dollars; null when the registry has none. */
+  totalAssets: number | null;
+  /** The published fee; null when the index holds none (see `status`). */
+  amount: number | null;
+  /** The fees by name when the schedule states several different ones (#1931): "$25 to $35 (...)". */
+  amountText?: string;
+  /**
+   * published: the fee is on file; not_counted: it is on file but outside what peer figures count
+   * (business-only, unsourced); not_on_schedule: other fees from its schedule are, this one is
+   * not; no_schedule: no schedule is on file.
+   */
+  status: "published" | "not_counted" | "not_on_schedule" | "no_schedule";
+  documentUrl: string | null;
+  /** When the fee was published to the index (ISO date). */
+  publishedAt: string | null;
+  own?: boolean;
+}
+
+/**
+ * Every institution in the group asked about, by name, with its fee or why there is none
+ * (#2033): the whole answer to a list question.
+ */
+export interface PeerListExhibit extends ExhibitBase {
+  kind: "peer_list";
+  /** The fee column's heading, e.g. "Overdraft fee". */
+  feeLabel: string;
+  rows: PeerListRow[];
+  /** Institutions in the group the list does not name (beyond the read's limit). */
+  unlisted: number;
+}
+
 export type StorylineExhibit =
+  | PeerListExhibit
   | SegmentTableExhibit
   | ChangeTimelineExhibit
   | StructureMatrixExhibit

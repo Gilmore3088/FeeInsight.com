@@ -1,6 +1,5 @@
 import type { User } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
-import { trackServerEvent } from "@/lib/analytics-server";
 import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 
 /**
@@ -29,7 +28,8 @@ export async function activateIfPaid(
         if (institutionId) {
           await anchorPaidInstitution(sql, { userId: user.id, institutionId, note: `Filed at Pro checkout (${subs.data[0].id}).` });
         }
-        await trackServerEvent("pro_activated", { source: "fallback" });
+        // No pro_activated here: the webhook counts it once per checkout session, when that
+        // checkout's welcome is first staged, and it lands even after this fallback ran.
         return true;
       }
     } catch (e) {

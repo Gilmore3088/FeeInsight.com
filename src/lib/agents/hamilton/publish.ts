@@ -21,7 +21,7 @@ import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-gua
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
-import { dropsCondition, isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { dropsCondition, isCutoffName, nameBeforeSentenceClauses, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -54,6 +54,11 @@ import {
   type PublishSweepRefusal,
   type PublishSweepRule,
 } from "@/lib/agents/hamilton/publish-sweep-rules";
+import {
+  PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX,
+  PUBLISH_REFUSE_PAGE_COPIES_LIVE,
+  selectPageCopyKeeper,
+} from "@/lib/agents/hamilton/page-copy-refuse";
 
 type SqlTag = typeof sql;
 
@@ -166,6 +171,8 @@ export interface HamiltonPublishResult {
   exactDuplicate?: Exclude<ExactDuplicateDecision, { kind: "none" }> | null;
   /** #1069 step 2: the sweep that would take this row down once live (rows about to publish only). */
   sweepRule?: PublishSweepRefusal | null;
+  /** The live row the page-copy collapse would keep over this one once live (rows about to publish only). */
+  pageCopyOf?: number | null;
 }
 
 export interface RunHamiltonPublishOptions {
@@ -183,6 +190,8 @@ export interface RunHamiltonPublishOptions {
   refuseDuplicatesLive?: boolean;
   /** Refuse rows a sweep would take down (`publish-sweep-rules.ts`); defaults to `PUBLISH_REFUSE_SWEEP_RULES_LIVE`. */
   refuseSweepRulesLive?: boolean;
+  /** Refuse rows the page-copy collapse would close; defaults to `PUBLISH_REFUSE_PAGE_COPIES_LIVE`. */
+  refusePageCopiesLive?: boolean;
   /**
    * Epoch ms after which the row loop stops (after `PUBLISH_MIN_ROWS_PER_STEP` rows), so the step
    * ends inside the tick (2026-10-17 finding).
@@ -190,6 +199,14 @@ export interface RunHamiltonPublishOptions {
   deadlineAt?: number;
   /** Epoch ms after which the cross-state top-up is not read; defaults to `deadlineAt`. */
   topUpDeadlineAt?: number;
+}
+
+export interface PublishPageCopyCheck {
+  /** True when the step refuses the rows the page-copy collapse would close. */
+  live: boolean;
+  wouldRefuse: number;
+  refused: number;
+  samples: Array<{ fee_verified_id: number; fee_published_id: number | null; kept_fee_published_id: number; fee_name: string; amount: number | null }>;
 }
 
 export interface HeldThinInstitution {
@@ -224,6 +241,8 @@ export interface RunHamiltonPublishResult {
   duplicateCheck: PublishDuplicateCheck;
   /** #1069 step 2: rows a sweep (another bank's or an unconfirmed host's document, a business schedule) would take down. */
   sweepCheck: PublishSweepCheck;
+  /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
+  pageCopyCheck: PublishPageCopyCheck;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
@@ -905,7 +924,7 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
   // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
   // ("GUASFCU charges a") is not published as it is.
-  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
+  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey) && !clauseCutName(name, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
@@ -915,6 +934,19 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
     return { code: "condition_only_name", reason: "Name is only a parenthetical condition; the fee it belongs to is in another cell" };
   }
   return null;
+}
+
+/**
+ * A name whose cut-off shape is only a comma clause after it ("Stop Payment, all items including ACH
+ * and bill pay") publishes under the name before the clause, when that still names the row's own
+ * category and the cut drops no condition. Beacon's $30 stop payment and $125 legal process fee were
+ * held as `cutoff_name` for this (verified 191900, 191887; Oct 19).
+ */
+function clauseCutName(name: string, canonicalKey: string): string | null {
+  const head = nameBeforeSentenceClauses(name);
+  // The clause must not change what the name reads as ("Wire Transfer Outgoing, including international").
+  if (!head || classifyFeeText(head) !== canonicalKey || classifyFeeText(name) !== canonicalKey || !checkFeeCategory(canonicalKey, head).ok) return null;
+  return dropsCondition(name, head, canonicalKey) ? null : head;
 }
 
 const CONDITION_ONLY_NAME = /^\s*\([^()]*\)\s*$/;
@@ -951,6 +983,8 @@ export function publishedFeeName(name: string, canonicalKey: string): string {
     // $7,500)" went live as "Minimum Balance Fee" (107240, 9 Oct) beside the $1,000 and $2,500
     // lines it is not. Retidy v15's `dropsCondition` is the same bar.
     if (retidied && checkFeeCategory(canonicalKey, retidied).ok && !dropsCondition(current, retidied, canonicalKey)) return retidied;
+    const clauseless = isCutoffName(current) ? clauseCutName(current, canonicalKey) : null;
+    if (clauseless) return clauseless;
   }
   // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
   const repaired = repairNameShape(stripFootnoteMarks(current));
@@ -1998,6 +2032,7 @@ export async function runHamiltonPublish(
   const dryRun = Boolean(options.dryRun);
   const refuseDuplicatesLive = options.refuseDuplicatesLive ?? PUBLISH_REFUSE_DUPLICATES_LIVE;
   const refuseSweepRulesLive = options.refuseSweepRulesLive ?? PUBLISH_REFUSE_SWEEP_RULES_LIVE;
+  const refusePageCopiesLive = options.refusePageCopiesLive ?? PUBLISH_REFUSE_PAGE_COPIES_LIVE;
   const learning = !dryRun && (await learningSchemaReady(db));
   const batchId = `agentic-run-${options.runId}`;
   const selected = await selectVerifiedFees(
@@ -2173,6 +2208,29 @@ export async function runHamiltonPublish(
       !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
         ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null)
         : null;
+    // A dollar row whose line is already live from another copy of the same page ("?print=1",
+    // "www.") is closed by the page-copy collapse later; read with its own test, and refused only
+    // while `refusePageCopiesLive` is on (page-copy-refuse.ts).
+    const pageCopyOf =
+      !skipReason &&
+      decision?.kind !== "identical" &&
+      decision?.kind !== "older_document" &&
+      exactDuplicate.kind !== "refuse" &&
+      !sweepRule &&
+      line.amount != null &&
+      line.ratePercent == null &&
+      row.source_document_id != null
+        ? await selectPageCopyKeeper(db, {
+            institutionId: line.institutionId,
+            canonicalFeeKey: line.canonicalFeeKey,
+            variantType: line.variantType,
+            amount: line.amount,
+            feeName: line.feeName,
+            frequency: row.frequency,
+            feeAudience: row.fee_audience,
+            sourceDocumentId: Number(row.source_document_id),
+          })
+        : null;
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2208,6 +2266,14 @@ export async function runHamiltonPublish(
         ...base,
         status: "skipped",
         reason: `${PUBLISH_SWEEP_REFUSE_REASON_PREFIX}${sweepRule.sweepReason}`,
+        feePublishedId: null,
+        ...NO_MOVEMENT,
+      };
+    } else if (refusePageCopiesLive && pageCopyOf != null) {
+      result = {
+        ...base,
+        status: "skipped",
+        reason: `${PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX}${pageCopyOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
@@ -2260,6 +2326,7 @@ export async function runHamiltonPublish(
     }
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
+    if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
     if (result.status === "published") {
       stepCopies.set(lineKey, [
         ...(stepCopies.get(lineKey) ?? []),
@@ -2298,6 +2365,7 @@ export async function runHamiltonPublish(
           same_line_check: SAME_LINE_CHECK_VERSION,
           ...(result.exactDuplicate ? { exact_duplicate: result.exactDuplicate } : {}),
           ...(result.sweepRule ? { sweep_rule: result.sweepRule } : {}),
+          ...(result.pageCopyOf != null ? { page_copy_of: result.pageCopyOf } : {}),
         },
       });
     }
@@ -2352,6 +2420,19 @@ export async function runHamiltonPublish(
     })),
     error: sweepReads.error,
   };
+  const pageCopyHits = results.filter((result) => result.pageCopyOf != null);
+  const pageCopyCheck: PublishPageCopyCheck = {
+    live: refusePageCopiesLive,
+    wouldRefuse: pageCopyHits.length,
+    refused: refusePageCopiesLive ? pageCopyHits.filter((result) => result.status === "skipped").length : 0,
+    samples: pageCopyHits.slice(0, 10).map((result) => ({
+      fee_verified_id: result.feeVerifiedId,
+      fee_published_id: result.feePublishedId,
+      kept_fee_published_id: result.pageCopyOf!,
+      fee_name: result.feeName,
+      amount: result.amount,
+    })),
+  };
   return {
     selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
@@ -2371,6 +2452,7 @@ export async function runHamiltonPublish(
     results,
     duplicateCheck,
     sweepCheck,
+    pageCopyCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

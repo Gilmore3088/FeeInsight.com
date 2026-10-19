@@ -1,3 +1,5 @@
+import { registryLedgerAgent } from "@/lib/agents/hoovie/names";
+
 /**
  * Gutenberg is the internal agent that keeps the live fee catalog (#1075; DECISIONS, Oct 12): it
  * takes Darwin-verified fees, decides which go live, and keeps them correct. Hamilton becomes the
@@ -27,6 +29,7 @@ export const PUBLISHER_STEP_KEYS: readonly string[] = [
   "publish",
   "publish-index",
   "publish-context",
+  "publish-sweeps",
   "category-guard",
   "frequency-fill",
   "source-link-repair",
@@ -36,8 +39,10 @@ export const PUBLISHER_STEP_KEYS: readonly string[] = [
 /**
  * The agent a ledger row belongs to today. A publisher step written under Hamilton's name
  * before the switch counts as Gutenberg's, so a reader that groups history by agent shows the
- * publisher's work in one place across the switch. Pure.
+ * publisher's work in one place across the switch. Likewise a registry step written under
+ * Magellan's name before #1865 counts as Hoovie's (`registryLedgerAgent`). Pure.
  */
 export function ledgerAgent(agentName: string, stepKey: string | null | undefined): string {
-  return agentName === "hamilton" && stepKey != null && PUBLISHER_STEP_KEYS.includes(stepKey) ? GUTENBERG_AGENT : agentName;
+  if (agentName === "hamilton" && stepKey != null && PUBLISHER_STEP_KEYS.includes(stepKey)) return GUTENBERG_AGENT;
+  return registryLedgerAgent(agentName, stepKey);
 }

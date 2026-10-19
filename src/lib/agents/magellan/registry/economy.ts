@@ -24,10 +24,14 @@ import {
   industryStats,
   parseHudCrosswalk,
   parseNationalWideCsv,
-  parseRemittancePrices,
+  locateRpwWorkbook,
+  parseRemittanceFile,
   placeAddressesInTracts,
   placePointInTract,
-  RPW_URL_ENV,
+  readRpwBytes,
+  REMITTANCE_PRICES_ATTRIBUTION,
+  REMITTANCE_PRICES_LICENCE,
+  RpwFileTooLargeError,
   RUCC_VINTAGES,
   sumIndustry,
   type AreaFetch,
@@ -55,6 +59,12 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  */
 
 export const ECONOMY_PARSER_VERSION = 1;
+
+/**
+ * The remittance source's own reader version, so a change to it re-runs only that source.
+ * v2: reads the RPW workbook from the World Bank's data page with no env var set.
+ */
+export const REMITTANCE_PARSER_VERSION = 2;
 
 export const ECONOMY_SOURCES = {
   rucc: "usda-rucc",
@@ -771,13 +781,29 @@ async function runFdicIndustry(db: RegistryDb, options: RegistryEconomyOptions):
 
 async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): Promise<RegistryEconomyResult> {
   const env = options.env ?? process.env;
-  const url = env[RPW_URL_ENV]?.trim();
-  if (!url) return skipFor(db, options, "World Bank remittance prices", `No ${RPW_URL_ENV} set; the RPW dataset is published as a workbook and no CSV download is confirmed`, HOURS.week);
+  // The env var is an optional override; unset, the workbook is found on the World Bank's data page.
+  const located = await locateRpwWorkbook(env, options.fetchOptions);
+  const url = located.url;
   const response = await registryFetch(url, { timeoutMs: 180_000, ...options.fetchOptions });
-  const parsed = parseRemittancePrices(await response.text());
+  let bytes: Uint8Array;
+  try {
+    bytes = await readRpwBytes(response, url);
+  } catch (error) {
+    if (!(error instanceof RpwFileTooLargeError)) throw error;
+    const detail = { parser_version: REMITTANCE_PARSER_VERSION, problem: error.problem, bytes_at_refusal: error.bytes, located_via: located.via, page_problem: located.pageProblem };
+    await recordEmpty(db, options, error.message, HOURS.week, url, detail);
+    return result(options, { sourceUrl: url, empty: true, emptyReason: error.message, summary: `World Bank remittance prices: nothing loaded. ${error.message}${dry(Boolean(options.dryRun))}.`, detail });
+  }
+  const parsed = parseRemittanceFile(bytes);
   const unique = [...new Map(parsed.rows.map((r) => [`${r.period}|${r.destination_country}|${r.firm}|${r.product ?? ""}`, r])).values()];
   const detail = {
-    parser_version: ECONOMY_PARSER_VERSION,
+    parser_version: REMITTANCE_PARSER_VERSION,
+    licence: REMITTANCE_PRICES_LICENCE,
+    attribution: REMITTANCE_PRICES_ATTRIBUTION,
+    located_via: located.via,
+    page_problem: located.pageProblem,
+    file_bytes: bytes.length,
+    sheets: parsed.sheets ?? null,
     rows: unique.length,
     duplicate_keys: parsed.rows.length - unique.length,
     non_us_rows: parsed.nonUsRows,
@@ -796,7 +822,8 @@ async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): 
   let written = 0;
   let linked = 0;
   for (const group of chunk(unique, UPSERT_CHUNK)) {
-    const payload = JSON.stringify(group.map((r) => ({ ...r, raw_json: r.raw, raw: undefined })));
+    // CC BY 4.0: each stored quote carries the attribution its licence requires.
+    const payload = JSON.stringify(group.map((r) => ({ ...r, raw_json: { ...r.raw, attribution: REMITTANCE_PRICES_ATTRIBUTION }, raw: undefined })));
     const out = await db<Array<{ linked: boolean }>>`
       WITH r AS (
         SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(

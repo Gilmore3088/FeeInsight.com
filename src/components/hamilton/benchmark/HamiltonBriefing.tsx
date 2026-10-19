@@ -39,6 +39,7 @@ const TOPIC_LABELS: Record<string, string> = {
   overdraft: "Overdraft & NSF",
   fees_pricing: "Fees & pricing",
   rulemaking_compliance: "Rulemaking",
+  enforcement: "Enforcement",
   consumer_lending: "Consumer lending",
 };
 
@@ -66,7 +67,8 @@ export function stateComparison(
   let biggest: { name: string; yours: number; median: number; pct: number } | null = null;
   for (const entry of positioning.entries) {
     const level = state.medians[entry.feeCategory];
-    if (!level || level.median <= 0) continue;
+    // A category with several different fees has no single price to set against the median.
+    if (!level || level.median <= 0 || entry.yourAmount === null) continue;
     compared += 1;
     const pct = ((entry.yourAmount - level.median) / level.median) * 100;
     if (pct >= 10) above += 1;

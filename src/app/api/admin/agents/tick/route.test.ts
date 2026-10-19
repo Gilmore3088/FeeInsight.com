@@ -14,6 +14,7 @@ const executeQueuedAgentRunsMock = vi.fn();
 const schedulePriorityInstitutionRunsMock = vi.fn();
 const assertCronTickBudgetAllowedMock = vi.fn();
 const scheduleGuardCatchUpRunMock = vi.fn();
+const schedulePublishSweepsRunMock = vi.fn();
 const scheduleStaleOutreachWithdrawalMock = vi.fn();
 
 vi.mock("@/lib/auth", () => ({
@@ -45,6 +46,10 @@ vi.mock("@/lib/agents/atlas/priority-institutions", () => ({
 
 vi.mock("@/lib/agents/hamilton/guard-catch-up", () => ({
   scheduleGuardCatchUpRun: scheduleGuardCatchUpRunMock,
+}));
+
+vi.mock("@/lib/agents/hamilton/publish-sweeps-schedule", () => ({
+  schedulePublishSweepsRun: schedulePublishSweepsRunMock,
 }));
 
 vi.mock("@/lib/agents/growth/withdraw", () => ({
@@ -107,6 +112,7 @@ describe("/api/admin/agents/tick", () => {
     scheduleStaleOutreachWithdrawalMock.mockResolvedValue({
       scheduled: true, runId: 126, due: 23, reason: null,
     });
+    schedulePublishSweepsRunMock.mockResolvedValue({ scheduled: true, runId: 127, live: false, reason: null });
     executeQueuedAgentRunsMock.mockResolvedValue({
       selected: 1,
       results: [{ runId: 123, status: "queued", terminal: false, executedSteps: 1 }],
@@ -309,6 +315,22 @@ describe("/api/admin/agents/tick", () => {
     );
   });
 
+  it("queues the publish-sweeps run before draining, and still drains when it cannot be scheduled", async () => {
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.publishSweeps).toMatchObject({ scheduled: true, runId: 127, live: false });
+    expect(schedulePublishSweepsRunMock.mock.invocationCallOrder[0]).toBeLessThan(
+      executeQueuedAgentRunsMock.mock.invocationCallOrder[0],
+    );
+
+    schedulePublishSweepsRunMock.mockRejectedValue(new Error("db down"));
+    const failed = await (await GET(request())).json();
+    expect(failed.publishSweeps).toEqual({ error: "db down" });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledTimes(2);
+  });
+
   it("still drains queued runs when the guard catch-up cannot be scheduled", async () => {
     scheduleGuardCatchUpRunMock.mockRejectedValue(new Error("db down"));
     const { GET } = await import("./route");
@@ -358,6 +380,7 @@ describe("/api/admin/agents/tick", () => {
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
     expect(scheduleGuardCatchUpRunMock).not.toHaveBeenCalled();
+    expect(schedulePublishSweepsRunMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(
       expect.objectContaining({ paused: { pipeline: true, marketing: false } }),
     );

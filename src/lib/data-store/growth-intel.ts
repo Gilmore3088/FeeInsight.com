@@ -5,6 +5,7 @@
  */
 
 import { sql } from "./connection";
+import { HELD_REG_ARTICLE_PATTERN, STRUCK_REG_ARTICLE_SOURCES } from "./struck-sources";
 
 type SqlTag = typeof sql;
 
@@ -28,6 +29,9 @@ export async function listNewRegulatorItems(hours: number, limit: number, db: Sq
       SELECT source, title, link, published_at
         FROM reg_articles
        WHERE created_at >= now() - make_interval(hours => ${hours}::int)
+         -- Held press and struck states' posts (DECISIONS.md "No non-commercial data").
+         AND source NOT LIKE ${HELD_REG_ARTICLE_PATTERN}
+         AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
        ORDER BY created_at DESC
        LIMIT ${limit}`,
     db`

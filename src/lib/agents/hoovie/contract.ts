@@ -64,7 +64,12 @@ export type HoovieLicenceStatus =
   /** Free to read, but the terms for showing it to customers are not yet confirmed. */
   | "terms-unconfirmed"
   /** Not loaded or shown until a person confirms the terms. */
-  | "held";
+  | "held"
+  /**
+   * Fee Insight's own reading of each institution's own public documents, the same documents the
+   * published fees come from: a fact and one evidence sentence with the link, never a copy of a page.
+   */
+  | "fee-insight";
 
 export interface HoovieLicence {
   status: HoovieLicenceStatus;
@@ -72,11 +77,19 @@ export interface HoovieLicence {
   licenceName?: string;
   /** What a person must still check, or how the source must be cited. */
   note?: string;
+  /** The credit the licence requires next to every figure shown, word for word; absent when none is required. */
+  attribution?: string;
 }
 
 export interface HoovieSourceContract {
   /** The registry source key (`RegistrySourceDefinition.source`). */
   source: string;
+  /**
+   * The registry module that runs this source, as its file name under `magellan/registry/` without
+   * `.ts`. The contract test reads it, and the registry modules it imports, for the SQL that writes
+   * each table in `tables` and for every key the contract names.
+   */
+  loader: string;
   /** Who publishes the data, as a reader would name them. */
   publisher: string;
   licence: HoovieLicence;
@@ -92,4 +105,20 @@ export interface HoovieSourceContract {
   linkKeys: HoovieLinkKey[];
   /** Tables the loader writes, besides `registry_ingest_partitions`. */
   tables: string[];
+  /**
+   * The publisher's host refuses production's requests, so the source is a named gap: the loader
+   * records an empty partition naming the host (`detail.missing_source`) instead of failing.
+   */
+  missingSource?: HoovieMissingSource;
+}
+
+export interface HoovieMissingSource {
+  /** The host production cannot reach. */
+  host: string;
+  /** What it answered and when that was read, e.g. "HTTP 403 to Vercel, read 2026-10-17". */
+  observed: string;
+  /** The official second source used instead and what it lacks, or null when there is none. */
+  fallback: string | null;
+  /** The GitHub issue tracking the gap. */
+  issue: number;
 }

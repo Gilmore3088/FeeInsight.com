@@ -174,8 +174,11 @@ export function passesWithoutAccountWords(row: HoldRow): boolean {
 
 export async function applyAccountTypeHold(
   db: SqlTag,
-  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean },
+  // `institutionId` scopes all three reads to one bank (a Read-now publish once the publish-sweeps
+  // split is on, hamilton/publish-sweeps.ts); unset, every institution, as before.
+  options: { runId: number; stepId?: number | null; batchId: string; dryRun: boolean; institutionId?: number },
 ): Promise<AccountTypeHoldResult> {
+  const onlyInstitution = options.institutionId ?? null;
   const result: AccountTypeHoldResult = { dryRun: options.dryRun, heldLive: [], heldWaiting: [], checkedUntyped: 0, recheckNoProduct: 0, restoredHeld: [], typedRejected: [], error: null };
   let live: HoldRow[];
   let waiting: HoldRow[];
@@ -189,6 +192,7 @@ export async function applyAccountTypeHold(
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         LEFT JOIN institution_sources inst ON inst.id = fp.institution_id
        WHERE fp.rolled_back_at IS NULL
+         AND (${onlyInstitution}::bigint IS NULL OR fp.institution_id = ${onlyInstitution}::bigint)
          AND fp.canonical_fee_key = ${HOLD_CATEGORY}
          AND NOT (COALESCE(fv.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_TYPE_CHECKED_FLAG})
        ORDER BY fp.fee_published_id
@@ -200,6 +204,7 @@ export async function applyAccountTypeHold(
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         LEFT JOIN institution_sources inst ON inst.id = fv.institution_id
        WHERE fv.canonical_fee_key = ${HOLD_CATEGORY}
+         AND (${onlyInstitution}::bigint IS NULL OR fv.institution_id = ${onlyInstitution}::bigint)
          AND fv.review_status IN ('verified', 'approved')
          AND NOT (COALESCE(fv.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_TYPE_CHECKED_FLAG})
          AND NOT EXISTS (
@@ -222,6 +227,7 @@ export async function applyAccountTypeHold(
            ORDER BY t.id DESC LIMIT 1
         ) txt ON TRUE
        WHERE fv.canonical_fee_key = ${HOLD_CATEGORY}
+         AND (${onlyInstitution}::bigint IS NULL OR fv.institution_id = ${onlyInstitution}::bigint)
          AND fv.review_status = 'rejected'
          AND COALESCE(fv.outlier_flags, '[]'::jsonb) ? 'category_guard:name_contradicts'
          AND NOT EXISTS (

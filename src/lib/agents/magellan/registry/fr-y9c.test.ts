@@ -12,6 +12,7 @@ function createDb() {
     const text = (strings as string[]).join(" ");
     statements.push({ text, values });
     if (text.includes("COUNT(DISTINCT holding_company_rssd)")) return Promise.resolve([{ matched: 1 }]);
+    if (text.includes("AS banks")) return Promise.resolve([{ banks: 4321 }]);
     if (text.includes("COUNT(DISTINCT rssd_id)")) return Promise.resolve([{ linked: 1 }]);
     if (text.includes("AS disagreements")) return Promise.resolve([{ disagreements: 0 }]);
     if (text.includes("INSERT INTO holding_company_y9c_items")) return Promise.resolve([{}, {}, {}]);
@@ -75,6 +76,23 @@ describe("registry fr-y9c", () => {
     expect(r.empty).toBe(true);
     expect(partitionDetail(statements).reason).toMatch(/does not list a BHCF file/);
   });
+
+  it("records a named missing source when NIC refuses the request (#1806)", async () => {
+    const { db, statements } = createDb();
+    const fetchImpl = vi.fn(async () => new Response("Forbidden", { status: 403 })) as unknown as typeof fetch;
+    const r = await runRegistryFrY9c({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(r).toMatchObject({ empty: true, writtenRows: 0, missingSource: { host: "www.ffiec.gov", status: 403, second_host: null } });
+    expect(r.emptyReason).toBe("FR Y-9C source missing: www.ffiec.gov answered HTTP 403 and FR Y-9C has no official second host");
+    const detail = partitionDetail(statements);
+    expect(detail.missing_source).toMatchObject({ host: "www.ffiec.gov", status: 403, second_host: null });
+    expect(statements.some((s) => s.text.includes("INSERT INTO holding_company_y9c"))).toBe(false);
+  });
+
+  it("still fails on an error that is not a refusal", async () => {
+    const { db } = createDb();
+    const fetchImpl = vi.fn(async () => new Response("bad", { status: 400 })) as unknown as typeof fetch;
+    await expect(runRegistryFrY9c({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl, backoffMs: 0 } })).rejects.toThrow(/HTTP 400/);
+  });
 });
 
 describe("registry nic-structure", () => {
@@ -99,5 +117,25 @@ describe("registry nic-structure", () => {
     expect(r.empty).toBe(true);
     expect(r.emptyReason).toMatch(/DT_START, DT_END/);
     expect(statements.some((s) => s.text.includes("INSERT INTO nic_relationships"))).toBe(false);
+  });
+
+  it("names the missing source and the FDIC fallback's reach when NIC refuses the request (#1806)", async () => {
+    const { db, statements } = createDb();
+    const fetchImpl = vi.fn(async () => new Response("Forbidden", { status: 403 })) as unknown as typeof fetch;
+    const r = await runRegistryNicStructure({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(r).toMatchObject({ empty: true, relationships: 0, missingSource: { host: "www.ffiec.gov", status: 403, second_host: null, fallback_banks: 4321 } });
+    expect(r.emptyReason).toMatch(/^NIC source missing: www\.ffiec\.gov answered HTTP 403\. Fallback: 4,321 tracked banks carry their current direct holding company from FDIC BankFind \(RSSDHCR\)/);
+    const detail = partitionDetail(statements);
+    expect(detail.missing_source.not_covered).toHaveLength(3);
+    expect(detail.missing_source.fallback).toMatch(/RSSDHCR/);
+    expect(statements.some((s) => s.text.includes("INSERT INTO nic_"))).toBe(false);
+  });
+
+  it("dry run of a refused NIC request writes nothing", async () => {
+    const { db, statements } = createDb();
+    const fetchImpl = vi.fn(async () => new Response("Forbidden", { status: 403 })) as unknown as typeof fetch;
+    const r = await runRegistryNicStructure({ db, dryRun: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(r.missingSource?.fallback_banks).toBe(4321);
+    expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 });

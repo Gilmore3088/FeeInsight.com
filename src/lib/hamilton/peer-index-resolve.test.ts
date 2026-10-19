@@ -7,7 +7,38 @@ const mocks = vi.hoisted(() => ({
   getNationalIndexCached: vi.fn(),
 }));
 
-vi.mock("@/lib/data-store/fee-index", () => mocks);
+// The resolver reads the stamped readers; each wraps a plain mock so calls stay easy to assert.
+const stamps = vi.hoisted(() => {
+  const base = {
+    methodVersion: 13,
+    counting: "counted_once" as const,
+    filters: [{ key: "sourced", label: "Only sourced fees" }],
+    newestRecordAt: null,
+  };
+  return {
+    live: (key: string) => ({ ...base, dataset: "published_fee_catalog" as const, mode: "live" as const, readAt: "2026-10-18T14:00:00.000Z", runId: null, id: `live:${key}` }),
+    cached: {
+      ...base,
+      dataset: "fee_index_cache" as const,
+      derivedFrom: "published_fee_catalog" as const,
+      mode: "cached" as const,
+      readAt: "2026-10-17T02:00:00.000Z",
+      runId: 9001,
+      id: "cached",
+    },
+  };
+});
+
+vi.mock("@/lib/data-store/fee-index", () => ({
+  getPeerIndexStamped: async (filters: unknown, approvedOnly: boolean) => ({
+    entries: await mocks.getPeerIndex(filters, approvedOnly),
+    stamp: stamps.live(JSON.stringify(filters)),
+  }),
+  getPeerIndexesStamped: async (sets: unknown[], approvedOnly: boolean) =>
+    ((await mocks.getPeerIndexes(sets, approvedOnly)) as unknown[]).map((entries, i) => ({ entries, stamp: stamps.live(JSON.stringify(sets[i])) })),
+  getNationalIndexStamped: async (approvedOnly: boolean) => ({ entries: await mocks.getNationalIndex(approvedOnly), stamp: stamps.live("national") }),
+  getNationalIndexCachedStamped: async () => ({ entries: await mocks.getNationalIndexCached(), stamp: stamps.cached }),
+}));
 const savedPeers = vi.hoisted(() => ({ getSavedPeerSetById: vi.fn(), getDefaultPeerSets: vi.fn() }));
 vi.mock("@/lib/data-store/saved-peers", () => savedPeers);
 
@@ -37,6 +68,9 @@ describe("resolveHamiltonPeerIndex", () => {
     expect(mocks.getPeerIndex).not.toHaveBeenCalled();
     expect(result.source).toBe("selected-institution-default");
     expect(result.entries[0].median_amount).toBe(2);
+    // The stamp is the chosen candidate's, not another candidate's.
+    expect(result.stamp.id).toBe(`live:${JSON.stringify(result.filters)}`);
+    expect(result.stamp.mode).toBe("live");
   });
 
   it("falls back to the cached national index when every candidate is too sparse", async () => {
@@ -48,6 +82,19 @@ describe("resolveHamiltonPeerIndex", () => {
     expect(result.source).toBe("national");
     expect(mocks.getNationalIndexCached).toHaveBeenCalledTimes(1);
     expect(mocks.getNationalIndex).not.toHaveBeenCalled();
+    // The national fallback carries the snapshot's stamp: cache time, run and method (#1924).
+    expect(result.stamp).toMatchObject({ dataset: "fee_index_cache", mode: "cached", runId: 9001, readAt: "2026-10-17T02:00:00.000Z" });
+  });
+
+  it("stamps the live national index when unapproved rows are asked for", async () => {
+    mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map(() => []));
+    mocks.getNationalIndex.mockResolvedValue(usable(9));
+
+    const result = await resolveHamiltonPeerIndex({ selectedInstitution: institution, approvedOnly: false });
+
+    expect(result.source).toBe("national");
+    expect(mocks.getNationalIndex).toHaveBeenCalledWith(false);
+    expect(result.stamp).toMatchObject({ dataset: "published_fee_catalog", mode: "live" });
   });
 
   describe("with a default peer group", () => {
@@ -83,6 +130,7 @@ describe("resolveHamiltonPeerIndex", () => {
         peerSetId: "42",
         fallbackReason: null,
       });
+      expect(result.stamp.id).toBe(`live:${JSON.stringify({ institutionIds: [11, 12, 13, 14, 15] })}`);
     });
 
     it("widens to the bank's default groups when the active set is too thin", async () => {

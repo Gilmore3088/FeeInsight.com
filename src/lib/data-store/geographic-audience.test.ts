@@ -49,3 +49,13 @@ describe("city fee comparison audience boundaries", () => {
     expectConsumerBoundary(state.queries[0]);
   });
 });
+
+describe("getCityAutocomplete bounds (2026-10-18 scrape)", () => {
+  it("matches a typed % literally and caps the rows at 25", async () => {
+    const { getCityAutocomplete } = await import("./geographic");
+    await getCityAutocomplete("%%", 100_000);
+    const query = state.queries.at(-1) ?? "";
+    expect(query).toContain("ILIKE \\%\\%%");
+    expect(query).toMatch(/LIMIT 25\s*$/);
+  });
+});

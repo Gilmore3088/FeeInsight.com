@@ -12,13 +12,6 @@ export default function TermsPage() {
   return (
     <div className="mx-auto max-w-3xl px-6 py-14">
       <header className={PAGE_HEADER}>
-        <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
-          <span className="h-px w-8 bg-brick/40" />
-          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-brick/60">
-            Legal
-          </span>
-        </div>
-
         <h1
           className="font-extrabold text-[1.75rem] sm:text-[2.25rem] leading-[1.12] tracking-[-0.02em] text-ink"
           style={{ fontFamily: "var(--fi-font-sans)" }}
@@ -26,7 +19,7 @@ export default function TermsPage() {
           Terms of Service
         </h1>
         <p className="mt-2 text-[13px] text-ink-muted">
-          Last updated: October 8, 2026
+          Last updated: October 18, 2026
         </p>
       </header>
 
@@ -204,7 +197,7 @@ export default function TermsPage() {
           </h2>
           <p>You agree not to:</p>
           <ul className="list-disc pl-6 space-y-1.5 mt-2">
-            <li>Use automated scraping or data extraction beyond your API allocation</li>
+            <li>Use automated scraping or data extraction beyond your API allocation (see section 11)</li>
             <li>Attempt to reverse-engineer, decompile, or gain unauthorized access to the Service</li>
             <li>Use the Service to harass, defame, or harm any financial institution</li>
             <li>Resell or redistribute data without authorization</li>
@@ -215,7 +208,48 @@ export default function TermsPage() {
         <section>
           <h2 className="text-[16px] font-bold text-ink mb-2"
             style={{ fontFamily: "var(--fi-font-sans)" }}>
-            11. Limitation of Liability
+            11. Automated Access and Bulk Data
+          </h2>
+          <p>
+            Bank Fee Index pages are free to read. Fee amounts come from banks&apos;
+            and credit unions&apos; own public documents; these terms cover our
+            compilation, organization and presentation of that data. Bulk copies
+            of the underlying data are available only under a data licensing
+            agreement. Unless you have a written agreement with us or are using
+            the API within your plan (section 7), you agree, whether or not you
+            have an account or are signed in, not to:
+          </p>
+          <ul className="list-disc pl-6 space-y-1.5 mt-2">
+            <li>
+              Use scrapers, crawlers, bots, headless browsers or rotating proxies
+              to copy, harvest or bulk-download data from the Service
+            </li>
+            <li>
+              Get around rate limits, CAPTCHAs, IP blocks or other access
+              controls, including by rotating IP addresses or disguising
+              automated traffic as a person, or send automated requests at a
+              volume that burdens the Service
+            </li>
+            <li>
+              Use data from the Service to build or supply a database or product
+              that offers bank or credit union fee data to others, or resell it
+            </li>
+          </ul>
+          <p className="mt-2">
+            Search engines and AI assistants that follow our robots.txt may
+            crawl the Service to show pages in search results and answers. We may block, rate-limit or suspend any access that we
+            believe breaks this section. For bulk data or a data license, email{" "}
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-brick hover:underline">
+              {CONTACT_EMAIL}
+            </a>
+            .
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-[16px] font-bold text-ink mb-2"
+            style={{ fontFamily: "var(--fi-font-sans)" }}>
+            12. Limitation of Liability
           </h2>
           <p>
             To the maximum extent permitted by law, Fee Insight shall not be
@@ -229,21 +263,21 @@ export default function TermsPage() {
         <section>
           <h2 className="text-[16px] font-bold text-ink mb-2"
             style={{ fontFamily: "var(--fi-font-sans)" }}>
-            12. Termination
+            13. Termination
           </h2>
           <p>
             We may suspend or terminate your access to the Service at any time
             for violation of these terms, with or without notice. Upon
             termination, your right to use the Service ceases immediately.
-            Sections regarding data licensing, liability, and governing law
-            survive termination.
+            Sections 5, 6, 8, 9, 10, 11, 12 and 14 survive termination,
+            including any block or suspension of your access.
           </p>
         </section>
 
         <section>
           <h2 className="text-[16px] font-bold text-ink mb-2"
             style={{ fontFamily: "var(--fi-font-sans)" }}>
-            13. Governing Law
+            14. Governing Law
           </h2>
           <p>
             These terms are governed by the laws of the State of {LEGAL_ENTITY_STATE},
@@ -256,7 +290,7 @@ export default function TermsPage() {
         <section>
           <h2 className="text-[16px] font-bold text-ink mb-2"
             style={{ fontFamily: "var(--fi-font-sans)" }}>
-            14. Changes to Terms
+            15. Changes to Terms
           </h2>
           <p>
             We may modify these terms at any time. Material changes will be

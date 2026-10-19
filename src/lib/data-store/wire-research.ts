@@ -16,6 +16,7 @@ import {
 } from "@/lib/regulatory/wire-research";
 import { sql } from "./connection";
 import { FEDERAL_RELEASES_ONLY } from "./news";
+import { HELD_SOURCES } from "./struck-sources";
 
 /**
  * Reads for the Regulatory Wire's research panels: the notes Magellan's
@@ -210,7 +211,8 @@ export async function getStateRelated(bills: StateBillRef[], press: StatePressRe
   const billStates = [...new Set(bills.map((b) => b.state))];
   const pressStates = [...new Set(press.map((p) => p.state))];
   const [storedPress, storedBills] = await Promise.all([
-    billStates.length === 0
+    // Press stories (Google News, state-bill-news) are held: DECISIONS.md "No non-commercial data".
+    billStates.length === 0 || HELD_SOURCES.includes("state-bill-news")
       ? Promise.resolve([] as PressForLink[])
       : (sql`
           SELECT guid, source, title, link, published_at

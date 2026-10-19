@@ -37,19 +37,24 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // v78 (Knox recall round 3, Oct 17): from main's reads (CA 156, FL 133 / 7, GA 172, IL 108 / 7, MI 128,
   // MN 121, NY 44, all 862 / 41) to CA 157, FL 136 / 6, GA 174, IL 112 / 5, MI 130, MN 121, NY 44, all
   // 874 / 38; the three wrong reads that left are safe deposit box late fees once read as loan late fees.
-  CA: { right: 157, wrong: 5 },
+  // Guard v75 (#2023, James chose "Take down", Oct 19): a club account's per-withdrawal charge is not
+  // early closure, and these keys (keyed Oct 6, before that decision) file five such lines under it
+  // ("Club Account Early Withdrawal | $10.00", "Holiday Club Withdrawal | $3"). Knox no longer reads
+  // them as early closure, so CA 157 to 156, GA 174 to 171, MI 130 to 128, all 874 to 869; no wrong
+  // read added, and with the switch off every floor holds.
+  CA: { right: 156, wrong: 5 },
   FL: { right: 136, wrong: 6 },
-  GA: { right: 174, wrong: 9 },
+  GA: { right: 171, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
   IL: { right: 112, wrong: 5 },
-  MI: { right: 130, wrong: 0 },
+  MI: { right: 128, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
   MN: { right: 121, wrong: 8 },
   NY: { right: 44, wrong: 5 },
-  all: { right: 874, wrong: 38 },
+  all: { right: 869, wrong: 38 },
 };
 
 const fixture = JSON.parse(

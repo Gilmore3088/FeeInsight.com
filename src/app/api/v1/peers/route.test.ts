@@ -31,6 +31,7 @@ const COMPARISON = {
   min_peers: 5,
   categories: [{
     category: "overdraft", display_name: "Overdraft (OD)", family: "Overdraft & NSF", amount: 30,
+    amount_low: 30, amount_high: 30, fees: [{ name: "Overdraft fee", amount: 30 }],
     peer_count: 6, peer_median: 30, peer_p25: 27.5, peer_p75: 32.5,
     peers_lower: 2, peers_same: 1, peers_higher: 3, percentile: 42, maturity_tier: "provisional" as const,
   }],

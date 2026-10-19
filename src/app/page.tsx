@@ -20,7 +20,9 @@ export const revalidate = 900;
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import { getReportPeerFinancialCached, type ReportPeerFinancial } from "@/lib/custom-report/peer-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
@@ -31,6 +33,7 @@ import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton } from "./landing-hamilton";
 import { LandingResearch } from "./landing-research-section";
+import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
 import { buildIndexCard } from "./landing-index";
 import { homeReadsCacheable } from "./landing-shared";
@@ -38,10 +41,10 @@ import { homeSerif } from "./landing-serif";
 import "./landing-motion.css";
 
 // The title follows the hero h1 (conversion headlines, Oct 17); neither line carries a count, so nothing goes stale.
-const HOME_TITLE = `See where your fees sit before your board asks | ${SITE_NAME}`;
+const HOME_TITLE = `Your next fee review doesn’t need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  "See where your fees sit against your competitors' own published fee schedules. " +
-  "Hamilton links every fee to the schedule it came from.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}. ` +
+  "Turn the evidence into analysis and board reports with Hamilton.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
@@ -87,7 +90,9 @@ export default async function LandingPage() {
   // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
   // report (the one /for-institutions and the sample page show) gives the Hamilton examples
   // their figures; a failed read shows the examples without figures. It is null both when none
-  // passes the bar today and on error.
+  // passes the bar today and on error. The sample bank's reported service-charge income (the
+  // read the sample report page shows) gives Prioritize its context; without it, no figures.
+  // The same report and income draw the deliverable before the plans.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
@@ -95,10 +100,30 @@ export default async function LandingPage() {
   const cardFees = getSpotlightCategories().filter((fee) => publicKeys.has(fee));
   const [sampleRead, indexReads] = await Promise.all([
     loadSampleReport().then(
-      (report) => ({ report, failed: false }),
+      async (report) => {
+        if (!report) return { report, revenue: null, financial: null, failed: false };
+        const id = report.data.subject.institution_id;
+        const [revenue, financial] = await Promise.all([
+          getRevenueContextCached(id).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank revenue read failed; Prioritize shown without income figures", error);
+              return { value: null as RevenueContext | null, failed: true };
+            },
+          ),
+          getReportPeerFinancialCached(id).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank peer financial read failed; share of revenue left out", error);
+              return { value: null as ReportPeerFinancial | null, failed: true };
+            },
+          ),
+        ]);
+        return { report, revenue: revenue.value, financial: financial.value, failed: revenue.failed || financial.failed };
+      },
       (error: unknown) => {
         console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
-        return { report: null, failed: true };
+        return { report: null, revenue: null, financial: null, failed: true };
       },
     ),
     Promise.all(
@@ -121,7 +146,8 @@ export default async function LandingPage() {
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
-  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])));
+  // The demo bank's own fees come from the same rows, so the card can mark it with no extra read.
+  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])), [DEMO_SAMPLE_INSTITUTION_ID]);
 
   return (
     <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper consumer-brand`}>
@@ -135,12 +161,13 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        {/* James's example (Oct 17): the hero with the working Index, the proof strip, Hamilton's
-            examples, the connected research, then the plans. */}
+        {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
+            and the proof strip), the Hamilton investigation, the evidence, the deliverable, the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
-        <LandingHamilton report={sampleRead.report} />
+        <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} financial={sampleRead.financial} />
         <LandingResearch />
+        <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} sizePeers={sampleRead.financial !== null} preparedOn={new Date()} />
         <LandingPricing />
       </main>
       <CustomerFooter />

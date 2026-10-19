@@ -14,6 +14,7 @@ import { loadMarketReport } from "@/lib/custom-report/report-data";
 import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { TrackView } from "@/components/track-view";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { getReportPeerContextCached, peerLinesFor } from "@/lib/custom-report/peer-context";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { MarketReportBody } from "../report-body";
 import { PrintButton } from "./print-button";
@@ -58,6 +59,7 @@ export default async function MarketReportPage({ params }: PageProps) {
     ? await getMarketBranchFootprintCached(market.county_fips, market.sod_year).catch(() => null)
     : null;
   const revenue = await getRevenueContextCached(verified.institutionId).catch(() => null);
+  const peers = await getReportPeerContextCached(verified.institutionId, peerLinesFor(report.analysis.lines)).catch(() => null);
   const lineup = analysis.readiness.ready ? await loadMarketCheckingLineup(verified.institutionId) : null;
 
   return (
@@ -75,6 +77,7 @@ export default async function MarketReportPage({ params }: PageProps) {
         <MarketReportBody
           report={report}
           revenue={revenue}
+          peers={peers}
           branches={branches}
           lineup={lineup}
           eyebrow="Competitive Fee Position Report"

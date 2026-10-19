@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STRUCK_FRED_SERIES } from "./struck-sources";
+import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
 export interface BeigeBookSection {
   id: number;
@@ -150,6 +150,7 @@ export async function getDistrictIndicators(
       FROM fed_economic_indicators
       WHERE (fed_district = ${district} OR fed_district IS NULL)
         AND series_id <> ALL(${[...STRUCK_FRED_SERIES]}::text[])
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY series_id, observation_date DESC
     ` as EconomicIndicator[];
   } catch {
@@ -234,6 +235,7 @@ async function buildRichIndicator(
       FROM fed_economic_indicators
       WHERE series_id = ${seriesId}
         AND value IS NOT NULL
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY observation_date DESC
       LIMIT ${historyLimit}
     ` as { observation_date: string | Date; value: number | string }[];
@@ -281,6 +283,7 @@ export async function getNationalEconomicSummary(): Promise<NationalEconomicSumm
           SELECT observation_date, value
           FROM fed_economic_indicators
           WHERE series_id = 'CPIAUCSL' AND value IS NOT NULL
+            AND ${sql.unsafe(fedIndicatorServedSql())}
           ORDER BY observation_date DESC
           LIMIT 24
         ` as { observation_date: string | Date; value: number | string }[];
@@ -517,7 +520,8 @@ export async function getFredSummary(): Promise<FredSummary> {
         value,
         observation_date
       FROM fed_economic_indicators
-      WHERE series_id IN ('FEDFUNDS', 'UNRATE', 'CPIAUCSL', 'GDPC1', 'PSAVERT', 'DRCBLACBS')
+      WHERE series_id IN ('FEDFUNDS', 'UNRATE', 'CPIAUCSL', 'GDPC1', 'PSAVERT')
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY series_id, observation_date DESC
     ` as { series_id: string; value: number | null; observation_date: string | Date }[];
 
@@ -539,6 +543,7 @@ export async function getFredSummary(): Promise<FredSummary> {
         SELECT value, observation_date
         FROM fed_economic_indicators
         WHERE series_id = 'CPIAUCSL'
+          AND ${sql.unsafe(fedIndicatorServedSql())}
         ORDER BY observation_date DESC
         LIMIT 13
       ` as { value: number | string | null; observation_date: string | Date }[];
@@ -561,6 +566,7 @@ export async function getFredSummary(): Promise<FredSummary> {
         SELECT value, observation_date
         FROM fed_economic_indicators
         WHERE series_id = 'GDPC1'
+          AND ${sql.unsafe(fedIndicatorServedSql())}
         ORDER BY observation_date DESC
         LIMIT 5
       ` as { value: number | string | null; observation_date: string | Date }[];

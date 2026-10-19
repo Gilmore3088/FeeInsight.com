@@ -5,7 +5,8 @@ import {
   getFeeCategorySummaries,
   getFeeCategoryDetail,
 } from "@/lib/data-store";
-import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
+import { getNationalIndexStamped, getPeerIndexStamped } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
 import {
   getInstitutionById,
   getFeesByInstitution,
@@ -98,8 +99,8 @@ export const searchIndex = tool({
   execute: async ({ state, charter, district }) => {
     const hasFilters = state || charter || district;
 
-    const entries = hasFilters
-      ? await getPeerIndex({
+    const { entries, stamp } = hasFilters
+      ? await getPeerIndexStamped({
           state_code: state?.toUpperCase(),
           charter_type: charter,
           fed_districts: district
@@ -109,11 +110,13 @@ export const searchIndex = tool({
                 .filter((d) => d >= 1 && d <= 12)
             : undefined,
         })
-      : await getNationalIndex();
+      : await getNationalIndexStamped();
 
     return {
       scope: hasFilters ? "filtered" : "national",
       filters: { state: state ?? null, charter: charter ?? null, district: district ?? null },
+      // #1924: which read these figures came from, so an answer can cite the stamp.
+      dataset: datasetCitation(stamp),
       total: entries.length,
       data: entries.map((e) => ({
         category: e.fee_category,

@@ -196,3 +196,24 @@ describe("institutionNameRank", () => {
     expect(institutionNameRank("Pegasus Bank", "pegasus bank")).toBe(0);
   });
 });
+
+describe("institution search bounds (2026-10-18 scrape)", () => {
+  beforeEach(() => {
+    unsafeMock.mockReset();
+  });
+
+  it("never sends a wildcard-only or punctuation-only query to the database", async () => {
+    for (const q of ["%%", "__", "%_%_", "!!", "--", "a%"]) {
+      expect(await autocompleteInstitutions(q)).toEqual([]);
+    }
+    expect(unsafeMock).not.toHaveBeenCalled();
+  });
+
+  it("cuts a long query and caps the row count", async () => {
+    unsafeMock.mockResolvedValueOnce([]);
+    await autocompleteInstitutions("x".repeat(5_000), 100_000);
+    const [, params] = unsafeMock.mock.calls[0];
+    expect(String(params[1])).toHaveLength(100);
+    expect(params[2]).toBe(25);
+  });
+});

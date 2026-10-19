@@ -658,7 +658,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/institutions?id={id}"
           summary="Get institution detail"
-          description="One institution's profile with its published fees and source links, call report figures and complaint counts. Add view=benchmark for its fees beside peer medians (format=csv for a spreadsheet) or view=regulatory_watch for enforcement actions and complaints."
+          description="One institution's profile with its published fees and source links, call report figures and complaint counts. Add view=benchmark for its fees beside peer medians (format=csv for a spreadsheet) or view=regulatory_watch for enforcement actions and complaints. Where it charges several different fees in one category, amount is null and each fee is listed by name (in view=regulatory_watch, with the lowest and highest amounts)."
           tierNote="Pro"
           params={[
             { name: "id", type: "integer", required: true, description: "Institution ID" },
@@ -814,7 +814,8 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
           responseFields={[
             { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
-            { name: "categories[].amount", type: "number", note: "The institution's amount in USD" },
+            { name: "categories[].amount", type: "number", note: "The institution's amount in USD; null when it charges several different fees in the category" },
+            { name: "categories[].fees", type: "array", note: "Each of the institution's fees in the category by name, lowest first, with amount_low and amount_high" },
             { name: "categories[].peer_median", type: "number", note: "Median among peers that publish the fee" },
             { name: "categories[].peer_count", type: "integer", note: "Peers that publish the fee" },
             { name: "categories[].percentile", type: "integer", note: "0 to 100, the share of peers with a lower amount" },
@@ -833,6 +834,9 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "category": "overdraft",
       "display_name": "Overdraft (OD)",
       "amount": 30.00,
+      "amount_low": 30.00,
+      "amount_high": 30.00,
+      "fees": [{ "name": "Overdraft fee", "amount": 30.00 }],
       "peer_count": 38,
       "peer_median": 30.00,
       "peer_p25": 27.00,

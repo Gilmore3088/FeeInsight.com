@@ -1,24 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import {
-  aboutSame,
   amountText,
   excludedNote,
   isRange,
   missingShort,
   money,
-  reference,
-  referenceShort,
   type CompareRow,
   type Median,
 } from "./profile-view";
 
-/** Rows shown before "Show all". */
-const ROWS_SHOWN = 5;
+/** Rows shown before "Show all compared fees" (James's design file shows three). */
+const ROWS_SHOWN = 3;
 
-const GRID = "md:grid-cols-[minmax(0,1.6fr)_minmax(6.5rem,auto)_repeat(var(--cols),minmax(0,6.5rem))_minmax(0,7.5rem)]";
+const GRID = "md:grid-cols-[minmax(0,1.7fr)_minmax(7rem,1fr)_repeat(var(--cols),minmax(0,1fr))]";
 
 function Amount({ row }: { row: CompareRow }) {
   if (row.amount == null) {
@@ -39,12 +37,12 @@ function Amount({ row }: { row: CompareRow }) {
       target="_blank"
       rel="noopener noreferrer"
       title="Open the fee schedule it was read from"
-      className="-my-3 inline-block py-3 font-mono text-[15px] font-semibold tabular-nums text-ink underline decoration-border underline-offset-2 hover:decoration-brick"
+      className="-my-3 inline-block py-3 text-[17px] font-semibold [font-variant-numeric:tabular-nums] text-ink underline decoration-transparent underline-offset-4 hover:decoration-brick"
     >
       {text}
     </a>
   ) : (
-    <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">{text}</span>
+    <span className="text-[17px] font-semibold [font-variant-numeric:tabular-nums] text-ink">{text}</span>
   );
 }
 
@@ -54,28 +52,9 @@ function MedianCell({ m, label }: { m: Median | null; label: string }) {
   return (
     <>
       <span className="sr-only">{label}: </span>
-      <span className="block font-mono text-[14px] tabular-nums text-ink-soft">{money(m.median)}</span>
-      <span className="block text-[11px] text-ink-muted">{m.institutions.toLocaleString("en-US")} publish</span>
+      <span className="block text-[16px] [font-variant-numeric:tabular-nums] text-ink">{money(m.median)}</span>
+      <span className="block text-[12px] [font-variant-numeric:tabular-nums] text-ink-muted">{m.institutions.toLocaleString("en-US")} publish</span>
     </>
-  );
-}
-
-/**
- * Its compared value (its one price, or the value named in "Compared at") against the first
- * reference median: "+$4", "−$2", "About the same" within 1%, or "None charged" for a published $0.
- */
-function Gap({ row }: { row: CompareRow }) {
-  const ref = reference(row);
-  if (row.amount == null || !ref) return <span className="text-[12px] text-ink-muted">&nbsp;</span>;
-  if (row.amount === 0) return <span className="text-[13px] text-ink-muted">None charged</span>;
-  const m = ref.median.median;
-  if (aboutSame(row.amount, m)) return <span className="text-[13px] text-ink-muted">{row.amount === m ? "Same" : "About the same"}</span>;
-  const diff = row.amount - m;
-  return (
-    <span className={`font-mono text-[14px] tabular-nums ${diff > 0 ? "text-brick" : "text-ink"}`}>
-      {diff > 0 ? "+" : "−"}
-      {money(Math.abs(diff))}
-    </span>
   );
 }
 
@@ -108,18 +87,19 @@ function Detail({ row }: { row: CompareRow }) {
 
 /**
  * Each published fee beside the state, district and U.S. medians, in the order orderRows sets
- * (the hero's fee first). Five show before "Show all"; phones get stacked rows so nothing
- * scrolls sideways.
+ * (the lead fee first), laid out as James's design file: three rows, then "Show all compared
+ * fees". Phones get one card per fee with the medians in a row, so nothing scrolls sideways.
  */
 export function CompareTable({
   rows,
+  institutionName,
   stateName,
-  stateCode,
   districtName,
 }: {
   rows: CompareRow[];
+  /** The price column's header, as in James's design file. */
+  institutionName: string;
   stateName: string | null;
-  stateCode: string | null;
   districtName: string | null;
 }) {
   const [all, setAll] = useState(false);
@@ -127,107 +107,74 @@ export function CompareTable({
   const hasDistrict = Boolean(districtName) && rows.some((r) => r.district);
   const shown = all ? rows : rows.slice(0, ROWS_SHOWN);
   const cols = 1 + (hasState ? 1 : 0) + (hasDistrict ? 1 : 0);
-  const shortState = stateCode ?? stateName ?? "State";
-
+  const priceHeader = institutionName;
   // Notes explain only the rows on screen.
   const notes = [...new Set(shown.filter((r) => r.amount == null && r.missing).map((r) => r.missing as string))];
   const blank = shown.some((r) => (hasState && !r.state) || (hasDistrict && !r.district) || !r.us);
-  const priceHeader = rows.some(isRange) ? "Its prices" : "Its fee";
+  const medians = [
+    ...(hasState ? [{ key: "state" as const, head: `${stateName} median`, short: `${stateName} median` }] : []),
+    ...(hasDistrict ? [{ key: "district" as const, head: `${districtName} district median`, short: `${districtName} district` }] : []),
+    { key: "us" as const, head: "U.S. median", short: "U.S. median" },
+  ];
 
   return (
     <div>
-      <p className="mb-3 text-center text-[12px] leading-relaxed text-ink-muted sm:max-w-none sm:text-left">
-        Medians cover the banks and credit unions in each place that publish the fee. The number with each median is how
-        many publish it{blank ? `; a blank means fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} do` : ""}.
-      </p>
       <div className="overflow-hidden rounded-2xl border border-border bg-surface-0" style={{ ["--cols" as string]: cols }}>
-        <div
-          aria-hidden="true"
-          className={`hidden border-b border-border bg-paper px-5 py-2 text-[12px] font-medium text-ink-muted md:grid md:gap-4 ${GRID}`}
-        >
+        <div aria-hidden="true" className={`hidden items-center border-b border-border bg-paper px-6 py-3 text-[13px] font-medium text-ink md:grid md:gap-4 ${GRID}`}>
           <span>Fee</span>
-          <span className="text-right">{priceHeader}</span>
-          {hasState && <span className="text-right">{stateName} median</span>}
-          {hasDistrict && <span className="text-right">{districtName} district</span>}
-          <span className="text-right">U.S. median</span>
-          <span className="text-right">Gap</span>
+          <span className="text-center">{priceHeader}</span>
+          {medians.map((m) => (
+            <span key={m.key} className="text-center leading-tight">
+              {m.head}
+              <span className="block text-[12px] font-normal text-ink-muted"># publishing</span>
+            </span>
+          ))}
         </div>
         <ul className="divide-y divide-border">
           {shown.map((row) => (
-            <li
-              key={row.key}
-              className={`grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1 px-4 py-3 md:items-baseline md:px-5 ${GRID}`}
-            >
-              <div className="min-w-0">
-                <p className="text-[14px] font-semibold leading-tight text-ink">{row.label}</p>
-                <Detail row={row} />
+            <li key={row.key} className={`px-4 py-4 md:grid md:items-center md:gap-4 md:px-6 md:py-5 ${GRID}`}>
+              <div className="flex items-start justify-between gap-4 md:block">
+                <div className="min-w-0">
+                  <p className="text-[16px] font-semibold leading-tight text-ink">{row.label}</p>
+                  <Detail row={row} />
+                </div>
+                <span className="shrink-0 text-right md:hidden">
+                  <span className="sr-only">{priceHeader}: </span>
+                  <Amount row={row} />
+                </span>
               </div>
-              <span className="text-right">
+              <span className="hidden text-center md:block">
                 <span className="sr-only">{priceHeader}: </span>
                 <Amount row={row} />
               </span>
-              {hasState && (
-                <span className="hidden text-right md:block">
-                  <MedianCell m={row.state} label={`${stateName} median`} />
-                </span>
-              )}
-              {hasDistrict && (
-                <span className="hidden text-right md:block">
-                  <MedianCell m={row.district} label={`${districtName} district median`} />
-                </span>
-              )}
-              <span className="hidden text-right md:block">
-                <MedianCell m={row.us} label="U.S. median" />
-              </span>
-              <span className="hidden text-right md:block">
-                {row.amount != null && row.amount !== 0 && reference(row) && (
-                  <span className="mr-1 text-[11px] text-ink-muted">{referenceShort(row, shortState)}</span>
-                )}
-                <Gap row={row} />
-              </span>
-              {/* Phones: the medians and the gap on one line under the fee. */}
-              <p className="col-span-2 flex flex-wrap items-baseline gap-x-3 text-[12px] text-ink-muted md:hidden">
-                {hasState && row.state && (
-                  <span>
-                    {shortState} <span className="font-mono tabular-nums text-ink-soft">{money(row.state.median)}</span>{" "}
-                    <span className="tabular-nums">({row.state.institutions.toLocaleString("en-US")})</span>
+              {/* Phones: the medians side by side under the fee; wide screens: one column each. */}
+              <div className="mt-3 grid grid-cols-3 gap-3 md:contents">
+                {medians.map((m) => (
+                  <span key={m.key} className="min-w-0 md:text-center">
+                    <span aria-hidden="true" className="block text-[11px] text-ink-muted md:hidden">
+                      {m.short}
+                    </span>
+                    <MedianCell m={row[m.key]} label={m.head} />
                   </span>
-                )}
-                {hasDistrict && row.district && (
-                  <span>
-                    District <span className="font-mono tabular-nums text-ink-soft">{money(row.district.median)}</span>{" "}
-                    <span className="tabular-nums">({row.district.institutions.toLocaleString("en-US")})</span>
-                  </span>
-                )}
-                {row.us && (
-                  <span>
-                    U.S. <span className="font-mono tabular-nums text-ink-soft">{money(row.us.median)}</span>{" "}
-                    <span className="tabular-nums">({row.us.institutions.toLocaleString("en-US")})</span>
-                  </span>
-                )}
-                {row.amount != null && reference(row) && (
-                  <span className="ml-auto">
-                    {row.amount !== 0 && <span className="mr-1">{referenceShort(row, shortState)}</span>}
-                    <Gap row={row} />
-                  </span>
-                )}
-              </p>
+                ))}
+              </div>
             </li>
           ))}
         </ul>
       </div>
-      {notes.length > 0 && (
-        <p className="mt-2 text-center text-[12px] text-ink-muted sm:max-w-none sm:text-left">
-          {notes.map((note) => (note.endsWith(".") ? note : `${note}.`)).join(" ")}
+      {(notes.length > 0 || blank) && (
+        <p className="mt-2 text-[12px] text-ink-muted">
+          {[...notes.map((note) => (note.endsWith(".") ? note : `${note}.`)), ...(blank ? [`A blank median means fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} publish the fee.`] : [])].join(" ")}
         </p>
       )}
       {shown.length < rows.length && (
         <button
           type="button"
           onClick={() => setAll(true)}
-          className="mt-4 inline-flex min-h-11 items-center rounded-full border border-ink px-5 text-[14px] font-semibold text-ink hover:bg-surface-0"
+          className="mt-5 inline-flex min-h-12 items-center gap-2 rounded-full border border-ink px-6 text-[14px] font-semibold text-ink hover:bg-surface-0"
         >
-          Show all {rows.length} fees
+          Show all compared fees
+          <ChevronDown aria-hidden="true" className="size-4" />
         </button>
       )}
     </div>

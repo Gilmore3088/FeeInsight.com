@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("./connection", () => ({ sql: vi.fn() }));
+vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: (text: string) => ({ unsafe: text }) }) }));
 
-import { changeOver, compareStateToNation, medianWithCount, summarizeSeries } from "./national-credit-aggregates";
+import { sql } from "./connection";
+import { changeOver, compareStateToNation, getNationalCreditSummary, medianWithCount, summarizeSeries } from "./national-credit-aggregates";
 
 const weekly = Array.from({ length: 14 }, (_, i) => ({
   source: "national-series",
@@ -50,5 +51,15 @@ describe("national credit aggregates", () => {
   it("medians carry their count and skip nulls", () => {
     expect(medianWithCount([3, null, 1, 2, 10])).toEqual({ median: 2.5, count: 4 });
     expect(medianWithCount([null])).toEqual({ median: null, count: 0 });
+  });
+
+  it("never reads a struck series (Freddie Mac PMMS, Philadelphia Fed cards; 2026-10-18)", async () => {
+    const mocked = sql as unknown as ReturnType<typeof vi.fn>;
+    mocked.mockReset();
+    mocked.mockResolvedValue([]);
+    await getNationalCreditSummary();
+    const [strings, ...values] = mocked.mock.calls[0] as unknown as [TemplateStringsArray, ...unknown[]];
+    expect(strings.join("?")).toContain("series_key <> ALL(?::text[])");
+    expect(values).toContainEqual(expect.arrayContaining(["natl_pmms_30y_fixed", "natl_lbccm_apr_avg"]));
   });
 });

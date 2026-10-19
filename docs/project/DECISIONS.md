@@ -3,6 +3,29 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-19
+
+**Fix the input and the process, not the output.** James, 2026-10-19 04:04 UTC, in the project
+chat: "we don't fix the output, we fix the input and the process. And only then do we validate and
+fix the output ... if we fix one and this is a problem for others, that means we're just gonna have
+to fix one at a time." When a fee error is found, the first fix goes to the pipeline step that
+caused it: discovery and document capture (Magellan), text conversion (Rosetta), extraction or
+categorisation (Knox) or verification and classification (Darwin). That fixes the whole class of
+error. Then the affected institutions are re-run and the output is validated. A one-off data fix
+(an admin correction, hold or re-file) is allowed only as the last step after the process fix,
+never instead of it. This sits beside the 2026-10-15 rule that a holding or re-filing rule ships
+with its Darwin live re-check. It is in CLAUDE.md "Standing rules" and
+AGENTS.md "How work runs".
+
+**The Product menu is three cards, and Hamilton's card names it.** James, 2026-10-19, in the
+"Product menu" thread: "Every fee" overclaimed ("it wont be possible to get every fee"), and the
+workspace is called Hamilton. He picked three cards: Bank Fee Index (Find your institution,
+National index), Market Benchmarks (state and district data, Reports) and a navy Hamilton card
+with "See plans" and "Ask for a demo", with no "Pro workspace" label. This narrows the 2026-10-15
+rule below: Hamilton's name, in text and without its mark, appears on its Product menu card and in
+the phone drawer. It still never appears as a top-level header item or in the footer, and its mark
+stays inside the workspace. `src/components/nav-items.test.ts` pins it.
+
 ## 2026-10-17
 
 **The homepage carries no standalone report promotion.** James, 2026-10-17 18:16, reviewing the
@@ -1221,3 +1244,76 @@ depository list (CFO site: "educational, personal, or training purposes"); and F
 (University of Michigan consumer sentiment needs a licence for a sold product). World Bank
 Remittance Prices Worldwide is held: its code stays, no partition is scheduled and no reader returns
 its rows until James confirms its terms.
+Round 2, 2026-10-18 (licence audit addendum,
+`api-mcp/loader-notes/licence-audit-2026-10-17.md`): struck the Philadelphia Fed large-bank credit
+card series (RCCCBAPRAVGPCTGP, RCCCBBALTOT, RCCCBUTILAVGPCT, RCCCBPMTMINPCT, RCCCBPMTFULLPCT;
+"informational, educational, and research purposes only") and Freddie Mac PMMS (MORTGAGE30US,
+MORTGAGE15US; freddiemac.com/terms: "may not redistribute ... or commercially exploit Data") from
+national-series; the New York (DFS: "for non-commercial purposes"), North Carolina (nc.gov: "for
+non-commercial use") and Florida regulator sites from state-reg-news and state-enforcement, so
+wire-research no longer reads their posts (New Jersey and the other states stay). Google News press
+(state-bill-news) is held: its terms are unread and reported as non-commercial, nothing is
+scheduled and no reader returns its rows. Released: World Bank Remittance Prices Worldwide (CC BY
+4.0; attribution "The World Bank: Remittance Prices Worldwide") and Urban Institute Debt in America
+(ODC-By 1.0; attribution "Braga et al., Debt in America, Urban Institute"), each carrying its
+attribution on every stored row and read. Rows already loaded from struck sources stay on prod and
+no reader returns them (`src/lib/data-store/struck-sources.ts`).
+FRED replaced by the original publishers, 2026-10-18 (James, card answer "Use publishers"): "Same
+series, fetched from BLS, Treasury and the Fed Board; FRED is no longer used." FRED's terms bar
+commercial use without the St. Louis Fed's written consent and bar storing FRED content in a
+database; most series we read through FRED are public-domain federal data. registry-fred now reads
+BLS (CPI, unemployment, payrolls, each state's LAUS and CES series), BEA NIPA (real GDP, the GDP
+price index, the saving rate; BEA_API_KEY) and the Fed Board's H.15 package (fed funds), keeping our
+series ids; national-series reads the Board's H.8 package (Z.1, about 592 MB, not yet), its charge-off and delinquency
+table and the SLOOS chart data. Dropped, with no publisher file confirmed: the FDIC national deposit
+rates (SNDR, ICNDR, MMNDR, NDR12MCD), the FDIC QBP service-charge series (QBPQYTNIYSRVDP) and
+DRCBLACBS. FRED-era rows stay on prod (none deleted) and are retired per series, so a publisher
+parser that fails cannot blank a chart: a series keeps showing its FRED-era values until its
+first row from the publisher lands, then only publisher rows are served
+(`fedIndicatorServedSql`, from `publisher_cutover_at`; `areaRowServedSql`, a national-series key
+with a Board row). Struck and dropped series, and series no publisher loads, are hidden at once.
+registry-fred names the series "still on FRED-era values" in its step output.
+
+**PRs merge without James; accuracy comes from recorded reviews.** James, 2026-10-18 06:40-06:43 UTC
+(project thread "Triage open GitHub issues", after a PR pipeline review that proposed these rules):
+"i jsut want the most accurate but autonomous way", "i cant merge every PR how quickly we are
+shipping them", then "yes, make the rule change". Page PRs, redesigns included, no longer wait for
+his review or typed yes. This replaces the 2026-10-05 entry ("redesigns wait for James's review"),
+the Oct 8 Pro price picker's wait for his review, the Oct 9 entry ("public, Pro and Hamilton screens
+still wait for his review"), the 2026-10-12 entry ("copy and page changes wait as open PRs"), the
+Oct 13 limit ("no lane opens a new copy preview while five are waiting for James"), the Oct 14
+design-system rollout's review on the Vercel preview, and the Oct 17 coordinator hold after #1815,
+which lived in project memory, not here. A page PR merges when three verdicts are on the PR: the
+growthOS review approves its desktop and phone screenshots; an independent reviewer finds no
+blockers on the exact head; CI is green. The growthOS review is the page lane's walkthrough of the
+screens against the site brief (#1294) in the roles of growth-os/agents/ (NORMAN, DRAPER, ERNEST,
+SHERLOCK), posted as a PR comment. James asked for it on 2026-10-15 (project memory: the growthOS
+team approves the whole user experience). The #1121 pause covers the growth agents' own marketing
+work, not this review. Every merge gets a receipt comment with the head SHA and both review
+verdicts, on top of the Oct 14 "Reviewed" rule. Batch to at most one PR per page or area a day. The
+day's merges go to him as one digest with screenshots, and he can ask for a revert. GitHub REST
+counts for Oct 15 05:00 to Oct 18 06:40 UTC: 318 PRs merged (`pulls?state=closed`, by `merged_at`),
+a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/runs?created=...`,
+`total_count`). Of 21 merged PRs sampled on Oct 18 (#1883, #1847, #1834, #1804, #1791, #1766, #1752,
+#1729, #1700, #1564, #1624, #1647, #1631, #1629, #1589, #1558, #1529, #1506, #1486, #1461, #1429),
+15 had no submitted GitHub review, which the Oct 14 "Reviewed" rule requires. Migrations,
+production-data changes and the other gated actions in CLAUDE.md still need his yes.
+
+**James's fee checking is one weekly live batch, nothing more.** James, 2026-10-19 03:48-03:49 UTC
+(project thread "James's to-do checklist"): "I'm fucking chasing my tail trying to validate individual
+fees every fucking day", "I gave you four live batches of data yesterday. How is that not good
+enough?", then "I'm happy to do a live batch of a hundred every week, but I don't wanna then be asked
+to do ten more." At 03:52 he asked for whatever size is statistically sound, sampled across areas,
+sizes and institutions; at 03:53 he rejected a few fees per institution ("We have fifty fees that
+we track"), and at 03:54 he set the size at 50 institutions a week. His only recurring check is a
+weekly Claude in Chrome live batch of 50 whole institutions, run as five prompts of 10: every
+published fee on each page against the bank's own current schedule, plus any of the 50 tracked
+categories on the schedule but missing from the page. The 50 are a fresh random draw each week
+across big banks, community banks and credit unions and the four Census regions (about 750 fees,
+roughly +/-3-4 points at 65% accuracy). The data quality lane supplies the draw and takes every miss
+with its error type; James sees the score, not the misses.
+That batch is the accuracy measurement against the 99.5% target, and the data
+quality lane works from what it finds. No lane asks him to confirm answer
+keys, press Confirm on rows, or check more fees by hand on top of it. A person's bank-level Confirm
+on an answer key covers every row on it (`feeCheckedBy` in `src/lib/data-store/answer-key.ts`), so
+he is never asked to re-press it.

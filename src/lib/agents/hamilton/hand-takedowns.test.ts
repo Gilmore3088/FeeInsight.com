@@ -5,9 +5,11 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
+import { planHandRefiles } from "./taxonomy-fold";
 import {
-  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS, handAudienceEvidence,
-  handTakedownBatchSizes, planHandAudienceFixes, planHandTakedowns, type LiveAudienceRow, type LiveTakedownRow,
+  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, lineKey, planHandTakedownReturns, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
+  HAND_WAITING_REJECTIONS, handAudienceEvidence, handTakedownBatchSizes, JAMES_APPROVED_BATCHES, planHandAudienceFixes, planHandTakedowns,
+  TEXAS_CAPITAL_TAKEDOWN_LIVE, texasCapitalTakedowns, texasCapitalWaitingRejections, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
 
 // #1659: U.S. Bank's Bank Smartly row, live at $10 now; the hand amount correction makes it $12.
@@ -200,19 +202,75 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 53765, lineage_ref: 208, institution_id: 8579, canonical_fee_key: "stop_payment", fee_name: "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year)", amount: "35.00" },
   // #1837: lineage ref is a fixture number.
   { fee_published_id: 45157, lineage_ref: 209, institution_id: 5622, canonical_fee_key: "overdraft", fee_name: "Non-Sufficient Funds / Overdraft: Non-members", amount: "0.00" },
+  // #1905: Navy Federal's five rows and the cash advance row its repeat waits on, live on prod, read-only, Oct 18.
+  { fee_published_id: 145735, lineage_ref: 15218, institution_id: 4956, canonical_fee_key: "cash_advance", fee_name: "Credit card cash advance§ | None", amount: "0.50" },
+  { fee_published_id: 28173, lineage_ref: 176232, institution_id: 4956, canonical_fee_key: "cash_advance", fee_name: "Credit card cash advance§", amount: "0.50" },
+  { fee_published_id: 122351, lineage_ref: 142958, institution_id: 4956, canonical_fee_key: "card_replacement", fee_name: "Lost/Stolen Card", amount: "5.00" },
+  { fee_published_id: 129718, lineage_ref: 142959, institution_id: 4956, canonical_fee_key: "atm_non_network", fee_name: "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry", amount: "1.00" },
+  { fee_published_id: 19884, lineage_ref: 14884, institution_id: 4956, canonical_fee_key: "late_payment", fee_name: "Generally 4% of principal and interest for government loans (VA &amp; FHA); maximum late charge of", amount: "30.00" },
+  { fee_published_id: 15730, lineage_ref: 9070, institution_id: 4956, canonical_fee_key: "late_payment", fee_name: "Generally a maximum late charge", amount: "10.00" },
+  // #1908: SchoolsFirst's payroll card rows, live on prod, read-only, Oct 18.
+  { fee_published_id: 104597, lineage_ref: 119757, institution_id: 6741, canonical_fee_key: "atm_non_network", fee_name: "ATM withdrawal at non-SchoolsFirst FCU and non-CO-OP Network locations", amount: "2.00" },
+  { fee_published_id: 104598, lineage_ref: 119758, institution_id: 6741, canonical_fee_key: "cashiers_check", fee_name: "Cashier's check payable to Payroll Cardholder", amount: "5.00" },
+  { fee_published_id: 104599, lineage_ref: 119759, institution_id: 6741, canonical_fee_key: "card_foreign_txn", fee_name: "ATM withdrawal at international ATM locations", amount: "2.00" },
+  { fee_published_id: 104600, lineage_ref: 119761, institution_id: 6741, canonical_fee_key: "rush_card", fee_name: "Rush Payroll Card replacement (per card)", amount: "20.00" },
+  { fee_published_id: 104602, lineage_ref: 119764, institution_id: 6741, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "0.00" },
+  { fee_published_id: 104603, lineage_ref: 119765, institution_id: 6741, canonical_fee_key: "atm_non_network", fee_name: "Balance inquiry at SchoolsFirst FCU and CO-OP Network ATMs", amount: "0.00" },
+  { fee_published_id: 104604, lineage_ref: 119766, institution_id: 6741, canonical_fee_key: "card_foreign_txn", fee_name: "Balance inquiry at international ATM locations", amount: "0.00" },
+  { fee_published_id: 104605, lineage_ref: 119767, institution_id: 6741, canonical_fee_key: "dormant_account", fee_name: "Account inactivity", amount: "0.00" },
+  { fee_published_id: 104606, lineage_ref: 119768, institution_id: 6741, canonical_fee_key: "document_reproduction", fee_name: "eStatement copies (per copy)", amount: "0.00" },  // #1946: footnoted $0 rows read as the footnote's number, live on prod, read-only, Oct 18.
+  { fee_published_id: 60838, lineage_ref: 63716, institution_id: 796, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "3.00" },
+  { fee_published_id: 61840, lineage_ref: 64932, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "3.00" },
+  { fee_published_id: 61841, lineage_ref: 64933, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "4.00" },
+  { fee_published_id: 61842, lineage_ref: 64934, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "5.00" },
+  { fee_published_id: 97256, lineage_ref: 103695, institution_id: 162, canonical_fee_key: "monthly_maintenance", fee_name: "Safe Start Checking Account Monthly service charge", amount: "1.00" },
+  { fee_published_id: 137275, lineage_ref: 159774, institution_id: 6942, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "1.00" },
+  { fee_published_id: 59691, lineage_ref: 51654, institution_id: 418, canonical_fee_key: "atm_non_network", fee_name: "Non-Penn Community Bank network ATM transactions", amount: "1.00" },
+  // #2018: James's 20-defect register, live on prod, read-only, Oct 19; 154181 and 144344 are the fees two of them repeat.
+  { fee_published_id: 154182, lineage_ref: 122264, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "per month with eStatements4 Paper statements available for an additional", amount: "3.00" },
+  // 154181 as the taxonomy fold leaves it: its hand re-file renames it earlier in the same publish.
+  { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "Paper statements", amount: "3.00" },
+  { fee_published_id: 154134, lineage_ref: 193235, institution_id: 7603, canonical_fee_key: "early_closure", fee_name: "Holiday Account Early Withdrawal", amount: "10.00" },
+  { fee_published_id: 152985, lineage_ref: 189585, institution_id: 4522, canonical_fee_key: "early_closure", fee_name: "Savings Accounts: Holiday Savings Account early withdrawal", amount: "10.00" },
+  { fee_published_id: 154075, lineage_ref: 193019, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "7.00" },
+  { fee_published_id: 154076, lineage_ref: 193020, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "10.00" },
+  { fee_published_id: 154101, lineage_ref: 193183, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Interac e-Transfer service fee (beyond included transactions)", amount: "1.50" },
+  { fee_published_id: 152916, lineage_ref: 46342, institution_id: 7756, canonical_fee_key: "check_image", fee_name: "Members enrolled in Mobile or Online Banking have unlimited access to check copies", amount: "2.00" },
+  { fee_published_id: 144344, lineage_ref: 174279, institution_id: 7756, canonical_fee_key: "check_image", fee_name: "Copy of Member Check", amount: "2.00" },
+  { fee_published_id: 152612, lineage_ref: 188765, institution_id: 54, canonical_fee_key: "atm_non_network", fee_name: "Other out-of-network ATMs", amount: "0.00" },
+  // #2022: Natbank's fees from National Bank of Canada's Canadian pages, live on prod, read-only, Oct 19.
+  { fee_published_id: 127400, lineage_ref: 143892, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "2.50" },
+  { fee_published_id: 127468, lineage_ref: 143964, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Connected monthly fee", amount: "15.95" },
+  { fee_published_id: 127469, lineage_ref: 143965, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "The Total monthly fee", amount: "28.95" },
+  { fee_published_id: 127470, lineage_ref: 143966, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Minimalist monthly fee", amount: "3.95" },
+  { fee_published_id: 127401, lineage_ref: 143893, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Bill payment service", amount: "2.00" },
+  { fee_published_id: 127402, lineage_ref: 143894, institution_id: 2675, canonical_fee_key: "paper_statement", fee_name: "Paper statement", amount: "3.50" },
+  { fee_published_id: 127403, lineage_ref: 143895, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Withdrawal for bill payment", amount: "1.25" },
+  { fee_published_id: 127404, lineage_ref: 143896, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Withdrawal, transfer, and withdrawal for bill payment", amount: "2.50" },
+  { fee_published_id: 127405, lineage_ref: 143897, institution_id: 2675, canonical_fee_key: "nsf", fee_name: "and returned or rejected due to insufficient funds", amount: "10.00" },
+  { fee_published_id: 127406, lineage_ref: 143898, institution_id: 2675, canonical_fee_key: "nsf", fee_name: "And returned or rejected due to insufficient funds", amount: "5.00" },
+  { fee_published_id: 127407, lineage_ref: 143899, institution_id: 2675, canonical_fee_key: "od_protection_transfer", fee_name: "Overdraft protection", amount: "5.00" },
+  { fee_published_id: 127408, lineage_ref: 143900, institution_id: 2675, canonical_fee_key: "overdraft", fee_name: "Transaction that leads to or increases overdraft", amount: "5.00" },
+  // #2032: Beacon's loan-servicing page row, live on prod, read-only, Oct 19.
+  { fee_published_id: 99795, lineage_ref: 103490, institution_id: 96, canonical_fee_key: "legal_process", fee_name: "Extended Service Fee Document Request / Subpoena / Research", amount: "20.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691, 154182, 154134, 152985, 154075, 154076, 154101, 152916, 152612, 127400, 127468, 127469, 127470, 127401, 127402, 127403, 127404, 127405, 127406, 127407, 127408, 99795];
 
-// The standing list without the #1772/#1773 ATM rows, which have their own tests below.
-const STANDING = HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1772 && entry.issue !== 1773);
+// The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
+const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
 
-function fakeDb(live: LiveTakedownRow[], failOn?: string) {
+function fakeDb(live: LiveTakedownRow[], failOn?: string, pending: Array<{ fee_verified_id: number; institution_id: number }> = []) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
   const db = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     if (failOn && text.includes(failOn)) throw new Error(`boom: ${failOn}`);
     if (text.includes("SELECT fp.fee_published_id")) return live;
+    if (text.includes("SELECT v.fee_verified_id")) return pending;
+    if (text.includes("RETURNING fee_verified_id")) {
+      writes.push({ text, values });
+      return [{ fee_verified_id: values.find((value) => typeof value === "number") }];
+    }
     writes.push({ text, values });
     if (text.includes("UPDATE published_fee_records")) return [{ fee_published_id: values.find((value) => typeof value === "number") }];
     return [];
@@ -321,6 +379,48 @@ describe("hand takedowns (James, Oct 16)", () => {
       [152591, "source_mismatch: #1828"],
       [152306, "duplicate of #53765 (#1830)"],
       [45157, "source_mismatch: #1837"],
+      [145735, "duplicate of #28173 (#1905)"], [122351, "source_mismatch: #1905"], [129718, "source_mismatch: #1905"],
+      [19884, "source_mismatch: #1905"], [15730, "source_mismatch: #1905"],
+      [104597, "source_mismatch: #1908"],
+      [104598, "source_mismatch: #1908"],
+      [104599, "source_mismatch: #1908"],
+      [104600, "source_mismatch: #1908"],
+      [104602, "source_mismatch: #1908"],
+      [104603, "source_mismatch: #1908"],
+      [104604, "source_mismatch: #1908"],
+      [104605, "source_mismatch: #1908"],
+      [104606, "source_mismatch: #1908"],
+      [60838, "source_mismatch: #1946"],
+      [61840, "source_mismatch: #1946"],
+      [61841, "source_mismatch: #1946"],
+      [61842, "source_mismatch: #1946"],
+      [97256, "source_mismatch: #1946"],
+      [137275, "source_mismatch: #1946"],
+      [59691, "source_mismatch: #1946"],
+      // #2018: James's 20-defect register (Oct 19), the listed rows guard v74 cannot reach by name.
+      [154182, "duplicate of #154181 (#2018)"],
+      [154134, "source_mismatch: #2018"],
+      [152985, "source_mismatch: #2018"],
+      [154075, "source_mismatch: #2018"],
+      [154076, "source_mismatch: #2018"],
+      [154101, "source_mismatch: #2018"],
+      [152916, "duplicate of #144344 (#2018)"],
+      [152612, "source_mismatch: #2018"],
+      // #2022: Natbank's fees from National Bank of Canada's Canadian pages (Oct 19).
+      [127400, "source_mismatch: #2022"],
+      [127468, "source_mismatch: #2022"],
+      [127469, "source_mismatch: #2022"],
+      [127470, "source_mismatch: #2022"],
+      [127401, "source_mismatch: #2022"],
+      [127402, "source_mismatch: #2022"],
+      [127403, "source_mismatch: #2022"],
+      [127404, "source_mismatch: #2022"],
+      [127405, "source_mismatch: #2022"],
+      [127406, "source_mismatch: #2022"],
+      [127407, "source_mismatch: #2022"],
+      [127408, "source_mismatch: #2022"],
+      // #2032: Beacon's loan-servicing page row (Oct 19).
+      [99795, "source_mismatch: #2032"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -329,8 +429,31 @@ describe("hand takedowns (James, Oct 16)", () => {
       : entry.reason === `source_mismatch: #${entry.issue}`))).toBe(true);
     // James, Oct 16 03:37 UTC: fewer than 20 fees per batch (one issue) go this way; a bigger batch goes to him.
     expect(HAND_TAKEDOWN_BATCH_LIMIT).toBeLessThan(20);
-    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1755, entries: 18 });
-    expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT)).toBe(true);
+    expect(handTakedownBatchSizes()[0]).toEqual({ issue: 1880, entries: 32 });
+    // Only a batch James approved by name holds more (#1880: his "Take them down", Oct 18).
+    expect([...JAMES_APPROVED_BATCHES.keys()]).toEqual([1880]);
+    expect(handTakedownBatchSizes().filter((batch) => !JAMES_APPROVED_BATCHES.has(batch.issue))[0]).toEqual({ issue: 1755, entries: 18 });
+    expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT || JAMES_APPROVED_BATCHES.has(batch.issue))).toBe(true);
+  });
+
+  it("#2018: a repeat waits on the fee it repeats", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 2018);
+    expect(batch).toHaveLength(8);
+    const withoutKept = LIVE.filter((row) => ![154181, 144344].includes(Number(row.fee_published_id)));
+    const planned = planHandTakedowns(withoutKept, batch);
+    expect(planned.takenDown.map((item) => item.feePublishedId)).toEqual([154134, 152985, 154075, 154076, 154101, 152612]);
+    expect(planned.skipped.map((item) => item.feePublishedId)).toEqual([154182, 152916]);
+  });
+
+  it("#2018: 154182 comes down once the fold has renamed 154181, and not before", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 154182);
+    const before = { fee_published_id: 154181, fee_verified_id: 193642, institution_id: 2954, source_document_id: 37121, canonical_fee_key: "paper_statement", fee_name: "Optional: Yes Paper Statements available", amount: "3.00" };
+    const [move] = planHandRefiles([before]);
+    expect(move.refile.name).toBe("Paper statements");
+    const dup = LIVE.find((row) => Number(row.fee_published_id) === 154182)!;
+    const renamed = { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: move.refile.name, amount: "3.00" };
+    expect(planHandTakedowns([dup, renamed], batch).takenDown.map((item) => item.feePublishedId)).toEqual([154182]);
+    expect(planHandTakedowns([dup, { ...renamed, fee_name: before.fee_name }], batch).takenDown).toEqual([]);
   });
 
   it("takes a row down only while it still reads as listed", () => {
@@ -432,6 +555,48 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 152591, feeVerifiedId: 188726, reason: "source_mismatch: #1828" },
         { feePublishedId: 152306, feeVerifiedId: 187951, reason: "duplicate of #53765 (#1830)" },
         { feePublishedId: 45157, feeVerifiedId: 209, reason: "source_mismatch: #1837" },
+        { feePublishedId: 145735, feeVerifiedId: 15218, reason: "duplicate of #28173 (#1905)" },
+        { feePublishedId: 122351, feeVerifiedId: 142958, reason: "source_mismatch: #1905" },
+        { feePublishedId: 129718, feeVerifiedId: 142959, reason: "source_mismatch: #1905" },
+        { feePublishedId: 19884, feeVerifiedId: 14884, reason: "source_mismatch: #1905" },
+        { feePublishedId: 15730, feeVerifiedId: 9070, reason: "source_mismatch: #1905" },
+        { feePublishedId: 104597, feeVerifiedId: 119757, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104598, feeVerifiedId: 119758, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104599, feeVerifiedId: 119759, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104600, feeVerifiedId: 119761, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104602, feeVerifiedId: 119764, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104603, feeVerifiedId: 119765, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104604, feeVerifiedId: 119766, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104605, feeVerifiedId: 119767, reason: "source_mismatch: #1908" },
+        { feePublishedId: 104606, feeVerifiedId: 119768, reason: "source_mismatch: #1908" },
+        { feePublishedId: 60838, feeVerifiedId: 63716, reason: "source_mismatch: #1946" },
+        { feePublishedId: 61840, feeVerifiedId: 64932, reason: "source_mismatch: #1946" },
+        { feePublishedId: 61841, feeVerifiedId: 64933, reason: "source_mismatch: #1946" },
+        { feePublishedId: 61842, feeVerifiedId: 64934, reason: "source_mismatch: #1946" },
+        { feePublishedId: 97256, feeVerifiedId: 103695, reason: "source_mismatch: #1946" },
+        { feePublishedId: 137275, feeVerifiedId: 159774, reason: "source_mismatch: #1946" },
+        { feePublishedId: 59691, feeVerifiedId: 51654, reason: "source_mismatch: #1946" },
+        { feePublishedId: 154182, feeVerifiedId: 122264, reason: "duplicate of #154181 (#2018)" },
+        { feePublishedId: 154134, feeVerifiedId: 193235, reason: "source_mismatch: #2018" },
+        { feePublishedId: 152985, feeVerifiedId: 189585, reason: "source_mismatch: #2018" },
+        { feePublishedId: 154075, feeVerifiedId: 193019, reason: "source_mismatch: #2018" },
+        { feePublishedId: 154076, feeVerifiedId: 193020, reason: "source_mismatch: #2018" },
+        { feePublishedId: 154101, feeVerifiedId: 193183, reason: "source_mismatch: #2018" },
+        { feePublishedId: 152916, feeVerifiedId: 46342, reason: "duplicate of #144344 (#2018)" },
+        { feePublishedId: 152612, feeVerifiedId: 188765, reason: "source_mismatch: #2018" },
+        { feePublishedId: 127400, feeVerifiedId: 143892, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127468, feeVerifiedId: 143964, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127469, feeVerifiedId: 143965, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127470, feeVerifiedId: 143966, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127401, feeVerifiedId: 143893, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127402, feeVerifiedId: 143894, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127403, feeVerifiedId: 143895, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127404, feeVerifiedId: 143896, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127405, feeVerifiedId: 143897, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127406, feeVerifiedId: 143898, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127407, feeVerifiedId: 143899, reason: "source_mismatch: #2022" },
+        { feePublishedId: 127408, feeVerifiedId: 143900, reason: "source_mismatch: #2022" },
+        { feePublishedId: 99795, feeVerifiedId: 103490, reason: "source_mismatch: #2032" },
       ],
       skipped: [],
     });
@@ -776,3 +941,117 @@ describe("#1788: guard v72 hand takedowns", () => {
     expect(planHandTakedowns([row, kept], [fifthThird]).takenDown.map((planned) => planned.feePublishedId)).toEqual([81615]);
   });
 });
+
+describe("#1880: Texas Capital's closed-account table", () => {
+  // The 32 rows as they read live on prod, read-only, Oct 18 (lineage refs from the same read).
+  const live: LiveTakedownRow[] = texasCapitalTakedowns(true).map((entry, index) => ({
+    fee_published_id: entry.feePublishedId, lineage_ref: 900000 + index, institution_id: 69,
+    canonical_fee_key: entry.canonicalFeeKey, fee_name: entry.feeName, amount: entry.amount.toFixed(2),
+  }));
+
+  it("lists all 32 live rows and 36 waiting copies while James's switch is on", () => {
+    expect(TEXAS_CAPITAL_TAKEDOWN_LIVE).toBe(true);
+    const entries = texasCapitalTakedowns(true);
+    expect(entries).toHaveLength(32);
+    expect(new Set(entries.map((entry) => entry.feePublishedId)).size).toBe(32);
+    expect(entries.every((entry) => entry.institutionId === 69 && entry.issue === 1880 && entry.kind === "not_on_schedule" &&
+      entry.reason === "source_mismatch: #1880" && entry.evidence.includes("no longer available to open"))).toBe(true);
+    expect(HAND_TAKEDOWNS.filter((entry) => entry.issue === 1880)).toHaveLength(32);
+    expect(texasCapitalWaitingRejections(true)).toHaveLength(36);
+    expect(HAND_WAITING_REJECTIONS.filter((entry) => entry.issue === 1880)).toHaveLength(36);
+    expect(texasCapitalTakedowns(false)).toEqual([]);
+    expect(texasCapitalWaitingRejections(false)).toEqual([]);
+    // None is on another batch too.
+    const elsewhere = new Set(HAND_TAKEDOWNS.filter((entry) => entry.issue !== 1880).map((entry) => entry.feePublishedId));
+    expect(entries.some((entry) => elsewhere.has(entry.feePublishedId))).toBe(false);
+  });
+
+  it("takes every row down while it reads as listed", () => {
+    const entries = texasCapitalTakedowns(true);
+    expect(planHandTakedowns(live, entries).takenDown).toHaveLength(32);
+    // A row re-priced since it was listed stays.
+    const repriced = live.map((row) => (row.fee_published_id === 153190 ? { ...row, amount: "35.00" } : row));
+    expect(planHandTakedowns(repriced, entries).skipped).toEqual([{ feePublishedId: 153190, reason: "changed since listed" }]);
+  });
+
+  it("rejects the waiting copies at the listed institution only, in the same run event", async () => {
+    const entries = texasCapitalTakedowns(true);
+    const waiting = texasCapitalWaitingRejections(true);
+    const pending = [{ fee_verified_id: 191907, institution_id: 69 }, { fee_verified_id: 191908, institution_id: 70 }];
+    const dry = fakeDb(live, undefined, pending);
+    const planned = await applyHandTakedowns(dry.db as never, { runId: 1, batchId: "b", dryRun: true, list: entries, waiting });
+    expect(planned.waitingRejected).toEqual([191907]);
+    expect(dry.writes).toHaveLength(0);
+
+    const { db, writes } = fakeDb(live, undefined, pending);
+    const result = await applyHandTakedowns(db as never, { runId: 2, stepId: 20, batchId: "b", dryRun: false, list: entries, waiting });
+    expect(result.takenDown).toHaveLength(32);
+    expect(result.waitingRejected).toEqual([191907]);
+    const rejection = writes.find((write) => write.text.includes("RETURNING fee_verified_id"));
+    expect(rejection?.text).toContain("AND institution_id = ?");
+    expect(rejection?.text).toContain("AND review_status IN ('verified', 'approved')");
+    expect(rejection?.values).toEqual(expect.arrayContaining([191907, 69]));
+    const events = writes.filter((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(events).toHaveLength(1);
+    expect(events[0].values).toEqual(expect.arrayContaining(["Took down 32 listed live fee(s) confirmed wrong against their bank's own text and rejected 1 waiting copy"]));
+
+    // Once all are down and rejected, nothing is written again.
+    const again = fakeDb([]);
+    const after = await applyHandTakedowns(again.db as never, { runId: 3, batchId: "b", dryRun: false, list: entries, waiting });
+    expect(after).toMatchObject({ takenDown: [], waitingRejected: [] });
+    expect(again.writes).toHaveLength(0);
+  });
+});
+
+// Live rows on prod (read-only, Oct 19) at institutions with a listed takedown, matched by line.
+const lineRow = (id: number, institution: number, key: string, name: string, amount: string, lineage = id + 1_000_000): LiveTakedownRow => ({
+  fee_published_id: id, lineage_ref: lineage, institution_id: institution, canonical_fee_key: key, fee_name: name, amount,
+});
+const RE_READS: LiveTakedownRow[] = [
+  lineRow(154638, 4956, "dormant_account", "Inactivity Fee", "5.00"), // #1765's 122350, Navy Federal's Oct 19 re-read (doc 37977)
+  lineRow(154639, 4956, "card_replacement", "Lost/Stolen Card", "5.00"), // #1905's 122351
+  lineRow(154640, 4956, "atm_non_network", "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry", "1.00"), // #1905's 129718
+  lineRow(153311, 4493, "atm_non_network", "ATM-surcharge", "4.00"), // #1772's 115027
+  lineRow(152525, 12, "monthly_maintenance", "Monthly fee", "3.00"), // #1774's 64716, TD's checking page at a new address (doc 37065)
+  lineRow(154157, 8048, "minimum_balance", "Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained)", "25.00"), // #1755's 74560 and 125809
+];
+const NOT_RE_READS: LiveTakedownRow[] = [
+  lineRow(99586, 1636, "deposited_item_return", "Return Check Fee", "15.00"), // #1755's 13031 re-filed to the right category
+  lineRow(30240, 58, "wire_domestic_incoming", "Domestic Wire-IN", "12.00"), // #1755's 102758 re-filed
+  lineRow(120678, 6673, "paper_statement", "Monthly Paper Statements", "2.00"), // the twin #1755's duplicates repeat
+  lineRow(151680, 7204, "garnishment_levy", "Judicial Attachment (Garnishment)", "34.00"), // a #1661 duplicate's line: the collapse's job
+  lineRow(153602, 69, "overdraft", "Paid Overdraft Fee", "15.00"), // #1880 was the old document's fault; this is from the current PDF (doc 37594)
+  lineRow(41001, 4956, "dormant_account", "Inactivity Fee", "10.00"), // another price
+];
+
+describe("re-reads of a listed line (#1905 triage, Oct 19)", () => {
+  it("names the six live re-reads on prod, each with its entry's reason", () => {
+    const planned = planHandTakedownReturns([...RE_READS, ...NOT_RE_READS]);
+    expect(planned.map((item) => item.feePublishedId)).toEqual([152525, 153311, 154157, 154638, 154639, 154640]);
+    expect(planned.find((item) => item.feePublishedId === 152525)).toMatchObject({ feeVerifiedId: 1_152_525, reason: expect.stringMatching(/ \(re-read of #64716\)$/) });
+  });
+
+  it("never names a listed row itself, and reads names without case, spaces or punctuation", () => {
+    const listed = HAND_TAKEDOWNS.find((entry) => entry.feePublishedId === 64716)!;
+    expect(planHandTakedownReturns([lineRow(64716, 12, listed.canonicalFeeKey, listed.feeName, "3.00")])).toEqual([]);
+    expect(lineKey("ATM-surcharge")).toBe(lineKey("ATM Surcharge"));
+    expect(planHandTakedownReturns([lineRow(1, 4493, "atm_non_network", "atm surcharge", "4")]).map((item) => item.feePublishedId)).toEqual([1]);
+  });
+
+  it("only reports re-reads while the switch is off, and takes them down with their verified row when on", async () => {
+    const off = fakeDb(RE_READS);
+    const reported = await applyHandTakedowns(off.db as never, { runId: 7, stepId: 70, batchId: "b", dryRun: false, list: HAND_TAKEDOWNS });
+    expect(reported).toMatchObject({ returnsLive: false, takenDown: [] });
+    expect(reported.returns).toHaveLength(6);
+    expect(off.writes).toHaveLength(0);
+
+    const on = fakeDb(RE_READS);
+    const result = await applyHandTakedowns(on.db as never, { runId: 8, stepId: 80, batchId: "b", dryRun: false, returnsLive: true });
+    expect(result.returns.map((item) => item.feePublishedId)).toEqual([152525, 153311, 154157, 154638, 154639, 154640]);
+    expect(on.writes.filter((write) => write.text.includes("UPDATE published_fee_records"))).toHaveLength(6);
+    expect(on.writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(6);
+    const event = on.writes.find((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(String(event?.values.at(-1))).toContain('"returns_live":true');
+  });
+});
+

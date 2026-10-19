@@ -300,6 +300,33 @@ const FEE_PRICE_KEY = /amount|median|^p\d{2}|avg|mean|average|^min|^max|price|fe
 /** Never money: ids, counts and ranks, whatever else the key says. */
 const NOT_MONEY_KEY = /(^|_)(id|ids|n|rank)$|count|number|^total$/i;
 
+/** A public-data row whose unit is dollars; rates, counts and indexes are not money. */
+const DOLLAR_UNIT = /usd|dollar/i;
+
+/** The dollar values in a queryData public-data result (rows of { value, unit }), compacted or not. */
+function publicDataDollars(output: unknown): number[] {
+  let parsed = output;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+  const rows = (parsed as { rows?: unknown } | null)?.rows;
+  if (!Array.isArray(rows)) return [];
+  return rows.flatMap((row) => {
+    const { value, unit } = (row ?? {}) as { value?: unknown; unit?: unknown };
+    return typeof value === "number" && Number.isFinite(value) && typeof unit === "string" && DOLLAR_UNIT.test(unit) ? [value] : [];
+  });
+}
+
+/** queryData on a public-data measure reads another source: its dollar figures are accepted as read. Fee measures stay with the catalog. */
+function publicDataQuery(result: { toolName: string; input?: unknown }): boolean {
+  const input = result.input as { measure?: unknown } | null | undefined;
+  return result.toolName === "queryData" && typeof input?.measure === "string" && input.measure.startsWith("area:");
+}
+
 /**
  * Money values the written answer's tools read from sources other than the fee catalog, which it
  * may state as read. Fee prices from catalog tools are left out: the live catalog decides those.
@@ -337,7 +364,11 @@ export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; inpu
       for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource);
     }
   };
-  for (const r of results) if (!catalogDerived(r)) walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
+  for (const r of results) {
+    if (catalogDerived(r)) continue;
+    if (publicDataQuery(r)) out.push(...publicDataDollars(r.output));
+    else walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
+  }
   return out;
 }
 

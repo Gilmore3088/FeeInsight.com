@@ -3,8 +3,14 @@ import type { LandingResearchHandoff } from "./landing-research-handoff";
 import type { LocalMarketAnswer } from "./local-market-answer";
 import type { GeographicResearchResult } from "./landing-geographic-research";
 import type { ReportSummaryResponse } from "./types";
+import { statedFeeText } from "@/lib/own-fee";
 
 const dollars = (v: number | null | undefined) => v == null ? "Not observed / insufficient evidence" : `$${v.toFixed(2)}`;
+/** A named institution's stated price, or the range and each fee by name when it states several (#1931). */
+const stated = (row: Pick<LocalMarketAnswer["you"], "fees" | "several">, c: string) => {
+  const span = row.several?.[c];
+  return span ? statedFeeText(span.low, span, (v) => dollars(v)) : dollars(row.fees[c]);
+};
 /** Data-only board draft using the existing saved report and PDF schema. No invented advice. */
 export function buildLandingReport(selection: LandingResearchHandoff, result: LocalMarketAnswer | GeographicResearchResult, asOf: string): ReportSummaryResponse {
   const local = "competitors" in result ? result : null;
@@ -13,8 +19,8 @@ export function buildLandingReport(selection: LandingResearchHandoff, result: Lo
   const charter = selection.charter === "all" ? "Banks and credit unions" : selection.charter === "bank" ? "Banks" : "Credit unions";
   const columns = local ? ["Institution", "Selected fee", "Published amount"] : ["Fee", "Selected median", "Institutions", "National median", "As of"];
   const rows = local ? [
-    ...selection.categories.map(c => [local.institutionName + " (research subject)", getDisplayName(c), dollars(local.you.fees[c])]),
-    ...local.competitors.flatMap(peer => selection.categories.map(c => [peer.name, getDisplayName(c), dollars(peer.fees[c])])),
+    ...selection.categories.map(c => [local.institutionName + " (research subject)", getDisplayName(c), stated(local.you, c)]),
+    ...local.competitors.flatMap(peer => selection.categories.map(c => [peer.name, getDisplayName(c), stated(peer, c)])),
   ] : geographic!.comparisons.map(row => [getDisplayName(row.category), dollars(row.selected.median), String(row.selected.institutions), row.national ? dollars(row.national.median) : "Not applicable", row.selected.lastUpdated ?? "Date unavailable"]);
   return {
     title: `${scope} — board research draft`,
