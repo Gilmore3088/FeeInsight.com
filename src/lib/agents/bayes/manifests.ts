@@ -275,6 +275,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v2 (#1862): provenance gating excludes old unbound fixture judgments. Original document
+  // mappings are absent; replay cannot manufacture them or convert old scores into new trust.
+  DARWIN_VERDICT_SCORE_STRATEGY: "Frozen-reference provenance starts a distinct protocol/manifest series. Unbound historical chunks and lessons remain historical; no fee replay or key repair is authorized.",
   // Discovery's own selector searches banks last checked by an older method. Guessed-path
   // memory affects future attempts, without rewriting attempt history or existing fee data.
   DISCOVERY_METHOD_VERSION: "The discovery selector searches banks last checked by an older method; its normal runs apply the new guessed-path memory, with no separate replay.",

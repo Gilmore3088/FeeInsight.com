@@ -232,6 +232,9 @@ function narrateFinished(
       const relabel = narrateAnswerKeyRelabel((detail.answer_key_relabel ?? null) as Detail | null);
       if (detail.schema_ready === false) return `${relabel}Skipped the answer-key score (migration not applied yet).`;
       const banks = n(detail, "banks_scored");
+      const reference = detail.reference_eligibility as Detail | undefined;
+      if (reference?.readError === true) return `${relabel}No answer-key measurement: reference eligibility and counts are unavailable.`;
+      if (reference?.state === "no_measurement") return `${relabel}No answer-key measurement: ${n(reference,"eligibleBanks")} eligible and ${n(reference,"excludedBanks")} excluded reference banks. Human confirmation is unchanged.`;
       if (banks === 0) return `${relabel}Had no confirmed answer-key banks to score yet.`;
       return `${relabel}Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
@@ -319,6 +322,7 @@ function narrateFinished(
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
+      if (n(detail,"fees_scored") === 0 && n(detail,"reference_excluded_banks") > 0) return `No eligible reference fees to replay; ${n(detail,"reference_excluded_banks")} reference banks and ${n(detail,"reference_excluded_cases")} unbound or incompatible historical cases excluded.`;
       return `Deming replayed the answer key against today's Knox: ${n(detail, "fees_missed")} of ${n(detail, "fees_scored")} key fees missed, ${n(detail, "activated")} newly read, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
     }
     case "deming-playbook-check": {

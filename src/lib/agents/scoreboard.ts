@@ -1,5 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
-import { ANSWER_KEY_SCORER_VERSION, answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
+import { ANSWER_KEY_SCORER_VERSION, answerKeySchemaReady, getLatestAnswerKeyScoreRun, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
+import { eligibleReferences, readReferenceEligibility, type ReferenceEligibilitySnapshot } from "@/lib/data-store/answer-key-reference-store";
+import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
@@ -40,7 +42,8 @@ export interface ScoreboardNumbers {
   rightDocument: { rate: number | null; numerator: number; denominator: number; windowDays: number } | null;
   knoxYield: { yield: number | null; fees: number; pricedLines: number; sampleSize: number } | null;
   depth: { median: number | null; liveInstitutions: number };
-  accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null; scorerVersion: number } | null;
+  accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null; scorerVersion: number;
+    reference?: ReferenceScoreCohort | null; referenceState?: string } | null;
   freshness: { medianDays: number | null; liveFees: number };
   knoxSurvival: KnoxSurvival;
   /** Null when the count could not be read; the other numbers are still stored. */
@@ -105,14 +108,16 @@ async function readRightDocument(db: SqlTag): Promise<ScoreboardNumbers["rightDo
   return { rate: rate(numerator, denominator), numerator, denominator, windowDays: RIGHT_DOCUMENT_WINDOW_DAYS };
 }
 
-async function readKnoxYield(db: SqlTag): Promise<ScoreboardNumbers["knoxYield"]> {
+async function readKnoxYield(db: SqlTag, eligibility: ReferenceEligibilitySnapshot): Promise<ScoreboardNumbers["knoxYield"]> {
   if (!(await answerKeySchemaReady(db))) return null;
+  const textIds = eligibleReferences(eligibility).flatMap(({ input }) => input.sources
+    .filter((source) => source.contentHash === input.key.contentHash && source.textStatus === "completed" && source.textId != null)
+    .map((source) => source.textId!));
   const [row] = await db`
     WITH sample AS (
       SELECT DISTINCT ON (t.institution_id) t.institution_id, t.source_document_id, t.normalized_text
         FROM agent_source_texts t
-        JOIN answer_key_institutions ak ON ak.institution_id = t.institution_id
-       WHERE t.status = 'completed'
+       WHERE t.status = 'completed' AND t.id = ANY(${textIds}::bigint[])
        ORDER BY t.institution_id, t.updated_at DESC, t.id DESC
     )
     SELECT COUNT(*)::int AS sample_size,
@@ -151,23 +156,18 @@ async function readDepth(db: SqlTag): Promise<ScoreboardNumbers["depth"]> {
   return { median: numberOrNull(row?.median), liveInstitutions: Number(row?.live_institutions ?? 0) };
 }
 
-async function readAccuracy(db: SqlTag): Promise<ScoreboardNumbers["accuracy"]> {
+async function readAccuracy(db: SqlTag, eligibility: ReferenceEligibilitySnapshot): Promise<ScoreboardNumbers["accuracy"]> {
   if (!(await answerKeySchemaReady(db))) return null;
-  const [row] = await db`
-    SELECT id, precision, recall, scored_at
-      FROM answer_key_score_runs
-     WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
-     ORDER BY scored_at DESC, id DESC
-     LIMIT 1
-  `;
-  if (!row) return { precision: null, recall: null, scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION };
+  const row = await getLatestAnswerKeyScoreRun(db, ANSWER_KEY_SCORER_VERSION, eligibility);
+  if (!row) return { precision: null, recall: null, scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION,
+    reference: eligibility.cohort, referenceState: "no_measurement" };
   return {
     // Scores from different scorer versions are never one series (#1354).
     scorerVersion: ANSWER_KEY_SCORER_VERSION,
     precision: numberOrNull(row.precision, 4),
     recall: numberOrNull(row.recall, 4),
     scoreRunId: Number(row.id),
-    scoredAt: row.scored_at instanceof Date ? row.scored_at.toISOString() : String(row.scored_at),
+    scoredAt: row.scored_at, reference: row.reference, referenceState: row.referenceState,
   };
 }
 
@@ -223,12 +223,13 @@ async function readReportReady(db: SqlTag): Promise<ReportReadyCount | null> {
 }
 
 export async function readScoreboardNumbers(db: SqlTag = sql): Promise<ScoreboardNumbers> {
+  const eligibility = await readReferenceEligibility(db);
   const [coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival] = await Promise.all([
     readCoverage(db),
     readRightDocument(db),
-    readKnoxYield(db),
+    readKnoxYield(db, eligibility),
     readDepth(db),
-    readAccuracy(db),
+    readAccuracy(db, eligibility),
     readFreshness(db),
     readKnoxSurvival(db),
   ]);
@@ -297,6 +298,8 @@ export async function runScoreboardSnapshot({
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
         accuracy_scorer_version: numbers.accuracy?.scorerVersion ?? null,
+        accuracy_reference: numbers.accuracy?.reference ?? null,
+        accuracy_reference_state: numbers.accuracy?.referenceState ?? null,
         knox_survival: numbers.knoxSurvival,
         ...(numbers.reportReady
           ? {

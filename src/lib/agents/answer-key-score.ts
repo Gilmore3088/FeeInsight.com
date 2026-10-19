@@ -11,6 +11,9 @@ import {
 } from "@/lib/data-store/answer-key";
 import { getFeeFamily } from "@/lib/fee-taxonomy";
 import { splitLiveCategory } from "@/lib/fee-fold";
+import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
+import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
+import { refreshReferenceEligibility } from "./answer-key-eligibility";
 
 /**
  * Atlas's score-answer-key step: compares the pipeline against the hand-checked
@@ -694,6 +697,8 @@ export interface AnswerKeyScoreRunResult {
   /** Every version scored on this run, each stored as its own row, oldest version first. */
   series?: Array<{ scorerVersion: AnswerKeyScorerVersion; scoreRunId: number | null; score: AnswerKeyScore }>;
   dryRun: boolean;
+  reference?: ReferenceScoreCohort;
+  referenceChecks?: { attempted: number; persisted: number; failed: number };
 }
 
 /**
@@ -704,19 +709,26 @@ export async function runAnswerKeyScore({
   runId,
   dryRun = false,
   db = sql,
+  stepId = null,
+  fetchImpl,
 }: {
   runId: number | null;
   dryRun?: boolean;
   db?: SqlTag;
+  stepId?: number | null;
+  fetchImpl?: typeof fetch;
 }): Promise<AnswerKeyScoreRunResult> {
   if (!(await answerKeySchemaReady(db))) return { schemaReady: false, scoreRunId: null, score: null, dryRun };
-  const entries = await getConfirmedAnswerKey(db);
+  const initial = await readReferenceEligibility(db);
+  const checked = await refreshReferenceEligibility({ db, runId, stepId, dryRun, snapshot: initial, fetchImpl });
+  const reference = checked.snapshot.cohort;
+  const entries = await getConfirmedAnswerKey(db, checked.snapshot);
   const evidence = await gatherBankEvidence(entries.map((entry) => entry.institutionId), db);
   const series: NonNullable<AnswerKeyScoreRunResult["series"]> = [];
   for (const version of ANSWER_KEY_SCORER_VERSIONS) {
     const score = scoreAnswerKey(entries, evidence, version);
     let scoreRunId: number | null = null;
-    if (!dryRun && entries.length > 0) {
+    if (!dryRun) {
       const [row] = await db`
         INSERT INTO answer_key_score_runs
           (agent_run_id, scorer_version, banks_scored, fees_expected, precision, recall,
@@ -724,7 +736,7 @@ export async function runAnswerKeyScore({
         VALUES
           (${runId}, ${score.scorerVersion}, ${score.banksScored}, ${score.feesExpected},
            ${score.overall.precision}, ${score.overall.recall},
-           ${JSON.stringify(score.byStage)}::jsonb, ${JSON.stringify(score.byCategory)}::jsonb,
+           ${JSON.stringify({ ...score.byStage, _reference: reference })}::jsonb, ${JSON.stringify(score.byCategory)}::jsonb,
            ${JSON.stringify(score.byDocumentType)}::jsonb, ${JSON.stringify(score.banks)}::jsonb)
         RETURNING id
       `;
@@ -733,7 +745,8 @@ export async function runAnswerKeyScore({
     series.push({ scorerVersion: version, scoreRunId, score });
   }
   const current = series.find((entry) => entry.scorerVersion === ANSWER_KEY_SCORER_VERSION)!;
-  return { schemaReady: true, scoreRunId: current.scoreRunId, score: current.score, series, dryRun };
+  return { schemaReady: true, scoreRunId: current.scoreRunId, score: current.score, series, dryRun, reference,
+    referenceChecks: { attempted: checked.attempted, persisted: checked.persisted, failed: checked.failed } };
 }
 
 function percent(value: number | null): string {
@@ -743,7 +756,10 @@ function percent(value: number | null): string {
 /** One sentence for the step summary. */
 export function summarizeAnswerKeyScore(result: AnswerKeyScoreRunResult): string {
   if (!result.schemaReady) return "Atlas skipped the answer-key score: the answer-key migration is not applied yet.";
+  if (result.reference?.readError) return "Atlas recorded no measurement: reference eligibility could not be read; reference counts are unavailable.";
   const score = result.score;
+  const reference = result.reference;
+  if (reference?.state === "no_measurement") return `Atlas has no eligible answer-key measurement: ${reference.excludedBanks} of ${reference.confirmedBanks} confirmed institutions excluded (${reference.excludedFees} fees). Document eligibility is separate from human confirmation; scorer v${ANSWER_KEY_SCORER_VERSION} is unchanged.`;
   if (!score || score.banksScored === 0) return "Atlas found no confirmed answer-key institutions to score yet.";
   const stages = SCORED_STAGES
     .map((stage) => `${stage} ${percent(score.byStage[stage].precision)}/${percent(score.byStage[stage].recall)}`)
@@ -757,5 +773,6 @@ export function summarizeAnswerKeyScore(result: AnswerKeyScoreRunResult): string
   const knox = misses.overall.expected > 0
     ? ` On the ${misses.banks} documents Rosetta read right, Knox missed ${misses.overall.missed} of ${misses.overall.expected} key fees (${percent(misses.overall.missRate)})${top ? `; most in ${top}` : ""}.`
     : "";
-  return `Atlas scored ${score.banksScored} answer-key institution${score.banksScored === 1 ? "" : "s"} (${score.feesExpected} fees) with scorer v${score.scorerVersion}: precision ${percent(score.overall.precision)}, recall ${percent(score.overall.recall)}. By stage (precision/recall): ${stages}.${older}${knox}`;
+  const cohort = reference ? ` Reference eligibility v${reference.protocol}: ${reference.eligibleBanks} eligible, ${reference.excludedBanks} excluded; reference changes start a separate measurement cohort.` : "";
+  return `Atlas scored ${score.banksScored} answer-key institution${score.banksScored === 1 ? "" : "s"} (${score.feesExpected} fees) with scorer v${score.scorerVersion}: precision ${percent(score.overall.precision)}, recall ${percent(score.overall.recall)}. By stage (precision/recall): ${stages}.${older}${knox}${cohort}`;
 }
