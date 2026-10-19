@@ -149,7 +149,7 @@ export function hourlyVerdict(
   // v2: a name silent on the hour is read on its own line, which must print the fee's price.
   const basis: HourlyBasis | null = partial || HOURLY_WORDING.test(text)
     ? "name"
-    : hourlyFromLine(sourceLine, amount ?? null) ? "line" : null;
+    : hourlyFromLine(sourceLine, amount ?? null, name) ? "line" : null;
   if (!basis) return null;
   if (partial) return { action: "exempt", exemptReason: "partial_hour", basis };
   if (canonicalFeeKey != null && HOURLY_EXEMPT_KEYS.has(canonicalFeeKey)) return { action: "exempt", exemptReason: "category", basis };

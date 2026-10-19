@@ -764,6 +764,11 @@ always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILIT
   whose name or line mentions the hour. Prod read Oct 18: 1,894 live fees at 1,433 institutions
   print "$X per/an hour" on their line with a silent name and a non-hourly frequency (a regex
   estimate; the step's count is the exact one). `hourlyCountSql()` still mirrors the name rule only.
+  The own-line attribution repair (#1456, Oct 19) passes the actual fee name to the priced
+  region, including a single-price line; an unrelated label or a previous/next fee's hourly
+  wording never supplies the unit. Bounds and partial-hour prices stay separate. Unnamed
+  callers require compatible readings of every matching fee price. The line switch remains
+  off, the check stays v2, and no replay epoch or activation is included in this repair.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
