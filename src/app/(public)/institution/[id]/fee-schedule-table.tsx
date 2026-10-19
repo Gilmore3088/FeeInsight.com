@@ -196,10 +196,21 @@ function familyFor(fee: DisplayFee): string {
 }
 
 function dedupeKey(fee: DisplayFee): string {
-  return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
+  return JSON.stringify([
+    fee.feeCategory,
+    fee.feeName.trim().toLowerCase(),
+    fee.rate ? [fee.rate.rate, fee.rate.detail] : fee.amount,
+    fee.frequency,
+    fee.conditions,
+    fee.accountProduct ?? null,
+    fee.feeAudience ?? "unknown",
+    fee.feeTreatment ?? "unknown",
+    fee.status,
+    fee.sourceUrl,
+  ]);
 }
 
-/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order for families and rows. */
+/** Groups fees by family, collapses identical displayed fee rows, keeps taxonomy order for families and rows. */
 export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   const groups = new Map<string, FeeGroup>();
   const seen = new Set<string>();
