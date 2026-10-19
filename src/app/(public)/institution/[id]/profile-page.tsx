@@ -54,7 +54,7 @@ import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileHero, type HeroFact } from "./profile-hero";
 import { SERIF } from "./profile-serif";
 import { profileSerif } from "./profile-serif-font";
-import { createReadBudget } from "@/lib/read-deadline";
+import { createPublicReadBudget as createReadBudget } from "@/lib/public-read-budget";
 import { degradedMetadata, METADATA_READ_BUDGET_MS, PAGE_READ_BUDGET_MS } from "./profile-budget";
 import "./profile.css";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
@@ -117,7 +117,7 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
   const budget = createReadBudget(METADATA_READ_BUDGET_MS, "Institution metadata");
   let inst: Awaited<ReturnType<typeof getPublicInstitutionForPage>>;
   try {
-    inst = await budget.required(getPublicInstitutionForPage(instId), "institution");
+    inst = await budget.required(() => getPublicInstitutionForPage(instId), "institution");
   } catch (error) {
     // A slow or failed database must not hold the page: a metadata read that never answers
     // left the stream to be cut at 300 seconds, which the browser showed as "Application error".
@@ -127,7 +127,7 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
   }
   if (!inst) notFound();
 
-  const fees = Number(inst.fee_count ?? 0) > 0 ? await budget.optional(getVisibleFeesForPage(instId), "fees", []) : [];
+  const fees = Number(inst.fee_count ?? 0) > 0 ? await budget.optional(() => getVisibleFeesForPage(instId), "fees", []) : [];
   if (budget.failed()) await shortenPageLife();
   const verifiedFees = fees.filter(isVerifiedFee);
   // The title quotes the same values as the comparison table (the index's own rule), so a tab or
@@ -168,7 +168,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   if (Number.isNaN(instId)) notFound();
 
   const budget = createReadBudget(PAGE_READ_BUDGET_MS, "Institution page");
-  const inst = await budget.required(getPublicInstitutionForPage(instId), "institution");
+  const inst = await budget.required(() => getPublicInstitutionForPage(instId), "institution");
   if (!inst) notFound();
 
   const catalogVisibleFeeCount = Number(inst.fee_count ?? 0);
@@ -177,13 +177,13 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
   const [visibleFees, rateFees, evidence, financials] = await Promise.all([
-    catalogVisibleFeeCount > 0 ? budget.required(getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
-    budget.required(getRateFeesForPage(instId), "rate fees"),
+    catalogVisibleFeeCount > 0 ? budget.required(() => getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
+    budget.required(() => getRateFeesForPage(instId), "rate fees"),
     shouldLoadPipelineEvidence
-      ? budget.optional(getInstitutionFeeScheduleEvidence(instId), "fee evidence", null)
+      ? budget.optional(() => getInstitutionFeeScheduleEvidence(instId), "fee evidence", null)
       : Promise.resolve(null),
     budget.optional(
-      getFinancialsByInstitution(instId, FINANCIAL_HISTORY_QUARTERS * FINANCIAL_SOURCES_PER_QUARTER),
+      () => getFinancialsByInstitution(instId, FINANCIAL_HISTORY_QUARTERS * FINANCIAL_SOURCES_PER_QUARTER),
       "financial context",
       [],
     ),
@@ -193,11 +193,11 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   // page is cached for every visitor. The branch footprint, complaints, enforcement and holding
   // company are public records every visitor sees.
   const [footprint, complaints, holdingCompany, enforcement, regulator] = await Promise.all([
-    budget.optional(getBranchFootprint(instId), "branch footprint", null),
-    budget.optional(getComplaintTrend(instId), "complaint trend", null),
-    budget.optional(getHoldingCompanyProfile(instId), "holding company", null),
-    budget.optional(getEnforcementRecord(instId), "enforcement actions", null),
-    budget.optional(getRegulatorInfo(instId), "regulator info", null),
+    budget.optional(() => getBranchFootprint(instId), "branch footprint", null),
+    budget.optional(() => getComplaintTrend(instId), "complaint trend", null),
+    budget.optional(() => getHoldingCompanyProfile(instId), "holding company", null),
+    budget.optional(() => getEnforcementRecord(instId), "enforcement actions", null),
+    budget.optional(() => getRegulatorInfo(instId), "regulator info", null),
   ]);
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
@@ -223,12 +223,12 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const hasFees = verifiedFees.length > 0;
   const [nationalIndex, stateIndex, districtIndex] = hasFees
     ? await Promise.all([
-        budget.optional(getComparableMarketIndexCached({ kind: "us" }), "national index", [] as IndexEntry[]),
+        budget.optional(() => getComparableMarketIndexCached({ kind: "us" }), "national index", [] as IndexEntry[]),
         stateCode
-          ? budget.optional(getComparableMarketIndexCached({ kind: "state", code: stateCode }), "state index", [] as IndexEntry[])
+          ? budget.optional(() => getComparableMarketIndexCached({ kind: "state", code: stateCode }), "state index", [] as IndexEntry[])
           : Promise.resolve([] as IndexEntry[]),
         district
-          ? budget.optional(getComparableMarketIndexCached({ kind: "district", district }), "district index", [] as IndexEntry[])
+          ? budget.optional(() => getComparableMarketIndexCached({ kind: "district", district }), "district index", [] as IndexEntry[])
           : Promise.resolve([] as IndexEntry[]),
       ])
     : [[] as IndexEntry[], [] as IndexEntry[], [] as IndexEntry[]];
@@ -323,10 +323,10 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   // same quarter's call reports (a Pro visitor already has the full financial profile).
   const [freePeerMedians, sampleLive] = await Promise.all([
     showHamiltonBand && latestFinancial
-      ? budget.optional(getPeerFinancialMedians(instId), "peer medians", null)
+      ? budget.optional(() => getPeerFinancialMedians(instId), "peer medians", null)
       : Promise.resolve(null),
     showHamiltonBand || sparse
-      ? budget.optional(sampleReportAvailable(), "sample report", false)
+      ? budget.optional(() => sampleReportAvailable(), "sample report", false)
       : Promise.resolve(false),
   ]);
   const sampleHref = sampleLive ? "/reports/sample-competitive-fee-position" : null;

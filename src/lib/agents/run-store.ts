@@ -11,6 +11,7 @@ import { withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
 import { archiveLiveSourceAudit,finalizeDueLiveAudits } from "@/lib/data-store/live-source-audit-read";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
+import { recheckReceiptNote, verifiedRecheckReceipt } from "@/lib/agents/darwin/verified-recheck-receipt";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
 import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
 import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
@@ -919,6 +920,9 @@ async function executeAgenticStep(
         stateCode,
         db: tx,
       });
+      const recheck = verifiedRecheckReceipt(verification.recheck, {
+        dryRun: run.runKind === "dry_run", learning: verification.learning,
+      });
       // Held fees get a way out: each is judged against the bank's schedule.
       const release = await runDarwinReleaseHeld({
         runId: run.id,
@@ -1060,7 +1064,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${recheckReceiptNote(recheck)}${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1073,6 +1077,7 @@ async function executeAgenticStep(
           learned_envelope_holds: verification.learnedEnvelopeHolds,
           // #1295: rows Knox re-filed since Darwin's decision; a count and sample while the switch is off.
           category_change_rejudge: verification.categoryChange,
+          recheck,
           document_owner: documentOwnerDetail(documentOwner),
           held_release: {
             selected: release.selected,

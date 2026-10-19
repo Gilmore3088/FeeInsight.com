@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { narrateEvent, narrateStepFinished } from "./narrate";
+import { verifiedRecheckReceipt } from "./darwin/verified-recheck-receipt";
 
 describe("narrateStepFinished", () => {
   it("independently discloses unknown returned-response costs without calling them zero", () => {
@@ -7,6 +8,45 @@ describe("narrateStepFinished", () => {
       .toContain("$0.00 in known estimates; cost unavailable for 1 returned response");
     expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 2, cost_microusd: 0, unknown_cost_responses: 2 }))
       .toContain("cost unavailable for 2 returned responses");
+  });
+  const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
+  const recheckContext = { dryRun: false, learning: true };
+
+  it.each(["classify", "verify"])("keeps nonzero recheck narration when %s has zero new raw fees", alias => {
+    const recheck = verifiedRecheckReceipt({ ...recheckZero, checked: 3, takenDown: [7], olderLive: { read: 2, wouldFail: { tier_perk_zero: 1 }, samples: [] } }, recheckContext);
+    const sentence = narrateStepFinished(alias, { processed_raw_fees: 0, recheck }, "GA");
+    expect(sentence).toContain("Had no new fees to check in GA. Recheck producer report: 3 checked");
+    expect(sentence).toContain("1 takedown reports");
+    expect(sentence).toContain("Older-live shadow: 2 assessed in the selected batch");
+    expect(sentence).toContain("Assessment completeness unknown; reported IDs do not verify affected rows");
+    expect(sentence).not.toMatch(/backlog|all fees|switch|more work/);
+  });
+
+  it("retains ordinary verification counts alongside a reported zero of unknown completeness", () => {
+    const sentence = narrateStepFinished("classify", { processed_raw_fees: 7, verified_fee_observations: 6, skipped_raw_fees: 1, recheck: verifiedRecheckReceipt(recheckZero, recheckContext) }, "GA");
+    expect(sentence).toContain("Verified 6 fees of 7 checked in GA: 1 not verified. Recheck producer report: 0 checked");
+    expect(sentence).toContain("completeness unknown");
+  });
+
+  it("exposes partial assessment errors safely, without converting absent wouldClear to a complement", () => {
+    const recheck = verifiedRecheckReceipt({ ...recheckZero, dueSecondLooks: { due: 5, wouldConfirm: { conditional_zero: 1 }, samples: [], error: "SECRET raw error/source/stack" } }, recheckContext);
+    const sentence = narrateStepFinished("verify", { processed_raw_fees: 0, recheck });
+    expect(sentence).toContain("5 assessed in the selected batch; assessment error reported; invalid fields unavailable");
+    expect(sentence).not.toContain("SECRET");
+    expect(recheck.dueSecondLooks.wouldClear).toBeNull();
+  });
+
+  it.each([
+    [recheckContext, "Recheck report unavailable; cause and assessment completeness unknown"],
+    [{ dryRun: true, learning: false }, "Recheck not run: verification dry run"],
+    [{ dryRun: false, learning: false }, "Recheck not run: learning log unavailable"],
+  ])("distinguishes unavailable and intentionally unexecuted rechecks", (context, expected) => {
+    expect(narrateStepFinished("verify", { processed_raw_fees: 0, recheck: verifiedRecheckReceipt(null, context) })).toContain(expected);
+  });
+
+  it("preserves legacy narration with no receipt and ignores unprojected/raw recheck text", () => {
+    expect(narrateStepFinished("verify", { processed_raw_fees: 0 })).toBe("Had no new fees to check across all states.");
+    expect(narrateStepFinished("verify", { processed_raw_fees: 0, recheck: { ...recheckZero, error: "SECRET" } })).toBe("Had no new fees to check across all states.");
   });
   it("separates pending selected-identity deferrals from already published or ineligible fees",()=>{
     expect(narrateStepFinished('publish',{processed_verified_fees:3,published_fees:0,skipped_verified_fees:3,identity_deferred_verified_fees:3},'GA'))
