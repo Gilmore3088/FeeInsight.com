@@ -30,7 +30,7 @@ env:
   # Run by the knox-gates job; the unit shards leave them out.
   KNOX_GATES: src/lib/agents/knox/answer-key-gate.test.ts src/lib/agents/knox/state-answer-key-gate.test.ts
   # Run by the e2e job against a real database; the unit shards leave them out.
-  E2E_TESTS: src/lib/agents/pipeline.e2e.test.ts src/lib/data-store/hamilton-peer-list.db.test.ts src/lib/data-store/pro-accounts.db.test.ts src/lib/agents/knox/reread.db.test.ts src/lib/agents/hamilton/refresh-copy.db.test.ts src/lib/agents/hamilton/newer-copy-retire.db.test.ts src/lib/agents/deming/playbook-contradictions.db.test.ts src/lib/agents/deming/knox-misses.db.test.ts src/lib/agents/deming/accuracy-history.db.test.ts src/lib/fee-corrections.db.test.ts src/lib/data-catalog/query-data.db.test.ts src/lib/data-catalog/roll-ups.db.test.ts src/lib/hamilton/customer-isolation.db.test.ts
+  E2E_TESTS: src/lib/api-hardening/login-rate-limit.db.test.ts src/lib/agents/pipeline.e2e.test.ts src/lib/data-store/hamilton-peer-list.db.test.ts src/lib/data-store/pro-accounts.db.test.ts src/lib/agents/knox/reread.db.test.ts src/lib/agents/hamilton/refresh-copy.db.test.ts src/lib/agents/hamilton/newer-copy-retire.db.test.ts src/lib/agents/deming/playbook-contradictions.db.test.ts src/lib/agents/deming/knox-misses.db.test.ts src/lib/agents/deming/accuracy-history.db.test.ts src/lib/fee-corrections.db.test.ts src/lib/data-catalog/query-data.db.test.ts src/lib/data-catalog/roll-ups.db.test.ts src/lib/hamilton/customer-isolation.db.test.ts
 
 jobs:
   changes:
