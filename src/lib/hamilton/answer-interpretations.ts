@@ -26,7 +26,6 @@ interface Observation {
 interface Evidence {
   ncua: boolean;
   incomplete: boolean;
-  accountMeasure: boolean;
   observations: Observation[];
   accountDates: Map<string, Set<string>>;
   dividendExpense: boolean;
@@ -40,7 +39,7 @@ const textValue = (v: unknown): string | null => typeof v === "string" && v.trim
 const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source ?? "")) || /\bNCUA\b/i.test(String(r.publisher ?? ""));
 
 function evidenceFrom(data: unknown): Evidence {
-  const result: Evidence = { ncua: false, incomplete: false, accountMeasure: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null };
+  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null };
   let visited = 0;
   const seen = new WeakSet<object>();
   function visit(value: unknown, depth: number, scopeId: string | null = null): void {
@@ -65,7 +64,6 @@ function evidenceFrom(data: unknown): Evidence {
     // Captions identify a measure's limitations, even when its value is missing.
     // They never supply an observation or authorize a reported fact.
     if (ncuaSource(r) || (metadata && ncuaSource(metadata))) {
-      if (r.measure === "call:acct_452" || r.metric === "acct_452") result.accountMeasure = true;
       if (r.measure === "call:acct_380" || r.metric === "acct_380") result.dividendExpense = true;
     }
     // Only a successful query with rows can establish a measure. listData captions
@@ -182,7 +180,7 @@ export function checkAnswerInterpretations(text: string, data: unknown): string[
     if (!clause || (/^(?:how|what|which|could|can|would|does|do)\b/i.test(clause) && clause.endsWith("?"))) continue;
     const memberTopic = /\b(?:members?(?:hip)?|customers?)\b/i;
     const memberChange = /\b(?:members?(?:hip)?|customers?)(?:\s+(?:base|count|numbers?|growth|is|are|has|have|was|were|had)){0,4}\s+(?:grow\w*|grew|increas\w*|expanded|rose|rising|fell|falling|declin\w*|decreas\w*|shrank|shrinking)\b|\b(?:member|membership|customer)\s+growth\b|\b(?:more|fewer|new|additional)\s+(?:members?|customers?)\b/i;
-    if (evidence.accountMeasure && memberChange.test(clause) && !refuses(clause, memberTopic) && !memberGrowthSupported(clause, evidence)) {
+    if (memberChange.test(clause) && !refuses(clause, memberTopic) && !memberGrowthSupported(clause, evidence)) {
       problems.add("Checking-account counts do not establish member or customer growth. Use account growth, or supply a same-institution, same-period member-count series.");
     }
     const paidDividends = /\b(?:paid|pays?|paying|disbursed|cash payments?)\b.{0,80}\b(?:share\s+)?dividends?\b|\b(?:share\s+)?dividends?\b.{0,60}\b(?:paid|disbursed|cash payments?)\b/i;
