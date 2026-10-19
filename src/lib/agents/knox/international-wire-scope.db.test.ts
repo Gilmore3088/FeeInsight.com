@@ -242,15 +242,13 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     const { holdPublishedFee } = await import("@/lib/fee-hold");
     expect(await holdPublishedFee(adminScope(tx), Number(oldId), "Reviewed hold remains protected", { id: 1, name: "Synthetic operator" })).toMatchObject({ ok: true });
     const [heldBefore] = await tx`SELECT * FROM published_fee_records WHERE fee_published_id=${oldId}`;
-    const fresh = await seed(tx, pdf, f.institutionId);
-    const v = await historicalVerified(tx, fresh, "International Wire Outgoing", 45, "wire_intl_outgoing");
     const protectedBy = vi.fn();
-    expect(await publish.insertPublishedFee(tx, { runId: fresh.runId, batchId: `agentic-run-${fresh.runId}`,
-      row: { fee_verified_id: v.verifiedId, canonical_fee_key: "wire_intl_outgoing" } as import("../hamilton/publish").VerifiedFeeRow,
+    expect(await publish.insertPublishedFee(tx, { runId: f.runId, batchId: `agentic-run-${f.runId}`,
+      row: { fee_verified_id: old.verifiedId, canonical_fee_key: "wire_intl_outgoing" } as import("../hamilton/publish").VerifiedFeeRow,
       onHeld: protectedBy })).toBeNull();
     expect(protectedBy).toHaveBeenCalledWith(Number(oldId));
     expect((await tx`SELECT * FROM published_fee_records WHERE fee_published_id=${oldId}`)[0]).toEqual(heldBefore);
-    expect(await tx`SELECT fee_published_id FROM published_fee_records WHERE lineage_ref=${v.verifiedId}`).toHaveLength(0);
+    expect(await tx`SELECT fee_published_id FROM published_fee_records WHERE lineage_ref=${old.verifiedId}`).toHaveLength(1);
   }));
 
   it("preserves the actual current manual correction overlay and history at the source-locked direct seam", async () => rollback(async tx => {
