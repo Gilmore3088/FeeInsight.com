@@ -44,6 +44,7 @@ import { getPeerSubject, peerSetMemberIds, resolvePeerRequest, resolvePeerSet } 
 import { areaRowServedSql } from "@/lib/data-store/struck-sources";
 import { URBAN_DEBT_ATTRIBUTION } from "@/lib/regulatory/state-lists";
 import { QUERY_DATA_MAX_LIMIT, familyRows, parseMeasure, periodMonths, queryData, queryDataInputSchema } from "./query-data";
+import { NCUA_CALL_MEASURES } from "./ncua-call-measures";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
 const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL"));
@@ -431,6 +432,50 @@ describe("queryData: call-report lines", () => {
     nextRows = [{ period: "2026-06-30", unit: "USD", median: 0, p25: 0, p75: 0, institution_count: 2, period_basis: "ytd", sources: ["ffiec"], source_url: null, fetched_at: null }];
     const result = await queryData({ measure: CALL, scope: { kind: "peer_set", peer: { charter_type: "bank" } } });
     expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ median: null, p25: null, p75: null, institution_count: 2 })] });
+  });
+
+  it.each(NCUA_CALL_MEASURES)("keeps $key's NCUA citation, semantics and source restrictions for institution reads", async (measure) => {
+    nextRows = [{ period: "2026-06-30", item_code: measure.code, item_description: measure.description, schedule: "FS220", value: 12, unit: measure.unit, period_basis: measure.periodBasis, source: "ncua", source_url: "https://ncua.gov/a", fetched_at: "2026-08-01T00:00:00Z" }];
+    const result = await queryData({ measure: `call:${measure.key}`, scope: { kind: "institution", id: "12" } });
+    expect(lastQuery().values).toContainEqual(["ncua"]);
+    expect(lastQuery().values).toContain(measure.storedUnit);
+    expect(lastQuery().values).toContain(measure.periodBasis);
+    expect(result).toMatchObject({
+      ok: true,
+      unit: measure.unit,
+      rows: [expect.objectContaining({ value: 12, source: "ncua", period_basis: measure.periodBasis })],
+      citation: { publisher: "NCUA (5300 call report)", source_url: "https://ncua.gov/a", as_of: "2026-06-30" },
+      measure_metadata: { item_code: measure.code, name: measure.name, source: "ncua-extras", publisher: "NCUA (5300 call report)", unit: measure.unit, period_basis: measure.periodBasis, caveat: measure.caveat },
+    });
+  });
+
+  it.each(["national", "peer_set"] as const)("keeps curated semantics and thin-group suppression for %s figures", async (scope) => {
+    const measure = NCUA_CALL_MEASURES.find((entry) => entry.key === "acct_131")!;
+    vi.mocked(resolvePeerSet).mockResolvedValue(BANKS);
+    vi.mocked(peerSetMemberIds).mockResolvedValue([11, 12]);
+    nextRows = [{ period: "2026-06-30", unit: "USD", median: 100, p25: 50, p75: 150, institution_count: 2, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/a", fetched_at: null }];
+    const result = await queryData({ measure: "call:acct_131", scope: scope === "national" ? { kind: "national" } : { kind: "peer_set", peer: { charter_type: "credit_union" } } });
+    expect(lastQuery().values).toContainEqual(["ncua"]);
+    expect(result).toMatchObject({
+      ok: true,
+      measure_metadata: { period_basis: "ytd", caveat: measure.caveat, publisher: "NCUA (5300 call report)" },
+      rows: [expect.objectContaining({ median: null, p25: null, p75: null, institution_count: 2, sources: "ncua", period_basis: "ytd" })],
+      citation: { publisher: "NCUA (5300 call report)" },
+    });
+  });
+
+  it("reads only NCUA archive files for a curated metric and preserves its semantics", async () => {
+    const file = { source: "ncua", period: "2019-06-30", objectKey: "n", rowCount: 1, sha256: "a".repeat(64) };
+    vi.mocked(prunedCallFiles).mockResolvedValueOnce([file, { ...file, source: "ffiec", objectKey: "f" }]);
+    vi.mocked(readColdCallRows).mockResolvedValueOnce({ rows: [{ institution_id: 12, source: "ncua", report_date: "2019-06-30", item_code: "ACCT_131", item_key: "acct_131", item_description: "FEE INCOME", schedule: "FS220", value: 123, unit: "dollars", period_basis: "ytd", source_url: "https://ncua.gov/old", fetched_at: null }], failed: [] });
+    const result = await queryData({ measure: "call:acct_131", scope: { kind: "institution", id: "12" } });
+    expect(readColdCallRows).toHaveBeenCalledWith([file], { itemKey: "acct_131", institutionIds: [12] });
+    expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ value: 123, unit: "USD", source: "ncua", period_basis: "ytd" })], measure_metadata: { period_basis: "ytd" }, citation: { publisher: "NCUA (5300 call report)", source_url: "https://ncua.gov/old" } });
+  });
+
+  it.each(["institution", "national"] as const)("explains missing comparable NCUA figures for %s without inventing values", async (scope) => {
+    const result = await queryData({ measure: "call:acct_131", scope: scope === "institution" ? { kind: "institution", id: "12" } : { kind: "national" } });
+    expect(result).toMatchObject({ ok: true, rows: [], unit: null, measure_metadata: { unit: "USD", period_basis: "ytd" }, citation: { publisher: "NCUA (5300 call report)" }, note: expect.stringMatching(/no comparable loaded figures.*unit USD and period basis ytd/i) });
   });
 });
 
