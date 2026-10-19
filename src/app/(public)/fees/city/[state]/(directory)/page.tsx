@@ -13,9 +13,10 @@ import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_HERO_WRAP, PageHero } from "@/components/public/page-hero";
 import { SITE_URL } from "@/lib/constants";
-import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { getStateLocalEconomyCached, getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-import { correctSpelling } from "@/lib/geo/city-names";
+import { cityKey, correctSpelling } from "@/lib/geo/city-names";
+import { createReadBudget } from "@/lib/read-deadline";
 import { displayCity } from "@/lib/format";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
 import { CitySearch, ExplorerMap, SelectedCity, StateExplorer, type ExplorerCity } from "./state-explorer";
@@ -29,6 +30,9 @@ interface PageProps {
 export function generateStaticParams() {
   return [];
 }
+
+/** The local economy block's read: optional, so a slow read leaves the block's unavailable note, not a held page. */
+const ECONOMY_READ_BUDGET_MS = 8_000;
 
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
@@ -52,11 +56,16 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
   if (!stateName) notFound();
 
-  const cities = await getStateMarketCitiesCached(stateCode);
-  if (cities.length === 0) await shortenPageLife();
+  const budget = createReadBudget(ECONOMY_READ_BUDGET_MS, "State city explorer");
+  const [cities, economy] = await Promise.all([
+    getStateMarketCitiesCached(stateCode),
+    budget.optional(getStateLocalEconomyCached(stateCode, stateName), "local economy", null),
+  ]);
+  if (cities.length === 0 || budget.failed()) await shortenPageLife();
   // getStateMarketCities folds each city's spellings into one and ranks by institutions with a branch there, most first.
   const links: ExplorerCity[] = cities.map((c) => ({
     key: c.city.toLowerCase(),
+    economyKey: cityKey(c.city),
     // Hyphens kept: WINSTON-SALEM reads "Winston-Salem".
     name: correctSpelling(displayCity(c.city)),
     href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
@@ -91,7 +100,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
       />
 
       {links.length > 0 ? (
-        <StateExplorer map={map} cities={links} stateName={stateName}>
+        <StateExplorer map={map} cities={links} stateName={stateName} economy={economy}>
           <PageHero
             crumbs={crumbs}
             title={title}

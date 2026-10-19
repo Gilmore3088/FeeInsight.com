@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
+import type { StateLocalEconomy } from "@/lib/data-store/local-economy";
 import { CitySearch, ExplorerMap, SelectedCity, StateExplorer, type ExplorerCity } from "./state-explorer";
 
 const cities: ExplorerCity[] = [
@@ -19,9 +20,9 @@ const map = stateMarketMap("FL", [
   { key: "nowhere", lat: 47.6, lon: -122.3 },
 ]);
 
-function renderExplorer() {
+function renderExplorer(economy?: StateLocalEconomy | null) {
   return render(
-    <StateExplorer map={map} cities={cities} stateName="Florida">
+    <StateExplorer map={map} cities={cities.map((c) => ({ ...c, economyKey: c.name.toUpperCase() }))} stateName="Florida" economy={economy}>
       <CitySearch />
       <SelectedCity />
       <ExplorerMap />
@@ -90,5 +91,38 @@ describe("StateExplorer", () => {
     renderExplorer();
     expect(within(panel()).getByRole("heading").textContent).toBe("Nowhere");
     expect(panel().textContent).toContain("no map coordinates");
+  });
+
+  it("shows the selected city's county economy beside the state's, with sources and years", () => {
+    renderExplorer({
+      state: { name: "Florida", population: 22_000_000, median_household_income: 71_000, poverty_rate: 0.125, acs_year: 2024, avg_annual_pay: 64_000, pay_year: "2025" },
+      counties: {
+        "12057": { name: "Hillsborough County", population: 1_500_000, median_household_income: 74_000, poverty_rate: 0.12, acs_year: 2024, avg_annual_pay: 68_500, pay_year: "2025" },
+      },
+      city_counties: { TAMPA: "12057" },
+    });
+    const block = screen.getByRole("region", { name: "Local economy" });
+    expect(block.textContent).toContain("Hillsborough County, the county with most of Tampa's bank branches");
+    expect(block.textContent).toContain("Median household income$74,000Florida: $71,000");
+    expect(block.textContent).toContain("Below the poverty line12.0%Florida: 12.5%");
+    expect(block.textContent).toContain("American Community Survey 5-year estimates, 2020-2024");
+    expect(block.textContent).toContain("Quarterly Census of Employment and Wages, 2025");
+    expect(block.textContent).not.toContain("—");
+    // Another city with no county on file says so rather than showing a figure.
+    fireEvent.change(search(), { target: { value: "St Pete" } });
+    fireEvent.click(screen.getAllByRole("option")[0]);
+    expect(screen.getByRole("region", { name: "Local economy" }).textContent).toContain("name no county");
+  });
+
+  it("says the figures could not be loaded when the read failed, and shows no number", () => {
+    renderExplorer(null);
+    const block = screen.getByRole("region", { name: "Local economy" });
+    expect(block.textContent).toContain("could not be loaded just now");
+    expect(block.textContent).not.toMatch(/\d/);
+  });
+
+  it("shows no economy block when the page passes none", () => {
+    renderExplorer();
+    expect(screen.queryByRole("region", { name: "Local economy" })).toBeNull();
   });
 });
