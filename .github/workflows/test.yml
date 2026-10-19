@@ -48,6 +48,10 @@ jobs:
           changed=$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" | grep -v -E '\.md$|^docs/' || true)
           if [ -n "$changed" ]; then echo "code=true" >> "$GITHUB_OUTPUT"; else echo "code=false" >> "$GITHUB_OUTPUT"; fi
           echo "Changed outside Markdown and docs/:"; echo "${changed:-(nothing)}"
+      # A findings-only PR skips `checks`, so the one guard that reads docs/ runs here (#1108).
+      - name: New findings name their guard
+        if: steps.diff.outputs.code == 'false'
+        run: bash scripts/ci-guards.sh findings-file-kill
 
   checks:
     needs: changes
