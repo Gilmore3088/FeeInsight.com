@@ -50,5 +50,6 @@ describe("institutions directory read deadline", () => {
     expect(page).toBeTruthy();
     expect(JSON.stringify(page)).toContain(UNAVAILABLE_LABEL);
     expect(shortenPageLife).toHaveBeenCalled();
+    expect(JSON.stringify(page)).not.toContain("and growing");
   });
 });

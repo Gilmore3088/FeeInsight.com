@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
-import { getPublicCategorySummaries, getPublicStatsSummary, UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
+import { getPublicCategorySummaries, getPublicStatsSummary, UNAVAILABLE_LABEL, UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -160,7 +160,8 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
   // Below the state map and filters they sat about three phone screens down.
   const resultsFirst = hasQuery && !hasState;
   // A render with a failed optional read is cached for a minute, not an hour (#1572).
-  if (budget.failed()) await shortenPageLife();
+  // An incomplete count (a read that answered but failed inside) is retried in a minute too.
+  if (budget.failed() || !stats.complete) await shortenPageLife();
   const resultsSection = shouldShowResults && (
     <>
       {results.total > 0 && (
@@ -255,9 +256,11 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
                     Pick your state, then your bank or credit union, to see its published fees and
                     how they compare.
                   </p>
-                  <p className="mt-1 text-sm text-ink-muted">
-                    Published fees for {stats.institutionsLabel} institutions and growing.
-                  </p>
+                  {stats.institutionsLabel !== UNAVAILABLE_LABEL && (
+                    <p className="mt-1 text-sm text-ink-muted">
+                      Published fees for {stats.institutionsLabel} institutions and growing.
+                    </p>
+                  )}
                 </>
               )}
               {/* The search box and its suggestions stay left-aligned under the centered phone header. */}
