@@ -41,6 +41,11 @@ reads, status-only writes, role permissions and immutable normal DML. The actual
 Oakwood PDF fixture additionally proves both witness inserts and the outer bound
 success marker commit together or all roll back. The existing PDF owner and concurrent
 settlement suites run with the witness schema installed. CI includes the new suite.
+The complete shared-schema SQL inventory runs with `--maxWorkers=1`: these tests
+temporarily rename schema objects and install transactional failure triggers, so
+parallel files could observe another test's deliberate temporary fixture. This
+preserves every suite, assertion and deadline. The initial 32-suite serial gate
+passed 567 tests in 56.74 seconds; it is a test-isolation choice, not a runtime change.
 
 ## Privacy and normal-write immutability
 
