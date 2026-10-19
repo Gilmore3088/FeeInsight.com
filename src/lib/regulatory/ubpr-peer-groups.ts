@@ -710,10 +710,10 @@ function tsvFormatControl(html: string): TsvFormatControl {
     if (name !== `${FIELD}FormatType` || value?.toLowerCase() !== FORMAT.toLowerCase()) continue;
     const onclick = (attribute(input[0], "onclick") ?? "").replace(/\\(['"])/g,"$1").trim();
     const event = /__doPostBack\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]\s*\)/.exec(onclick);
-    if (onclick && !event) throw new RegistryHttpError("FFIEC TSV radio has an unsupported handler; no guessed format postback sent", UBPR_BULK_URL, null);
+    if (onclick && !event) throw new RegistryHttpError(`FFIEC TSV radio has an unsupported handler; no guessed format postback sent. Page: ${formatFfiecPage(describeFfiecPage(html))}`, UBPR_BULK_URL, null);
     return {name, value, target:event?.[1] ?? null, argument:event?.[2] ?? ""};
   }
-  throw new RegistryHttpError("FFIEC page has no tab-delimited format radio; no guessed format postback sent", UBPR_BULK_URL, null);
+  throw new RegistryHttpError(`FFIEC page has no tab-delimited format radio; no guessed format postback sent. Page: ${formatFfiecPage(describeFfiecPage(html))}`, UBPR_BULK_URL, null);
 }
 
 export interface UbprBulkDownload {
