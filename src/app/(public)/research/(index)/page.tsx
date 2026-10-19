@@ -18,7 +18,7 @@ import {
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
-import type { StateFeeIndexes } from "@/lib/data-store";
+import type { IndexEntry, StateFeeIndexes } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getStatesForDistrict } from "@/lib/us-map-paths";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
@@ -88,18 +88,20 @@ export default async function ResearchHubPage() {
   // The coverage read is required: without it the page would state a wrong state count, so a
   // failure goes to the error boundary. A failed optional read hides its part, and the render
   // is cached for a minute, not an hour.
-  const [{ summary, categories: summaries }, coverage, articlesRead, nationalIndex, districtReads, sampleRead] = await Promise.all([
+  const [{ summary, categories: summaries }, coverage, articlesRead, nationalRead, districtReads, sampleRead] = await Promise.all([
     getPublicSnapshot(),
     getResearchCoverageCached(),
     softRead(getPublishedArticleSummariesCached(ARTICLE_LIMIT), [] as ArticleSummary[]),
-    getPublicNationalIndex(),
+    softRead(getPublicNationalIndex(), [] as IndexEntry[]),
     Promise.all(DISTRICT_IDS.map((id) => softRead(getDistrictFeeIndexesCached(id), null as StateFeeIndexes | null))),
     softRead(sampleReportAvailable(), false),
   ]);
   const articles = articlesRead.value;
+  // Without the national index no district can be compared, so the district map shows its fallback.
+  const nationalIndex = nationalRead.value;
   const districtIndexes = districtReads.map((r) => r.value);
   const sampleLive = sampleRead.value;
-  if (!summary.complete || summaries.length === 0 || articlesRead.failed || sampleRead.failed || districtReads.some((r) => r.failed)) {
+  if (!summary.complete || summaries.length === 0 || articlesRead.failed || nationalRead.failed || sampleRead.failed || districtReads.some((r) => r.failed)) {
     await shortenPageLife();
   }
 
