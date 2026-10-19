@@ -1,3 +1,4 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
@@ -393,7 +394,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   await addBlockedFetch(result, options, db);
   if (result.budgetStopped) return result;
 
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const model = PAID_PASS_MODELS.find();
   const usePick = options.pick ?? process.env.MAGELLAN_PAID_PICK?.trim().toLowerCase() !== "off";
   const ownHostsById = await loadOwnHosts(db, rows);

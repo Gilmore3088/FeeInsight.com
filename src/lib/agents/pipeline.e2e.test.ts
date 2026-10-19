@@ -13,6 +13,15 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
 import { researchSplitTarget } from "@/lib/fee-fold";
 
+// The source runtime has its own pinned transport. Route that seam through this
+// suite's existing in-memory bank fixtures too; never resolve/contact fake bank
+// hostnames from an integration test. The source transport has separate network
+// policy tests using owned loopback servers.
+vi.mock("@/lib/agents/fee-source-fetch", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/agents/fee-source-fetch")>(),
+  feeSourceFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
+}));
+
 const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
 
