@@ -21,6 +21,9 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
   let publish: typeof import("../hamilton/publish");
   let excerptOf: typeof import("../hamilton/frequency-fill").excerptOf;
   let official: string;
+  // Rollbacks do not rewind PostgreSQL sequences. Keep these fixtures out of
+  // the public run sequence used by other CI suites (including their run #1).
+  let nextRunId = -215_100_000 - process.pid * 10;
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
       throw new Error("Wrapped-bullet SQL tests require a disposable loopback database; production is forbidden");
@@ -50,8 +53,9 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       VALUES ('SchoolsFirst Federal Credit Union','https://www.schoolsfirstfcu.org/',
       'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf',
       'credit_union','California','CA',35000000,'e2e','active') RETURNING id`;
-    const [{ id: runId }] = await tx`INSERT INTO agent_runs (agent_name,run_kind,title,status)
-      VALUES ('knox','state_agent','Wrapped fee bullets SQL fixture','running') RETURNING id`;
+    const [{ id: runId }] = await tx`INSERT INTO agent_runs (id,agent_name,run_kind,title,status)
+      VALUES (${nextRunId--},'knox','state_agent','Wrapped fee bullets SQL fixture','running') RETURNING id`;
+    expect(Number(runId)).toBeLessThan(0);
     return addDocument(tx, { institutionId: Number(institutionId), runId: Number(runId) }, text);
   }
   async function addDocument(tx: Db, base: Pick<Fixture, "institutionId" | "runId">, text: string): Promise<Fixture> {
