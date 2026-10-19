@@ -231,6 +231,7 @@ describe("source-owned international wire scope, independent of price admission 
     expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Incoming", 40).kind).toBe("unresolved");
     expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Outgoing", 15).kind).toBe("unresolved");
     expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Incoming / Outgoing", 15).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope("Incoming Wire Transfers – Foreign Incoming / Outgoing | $15 / $40", "Incoming Wire Transfers – Foreign Outgoing", 40).kind).toBe("unresolved");
   });
 
   it.each([

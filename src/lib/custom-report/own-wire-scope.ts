@@ -162,7 +162,8 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
     if (!pair || !prices || pair[2].toLowerCase() === pair[3].toLowerCase()) continue;
     const prefix = pair[1].trim();
     if (!/\bwires?\b/i.test(prefix) || !INTERNATIONAL.test(prefix)
-      || DOMESTIC.test(prefix) || !WIRE_WORDS.test(prefix.replace(/[():/&–—-]/g, " ").replace(/\s+/g, " ").trim())) continue;
+      || DOMESTIC.test(prefix) || INCOMING.test(prefix) || OUTGOING.test(prefix)
+      || !WIRE_WORDS.test(prefix.replace(/[():/&–—-]/g, " ").replace(/\s+/g, " ").trim())) continue;
     const amounts = prices.slice(1).map(value => Number(value.replace(/,/g, "")));
     if (amounts.some(value => !Number.isFinite(value) || value <= 0) || amounts[0] === amounts[1]) continue;
     for (let index = 0; index < 2; index++) {
