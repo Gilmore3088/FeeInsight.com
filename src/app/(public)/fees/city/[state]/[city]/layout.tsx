@@ -1,8 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
-import { cityHasBranches, fullCityForCut, hqCityName } from "@/lib/data-store";
-import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { cityHasBranches, fullCityForCut } from "@/lib/data-store";
 import { STATE_NAMES } from "@/lib/us-states";
-import { canonicalCityName, cityPath, decodedSegment, dottedCityName, loadCityInstitutions, titleCase } from "./city-lookup";
+import { cityPath, decodedSegment, dottedCityName, loadCanonicalCityName, loadCityInstitutions, titleCase } from "./city-lookup";
 
 /**
  * A city with no institutions and no bank or credit union branch answers 404 (#1165). The check sits in this layout, outside the
@@ -34,9 +33,7 @@ export default async function CityLayout({
   const cityName = titleCase(city);
   // An unknown state never reaches the cached read, so junk addresses add no cache entries.
   if (!STATE_NAMES[stateCode]) notFound();
-  const directory = await getStateMarketCitiesCached(stateCode).catch(() => []);
-  const listed = canonicalCityName(cityName, directory, null);
-  const canonical = listed ?? canonicalCityName(cityName, [], await hqCityName(cityName, stateCode).catch(() => null));
+  const canonical = await loadCanonicalCityName(stateCode, cityName);
   // Compared as the address itself, so "wilkes-barre" for WILKES-BARRE (which titleCase reads as
   // "Wilkes Barre") is already home and never redirects to itself.
   const segment = decodedSegment(city);

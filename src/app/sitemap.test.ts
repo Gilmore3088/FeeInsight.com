@@ -17,9 +17,12 @@ vi.mock("@/lib/data-store", () => ({
   getTopCitiesByState: vi.fn(() => Promise.resolve([])),
 }));
 
-const directory = vi.hoisted(() => ({ cities: {} as Record<string, { city: string; spellings: string[] }[]> }));
+const directory = vi.hoisted(() => ({ cities: {} as Record<string, { city: string; spellings: string[] }[]>, failing: "" }));
 vi.mock("@/lib/data-store/public-cached-reads", () => ({
-  getStateMarketCitiesCached: vi.fn(async (state: string) => directory.cities[state] ?? []),
+  getStateMarketCitiesCached: vi.fn(async (state: string) => {
+    if (state === directory.failing) throw new Error("timeout");
+    return directory.cities[state] ?? [];
+  }),
 }));
 
 vi.mock("@/lib/public-stats", () => ({
@@ -179,6 +182,18 @@ describe("sitemap duplicates and dates (#1163)", () => {
     expect(paths).not.toContain("/fees/city/fl/saint%20petersburg");
     expect(paths).toContain("/fees/city/fl/tampa");
     expect(paths).toContain("/fees/city/mo/st.%20louis");
+  });
+
+  it("leaves out a state whose directory read failed instead of guessing its cities' names", async () => {
+    directory.failing = "FL";
+    vi.mocked(getTopCitiesByState).mockResolvedValueOnce([
+      { city: "Saint Petersburg", state_code: "FL", institution_count: 9, with_fees: 6 },
+      { city: "Austin", state_code: "TX", institution_count: 5, with_fees: 4 },
+    ] as never);
+    const paths = await urls();
+    directory.failing = "";
+    expect(paths.some((path) => path.startsWith("/fees/city/fl/"))).toBe(false);
+    expect(paths).toContain("/fees/city/tx/austin");
   });
 
   it("gives static pages no lastmod instead of the time of the rebuild", async () => {

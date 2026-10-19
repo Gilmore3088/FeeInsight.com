@@ -58,6 +58,6 @@ describe("getCityAutocomplete bounds (2026-10-18 scrape)", () => {
     const query = state.queries.at(-1) ?? "";
     expect(query).toContain("ILIKE ANY(\\%\\%%::text[])");
     // Room to fold spellings (#2092); the answer itself is cut to 25 after the fold.
-    expect(query).toMatch(/LIMIT 75\s*$/);
+    expect(query).toMatch(/LIMIT 200\s*$/);
   });
 });

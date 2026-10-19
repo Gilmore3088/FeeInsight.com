@@ -358,6 +358,14 @@ export async function getTopCitiesByState(
 }
 
 /**
+ * Spellings read before the fold. Counts are summed after folding within these rows, so a city
+ * whose spellings all sit among the AUTOCOMPLETE_FOLD_ROWS largest matches is counted in full; a
+ * search that matches more cities than this (two common letters) can undercount a small spelling
+ * of a city far below the 25 shown.
+ */
+const AUTOCOMPLETE_FOLD_ROWS = 200;
+
+/**
  * Cities whose name starts with the search, each once with its spellings folded (#2092): "st pete"
  * finds St. Petersburg whether a record spells it "Saint", "St" or "St.". The count is the
  * institutions with approved fees across the spellings found.
@@ -374,7 +382,7 @@ export async function getCityAutocomplete(query: string, limit: number = 10): Pr
     AND ct.id IN (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
     GROUP BY LOWER(ct.city), ct.state_code
     ORDER BY count DESC
-    LIMIT ${cap * 3}
+    LIMIT ${AUTOCOMPLETE_FOLD_ROWS}
   ` as { city: string; state_code: string; count: number | string }[];
 
   return foldCitySummaries(

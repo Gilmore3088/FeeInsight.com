@@ -23,7 +23,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { default: CityLayout } = await import("./layout");
-const { dottedCityName, titleCase } = await import("./city-lookup");
+const { cityCanonicalPath, dottedCityName, titleCase } = await import("./city-lookup");
 const { cityKey } = await import("@/lib/geo/city-names");
 const render = (state: string, city: string) => CityLayout({ children: null, params: Promise.resolve({ state, city }) });
 
@@ -105,6 +105,14 @@ describe("city layout (#1165, #1213, #1267)", () => {
     expect(hqCityName).not.toHaveBeenCalled();
   });
 
+  it("never redirects on a failed directory read, so a recovering read cannot send it back", async () => {
+    getCityInstitutions.mockResolvedValue([{ id: 1 }]);
+    hqCityName.mockResolvedValue("Saint Petersburg");
+    getStateMarketCitiesCached.mockRejectedValueOnce(new Error("timeout"));
+    await expect(render("fl", "st.%20petersburg")).resolves.toBeNull();
+    expect(hqCityName).not.toHaveBeenCalled();
+  });
+
   it("answers 404 for an unknown state without reading the city directory", async () => {
     getStateMarketCitiesCached.mockClear();
     await expect(render("zz", "tampa")).rejects.toThrow("NOT_FOUND");
@@ -130,5 +138,25 @@ describe("city names in addresses", () => {
   it("keeps a malformed escape as typed", () => {
     expect(titleCase("%E0%A4%A")).toBe("%e0%a4%a");
     expect(titleCase("st.%20louis")).toBe("St. Louis");
+  });
+});
+
+describe("the city page's canonical address (#2092)", () => {
+  it("names a hyphenated city by its own address, the one the layout keeps", async () => {
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "WILKES-BARRE", spellings: ["WILKES-BARRE"] }]);
+    expect(await cityCanonicalPath("pa", "wilkes-barre")).toBe("/fees/city/pa/wilkes-barre");
+    hqCityName.mockResolvedValueOnce("Winston-Salem");
+    getStateMarketCitiesCached.mockResolvedValueOnce([]);
+    expect(await cityCanonicalPath("nc", "winston-salem")).toBe("/fees/city/nc/winston-salem");
+  });
+
+  it("names a second spelling by the city's one address", async () => {
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "ST. PETERSBURG", spellings: ["ST. PETERSBURG"] }]);
+    expect(await cityCanonicalPath("fl", "saint-petersburg")).toBe("/fees/city/fl/st.%20petersburg");
+  });
+
+  it("keeps the requested address when the directory read fails", async () => {
+    getStateMarketCitiesCached.mockRejectedValueOnce(new Error("timeout"));
+    expect(await cityCanonicalPath("pa", "wilkes-barre")).toBe("/fees/city/pa/wilkes-barre");
   });
 });
