@@ -7,7 +7,7 @@ vi.mock("@/lib/data-store", () => ({
   fullCityForCut: (...args: unknown[]) => fullCityForCut(...args),
   cityHasBranches: async () => false,
 }));
-const getStateMarketCitiesCached = vi.fn(async (_state: string): Promise<{ city: string; spellings: string[] }[]> => []);
+const getStateMarketCitiesCached = vi.fn<(state: string) => Promise<{ city: string; spellings: string[] }[]>>(async () => []);
 vi.mock("@/lib/data-store/public-cached-reads", () => ({
   getStateMarketCitiesCached: (state: string) => getStateMarketCitiesCached(state),
 }));

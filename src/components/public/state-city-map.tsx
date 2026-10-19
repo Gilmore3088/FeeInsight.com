@@ -16,14 +16,14 @@ export interface CityMarker {
   institutions: number;
   /** Of those, the ones with published fees. */
   withFees: number;
-  /** A link that selects the city without scripts (for example `?city=orlando`). */
+  /** Where the marker goes without scripts (a `?city=` link, or the city's own page). */
   selectHref?: string;
 }
 
 const COUNT = new Intl.NumberFormat("en-US");
 
 export function markerTitle(m: CityMarker): string {
-  return `${m.name}: ${COUNT.format(m.withFees)} of ${COUNT.format(m.institutions)} institutions have published fees`;
+  return `${m.name}. Institutions with branches in ${m.name}: ${COUNT.format(m.institutions)}. Fee data available for ${COUNT.format(m.withFees)} of ${COUNT.format(m.institutions)} institutions.`;
 }
 
 export function StateCityMap({
@@ -192,8 +192,8 @@ export function CityCoverage({
     <div className="rounded-2xl border border-border bg-surface-0 p-5 sm:p-6">
       <Heading className="text-[24px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[28px]">{marker.name}</Heading>
       <p className="mt-1 text-[15px] text-ink-soft sm:mx-0">
-        <span className="font-semibold tabular-nums text-ink">{COUNT.format(marker.withFees)}</span> of{" "}
-        <span className="tabular-nums">{COUNT.format(marker.institutions)}</span> institutions have published fees
+        Fee data available for <span className="font-semibold tabular-nums text-ink">{COUNT.format(marker.withFees)}</span> of{" "}
+        <span className="tabular-nums">{COUNT.format(marker.institutions)}</span> institutions
       </p>
       <div className="mt-3 h-2.5 rounded-sm bg-surface-200" aria-hidden="true">
         <div className="h-2.5 rounded-sm bg-ink/60" style={{ width: `${Math.max(2, share * 100)}%` }} />

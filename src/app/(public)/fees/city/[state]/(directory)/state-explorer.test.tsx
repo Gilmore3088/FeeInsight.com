@@ -1,79 +1,94 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
-import { StateExplorer, type ExplorerCity } from "./state-explorer";
+import { CitySearch, ExplorerMap, SelectedCity, StateExplorer, type ExplorerCity } from "./state-explorer";
 
 const cities: ExplorerCity[] = [
   { key: "tampa", name: "Tampa", href: "/fees/city/fl/tampa", institutions: 78, withFees: 58 },
-  { key: "orlando", name: "Orlando", href: "/fees/city/fl/orlando", institutions: 50, withFees: 41 },
+  { key: "st. petersburg", name: "St. Petersburg", href: "/fees/city/fl/st.%20petersburg", institutions: 50, withFees: 41 },
+  { key: "port st. lucie", name: "Port St. Lucie", href: "/fees/city/fl/port%20st.%20lucie", institutions: 30, withFees: 20 },
   { key: "fort lauderdale", name: "Fort Lauderdale", href: "/fees/city/fl/fort%20lauderdale", institutions: 40, withFees: 34 },
   { key: "nowhere", name: "Nowhere", href: "/fees/city/fl/nowhere", institutions: 2, withFees: 1 },
 ];
 const map = stateMarketMap("FL", [
   { key: "tampa", lat: 27.98, lon: -82.5 },
-  { key: "orlando", lat: 28.51, lon: -81.38 },
+  { key: "st. petersburg", lat: 27.77, lon: -82.64 },
+  { key: "port st. lucie", lat: 27.27, lon: -80.35 },
   { key: "fort lauderdale", lat: 26.14, lon: -80.14 },
   // A bad coordinate far outside Florida is dropped, not drawn.
   { key: "nowhere", lat: 47.6, lon: -122.3 },
 ]);
 
-function renderExplorer(initialCity = "tampa") {
+function renderExplorer() {
   return render(
-    <StateExplorer map={map} cities={cities} initialCity={initialCity} initialQuery="" initialAll={false} stateName="Florida" stateCode="FL" />,
+    <StateExplorer map={map} cities={cities} stateName="Florida">
+      <CitySearch />
+      <SelectedCity />
+      <ExplorerMap />
+    </StateExplorer>,
   );
 }
 
-const panelText = () => screen.getByRole("heading", { level: 2, name: /^(Tampa|Orlando|Fort Lauderdale|Nowhere)$/ }).parentElement!;
+const panel = () => screen.getByRole("heading", { level: 2 }).parentElement!;
+const search = () => screen.getByRole("combobox", { name: "Find a city" }) as HTMLInputElement;
 
 describe("StateExplorer", () => {
-  it("draws a marker per located city, each a no-script link to ?city=", () => {
-    const { container } = renderExplorer();
-    expect(map?.points.map((p) => p.key)).toEqual(["tampa", "orlando", "fort lauderdale"]);
-    const links = [...container.querySelectorAll("svg a")];
-    expect(links.map((a) => a.getAttribute("href"))).toContain("?city=orlando#explorer");
-    expect(links.map((a) => a.getAttribute("href"))).toContain("?city=fort+lauderdale#explorer");
-    // The city menu does the same job, so the ~400 dots stay out of the tab order and the accessibility tree.
-    links.forEach((a) => expect(a.getAttribute("aria-hidden")).toBe("true"));
-  });
+  beforeEach(() => window.history.replaceState(null, "", "/fees/city/fl"));
 
-  it("selecting a marker shows the city, its coverage and its comparison link", () => {
-    const { container } = renderExplorer();
-    fireEvent.click(container.querySelector('svg a[aria-label="Orlando: 41 of 50 institutions have published fees"]')!);
-    const panel = panelText();
-    expect(panel.textContent).toContain("41 of 50 institutions have published fees");
-    expect(within(panel).getByRole("link", { name: /Compare Orlando fees/ }).getAttribute("href")).toBe("/fees/city/fl/orlando");
-    expect(new URL(window.location.href).searchParams.get("city")).toBe("orlando");
-  });
-
-  it("opens on the city a ?city= link asked for, and says when a city is not on the map", () => {
-    renderExplorer("nowhere");
-    expect(panelText().textContent).toContain("no map coordinates");
-  });
-
-  it("selects the one city a search matches and filters the list below", () => {
+  it("opens on the largest city with its branch count, fee data count and one comparison link", () => {
     renderExplorer();
-    fireEvent.change(screen.getByLabelText("Find a city"), { target: { value: "orl" } });
-    expect(within(panelText()).getByRole("link", { name: /Compare Orlando fees/ })).toBeTruthy();
-    const list = screen.getByRole("region", { name: "Every Florida city" });
-    expect(within(list).getAllByRole("link").map((a) => a.textContent)).toEqual(["Orlando41 of 50 with fees"]);
+    const p = panel();
+    expect(within(p).getByRole("heading").textContent).toBe("Tampa");
+    expect(p.textContent).toContain("78 banks and credit unions with local branches");
+    expect(p.textContent).toContain("58 have published fee data in the index");
+    expect(p.textContent).toContain("Coverage varies by institution and fee category.");
+    expect(within(p).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual([["Compare Tampa fees→", "/fees/city/fl/tampa"]]);
   });
 
-  it("carries the search and the full list through no-script links and forms", () => {
-    const { container } = render(
-      <StateExplorer map={map} cities={cities} initialCity="tampa" initialQuery="or" initialAll stateName="Florida" stateCode="FL" />,
-    );
-    expect(container.querySelector('svg a[aria-label^="Orlando"]')!.getAttribute("href")).toBe("?q=or&all=1&city=orlando#explorer");
-    const menuForm = (screen.getByLabelText("City on the map") as HTMLSelectElement).form!;
-    expect(Object.fromEntries(new FormData(menuForm))).toEqual({ q: "or", all: "1", city: "tampa" });
-    const searchForm = (screen.getByLabelText("Find a city") as HTMLInputElement).form!;
-    expect(Object.fromEntries(new FormData(searchForm))).toEqual({ city: "tampa", all: "1", q: "or" });
+  it("finds St. Petersburg from \"St Pete\" and moves the map to it", () => {
+    const { container } = renderExplorer();
+    fireEvent.change(search(), { target: { value: "St Pete" } });
+    const options = screen.getAllByRole("option");
+    expect(options.map((o) => o.textContent)).toEqual(["St. Petersburg50 institutions"]);
+    fireEvent.click(options[0]);
+    expect(within(panel()).getByRole("heading").textContent).toBe("St. Petersburg");
+    expect(search().value).toBe("St. Petersburg");
+    expect(container.querySelector('svg a[aria-current="true"]')!.getAttribute("href")).toBe("/fees/city/fl/st.%20petersburg");
+    expect(new URL(window.location.href).searchParams.get("city")).toBe("st. petersburg");
   });
 
-  it("selects from the city menu, which also works as a plain GET form", () => {
+  it("chooses with the keyboard and folds Saint and St", () => {
     renderExplorer();
-    const menu = screen.getByLabelText("City on the map") as HTMLSelectElement;
-    expect(menu.name).toBe("city");
-    fireEvent.change(menu, { target: { value: "fort lauderdale" } });
-    expect(within(panelText()).getByRole("link", { name: /Compare Fort Lauderdale fees/ }).getAttribute("href")).toBe("/fees/city/fl/fort%20lauderdale");
+    fireEvent.change(search(), { target: { value: "port saint" } });
+    fireEvent.keyDown(search(), { key: "Enter" });
+    expect(within(panel()).getByRole("heading").textContent).toBe("Port St. Lucie");
+  });
+
+  it("fades markers the search does not match and says when nothing matches", () => {
+    const { container } = renderExplorer();
+    fireEvent.change(search(), { target: { value: "lauder" } });
+    expect(container.querySelectorAll("svg circle.fill-surface-200").length).toBeGreaterThan(0);
+    fireEvent.change(search(), { target: { value: "Sarasota" } });
+    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(screen.getByText(/No Florida city matches/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Search institutions by name" }).getAttribute("href")).toBe("/institutions?q=Sarasota");
+  });
+
+  it("selecting a marker fills the search; without scripts a marker opens the city page", () => {
+    const { container } = renderExplorer();
+    const markers = [...container.querySelectorAll("svg a")];
+    expect(markers.map((a) => a.getAttribute("href"))).toContain("/fees/city/fl/fort%20lauderdale");
+    // The search does the same job, so the dots stay out of the tab order and the accessibility tree.
+    markers.forEach((a) => expect(a.getAttribute("aria-hidden")).toBe("true"));
+    fireEvent.click(markers.find((a) => a.getAttribute("href") === "/fees/city/fl/fort%20lauderdale")!);
+    expect(search().value).toBe("Fort Lauderdale");
+    expect(panel().textContent).toContain("34 have published fee data in the index");
+  });
+
+  it("opens on the city a shared ?city= link names, and says when a city has no marker", () => {
+    window.history.replaceState(null, "", "/fees/city/fl?city=nowhere");
+    renderExplorer();
+    expect(within(panel()).getByRole("heading").textContent).toBe("Nowhere");
+    expect(panel().textContent).toContain("no map coordinates");
   });
 });
