@@ -5,11 +5,15 @@ import { createContext, useContext, useId, useMemo, useState, useSyncExternalSto
 import type { StateMarketMap } from "@/lib/geo/state-market-map";
 import { cityMatches } from "@/lib/geo/city-names";
 import { StateCityMap, type CityMarker } from "@/components/public/state-city-map";
+import type { StateLocalEconomy } from "@/lib/data-store/local-economy";
 import type { CityLink } from "./city-list";
+import { cityEconomyView } from "./local-economy-view";
 
 export interface ExplorerCity extends CityLink {
   /** The city's key in `?city=`: its name in lower case, as the city page's URL spells it. */
   key: string;
+  /** Its `cityKey` (spellings folded), which the local economy's city-to-county map is keyed by. */
+  economyKey?: string;
 }
 
 /** Suggestions the city search offers at once. */
@@ -21,6 +25,8 @@ interface Explorer {
   cities: ExplorerCity[];
   map: StateMarketMap | null;
   stateName: string;
+  /** Undefined: the page passed none (no block). Null: the read failed (an honest unavailable note). */
+  economy: StateLocalEconomy | null | undefined;
   city: ExplorerCity;
   query: string;
   setQuery: (q: string) => void;
@@ -51,11 +57,13 @@ export function StateExplorer({
   map,
   cities,
   stateName,
+  economy,
   children,
 }: {
   map: StateMarketMap | null;
   cities: ExplorerCity[];
   stateName: string;
+  economy?: StateLocalEconomy | null;
   children: ReactNode;
 }) {
   const byKey = useMemo(() => new Map(cities.map((c) => [c.key, c])), [cities]);
@@ -89,7 +97,7 @@ export function StateExplorer({
   const city = byKey.get(selected) ?? cities[0];
   if (!city) return null;
   return (
-    <ExplorerContext.Provider value={{ cities, map, stateName, city, query, setQuery, select }}>{children}</ExplorerContext.Provider>
+    <ExplorerContext.Provider value={{ cities, map, stateName, economy, city, query, setQuery, select }}>{children}</ExplorerContext.Provider>
   );
 }
 
@@ -196,10 +204,10 @@ export function CitySearch() {
 
 /** The selected city: its institutions with local branches, how many have fee data, and the way into its comparison. */
 export function SelectedCity() {
-  const { city, map } = useExplorer();
+  const { city, map, economy, stateName } = useExplorer();
   const onMap = !map || map.points.some((p) => p.key === city.key);
   return (
-    <div aria-live="polite" className="max-w-[32rem] rounded-2xl bg-surface-0 p-5 text-ink sm:p-6">
+    <div id="selected-city" aria-live="polite" className="scroll-mt-24 rounded-2xl bg-surface-0 p-5 text-ink shadow-fi-2 sm:p-6">
       <h2 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] sm:text-[30px]">{city.name}</h2>
       <p className="mt-2 text-[15px] text-ink-soft">
         <span className="tabular-nums">{COUNT.format(city.institutions)}</span>{" "}
@@ -217,7 +225,46 @@ export function SelectedCity() {
       </Link>
       <p className="mt-3 text-[13px] text-ink-muted">Coverage varies by institution and fee category.</p>
       {!onMap && <p className="mt-1 text-[12px] text-ink-muted">Its branch records carry no map coordinates, so it has no marker.</p>}
+      {economy !== undefined && <LocalEconomy economy={economy} city={city} stateName={stateName} />}
     </div>
+  );
+}
+
+/**
+ * The selected city's county economy beside the state's: Census and BLS figures, each source
+ * and year named. Neither publishes a figure for the city itself, so the county is named.
+ */
+function LocalEconomy({ economy, city, stateName }: { economy: StateLocalEconomy | null; city: ExplorerCity; stateName: string }) {
+  const view = cityEconomyView(economy, city.economyKey ?? "", stateName);
+  return (
+    <section aria-label="Local economy" className="mt-5 border-t border-border pt-4">
+      <h3 className="text-[13px] font-semibold uppercase tracking-[0.08em] text-ink-muted">Local economy</h3>
+      {view.status === "ok" ? (
+        <>
+          <p className="mt-1 text-[14px] text-ink-soft">
+            {view.county}, the county with most of {city.name}&apos;s bank branches
+          </p>
+          <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
+            {view.rows.map((row) => (
+              <div key={row.label}>
+                <dt className="text-[12px] text-ink-muted">{row.label}</dt>
+                <dd className="text-[18px] font-semibold tabular-nums text-ink">{row.value}</dd>
+                {row.compare && <dd className="text-[12px] tabular-nums text-ink-muted">{row.compare}</dd>}
+              </div>
+            ))}
+          </dl>
+          <p className="mt-3 text-[11px] leading-snug text-ink-muted">Sources: {view.sources.join("; ")}.</p>
+        </>
+      ) : (
+        <p className="mt-1 text-[13px] text-ink-muted">
+          {view.status === "unavailable"
+            ? "Local economic figures could not be loaded just now."
+            : view.status === "no_county"
+              ? `${city.name}'s branch records name no county, so no county figures are shown.`
+              : `No Census or BLS figures are stored yet for ${city.name}'s county.`}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -242,12 +289,17 @@ export function ExplorerMap() {
     selectHref: c.href,
   }));
   return (
-    <figure className="mx-auto w-full max-w-[26rem] rounded-2xl bg-paper p-4 sm:max-w-none sm:p-5">
+    <figure className="mx-auto w-full max-w-[26rem] rounded-2xl border border-border bg-surface-0 p-4 sm:max-w-none sm:p-5">
       <StateCityMap
         map={map}
         markers={markers}
         selected={city.key}
-        onSelect={select}
+        onSelect={(key) => {
+          select(key);
+          // The chosen city's panel sits in the hero above the map: bring it into view.
+          const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+          document.getElementById("selected-city")?.scrollIntoView?.({ behavior: reduce ? "auto" : "smooth", block: "center" });
+        }}
         dimmed={dimmed}
         label={`${stateName} cities with published fees, sized by institutions with a branch`}
         focusable={false}
