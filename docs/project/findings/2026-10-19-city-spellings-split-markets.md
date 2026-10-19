@@ -17,3 +17,5 @@ city address redirects to the one the directory links to. Stored records are unc
 `institution_sources.city` (headquarters), which the institution directory and headquarters
 counts read without a fold; that is not checked here and is worth a read-only count before
 anyone relies on headquarters-city totals (tracked as #2092).
+**Guard:** `src/lib/geo/city-names.test.ts` pins the folds (Saint/St/St., Petersberg, Port St. Lucie);
+the headquarters-city side has no guard yet and is tracked in #2092.
