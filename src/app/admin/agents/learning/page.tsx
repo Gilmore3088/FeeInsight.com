@@ -47,7 +47,7 @@ function OutcomeBar({ row }: { row: MethodRow }) {
 
 /** The Learning screen: for every agent, which methods worked this week and which didn't. */
 export default async function LearningPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   let scorecard: Awaited<ReturnType<typeof getMethodScorecard>> | null = null;
   try {
     scorecard = await getCachedScorecard();

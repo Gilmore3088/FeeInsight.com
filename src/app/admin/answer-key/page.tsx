@@ -45,7 +45,7 @@ export default async function AnswerKeyPage({
 }: {
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await answerKeySchemaReady().catch(() => false);
   const [rows, latest] = ready

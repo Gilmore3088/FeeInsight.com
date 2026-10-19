@@ -17,7 +17,7 @@ function _maturityColor(maturity: string): string {
 }
 
 export default async function NationalIndexPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   let entries: Awaited<ReturnType<typeof getNationalIndexData>> = [];
 

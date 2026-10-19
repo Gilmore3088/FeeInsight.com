@@ -56,7 +56,7 @@ function StrategyTable({ ranks }: { ranks: StrategyRank[] }) {
 }
 
 export default async function StateExpertPage({ params }: { params: Promise<{ code: string }> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { code } = await params;
   const page = await loadStateExpertPage(sql, code);
   if (!page) notFound();

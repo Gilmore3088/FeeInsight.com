@@ -49,7 +49,7 @@ export default async function PeerDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const { id } = await params;
   const targetId = parseInt(id, 10);

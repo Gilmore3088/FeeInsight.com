@@ -52,7 +52,7 @@ function DayBars({ health }: { health: AgentHealth }) {
 
 /** Agent health: what each agent finished and what failed, day by day, from the run log. */
 export default async function AgentsHealthPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const health = await getCachedAgentHealth().catch((error) => {
     console.error("Agent health failed", error);
     return null;

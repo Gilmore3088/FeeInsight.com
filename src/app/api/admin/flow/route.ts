@@ -9,7 +9,7 @@ export const revalidate = 0;
 /** Live flow for the admin Live page (polled): latest institution moves, current work, and cached queue sizes. */
 async function handleGET() {
   const user = await getCurrentUser();
-  if (!user || !hasPermission(user, "view")) {
+  if (!user || !hasPermission(user, "operate")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const [snapshot, waiting] = await Promise.all([getFlowSnapshot(), getFlowWaiting().catch(() => null)]);
