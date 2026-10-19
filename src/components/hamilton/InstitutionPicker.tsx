@@ -116,6 +116,8 @@ export function InstitutionPicker({
 
   function handleQueryChange(value: string) {
     setQuery(value);
+    // Matches for the old text never answer an Enter typed before the new search returns.
+    setSuggestions([]);
     setSelectedId(null);
     setSelectedName(null);
     setShowSuggestions(value.trim().length >= 2);

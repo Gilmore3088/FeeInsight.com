@@ -53,6 +53,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
   lineup?: AccountLineup | null;
+  /** v82: the second fee a shared priced line carries (`twin:nsf`), part of the raw dedupe key. */
+  lineShare?: string;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
