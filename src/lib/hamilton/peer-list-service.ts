@@ -3,8 +3,6 @@ import { getPeerListRows, getPeerListSubject } from "@/lib/data-store/hamilton-p
 import { getPublishedPeerFees, getPublishedPeerRateFees } from "@/lib/data-store/hamilton-peer-fees";
 import { isStaleSource } from "./source-age";
 import { getActivePeerSet } from "./active-peer-set";
-import { getInstitutionById } from "@/lib/data-store/core";
-import { resolveHamiltonPeerIndex, type HamiltonPeerFilters } from "./peer-index";
 import { loadHamiltonAccountContext } from "./account-context-store";
 import { normalizeCanonicalInstitutionId } from "./context-link";
 import { resolveHamiltonInstitutionContext } from "./workspace-context";
@@ -191,9 +189,8 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const active = intent.saved || (!explicitFilters && intent.peerBased)
           ? await getActivePeerSet({ userId: user.id, institutionId: subject.institutionId })
           : null;
-        // No saved group: a bare "list my peers" names the group Hamilton's answers use (#2097).
-        const picked = !active && !intent.saved && !explicitFilters && intent.peerBased ? await answersPeerGroup(subject.institutionId) : null;
-        const planned = planPeerList(intent, subject, active, picked);
+        // No saved group: "list my peers" keeps half to twice the assets, and the reader can save their own (James, Oct 19, #2097).
+        const planned = planPeerList(intent, subject, active);
         if (!planned.criteria) return message("needs_criteria", planned.problem ?? "Specify peer criteria.");
         const criteria = planned.criteria;
         // A page never runs past the count asked for: "List 60 peers" shows 50, then 10.
@@ -237,14 +234,3 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
   return result;
 }
 
-/** The default peer group Hamilton's answers compare with, or null when only the national index qualifies. */
-async function answersPeerGroup(institutionId: number): Promise<{ filters: HamiltonPeerFilters; label: string } | null> {
-  try {
-    const institution = await getInstitutionById(institutionId);
-    if (!institution) return null;
-    const group = await resolveHamiltonPeerIndex({ userId: null, institutionId, selectedInstitution: institution, approvedOnly: true, minUsableCategories: 1 });
-    return group.source === "selected-institution-default" && group.filters ? { filters: group.filters, label: group.label } : null;
-  } catch {
-    return null;
-  }
-}
