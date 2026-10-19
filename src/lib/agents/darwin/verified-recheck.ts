@@ -462,6 +462,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
   if (!positiveId(options.runId) || !positiveId(options.stepId)) {
     execution.reasonCode = "invalid_run_context"; return freshResult(execution);
   }
+  const stepId = options.stepId;
   if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") {
     execution.reasonCode = "transaction_unavailable"; return freshResult(execution);
   }
@@ -469,7 +470,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
     return await inSavepoint(db, async scope => {
       const [context] = await scope<{ id: number | string }[]>`
         SELECT s.id FROM agent_run_steps s JOIN agent_runs r ON r.id=s.agent_run_id
-         WHERE r.id=${options.runId} AND s.id=${options.stepId} AND s.step_key IN ('classify','verify')
+         WHERE r.id=${options.runId} AND s.id=${stepId} AND s.step_key IN ('classify','verify')
       `;
       if (!context) throw new RecheckDeferred("invalid_run_context");
       const result = freshResult(execution);
@@ -586,7 +587,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
             }
             const attemptId = await recordAttestedAttempt(tx, { institutionId: Number(row.institution_id), sourceDocumentId: Number(row.source_document_id),
               stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
-              outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId: options.stepId, foldIntoPlaybook: false,
+              outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId, foldIntoPlaybook: false,
               detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
                 canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, action, feedback_ids: feedbackIds,
                 selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
@@ -616,7 +617,7 @@ export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): 
       if (Buffer.byteLength(payload, "utf8") > 262_144) throw new RecheckDeferred("producer_witness_failed");
       const events = await scope<{ id: number | string; matches: boolean }[]>`
         INSERT INTO agent_run_events (agent_run_id,step_id,event_type,status,message,detail)
-        VALUES (${options.runId},${options.stepId},'darwin.recheck.assessed',${execution.state === "complete" ? "completed" : "blocked"},'Darwin selected-batch recheck execution witness.',${payload}::jsonb) RETURNING id,(agent_run_id=${options.runId} AND step_id=${options.stepId} AND event_type='darwin.recheck.assessed' AND detail=${payload}::jsonb) AS matches
+        VALUES (${options.runId},${stepId},'darwin.recheck.assessed',${execution.state === "complete" ? "completed" : "blocked"},'Darwin selected-batch recheck execution witness.',${payload}::jsonb) RETURNING id,(agent_run_id=${options.runId} AND step_id=${stepId} AND event_type='darwin.recheck.assessed' AND detail=${payload}::jsonb) AS matches
       `;
       const eventId = Number(events[0]?.id);
       if (events.length !== 1 || events[0].matches !== true || !positiveId(eventId)) throw new RecheckDeferred("producer_witness_failed");
