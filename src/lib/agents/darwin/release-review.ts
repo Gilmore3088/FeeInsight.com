@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { prepareVerificationAudience, VerificationAudienceDeferred } from "./verification-audience";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
@@ -21,6 +22,7 @@ import {
   DARWIN_RELEASE_ACTS,
   DARWIN_RELEASE_STRATEGY,
   releaseCheckHold,
+  releaseVerdict,
   releaseHeldFee,
   TEMPORARY_RELEASE_HOLDS,
   scheduleContext,
@@ -731,6 +733,7 @@ function isStopError(error: unknown): boolean {
 }
 
 export interface ReleaseReviewResult extends PaidPassResult {
+  audienceDeferrals?: Array<{ feeRawId: number; reason: string }>;
   calls: number;
   /** Lessons from the learning store put in the prompts. */
   lessons: number;
@@ -867,71 +870,91 @@ export async function runDarwinReleaseReview(
     result.costMicrousd += call.costMicrousd;
     const verdicts = parseReleaseReviews(paidResponseJson(call.message));
     const share = Math.floor(call.costMicrousd / batch.length);
-    for (const candidate of batch) {
-      const feeRawId = Number(candidate.row.fee_raw_id);
+    for (const selectedCandidate of batch) {
+      const feeRawId = Number(selectedCandidate.row.fee_raw_id);
       result.processed += 1;
-      const verdict = verdicts.get(feeRawId);
-      if (!verdict) {
-        result.failed += 1;
-        await recordAttempt(db, {
-          ...common(candidate),
-          outcome: "parse_error",
-          yieldCount: 0,
-          costMicrousd: share,
-          durationMs: Date.now() - startedAt,
-          detail: { fee_raw_id: feeRawId, model },
+      try {
+        await inSavepoint(db, async scope => {
+          // Provider usage is already recorded. Acquire the row context only now, before
+          // free checks and any ordinary positive/negative/parse decision, never during the call.
+          const admission = await prepareVerificationAudience(scope, selectedCandidate.row, textOf(selectedCandidate));
+          const raw = admission.row as HeldFeeRow;
+          const effectiveRow = admission.audience ? { ...raw, fee_audience: admission.audience.feeAudience } : raw;
+          const currentText = admission.sourceText;
+          const currentLine = admission.ownClause === "none" ? selectedCandidate.sourceLine
+            : releaseVerdict(effectiveRow, currentText, categoryModel).sourceLine ?? selectedCandidate.sourceLine;
+          const candidate: ReleaseReviewCandidate = { row: effectiveRow, sourceLine: currentLine,
+            sourceContext: admission.ownClause === "none" ? selectedCandidate.sourceContext : scheduleContext(currentText, currentLine) };
+          const verdict = verdicts.get(feeRawId);
+          if (!verdict) {
+            result.failed += 1;
+            await recordAttempt(scope, {
+              ...common(candidate),
+              outcome: "parse_error",
+              yieldCount: 0,
+              costMicrousd: share,
+              durationMs: Date.now() - startedAt,
+              detail: { fee_raw_id: feeRawId, model },
+            });
+            return;
+          }
+          const refilesTo = lineRefilesTo(candidate);
+          const premium = premiumServiceMisfiled(candidate);
+          const holdReason = releaseHoldReason(candidate);
+          // #1367: the candidate's release verdict may predate the category check; read it again now.
+          const releaseCheck = releaseCheckHold(candidate.row, currentText, categoryModel);
+          const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null && releaseCheck == null;
+          // A blank frequency takes what the line says after the price; a stated one is kept (or held above).
+          const price = candidate.row.amount == null ? null : Number(candidate.row.amount);
+          const lineFrequency = candidate.row.frequency ? null : frequencyFromLine(candidate.sourceLine, price);
+          let feeVerifiedId: number | null = null;
+          if (passes && acts) {
+            const row = lineFrequency ? { ...candidate.row, frequency: lineFrequency } : candidate.row;
+            feeVerifiedId = (await releaseHeldFee(scope, { runId: options.runId, row, originalRow: admission.row as HeldFeeRow,
+              sourceLine: candidate.sourceLine, sourceText: currentText, categoryModel, frequencyFromSourceLine: frequencyFromLine })).feeVerifiedId;
+            if (feeVerifiedId != null) result.released += 1;
+          }
+          await recordAttempt(scope, {
+            ...common(candidate),
+            outcome: passes ? "ok" : "rejected",
+            yieldCount: feeVerifiedId != null ? 1 : 0,
+            costMicrousd: share,
+            durationMs: Date.now() - startedAt,
+            detail: {
+              fee_raw_id: feeRawId,
+              fee_name: candidate.row.fee_name,
+              canonical_fee_key: candidate.row.held_canonical_fee_key,
+              amount: candidate.row.amount == null ? null : Number(candidate.row.amount),
+              held_reason: candidate.row.held_reason,
+              source_line: candidate.sourceLine.slice(0, 300),
+              source_context: candidate.sourceContext ?? null,
+              refiles_to: refilesTo,
+              premium_service: premium,
+              hold_reason: holdReason,
+              release_check: releaseCheck,
+              frequency_filled: lineFrequency,
+              is_fee: verdict.isFee,
+              category_fits: verdict.categoryFits,
+              amount_is_price: verdict.amountIsPrice,
+              passes,
+              reason: verdict.reason,
+              lessons: batchLessons.length,
+              fee_verified_id: feeVerifiedId,
+              acted: acts,
+              model,
+            },
+          });
+          result.succeeded += 1;
+          if (passes) result.passed += 1;
+          if (result.results.length < 50) {
+            result.results.push({ fee_raw_id: feeRawId, passes, reason: verdict.reason });
+          }
         });
-        continue;
-      }
-      result.succeeded += 1;
-      const refilesTo = lineRefilesTo(candidate);
-      const premium = premiumServiceMisfiled(candidate);
-      const holdReason = releaseHoldReason(candidate);
-      // #1367: the candidate's release verdict may predate the category check; read it again now.
-      const releaseCheck = releaseCheckHold(candidate.row, textOf(candidate), categoryModel);
-      const passes = reviewPasses(verdict) && refilesTo == null && !premium && holdReason == null && releaseCheck == null;
-      if (passes) result.passed += 1;
-      // A blank frequency takes what the line says after the price; a stated one is kept (or held above).
-      const price = candidate.row.amount == null ? null : Number(candidate.row.amount);
-      const lineFrequency = candidate.row.frequency ? null : frequencyFromLine(candidate.sourceLine, price);
-      let feeVerifiedId: number | null = null;
-      if (passes && acts) {
-        const row = lineFrequency ? { ...candidate.row, frequency: lineFrequency } : candidate.row;
-        feeVerifiedId = (await releaseHeldFee(db, { runId: options.runId, row, sourceLine: candidate.sourceLine })).feeVerifiedId;
-        if (feeVerifiedId != null) result.released += 1;
-      }
-      await recordAttempt(db, {
-        ...common(candidate),
-        outcome: passes ? "ok" : "rejected",
-        yieldCount: feeVerifiedId != null ? 1 : 0,
-        costMicrousd: share,
-        durationMs: Date.now() - startedAt,
-        detail: {
-          fee_raw_id: feeRawId,
-          fee_name: candidate.row.fee_name,
-          canonical_fee_key: candidate.row.held_canonical_fee_key,
-          amount: candidate.row.amount == null ? null : Number(candidate.row.amount),
-          held_reason: candidate.row.held_reason,
-          source_line: candidate.sourceLine.slice(0, 300),
-          source_context: candidate.sourceContext ?? null,
-          refiles_to: refilesTo,
-          premium_service: premium,
-          hold_reason: holdReason,
-          release_check: releaseCheck,
-          frequency_filled: lineFrequency,
-          is_fee: verdict.isFee,
-          category_fits: verdict.categoryFits,
-          amount_is_price: verdict.amountIsPrice,
-          passes,
-          reason: verdict.reason,
-          lessons: batchLessons.length,
-          fee_verified_id: feeVerifiedId,
-          acted: acts,
-          model,
-        },
-      });
-      if (result.results.length < 50) {
-        result.results.push({ fee_raw_id: feeRawId, passes, reason: verdict.reason });
+      } catch (error) {
+        if (!(error instanceof VerificationAudienceDeferred)) throw error;
+        result.deferred = (result.deferred ?? 0) + 1;
+        result.audienceDeferrals ??= [];
+        if (result.audienceDeferrals.length < 25) result.audienceDeferrals.push({ feeRawId, reason: error.reason });
       }
     }
   }
@@ -959,6 +982,8 @@ export const RECORDED_RELEASE_DRY_RUN_FINGERPRINT = `darwin:recorded-release:dry
 export const RECORDED_RELEASE_DRY_RUN_WAIT_MINUTES = 4;
 
 export interface RecordedReleaseResult {
+  audienceDeferrals?: Array<{ feeRawId: number; reason: string }>;
+  deferred?: number;
   acts: boolean;
   dryRun: boolean;
   /** This step was the dry run the live release waits for, and wrote its ledger row. */
@@ -1080,50 +1105,68 @@ export async function releaseRecordedPasses(
     result.modelMissing = true;
     return result;
   }
-  for (const { source_line, source_context, ...raw } of rows) {
-    const candidate: ReleaseReviewCandidate = { row: raw as HeldFeeRow, sourceLine: source_line, sourceContext: source_context };
-    const text = raw.source_document_id == null ? null : texts.get(Number(raw.source_document_id));
-    const reason = recordedPassHoldReason(candidate, { text, categoryModel });
-    const feeRawId = Number(raw.fee_raw_id);
-    if (reason) {
-      result.held[reason] = (result.held[reason] ?? 0) + 1;
-      if (result.heldExamples.length < 25) {
-        result.heldExamples.push({ feeRawId, feeName: raw.fee_name, amount: raw.amount == null ? null : Number(raw.amount), canonicalFeeKey: raw.held_canonical_fee_key, reason });
-      }
-    } else {
-      result.wouldRelease += 1;
-      const key = raw.held_canonical_fee_key;
-      result.releaseByCategory[key] = (result.releaseByCategory[key] ?? 0) + 1;
-    }
-    if (!acts) continue;
-    // A hold that says only this tick could not read the stored text is retried, never recorded.
-    if (reason && TEMPORARY_RELEASE_HOLDS.has(reason)) continue;
-    let feeVerifiedId: number | null = null;
-    if (!reason) {
-      const price = raw.amount == null ? null : Number(raw.amount);
-      const lineFrequency = raw.frequency ? null : frequencyFromLine(source_line, price);
-      const row = lineFrequency ? { ...candidate.row, frequency: lineFrequency } : candidate.row;
-      feeVerifiedId = (await releaseHeldFee(db, { runId: options.runId, row, sourceLine: source_line })).feeVerifiedId;
+  for (const { source_line, source_context, ...selected } of rows) {
+    const feeRawId = Number(selected.fee_raw_id);
+    try {
+      const settled = await inSavepoint(db, async scope => {
+        const legacyText = selected.source_document_id == null ? null : texts.get(Number(selected.source_document_id)) ?? null;
+        const admission = options.dryRun || !switchOn ? null : await prepareVerificationAudience(scope, selected, legacyText);
+        const original = (admission?.row ?? selected) as HeldFeeRow;
+        const raw = admission?.audience ? { ...original, fee_audience: admission.audience.feeAudience } : original;
+        const text = admission ? admission.sourceText : legacyText;
+        const currentLine = !admission || admission.ownClause === "none" ? source_line
+          : releaseVerdict(raw, text, categoryModel).sourceLine ?? source_line;
+        const candidate: ReleaseReviewCandidate = { row: raw, sourceLine: currentLine,
+          sourceContext: admission && admission.ownClause !== "none" ? scheduleContext(text, currentLine) : source_context };
+        const reason = recordedPassHoldReason(candidate, { text, categoryModel });
+        let feeVerifiedId: number | null = null;
+        if (acts && !(reason && TEMPORARY_RELEASE_HOLDS.has(reason))) {
+          if (!reason) {
+            const price = raw.amount == null ? null : Number(raw.amount);
+            const lineFrequency = raw.frequency ? null : frequencyFromLine(currentLine, price);
+            const row = lineFrequency ? { ...raw, frequency: lineFrequency } : raw;
+            feeVerifiedId = (await releaseHeldFee(scope, { runId: options.runId, row, originalRow: original,
+              sourceLine: currentLine, sourceText: text, categoryModel, frequencyFromSourceLine: frequencyFromLine })).feeVerifiedId;
+          }
+          await recordAttempt(scope, {
+            institutionId: Number(raw.institution_id),
+            sourceDocumentId: raw.source_document_id == null ? null : Number(raw.source_document_id),
+            stage: "verify",
+            strategy: DARWIN_RECORDED_RELEASE_STRATEGY.strategy,
+            version: DARWIN_RECORDED_RELEASE_STRATEGY.version,
+            fingerprint: rawFeeFingerprint(feeRawId),
+            runId: options.runId,
+            stepId: options.stepId ?? null,
+            foldIntoPlaybook: false,
+            outcome: reason ? "rejected" : "ok",
+            yieldCount: feeVerifiedId != null ? 1 : 0,
+            costMicrousd: 0,
+            durationMs: 0,
+            detail: { fee_raw_id: feeRawId, canonical_fee_key: raw.held_canonical_fee_key, hold_reason: reason, fee_verified_id: feeVerifiedId },
+          });
+        }
+        return { raw, reason, feeVerifiedId };
+      });
+      const { raw, reason, feeVerifiedId } = settled;
       if (feeVerifiedId != null) result.released += 1;
+      if (reason) {
+        result.held[reason] = (result.held[reason] ?? 0) + 1;
+        if (result.heldExamples.length < 25) result.heldExamples.push({ feeRawId, feeName: raw.fee_name,
+          amount: raw.amount == null ? null : Number(raw.amount), canonicalFeeKey: raw.held_canonical_fee_key, reason });
+      } else {
+        result.wouldRelease += 1;
+        const key = raw.held_canonical_fee_key;
+        result.releaseByCategory[key] = (result.releaseByCategory[key] ?? 0) + 1;
+      }
+    } catch (error) {
+      if (!(error instanceof VerificationAudienceDeferred)) throw error;
+      result.deferred = (result.deferred ?? 0) + 1;
+      result.audienceDeferrals ??= [];
+      if (result.audienceDeferrals.length < 25) result.audienceDeferrals.push({ feeRawId, reason: error.reason });
     }
-    await recordAttempt(db, {
-      institutionId: Number(raw.institution_id),
-      sourceDocumentId: raw.source_document_id == null ? null : Number(raw.source_document_id),
-      stage: "verify",
-      strategy: DARWIN_RECORDED_RELEASE_STRATEGY.strategy,
-      version: DARWIN_RECORDED_RELEASE_STRATEGY.version,
-      fingerprint: rawFeeFingerprint(feeRawId),
-      runId: options.runId,
-      stepId: options.stepId ?? null,
-      foldIntoPlaybook: false,
-      outcome: reason ? "rejected" : "ok",
-      yieldCount: feeVerifiedId != null ? 1 : 0,
-      costMicrousd: 0,
-      durationMs: 0,
-      detail: { fee_raw_id: feeRawId, canonical_fee_key: raw.held_canonical_fee_key, hold_reason: reason, fee_verified_id: feeVerifiedId },
-    });
   }
-  if (switchOn && !acts && result.recordedPasses > 0) {
+
+  if (switchOn && !acts && result.recordedPasses > (result.deferred ?? 0)) {
     await recordAttempt(db, {
       institutionId: null,
       stage: "verify",

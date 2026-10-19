@@ -95,6 +95,10 @@ describe("runDarwinConditionalZeroResolve", () => {
   function createDb() {
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join("?");
+      // Immutable ordinary raw fixture; actual current-source locks use PostgreSQL.
+      if (text.includes("SELECT fr.*") && text.includes("FROM raw_fee_observations fr")) {
+        return Promise.resolve(rows.filter(row => row.fee_raw_id === values[0]));
+      }
       // The selected row is still current when insertVerifiedFee takes its raw lock.
       if (text.includes("FOR UPDATE OF fr")) {
         return Promise.resolve(rows.filter((row) => row.fee_raw_id === values[0]));
@@ -107,6 +111,7 @@ describe("runDarwinConditionalZeroResolve", () => {
       return Promise.resolve([]);
     }) as unknown as Parameters<typeof runDarwinConditionalZeroResolve>[0]["db"] & ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
     (db as unknown as { unsafe: unknown }).unsafe = vi.fn(() => Promise.resolve(rows));
+    Object.assign(db, { savepoint: (work: (scope: typeof db) => Promise<unknown>) => work(db) });
     return db;
   }
 

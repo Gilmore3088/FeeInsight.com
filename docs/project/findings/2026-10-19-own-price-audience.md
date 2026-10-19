@@ -1,5 +1,7 @@
 # An exclusive audience on the fee's own price clause (#2342)
 
+**Guard:** `own-price-audience.test.ts`, `locked-raw-source.db.test.ts` and `verification-audience.db.test.ts` cover exact clause ownership, factual locks, ordinary boundaries and real caller settlement.
+
 Oakwood's repaired source prints Check Images at $10 per statement for consumers only.
 Raw943014 retained that clause in conditions but left audience unknown. Darwin then called
 verified198096/published155214 `both` from unrelated mixed-schedule context. The price,
@@ -85,3 +87,71 @@ source and duplicate checks must use that same exact audience. Existing known ra
 and historical relabel behavior remain unchanged. Each consumer's busy/unavailable fallback
 requires review; this module does not impose a new global source-binding requirement on
 ordinary nonapplicable fees or turn unavailable proof into an ordinary no-qualifier result.
+
+## Factual current-raw refinement and prospective caller matrix
+
+`withLockedCurrentRawSource` uses the same loader and full raw CAS as the strict wrapper,
+without treating an old missing raw digest as missing current source facts. An available
+current document/artifact stays locked through raw CAS and later work even when the own
+qualifier is absent. The strict wrapper adds `matchOriginalRawSource` over those same facts.
+Three additional real PostgreSQL controls (33 total) prove the no-header ordinary boundary,
+a no-qualifier source replaced by Consumer Only before prefix acquisition, and a real
+source UPDATE blocked until the negative-cue consumer's transaction ends.
+
+The prospective integration follows this matrix. Busy/changed is a transient deferral,
+never an ordinary judgement, attempt, feedback or pending-state mutation. All consumer
+work is enclosed by its own savepoint so a deferred suffix releases the prefix as well.
+
+| Current factual source / own clause | Prospective disposition |
+| --- | --- |
+| Available, no own exclusive clause | Hold factual prefix and raw CAS; preserve the existing legacy audience calculation. An original raw hash is not newly required. |
+| Available, qualified or ambiguous own clause, raw audience unknown | Require the exact original artifact/hash. Qualified evidence precedes broader defaults; ambiguity is explicit null, never undefined/recomputed. |
+| Available own clause but original binding unavailable/mismatched | Defer; do not convert unavailable authority to a broad both/title result. |
+| Current raw already has a definite audience | Preserve the existing raw-label contract and trigger behavior. No historical rewrite. |
+| Genuinely unavailable source, no current own-clause cue | Preserve the documented ordinary legacy boundary. This is not proof that the document contains no qualifier or a claim of full coverage. |
+| Unavailable facts with a current own-clause cue | Defer; caller/model text or a retained witness cannot supply authority. |
+| Direct caller with own-clause evidence but no matching completed admission context | Defer to the normal verification path; new audience metadata is not verification authority. |
+
+Normal verification, normal/paid held release and conditional-zero resolution must derive
+one prospective decision before their source/peer/duplicate checks, then compare the same
+admitted identity and audience at the common writer after fresh current-raw/source locks.
+Caller name, amount/kind/rate identity and every supplied category-relevant field must match
+current raw. Optional absent fields in minimal ordinary callers are loaded from the database.
+The selected legacy evidence projection is `extraction_note ?? conditions`; the complete raw
+snapshot remains separate. Derived effective audience is never compared as if it were the
+original raw label. Existing historical v4 relabel calls remain unopted and unchanged.
+
+
+## Prospective caller checkpoint
+
+The completed admission carries a private brand, exact current raw/source identities, explicit
+nullable audience, final checked category, the existing release-derived frequency when used,
+and `sourceContext: Readonly<LockedCurrentRawSourceResult>`. Other guards consume those held
+facts directly; the identity string and caller source text are hints, not another source loader.
+The final writer independently re-prepares actual facts, compares the admitted raw/effective
+identity, and refuses own-clause direct calls without completed admission. Minimal ordinary
+callers still load absent optional raw metadata from the database.
+
+Every ordinary settlement is enclosed by its consumer's native row savepoint: normal Darwin
+checks, free held sorting, paid review after its existing response, recorded passes, zero
+resolution and direct release. Uncertainty precedes negative, duplicate and feedback outcomes
+as well as inserts. Paid transport failures keep their existing usage/retry contract; no source
+lock is held across a provider request. Explicit dry runs and switched-off release previews
+retain the existing legacy calculation, so this patch does not claim preview/live parity.
+Parent receipts distinguish selected/settled/deferred inputs and retain bounded ID/reason
+samples without source bodies or exception stacks.
+
+Twenty-six actual disposable-PostgreSQL caller tests cover the complete official Oakwood text
+through Knox → Darwin → Hamilton, migration47's actual audience trigger, explicit ambiguous
+null, known raw business labels, minimal/direct calls, original/derived release frequency,
+ordinary unavailable inputs, zero resolution, all held/review negative paths, stale admissions,
+real busy opposing connections, and unchanged existing verified/raw history. The paid negative
+path uses an accepted local response transport fixture, with zero provider requests/spend.
+The existing shared factual-source suite remains33 cases. The released trigger47 body is
+installed transactionally inside caller fixtures because the base CI schema otherwise contains
+its older migration40 body; rollback restores fixture DDL. No new production DDL is proposed.
+
+No extraction/reader/verification/source-check/relabel version, manifest epoch or selector
+changes. Already-recorded decisions are not reopened, and no existing public row is rewritten.
+The source/lock/CAS availability boundary remains explicit; the dated offline projection is
+conditional policy evidence, not a historical error census or proof of live admission.
