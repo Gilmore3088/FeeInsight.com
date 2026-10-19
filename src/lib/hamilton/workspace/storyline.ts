@@ -198,7 +198,8 @@ function segmentPiece(research: FeeResearch, name: string): Piece | null {
   if (!seg || seg.problem !== null || seg.members.length === 0) return null;
   const n = seg.members.length;
   const median = seg.band ? `; the median is ${money(seg.band.median)}` : "";
-  const zero = seg.zeroCount > 0 ? `, ${count(seg.zeroCount)} at $0` : "";
+  const mixedZero = seg.members.some(m => m.amount === 0 && m.several);
+  const zero = seg.zeroCount > 0 ? mixedZero ? `, ${count(seg.zeroCount)} with a $0 value in group statistics` : `, ${count(seg.zeroCount)} at $0` : "";
   const exhibit: Exhibit = {
     kind: "segment_table",
     title: `${capitalize(name)} fees, ${shortSegmentLabel(seg.segment)}, largest first`,
@@ -229,7 +230,9 @@ function largestPiece(research: FeeResearch, name: string): Piece | null {
   const hi = Math.max(...amounts);
   return {
     key: "largest",
-    actionTitle: `The ${count(exhibit.items.length)} largest ${shortSegmentLabel({ ...seg.segment, largest: null })} that publish one charge ${money(lo)} to ${money(hi)}.`,
+    actionTitle: exhibit.items.some(item => item.several)
+      ? `The ${count(exhibit.items.length)} largest ${shortSegmentLabel({ ...seg.segment, largest: null })} have values of ${money(lo)} to ${money(hi)} in group statistics; their stated prices are shown by name.`
+      : `The ${count(exhibit.items.length)} largest ${shortSegmentLabel({ ...seg.segment, largest: null })} that publish one charge ${money(lo)} to ${money(hi)}.`,
     exhibit,
   };
 }
@@ -854,7 +857,7 @@ function financeLens(research: FeeResearch, answer: HamiltonAnswer, intent: Stor
 function customerGroup(research: FeeResearch): { label: string; members: { name: string; amount: number; several?: SeveralFees }[]; source: SourceRef } | null {
   const seg = research.segment;
   if (seg && seg.problem === null && seg.members.length > 0) {
-    return { label: shortSegmentLabel(seg.segment), members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount })), source: seg.source };
+    return { label: shortSegmentLabel(seg.segment), members: seg.members.map((m) => ({ name: m.institutionName, amount: m.amount, several: m.several })), source: seg.source };
   }
   const local = research.localCompetitors ?? [];
   if (local.length > 0) {
@@ -914,7 +917,13 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const cheaper = group.members.filter((m) => m.amount < current).sort((a, b) => a.amount - b.amount);
     const dearer = group.members.filter((m) => m.amount > current);
     const n = group.members.length;
-    if (cheaper.length === 0) {
+    if (group.members.some(m => m.several)) {
+      out.push({
+        text: `In group statistics, ${count(cheaper.length)} of ${count(n)} ${group.label} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+        source: group.source,
+        sampleSize: n,
+      });
+    } else if (cheaper.length === 0) {
       // Neutral: who is higher, by name, never whether that helps or hurts.
       // Named only by a stated price: an institution stating several different fees has none (#1931).
       const top = [...dearer].sort((a, b) => b.amount - a.amount)[0];

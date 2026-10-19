@@ -13,6 +13,8 @@ import {
   type FeedbackRow,
 } from "./feedback";
 import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
+import { eligibleReferences, readReferenceEligibility, referenceFeeFingerprint } from "@/lib/data-store/answer-key-reference-store";
+import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
 
 type SqlTag = typeof sql;
 
@@ -28,6 +30,8 @@ export interface FeedbackSyncResult {
   written: number;
   /** Older takedown rows named after one fee ("hamilton.refreshed by #69017") given their fixed names. */
   relabeled: number;
+  referenceExcludedBanks?: number;
+  referenceCohort?: string;
 }
 
 const NOT_READY: FeedbackSyncResult = {
@@ -85,20 +89,6 @@ interface CategoryRejectRow {
   fee_name: string | null;
   outlier_flags: unknown;
   source_url: string | null;
-}
-
-interface AnswerKeyRow {
-  id: number | string;
-  institution_id: number | string;
-  canonical_key: string;
-  amount: number | string | null;
-  amount_kind: string | null;
-  source_line: string | null;
-  uncertain: boolean | null;
-  document_url: string | null;
-  confirmed_by: string | null;
-  key_status: AnswerKeyInstitution["status"];
-  key_confirmed_by: string | null;
 }
 
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
@@ -330,33 +320,37 @@ export async function syncPipelineFeedback(
     }
     result.categoryRejects = rejects.length;
 
-    const answerKeyFees = await inSavepoint(db, (scope) => scope<AnswerKeyRow[]>`
-      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url,
-             f.confirmed_by, ak.status AS key_status, ak.confirmed_by AS key_confirmed_by
-        FROM answer_key_fees f
-        JOIN answer_key_institutions ak ON ak.id = f.answer_key_institution_id
-       WHERE f.status = 'confirmed'
-         AND NOT EXISTS (SELECT 1 FROM pipeline_feedback p WHERE p.dedupe_key = 'answer_key:fee:' || f.id)
-       ORDER BY f.id
-       LIMIT ${limit}
+    const reference = await readReferenceEligibility(db);
+    result.referenceExcludedBanks = reference.cohort.excludedBanks;
+    result.referenceCohort = reference.cohort.cohortFingerprint;
+    const candidates = eligibleReferences(reference).flatMap(({ input, eventId }) => input.key.fees
+      .filter((fee) => fee.canonicalKey !== "unmapped").map((fee) => ({ input, fee, eventId,
+        dedupe: `answer_key:fee:${fee.id}:reference:${referenceKeyFingerprint(input.key)}` })));
+    const existing = await inSavepoint(db, (scope) => scope<Array<{ dedupe_key: string }>>`
+      SELECT dedupe_key FROM pipeline_feedback WHERE dedupe_key = ANY(${candidates.map((row) => row.dedupe)}::text[])
     `);
-    for (const row of answerKeyFees) {
+    const present = new Set(existing.map((row) => row.dedupe_key));
+    const answerKeyFees = candidates.filter((row) => !present.has(row.dedupe)).slice(0, limit);
+    for (const { input: { key }, fee, eventId, dedupe } of answerKeyFees) {
+      const checkedBy = feeCheckedBy(fee.confirmedBy, { status: key.status as AnswerKeyInstitution["status"], confirmed_by: key.confirmedBy });
       rows.push({
         aboutStage: "extract",
         signal: "right",
         kind: "answer_key",
         // Keys the Knox thread keyed line by line are not a person's check, unless a person
         // then confirmed the whole bank, which covers every row on it.
-        reportedBy: MACHINE_ANSWER_KEYERS.has(feeCheckedBy(row.confirmed_by, { status: row.key_status, confirmed_by: row.key_confirmed_by }) ?? "") ? "knox" : "human",
+        reportedBy: MACHINE_ANSWER_KEYERS.has(checkedBy ?? "") ? "knox" : "human",
         checkName: "answer_key",
-        institutionId: num(row.institution_id),
-        sourceUrl: row.document_url,
-        canonicalFeeKey: row.canonical_key,
-        amount: num(row.amount),
-        weight: row.uncertain ? 0.5 : 1,
-        evidence: { source_line: row.source_line, amount_kind: row.amount_kind, confirmed_by: feeCheckedBy(row.confirmed_by, { status: row.key_status, confirmed_by: row.key_confirmed_by }) ?? null },
+        institutionId: key.institutionId,
+        sourceUrl: key.documentUrl,
+        canonicalFeeKey: fee.canonicalKey,
+        amount: fee.amount,
+        weight: fee.uncertain ? 0.5 : 1,
+        evidence: { source_line: fee.sourceLine, amount_kind: fee.amountKind, confirmed_by: checkedBy ?? null,
+          answer_key_fee_id: fee.id, reference_protocol: reference.protocol, reference_event_id: eventId,
+          reference_key_fingerprint: referenceKeyFingerprint(key), reference_fee_fingerprint: referenceFeeFingerprint(key, fee.id) },
         runId: options.runId,
-        dedupeKey: `answer_key:fee:${row.id}`,
+        dedupeKey: dedupe,
       });
     }
     result.answerKeyFees = answerKeyFees.length;

@@ -1,3 +1,4 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -1016,7 +1017,7 @@ export async function runMagellanFetch(
   options: RunMagellanFetchOptions,
 ): Promise<RunMagellanFetchResult> {
   const db = options.db ?? sql;
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);
   const rows = await selectCandidates(db, limit, options.institutionId, options.stateCode, Boolean(options.newLinksOnly));

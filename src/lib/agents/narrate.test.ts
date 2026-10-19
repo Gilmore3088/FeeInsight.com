@@ -2,6 +2,15 @@ import { describe, expect, it } from "vitest";
 import { narrateEvent, narrateStepFinished } from "./narrate";
 
 describe("narrateStepFinished", () => {
+  it("separates pending selected-identity deferrals from already published or ineligible fees",()=>{
+    expect(narrateStepFinished('publish',{processed_verified_fees:3,published_fees:0,skipped_verified_fees:3,identity_deferred_verified_fees:3},'GA'))
+      .toBe('Published 0 fees in GA: 3 deferred after selected verification or identity changed (still pending).');
+  });
+  it("names excluded references instead of implying no confirmed keys or a passing empty replay", () => {
+    expect(narrateStepFinished("score-answer-key",{schema_ready:true,banks_scored:0,reference_eligibility:{state:"no_measurement",eligibleBanks:0,excludedBanks:3}})).toContain("No answer-key measurement: 0 eligible and 3 excluded");
+    expect(narrateStepFinished("deming-knox-misses",{ready:true,fees_scored:0,reference_excluded_banks:3,reference_excluded_cases:9})).toContain("No eligible reference fees to replay; 3 reference banks and 9 unbound");
+  });
+
   it("names the cap that stopped a paid pass", () => {
     expect(narrateStepFinished("discover-paid", {
       processed: 29, succeeded: 6, cost_microusd: 1_370_000, budget_stopped: true,

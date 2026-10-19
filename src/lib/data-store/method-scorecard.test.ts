@@ -55,7 +55,9 @@ describe("getMethodScorecard", () => {
     ]);
     const { getMethodScorecard } = await import("./method-scorecard");
     const { rows } = await getMethodScorecard();
-    expect(rows[0].score).toEqual({ correct: 39, decided: 50, holdoutCorrect: 25, holdoutDecided: 30, chunks: 3, passedChunks: 1 });
+    expect(rows[0].score).toBeNull();
+    expect(rows[0].referenceState).toBe("legacy_unbound_no_measurement");
+    expect(rows[0].legacyScore).toEqual({ correct: 39, decided: 50, holdoutCorrect: 25, holdoutDecided: 30, chunks: 3, passedChunks: 1 });
     expect(rows[0]).toMatchObject({ attempts: 3, ok: 1, held: 2, failed: 0 });
   });
 });

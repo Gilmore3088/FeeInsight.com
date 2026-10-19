@@ -1,5 +1,15 @@
-export const dynamic = "force-dynamic";
+import { permanentRedirect } from "next/navigation";
+import { buildAdminRedirectPath, type AdminSearchParams } from "@/lib/admin-redirect-path";
 
-// The marketing agents' cards open the team view of the Growth page from inside the Agents
-// room, so the phone's back link returns to the agents. The page itself lives in /admin/growth.
-export { default } from "../../growth/page";
+/**
+ * The Marketing team screen only re-exported the Growth page, so it showed the same board under
+ * a second address. Old links (the marketing cards' `?view=team&agent=`) land on Growth with their
+ * query kept (#1122).
+ */
+export default async function MarketingTeamRedirect({
+  searchParams,
+}: {
+  searchParams: Promise<AdminSearchParams>;
+}) {
+  permanentRedirect(buildAdminRedirectPath("/admin/growth", await searchParams));
+}

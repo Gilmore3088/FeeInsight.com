@@ -45,10 +45,6 @@ vi.mock("@/lib/auth", () => ({
   })),
 }));
 
-vi.mock("@/lib/research/rate-limit", () => ({
-  checkAdminRateLimit: () => ({ allowed: true }),
-}));
-
 vi.mock("@/lib/research/history", () => ({
   getDailyCostCents: async () => 0,
   logUsage: vi.fn(async () => {}),

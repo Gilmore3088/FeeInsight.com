@@ -70,7 +70,7 @@ export function ThisMonthOverview({
         />
         <Tile
           label={`Fee changes in ${place}`}
-          value={feesChangedNearby === 0 ? "None confirmed" : `${feesChangedNearby} matching fees`}
+          value={feesChangedNearby === 0 ? "None confirmed" : `${feesChangedNearby} matching ${feesChangedNearby === 1 ? "fee" : "fees"}`}
           note={
             feesChangedNearby === 0
               ? `No institution in ${place} changed a fee ${institutionName} publishes in the last ${windowDays} days.`

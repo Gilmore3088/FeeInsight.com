@@ -2,6 +2,7 @@ import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
+import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
@@ -9,6 +10,7 @@ import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDrop
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
 export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
+import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -53,6 +55,14 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
   lineup?: AccountLineup | null;
+  /** Explicit primary-document ownership, independent of monthly balance/waiver fields. */
+  ancillaryProduct?: AncillaryProduct;
+  /** v82: the second fee a shared priced line carries (`twin:nsf`), part of the raw dedupe key. */
+  lineShare?: string;
+  /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */
+  ownedBullet?: true;
+  /** Bounded, explicitly referenced context; never read as the price's charging unit. */
+  linkedConditions?: string;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
@@ -96,7 +106,8 @@ export type DroppedLineReason =
   | "no_name"
   | "no_fee_word_not_table_row"
   | "not_fee_schedule"
-  | "unclassified_cap";
+  | "unclassified_cap"
+  | "wrapped_bullet_unresolved";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -2438,6 +2449,11 @@ export function withoutBusinessOnlyFees(text: string): string {
 const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
 
 
+/** Only labels the existing taxonomy recognizes leave the legacy fragment readers. */
+export function recognizedFeeBullets(text: string) {
+  return feeBullets(text).filter((row) => classifyFeeText(row.title) != null);
+}
+
 export function extractCandidatesFromText(input: string): ExtractionRulesResult {
   const raw = withDroppedDecimalPoints(input);
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
@@ -2450,9 +2466,26 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     candidates: scoped.map((fee) => ({ ...fee, frequency: null, confidence: 0.98, waivable: false })),
     held: [],
   };
-  const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
+  const owned = recognizedFeeBullets(text);
+  const legacyText = withoutFeeBullets(text, owned);
+  for (const row of owned) {
+    if (row.problem || row.price == null || row.priceText == null) {
+      countDrop(result, "wrapped_bullet_unresolved");
+      continue;
+    }
+    // Existing price/category guards read a bounded primary label and its own price.
+    // Full conditions remain in the excerpt and the shared own-row source witness.
+    const read = extractFromSegment(`${row.title} | ${row.priceText}`);
+    for (const candidate of read.candidates) {
+      if (!passesDarwinChecks(candidate.canonicalHint, row.title, candidate.amount)) continue;
+      result.candidates.push({ ...candidate, feeName: row.title, excerpt: row.compactText, ownedBullet: true,
+        ...(row.linkedConditions ? { linkedConditions: row.linkedConditions } : {}),
+        frequency: detectFrequency(row.text), waivable: WAIVER_LANGUAGE.test(row.text) });
+    }
+  }
+  const joinedLines = [...columnContinuations(legacyText), ...wrappedNamePrices(legacyText), ...centeredNamePrices(legacyText)];
   const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
-  for (const candidate of [...itemAmountTierFees(text), ...continued]) {
+  for (const candidate of [...itemAmountTierFees(legacyText), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
     if (seen.has(key)) continue;
@@ -2481,7 +2514,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // kind only while no heading line (a "Loan Fees" title) has come between them.
   let previousKind: string | null = null;
   let previousSection = -1;
-  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(text)) {
+  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(legacyText)) {
     if (section !== previousSection) previousKind = null;
     previousSection = section;
     let found = extractFromSegment(segment);

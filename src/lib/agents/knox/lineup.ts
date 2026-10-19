@@ -1,6 +1,7 @@
 import { AMOUNT_PATTERN, amountsIn, BALANCE_BELOW_CLAUSE } from "@/lib/agents/knox/rules";
 import { accountTableProduct } from "@/lib/custom-report/account-table";
 import { namesNoAccount, withoutNonAccountWords } from "@/lib/account-name-exclusions";
+import { withAncillaryProduct } from "./ancillary-product";
 
 /**
  * A checking account's lineup facts, read with its monthly maintenance fee: the product's
@@ -521,7 +522,7 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
   /** v73's account order; false reads the name as v55 did (`lineupCorrections`, LINEUP_CORRECT_STRATEGY v2). */
   options: { accountProduct?: boolean; institutionName?: string | null } = {},
 ): T {
-  if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) return candidate;
+  if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) return withAncillaryProduct(candidate, text, options.institutionName);
   const read = candidate.lineup ?? { productName: null, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null };
   // A model-read waiver that is a rate tier carries the tier's balance with it; neither is the fee's.
   const current: AccountLineup =

@@ -435,7 +435,7 @@ describe("Hamilton agentic publish", () => {
     expect(result.results[0]).toMatchObject({ status: "published", feePublishedId: null });
     // The selection, the depth read, the three sweep-rule reads (#1069 step 2) and the
     // document-owner verdict read, all SELECTs.
-    expect(db.unsafe).toHaveBeenCalledTimes(6);
+    expect(db.unsafe.mock.calls.filter(([query]) => /SELECT|WITH/.test(query))).toHaveLength(6);
     expect(writes(db)).toEqual([]);
   });
 

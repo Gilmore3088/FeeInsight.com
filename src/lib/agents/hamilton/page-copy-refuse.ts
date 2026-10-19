@@ -25,6 +25,7 @@ export const PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX = "Copy of the page of live 
 const CANDIDATE_ID = Number.MAX_SAFE_INTEGER;
 
 export interface PageCopyCandidate {
+  productName?: string | null;
   institutionId: number;
   canonicalFeeKey: string;
   variantType: string | null | undefined;
@@ -64,7 +65,7 @@ export async function selectPageCopyKeeper(db: SqlTag, row: PageCopyCandidate): 
       const live = await scope<PageCopyRow[]>`
         SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
                GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded, sd.superseded_by_id,
-               fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience
+               fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fr.product_name
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -101,6 +102,7 @@ export async function selectPageCopyKeeper(db: SqlTag, row: PageCopyCandidate): 
         fee_name: row.feeName,
         frequency: row.frequency ?? null,
         fee_audience: row.feeAudience ?? null,
+        product_name: row.productName,
       };
       // The collapse groups by the category a row is live under. A twin filed under the category
       // the row moves from is read under the one it moves to only when its own name moves it there

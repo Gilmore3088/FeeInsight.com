@@ -30,7 +30,8 @@ export const maxDuration = 300;
 const DEFAULT_MAX_STEPS_PER_RUN = 10;
 /**
  * Runs advanced per tick, one after another except up to PARALLEL_STATE_LANES state lanes side by side (see executeQueuedAgentRuns),
- * until the step-start deadline. No run starts past the deadline except the first.
+ * until the step-start deadline. Other first runs may take a progress step; the
+ * daily scoreboard must fit the deadline even when selected first.
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
@@ -80,10 +81,9 @@ async function handleGET(request: NextRequest) {
       changedBy: marketing.changedBy,
     },
   };
-  // The pipeline pause and the marketing pause are separate: with only the pipeline
-  // paused, the tick still drains growth's marketing runs (and the reverse). Only when
-  // both are paused, or execution is off, does the tick do nothing.
-  if ((!pipeline.enabled && !marketing.enabled) || !execution.enabled) {
+  // Backend off is a hard stop. Paused controls may still permit the existing
+  // daily scoreboard's measurement steps, handled by a narrowly scoped drain below.
+  if (!execution.enabled) {
     return NextResponse.json({
       ok: true,
       paused: true,
@@ -111,6 +111,32 @@ async function handleGET(request: NextRequest) {
   const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), DEFAULT_RUN_LIMIT, 10);
   const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 10);
   const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), STATE_LANE_LIMIT_PER_TICK, 10);
+
+  if (!pipeline.enabled && !marketing.enabled) {
+    // Do not broaden the pause exception to alerts, digests or other reporting runs.
+    // This path schedules nothing and never consults/opens a provider budget.
+    const scope = { agent: "atlas", kind: "workflow", source: "atlas.scoreboard" } as const;
+    const reaped = await reapStaleAgentSteps({ scope });
+    const result = await executeQueuedAgentRuns({
+      runLimit,
+      maxStepsPerRun,
+      allowProviderSteps: false,
+      deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
+      paused: { pipeline: true, marketing: true },
+      scope,
+      pauseExemptOnly: true,
+    });
+    return NextResponse.json({
+      ok: true,
+      paused: true,
+      measurementOnly: true,
+      pauseReason: "Pipeline and marketing are paused; only queued daily scoreboard measurements may advance.",
+      ...controls,
+      reaped,
+      scheduledStateLanes: { selected: 0, scheduled: 0, reused: 0, failed: [], results: [] },
+      ...result,
+    });
+  }
 
   // Recover steps a killed invocation left running before selecting new work.
   const reaped = await reapStaleAgentSteps();

@@ -23,6 +23,10 @@ Rosetta owns source text normalization.
 
 ## Required Behavior
 
+- Default fee-source downloads use `../fee-source-fetch.ts`, including linked fallback documents
+  and the paid reader's plain download. Keep source URLs/headers and pass the selected transport
+  through helpers. Vault, hand-supplied and injected test reads keep their existing transports.
+  Scope and compatibility: `docs/project/findings/2026-10-19-safe-fee-source-fetch.md` (#2136).
 - Use deterministic HTML, text, and PDF extraction first.
 - HTML is read through a parsed DOM (`read.html_dom`, `html-dom.ts`): each data-table
   row is one line with cells joined by ` | `, definition lists pair term and
