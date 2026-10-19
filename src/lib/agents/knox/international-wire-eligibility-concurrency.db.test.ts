@@ -232,6 +232,7 @@ describe.skipIf(!connection)("International applicability hold and Darwin concur
 
   it.each([
     { name: "International Wire Outgoing", key: "minimum_balance", deferred: true },
+    { name: "Outgoing Wire Transfer outside USA Consumer Customer", key: "minimum_balance", deferred: true },
     { name: "Domestic Wire Outgoing", key: "wire_domestic_outgoing", deferred: false },
     { name: "International Money Order", key: "money_order", deferred: false },
   ])("routes unavailable current $name source without changing unrelated ordinary admission", async ({ name, key, deferred: mustDefer }) => {

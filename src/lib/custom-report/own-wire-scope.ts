@@ -32,6 +32,13 @@ const TRAILING_LEADER = /(?:(?:\.\s*){3,}|…)\s*$/;
 
 type PhysicalRow = { cells: string[]; sourceLine: string; lineIndex: number };
 
+function physicalCells(line: string): string[] {
+  const cells = line.split("|").map(clean);
+  // A complete Markdown outer delimiter is syntax, not a blank first/last column.
+  // Interior empty cells remain physical columns and are never collapsed.
+  return line.trim().startsWith("|") && line.trim().endsWith("|") ? cells.slice(1, -1) : cells;
+}
+
 /** Only literal label/price geometry, after price admission; no inferred fee or scope. */
 function physicalRows(lines: string[]): PhysicalRow[] {
   const result: PhysicalRow[] = [];
@@ -39,7 +46,7 @@ function physicalRows(lines: string[]): PhysicalRow[] {
     const sourceLine = lines[lineIndex].trim();
     if (!sourceLine || sourceLine.length > MAX_ROW) continue;
     // Keep empty cells: collapsing one would move a right-column label under a left header.
-    const cells = sourceLine.split("|").map(clean);
+    const cells = physicalCells(sourceLine);
     result.push({ cells, sourceLine, lineIndex });
     if (cells.length !== 1) continue;
     const cell = cells[0];
@@ -80,8 +87,13 @@ function labelKey(value: string): string {
     .filter(word => !/^(?:fees?|charges?|and|or|each|per|item|on)$/.test(word)))].sort().join(" ");
 }
 
+/** A finite current-name uncertainty cue; it never chooses a category or admits a price. */
+export function hasLiteralOutsideUsaWireCue(value: string): boolean {
+  return OUTSIDE_USA_WIRE.test(value) && !/\b(?:not|no|unavailable|except|excluding)\b/i.test(value);
+}
+
 function facts(own: string): { geography: WireGeography; directions: WireDirection[] } | null {
-  const outsideUSA = OUTSIDE_USA_WIRE.test(own) && !/\b(?:not|no|unavailable|except|excluding)\b/i.test(own);
+  const outsideUSA = hasLiteralOutsideUsaWireCue(own);
   const intl = INTERNATIONAL.test(own) || outsideUSA, domestic = DOMESTIC.test(own);
   const incoming = INCOMING.test(own), outgoing = OUTGOING.test(own);
   // Both means literal common scope, never a merger of unrelated direction cells.
@@ -98,7 +110,7 @@ function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow[]>
     const line = clean(lines[index]);
     if (!line) continue;
     visited++;
-    const cells = line.split("|").map(clean);
+    const cells = physicalCells(line);
     const column = cells[ownerColumn] ?? "";
     const nextCell = cells[ownerColumn + 1] ?? "";
     const ownPrice = /\$|\b(?:free|no charge|no fee)\b/i.test(column) || /^\$|^(?:free|no charge|no fee)\b/i.test(nextCell);

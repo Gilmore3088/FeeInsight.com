@@ -42,12 +42,12 @@ describe("final international verification uses held current source facts (#2278
     const f = facts("International Money Order | $5", "International Money Order", 5);
     expect(internationalVerificationDecision(f.raw, "money_order", "money_order", f.context)).toEqual({ kind: "not_applicable" });
   });
-  it.each(["International Wire Outgoing", "Foreign Transfer Fee", "Int'l Wire Incoming"])("routes actual %s uncertainty even when both keys and source are unavailable", name => {
+  it.each(["International Wire Outgoing", "Foreign Transfer Fee", "Int'l Wire Incoming", "Outgoing Wire Transfer outside USA Consumer Customer"])("routes actual %s uncertainty even when both keys and source are unavailable", name => {
     const f = facts(pdf.normalizedText, name, 45);
     expect(internationalVerificationDecision(f.raw, "minimum_balance", "minimum_balance", { kind: "unavailable" }))
       .toEqual({ kind: "deferred", reason: "source_unavailable" });
   });
-  it.each(["Domestic Wire Outgoing", "International Money Order"])("keeps the unrelated unavailable-source path for %s", name => {
+  it.each(["Domestic Wire Outgoing", "International Money Order", "Outgoing Wire Transfer for customers residing outside USA", "Outgoing Wire Transfer not outside USA"])("keeps the unrelated unavailable-source path for %s", name => {
     const f = facts("unused", name, 45);
     expect(internationalVerificationDecision(f.raw, "minimum_balance", "minimum_balance", { kind: "unavailable" }))
       .toEqual({ kind: "not_applicable" });

@@ -252,6 +252,13 @@ describe("source-owned international wire scope, independent of price admission 
     expect(sourceOwnedWireScope(text, "International Wire Transfers: Incoming", 15)).toMatchObject({ kind: "owned", geography: "international", directions: ["incoming"] });
   });
 
+  it("treats complete Markdown outer pipes as syntax while preserving interior empty columns", () => {
+    const header = "International Wire Transfers";
+    expect(sourceOwnedWireScope(`${header}\n| Incoming | $15 |`, `${header}: Incoming`, 15)).toMatchObject({ kind: "owned", geography: "international", directions: ["incoming"] });
+    expect(sourceOwnedWireScope(`| ${header} | Other Fees |\n| Incoming | $15 | Outgoing | $50 |`, `${header}: Outgoing`, 50).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope(`${header}\n| | Incoming | $15 |`, `${header}: Incoming`, 15).kind).toBe("unresolved");
+  });
+
   it.each([
     "Wire Transfers | Other Fees\nInternational | Other\nIncoming | $15 | Outgoing | $50",
     "International Wire Transfers | Other Fees\nIncoming | $15 | | Outgoing | $50",
