@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import type { ApiKeyValidation } from "@/lib/api-auth";
 import type { RateLimitResult } from "@/lib/api-rate-limit";
+import { CONTACT_EMAIL } from "@/lib/constants";
 
 /**
  * Shared plumbing for the public /api/v1 routes: one error shape, one set of
@@ -17,7 +18,7 @@ export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
  * The API's version, shown in /api/v1/openapi.json and the connector's serverInfo. Bump it in any PR
  * that changes the API; scripts/ci-guards.sh api-docs-kill enforces that (James, 2026-10-17).
  */
-export const API_VERSION = "1.11.0";
+export const API_VERSION = "1.11.1";
 
 export const API_ERROR_CODES = [
   "api_key_required",
@@ -91,7 +92,7 @@ export function apiError(
 }
 
 export function apiKeyRequiredError(): NextResponse {
-  return apiError(401, "api_key_required", "An API key is required. Ask hello@bankfeeindex.com for access.", {
+  return apiError(401, "api_key_required", `An API key is required. Make yours on your account page if your Hamilton plan includes API access, or ask ${CONTACT_EMAIL} for a partner key.`, {
     headers: { "WWW-Authenticate": "Bearer" },
   });
 }
@@ -119,7 +120,7 @@ export function burstLimitError(burst: RateLimitResult, now: Date = new Date()):
 }
 
 export function planRequiredError(rateLimit: RateLimitResult, what: string): NextResponse {
-  return apiError(403, "plan_required", `${what} requires a Pro or Enterprise API key`, {
+  return apiError(403, "plan_required", `${what} requires a Hamilton API key or a paid partner key`, {
     rateLimit,
     extra: { upgrade_url: "/subscribe" },
   });
