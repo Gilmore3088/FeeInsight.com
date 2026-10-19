@@ -58,6 +58,8 @@ export interface AreaRollupRow extends RollupRow {
 export interface CallRollupRow extends RollupRow {
   period_basis: string | null;
   sources: string[] | null;
+  /** Whether the scoped subject actually reported in this source/period group; null without a subject. */
+  subject_included?: boolean | null;
 }
 
 /**
@@ -121,7 +123,7 @@ const CALL_UNIT_SQL = `(CASE WHEN c.unit = 'count' THEN 'count' ELSE 'USD' END)`
  */
 export async function callPeerRollup(
   tx: Tx,
-  args: { itemKey: string; rowSources: string[]; memberIds: number[] | null; from: string | null; to: string | null; limit: number },
+  args: { itemKey: string; rowSources: string[]; memberIds: number[] | null; subjectId?: number | null; from: string | null; to: string | null; limit: number },
 ): Promise<CallRollupRow[]> {
   const measure = ncuaCallMeasure(args.itemKey);
   const rowSources = measure ? args.rowSources.filter((source) => source === "ncua") : args.rowSources;
@@ -132,10 +134,15 @@ export async function callPeerRollup(
            percentile_cont(0.75) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS p75,
            count(DISTINCT c.institution_id)::int AS institution_count,
            c.period_basis,
+           CASE WHEN ${args.subjectId ?? null}::bigint IS NULL THEN NULL
+             ELSE COALESCE(BOOL_OR(c.institution_id = ${args.subjectId ?? null}::bigint), FALSE) END AS subject_included,
            array_agg(DISTINCT c.source) AS sources,
            max(c.fetched_at) AS fetched_at,
            (array_agg(c.source_url ORDER BY c.fetched_at DESC NULLS LAST))[1] AS source_url
       FROM institution_call_report_items c
+      JOIN institution_sources identity ON identity.id = c.institution_id
+        AND ((identity.charter_type = 'bank' AND c.source = 'ffiec')
+          OR (identity.charter_type = 'credit_union' AND c.source = 'ncua'))
      WHERE c.item_key = ${args.itemKey}
        AND c.source = ANY(${rowSources}::text[])
        AND (${measure?.code ?? null}::text IS NULL OR c.item_code = ${measure?.code ?? null}::text)
@@ -144,8 +151,8 @@ export async function callPeerRollup(
        AND (${args.memberIds}::bigint[] IS NULL OR c.institution_id = ANY(${args.memberIds}::bigint[]))
        AND (${args.from}::text IS NULL OR to_char(c.report_date, 'YYYY-MM') >= ${args.from}::text)
        AND (${args.to}::text IS NULL OR to_char(c.report_date, 'YYYY-MM') <= ${args.to}::text)
-     GROUP BY c.report_date, 2, c.period_basis
-     ORDER BY c.report_date DESC, 2, c.period_basis
+     GROUP BY c.report_date, 2, c.period_basis, c.source
+     ORDER BY c.report_date DESC, 2, c.period_basis, c.source
      LIMIT ${args.limit}
   `;
   return [...rows];
@@ -176,6 +183,9 @@ export async function callInstitutionSeries(
            ${tx.unsafe(CALL_VALUE_SQL)}::float8 AS value, ${tx.unsafe(CALL_UNIT_SQL)} AS unit,
            c.period_basis, c.source, c.source_url, c.fetched_at
       FROM institution_call_report_items c
+      JOIN institution_sources identity ON identity.id = c.institution_id
+        AND ((identity.charter_type = 'bank' AND c.source = 'ffiec')
+          OR (identity.charter_type = 'credit_union' AND c.source = 'ncua'))
      WHERE c.institution_id = ${args.institutionId}
        AND c.item_key = ${args.itemKey}
        AND c.source = ANY(${rowSources}::text[])

@@ -80,7 +80,7 @@ describe("Hamilton institution briefing", () => {
     mocks.getFinancialsByInstitution.mockResolvedValue([
       {
         report_date: "2026-06-30",
-        source: "call_report",
+        source: "fdic",
         total_assets: 2500000000,
         total_deposits: 1800000000,
         service_charge_income: 12000000,
@@ -168,6 +168,17 @@ describe("Hamilton institution briefing", () => {
     expect(prompt).toContain('"confidence":0.95');
   });
 
+  it.each([["bank", "ncua"], ["credit_union", "fdic"], ["unknown", "ncua"]])("excludes %s financials from incompatible source %s", async (charter, source) => {
+    mocks.getInstitutionById.mockResolvedValueOnce({ id: 2945, institution_name: "Subject", charter_type: charter });
+    mocks.getFinancialsByInstitution.mockResolvedValueOnce([
+      { report_date: "2026-06-30", source, service_charge_income: 999999 },
+    ]);
+    const { buildHamiltonInstitutionBriefingSnapshot } = await import("./institution-briefing");
+    const snapshot = await buildHamiltonInstitutionBriefingSnapshot(contract, { writtenAnswer: true });
+    expect(snapshot?.evidence.some((fact) => fact.metric === "service_charge_income")).toBe(false);
+    expect(snapshot?.prompt).not.toContain("999999");
+  });
+
   it("returns null when the selected institution does not exist", async () => {
     mocks.getInstitutionById.mockResolvedValueOnce(null);
     const { buildHamiltonInstitutionBriefing } = await import("./institution-briefing");
@@ -176,6 +187,9 @@ describe("Hamilton institution briefing", () => {
   });
 
   it("builds the written prompt and validator facts from one dated, unit-aware filing snapshot", async () => {
+    const institution = await mocks.getInstitutionById();
+    mocks.getInstitutionById.mockClear();
+    mocks.getInstitutionById.mockResolvedValueOnce({ ...institution, charter_type: "credit_union" });
     mocks.getFinancialsByInstitution.mockResolvedValueOnce([
       { report_date: "2026-06-30", source: "ncua", service_charge_income: 57260, total_assets: 20000000, fee_income_ratio: 0.1, member_count: 123456 },
       { report_date: "2026-03-31", source: "ncua", service_charge_income: 27230, total_assets: 19000000, fee_income_ratio: null },
@@ -208,6 +222,9 @@ describe("Hamilton institution briefing", () => {
   });
 
   it("keeps account facts scoped and missing filing fields absent instead of inventing zero", async () => {
+    const institution = await mocks.getInstitutionById();
+    mocks.getInstitutionById.mockClear();
+    mocks.getInstitutionById.mockResolvedValueOnce({ ...institution, charter_type: "credit_union" });
     mocks.getFinancialsByInstitution.mockResolvedValueOnce([
       { report_date: "2026-06-30", source: "ncua", service_charge_income: null, total_assets: 0, fee_income_ratio: Number.NaN },
     ]);

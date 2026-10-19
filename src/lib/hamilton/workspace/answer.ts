@@ -8,6 +8,7 @@
  */
 
 import { PERCENTILE_METHOD } from "@/lib/percentile";
+import { nationalIncomeFamily } from "./national-income";
 import { revenueLineName } from "./revenue";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
@@ -316,13 +317,14 @@ function trendExhibit(research: FeeResearch): Exhibit | null {
       sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
     };
   }
-  const national = research.nationalIncomeSeries;
-  if (national.length >= 2) {
+  const family = nationalIncomeFamily(research.nationalIncomeSeries);
+  const national = family?.rows ?? [];
+  if (family && national.length >= 2) {
     return {
       kind: "trend",
-      title: "Deposit service charge income, all U.S. banks and credit unions",
+      title: `${family.measureLabel}, U.S. ${family.kind} on file`,
       unit: "dollars",
-      series: [{ label: "All filers", points: [...national].reverse().map((q) => ({ date: q.quarter, value: q.total })) }],
+      series: [{ label: `All ${family.kind} on file`, points: [...national].reverse().map((q) => ({ date: q.quarter, value: q.total })) }],
       sources: [national[0].sourceRef],
     };
   }

@@ -239,6 +239,8 @@ describe('terminal raw response integration with actual SDK and factory', () => 
                 return [{ id: 990 }];
             return [];
         }), { unsafe: vi.fn(async (query: string) => query.includes('FROM agent_source_texts adt') ? [{ source_document_id: 1, institution_id: 41, institution_name: 'Scan Bank 1', document_url: 'https://scan1.example/fees.pdf', content_hash: 'owned-hash-1' }] : []) });
+        // Callback-only sink; native Rosetta SQL controls prove rollback.
+        Object.assign(db, { begin: vi.fn(async (work: (scope: typeof db) => Promise<unknown>) => work(db)) });
         const pdfFetch = vi.fn(async () => new Response(new TextEncoder().encode('%PDF-1.4 owned fixture'), { headers: { 'content-type': 'application/pdf' } }));
         const r = await settle('rosetta-partial', () => runRosettaPaidRead({ runId: 900, db: db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>, fetchImpl: pdfFetch, pageCounter: async () => 3 }), v => ({ processed: v.processed, succeeded: v.succeeded, failed: v.failed, result: v.results, attempts: db.mock.calls.filter((c: unknown[]) => sqlText(c[0]).includes('INSERT INTO pipeline_attempts')).map((c: unknown[]) => ({ strategy: c[4], outcome: c[7], cost: c[9], detail: c.at(-1) })), stored: db.mock.calls.filter((c: unknown[]) => sqlText(c[0]).includes('INSERT INTO agent_source_texts')).map((c: unknown[]) => ({ values: c.slice(1) })) }));
         expect(r.error).toBeNull();

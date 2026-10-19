@@ -1,6 +1,10 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import { buildRevenueContext } from "@/lib/custom-report/revenue-context";
 import { describe, expect, it } from "vitest";
 import { buildMarketBranchFootprint } from "@/lib/data-store/branches";
-import { footprintLine, notComparableNote } from "./report-body";
+import { footprintLine, notComparableNote, RevenueSection } from "./report-body";
 
 const footprint = buildMarketBranchFootprint(
   2025,
@@ -62,5 +66,20 @@ describe("notComparableNote", () => {
   it("keeps the small-group wording for thin lines", () => {
     expect(notComparableNote({ own: null, peers: { n: 2 } as never })).toBe("Too few local competitors");
     expect(notComparableNote({ own: { amount: 10 } as never, peers: { n: 3 } as never })).toBe("Too few local competitors");
+  });
+});
+
+
+describe("RevenueSection financial measure labels", () => {
+  it("renders only a CU cohort and its broad income definition, never a mixed peer claim", () => {
+    const comparison = financialPeerComparison({ source: "ncua", reportDate: "2026-06-30", tier: "regional", minimumAssetsUsd: 1e10, maximumAssetsUsd: 250e9, subjectIncluded: true, eligibleCount: 25, reportedCount: 25, ratioReportedCount: 24, minimumMedianCount: 5 });
+    const revenue = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 300 }], { tier: "regional", sc_rank: 2, peer_count: 25, peer_median_sc: 75, comparison })!;
+    const html = renderToStaticMarkup(createElement(RevenueSection, { name: "Synthetic CU", revenue }));
+    expect(html).toContain("Broad credit-union fee income");
+    expect(html).toContain("25 credit unions");
+    expect(html).toContain("including Synthetic CU");
+    expect(html).toContain("not deposit-only or overdraft-only income");
+    expect(html).not.toContain("banks and credit unions");
+    expect(html).not.toContain("Deposit service charges");
   });
 });

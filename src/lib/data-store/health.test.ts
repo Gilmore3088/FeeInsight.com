@@ -17,10 +17,6 @@ import {
   getDepositGrowthTrend,
   getLoanGrowthTrend,
   getInstitutionCountTrends,
-  type IndustryHealthMetrics,
-  type GrowthTrend,
-  type HealthByCharter,
-  type InstitutionCountTrend,
 } from "./health";
 import { getSql } from "./connection";
 import { unfilteredFinancialReads } from "./financial-sources.test-helper";
@@ -38,9 +34,9 @@ function resetMock(mock: MockSql) {
 
 // Shared mock rows for health indicator queries
 const healthRows = [
-  { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.012" },
-  { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.011" },
-  { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.010" },
+  { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.012", institution_count: 5 },
+  { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.011", institution_count: 5 },
+  { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.010", institution_count: 5 },
 ];
 
 // ── getIndustryHealthMetrics (HEALTH-01) ──────────────────────────────────────
@@ -81,9 +77,9 @@ describe("getIndustryHealthMetrics", () => {
 
   it("computes correct median from mock quarterly data", async () => {
     const rows = [
-      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.015" },
-      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.013" },
-      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.012" },
+      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.015", institution_count: 5 },
+      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.013", institution_count: 5 },
+      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.012", institution_count: 5 },
     ];
     getMock().unsafe.mockResolvedValue(rows);
 
@@ -91,6 +87,20 @@ describe("getIndustryHealthMetrics", () => {
     expect(result.roa).not.toBeNull();
     // current should be the most recent quarter's median (index 0)
     expect(result.roa!.current).toBeCloseTo(0.015, 4);
+  });
+
+  it("suppresses a four-reporter median without losing dates/counts or using an older value as current", async () => {
+    getMock().unsafe.mockResolvedValue([
+      { quarter: "2026-Q2", quarter_date: "2026-06-30", median_value: null, institution_count: 4 },
+      { quarter: "2026-Q1", quarter_date: "2026-03-31", median_value: 1.2, institution_count: 5 },
+    ]);
+    const result = await getIndustryHealthMetrics("ncua");
+    expect(result.roa).toMatchObject({ current: null, asOf: "2026-06-30", minimum_median_count: 5, trend: "insufficient_data" });
+    expect(result.roa?.history).toEqual([
+      { date: "2026-Q2", value: null, institution_count: 4 },
+      { date: "2026-Q1", value: 1.2, institution_count: 5 },
+    ]);
+    expect(getMock().unsafe.mock.calls[0][1]).toEqual([12, "ncua"]);
   });
 
   it("returns null indicator gracefully on DB error", async () => {
@@ -105,12 +115,12 @@ describe("getIndustryHealthMetrics", () => {
   it("computes trend direction correctly (rising when recent > older)", async () => {
     // 6 rows: recent 3 avg ~0.015, older 3 avg ~0.01 -> rising
     const risingRows = [
-      { quarter: "2025-Q2", quarter_date: "2025-04-01", median_value: "0.016" },
-      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.015" },
-      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.014" },
-      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.011" },
-      { quarter: "2024-Q2", quarter_date: "2024-04-01", median_value: "0.010" },
-      { quarter: "2024-Q1", quarter_date: "2024-01-01", median_value: "0.009" },
+      { quarter: "2025-Q2", quarter_date: "2025-04-01", median_value: "0.016", institution_count: 5 },
+      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.015", institution_count: 5 },
+      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.014", institution_count: 5 },
+      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.011", institution_count: 5 },
+      { quarter: "2024-Q2", quarter_date: "2024-04-01", median_value: "0.010", institution_count: 5 },
+      { quarter: "2024-Q1", quarter_date: "2024-01-01", median_value: "0.009", institution_count: 5 },
     ];
     getMock().unsafe.mockResolvedValue(risingRows);
 
@@ -165,14 +175,14 @@ describe("getHealthMetricsByCharter", () => {
   it("bank and credit_union values are independent (separate mock values)", async () => {
     // First 3 calls: bank (roa, roe, eff) — second 3: credit_union
     const bankRows = [
-      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.020" },
-      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.019" },
-      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.018" },
+      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.020", institution_count: 5 },
+      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.019", institution_count: 5 },
+      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.018", institution_count: 5 },
     ];
     const cuRows = [
-      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.010" },
-      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.009" },
-      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.008" },
+      { quarter: "2025-Q1", quarter_date: "2025-01-01", median_value: "0.010", institution_count: 5 },
+      { quarter: "2024-Q4", quarter_date: "2024-10-01", median_value: "0.009", institution_count: 5 },
+      { quarter: "2024-Q3", quarter_date: "2024-07-01", median_value: "0.008", institution_count: 5 },
     ];
     getMock().unsafe
       .mockResolvedValueOnce(bankRows)  // bank roa

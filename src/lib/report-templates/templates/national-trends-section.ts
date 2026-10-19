@@ -8,6 +8,7 @@
 import { chapterDivider, compactTable, footnote, horizontalBarChart, pageBreak, statCardRow } from "../primitives";
 import type { StatCard } from "../primitives";
 import { TREND_FEES, type FeeMedian, type NationalTrends, type TrendFee } from "@/lib/report-assemblers/national-trends";
+import { financialIncomeLabel } from "@/lib/report-assemblers/financial-income";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 
 const SUBHEAD_STYLE =
@@ -47,44 +48,35 @@ function feeCells(fees: Record<TrendFee, FeeMedian>): Record<string, string> {
 }
 
 function districtPart(t: NationalTrends, withFees: boolean): string {
-  const quarter = t.districts.find((d) => d.income)?.income?.quarter;
-  if (!withFees) {
-    if (!quarter) return `<p style="${EMPTY_STYLE}">No district service-charge filings are on file.</p>`;
-    return compactTable({
-      caption: `Service-charge income by Federal Reserve district, ${quarter}`,
-      columns: [
-        { key: "district", label: "District", align: "left" },
-        { key: "filers", label: "Filers", align: "right", format: "integer" },
-        { key: "income", label: "Fee income", align: "right" },
-        { key: "yoy", label: "vs year ago", align: "right" },
-      ],
-      rows: t.districts.map((d) => ({
-        district: `${d.district} ${d.name}`,
-        filers: d.income?.institutions ?? null,
-        income: d.income ? thousandsShort(d.income.thousands) : "\u2014",
-        yoy: d.income ? signedPct(d.income.yoyPct) : "\u2014",
-      })),
-    });
-  }
+  const incomeTable = t.districts.flatMap((d) => (d.financialIncome ?? []).flatMap((g) => {
+    const q = g.quarters[0];
+    return q ? [{ district: `${d.district} ${d.name}`, measure: financialIncomeLabel(g.source), date: q.report_date,
+      filers: q.reported_count, income: thousandsShort(q.total_thousands), yoy: signedPct(q.yoy_change_pct) }] : [];
+  }));
+  const districtGroups = new Map(t.districts.flatMap((d) => (d.financialIncome ?? []).map((g) => [g.source, g] as const)));
+  const income = incomeTable.length ? compactTable({
+    caption: "Separate financial measures by Federal Reserve district",
+    columns: [{ key: "district", label: "District", align: "left" }, { key: "measure", label: "Measure", align: "left" },
+      { key: "date", label: "Quarter end", align: "left" }, { key: "filers", label: "Filers", align: "right" },
+      { key: "income", label: "Income", align: "right" }, { key: "yoy", label: "vs year ago", align: "right" }],
+    rows: incomeTable,
+  }) + footnote([...districtGroups.values()].map((g) => `${g.publisher}: ${g.definition}; standalone quarters, displayed in USD. ${g.cohort_rule}`).join(" ")) : `<p style="${EMPTY_STYLE}">No source-specific district financial filings are on file.</p>`;
+  if (!withFees) return income;
   const priced = t.districts.filter((d) => d.institutions > 0);
   if (priced.length === 0) return `<p style="${EMPTY_STYLE}">No district has published fees on file yet.</p>`;
   return compactTable({
-    caption: `Median published fee by Federal Reserve district${quarter ? `, with ${quarter} service-charge income` : ""}`,
+    caption: "Median published fee by Federal Reserve district",
     columns: [
       { key: "district", label: "District", align: "left" },
       { key: "institutions", label: "Institutions", align: "right", format: "integer" },
       ...FEE_COLUMNS,
-      { key: "income", label: "Fee income", align: "right" },
-      { key: "yoy", label: "vs year ago", align: "right" },
     ],
     rows: t.districts.map((d) => ({
       district: `${d.district} ${d.name}`,
       institutions: d.institutions,
       ...feeCells(d.fees),
-      income: d.income ? thousandsShort(d.income.thousands) : "—",
-      yoy: d.income ? signedPct(d.income.yoyPct) : "—",
     })),
-  });
+  }) + income;
 }
 
 function districtSpread(t: NationalTrends): string {
@@ -141,55 +133,22 @@ function tierPart(t: NationalTrends): string {
 }
 
 function incomePart(t: NationalTrends): string {
-  if (t.income.length === 0) return `<p style="${EMPTY_STYLE}">No FDIC or NCUA service-charge filings are on file.</p>`;
-  const latest = t.income[0];
-  const oldest = t.income[t.income.length - 1];
-  const change = oldest.thousands > 0 ? ((latest.thousands - oldest.thousands) / oldest.thousands) * 100 : null;
-  const cards: StatCard[] = [
-    {
-      label: `Service-charge income, ${latest.quarter}`,
-      value: thousandsShort(latest.thousands),
-      delta: latest.yoyPct === null ? undefined : `${signedPct(latest.yoyPct)} vs a year earlier`,
-      deltaColor: "neutral",
-      source: `${latest.institutions.toLocaleString("en-US")} filers`,
-    },
-    {
-      label: `Change since ${oldest.quarter}`,
-      value: change === null ? "—" : signedPct(change),
-      source: `${t.income.length} quarters of FDIC and NCUA filings`,
-    },
-    {
-      label: `Credit union share, ${latest.quarter}`,
-      value: latest.thousands > 0 ? `${((latest.cuThousands / latest.thousands) * 100).toFixed(0)}%` : "—",
-      source: `Banks ${thousandsShort(latest.bankThousands)}, credit unions ${thousandsShort(latest.cuThousands)}`,
-    },
-  ];
-  const chronological = [...t.income].reverse();
-  return [
-    statCardRow(cards),
-    horizontalBarChart({
-      title: "Deposit service-charge income by quarter",
-      bars: chronological.map((q) => ({ label: q.quarter, value: q.thousands, displayValue: thousandsShort(q.thousands) })),
-      source: "FDIC call reports and NCUA 5300; credit-union year-to-date figures split into quarters.",
-    }),
-    compactTable({
-      caption: "Quarterly service-charge income",
-      columns: [
-        { key: "quarter", label: "Quarter", align: "left" },
-        { key: "total", label: "Total", align: "right" },
-        { key: "banks", label: "Banks", align: "right" },
-        { key: "cus", label: "Credit unions", align: "right" },
-        { key: "yoy", label: "vs year ago", align: "right" },
-      ],
-      rows: t.income.map((q) => ({
-        quarter: q.quarter,
-        total: thousandsShort(q.thousands),
-        banks: thousandsShort(q.bankThousands),
-        cus: thousandsShort(q.cuThousands),
-        yoy: signedPct(q.yoyPct),
-      })),
-    }),
-  ].join("\n");
+  const groups = t.financialIncomeGroups ?? [];
+  if (!groups.some((g) => g.quarters.length)) return `<p style="${EMPTY_STYLE}">No source-specific financial filings are on file.</p>`;
+  return groups.filter((g) => g.quarters.length).map((g) => {
+    const latest = g.quarters[0];
+    const label = financialIncomeLabel(g.source);
+    const cards: StatCard[] = [{ label: `${label}, ${latest.report_date}`, value: thousandsShort(latest.total_thousands),
+      delta: latest.yoy_change_pct === null ? undefined : `${signedPct(latest.yoy_change_pct)} vs a year earlier`,
+      deltaColor: "neutral", source: `${latest.reported_count.toLocaleString("en-US")} ${g.charter_type === "bank" ? "bank" : "credit-union"} filers` }];
+    return [statCardRow(cards), horizontalBarChart({ title: `${label} by quarter`,
+      bars: [...g.quarters].reverse().map((q) => ({ label: q.quarter, value: q.total_thousands, displayValue: thousandsShort(q.total_thousands) })),
+      source: `${g.publisher}; standalone quarters; ${g.unit}. ${g.definition}` }),
+      compactTable({ caption: label, columns: [{ key: "date", label: "Quarter end", align: "left" },
+        { key: "total", label: "Income", align: "right" }, { key: "filers", label: "Filers", align: "right" }, { key: "yoy", label: "vs year ago", align: "right" }],
+        rows: g.quarters.map((q) => ({ date: q.report_date, total: thousandsShort(q.total_thousands), filers: q.reported_count, yoy: signedPct(q.yoy_change_pct) })) }),
+      footnote(`${g.definition}. ${g.cohort_rule}`)].join("\n");
+  }).join("\n");
 }
 
 function outlierPart(t: NationalTrends): string {
@@ -235,7 +194,7 @@ export function renderNationalTrendsSection(trends: NationalTrends, options: Nat
     statePart(trends),
     tiers ? `<h4 style="${SUBHEAD_STYLE}">Asset size</h4>` : "",
     tiers ? tierPart(trends) : "",
-    `<h4 style="${SUBHEAD_STYLE}">Fee income, ${trends.income.length} quarters</h4>`,
+    `<h4 style="${SUBHEAD_STYLE}">Fee income by reporting source</h4>`,
     incomePart(trends),
     `<h4 style="${SUBHEAD_STYLE}">Highest published fees</h4>`,
     outlierPart(trends),

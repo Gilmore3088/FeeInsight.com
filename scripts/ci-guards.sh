@@ -42,6 +42,8 @@
 #                 Fail if post-agentic-decommission migrations reintroduce retired runtime concepts.
 #   financial-source-kill
 #                 Fail if src reads institution_financial_records without a source filter (ffiec rows use other units).
+#   runtime-ddl-kill
+#                 Fail if non-test src code creates, alters or drops schema at runtime (schema comes from supabase/migrations).
 #   bayes-manifest-kill
 #                 Fail if a PR changes a Knox, Darwin, Hamilton, Magellan or Rosetta version constant that no Bayes manifest names.
 #   guide-version-kill
@@ -653,6 +655,29 @@ sql_placeholder_kill() {
   echo "sql-placeholder-kill: OK (no placeholders computed from params.length - N)"
 }
 
+runtime_ddl_kill() {
+  # Schema comes from supabase/migrations only. Request code that runs CREATE/ALTER/DROP
+  # TABLE/INDEX/... drifts from the migrated schema and writes on a public read (#2234).
+  # Tests may build throwaway tables; *.test.ts(x) files are skipped.
+  local pattern='\b(create|alter|drop)[[:space:]]+(or[[:space:]]+replace[[:space:]]+)?(unique[[:space:]]+)?(temp(orary)?[[:space:]]+)?(table|index|schema|extension|type|view|materialized[[:space:]]+view|trigger|sequence|function)\b'
+  local hits=""
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    hits=$(git grep -niE "$pattern" -- 'src/*.ts' 'src/*.tsx' 'src/*.js' 'src/*.mjs' \
+      ':(exclude)src/**/*.test.ts' ':(exclude)src/**/*.test.tsx' | grep -v '^Binary file' || true)
+  else
+    hits=$(grep -rniE "$pattern" --include='*.ts' --include='*.tsx' --include='*.js' --include='*.mjs' \
+      --exclude='*.test.ts' --exclude='*.test.tsx' src 2>/dev/null || true)
+  fi
+  # Comments may name the pattern.
+  hits=$(printf '%s\n' "$hits" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' | grep -v '^$' || true)
+  if [[ -n "$hits" ]]; then
+    echo "runtime-ddl-kill: schema belongs in supabase/migrations, not in request code; remove the DDL (a missing table needs a migration James approves):" >&2
+    echo "$hits" >&2
+    exit 1
+  fi
+  echo "runtime-ddl-kill: OK (no runtime DDL in src)"
+}
+
 migration_version_kill() {
   # Supabase records each migration by the number before the first underscore and applies
   # files in number order. Two files with one number, or a file numbered below what prod has
@@ -911,13 +936,14 @@ case "$SUBCOMMAND" in
   guide-version-kill) guide_version_kill ;;
   bayes-manifest-kill) bayes_manifest_kill ;;
   api-docs-kill) api_docs_kill ;;
+  runtime-ddl-kill) runtime_ddl_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill>" >&2
     exit 2
     ;;
 esac

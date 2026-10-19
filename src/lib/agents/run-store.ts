@@ -168,6 +168,13 @@ const CATEGORY_GUARD_STEP_LIMIT = 100;
 const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "report", "manual_repair", "dry_run"] as const;
 const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
+function admissionDeferralSamples(samples: readonly { feeRawId: number; reason: string }[] | undefined) {
+  return (samples ?? []).slice(0, 25).map(({ feeRawId, reason }) => ({
+    feeRawId,
+    reason: /^[a-z0-9_:]{1,100}$/.test(reason) ? reason : "admission_unresolved",
+  }));
+}
+
 type SqlTag = typeof sql;
 export interface AgentRunSelectionScope {
   agent: AdminAgent;
@@ -1064,10 +1071,12 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${recheckReceiptNote(recheck)}${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${verification.deferredRawFees ? ` ${verification.deferredRawFees.toLocaleString()} row(s) deferred without a verification decision because current source/raw admission remains unresolved.` : ""}${recheckReceiptNote(recheck)}${release.deferred ? ` ${release.deferred.toLocaleString()} held fee(s) deferred without a release decision.` : ""}${conditionalZero.selected > 0 ? ` Settled ${(conditionalZero.selected - (conditionalZero.deferred ?? 0)).toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).${conditionalZero.deferred ? ` ${conditionalZero.deferred.toLocaleString()} conditional-$0 hold(s) deferred without a decision.` : ""}` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
+          deferred_raw_fees: verification.deferredRawFees ?? 0,
+          verification_deferrals: admissionDeferralSamples(verification.deferrals),
           verified_fee_observations: verification.verifiedFees,
           skipped_raw_fees: verification.skippedFees,
           verified_free_fees: verification.zeroFeesVerified,
@@ -1081,6 +1090,8 @@ async function executeAgenticStep(
           document_owner: documentOwnerDetail(documentOwner),
           held_release: {
             selected: release.selected,
+            deferred: release.deferred ?? 0,
+            deferrals: admissionDeferralSamples(release.deferrals),
             acted: release.acted,
             verdicts: release.verdicts,
             released: release.released,
@@ -1099,7 +1110,7 @@ async function executeAgenticStep(
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
           ...(releaseRepairFull ? { release_repair_full_count: releaseRepairFindingsDetail(releaseRepairFull) } : {}),
           schedule_refile: { selected: scheduleRefile.selected, refiled: scheduleRefile.refiled },
-          conditional_zero: { selected: conditionalZero.selected, verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
+          conditional_zero: { selected: conditionalZero.selected, settled: conditionalZero.selected - (conditionalZero.deferred ?? 0), deferred: conditionalZero.deferred ?? 0, deferrals: admissionDeferralSamples(conditionalZero.deferrals), verdicts: conditionalZero.verdicts, verified: conditionalZero.verified },
           feedback_written: verification.feedbackWritten,
           reason_counts: verification.reasonCounts,
           outcomes: verification.outcomes,
@@ -1563,13 +1574,15 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${(published.identityDeferredFees ?? 0) > 0 ? ` ${published.identityDeferredFees!.toLocaleString()} deferred because selected verification or identity changed; left pending for a stable read.` : ""}${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${(published.identityDeferredFees ?? 0) > 0 ? ` ${published.identityDeferredFees!.toLocaleString()} deferred because selected verification or identity changed; left pending for a stable read.` : ""}${(published.evidenceDeferredFees ?? 0) > 0 ? ` ${published.evidenceDeferredFees!.toLocaleString()} left pending because required publication evidence was unavailable.` : ""}${published.evidenceCheck?.readState === "unavailable" ? " Publication evidence reads were incomplete; known independent decisions remain recorded separately." : ""}${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
           published_fees: published.publishedFees,
           skipped_verified_fees: published.skippedFees,
           identity_deferred_verified_fees: published.identityDeferredFees ?? 0,
+          evidence_deferred_verified_fees: published.evidenceDeferredFees ?? 0,
+          publication_evidence_check: published.evidenceCheck ?? null,
           superseded_fees: published.supersededFees,
           outlier_rollbacks: outlierRollbacks.length,
           outlier_restores: outlierRestores.length,
@@ -2098,6 +2111,8 @@ async function executeAgenticStep(
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
             identity_deferred: result.identityDeferred ?? false,
+            evidence_deferred: result.evidenceDeferred ?? false,
+            unavailable_evidence: result.unavailableEvidence ?? [],
             institution_id: result.institutionId,
             fee_name: result.feeName,
             amount: result.amount,

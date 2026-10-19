@@ -1,5 +1,17 @@
 # Darwin Agent Guide
 
+## Current symbolic lesser-of applicability hold (#2335)
+
+The existing current-raw lock also refuses verification when both `knox_review:eligibility`
+and source-derived `knox_eligibility:symbolic_lesser` are present, regardless of a stale
+chosen category or legacy product representation. The common writer owns the exact source
+proof and pending-only lock/fresh-history protocol; models cannot supply this provenance.
+The printed dollar still passes numeric source support. This is prospective unsupported
+symbolic-charge applicability, not a false-price verdict, live retirement rule or global
+needs-flag requirement. Judged histories and ordinary flagless rejudges stay unchanged;
+verification/source-check/replay versions remain fixed. Historical88747validation remains
+separate after process release and exact normal reviewed recovery.
+
 ## Current cap applicability hold (#2304)
 
 The existing current-raw row lock also refuses verification when both
@@ -1135,6 +1147,32 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   still inherits the raw row's audience). The decision is the audience the batch duplicate key,
   the consumer peer check and the second-source check read, and it is recorded on the
   `verify.rules` attempt (`fee_audience`, `audience_evidence`).
+- Prospective verification also reads a bounded exclusive qualifier on the exact fee's own
+  requested-price clause (#2342, `own-price-audience.ts`). Unknown raw rows take a proved
+  consumer/business-only clause before broader context; conflicting/repeated owner ambiguity
+  is explicit no decision, never a broad `both` fallback. Known raw labels and existing
+  name/product/paired-price meanings stand. This is applicability metadata, not price or
+  category verification authority.
+  `verification-audience.ts` holds factual document → artifact → raw locks through each row's
+  checks and settlement, using native savepoints and NOWAIT at every new lock. An available
+  no-cue source stays locked too. New own-clause authority additionally requires the exact
+  original generated raw artifact/hash; a current own cue without that binding defers.
+  Genuinely unavailable ordinary inputs preserve the documented legacy boundary, not a proof
+  of qualifier absence. Current raw core/optional supplied facts, effective audience and the
+  existing held-release derived frequency are bound again by the shared final writer. Model,
+  caller audience/text and retained historical witnesses supply no new authority.
+  Normal verification, free held sorting, post-response paid review, recorded-pass settlement,
+  conditional-zero resolution and direct release cover negative/duplicate outcomes too.
+  Busy/changed/unresolved inputs roll back their row savepoint and record no ordinary attempt,
+  feedback or pending-state change; parent receipts report counts and at most25 ID/reason
+  samples, without source bodies/stacks. Paid response usage is independent; locks are never
+  acquired across the provider call. Existing provider controls/calls and second-look/copy
+  rules are unchanged.
+  This is prospective behavior on rows existing selectors already admit. `verify.rules` v3,
+  source-check/batch versions and all extraction/reader/relabel epochs/cursors remain unchanged;
+  no historical rejudge, backfill, live relabel or fee mutation is activated. Explicit dry runs
+  and switched-off release previews retain their legacy read-only calculation and do not claim
+  parity with locked live admission. The historical v4 relabel below keeps its default adapter.
 - The audience relabel (`audience-relabel.ts`, step `audience-relabel`, #1059 step 3) gives the
   same decision to live fees verified as `unknown` before migration 20270110000047, reading each
   document's newest text. A fee it cannot decide stays `unknown`. No provider calls. Each step

@@ -2,6 +2,33 @@
 
 Knox owns conservative raw fee extraction.
 
+## Source-owned symbolic lesser-of eligibility (#2335)
+
+A complete physical own-label row can print a dollar bound followed by `or amount of
+minimum payment, whichever is less`. The dollar remains numerically source-supported;
+the current flat-price representation cannot express the symbolic charge. Free extraction
+and both common candidate writers keep this row in eligibility review, carrying the full
+own clause and source-derived `knox_eligibility:symbolic_lesser`. Supplied model conditions,
+linked conditions and extra flags cannot create or qualify that provenance. Multiple prices,
+unsupported tails and indistinguishable same-name/same-price rows decline; they never choose
+an amount, account, frequency or category. Percent formulas, prefixed table/header labels and
+wrapped clauses remain outside this bounded physical grammar, not a claim of complete safety.
+
+Positive late-payment named/category callers now need hash-bound full source even when their
+fee is ordinary. Missing legacy content may recover only the exact artifact/document/
+institution/hash; unavailable or mismatched content declines. Supplied content retains the
+existing trusted internal source-row relation contract and checks its actual digest. This
+caller-boundary change is measured/tested separately from the formula wording frame.
+
+Only exact unverified pending identities may become this held shape, using the existing
+transaction, row lock and fresh judgment check. Every judged/verified/published history and
+unrelated nonpending hold stays unchanged. Darwin's current-raw lock respects the dedicated
+provenance despite stale category/product selection; ordinary flagless rejudges stay eligible.
+This is the explicitly approved prospective applicability phase, like #2304/#2259, not a
+shared unsupported-price rule or historical retirement predicate. No replay epoch, selector,
+rules version, provider activation or historical88747repair is included. The attempted fresh
+wording frame timed out without a rowset; it supplies no population or global-recall claim.
+
 ## Source-owned cap-first eligibility (#2304, prospective admission)
 
 The existing literal `NSF Fee` / `Overdraft Fee` cap-first price grammar can prove an item

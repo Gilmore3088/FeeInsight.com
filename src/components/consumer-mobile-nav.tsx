@@ -166,7 +166,7 @@ function DrawerList({
 
 /**
  * On phones the desktop account menu is hidden, so Pro readers get its items here: the bank
- * and its data, all changes, the Reference pages, Admin for staff, account and sign out.
+ * and its data, alerts and watches, the Reference pages, Admin for staff, account and sign out.
  */
 function ProAccountLinks({ isStaff, onNavigate }: { isStaff: boolean; onNavigate: () => void }) {
   const contextHref = useHamiltonNavigationHref();

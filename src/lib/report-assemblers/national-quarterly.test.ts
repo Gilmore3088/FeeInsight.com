@@ -13,6 +13,8 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@/lib/data-store/fee-index", () => ({
   getNationalIndex: vi.fn(),
   getPeerIndex: vi.fn(),
+  getPeerIndexes: vi.fn().mockResolvedValue([]),
+  getPeerFeeValues: vi.fn().mockResolvedValue([new Map()]),
 }));
 vi.mock("@/lib/data-store/call-reports", () => ({
   getRevenueTrend: vi.fn(),
@@ -31,7 +33,13 @@ vi.mock("@/lib/public-stats", () => ({
   getPublicStatsSummary: vi.fn(),
 }));
 
-import { buildThesisSummary } from "./national-quarterly";
+import { buildFinancialIncomeGroup } from "./financial-income";
+vi.mock("./developments", () => ({ loadDevelopments: vi.fn().mockResolvedValue({ items: [] }), loadFeeChanges: vi.fn().mockResolvedValue({ changes: [] }) }));
+import { getNationalIndex, getPeerIndex } from "@/lib/data-store/fee-index";
+import { getRevenueTrend } from "@/lib/data-store/call-reports";
+import { getBeigeBookHeadlines, getBeigeBookThemes, getFredSummary } from "@/lib/data-store/fed";
+import { getPublicStatsSummary } from "@/lib/public-stats";
+import { assembleNationalQuarterly, buildThesisSummary } from "./national-quarterly";
 import type { NationalQuarterlyPayload } from "./national-quarterly";
 
 // ─── Mock factory ──────────────────────────────────────────────────────────────
@@ -173,19 +181,20 @@ describe("buildThesisSummary", () => {
     });
   });
 
-  it("maps revenue_snapshot when revenue is non-null", () => {
-    const payload = makeMockPayload();
-    const result = buildThesisSummary(payload);
-
-    expect(result.revenue_snapshot).not.toBeNull();
-    expect(result.revenue_snapshot).toMatchObject({
-      latest_quarter: "Q4 2024",
-      total_service_charges: 48_000_000_000,
-      yoy_change_pct: -3.6,
-      bank_service_charges: 36_000_000_000,
-      cu_service_charges: 12_000_000_000,
-      total_institutions: 8000,
-    });
+  it("rejects legacy pooled snapshots and preserves separate dated source groups", () => {
+    const groups = ["fdic", "ncua"].map((source) => buildFinancialIncomeGroup(source as "fdic" | "ncua", [{
+      quarter: "2026-Q2", total_service_charges: source === "fdic" ? 1000 : 200,
+      bank_service_charges: source === "fdic" ? 1000 : 0, cu_service_charges: source === "ncua" ? 200 : 0,
+      total_institutions: source === "fdic" ? 50 : 10, yoy_change_pct: null,
+    }]));
+    const result = buildThesisSummary(makeMockPayload({ financial_income_groups: groups }));
+    expect(result.revenue_snapshot).toBeNull();
+    expect(result.financial_income_groups).toEqual(groups);
+    expect(result.financial_income_groups?.map((g) => g.quarters[0])).toEqual([
+      expect.objectContaining({ report_date: "2026-06-30", total_thousands: 1000, reported_count: 50 }),
+      expect.objectContaining({ report_date: "2026-06-30", total_thousands: 200, reported_count: 10 }),
+    ]);
+    expect(result.derived_tensions.join(" ")).not.toContain("Average service-charge income");
   });
 
   it("maps fred_snapshot when fred is non-null", () => {
@@ -211,14 +220,14 @@ describe("buildThesisSummary", () => {
     ]);
   });
 
-  it("generates all 3 derived_tensions when all data is present", () => {
+  it("keeps fee-price tensions while excluding the legacy mixed income mean", () => {
     const payload = makeMockPayload();
     const result = buildThesisSummary(payload);
 
-    expect(result.derived_tensions).toHaveLength(3);
+    expect(result.derived_tensions).toHaveLength(2);
     expect(result.derived_tensions[0]).toContain("Banks charge more than credit unions in 12 of 15");
     expect(result.derived_tensions[1]).toContain("7 of 15 fee categories have a middle half narrower than 30% of the median");
-    expect(result.derived_tensions[2]).toContain("Average service-charge income per reporting institution: $6,000,000 in Q4 2024");
+    expect(result.derived_tensions.join(" ")).not.toContain("Average service-charge income");
   });
 
   it("sets revenue_snapshot and fred_snapshot to null when missing", () => {
@@ -329,5 +338,30 @@ describe("NationalQuarterlyPayload shape", () => {
     expect(payload.beige_themes).toEqual([]);
     // district_headlines still present as fallback
     expect(payload.district_headlines.length).toBeGreaterThan(0);
+  });
+});
+
+
+describe("national financial reads", () => {
+  it("partitions actual assembly inputs by source and leaves old mixed metrics empty", async () => {
+    vi.mocked(getNationalIndex).mockResolvedValue([]);
+    vi.mocked(getPeerIndex).mockResolvedValue([]);
+    vi.mocked(getBeigeBookHeadlines).mockResolvedValue(new Map());
+    vi.mocked(getBeigeBookThemes).mockResolvedValue([]);
+    vi.mocked(getFredSummary).mockResolvedValue(null as never);
+    vi.mocked(getPublicStatsSummary).mockResolvedValue({ institutions: 0 } as never);
+    vi.mocked(getRevenueTrend).mockImplementation(async (_n, source) => ({ latest: null, quarters: [{
+      quarter: source === "fdic" ? "2026-Q3" : "2026-Q2", total_service_charges: source === "fdic" ? 100 : 10,
+      bank_service_charges: source === "fdic" ? 100 : 0, cu_service_charges: source === "ncua" ? 10 : 0,
+      total_institutions: source === "fdic" ? 50 : 5, yoy_change_pct: null,
+    }] }));
+    const assembled = await assembleNationalQuarterly();
+    expect(getRevenueTrend).toHaveBeenCalledWith(12, "fdic");
+    expect(getRevenueTrend).toHaveBeenCalledWith(12, "ncua");
+    expect(assembled.financial_income_groups?.map((g) => [g.source, g.quarters[0].report_date, g.quarters[0].reported_count]))
+      .toEqual([["fdic", "2026-09-30", 50], ["ncua", "2026-06-30", 5]]);
+    expect(assembled.revenue).toBeNull();
+    expect(assembled.income_series).toEqual([]);
+    expect(assembled.derived).toMatchObject({ revenue_per_institution: null, bank_revenue_share_pct: null, cu_revenue_share_pct: null });
   });
 });

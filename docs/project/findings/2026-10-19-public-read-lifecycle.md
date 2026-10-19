@@ -26,6 +26,11 @@ retry, new query or timeout increase. The underlying statement can still fail or
 the platform's request lifetime; this is a bounded amplification/lifecycle repair, not a
 claim that all database saturation is resolved.
 
+Once the budget's own timer fires or `remaining()` observes zero, expiry stays terminal
+even if the clock later moves backward. A read's unrelated error still permits ordinary
+catch-and-continue within the remaining budget. See
+`2026-10-19-read-budget-terminal-deadline.md` for the causal controls and their limits.
+
 **Lesson:** A deadline must govern whether optional work starts, as well as how long
 the response waits. Keep already-started transport work attached to the request lifecycle.
 Do not infer CPU activity or exact request attribution from a client-protocol wait alone.

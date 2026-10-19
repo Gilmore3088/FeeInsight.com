@@ -125,7 +125,8 @@ function searchQualityCte(scopeSql: string): string {
     WHERE NOT EXISTS (
         SELECT 1
         FROM scope_catalog pfc
-        WHERE pfc.fee_verified_id = fv.fee_verified_id
+        WHERE pfc.institution_id = fv.institution_id
+          AND pfc.fee_verified_id = fv.fee_verified_id
           AND pfc.review_status <> 'rejected'
       )
     GROUP BY fv.institution_id

@@ -44,7 +44,11 @@ function paidDb(rows: Array<Record<string, unknown>>, { learning = true } = {}):
   return db;
 }
 
-const asDb = (db: DbMock) => db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>;
+const asDb = (db: DbMock) => {
+  // Callback facade only; native SQL tests prove actual rollback/savepoint behavior.
+  Object.assign(db, { begin: vi.fn(async (work: (scope: DbMock) => Promise<unknown>) => work(db)) });
+  return db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>;
+};
 
 const pdfBytes = new TextEncoder().encode("%PDF-1.4 scanned bytes");
 const pdfFetch = () => vi.fn(async () => new Response(pdfBytes, { status: 200, headers: { "content-type": "application/pdf" } }));
