@@ -2053,6 +2053,37 @@ describe("guard v76 (#2037, James's \"Split\"): International ATM is its own typ
     expect(checkFeeCategory("atm_international", "Foreign ATM Transaction Fee").ok).toBe(false);
   });
 
+  it("v77 refuses a card that draws only on credit (W43 live check, Oct 19)", () => {
+    for (const name of [
+      "Credit Card Replacement",
+      "Replace a Visa Credit Card",
+      "Credit Replacement Card",
+      "Orion Credit Cards: Card Replacement Fee",
+      "HELOC Access Card Replacement",
+      "Credit Card Replacement Fee (Subsequent occurrence within 6 months)",
+      "Lost/Replacement Credit Card",
+    ]) {
+      expect(checkFeeCategory("card_replacement", name).ok, name).toBe(false);
+      // No other type takes it: the fee keeps its key and fails, so it is not published.
+      expect(refileCategory("card_replacement", name), name).toBe("card_replacement");
+    }
+    for (const name of ["Credit Card Rush Fee", "Credit Card Replacement - Expedited"]) {
+      expect(checkFeeCategory("rush_card", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      "Debit/Credit Card Replacement",
+      "ATM, Credit, or Check Card – Replacement",
+      "Interest Compounded Daily CREDIT/DEBITLost Credit/Debit Card Replacement",
+      "Card Replacement (Credit, Debit, and Travel Card)",
+      "Credit Union Membership Card (Replacement Fee)",
+      "Replacement card (fee credited back if fraud)",
+      "Debit Card Replacement",
+    ]) {
+      expect(checkFeeCategory("card_replacement", name), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("rush_card", "Debit or Credit Card Rush Delivery")).toEqual({ ok: true });
+  });
+
   it("refuses a dollar amount on a line that states a rate", () => {
     expect(checkFeeCategory("atm_international", "International ATM withdrawal 1% of amount", { amount: 1 }).ok).toBe(false);
   });
