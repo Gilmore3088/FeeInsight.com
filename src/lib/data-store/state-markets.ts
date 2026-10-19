@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import { CITY_FEES, getStateMarketCities, type CityFeeKey } from "./city-market";
 
 /**
@@ -70,7 +70,9 @@ export async function getStateMarketFees(stateCode: string): Promise<StateMarket
                   ROW_NUMBER() OVER (PARTITION BY ef.institution_id, ef.fee_category ORDER BY ef.amount, ef.id) AS rn,
                   COUNT(*) OVER (PARTITION BY ef.institution_id, ef.fee_category) AS n
              FROM published_fee_catalog ef
+             JOIN institution_sources ct ON ct.id = ef.institution_id
             WHERE ef.institution_id = ANY($1::bigint[])
+              AND ${activeInstitutionFilter("ct")}
               AND ef.fee_category = ANY($2::text[])
               AND ef.review_status = 'approved' AND ef.amount IS NOT NULL AND ef.amount >= 0
               AND ${statsRowFilter("ef")}

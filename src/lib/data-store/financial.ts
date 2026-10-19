@@ -1,5 +1,6 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
+import { activeInstitutionFilter } from "./fee-stats";
 import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
 // FDIC/NCUA dollar columns retain stored thousands (financial-sources.ts).
@@ -755,6 +756,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
       JOIN institution_sources s
         ON s.charter_type = me.charter_type
        AND s.asset_size_tier IS NOT DISTINCT FROM me.asset_size_tier
+       AND (${sql.unsafe(activeInstitutionFilter("s"))} OR s.id = ${targetId})
       JOIN institution_financial_records f
         ON f.institution_id = s.id AND f.report_date = me.report_date AND f.source = me.source
      GROUP BY me.report_date, me.source`;
@@ -853,6 +855,7 @@ export async function getPeerPercentiles(targetId: number): Promise<PeerPercenti
         JOIN institution_sources s
           ON s.charter_type = me.charter_type
          AND s.asset_size_tier IS NOT DISTINCT FROM me.asset_size_tier
+         AND (${activeInstitutionFilter("s")} OR s.id = $1)
         JOIN institution_financial_records f
           ON f.institution_id = s.id AND f.report_date = me.report_date AND f.source = me.source
         LEFT JOIN institution_financial_records p

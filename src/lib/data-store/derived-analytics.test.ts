@@ -19,7 +19,7 @@ import {
 } from "./derived-analytics";
 import { getSql } from "./connection";
 import { unfilteredFinancialReads } from "./financial-sources.test-helper";
-import { STATS_ROW_FILTER } from "./fee-stats";
+import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
 
 type MockSql = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -73,9 +73,12 @@ describe("RevenueConcentration", () => {
     expect(result.summary.prevalence_pct).toBeCloseTo(80, 1);
     expect(result.summary.total_fee_dollars).toBe(10000);
     expect(result.summary.total_institutions).toBe(100);
-    expect(getMock().unsafe).toHaveBeenCalledTimes(2);
+    // Each query takes the statistics filter and the active-institution rule (#2190).
+    expect(getMock().unsafe).toHaveBeenCalledTimes(4);
     expect(getMock().unsafe).toHaveBeenNthCalledWith(1, STATS_ROW_FILTER);
-    expect(getMock().unsafe).toHaveBeenNthCalledWith(2, STATS_ROW_FILTER);
+    expect(getMock().unsafe).toHaveBeenNthCalledWith(2, activeInstitutionFilter("ct"));
+    expect(getMock().unsafe).toHaveBeenNthCalledWith(3, STATS_ROW_FILTER);
+    expect(getMock().unsafe).toHaveBeenNthCalledWith(4, activeInstitutionFilter("ct"));
   });
 
   it("keeps real zero-fee rows in prevalence while excluding business/unknown rows at SQL boundary", async () => {

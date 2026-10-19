@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
-import { STATS_ROW_FILTER } from "./fee-stats";
+import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
 import type { FinancialSource } from "./financial-sources";
 
 /**
@@ -104,7 +104,7 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
       AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
-    WHERE 1 = 1
+    WHERE ${sql.unsafe(activeInstitutionFilter("ct"))}
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.id, ct.institution_name, ct.charter_type, ct.state_code,
              ct.asset_size_tier, ct.fed_district, ifin.report_date, ifin.source,
@@ -184,6 +184,7 @@ export async function getTierFeeRevenueSummary(source?: FinancialSource): Promis
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
     WHERE ct.asset_size_tier IS NOT NULL
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.asset_size_tier, ifin.source, ifin.report_date
     ORDER BY AVG(ifin.total_assets) ASC
@@ -259,6 +260,7 @@ export async function getCharterFeeRevenueSummary(source?: FinancialSource): Pro
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
     WHERE ifin.service_charge_income IS NOT NULL
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     GROUP BY ct.charter_type, ifin.source, ifin.report_date
   ` as CharterFeeRevenueSummary[];
 

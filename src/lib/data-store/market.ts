@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER } from "./fee-stats";
+import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
 import type { IndexEntry } from "./fee-index";
 
 export interface MarketIndexEntry extends IndexEntry {
@@ -75,7 +75,7 @@ export async function getFilteredTierCounts(filters: {
   asset_tiers?: string[];
   fed_districts?: number[];
 }): Promise<{ tier: string; count: number }[]> {
-  const conditions = ["asset_size_tier IS NOT NULL"];
+  const conditions = ["asset_size_tier IS NOT NULL", activeInstitutionFilter("institution_sources")];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
@@ -126,6 +126,7 @@ export async function getFeesForCategory(
     "ef.amount IS NOT NULL",
     "ef.amount >= 0",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     approvedOnly
       ? "ef.review_status = 'approved'"
       : "ef.review_status != 'rejected'",
@@ -192,6 +193,7 @@ export async function getSegmentOutliers(
     "ef.amount IS NOT NULL",
     "ef.amount >= 0",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
   ];
   const params: (string | number)[] = [];
   let paramIdx = 0;
@@ -251,7 +253,7 @@ export async function getSegmentOutliers(
     amount: number;
   }[];
 
-  const flaggedConditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'flagged'"];
+  const flaggedConditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'flagged'", activeInstitutionFilter("ct")];
   const flaggedParams: (string | number)[] = [];
   let flaggedParamIdx = 0;
   if (filters.charter_type) {

@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER } from "./fee-stats";
+import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
 import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
 import type { FinancialSource } from "./financial-sources";
 import { canonicalFinancialSourceSql } from "./financial-peer-contract";
@@ -92,24 +92,28 @@ export async function getRevenueConcentration(
       SELECT
         fee_category,
         SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as total_fee_dollars,
-        COUNT(DISTINCT institution_id) as institution_count
+        COUNT(DISTINCT ef.institution_id) as institution_count
       FROM published_fee_catalog ef
-      WHERE fee_category IS NOT NULL
-        AND review_status = 'approved'
+      JOIN institution_sources ct ON ct.id = ef.institution_id
+      WHERE ef.fee_category IS NOT NULL
+        AND ef.review_status = 'approved'
         AND ${sql.unsafe(STATS_ROW_FILTER)}
-        AND amount IS NOT NULL
-        AND amount >= 0
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
       GROUP BY fee_category
       ORDER BY total_fee_dollars DESC
     `;
 
     const totalRow = await sql`
-      SELECT COUNT(DISTINCT institution_id) as total
+      SELECT COUNT(DISTINCT ef.institution_id) as total
       FROM published_fee_catalog ef
-      WHERE review_status = 'approved'
+      JOIN institution_sources ct ON ct.id = ef.institution_id
+      WHERE ef.review_status = 'approved'
         AND ${sql.unsafe(STATS_ROW_FILTER)}
-        AND amount IS NOT NULL
-        AND amount >= 0
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
     `;
 
     if (rows.length === 0) {

@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { activeInstitutionFilter } from "./fee-stats";
 
 export interface CollectionHealth {
   last_run_at: string | null;
@@ -62,7 +63,7 @@ export async function getDistrictMetrics(filters?: {
   charter_type?: string;
   asset_tiers?: string[];
 }): Promise<DistrictMetric[]> {
-  const conditions = ["ct.fed_district IS NOT NULL"];
+  const conditions = ["ct.fed_district IS NOT NULL", activeInstitutionFilter("ct")];
   const params: (string | number)[] = [];
   let paramIdx = 1;
 
