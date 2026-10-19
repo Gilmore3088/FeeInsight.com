@@ -2,6 +2,7 @@ import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
   extractCandidatesFromText,
+  recognizedFeeBullets,
   isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
   withBoxSizeCellsSplit,
@@ -22,6 +23,7 @@ import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-repo
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
+import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -127,7 +129,10 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // (NSF) or Overdraft (OD)") and with a returned item for NSF ("Overdraft/Return Item Fee"). The
 // stale-read floor stays at v78; only pages with a combined row and no twin are read again
 // (`KNOX_TWIN_READ_BELOW_VERSION`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 82 } as const;
+// v83 (#2151): explicitly labeled, bounded wrapped bullets keep their own terminal price and
+// complete conditions. All readers and the source witness share physical ownership, so a
+// neighboring paid/returned row cannot donate its price. Stale-read floor remains v78.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 83 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -284,13 +289,14 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
   // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
   const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
-  const windows = priceWindows(text);
+  const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
+  const windows = priceWindows(legacyText);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
-    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
+    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(legacyText, extractCandidatesFromText(text)) },
     // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
-    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
+    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(legacyText)) },
     // #1100 gap 3: each product's monthly fee in an account comparison table, read by its column.
-    { ...KNOX_ACCOUNT_TABLE_STRATEGY, pass: 2, run: () => extractAccountTableCandidates(newestColumnText(text)) },
+    { ...KNOX_ACCOUNT_TABLE_STRATEGY, pass: 2, run: () => extractAccountTableCandidates(newestColumnText(legacyText)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,
