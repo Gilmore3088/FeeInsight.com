@@ -1,0 +1,9 @@
+@media (prefers-reduced-motion: no-preference) {
+  .consumer-intro {
+    animation: consumer-enter 450ms ease-out both;
+  }
+  @keyframes consumer-enter {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
