@@ -156,7 +156,6 @@ export const ROOMS: Room[] = [
     href: "/admin/growth",
     pages: [
       { href: "/admin/growth", label: "Board", role: "Plan, drafts and approvals", exact: true },
-      { href: "/admin/agents/marketing", label: "Marketing team", role: "Eight marketing agents" },
     ],
   },
   {
