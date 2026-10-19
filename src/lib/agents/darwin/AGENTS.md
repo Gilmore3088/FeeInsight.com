@@ -827,11 +827,12 @@ Darwin owns verification and classification.
 - Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
   Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
   parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
-  so a live fee's document is Canadian when its stored text names Interac, CDIC or Canada Deposit
-  Insurance as a whole word and names neither FDIC nor NCUA (the address is not used: Natbank's own
-  U.S. pages are on nbc.ca too; "interactive" matched 352 documents, `\mInterac\M` only Natbank's
-  two). It reads every live document's text (8,722; 1.3 to 3.9 s), so at most hourly; an
-  institution-scoped run always reads. On (`CANADIAN_DOCUMENT_TAKEDOWN_LIVE`), a match goes through
+  so a live fee's document is Canadian when its stored text names two of Interac, e-Transfer,
+  chequing and CDIC/Canada Deposit Insurance as whole words and names neither FDIC nor NCUA (one
+  alone is not enough: a border credit union may price Interac ATMs in Canada; the address is not
+  used: Natbank's own U.S. pages are on nbc.ca too and name only "chequing"). It reads every live
+  document's text (8,722; 1.3 to 3.9 s), so at most hourly; an institution-scoped run always reads
+  and does not restart the clock. On (`CANADIAN_DOCUMENT_TAKEDOWN_LIVE`), a match goes through
   the 12-hour second look (`darwin.canadian_document`) and is archived with `canadian_document:
   #<doc>` (batch `darwin-canadian-document-<run>`, verified row rejected with the
   `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail

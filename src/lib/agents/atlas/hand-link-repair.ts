@@ -109,8 +109,9 @@ export async function runHandLinkRepair(
          SET rejected_source_urls = (
                SELECT COALESCE(jsonb_agg(item), '[]'::jsonb)
                  FROM (
-                   SELECT item FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) item
-                    WHERE NOT (item->>'url' = ANY(${own}::text[]))
+                   SELECT item FROM jsonb_array_elements(
+                            CASE WHEN jsonb_typeof(rejected_source_urls) = 'array' THEN rejected_source_urls ELSE '[]'::jsonb END) item
+                    WHERE NOT COALESCE(item->>'url' = ANY(${own}::text[]), FALSE)
                    UNION ALL
                    SELECT item FROM jsonb_array_elements(${JSON.stringify(added)}::jsonb) item
                  ) kept

@@ -12,16 +12,17 @@ type SqlTag = typeof sql;
  * registry pointed at nbc.ca, so 12 fees were read from the parent's Canadian chequing page and
  * personal fee guide (Canadian dollars, Interac e-Transfers) and published as Natbank's.
  *
- * Every institution here is U.S.-chartered, so a document is Canadian when its stored text names a
- * Canadian marker (`CANADIAN_MARKS`: Interac, CDIC or Canada Deposit Insurance) and names no U.S.
- * insurer (`US_INSURER`: FDIC or NCUA). The address is not used: Natbank's own U.S. pages live on
- * nbc.ca too (docs 17161, 33328), and they name no Interac. Whole words only: "interactive"
- * matched 352 live documents on Oct 19, "\mInterac\M" only Natbank's two. RBC Bank's cross-border
- * pages name CDIC beside FDIC, so they stay.
+ * Every institution here is U.S.-chartered, so a document is Canadian when its stored text names two
+ * Canadian banking words (`CANADIAN_MARKS`: Interac, e-Transfer, chequing, CDIC or Canada Deposit
+ * Insurance) and names no U.S. insurer (`US_INSURER`: FDIC or NCUA). The address is not used:
+ * Natbank's own U.S. pages live on nbc.ca too (docs 17161, 33328) and name only "chequing". Whole
+ * words only: "interactive" matched 352 live documents on Oct 19, "\mInterac\M" only Natbank's two.
+ * RBC Bank's cross-border pages name CDIC beside FDIC, so they stay.
  *
  * Every live document's text is read (8,722 documents, 1.3 to 3.9 s on prod, Oct 19), so a step
- * reads at most once per `CANADIAN_DOCUMENT_SCAN_INTERVAL_HOURS`, keyed on the last event of a real
- * read. An institution-scoped run reads only that institution's fees, every time.
+ * reads at most once per `CANADIAN_DOCUMENT_SCAN_INTERVAL_HOURS`, keyed on the last event of a full
+ * read. An institution-scoped run reads only that institution's fees, every time, and its event
+ * (`scoped: true`) does not restart the clock.
  *
  * Switched on, a matching fee goes through the shared 12-hour second look (check
  * `darwin.canadian_document`) and is archived on its second failure: rolled back with
@@ -44,18 +45,26 @@ export const CANADIAN_DOCUMENT_LIMIT = 2_000;
 export const CANADIAN_DOCUMENT_SAMPLES = 20;
 export const CANADIAN_DOCUMENT_SCAN_INTERVAL_HOURS = 1;
 
-/** Words a Canadian bank's document names, written once for JS and Postgres (`\m...\M`, `~*`). */
-const CANADIAN_WORDS = "interac|cdic|canada deposit insurance";
+/**
+ * Canadian banking words, written once for JS and Postgres (`\m...\M`, `~*`). A document is
+ * Canadian when it names at least `CANADIAN_MARKS_NEEDED` of them: one alone is not enough, since a
+ * U.S. credit union near the border may price "Interac ATM withdrawals in Canada" and print no
+ * insurer (review of v1). Natbank's Canadian pages name three or four; its U.S. page names only
+ * "chequing" (doc 17161), and no other live document names any two (prod, read-only, Oct 19).
+ */
+export const CANADIAN_MARKS: readonly string[] = ["interac", "e[-\u2011 ]?transfers?", "chequing", "cdic|canada deposit insurance"];
+export const CANADIAN_MARKS_NEEDED = 2;
 const US_INSURER_WORDS = "fdic|ncua";
-export const CANADIAN_MARKS_SQL = `\\m(${CANADIAN_WORDS})\\M`;
+export const CANADIAN_MARKS_SQL: readonly string[] = CANADIAN_MARKS.map((words) => `\\m(${words})\\M`);
 export const US_INSURER_SQL = `\\m(${US_INSURER_WORDS})\\M`;
-const CANADIAN_MARKS = new RegExp(`\\b(?:${CANADIAN_WORDS})\\b`, "i");
+const CANADIAN_MARK_RES = CANADIAN_MARKS.map((words) => new RegExp(`\\b(?:${words})\\b`, "i"));
 const US_INSURER = new RegExp(`\\b(?:${US_INSURER_WORDS})\\b`, "i");
 
-/** Pure: the text is a Canadian bank's document (a Canadian marker, no U.S. insurer). */
+/** Pure: the text is a Canadian bank's document (two Canadian marks, no U.S. insurer). */
 export function canadianDocument(text: string | null | undefined): boolean {
   const body = text ?? "";
-  return CANADIAN_MARKS.test(body) && !US_INSURER.test(body);
+  if (US_INSURER.test(body)) return false;
+  return CANADIAN_MARK_RES.filter((mark) => mark.test(body)).length >= CANADIAN_MARKS_NEEDED;
 }
 
 export interface CanadianDocumentRow {
@@ -91,8 +100,10 @@ export interface CanadianDocumentFindings {
 export interface CanadianDocumentResult extends CanadianDocumentFindings {
   live: boolean;
   dryRun: boolean;
-  /** True when the step skipped the read (the last real read was under the interval ago). */
+  /** True when the step skipped the read (the last full read was under the interval ago). */
   skipped: boolean;
+  /** An institution-scoped read: it never restarts the hourly clock. */
+  scoped: boolean;
   flagged: number;
   waiting: number;
   takenDown: number[];
@@ -156,10 +167,14 @@ export function canadianDocumentRowsSql(db: SqlTag, options: { institutionId?: n
         JOIN LATERAL (
           SELECT ast.normalized_text FROM agent_source_texts ast
            WHERE ast.source_document_id = d.source_document_id
+           ORDER BY ast.id DESC
            LIMIT 1
         ) t ON TRUE
-       WHERE t.normalized_text ~* ${CANADIAN_MARKS_SQL}
-         AND t.normalized_text !~* ${US_INSURER_SQL}
+       WHERE t.normalized_text !~* ${US_INSURER_SQL}
+         AND (t.normalized_text ~* ${CANADIAN_MARKS_SQL[0]})::int
+           + (t.normalized_text ~* ${CANADIAN_MARKS_SQL[1]})::int
+           + (t.normalized_text ~* ${CANADIAN_MARKS_SQL[2]})::int
+           + (t.normalized_text ~* ${CANADIAN_MARKS_SQL[3]})::int >= ${CANADIAN_MARKS_NEEDED}
     )
     SELECT live.*, btrim(sd.document_url) AS document_url
       FROM live
@@ -170,15 +185,15 @@ export function canadianDocumentRowsSql(db: SqlTag, options: { institutionId?: n
   `;
 }
 
-/** True when a real (not skipped) read ran under the interval ago. A failed read never skips. */
+/** True when a full (not institution-scoped) read ran under the interval ago. A failed read never skips. */
 async function readRecently(db: SqlTag, now: Date): Promise<boolean> {
   try {
     const rows = await inSavepoint(db, (scope) => scope<{ created_at: Date | string | null }[]>`
       SELECT created_at
         FROM agent_run_events
        WHERE event_type = ${CANADIAN_DOCUMENT_CHECK}
-         AND COALESCE(detail->>'skipped', 'false') <> 'true'
-       ORDER BY id DESC
+         AND COALESCE(detail->>'scoped', 'false') <> 'true'
+       ORDER BY created_at DESC, id DESC
        LIMIT 1
     `);
     const at = rows[0]?.created_at == null ? null : new Date(rows[0].created_at).getTime();
@@ -200,7 +215,7 @@ export async function recheckCanadianDocuments(
   const live = options.live ?? CANADIAN_DOCUMENT_TAKEDOWN_LIVE;
   const { matches: _none, ...empty } = findCanadianDocuments([]);
   void _none;
-  const result: CanadianDocumentResult = { live, dryRun: options.dryRun, skipped: false, ...empty, flagged: 0, waiting: 0, takenDown: [] };
+  const result: CanadianDocumentResult = { live, dryRun: options.dryRun, skipped: false, scoped: options.institutionId != null, ...empty, flagged: 0, waiting: 0, takenDown: [] };
 
   if (options.institutionId == null && !options.dryRun && await readRecently(db, options.now ?? new Date())) {
     result.skipped = true;
@@ -328,6 +343,7 @@ export function canadianDocumentDetail(result: CanadianDocumentResult) {
     switch_live: result.live,
     dry_run: result.dryRun,
     skipped: result.skipped,
+    scoped: result.scoped,
     matched: result.matched,
     documents: result.documents,
     institutions: result.institutions,

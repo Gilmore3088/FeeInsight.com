@@ -2530,11 +2530,18 @@ async function executeAgenticStep(
     case "atlas-city-repair": {
       const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });
       // #2022: registry links checked by hand (Natbank's own U.S. pages), the same guarded kind of repair.
-      const links = await runHandLinkRepair({ db: tx, dryRun: run.runKind === "dry_run" });
+      // Its own savepoint: a failure leaves the city repairs written and is reported in the detail.
+      let links: Awaited<ReturnType<typeof runHandLinkRepair>> | null = null;
+      let linksError: string | null = null;
+      try {
+        links = await inSavepoint(tx, (scope) => runHandLinkRepair({ db: scope, dryRun: run.runKind === "dry_run" }));
+      } catch (error) {
+        linksError = error instanceof Error ? error.message : String(error);
+      }
       return {
         status: "completed",
-        summary: links.candidates.length > 0 ? `${summarizeCityRepair(result)} ${summarizeHandLinkRepair(links)}` : summarizeCityRepair(result),
-        detail: { ...cityRepairDetail(result), hand_links: handLinkRepairDetail(links) },
+        summary: links && links.candidates.length > 0 ? `${summarizeCityRepair(result)} ${summarizeHandLinkRepair(links)}` : summarizeCityRepair(result),
+        detail: { ...cityRepairDetail(result), hand_links: links ? handLinkRepairDetail(links) : { error: linksError } },
       };
     }
     case "atlas-storage-retention": {

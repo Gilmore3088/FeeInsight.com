@@ -38,22 +38,24 @@ const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as Templ
 
 describe("canadianDocument (#2022)", () => {
   it("reads National Bank of Canada's pages as Canadian and U.S. schedules as not", () => {
-    expect(canadianDocument("Unlimited Interac e-Transfers with no fees")).toBe(true);
+    // Natbank's Canadian chequing page and fee guide (docs 26833, 26834) name two or more marks.
+    expect(canadianDocument("Chequing account ... Unlimited Interac e\u2011Transfers with no fees")).toBe(true);
     expect(canadianDocument("Fee Guide for Personal Banking Solutions ... Interac e-Transfer ... 28")).toBe(true);
-    expect(canadianDocument("Eligible deposits are insured by the Canada Deposit Insurance Corporation")).toBe(true);
-    expect(canadianDocument("Member CDIC")).toBe(true);
-    // Natbank's U.S. page (doc 17161): no Canadian marker.
-    expect(canadianDocument("NatCheck Unlimited Monthly fee $5 ... Florida")).toBe(false);
+    expect(canadianDocument("Chequing ... Eligible deposits are insured by the Canada Deposit Insurance Corporation")).toBe(true);
+    // One mark alone is not enough: a border credit union pricing Canadian ATMs, Natbank's U.S. page.
+    expect(canadianDocument("Interac ATM withdrawal in Canada $2.00")).toBe(false);
+    expect(canadianDocument("Chequing account NatCheck Unlimited Monthly fee $5 ... Florida")).toBe(false);
+    expect(canadianDocument("Member CDIC")).toBe(false);
     // "interactive" matched 352 live documents on Oct 19; whole words only.
-    expect(canadianDocument("Use our interactive fee calculator or interact with a banker")).toBe(false);
+    expect(canadianDocument("Use our interactive fee calculator or interact with a banker about transfers")).toBe(false);
     // RBC Bank's cross-border page names CDIC beside FDIC: a U.S. bank's document.
-    expect(canadianDocument("RBC Bank (Georgia), N.A. Member FDIC. Not insured by CDIC.")).toBe(false);
-    expect(canadianDocument("Interac ATM in Canada ... Federally insured by NCUA")).toBe(false);
+    expect(canadianDocument("RBC Bank (Georgia), N.A. Member FDIC. Not insured by CDIC. Interac e-Transfer")).toBe(false);
+    expect(canadianDocument("Interac e-Transfer ... Federally insured by NCUA")).toBe(false);
     expect(canadianDocument(null)).toBe(false);
   });
 
   it("writes the same words for Postgres", () => {
-    expect(CANADIAN_MARKS_SQL).toBe("\\m(interac|cdic|canada deposit insurance)\\M");
+    expect(CANADIAN_MARKS_SQL).toEqual(["\\m(interac)\\M", "\\m(e[-\u2011 ]?transfers?)\\M", "\\m(chequing)\\M", "\\m(cdic|canada deposit insurance)\\M"]);
     expect(US_INSURER_SQL).toBe("\\m(fdic|ncua)\\M");
   });
 });
@@ -106,6 +108,10 @@ describe("recheckCanadianDocuments (#2022)", () => {
 
     const scoped = dbFor(ROWS, { lastReadAt: new Date("2026-10-19T01:30:00Z") });
     expect((await recheckCanadianDocuments(asDb(scoped), { runId: 1, dryRun: false, now, institutionId: 2675 })).matched).toBe(3);
+    // A scoped read's event says so, and the clock read leaves scoped events out.
+    const scopedEvent = scoped.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("INSERT INTO agent_run_events"));
+    expect(JSON.parse(String(scopedEvent!.at(-1)))).toMatchObject({ scoped: true });
+    expect(texts(old).find((text) => text.includes("FROM agent_run_events"))).toContain("detail->>'scoped'");
   });
 
   it("writes nothing in a dry run or with the switch off, and survives a failed read", async () => {
