@@ -127,8 +127,8 @@ export const KEPT_PUBLISH_CALLS = [
  * Which of the moved sweeps a step runs.
  * - `full`: every sweep (switch off, or a publish with no state and no institution).
  * - `lane`: none; the `publish-sweeps` step runs them (switch on, a state lane's publish).
- * - `institution`: every sweep scoped to the institution except `feedbackSync`, which is global
- *   there too (switch on, a Read-now or hand-found run's publish).
+ * - `institution`: every sweep scoped to the institution, and none of the seven that take no
+ *   institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`) (switch on, a Read-now or hand-found run's publish).
  * - `sweeps`: every moved sweep, unscoped (the `publish-sweeps` step itself).
  */
 export type PublishSweepMode = "full" | "lane" | "institution" | "sweeps";
@@ -147,9 +147,31 @@ export function publishSweepMode(options: {
   return "full";
 }
 
+/**
+ * The moved sweeps that take no institution id, so in a Read-now publish they would still run over
+ * every bank. With the split on, a Read-now publish leaves them to the `publish-sweeps` step:
+ * - `feedbackSync`, `holdFeedback`: learning-store upkeep over every outcome; nothing about the bank.
+ * - `handAmounts`, `cutNameDuplicates`, `handTakedowns`, `handAudience`: fixed hand lists keyed by
+ *   fee ids already applied; a row the Read-now step publishes gets a new id, so no list can name
+ *   it. A newly merged list entry reaches its rows at the next `publish-sweeps` run (one tick).
+ * - `extractionNotes`: a tidy of Knox's raw rows (`conditions` to `extraction_note`); it never
+ *   decides whether a fee publishes.
+ * `accountTypeHold` stays in the Read-now publish, scoped to its bank: it holds the bank's own
+ * non-checking monthly fees as verified before its rows publish (#1100 gap 1).
+ */
+export const GLOBAL_ONLY_PUBLISH_SWEEPS: readonly MovedPublishSweep[] = [
+  "handAmounts",
+  "cutNameDuplicates",
+  "handTakedowns",
+  "handAudience",
+  "extractionNotes",
+  "feedbackSync",
+  "holdFeedback",
+];
+
 export function runsMovedSweep(mode: PublishSweepMode, key: MovedPublishSweep): boolean {
   if (mode === "lane") return false;
-  if (mode === "institution") return key !== "feedbackSync";
+  if (mode === "institution") return !GLOBAL_ONLY_PUBLISH_SWEEPS.includes(key);
   return true;
 }
 
@@ -294,6 +316,8 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
     stepId: ctx.stepId,
     batchId: batchId(ctx),
     dryRun,
+    // Scoped to the bank only in a Read-now publish with the split on; otherwise every bank, as before.
+    ...(ctx.mode === "institution" ? { institutionId } : {}),
   }));
   // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
   const handTakedowns = await sweep(ctx, "handTakedowns", (): Result<typeof applyHandTakedowns> => ({
@@ -359,7 +383,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   // a guard change takes effect without anyone starting the repair run by hand.
   const categoryGuard = await sweep(ctx, "categoryGuard", (): Result<typeof runHamiltonCategoryGuard> => ({
     scannedFees: 0, failingFees: 0, rolledBackFees: 0, rejectedVerifiedFees: 0, flaggedFees: 0, awaitingSecondLook: 0,
-    restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [],
+    confirmedFeeIds: [], restoredFees: 0, refiledFees: 0, liveRefiledFees: 0, cardProductPending: 0, cardProductPendingSamples: [],
     limit: ctx.categoryGuardLimit, dryRun, rollbackBatchId: batchId(ctx), guardVersion: 0, byCode: {}, byCategory: {}, failures: [],
   }), () => runHamiltonCategoryGuard({
     runId,
@@ -672,7 +696,9 @@ export function movedSweepTakedownIds(r: MovedSweepResults): number[] {
     ...r.productPage.rolledBack.map((row) => row.feePublishedId),
     ...r.productPageConflict.rolledBack.map((row) => row.feePublishedId),
     ...r.crossPage.rolledBack.map((row) => row.feePublishedId),
-    ...r.categoryGuard.failures.map((row) => row.feePublishedId),
+    // Only failures a second look confirmed; first looks and waiting fees stay live
+    // (`movedSweepSecondLookIds`).
+    ...r.categoryGuard.confirmedFeeIds,
     ...r.earlyDuplicateCollapses.map((row) => row.feePublishedId),
     ...(r.nearNameCollapse.live ? r.nearNameCollapse.collapses.map((row) => row.feePublishedId) : []),
     ...(r.pageCopyCollapse.live ? r.pageCopyCollapse.collapses.map((row) => row.feePublishedId) : []),
@@ -680,6 +706,15 @@ export function movedSweepTakedownIds(r: MovedSweepResults): number[] {
     ...r.linkDrift.archived.map((row) => row.feePublishedId),
   ];
   return Array.from(new Set(ids.filter((id): id is number => Number.isFinite(id)))).sort((a, b) => a - b);
+}
+
+/**
+ * Category-guard failures that are not coming down this run: first looks and fees waiting for
+ * their second look. Kept apart from the takedown ids so the window check counts only takedowns.
+ */
+export function movedSweepSecondLookIds(r: MovedSweepResults): number[] {
+  const confirmed = new Set(r.categoryGuard.confirmedFeeIds);
+  return Array.from(new Set(r.categoryGuard.failures.map((row) => row.feePublishedId).filter((id) => !confirmed.has(id)))).sort((a, b) => a - b);
 }
 
 const DRY_RUN_ROLLBACK = Symbol("publish-sweeps dry run rolled back");
@@ -787,6 +822,7 @@ export async function runPublishSweepsStep(
     .filter(([key]) => key.endsWith(".flagged"))
     .reduce((sum, [, value]) => sum + value, 0);
   const takedownIds = movedSweepTakedownIds(results);
+  const secondLookIds = movedSweepSecondLookIds(results);
   const indexRefresh = !dryRun && changed > 0
     ? await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(db, { runId: options.runId, force: true }))
     : null;
@@ -814,6 +850,9 @@ export async function runPublishSweepsStep(
       would_take_down_ids: dryRun ? takedownIds.slice(0, PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT) : undefined,
       taken_down_ids: dryRun ? undefined : takedownIds.slice(0, PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT),
       takedown_ids_total: takedownIds.length,
+      // Category-guard first looks and fees awaiting their second look: still live, not takedowns.
+      second_look_candidate_ids: secondLookIds.slice(0, PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT),
+      second_look_candidates_total: secondLookIds.length,
       ...(dryRun ? { dry_run_write_check: check.state, dry_run_first_writer: check.firstWriter, rolled_back: rolledBack } : {}),
       index_refreshed: indexRefresh?.refreshed ?? false,
       index_categories: indexRefresh?.categories ?? 0,
