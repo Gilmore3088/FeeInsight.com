@@ -207,3 +207,25 @@ describe("readSourceHealth", () => {
     // The scheduler's module graph is large; loading it the first time is slow.
   }, 60_000);
 });
+
+it("keeps recorded empty-source causes distinct without overriding holds or failures",()=>{
+  const missing=feed("missing",{lastSuccessAt:NOW.toISOString(),emptyReason:"No confirmed download URL",emptyPartition:"current"});
+  const weight=feed("weight",{lastSuccessAt:NOW.toISOString(),emptyReason:"No single survey weight",emptyPartition:"current"});
+  expect(sourceHealth(contract("missing"),missing,null,NOW).reason).toContain("latest empty check current: No confirmed download URL");
+  expect(sourceHealth(contract("weight"),weight,null,NOW).reason).toContain("No single survey weight");
+  expect(sourceHealth(contract("weight"),weight,"licence held",NOW).reason).toBe("licence held");
+  const failed={...weight,failed:1,lastFailedAt:NOW.toISOString(),lastSuccessAt:null,lastError:"HTTP 400"};
+  expect(sourceHealth(contract("weight"),failed,null,NOW).status).toBe("failed");
+  expect(sourceHealth(contract("weight"),failed,null,NOW).reason).not.toContain("survey weight");
+});
+
+it("redacts and bounds empty-check evidence without inventing a legacy reason",()=>{
+  const current=feed("x",{lastSuccessAt:NOW.toISOString(),emptyReason:`UserID=secret\n${"x".repeat(400)}`,emptyPartition:"current"});
+  const reason=sourceHealth(contract("x"),current,null,NOW).reason;
+  expect(reason).toContain("UserID=***");
+  expect(reason).not.toContain("secret");
+  expect(reason).not.toContain("\n");
+  expect(reason.length).toBeLessThan(260);
+  expect(sourceHealth(contract("legacy"),feed("legacy",{lastSuccessAt:NOW.toISOString()}),null,NOW).reason)
+    .toBe("every load so far came back empty");
+});

@@ -24,6 +24,8 @@ export interface RegistryFeedFreshness {
   lastAttemptAt?: string | null;
   /** Latest retained receipt that actually loaded rows; absent on historical snapshots. */
   lastLoadedAt?: string | null;
+  emptyReason?: string | null;
+  emptyPartition?: string | null;
   nextAttemptAt: string | null;
   failed: number;
   scheduled: number;
@@ -90,6 +92,10 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
              WHERE status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source'))
            ) AS last_success_at,
            MAX(updated_at) AS last_attempt_at,
+           (ARRAY_AGG(COALESCE(detail->>'empty_reason',detail->>'reason',detail->>'problem') ORDER BY updated_at DESC)
+             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source')))[1] AS empty_reason,
+           (ARRAY_AGG(partition_key ORDER BY updated_at DESC)
+             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source')))[1] AS empty_partition,
            MAX(fetched_at) FILTER (WHERE status = 'succeeded' AND row_count > 0) AS last_loaded_at,
            MIN(next_attempt_after) FILTER (WHERE status IN ('scheduled', 'failed')) AS next_attempt_at,
            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
@@ -110,6 +116,8 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
     lastSuccessAt: iso(r.last_success_at),
     lastAttemptAt: iso(r.last_attempt_at),
     lastLoadedAt: iso(r.last_loaded_at),
+    emptyReason: r.empty_reason ? String(r.empty_reason) : null,
+    emptyPartition: r.empty_partition ? String(r.empty_partition) : null,
     nextAttemptAt: iso(r.next_attempt_at),
     failed: Number(r.failed),
     scheduled: Number(r.scheduled),

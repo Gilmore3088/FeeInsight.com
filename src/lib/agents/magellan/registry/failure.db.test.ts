@@ -12,7 +12,7 @@ const connection = process.env.E2E_DATABASE_URL;
 const schema = `registry_failure_${randomBytes(8).toString("hex")}`;
 describe.skipIf(!connection)("registry failure receipts in isolated PostgreSQL", () => {
   let admin: postgres.Sql;
-  let db: postgres.Sql;
+  let db: postgres.Sql<{ json: unknown }>;
   const asDb = () => db as unknown as RegistryDb;
   const input = (error: unknown, runId = 7) => ({ source: "bea-personal-income", partitionKey: "2024", runId, error });
   beforeAll(async () => {
