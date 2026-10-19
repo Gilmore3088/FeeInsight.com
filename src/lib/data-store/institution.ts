@@ -490,7 +490,7 @@ export async function getInstitutionFeeScheduleEvidence(
           created_at
         FROM raw_fee_observations
         WHERE institution_id = ${id}
-          AND (${options.pipelineNotes ?? false} OR NOT (COALESCE(outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'))
+          AND (${options.pipelineNotes ?? false} OR NOT (COALESCE(outlier_flags, '[]'::jsonb) ?| array['knox_review:eligibility', 'knox_review:periodic_program']))
         ORDER BY created_at DESC NULLS LAST, fee_raw_id DESC
         LIMIT 12
       ),
@@ -579,7 +579,8 @@ export async function getInstitutionFeeScheduleEvidence(
         verified_without_published_count: Number(countRow?.verified_without_published_count ?? 0),
       },
       raw_fee_preview: rawRows.filter(r => options.pipelineNotes ||
-        !(safeJsonb<string[]>(r.outlier_flags) ?? []).includes("knox_review:eligibility")).map((r) => ({
+        !(safeJsonb<string[]>(r.outlier_flags) ?? []).some(flag =>
+          flag === "knox_review:eligibility" || flag === "knox_review:periodic_program")).map((r) => ({
         fee_raw_id: Number(r.fee_raw_id),
         source_document_id: r.source_document_id != null ? Number(r.source_document_id) : null,
         fee_name: String(r.fee_name),

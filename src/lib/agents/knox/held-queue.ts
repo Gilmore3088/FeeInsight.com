@@ -51,6 +51,12 @@ interface ShapeInfo {
 }
 
 const SHAPES: Record<string, ShapeInfo> = {
+  periodic_program: {
+    label: "An annual overdraft program, not a paid-item fee",
+    owner: "Knox and Darwin's source/category review (#2240)",
+    wayOut: "Retained with its complete annual price clause; no automatic release under the per-item overdraft category. A supported product/category contract must identify this charge first.",
+    hasExit: false,
+  },
   eligibility: {
     label: "A price limited to an age or product tier",
     owner: "Knox and the product-tier comparison contract (#1060, #1911)",

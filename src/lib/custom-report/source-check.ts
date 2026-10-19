@@ -19,6 +19,7 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, ownsBulletName } from "./fee-bullets";
 import { accountTableRow } from "@/lib/custom-report/account-table";
 import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
+import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./stacked-fee-prices";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1094,6 +1095,16 @@ export function checkFeeAgainstSource(
   if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
   // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
   const text = droppedPointText(rawText);
+  if (canonicalFeeKey == null || NSF_POLICY_CATEGORIES.has(canonicalFeeKey)) {
+    const item = capFirstItemPrices(text).find(row => stackedLabelKey(row.label) === stackedLabelKey(feeName) && row.amount === amount &&
+      (canonicalFeeKey == null || row.canonicalKey === canonicalFeeKey));
+    if (item && new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i").test(item.ownText)) {
+      return { ok: true, sourceLine: item.ownText };
+    }
+  }
+  // #2240/#2241: an exact physical label with an unambiguous price run cannot borrow
+  // another service's amount or turn its own annual program price into a paid-item fee.
+  if (refusesStackedFeePrice(text, feeName, amount, canonicalFeeKey)) return { ok: false, reason: "amount_not_the_fee" };
   // A complete returned/paid-item policy paragraph owns its stated price and linked exceptions.
   // Only the exact shared reader's name/amount/category can use this witness.
   if (canonicalFeeKey == null || NSF_POLICY_CATEGORIES.has(canonicalFeeKey)) {
