@@ -15,6 +15,7 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
+import { getNationalIndicators, isEmptyNationalIndicators } from "./economic-context";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
 import {
@@ -142,6 +143,12 @@ export const getDistrictFeeIndexesCached = cachedPublicRead(
  * (market-eligibility.ts). One entry per market (the U.S., each state, each district).
  */
 export const getComparableMarketIndexCached = cachedPublicRead("comparable-market-index-v1", getComparableMarketIndex);
+/** The research hub's national indicator strip (BLS unemployment and CPI, Fed Board funds rate). */
+export const getNationalIndicatorsCached = cachedPublicRead(
+  "national-indicators-v1",
+  getNationalIndicators,
+  isEmptyNationalIndicators,
+);
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
 /**
