@@ -7,6 +7,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { refileCategory, refileFromLine } from "@/lib/fee-category-guard";
 import { groundPaidRow } from "./paid-extract";
 import { runFreeSpecialists } from "./specialists";
+import { internationalWireEligibility, requiresInternationalWireSource } from "./international-wire-eligibility";
 
 const fixture = JSON.parse(readFileSync(new URL("./__fixtures__/family-international-wire-scope.json", import.meta.url), "utf8"));
 const pdf = fixture.sources.find((row: { kind: string }) => row.kind === "consumer_pdf");
@@ -39,6 +40,30 @@ describe("source-owned international wire scope, independent of price admission 
     expect(scope).toMatchObject({ kind: "owned", geography: "international", directions: [] });
     expect(reviewInternationalDirection(scope, "wire_intl_outgoing")).toMatchObject({ kind: "hold", reason: "direction_missing" });
     expect(checkFeeAgainstSource(html.normalizedText, "International Wire Transfer Fee", 35, ".", "wire_intl_outgoing").ok).toBe(true);
+    const free = runFreeSpecialists(html.normalizedText);
+    expect(free.candidates.some(row => row.canonicalHint === "wire_intl_outgoing" && row.amount === 35)).toBe(false);
+    expect(free.held).toContainEqual(expect.objectContaining({ shape: "eligibility", feeName: "International Wire Transfer Fee",
+      amount: 35, excerpt: "International Wire Transfer Fee | $35.00", ownedPolicy: true }));
+  });
+
+  it("uses the existing resolved key before a caller's source requirement", () => {
+    const candidate = { feeName: "International Wire Incoming", amount: 35, canonicalHint: "wire_domestic_incoming", excerpt: "International Wire Incoming $35" };
+    expect(requiresInternationalWireSource(candidate)).toBe(true);
+    expect(internationalWireEligibility(pdf.normalizedText, candidate)).toMatchObject({ kind: "admit" });
+    expect(requiresInternationalWireSource({ ...candidate, feeName: "Named Member Wire Incoming" })).toBe(false);
+    expect(internationalWireEligibility("unrepresented source", { ...candidate, feeName: "Named Member Wire Incoming" })).toEqual({ kind: "not_applicable" });
+  });
+
+  it("does not refile a supplied wrong incoming key from a model claim", () => {
+    const candidate = { feeName: "International Wire Outgoing", amount: 45, canonicalHint: "wire_intl_incoming", excerpt: "incoming claim" };
+    expect(internationalWireEligibility(pdf.normalizedText, candidate)).toMatchObject({ kind: "hold", reason: "direction_mismatch" });
+  });
+
+  it("keeps new international admission separate from unchanged price support", () => {
+    const candidate = { feeName: "International Wire Transfer Fee", amount: 35, canonicalHint: "wire_intl_outgoing", excerpt: "incoming" };
+    expect(checkFeeAgainstSource(html.normalizedText, candidate.feeName, 35, ".", candidate.canonicalHint).ok).toBe(true);
+    expect(internationalWireEligibility(html.normalizedText, candidate)).toMatchObject({ kind: "hold", reason: "direction_missing" });
+    expect(internationalWireEligibility("International Wire Incoming | $35", candidate)).toMatchObject({ kind: "decline", reason: "missing_owner" });
   });
 
   it("validates a previously admitted literal international slash clause without creating its price", () => {

@@ -45,16 +45,18 @@ describe("own post-price wire directions (#2021)", () => {
     }
   });
 
-  it("leaves Family's unresolved international35/45 scope outside new admission authority", () => {
-    const rows = runFreeSpecialists(family.normalizedText).candidates;
-    expect(rows.filter(row => row.canonicalHint === "wire_intl_outgoing").map(row => row.amount)).toEqual([35]);
+  it("keeps domestic slash-price authority separate from international applicability (#2278)", () => {
+    const free = runFreeSpecialists(family.normalizedText);
+    const rows = free.candidates;
+    expect(rows.filter(row => row.canonicalHint === "wire_intl_outgoing")).toEqual([]);
+    expect(free.held).toContainEqual(expect.objectContaining({ shape: "eligibility", feeName: "International Wire Transfer Fee", amount: 35 }));
     expect(rows.some(row => row.amount === 45)).toBe(false);
     expect(checkWireClausePrice(family.normalizedText, "International Wire Transfer Fee", 35, "wire_intl_outgoing", ".")).toBeNull();
     expect(checkFeeAgainstSource(family.normalizedText, "International Wire Transfer Fee", 35, ".", "wire_intl_outgoing").ok).toBe(true);
     expect(wireClausePrices(family.normalizedText).some(row => row.canonicalKey === "wire_intl_outgoing" && row.amount === 45)).toBe(true);
-    // One retained international price cannot create a synthetic40 midpoint.
-    const international = rows.filter(row => row.canonicalHint === "wire_intl_outgoing").map(row => row.amount);
-    expect(institutionValue("wire_intl_outgoing", international)).toBe(35);
+    // The actual historical public35/new45 conflict is tested through normal SQL stages;
+    // neither a numeric refusal nor a median policy change supplies direction authority.
+    expect(institutionValue("wire_intl_outgoing", [35, 45])).toBe(40);
   });
 
   it("keeps an exact same-name ordinary price in another table regardless of order", () => {

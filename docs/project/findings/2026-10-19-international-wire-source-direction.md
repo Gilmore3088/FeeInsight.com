@@ -18,15 +18,24 @@ direction. The broad incoming guard preserves legacy paired-price support, so it
 a wrong supplied key. Prospective history preservation alone leaves old/new public prices
 mixed; changing a median or relabeling the older HTML $35 as incoming is not justified.
 
-**Current stage:** Only the pure factual source-scope helper and full exact normalized
-source fixtures are implemented. No existing producer, writer, verifier, publisher, epoch
-or numeric matcher is changed yet. The helper binds a priced own cell/label or bounded
+**Current stage:** The factual source-scope helper and private extraction/common-writer
+eligibility checks are implemented; verifier and publisher integration remain pending.
+No epoch, selector or numeric matcher is changed. The helper binds a priced own cell/label or bounded
 literal heading and keeps geography/direction separate from price admission. Literal both
 directions or shared domestic/international scope requires explicit own wording. Repeated,
 unsupported or missing ownership stays unresolved. Ordinary domestic unresolved scope is
 outside this international review; it is not a new domestic admission requirement.
 
-Common admission and final verification integration remain required. They must use the
+Both common writers and the held writer rederive private `knox_eligibility:international_wire`
+from the actual full source, never a supplied marker or model condition. Existing category
+refiling happens before review, preserving the PDF incoming35 domestic-hint transition.
+Only a resolved international row acquires exact-artifact fallback when content is missing;
+ordinary unresolved domestic callers keep their prior availability contract. Supplied full
+rows retain the existing trusted internal identity relation and check actual text digest.
+Only the exact still-unverified pending raw identity can become this hold; unrelated held
+and all judged histories keep their complete rows. No historical clean-up is claimed.
+
+Final verification and publication integration remain required. They must use the
 existing resolved category (the valid PDF incoming $35 starts with a domestic hint), actual
 current raw-owned source relations/digests and the shared doc/artifact/raw lock contract.
 The pending-row hold protocol must preserve judged histories. An independently justified
@@ -41,7 +50,8 @@ silently repair old rows.
 **Guard:** Pure controls cover complete Family sources, valid incoming refile, own cells
 and headings, named equal-price owners, literal both/shared scope, unknown/model/neighbor
 direction, extra prices and domestic noninterference. Full normal PostgreSQL characterization
-retains one positive and three functional OLD-red assertions until the corresponding runtime
-integration is implemented. The release gate still requires all common writers/final callers,
+retains the original one positive and three functional OLD-red assertions. Prospective fixtures
+now also carry the real source-byte hash and explicit consumer-companion stream; those fixture
+deltas do not retroactively alter the frozen baseline. The release gate still requires all common writers/final callers,
 real pending-versus-judged races, source-binding failures, all promoters and safe mixed-history
 publication under unchanged comparison policy.
