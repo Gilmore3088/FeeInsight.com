@@ -3,8 +3,11 @@
 This series measures support for **published dollar fees in stored documents**, using the
 deployed source, category and name checks. It is not an independent live-site assessment, a
 measure of missed fees, rate-fee accuracy, or evidence that a stored schedule is current.
-Live-site validation and answer-key eligibility remain #2061 and #1862. The broader stratified,
-independently labelled sampling and adjudication plan remains #1923.
+Live-site validation and answer-key eligibility remain #2061 and #1862. The
+[weekly live fee accuracy plan](../../../../docs/plans/weekly-live-fee-accuracy-plan.md) (#1923)
+defines the separate 50-institution draw, current-source decisions, missing-fee denominators,
+institution-cluster confidence bound and correction/retest protocol. It is a written method,
+not an execution or launch-accuracy receipt; #1063's broader automation work also remains open.
 
 The launch accuracy measurement is James's single weekly live batch of **50 whole institutions**,
 run as five prompts of ten across big banks, community banks and credit unions and the four Census
