@@ -1,3 +1,4 @@
+import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { sql } from "@/lib/data-store/connection";
 import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -659,7 +660,7 @@ async function readSpend(db: SqlTag, addedThisWeek: number | null): Promise<Goal
              COALESCE(SUM(estimated_cost_microusd) FILTER (
                WHERE created_at >= date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS month
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(db)}
          AND created_at >= LEAST(
                NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int),
                date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')

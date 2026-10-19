@@ -12,7 +12,7 @@ import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { extractFigures } from "./figure-check";
 import { checkAnswerEvidence } from "./answer-gate";
 import type { HamiltonEvidenceBundle } from "./evidence-contract";
@@ -282,7 +282,7 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
             { model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content: user }] },
             { ...attempt, timeout: REQUEST_TIMEOUT_MS },
           );
-        }),
+        }).then((response) => assertCompletedAnthropicTextResponse(response)),
       );
       if (usage) {
         usage.inputTokens += response.usage?.input_tokens ?? 0;
@@ -330,6 +330,16 @@ export async function writeStorylineMemo(
       // Counted once the call returns: a call the budget refused never reached the model.
       if (options.usage) options.usage.calls += 1;
     } catch (error) {
+      const incomplete = incompleteProviderResponse(error);
+      if (incomplete) {
+        // A known incurred call still counts toward the memo quota when no answer is saved.
+        if (options.usage && incomplete.observedUsage) {
+          options.usage.calls += 1;
+          options.usage.inputTokens += incomplete.observedUsage.inputTokens ?? 0;
+          options.usage.outputTokens += incomplete.observedUsage.outputTokens ?? 0;
+        }
+        return { status: "unavailable", reason: incomplete.message };
+      }
       if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
       const message = error instanceof Error ? error.message : String(error);
       return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };

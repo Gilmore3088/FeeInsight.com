@@ -11,7 +11,7 @@ import {
   getHamiltonModel,
   type Anthropic,
 } from "@/lib/ai-provider";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
 import {
   evaluateCitationDensity,
@@ -73,6 +73,8 @@ export interface SectionTracking {
   operation?: string;
   subjectKey?: string;
   agentRunId?: number;
+  /** One observation per returned raw response, including figure regeneration/incomplete replies. */
+  onProviderResponse?: (usage: ProviderUsage | undefined, model: string) => void;
 }
 
 export async function generateSection(input: SectionInput, tracking: SectionTracking = {}): Promise<SectionOutput> {
@@ -100,6 +102,11 @@ export async function generateSection(input: SectionInput, tracking: SectionTrac
         },
         { ...attempt, timeout: REQUEST_TIMEOUT_MS },
         );
+      }).then((response) => {
+        // Bookkeeping must never turn an otherwise completed request into a paid retry.
+        try { tracking.onProviderResponse?.(observedProviderUsage(response.usage), MODEL); }
+        catch (error) { console.error("Hamilton report usage observer failed", error); }
+        return assertCompletedAnthropicTextResponse(response);
       }),
     );
   } catch (err) {
@@ -229,11 +236,11 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
         },
         { ...attempt, timeout: THESIS_TIMEOUT_MS },
         );
-      }),
+      }).then((response) => assertCompletedAnthropicTextResponse(response)),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Hamilton thesis generation failed [scope=${input.scope}]: ${message}`);
+    throw new Error(`Hamilton thesis generation failed [scope=${input.scope}]: ${message}`, { cause: err });
   }
 
   const raw = extractAnthropicText(response);

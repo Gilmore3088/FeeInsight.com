@@ -34,7 +34,7 @@ describe("consumer hub structured data", () => {
       .toEqual([`${SITE_URL}/`, collection.url]);
   });
 
-  it("keeps every structured guide in the same order as the visible links, without upcoming tools", () => {
+  it("keeps every structured guide in the same order as the visible links", () => {
     const { document, structuredData } = renderedPage();
     const collection = structuredData.find((item) => item["@type"] === "CollectionPage");
     const list = collection.mainEntity;
@@ -58,6 +58,15 @@ describe("consumer hub structured data", () => {
     });
     expect(list.itemListElement.map((entry: { item: { url: string } }) => entry.item.url))
       .not.toContain(`${SITE_URL}/check`);
-    expect(JSON.stringify(structuredData)).not.toMatch(/Fee Check|FAQPage|SoftwareApplication|Offer/);
+    expect(JSON.stringify(structuredData)).not.toMatch(/FAQPage|SoftwareApplication|Offer/);
+  });
+
+  it("connects the live Fee Check toolkit link without adding it to the guide collection", () => {
+    const { document, structuredData } = renderedPage();
+    const collection = structuredData.find((item) => item["@type"] === "CollectionPage");
+    const feeCheckLink = document.querySelector('section[aria-labelledby="toolkit-heading"] a[href="/check"]');
+    expect(feeCheckLink?.textContent).toContain("Fee Check");
+    expect(collection.relatedLink).toBe(new URL(feeCheckLink?.getAttribute("href") ?? "", SITE_URL).href);
+    expect(document.body.textContent).not.toContain("Coming soon");
   });
 });
