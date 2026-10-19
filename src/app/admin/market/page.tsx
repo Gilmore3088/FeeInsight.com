@@ -35,7 +35,7 @@ export default async function MarketPage({
 }: {
   searchParams: Promise<{ q?: string; institution?: string; size?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const params = await searchParams;
   const query = (params.q ?? "").trim();
   const institutionId = Number(params.institution);

@@ -122,6 +122,6 @@ export async function archiveGuideAction(guideId: number): Promise<GuideActionRe
 
 /** Preview what a reader would see — used to surface unresolved tokens before publish. */
 export async function loadGuideForPreviewAction(slug: string) {
-  await requireAuth("view");
+  await requireAuth("operate");
   return getGuideBySlug(slug, { includeUnpublished: true });
 }

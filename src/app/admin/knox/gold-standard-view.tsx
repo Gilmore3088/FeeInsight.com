@@ -8,7 +8,7 @@ import { formatAssets } from "@/lib/format";
  * /admin/verify/[id] form. Knox's page embeds it (#1122: the old /admin/verify screen was the same view).
  */
 export async function GoldStandardView() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const candidates = await getGoldStandardCandidates(50);
 

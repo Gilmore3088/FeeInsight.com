@@ -13,6 +13,8 @@
  */
 
 import { proseFeeName } from "./names";
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
+import { midRankPercentile, SAME_PRICE_TOLERANCE } from "@/lib/percentile";
 import {
   WORKSPACE_ENGINE_VERSION,
   type ClarifyingQuestion,
@@ -26,7 +28,6 @@ import {
 
 /** Fewer peers than this and a percentile says more than the data does. */
 export const MIN_PEERS_FOR_POSITION = 5;
-const SAME_PRICE_TOLERANCE = 0.005;
 
 function fmtMoney(n: number): string {
   const cents = Math.abs(n % 1) > SAME_PRICE_TOLERANCE;
@@ -62,16 +63,18 @@ export function spanOf(lo: string, hi: string): string {
   return lo === hi ? lo : `${lo} to ${hi}`;
 }
 
-/** Mid-rank percentile: share of peers below the price plus half of those equal to it. */
+/** The shared mid-rank percentile (#2048), once enough peers publish the fee to place a price. */
 export function pricePosition(price: number, peers: number[]): number | null {
   if (peers.length < MIN_PEERS_FOR_POSITION) return null;
-  let below = 0;
-  let same = 0;
-  for (const p of peers) {
-    if (Math.abs(p - price) <= SAME_PRICE_TOLERANCE) same++;
-    else if (p < price) below++;
-  }
-  return Math.round(((below + same / 2) / peers.length) * 100);
+  return midRankPercentile(price, peers);
+}
+
+/**
+ * The amounts a fee's percentile ranks against: the band's own, one per institution and sister
+ * charters of one schedule once, so "the Nth percentile of N peers" counts one population.
+ */
+export function countedPeerAmounts(research: { peers: readonly { institutionId: number; amount: number; countedAs?: number }[] }): number[] {
+  return countedAmounts(research.peers);
 }
 
 export function annualItemsQuestion(feeCategory: string, institutionName?: string): ClarifyingQuestion {
@@ -125,7 +128,7 @@ function scenarioProvenance(
     engineVersion: WORKSPACE_ENGINE_VERSION,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     evidenceLevel,
-    peerGroup: { label: input.peerLabel, n: input.peers.length },
+    peerGroup: { label: input.peerLabel.split(";")[0].trim(), n: input.peers.length },
     dataAsOf: { fees: input.feesAsOf ?? null, financials: line?.quarterEnd ?? null },
     sources: line ? [PEER_SOURCE, line.source] : [PEER_SOURCE],
     assumptions,
@@ -134,7 +137,9 @@ function scenarioProvenance(
 }
 
 export function buildScenario(input: ScenarioInput): Scenario {
-  const { feeCategory, current, tested, peers, peerLabel } = input;
+  const { feeCategory, current, tested, peers } = input;
+  // The group's name only: a thin fee's label also carries "; only 3 of them publish this fee".
+  const group = input.peerLabel.split(";")[0].trim();
   let peersMore = 0;
   let peersSame = 0;
   let peersLess = 0;
@@ -148,7 +153,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
     feeCategory,
     current,
     tested,
-    peerLabel,
+    peerLabel: group,
     n: peers.length,
     peersMore,
     peersSame,
@@ -159,8 +164,8 @@ export function buildScenario(input: ScenarioInput): Scenario {
   };
   const peerAssumption =
     peers.length < MIN_PEERS_FOR_POSITION
-      ? `Only ${peers.length} peers in ${peerLabel} publish this fee, too few for a percentile.`
-      : `Position is among ${peers.length} institutions in ${peerLabel} that publish this fee.`;
+      ? `Only ${peers.length} peers in ${group} publish this fee, too few for a percentile.`
+      : `Position is among ${peers.length} institutions in ${group} that publish this fee.`;
 
   const facts = input.institutionFacts;
   if (facts?.annualItems !== undefined && facts.annualItems >= 0) {

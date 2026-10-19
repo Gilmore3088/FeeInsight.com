@@ -3,7 +3,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import { getInstitutionOwnFees, getNationalIndex, getNationalIndexStamped } from "@/lib/data-store/fee-index";
+import { getInstitutionOwnFees, getNationalIndex, getNationalIndexStamped, getPeerFeeValues } from "@/lib/data-store/fee-index";
+import { peerAmounts } from "@/lib/hamilton/workspace/research";
 import { getInstitutionById } from "@/lib/data-store";
 import { computeConfidenceTier, canSimulate } from "@/lib/hamilton/confidence";
 import { getHamiltonScenarioById } from "@/lib/hamilton/pro-tables";
@@ -108,6 +109,13 @@ export async function getDistributionForCategory(
       peer_fallback_reason: peerFallbackReason,
       stamp,
     };
+
+    // The peers' own amounts, from the same group as the distribution, for the shared mid-rank percentile (#2048).
+    const excluded = peerContext?.institutionId ? Number(peerContext.institutionId) : undefined;
+    const [values] = await getPeerFeeValues([peerSource === "national" ? {} : peerIndex.filters ?? {}], [feeCategory], Number.isInteger(excluded) ? excluded : undefined).catch(() => [null]);
+    const amounts = peerAmounts(values?.get(feeCategory) ?? []);
+    if (amounts.length > 0) distribution.peer_amounts = amounts;
+    if (!values) distribution.peer_amounts_unread = true;
 
     const confidenceTier = computeConfidenceTier(entry.institution_count);
     return { distribution, confidenceTier };

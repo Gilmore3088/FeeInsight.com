@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/session-cookie";
+import { SESSION_COOKIE, verifyAndExtractSessionId } from "@/lib/session-cookie";
+import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { cityMetroPath, isSignedInVariantPath, signedInVariantPath } from "@/lib/viewer-variant";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
@@ -28,6 +29,8 @@ export function cachedVariantPath(pathname: string, search: URLSearchParams): st
 
 function requestHeadersWithPath(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
+  // Legacy login markers are never client authority, even on rewritten requests.
+  requestHeaders.delete("x-bfi-admin-login-route");
   const pathWithSearch = `${request.nextUrl.pathname}${request.nextUrl.search}`;
   requestHeaders.set("x-invoke-path", pathWithSearch);
   requestHeaders.set("x-next-url", pathWithSearch);
@@ -83,19 +86,17 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url, permanentRedirectStatus(request.method));
   }
 
-  // Skip login page itself
+  // Legacy login goes straight to the shared login, outside the protected layout.
   if (pathname === "/admin/login") {
-    const requestHeaders = requestHeadersWithPath(request);
-    requestHeaders.set("x-bfi-admin-login-route", "1");
-    return NextResponse.next({
-      request: { headers: requestHeaders },
-    });
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("from", sanitizeInternalRedirect(request.nextUrl.searchParams.get("from"), "/admin"));
+    return NextResponse.redirect(loginUrl);
   }
 
-  // Check for session cookie on all /admin routes.
+  // Reject forged cookies early; pages still validate the live session and operator role.
   if (isRouteBranch(pathname, "/admin")) {
-    const session = request.cookies.get("fsh_session");
-    if (!session?.value) {
+    const session = request.cookies.get(SESSION_COOKIE)?.value;
+    if (!session || !verifyAndExtractSessionId(session)) {
       const loginUrl = new URL("/admin/login", request.url);
       loginUrl.searchParams.set("from", `${pathname}${request.nextUrl.search}`);
       return NextResponse.redirect(loginUrl);

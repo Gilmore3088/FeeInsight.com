@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * records stay in `agent_messages` and `knox_overrides`; old queue links land here.
  */
 export default async function KnoxPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const status = await getKnoxStatus().catch((error) => {
     logReadFailure("Knox status", error);
     return null;

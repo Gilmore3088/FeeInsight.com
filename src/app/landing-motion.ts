@@ -111,7 +111,8 @@ export function useAutoAdvance({
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
 
-  const playing = !reduced && !paused && visible && tabVisible && !held;
+  // One slide has nothing to advance to.
+  const playing = count > 1 && !reduced && !paused && visible && tabVisible && !held;
 
   // Tick mode: the time is state, for a section that draws from it.
   useEffect(() => {

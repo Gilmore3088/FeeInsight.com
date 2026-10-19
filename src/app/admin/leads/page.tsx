@@ -18,7 +18,7 @@ import { EmailDeliveryPanel } from "./email-delivery-panel";
 import { LeadsTable } from "./leads-table";
 
 export default async function LeadsPage() {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
 
   let leads: LeadRow[] = [];
   try {

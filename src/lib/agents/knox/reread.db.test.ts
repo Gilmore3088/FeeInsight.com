@@ -3,6 +3,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { insertCandidate, retireRowsFromOlderText, type KnoxTextRow } from "./extract";
+import type { FeeAudience } from "@/lib/fee-audience";
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = Parameters<typeof insertCandidate>[0];
@@ -111,5 +112,41 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     const [row] = await flagsOf();
     expect(row.flags).toContain("needs_darwin_verification");
     expect(row.flags).not.toContain("knox_reread_took_over");
+  });
+
+  it.each(["consumer", "business", "unknown", "both"] as const)("enriches only the %s sibling of a same-name, same-price fee (#2108)", async (audience) => {
+    const excerpts: Record<FeeAudience, string> = {
+      consumer: "Personal checking: Monthly Service Fee | $5.00",
+      business: "Business checking: Monthly Service Fee | $5.00",
+      unknown: "Monthly Service Fee | $5.00",
+      both: "All accounts: Monthly Service Fee | $5.00",
+    };
+    const candidateFor = (feeAudience: FeeAudience) => ({
+      ...overdraft, feeName: "Monthly Service Fee", amount: 5, canonicalHint: "monthly_maintenance",
+      frequency: "monthly", excerpt: excerpts[feeAudience],
+    });
+    // The unique key intentionally permits four rows with the same document, name and price.
+    for (const sibling of Object.keys(excerpts) as FeeAudience[]) {
+      expect(await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: candidateFor(sibling) })).toBe(true);
+    }
+    expect(await insertCandidate(db as unknown as Db, {
+      runId: 2, row: firstRead,
+      candidate: { ...candidateFor(audience), lineup: {
+        productName: "Everyday Checking", minBalanceToAvoid: 500, minOpeningDeposit: 25,
+        waiverText: "Waived with a $500 minimum balance",
+      } },
+    })).toBe(false);
+
+    const rows = await db`SELECT fee_audience, product_name, min_balance_to_avoid, min_opening_deposit, waiver_text
+                            FROM raw_fee_observations ORDER BY fee_audience`;
+    expect(rows).toHaveLength(4);
+    for (const row of rows) {
+      expect(row).toEqual({ fee_audience: row.fee_audience,
+        product_name: row.fee_audience === audience ? "Everyday Checking" : null,
+        min_balance_to_avoid: row.fee_audience === audience ? 500 : null,
+        min_opening_deposit: row.fee_audience === audience ? 25 : null,
+        waiver_text: row.fee_audience === audience ? "Waived with a $500 minimum balance" : null,
+      });
+    }
   });
 });

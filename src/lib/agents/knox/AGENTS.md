@@ -35,6 +35,9 @@ Knox owns conservative raw fee extraction.
   `20270110000040_fee_audience_integrity.sql`), so one document may hold the same name and price
   once per audience. A traced read that meets a row of the same key held as `unclassified` or
   `untraced` takes it over (`knox_promoted_from_held`); any other existing row is left as it is.
+  A same-row lineup enrichment after an insert conflict matches that audience too (#2108),
+  so a consumer, business, both or unknown row never fills another audience's account facts.
+  This restricts future enrichment only: extraction rules stay v81 and no old text is requeued.
 - One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
   `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
   a text. Each extract step also retires up to 2,000 unverified rows from older copies
@@ -1354,7 +1357,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v80 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v81 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

@@ -7,14 +7,15 @@
  * Decision support only: nothing here says to raise, lower or drop a fee.
  */
 
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { revenueLineName } from "./revenue";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { feeItem, proseFeeName } from "./names";
-import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
+import { annualItemsQuestion, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
-import { buildStoryline, type StoryIntent } from "./storyline";
+import { buildStoryline, largestNote, MAX_LISTED_ROWS, peerGroupNote, type StoryIntent } from "./storyline";
 import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
 
 import { uniqueStampedFigures, type StampedFigure } from "@/lib/dataset-note";
@@ -270,29 +271,31 @@ function positionExhibit(research: FeeResearch, name: string): Exhibit | null {
     own: research.current,
     ownLabel: research.institutionName,
     band: { label: research.peerLabel, p25: band.p25, median: band.median, p75: band.p75, n: band.n },
+    ...(research.current !== null && band.n >= MIN_PEERS_FOR_POSITION ? { method: PERCENTILE_METHOD } : {}),
     markers,
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
-    note: "Shaded: the middle half of peers. Each marker is a market's median and its institution count.",
+    // Kept short (#2102): what the shading and markers are, then which peers.
+    note: [`Shaded: peers' middle half.`, markers.length > 1 ? "Markers: each market's median." : "", peerGroupNote(research, { publishing: true })].filter(Boolean).join(" "),
   };
 }
 
 function competitorExhibit(research: FeeResearch, name: string): Exhibit | null {
   const list = research.localCompetitors ?? [];
   if (list.length === 0) return null;
-  const items = [...list]
-    .slice(0, MAX_COMPETITORS)
-    .sort((a, b) => a.amount - b.amount)
-    .map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) }));
+  const item = (p: (typeof list)[number]) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) });
+  const items = list.slice(0, MAX_COMPETITORS).sort((a, b) => a.amount - b.amount).map(item);
+  // Every competitor counted stays listable under "Show N more" (#2036).
+  const rest = list.slice(MAX_COMPETITORS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount).map(item);
   return {
     kind: "competitor_range",
-    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${items.length} institutions in ${subjectPossessive(research, false)} market`,
+    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${list.length} institutions in ${subjectPossessive(research, false)} market`,
     unit: "dollars",
     own: research.current,
     ownLabel: research.institutionName,
     items,
-    ...(list.length > MAX_COMPETITORS ? { allAmounts: list.map((p) => p.amount) } : {}),
+    ...(list.length > MAX_COMPETITORS ? { allAmounts: list.map((p) => p.amount), rest } : {}),
     sources: [research.localMarket?.source ?? feeSource(research)],
-    note: list.length > MAX_COMPETITORS ? `The ${MAX_COMPETITORS} largest by local deposits of ${list.length}.` : undefined,
+    note: list.length > MAX_COMPETITORS ? largestNote(list.length, items.length, items.length + rest.length) : undefined,
   };
 }
 
@@ -346,10 +349,10 @@ function headline(research: FeeResearch, name: string): string {
   const byRate = rateHeadline(research, name);
   if (byRate) return byRate;
   const band = research.band;
-  const amounts = research.peers.map((p) => p.amount);
+  const amounts = countedPeerAmounts(research);
   if (research.current !== null) {
     const position = pricePosition(research.current, amounts);
-    if (band && position !== null) {
+    if (band && band.n >= MIN_PEERS_FOR_POSITION && position !== null) {
       return `${subjectPossessive(research)} ${money(research.current)} ${name} fee is ${placeAmong(position, band.n)} (median ${money(band.median)}).`;
     }
     return `${subjectPossessive(research)} ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;

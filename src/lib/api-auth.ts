@@ -3,6 +3,7 @@ import { hashApiKey } from "@/lib/api-keys";
 import { subscriberKeyAllowed, subscriberKeyUserId, subscriberUserIdFromSlug } from "@/lib/api-subscriber-access";
 import { seatStillCovered } from "@/lib/api-subscriber-keys";
 import { CONTACT_EMAIL } from "@/lib/constants";
+import { retainV1BackgroundTask } from "@/lib/api-v1-background";
 
 /** Why a key that was sent was turned away; each is its own v1 error code. */
 export type ApiKeyErrorCode = "invalid_api_key" | "key_revoked" | "subscription_inactive" | "seat_removed";
@@ -103,12 +104,13 @@ export async function validateApiKey(
     }
   }
 
-  // Fire-and-forget: update last_used_at
-  sql`
+  const lastUsedTask = sql`
     UPDATE api_keys SET last_used_at = NOW() WHERE id = ${row.id}
   `.catch(() => {
     // Silent — non-critical timestamp update
   });
+  // Other API-key callers retain their current lifecycle; v1 keeps this write alive.
+  if (new URL(request.url).pathname.startsWith("/api/v1/")) retainV1BackgroundTask(lastUsedTask);
 
   return {
     valid: true,

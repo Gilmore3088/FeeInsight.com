@@ -62,7 +62,7 @@ type Fetcher = typeof fetch;
  */
 export const SECOND_DOCUMENT_FINDER = { strategy: "discover.second_document", version: 4 } as const;
 /** One `pipeline_attempts` row per site-search query, so each query's hit rate is visible. */
-export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 1 } as const;
+export const SITE_SEARCH_STRATEGY = { strategy: "discover.site_search", version: 2 } as const;
 /** Live banks with fewer published fee categories than this are searched. */
 export const THIN_BANK_CATEGORY_LIMIT = 8;
 export const SECOND_DOCUMENT_BANKS_PER_STEP = 6;
@@ -529,6 +529,12 @@ export interface SiteSearchResult {
   candidates: number;
   /** Companion pages kept from its results. */
   kept: number;
+  /** Candidate URLs whose validation actually finished, including request failures. */
+  checked: number;
+  /** Candidate URLs left outside the validation caps or time budget. */
+  unchecked: number;
+  /** Checked candidates ruled out by the document check. */
+  rejected: number;
   durationMs: number;
 }
 
@@ -716,18 +722,38 @@ async function searchBank(
   // first query that found it.
   const searchRuns: Array<{ query: string; url: string; status: number | null; ok: boolean; links: PageLink[]; durationMs: number }> = [];
   const foundBySearch = new Map<string, string>();
+  const candidateOutcomes = new Map<string, AttemptOutcome>();
+  const recordCandidateCheck = (url: string, verdict: string, accepted = false) => {
+    const status = /^http_(\d+)$/.exec(verdict)?.[1];
+    const outcome = accepted ? "ok"
+      : verdict === "fetch_failed" ? "network_error"
+      : status ? Number(status) < 400 ? "unsupported_format" : classifyFetchFailure(Number(status))
+      : "rejected";
+    candidateOutcomes.set(urlIdentity(url), outcome);
+  };
   let siteRef: URL | null = null;
   let excludeRef = new Set<string>();
   const searchResults = (): SiteSearchResult[] =>
     searchRuns.map((search) => {
-      const candidates = siteRef ? companionCandidates(search.links, siteRef, excludeRef).length : 0;
+      const candidateIds = siteRef ? companionCandidates(search.links, siteRef, excludeRef).map((candidate) => urlIdentity(candidate.url)) : [];
+      const candidates = candidateIds.length;
+      const outcomes = candidateIds.map((identity) => candidateOutcomes.get(identity));
+      const checked = outcomes.filter((outcome) => outcome !== undefined).length;
+      const unchecked = candidates - checked;
+      const rejected = outcomes.filter((outcome) => outcome === "rejected").length;
       const kept = pages.filter((page) => foundBySearch.get(urlIdentity(page.url)) === search.query).length;
+      const failedRequest = outcomes.find((outcome) => outcome !== undefined && outcome !== "ok" && outcome !== "rejected");
       let outcome: AttemptOutcome;
       if (!search.ok) outcome = search.status != null && search.status < 400 ? "unsupported_format" : classifyFetchFailure(search.status);
       else if (kept > 0) outcome = "ok";
       else if (candidates === 0) outcome = "no_candidates";
+      else if (unchecked > 0 && Date.now() > deadline) outcome = "timeout";
+      // A duplicate hit already kept by an earlier query is useful and already up to date.
+      else if (outcomes.includes("ok")) outcome = "unchanged";
+      else if (failedRequest) outcome = failedRequest;
+      else if (unchecked > 0) outcome = "no_candidates";
       else outcome = "rejected";
-      return { query: search.query, url: search.url, outcome, status: search.status, candidates, kept, durationMs: search.durationMs };
+      return { query: search.query, url: search.url, outcome, status: search.status, candidates, kept, checked, unchecked, rejected, durationMs: search.durationMs };
     });
   const done = (fields: Pick<SecondDocumentResult, "outcome" | "reason">) => ({
     institutionId,
@@ -848,10 +874,17 @@ async function searchBank(
     const html = await openHtml(candidate.url, "crawl_page", candidate.label);
     const entry = trail[trail.length - 1];
     entry.score = Math.round(candidate.score * 100) / 100;
-    if (!html) continue;
+    if (!html) {
+      const verdict = entry.verdict === "cached"
+        ? [...trail].reverse().find((prior) => urlIdentity(prior.url) === urlIdentity(candidate.url) && prior.verdict !== "cached")?.verdict ?? "fetch_failed"
+        : entry.verdict;
+      recordCandidateCheck(candidate.url, verdict);
+      continue;
+    }
     moreLinks.push(...pageLinks(html, site));
     const check = accountPageListsFees(html, candidate.url);
     entry.verdict = check.ok ? "accepted_html" : "too_few_fee_words";
+    recordCandidateCheck(candidate.url, entry.verdict, check.ok);
     if (check.ok) {
       keep({
         url: candidate.url,
@@ -887,6 +920,7 @@ async function searchBank(
         fetchImpl,
       );
       entry.verdict = validation.verdict;
+      recordCandidateCheck(candidate.url, entry.verdict, validation.ok);
       if (validation.ok) {
         keep({
           url: candidate.url,
@@ -901,6 +935,7 @@ async function searchBank(
       }
     } catch {
       entry.verdict = "fetch_failed";
+      recordCandidateCheck(candidate.url, entry.verdict);
     }
   }
 
@@ -917,6 +952,7 @@ async function searchBank(
     try {
       const check = await agreementListsFees(candidate.url, fetchImpl);
       entry.verdict = check.verdict;
+      recordCandidateCheck(candidate.url, entry.verdict, check.ok);
       if (check.ok) {
         keep({
           url: candidate.url,
@@ -931,6 +967,7 @@ async function searchBank(
       }
     } catch {
       entry.verdict = "fetch_failed";
+      recordCandidateCheck(candidate.url, entry.verdict);
     }
   }
 
@@ -1012,7 +1049,7 @@ export async function runSecondDocumentFind(options: {
         durationMs: search.durationMs,
         runId: options.runId,
         stepId: options.stepId ?? null,
-        detail: { pass: 2, finder: SECOND_DOCUMENT_FINDER.strategy, query: search.query, url: search.url, status: search.status, candidates: search.candidates, kept: search.kept },
+        detail: { pass: 2, finder: SECOND_DOCUMENT_FINDER.strategy, query: search.query, url: search.url, status: search.status, candidates: search.candidates, kept: search.kept, checked: search.checked, unchecked: search.unchecked, rejected: search.rejected },
         foldIntoPlaybook: false,
       });
     }
@@ -1039,7 +1076,7 @@ export async function runSecondDocumentFind(options: {
         reason: result.reason,
         pages_fetched: result.fetches,
         index_documents_checked: result.indexDocumentsChecked,
-        searches: result.searches.map((search) => ({ query: search.query, outcome: search.outcome, candidates: search.candidates, kept: search.kept })),
+        searches: result.searches.map((search) => ({ query: search.query, outcome: search.outcome, candidates: search.candidates, kept: search.kept, checked: search.checked, unchecked: search.unchecked, rejected: search.rejected })),
         trail: trail.slice(0, 40),
       },
     });

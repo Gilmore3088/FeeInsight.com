@@ -1,8 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AnswerView, ExhibitView, axisFor, placeLabels } from "./exhibit-view";
+import { AnswerView, ExhibitView, axisFor, ownLabelStyle, placeLabels } from "./exhibit-view";
 
 const src = { label: "Bank Fee Index", asOf: "2026-10-01" };
+
+describe("ownLabelStyle (#2080)", () => {
+  it("keeps the institution's label inside the track at any width, the axis ends included", () => {
+    // At the axis maximum the label ends at the mark; at the minimum it starts at it.
+    expect(ownLabelStyle(100)).toEqual({ left: "100%", transform: "translateX(-100%)" });
+    expect(ownLabelStyle(0)).toEqual({ left: "0%", transform: "translateX(-0%)" });
+    expect(ownLabelStyle(140)).toEqual({ left: "100%", transform: "translateX(-100%)" });
+    expect(ownLabelStyle(65)).toEqual({ left: "65%", transform: "translateX(-65%)" });
+  });
+
+  it("renders a price at the top of the axis with its label ending at the mark, never past the frame", () => {
+    const exhibit = {
+      kind: "fee_position" as const,
+      title: "Overdraft against peers",
+      unit: "dollars" as const,
+      own: 40,
+      ownLabel: "Example Valley Credit Union",
+      band: { label: "Peer group", p25: 20, median: 25, p75: 30, n: 18 },
+      markers: [],
+      sources: [src],
+    };
+    const html = renderToStaticMarkup(<ExhibitView exhibit={exhibit} />);
+    expect(html).toMatch(/max-w-full truncate[^"]*" style="left:\d+(\.\d+)?%;transform:translateX\(-\d+(\.\d+)?%\)" title="Example Valley Credit Union \$40"/);
+    expect(html).not.toContain("whitespace-nowrap text-xs font-semibold");
+  });
+});
 
 describe("axisFor", () => {
   it("pads both ends and never goes below $0", () => {

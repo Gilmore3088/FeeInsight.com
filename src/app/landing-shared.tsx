@@ -1,9 +1,6 @@
 import { Button, SearchInput } from "@/brand/components";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import type { LinePosition } from "@/lib/custom-report/analysis";
-import type { MarketReport } from "@/lib/custom-report/report-data";
-import { lineName } from "@/app/for-institutions/board-math";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 
 export const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
@@ -13,6 +10,9 @@ export const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
 export const SERIF = { fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" } as const;
 /** The homepage's content width (James's example: 1280px, with a 16px gutter on a phone). */
 export const HOME_WRAP = "mx-auto w-full max-w-[1312px] px-4 sm:px-6 lg:px-8";
+
+/** The homepage's reads share one deadline (createReadBudget); past it each part drops out (#1988). */
+export const HOME_READ_BUDGET_MS = 15_000;
 
 export const money = (v: number) => `$${v.toFixed(2)}`;
 
@@ -56,27 +56,6 @@ export function InstitutionSearchForm({
   );
 }
 
-/** One comparable line of the live sample report: the bank's fee against its local market. */
-export interface SampleRow {
-  key: string;
-  label: string;
-  amount: number;
-  median: number;
-  /** The middle half of the local competitors that publish this fee, and how many do. */
-  p25: number;
-  p75: number;
-  competitors: number;
-  position: LinePosition;
-}
-
-/** The live sample Competitive Fee Position Report, as the Hamilton examples draw it. */
-export interface SampleView {
-  institutionName: string;
-  competitors: number;
-  /** Comparable lines, in report order. */
-  rows: SampleRow[];
-}
-
 /**
  * Whether a homepage render may be kept in the page cache. The page is regenerated in the
  * background (ISR), and a render made while a read was failing would otherwise be served
@@ -99,28 +78,3 @@ export function homeReadsCacheable({
 }): boolean {
   return summary.complete && categories.length > 0 && !sampleFailed && !indexFailed;
 }
-
-/** The sample report's comparable lines, in report order, each with its fee's report name. */
-export function buildSampleView(report: MarketReport | null): SampleView | null {
-  if (!report) return null;
-  const rows: SampleRow[] = [];
-  for (const line of report.analysis.lines) {
-    if (!line.comparable || !line.own || !line.peers || !line.position) continue;
-    rows.push({
-      key: line.key,
-      label: lineName(line.label),
-      amount: line.own.amount,
-      median: line.peers.median,
-      p25: line.peers.p25,
-      p75: line.peers.p75,
-      competitors: line.peers.n,
-      position: line.position,
-    });
-  }
-  return {
-    institutionName: report.data.subject.institution_name,
-    competitors: report.analysis.readiness.competitorsWithData,
-    rows,
-  };
-}
-

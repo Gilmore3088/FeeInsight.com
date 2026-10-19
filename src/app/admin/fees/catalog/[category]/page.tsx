@@ -91,7 +91,7 @@ export default async function FeeCategoryDetailPage({
   params: Promise<{ category: string }>;
   searchParams: Promise<{ tab?: string; min?: string; max?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const { category } = await params;
   const { tab = "overview", min, max } = await searchParams;

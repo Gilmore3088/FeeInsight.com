@@ -529,6 +529,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
     v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    Both rows must keep the same audience (#2109): missing legacy audience means `unknown`,
+    never a wildcard for consumer, business or both. The selector, pure plan and final write
+    enforce it; an audience changed since selection leaves the live row where it was. This
+    safety restriction stays in v2, so already-decided pairs are not reopened. It repairs no
+    prior audience change and creates no replay or backfill; Bayes records that no-replay
+    contract in `VERSIONS_WITHOUT_REPLAY.REFRESH_COPY_STRATEGY`.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
