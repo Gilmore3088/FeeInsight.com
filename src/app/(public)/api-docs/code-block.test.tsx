@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodeBlock } from "./code-block";
 
@@ -11,6 +11,27 @@ afterEach(() => {
 });
 
 describe("API documentation code copying", () => {
+  it("keeps keyboard focus during and after copying and ignores repeated activation", async () => {
+    let finishCopy!: () => void;
+    const writeText = vi.fn(() => new Promise<void>((resolve) => { finishCopy = resolve; }));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<CodeBlock title="Request">curl https://feeinsight.com/api/v1/fees</CodeBlock>);
+    const button = screen.getByRole("button", { name: "Copy Request" });
+    button.focus();
+
+    fireEvent.click(button);
+    expect(button).toHaveFocus();
+    expect(button).toBeEnabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(button);
+    expect(writeText).toHaveBeenCalledTimes(1);
+
+    await act(async () => finishCopy());
+    expect(button).toHaveFocus();
+    expect(button).toHaveAttribute("aria-disabled", "false");
+    expect(screen.getByRole("status")).toHaveTextContent("Copied to clipboard.");
+  });
+
   it.each([
     ["GET /fees request", 'curl -H "Authorization: Bearer YOUR_API_KEY" https://feeinsight.com/api/v1/fees'],
     ["Connector link", "https://feeinsight.com/api/v1/mcp?api_key=YOUR_API_KEY"],
