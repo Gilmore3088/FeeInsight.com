@@ -33,7 +33,12 @@ describe("proxy", () => {
       const response = proxy(request(`https://feeinsight.com/institutions?${query}`));
       expect(response.headers.get("x-middleware-rewrite")).toBe(`https://feeinsight.com/institutions/results?${query}`);
     }
-    for (const url of ["https://feeinsight.com/institutions", "https://feeinsight.com/institutions?utm_source=x&q="]) {
+    for (const url of [
+      "https://feeinsight.com/institutions",
+      "https://feeinsight.com/institutions?utm_source=x&q=",
+      "https://feeinsight.com/institutions?fees=0",
+      "https://feeinsight.com/institutions?fees=yes",
+    ]) {
       expect(proxy(request(url)).headers.get("x-middleware-rewrite")).toBeNull();
     }
   });

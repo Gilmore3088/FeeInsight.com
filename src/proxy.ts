@@ -5,7 +5,7 @@ import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 const FEE_CATEGORIES = new Set<string>(Object.values(FEE_FAMILIES).flat());
 /** The directory's filters; any one of them makes the view per request. */
-const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee", "fees"];
+const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee"];
 
 /**
  * The cached route that serves a public address whose query string changes the page (#1811).
@@ -20,7 +20,8 @@ export function cachedVariantPath(pathname: string, search: URLSearchParams): st
     const fee = search.get("fee");
     return fee && FEE_CATEGORIES.has(fee) ? `/institution/${profile[1]}/fee/${fee}` : null;
   }
-  if (pathname === "/institutions" && DIRECTORY_FILTER_KEYS.some((key) => search.get(key))) {
+  // `fees` counts only as "1", the one value the page reads, so `?fees=x` stays on the cached page.
+  if (pathname === "/institutions" && (DIRECTORY_FILTER_KEYS.some((key) => search.get(key)) || search.get("fees") === "1")) {
     return "/institutions/results";
   }
   return null;

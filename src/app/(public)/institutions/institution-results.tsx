@@ -26,6 +26,13 @@ export function coverageText(row: InstitutionSearchResult, coverage: HeadlineCov
   return "No fees in the index yet";
 }
 
+/** The phone card's shorter form: "12 of 15 fees", so the chip stays on one line at 320px. */
+export function shortCoverageText(row: InstitutionSearchResult, coverage: HeadlineCoverage): string {
+  const categories = coverage?.get(row.id);
+  if (hasVerifiedFees(row) && categories !== undefined) return `${categories} of ${HEADLINE_FEE_KEYS.length} fees`;
+  return coverageText(row, coverage);
+}
+
 /**
  * The coverage column: a small meter of the headline fees in the index, one segment per headline
  * fee, with the count beside it. Rows without a count say what is known in words.
@@ -174,14 +181,14 @@ export function InstitutionResultsTable({
 
 /**
  * The phone's coverage indicator, up front on each card: an icon and the row's coverage
- * ("12 of 15 headline fees available"), "Under review", or "No fees in the index yet".
+ * ("12 of 15 fees"), "Under review", or "No fees in the index yet".
  */
 function CoverageChip({ row, coverage }: { row: InstitutionSearchResult; coverage: HeadlineCoverage }) {
   if (hasVerifiedFees(row)) {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-brick/30 bg-brick-tint px-2.5 py-1 text-[13px] font-semibold tabular-nums text-brick-ink">
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-brick/30 bg-brick-tint px-2.5 py-1 text-[13px] font-semibold tabular-nums text-brick-ink">
         <FileCheck2 aria-hidden="true" className="size-3.5" strokeWidth={2} />
-        {coverageText(row, coverage)}
+        {shortCoverageText(row, coverage)}
       </span>
     );
   }

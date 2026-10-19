@@ -52,6 +52,23 @@ function strings(node: unknown, seen = new Set<unknown>()): string[] {
   return Object.values(props).flatMap((value) => strings(value, seen));
 }
 
+/** The first element's props in a rendered tree that carry `key`. */
+function propsWith(node: unknown, key: string, seen = new Set<unknown>()): Record<string, unknown> | null {
+  if (!node || typeof node !== "object" || seen.has(node)) return null;
+  seen.add(node);
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = propsWith(child, key, seen);
+      if (found) return found;
+    }
+    return null;
+  }
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (!props) return null;
+  if (key in props) return props;
+  return propsWith(Object.values(props), key, seen);
+}
+
 function row(id: number, name: string, published: number): InstitutionSearchResult {
   return {
     id,
@@ -147,5 +164,48 @@ describe("institutions directory opening list", () => {
     expect(reads.largest).not.toHaveBeenCalled();
     expect(text).toContain("2 institutions with fees in the index in Florida.");
     expect(text).not.toContain("Quiet Bank");
+  });
+
+  it("treats a junk name as no search: the opening list, no search read", async () => {
+    reads.largest.mockResolvedValue([row(1, "Big Bank", 40)]);
+    reads.coverage.mockResolvedValue(new Map([[1, 12]]));
+    for (const q of ["--", "&&", "a."]) {
+      const text = strings(await InstitutionsDirectory({ params: { q } })).join(" ");
+      expect(text).toContain("Largest banks and credit unions");
+    }
+    expect(reads.search).not.toHaveBeenCalled();
+  });
+
+  it("caches an empty opening list for a minute, as for a failed read", async () => {
+    reads.largest.mockResolvedValue([]);
+    await InstitutionsDirectory({ params: {} });
+    expect(shortenPageLife).toHaveBeenCalled();
+  });
+
+  it("with Fees available on, takes the exact count from the window when it holds a row without fees", async () => {
+    const window = [...Array.from({ length: 30 }, (_, i) => row(i + 1, `Fee Bank ${i + 1}`, 5)), row(99, "Quiet Bank", 0)];
+    reads.search.mockResolvedValue({ rows: window, total: 4_000 });
+    reads.coverage.mockResolvedValue(new Map());
+    const page = await InstitutionsDirectory({ params: { q: "bank", fees: "1" } });
+    const text = strings(page).join(" ");
+    expect(text).toContain("30 institutions with fees in the index match");
+    expect(reads.search).toHaveBeenCalledTimes(1);
+  });
+
+  it("past a window full of fees, offers a next page only when it has rows with fees", async () => {
+    const full = Array.from({ length: 1_500 }, (_, i) => row(i + 1, `Fee Bank ${i + 1}`, 5));
+    const pageRows = Array.from({ length: 25 }, (_, i) => row(5_000 + i, `Late Bank ${i}`, 5));
+    reads.search.mockImplementation(async ({ page, pageSize }: { page: number; pageSize: number }) =>
+      pageSize === 1_500
+        ? { rows: full, total: 4_000 }
+        : page === 70
+          ? { rows: pageRows, total: 4_000 }
+          : { rows: [row(9_000, "Quiet Bank", 0)], total: 4_000 },
+    );
+    reads.coverage.mockResolvedValue(new Map());
+    const page = await InstitutionsDirectory({ params: { q: "bank", fees: "1", page: "70" } });
+    expect(strings(page).join(" ")).toContain("Late Bank 0");
+    // Page 71 holds no institution with fees, so page 70 is the last.
+    expect(propsWith(page, "totalPages")).toMatchObject({ page: 70, totalPages: 70 });
   });
 });

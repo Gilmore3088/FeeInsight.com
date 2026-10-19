@@ -236,16 +236,17 @@ export async function searchInstitutions(params: {
 
   if (params.query && params.query.trim().length >= 2) {
     // The same name match as the typeahead, so "M&T" or "US Bank" finds the same banks on Enter.
-    // Bounded like the typeahead: at most 100 characters, at least two letters or digits.
+    // Bounded like the typeahead: at most 100 characters, at least two letters or digits. A typed
+    // name with fewer ("--", "&&", "a.") matches nothing: dropping the condition would list, and
+    // count, every institution for each junk query.
     const term = boundedSearchTerm(params.query);
-    if (term) {
-      const { pattern, squashed, aliases } = institutionSearchPatterns(term);
-      conditions.push(`(ct.institution_name ~* $${paramIdx + 1}
-        OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $${paramIdx + 2}
-        OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
-      queryParams.push(pattern, squashed, aliases);
-      paramIdx += 3;
-    }
+    if (!term) return { rows: [], total: 0 };
+    const { pattern, squashed, aliases } = institutionSearchPatterns(term);
+    conditions.push(`(ct.institution_name ~* $${paramIdx + 1}
+      OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $${paramIdx + 2}
+      OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
+    queryParams.push(pattern, squashed, aliases);
+    paramIdx += 3;
   }
   if (params.state_code) {
     paramIdx++;

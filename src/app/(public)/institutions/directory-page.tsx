@@ -20,6 +20,7 @@ import {
 } from "@/lib/data-store/public-cached-reads";
 import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { createReadBudget } from "@/lib/read-deadline";
+import { boundedSearchTerm } from "@/lib/api-hardening/query-caps";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { InstitutionSearchBar } from "./search-bar";
@@ -110,13 +111,19 @@ interface DirectoryResults {
   total: number | null;
   /** Matches with published fees, when the whole match set was read in one window; else null. */
   published: number | null;
+  /** Without a count: whether a next page has rows. Null when `total` answers that. */
+  hasNext: boolean | null;
 }
 
 /**
  * Published-first ordering across the whole result set when it fits in one window; otherwise
- * the current page is sorted on its own. The fees filter is applied to the rows read: the whole
- * set when it fits in the window, else the page (the database already lists institutions with
- * fees first, so the filtered pages run in order and the count is left out).
+ * the current page is sorted on its own.
+ *
+ * The fees filter is applied to the rows read. The database lists institutions with fees first,
+ * so when the window holds any row without fees it already holds every row with fees, and the
+ * filtered set is exact. Only when every row in the window has fees (more than 1,500 matches with
+ * fees) are later pages read one at a time, without a count; `hasNext` then says whether the next
+ * page holds any row with fees, so the page never offers a "next" that comes back empty.
  */
 async function loadResults(params: {
   query?: string;
@@ -131,19 +138,27 @@ async function loadResults(params: {
   // A name search puts the institution it names first among equals ("US Bank": U.S. Bank, then First US Bank).
   const query = params.query;
   const nameRank = query ? (name: string) => institutionNameRank(name, query) : undefined;
-  if (firstPass.total <= DIRECTORY_SORT_WINDOW) {
-    const matches = feesOnly ? firstPass.rows.filter(hasVerifiedFees) : firstPass.rows;
+  const withFees = firstPass.rows.filter(hasVerifiedFees);
+  const windowComplete = firstPass.total <= DIRECTORY_SORT_WINDOW || (feesOnly && withFees.length < firstPass.rows.length);
+  if (windowComplete) {
+    const matches = feesOnly ? withFees : firstPass.rows;
     return {
       rows: paginate(sortVerifiedFirst(matches, nameRank), params.page, DIRECTORY_PAGE_SIZE),
       total: matches.length,
       published: matches.filter(hasVerifiedFees).length,
+      hasNext: null,
     };
   }
   const paged = await searchInstitutionsCached({ ...search, pageSize: DIRECTORY_PAGE_SIZE });
   const rows = sortVerifiedFirst(paged.rows, nameRank);
-  return feesOnly
-    ? { rows: rows.filter(hasVerifiedFees), total: null, published: null }
-    : { rows, total: paged.total, published: null };
+  if (!feesOnly) return { rows, total: paged.total, published: null, hasNext: null };
+  const pageRows = rows.filter(hasVerifiedFees);
+  const lastRaw = params.page * DIRECTORY_PAGE_SIZE >= paged.total;
+  const hasNext =
+    pageRows.length === DIRECTORY_PAGE_SIZE && !lastRaw
+      ? (await searchInstitutionsCached({ ...search, page: params.page + 1, pageSize: DIRECTORY_PAGE_SIZE })).rows.some(hasVerifiedFees)
+      : false;
+  return { rows: pageRows, total: null, published: null, hasNext };
 }
 
 /** Rows in the opening list, and how many of the largest are read to fill it with the fees filter on. */
@@ -166,7 +181,9 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
   // Validated against the taxonomy: an unknown value degrades to the plain directory.
   const focusCategory = params.fee && TAXONOMY.has(params.fee) ? params.fee : "";
 
-  const hasQuery = query.length >= 2;
+  // A name with under two letters or digits ("--", "a.") is no search: the page stays the
+  // plain directory instead of listing every institution.
+  const hasQuery = boundedSearchTerm(query) !== null;
   const hasState = Boolean(stateCode);
   // A name or a state lists every match; otherwise the page opens on the largest institutions.
   const isSearch = hasQuery || hasState;
@@ -201,7 +218,7 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
           )
           .then<DirectoryResults>((rows) => {
             const shown = (feesOnly ? rows.filter(hasVerifiedFees) : rows).slice(0, LARGEST_SHOWN);
-            return { rows: shown, total: shown.length, published: null };
+            return { rows: shown, total: shown.length, published: null, hasNext: null };
           }),
     focusCategory ? budget.optional(getPublicCategorySummaries(), "category summaries", []) : Promise.resolve([]),
   ]);
@@ -212,8 +229,9 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
     results.rows.length > 0
       ? await budget.optional(getInstitutionHeadlineCoverageCached(results.rows.map((row) => row.id)), "headline coverage", null)
       : null;
-  // A render with a failed optional read is cached for a minute, not an hour (#1572).
-  if (budget.failed() || !stats.complete) await shortenPageLife();
+  // A render with a failed optional read is cached for a minute, not an hour (#1572). An empty
+  // opening list is treated the same: the largest institutions are never really none.
+  if (budget.failed() || !stats.complete || (!isSearch && results.rows.length === 0)) await shortenPageLife();
 
   const focus: FeeFocus | null = focusCategory
     ? {
@@ -234,13 +252,9 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
   const bands = bandsInUse(summaries.filter((s) => STATE_NAMES[s.state_code]));
 
   const keep = { q: hasQuery ? query : "", charter, fee: focusCategory, fees: feesOnly };
-  // Without a count (the fees filter over a very large match set), a short page is the last one.
-  const totalPages =
-    results.total !== null
-      ? Math.ceil(results.total / DIRECTORY_PAGE_SIZE)
-      : results.rows.length < DIRECTORY_PAGE_SIZE
-        ? page
-        : page + 1;
+  // Without a count (the fees filter over a very large match set), "next" shows only when the
+  // next page has rows.
+  const totalPages = results.total !== null ? Math.ceil(results.total / DIRECTORY_PAGE_SIZE) : results.hasNext ? page + 1 : page;
   const buildPageHref = (nextPage: number) => directoryHref({ ...keep, state: stateCode, page: nextPage });
   const stateHref = (code: string) => directoryHref({ ...keep, state: code });
 

@@ -242,3 +242,16 @@ describe("getLargestInstitutions", () => {
     expect(unsafeMock.mock.calls[1][1]).toEqual([25, null]);
   });
 });
+
+describe("searchInstitutions with a junk name", () => {
+  beforeEach(() => {
+    unsafeMock.mockReset();
+  });
+
+  it("matches nothing and reads nothing for a name with under two letters or digits", async () => {
+    for (const query of ["--", "&&", "a."]) {
+      expect(await searchInstitutions({ query, state_code: "TX", page: 3 })).toEqual({ rows: [], total: 0 });
+    }
+    expect(unsafeMock).not.toHaveBeenCalled();
+  });
+});
