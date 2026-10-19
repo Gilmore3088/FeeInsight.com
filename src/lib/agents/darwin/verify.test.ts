@@ -73,6 +73,20 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
 }
 
 function asVerifyDb(db: DbMock): NonNullable<Parameters<typeof runDarwinVerify>[0]["db"]> {
+  // Existing rule tests supply immutable ordinary raw facts. Source locking/own authority
+  // is exercised by the actual PostgreSQL suites, not simulated by this SQL stub.
+  const original = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = templateText(strings);
+    if (text.includes("SELECT fr.*") && text.includes("FROM raw_fee_observations fr")) {
+      return (db.unsafe as unknown as (query: string, params: unknown[]) => Promise<Array<Record<string, unknown>>>)("SELECT * FROM raw_fee_observations -- current immutable rule fixture", [null, [Number(values[0])]])
+        .then((rows: Array<Record<string, unknown>>) => rows.filter(row => Number(row.fee_raw_id) === Number(values[0])));
+    }
+    return original(strings, ...values);
+  });
+  if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") {
+    Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
+  }
   return db as unknown as NonNullable<Parameters<typeof runDarwinVerify>[0]["db"]>;
 }
 

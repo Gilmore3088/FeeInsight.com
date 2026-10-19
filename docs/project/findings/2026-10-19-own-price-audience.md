@@ -1,5 +1,7 @@
 # An exclusive audience on the fee's own price clause (#2342)
 
+**Guard:** `own-price-audience.test.ts`, `locked-raw-source.db.test.ts` and `verification-audience.db.test.ts` cover exact clause ownership, factual locks, ordinary boundaries and real caller settlement.
+
 Oakwood's repaired source prints Check Images at $10 per statement for consumers only.
 Raw943014 retained that clause in conditions but left audience unknown. Darwin then called
 verified198096/published155214 `both` from unrelated mixed-schedule context. The price,
@@ -118,3 +120,38 @@ current raw. Optional absent fields in minimal ordinary callers are loaded from 
 The selected legacy evidence projection is `extraction_note ?? conditions`; the complete raw
 snapshot remains separate. Derived effective audience is never compared as if it were the
 original raw label. Existing historical v4 relabel calls remain unopted and unchanged.
+
+
+## Prospective caller checkpoint
+
+The completed admission carries a private brand, exact current raw/source identities, explicit
+nullable audience, final checked category, the existing release-derived frequency when used,
+and `sourceContext: Readonly<LockedCurrentRawSourceResult>`. Other guards consume those held
+facts directly; the identity string and caller source text are hints, not another source loader.
+The final writer independently re-prepares actual facts, compares the admitted raw/effective
+identity, and refuses own-clause direct calls without completed admission. Minimal ordinary
+callers still load absent optional raw metadata from the database.
+
+Every ordinary settlement is enclosed by its consumer's native row savepoint: normal Darwin
+checks, free held sorting, paid review after its existing response, recorded passes, zero
+resolution and direct release. Uncertainty precedes negative, duplicate and feedback outcomes
+as well as inserts. Paid transport failures keep their existing usage/retry contract; no source
+lock is held across a provider request. Explicit dry runs and switched-off release previews
+retain the existing legacy calculation, so this patch does not claim preview/live parity.
+Parent receipts distinguish selected/settled/deferred inputs and retain bounded ID/reason
+samples without source bodies or exception stacks.
+
+Twenty-six actual disposable-PostgreSQL caller tests cover the complete official Oakwood text
+through Knox → Darwin → Hamilton, migration47's actual audience trigger, explicit ambiguous
+null, known raw business labels, minimal/direct calls, original/derived release frequency,
+ordinary unavailable inputs, zero resolution, all held/review negative paths, stale admissions,
+real busy opposing connections, and unchanged existing verified/raw history. The paid negative
+path uses an accepted local response transport fixture, with zero provider requests/spend.
+The existing shared factual-source suite remains33 cases. The released trigger47 body is
+installed transactionally inside caller fixtures because the base CI schema otherwise contains
+its older migration40 body; rollback restores fixture DDL. No new production DDL is proposed.
+
+No extraction/reader/verification/source-check/relabel version, manifest epoch or selector
+changes. Already-recorded decisions are not reopened, and no existing public row is rewritten.
+The source/lock/CAS availability boundary remains explicit; the dated offline projection is
+conditional policy evidence, not a historical error census or proof of live admission.
