@@ -26,6 +26,7 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -525,5 +526,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     if (!duplicate) rates.push(rate);
     return false;
   });
-  return { candidates, held: stillHeld, rates, runs, dropped };
+  const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
+    ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
+  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped };
 }

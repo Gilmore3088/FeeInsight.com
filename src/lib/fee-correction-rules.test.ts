@@ -13,6 +13,7 @@ import {
   ADMIN_CORRECTION_PREFIX,
 } from "./fee-correction-rules";
 import { ADMIN_HOLD_PREFIX } from "./fee-hold-rules";
+import { SPECIAL_UNIT_FREQUENCIES } from "./fee-unit";
 
 const good = {
   feePublishedId: 117687,
@@ -62,6 +63,15 @@ describe("fee correction rules (H03, #978)", () => {
     expect(parseCorrectedAmount("$1,234.50")).toBe(1234.5);
     expect(parseCorrectedAmount(0)).toBe(0);
     for (const bad of ["", "-5", "12.345", "abc", "10001", Number.NaN, null]) expect(parseCorrectedAmount(bad)).toBeNull();
+  });
+
+  it("preserves an existing literal charging unit when another field is corrected (#2248)", () => {
+    for (const frequency of SPECIAL_UNIT_FREQUENCIES) {
+      const parsed = validateCorrectionInput({ ...good, frequency, conditions: "Own stated charging unit" });
+      expect(parsed.ok, frequency).toBe(true);
+      if (parsed.ok) expect(parsed.value).toMatchObject({ frequency, conditions: "Own stated charging unit", amount: 35 });
+    }
+    expect(validateCorrectionInput({ ...good, frequency: "per_unknown_unit" }).ok).toBe(false);
   });
 
   it("should_require_a_valid_expected_version_and_idempotency_key", () => {

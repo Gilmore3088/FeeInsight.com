@@ -5,6 +5,8 @@
  * fee). Only wording that points one way counts; anything else stays unknown.
  */
 
+import { isSpecialUnitFrequency, normalizedUnitFrequency, specialUnitOnPriceLine } from "@/lib/fee-unit";
+
 export const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))(?![a-z])/i;
 export const PERIODIC_WORDING = /\b(per (month|year|quarter)|monthly|annual(ly)?|quarterly|\/\s?(mo|month|yr|year)\b|a month|a year)/i;
 
@@ -403,6 +405,12 @@ export function settledFrequency(
   // #1456: an hourly frequency comes from the fee's own words (Darwin's live hourly re-check) and
   // is never replaced by a flat reading of the same line.
   if (stated === HOURLY_FREQUENCY) return HOURLY_FREQUENCY;
+  // #2248: retain a newly source-owned literal unit; generic per-item cleanup must not
+  // erase it. This does not infer units for historical blank/per_item rows or relax categories.
+  const unit = specialUnitOnPriceLine(sourceLine, amount);
+  if (isSpecialUnitFrequency(stated) && unit === normalizedUnitFrequency(stated) &&
+      (!(canonicalKey && (PERIOD_FEE_KEYS.has(canonicalKey) || HOURLY_EXEMPT_KEYS.has(canonicalKey))) ||
+        (canonicalKey === "paper_statement" && unit === "per_statement"))) return unit;
   // #1456: with `hourly: true`, a fee whose own row prices it by the hour is hourly, unless its
   // category is never charged by the hour ("Monthly Fee: (per hour) | $25" is a misread a person
   // looks at). Opt-in: Knox does not read hourly at extraction yet (it rides the next Knox rules

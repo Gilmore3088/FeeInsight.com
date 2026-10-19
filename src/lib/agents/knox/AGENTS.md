@@ -2,6 +2,27 @@
 
 Knox owns conservative raw fee extraction.
 
+## Literal own charging units (#2248, prospective raw lineage)
+
+After the existing name, price and category admission checks, an exact own label/price pair
+can carry its literal hourly, page, document, image, statement, half-hour, quarter-hour or
+minute unit. The numeric amount is unchanged. The full own price clause and existing linked
+conditions survive in readable `conditions`; model-provided unit or condition claims are not
+evidence. Equal-price neighbors, incompatible repeated labels, conflicting units, minima and
+turnaround times cannot supply a unit. An exact one-word label may own its immediate explicit
+price bullet for annotation, without widening the shared price-admission/refusal grammar.
+
+Existing period/per-event/hour-exempt category guards still run. Literal `per_statement` is
+allowed for `paper_statement`; it never means monthly. Newly inserted zero-price rows follow
+the same evidence contract. Same-key historical raw conflicts keep their complete old rows;
+held/name-file/untraced/superseded direct promoters do not use new unit facts to rewrite old
+frequency, conditions, identity or hold status. Historical recovery remains separate work.
+
+Known special units stay visible but do not enter mixed-unit category comparisons. SQL and
+client comparison readers share one finite predicate, statistics method 17/18, and versioned
+summary caches. Blank, `other` and legacy `per_item` are not reinterpreted. This code does not
+activate historical hourly rereads, change provider/pause controls or rescale any amount.
+
 ## Ancillary product ownership (#1911 code phase, 2026-10-19)
 
 A bounded single-primary-deposit-product document can assign its own ancillary priced fee
