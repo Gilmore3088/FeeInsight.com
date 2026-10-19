@@ -61,6 +61,7 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 
 export const ECONOMY_PARSER_VERSION = 1;
 export const BRANCH_TRACT_PARSER_VERSION = 2;
+export const BEA_PARSER_VERSION = 2;
 
 /**
  * The remittance source's own reader version, so a change to it re-runs only that source.
@@ -250,7 +251,7 @@ async function recordEmpty(
     sourceUrl,
     runId: options.runId ?? null,
     nextAttemptAfterHours: retryHours,
-    detail: { parser_version: ECONOMY_PARSER_VERSION, reason, ...extra },
+    detail: { parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION, reason, ...extra },
   });
 }
 
@@ -326,7 +327,7 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   const byGeo: Record<string, number> = {};
   for (const r of rows) byGeo[r.geo_type] = (byGeo[r.geo_type] ?? 0) + 1;
   const detail = {
-    parser_version: ECONOMY_PARSER_VERSION,
+    parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION,
     rows: rows.length,
     rows_by_geo_type: byGeo,
     series: [...new Set(rows.map((r) => r.series_key))],

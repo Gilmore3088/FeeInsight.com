@@ -214,3 +214,8 @@ and one run writes at most 1,000 changed rows (key partitions) or 60 institution
 one GLEIF call a second). Leftover work waits for the next run of the partition, an hour or two
 later; a register longer than 75 pages is walked over several runs (`detail.walk_resume`), and
 only a walk that read every page in one run may clear a link its key no longer finds.
+
+The source-health brief includes the newest nonblocked empty partition’s actual recorded reason
+when a source has loaded nothing. It bounds and redacts that evidence; holds and newer failures
+keep precedence. Missing legacy reasons remain unknown. A recorded parser/weight/URL problem
+must be repaired at its source, never replaced with guessed data to make the status fresh.

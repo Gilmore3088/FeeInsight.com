@@ -234,6 +234,12 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   migration (20270110000052) it is `skipped` and nothing is written. A dry run writes nothing.
   `/admin/states/<ST>/expert` lists the notes, newest first.
 
+The morning brief counts health/storage warnings alongside console items, includes bounded
+redacted reasons and admin action URLs, separates failed from blocked runs, and labels agent
+activity as completed steps. Spend includes the remaining monthly budget. Source dates distinguish
+successful checks from nonempty loads and attempts; answer evals show planned/completed samples
+when recorded and identify small paid samples. Historical snapshots may lack these fields.
+
 ## Goal scorecard (#1040)
 
 `goal-scorecard.ts` runs with the daily scoreboard step and stores the goal numbers in
