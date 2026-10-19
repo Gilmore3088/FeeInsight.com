@@ -1,5 +1,17 @@
 # Darwin Agent Guide
 
+## Current symbolic lesser-of applicability hold (#2335)
+
+The existing current-raw lock also refuses verification when both `knox_review:eligibility`
+and source-derived `knox_eligibility:symbolic_lesser` are present, regardless of a stale
+chosen category or legacy product representation. The common writer owns the exact source
+proof and pending-only lock/fresh-history protocol; models cannot supply this provenance.
+The printed dollar still passes numeric source support. This is prospective unsupported
+symbolic-charge applicability, not a false-price verdict, live retirement rule or global
+needs-flag requirement. Judged histories and ordinary flagless rejudges stay unchanged;
+verification/source-check/replay versions remain fixed. Historical88747validation remains
+separate after process release and exact normal reviewed recovery.
+
 ## Current cap applicability hold (#2304)
 
 The existing current-raw row lock also refuses verification when both
