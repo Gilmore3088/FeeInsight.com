@@ -287,11 +287,20 @@ describe.skipIf(!connection)("FDIC own-LEI collection in isolated PostgreSQL", (
     ]);
   });
 
-  it("treats a whitespace-only canonical LEI as missing and fills the unique source key without a false hold", async () => {
-    await db`INSERT INTO institution_sources (cert_number,source,lei) VALUES ('1','fdic','   ')`;
+  it.each(["   ", "\t", "\r\n", "\u00a0", "\ufeff\u3000\u200a"])("treats whitespace-only canonical LEI %j as missing and fills the unique source key without a false hold", async (blank) => {
+    await db`INSERT INTO institution_sources (cert_number,source,lei) VALUES ('1','fdic',${blank})`;
     const result = await run([active(1, lei)]);
     expect(result.leiIdentity).toMatchObject({ conflicts: [], hold_proposals: 0, durable_holds_inserted: 0 });
     expect([...await db`SELECT lei FROM institution_sources`]).toEqual([{ lei }]);
     expect(await db`SELECT id FROM institution_identity_holds`).toHaveLength(0);
+  });
+
+  it("preserves a nonblank malformed stored LEI and holds the differing publisher key", async () => {
+    const stored = "\tinvalid\n";
+    await db`INSERT INTO institution_sources (cert_number,source,lei) VALUES ('1','fdic',${stored})`;
+    const result = await run([active(1, lei)]);
+    expect(result.leiIdentity).toMatchObject({ conflicts: [{ certificate: "1", stored_lei: stored, reported_lei: lei }],
+      hold_proposals: 1, durable_holds_inserted: 1 });
+    expect([...await db`SELECT lei FROM institution_sources`]).toEqual([{ lei: stored }]);
   });
 });

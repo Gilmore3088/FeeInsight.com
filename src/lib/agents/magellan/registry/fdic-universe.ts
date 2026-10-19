@@ -32,6 +32,8 @@ const UPDATE_CHUNK = 1_000;
 const CERT_LOOKUP_BATCH = 50;
 const MAX_CERT_LOOKUPS = 500;
 const REFRESH_HOURS = 24 * 7;
+/** ECMAScript String.trim whitespace, matching conflict evaluation of blank stored keys. */
+const JS_TRIM_WHITESPACE = "\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff";
 /**
  * Bumped when the step starts writing something new, so a finished partition runs
  * again on the next registry tick. 3: collects FDIC's own institution LEI, holding shared
@@ -237,7 +239,10 @@ async function updateExisting(
                AND NOT EXISTS (SELECT 1 FROM institution_sources x WHERE x.rssd_id = r.rssd_id)
              THEN r.rssd_id END
       ),
-      lei = CASE WHEN ${FDIC_OWN_LEI_WRITES_ENABLED} THEN COALESCE(NULLIF(BTRIM(s.lei), ''), r.lei) ELSE s.lei END,
+      lei = CASE WHEN ${FDIC_OWN_LEI_WRITES_ENABLED} THEN COALESCE(
+        CASE WHEN NULLIF(BTRIM(s.lei, ${JS_TRIM_WHITESPACE}), '') IS NOT NULL THEN NULLIF(BTRIM(s.lei), '') END,
+        r.lei
+      ) ELSE s.lei END,
       holding_company_rssd = r.holding_company_rssd,
       holding_company_name = r.holding_company_name,
       primary_regulator = r.primary_regulator,
