@@ -493,10 +493,10 @@ function narrateFinished(
     }
     case "competitor-alerts": {
       const alerts = n(detail, "alerts");
-      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Monitor.`;
+      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Alerts and watches.`;
       return alerts === 0
         ? "Checked local competitors; no verified fee change to show."
-        : `Showed ${count(alerts, "competitor change alert")} in Monitor.`;
+        : `Showed ${count(alerts, "competitor change alert")} in Alerts and watches.`;
     }
     case "pro-digest": {
       const withNews = n(detail, "withNews");

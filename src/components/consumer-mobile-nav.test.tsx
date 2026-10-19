@@ -32,7 +32,7 @@ describe("ConsumerMobileNav", () => {
       render(<ConsumerMobileNav />);
       fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
       await screen.findByRole("dialog", { name: "Menu" });
-      for (const name of ["My bank and data", "All changes", "Institutions", "Fee categories", "Account and billing"]) {
+      for (const name of ["My bank and data", "Alerts and watches", "Institutions", "Fee categories", "Account and billing"]) {
         expect(screen.getByRole("link", { name })).toBeInTheDocument();
       }
       expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();

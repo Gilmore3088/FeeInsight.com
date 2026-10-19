@@ -699,8 +699,15 @@ export async function insertCandidate(
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
+    // Keep a referenced count cap in the lineage evidence, before excerptOf's
+    // final price-unit text so downstream frequency cannot borrow its day.
+    (options.candidate.ownedBullet && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
-    `excerpt="${ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
+    `excerpt="${options.candidate.ownedBullet ? options.candidate.excerpt : ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
+  // The catalog's conditions are the bank's own text, distinct from audit metadata.
+  const sourceConditions = options.candidate.ownedBullet
+    ? [options.candidate.excerpt, options.candidate.linkedConditions].filter(Boolean).join(" ")
+    : null;
   // A checking account's lineup facts, already grounded in the text (`lineup.ts`): a monthly
   // maintenance fee carries them all, a minimum balance fee only its account (v73).
   const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
@@ -740,7 +747,8 @@ export async function insertCandidate(
       min_opening_deposit,
       waiver_text,
       fee_audience, audience_evidence, fee_treatment,
-      line_share
+      line_share,
+      conditions
     )
     VALUES (
       ${institutionId},
@@ -760,7 +768,8 @@ export async function insertCandidate(
       ${lineup?.minOpeningDeposit ?? null},
       ${lineup?.waiverText ?? null},
       ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
-      ${options.candidate.lineShare ?? ""}
+      ${options.candidate.lineShare ?? ""},
+      ${sourceConditions}
     )
     ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
@@ -769,7 +778,7 @@ export async function insertCandidate(
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       extraction_note = EXCLUDED.extraction_note,
-      conditions = NULL,
+      conditions = EXCLUDED.conditions,
       audience_evidence = EXCLUDED.audience_evidence,
       fee_treatment = EXCLUDED.fee_treatment,
       -- v73: a product an older Knox wrote, or one that names no account, gives way to this read's.
