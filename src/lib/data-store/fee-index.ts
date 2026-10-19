@@ -476,7 +476,7 @@ export async function getPeerIndex(
   filters: PeerFilterSet,
   approvedOnly = true
 ): Promise<IndexEntry[]> {
-  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
+  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER, activeInstitutionFilter("ct")];
   const params: (string | number | string[] | number[])[] = [];
   let paramIdx = 0;
 
@@ -602,6 +602,7 @@ export async function getPeerIndexes(
   const conditions = [
     "ef.fee_category IS NOT NULL",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     approvedOnly ? "ef.review_status = 'approved'" : "ef.review_status != 'rejected'",
   ];
   const params: (string[] | number[])[] = [];
@@ -1318,7 +1319,8 @@ export async function getPeerFeeValues(
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [categories] as never[],
   ) as (PeerRow & {
     id: number | string;

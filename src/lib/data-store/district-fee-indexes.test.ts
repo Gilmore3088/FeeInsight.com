@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { getDistrictFeeIndexes, getNationalIndex, getStateFeeIndexes } from "./fee-index";
+import { getDistrictFeeIndexes, getNationalIndex, getPeerFeeValues, getPeerIndex, getPeerIndexes, getStateFeeIndexes } from "./fee-index";
 import { activeInstitutionFilter } from "./fee-stats";
 import { sql } from "./connection";
 
@@ -63,6 +63,15 @@ describe("one institution rule for public medians (#1980)", () => {
     await getStateFeeIndexes("FL");
     await getDistrictFeeIndexes(6);
     await getNationalIndex();
+    expect(db.unsafe).toHaveBeenCalledTimes(3);
+    for (const [text] of db.unsafe.mock.calls) expect(String(text)).toContain(activeInstitutionFilter("ct"));
+  });
+
+  it("applies the same rule to the peer readers the national report's charter, district, size and state groups use", async () => {
+    db.unsafe.mockResolvedValue([]);
+    await getPeerIndex({ charter_type: "bank" });
+    await getPeerIndexes([{ charter_type: "credit_union" }]);
+    await getPeerFeeValues([{}], ["overdraft"]);
     expect(db.unsafe).toHaveBeenCalledTimes(3);
     for (const [text] of db.unsafe.mock.calls) expect(String(text)).toContain(activeInstitutionFilter("ct"));
   });
