@@ -3,8 +3,16 @@ import type { Metadata } from "next";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { ABOUT_BLOCKS, aboutNextAction, aboutProof } from "./about-view";
-import { AboutBlocks, AboutContact, AboutHero, AboutNextAction } from "./about-sections";
+import { aboutNextAction, aboutProof } from "./about-view";
+import {
+  AboutCoverage,
+  AboutEvidence,
+  AboutFounder,
+  AboutHero,
+  AboutLegal,
+  AboutNextAction,
+  AboutProducts,
+} from "./about-sections";
 
 const ABOUT_URL = `${SITE_URL}/about`;
 const DESCRIPTION = `${SITE_NAME} publishes the ${PRODUCT_NAME}: what U.S. banks and credit unions charge, read from each institution's own fee schedule.`;
@@ -24,13 +32,17 @@ export default async function AboutPage() {
   ]);
   const proof = summary ? aboutProof(summary) : { figures: [], publishedShare: null, freshness: null };
 
+  // James's order (Oct 19): purpose, the two products, the evidence, the founder, coverage, then the sample report.
   return (
     <div className="bg-paper">
-      <AboutHero proof={proof} />
-      <div className="mx-auto max-w-page space-y-10 px-4 py-10 sm:px-6 sm:py-14">
-        <AboutBlocks blocks={ABOUT_BLOCKS} />
+      <AboutHero />
+      <div className="mx-auto max-w-page space-y-12 px-4 py-10 sm:px-6 sm:py-14">
+        <AboutProducts />
+        <AboutEvidence />
+        <AboutFounder email={CONTACT_EMAIL} />
+        <AboutCoverage proof={proof} />
         <AboutNextAction action={aboutNextAction(sampleLive)} />
-        <AboutContact email={CONTACT_EMAIL} legalLine={LEGAL_ENTITY_LINE} />
+        <AboutLegal legalLine={LEGAL_ENTITY_LINE} />
       </div>
     </div>
   );
