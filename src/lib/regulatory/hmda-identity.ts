@@ -167,6 +167,20 @@ export function matchHmdaIdentities(
     if (!lei) return { ...base, status: "unmatched", reason: "invalid_lei" };
     if (lender.sourceConflict) return { ...base, status: "ambiguous", reason: "panel_identity_conflict" };
     if (blockedLeis.has(lei)) return { ...base, status: "ambiguous", reason: "canonical_lei_conflict" };
+    // A unique RSSD is not permission to ignore the candidate's contradictory or unresolved
+    // LEI facts. Check candidate facts even when the lender LEI has no entry in the LEI index.
+    for (const id of rssdIds) {
+      const candidate = snapshots.get(id)!;
+      const own = normalizeLei(candidate.lei);
+      const link = candidate.leiLink;
+      const accepted = link?.status === "linked" && link.basis && KEY_BASES.has(link.basis) ? normalizeLei(link.lei) : null;
+      if (link?.status === "ambiguous" || (own && accepted && own !== accepted)) {
+        return { ...base, status: "ambiguous", reason: "canonical_lei_conflict" };
+      }
+      if ((own && own !== lei) || (accepted && accepted !== lei)) {
+        return { ...base, status: "ambiguous", reason: "identifier_disagreement" };
+      }
+    }
     if (candidateIds.length > 1) {
       return { ...base, status: "ambiguous", reason: leiIds.size > 1 ? "shared_lei" : rssdIds.size > 1 ? "shared_rssd" : "identifier_disagreement" };
     }

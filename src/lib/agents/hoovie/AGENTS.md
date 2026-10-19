@@ -180,6 +180,23 @@ reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-sche
 the row is missing, or the read fails, runs keep the name `magellan` and record why in
 `params_json.ledger_agent_fallback`.
 
+## Bounded HMDA identity repair (#2264)
+
+`hmda-identity-repair.ts` is one manual-only run-ledger step with a server-owned ten-bank
+manifest. Its admin queue route never executes work, and the ordinary cron drain excludes
+its step key. Preview changes no source data but records its ledger run; apply and rollback
+remain disabled by `HMDA_REPAIR_WRITES_ENABLED`. Both ordinary identity rollout flags in
+`hmda-repair-release.ts` are also false. Do not enable those flags as part of the pilot;
+broader release waits on the durable FDIC identity-hold issue #2266.
+
+The repair owns its transaction after the fixed public-source fetch. It checks running admin
+run/step ownership and cancellation state, shares annual lock namespace 2253 with the complete
+normal HMDA database phase, and takes short-wait table locks to protect row sets and ownership.
+All exact before-images and permitted-field-only post-images must match the reviewed hashes.
+The immutable apply/rollback receipt is inserted into `agent_run_events` in that same
+transaction. Retry safety and rollback rely on that receipt and current post-images, never
+only on whether the enclosing step later completed. No request-time DDL or schema change.
+
 ## LEI links (#1868)
 
 The `gleif` source's `lei-match-*` partitions (`magellan/registry/gleif-lei-match.ts`) link each

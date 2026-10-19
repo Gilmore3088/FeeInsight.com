@@ -1,8 +1,12 @@
 import { strToU8, zipSync } from "fflate";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HMDA_PARSER_VERSION, hmdaPartitions, latestHmdaYear, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
 import type { RegistryDb } from "./partitions";
+
+const release = vi.hoisted(() => ({ HMDA_ORDINARY_IDENTITY_WRITES_ENABLED: true }));
+vi.mock("@/lib/agents/hoovie/hmda-repair-release", () => release);
+beforeEach(() => { release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = true; });
 
 const LEI1 = "549300OSSFHX7ABQ2Y81";
 const LEI2 = "254900B5PW4JPZAQI721";
@@ -14,7 +18,7 @@ function createDb() {
     const text = (strings as string[]).join(" ");
     statements.push({ text, values });
     if (text.includes("FROM institution_sources s")) return Promise.resolve([{ id: 1, lei: LEI1, rssd_id: "480228" }]);
-    if (text.includes("SELECT NOW() AS started_at")) return Promise.resolve([{ started_at: "2026-10-17T00:00:00Z" }]);
+    if (text.includes("SELECT clock_timestamp() AS started_at")) return Promise.resolve([{ started_at: "2026-10-17T00:00:00Z" }]);
     if (text.includes("INSERT INTO hmda_lenders")) return Promise.resolve([{ matched: true }, { matched: false }]);
     if (text.includes("INSERT INTO hmda_lender_originations")) return Promise.resolve([{}, {}, {}]);
     if (text.includes("INSERT INTO hmda_lender_loan_costs")) return Promise.resolve([{}, {}]);
@@ -114,6 +118,20 @@ describe("registry hmda run", () => {
     expect(detail.cleaning.lenders_not_in_panel).toBe(2);
     expect(detail.cleaning.panel_rssd_field).toBeNull();
     expect(detail.matching).toMatchObject({ matched: 1, unmatched: 1, ambiguous: 0 });
+    const lockAt = statements.findIndex((s) => s.text.includes("pg_advisory_xact_lock"));
+    const readAt = statements.findIndex((s) => s.text.includes("FROM institution_sources s"));
+    expect(lockAt).toBeGreaterThanOrEqual(0);
+    expect(readAt).toBeGreaterThan(lockAt);
+  });
+
+  it("does not propagate annual identities while ordinary identity rollout is disabled", async () => {
+    release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = false;
+    const { db, statements } = createDb();
+    const result = await runRegistryHmda({ partitionKey: "2024-CA", db, fetchOptions: { fetchImpl: hmdaFetch(), backoffMs: 0 } });
+    expect(result).toMatchObject({ propagatedOriginationRows: 0, propagatedCostRows: 0 });
+    expect(partitionDetail(statements).identity_writes_enabled).toBe(false);
+    expect(statements.some((s) => s.text.includes("UPDATE hmda_lender_originations"))).toBe(false);
+    expect(statements.some((s) => s.text.includes("UPDATE hmda_lender_loan_costs"))).toBe(false);
   });
 
   it("keeps old cells when the stream does not tie out, and survives a missing panel", async () => {

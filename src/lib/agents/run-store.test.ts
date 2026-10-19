@@ -20,6 +20,8 @@ const {
   runPublicDiscoveryAuditMock,
   runRosettaReadMock,
   runRegistryStepMock,
+  executeHmdaIdentityRepairMock,
+  parseHmdaRepairParamsMock,
 } = vi.hoisted(() => {
   const tx = vi.fn() as TxMock;
   tx.unsafe = vi.fn();
@@ -41,6 +43,8 @@ const {
     runPublicDiscoveryAuditMock: vi.fn(),
     runRosettaReadMock: vi.fn(),
     runRegistryStepMock: vi.fn(),
+    executeHmdaIdentityRepairMock: vi.fn(),
+    parseHmdaRepairParamsMock: vi.fn(),
   };
 });
 
@@ -127,6 +131,12 @@ vi.mock("@/lib/agents/magellan/fetch", () => ({
 vi.mock("@/lib/agents/magellan/registry", () => ({
   isRegistryStepKey: (key: string) => key.startsWith("registry-"),
   runRegistryStep: runRegistryStepMock,
+}));
+
+vi.mock("@/lib/agents/hoovie/hmda-identity-repair", () => ({
+  HMDA_IDENTITY_REPAIR_STEP_KEY: "hmda-identity-repair",
+  executeHmdaIdentityRepair: executeHmdaIdentityRepairMock,
+  parseHmdaRepairParams: parseHmdaRepairParamsMock,
 }));
 
 vi.mock("@/lib/agents/public-discovery", () => ({
@@ -306,6 +316,12 @@ describe("agentic run store", () => {
     getPipelineControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getMarketingControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getExecutionBackendMock.mockReset().mockReturnValue("disabled");
+    runRegistryStepMock.mockReset();
+    executeHmdaIdentityRepairMock.mockReset().mockResolvedValue({
+      summary: "Reviewed the fixed HMDA cohort without identity writes.",
+      detail: { mode: "preview", writes: 0 },
+    });
+    parseHmdaRepairParamsMock.mockReset().mockImplementation((value: unknown) => value);
     runDarwinVerifyMock.mockReset().mockResolvedValue({
       selectedRawFees: 7,
       processedRawFees: 7,
@@ -610,6 +626,77 @@ describe("agentic run store", () => {
     );
     // prepare + finish each open a transaction; the network step itself does not.
     expect(withTransactionMock.mock.calls.length - transactionsBefore).toBe(2);
+  });
+
+  it("advances the manual HMDA repair outside the wrapper transaction using only its reviewed run config", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const params = { source: "hoovie.hmda-identity-repair", mode: "preview", manifest_digest: "reviewed-digest" };
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair", agent_name: "hoovie",
+      input_payload: { mode: "apply", manifest_digest: "unreviewed-override" } }];
+    const run = { ...runRow, agent_name: "hoovie", run_kind: "dry_run", params_json: params, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+
+    expect(parseHmdaRepairParamsMock).toHaveBeenCalledWith(params);
+    expect(executeHmdaIdentityRepairMock).toHaveBeenCalledWith({ db: sqlMock, runId: 101, stepId: 201, params });
+    expect(runRegistryStepMock).not.toHaveBeenCalled();
+    // Claim + finish only: the repair verifies the public source, then owns its transaction.
+    expect(withTransactionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds the manual HMDA repair while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Review in progress" });
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, run_kind: "dry_run", progress_total: 1,
+      params_json: { source: "hoovie.hmda-identity-repair", mode: "preview", manifest_digest: "reviewed-digest" } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 0, status: "queued", terminal: false });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+    expect(withTransactionMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { trigger_source: "schedule", run_kind: "dry_run", mode: "preview" },
+    { trigger_source: "admin", run_kind: "workflow", mode: "preview" },
+    { trigger_source: "admin", run_kind: "dry_run", mode: "apply" },
+  ])("refuses HMDA repair runs outside explicit admin/mode configuration: %j", async ({ mode, ...invalid }) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, ...invalid, progress_total: 1,
+      params_json: { source: "hoovie.hmda-identity-repair", mode, manifest_digest: "reviewed-digest" } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed" });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+  });
+
+  it("records malformed HMDA repair parameters as failure without calling the executor", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    parseHmdaRepairParamsMock.mockImplementation(() => { throw new Error("Reviewed manifest digest does not match"); });
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, run_kind: "dry_run", progress_total: 1, params_json: {} };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed" });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+    expect(combinedTransactionSql()).toContain("step.failed");
+  });
+
+  it("keeps reviewed HMDA repair steps out of cron selection", async () => {
+    sqlMock.mockResolvedValue([]);
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("hmda-identity-repair");
+    const selection = sqlMock.mock.calls.find(([strings]) => templateText(strings).includes("SELECT r.id"));
+    expect(selection).toBeDefined();
+    expect(templateText(selection![0])).toContain("OR s.step_key = ANY(");
+    expect(selection!.slice(1)).toContainEqual(expect.arrayContaining(["hmda-identity-repair"]));
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
   });
 
   it("passes state lane scope into worker execution", async () => {

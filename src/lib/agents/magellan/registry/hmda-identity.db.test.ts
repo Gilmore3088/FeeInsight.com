@@ -9,6 +9,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 import { runRegistryHmda } from "./hmda";
 import type { RegistryDb } from "./partitions";
+import { lockHmdaYear } from "./hmda-lock";
+
+const release = vi.hoisted(() => ({ HMDA_ORDINARY_IDENTITY_WRITES_ENABLED: true }));
+vi.mock("@/lib/agents/hoovie/hmda-repair-release", () => release);
 
 const connection = process.env.HMDA_IDENTITY_TEST_DATABASE_URL ?? process.env.E2E_DATABASE_URL;
 const schema = `hmda_identity_${randomBytes(8).toString("hex")}`;
@@ -52,6 +56,7 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
   });
 
   beforeEach(async () => {
+    release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = true;
     await db`TRUNCATE institution_sources, institution_lei_links, hmda_lenders,
       hmda_lender_originations, hmda_lender_loan_costs, registry_ingest_partitions RESTART IDENTITY CASCADE`;
   });
@@ -230,6 +235,102 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
     expect(await snapshot()).toBe(before);
   });
 
+  it("preserves reviewed annual identities while ordinary rollout is disabled and leaves new annual rows unlinked", async () => {
+    await db`INSERT INTO institution_sources (id, lei) VALUES (1, ${A}), (2, ${B}), (3, NULL)`;
+    await run({ loans: [{ lei: A }] });
+    const [before] = await db`SELECT institution_id, match_method, raw_json->'feeinsight_identity' AS identity
+      FROM hmda_lenders WHERE activity_year = 2025 AND lei = ${A}`;
+    await db`UPDATE institution_sources SET lei = NULL WHERE id = 1`;
+    await db`UPDATE institution_sources SET lei = ${A} WHERE id = 3`;
+    release.HMDA_ORDINARY_IDENTITY_WRITES_ENABLED = false;
+    const { result } = await run({ state: "MD", loans: [{ lei: A }, { lei: B }] });
+    expect(result).toMatchObject({ matchedLenders: 1, unmatchedLenders: 1,
+      propagatedOriginationRows: 0, propagatedCostRows: 0, matching: { matched: 2 } });
+    const [after] = await db`SELECT institution_id, match_method, raw_json->'feeinsight_identity' AS identity
+      FROM hmda_lenders WHERE activity_year = 2025 AND lei = ${A}`;
+    expect(after).toEqual(before);
+    const [newLender] = await db`SELECT institution_id, match_method, raw_json FROM hmda_lenders WHERE lei = ${B}`;
+    expect(newLender).toEqual({ institution_id: null, match_method: null, raw_json: {} });
+    const rows = await identities();
+    for (const table of [rows.originations, rows.costs]) {
+      expect(table.filter((row) => row.lei === A).every((row) => Number(row.institution_id) === 1)).toBe(true);
+      expect(table.find((row) => row.lei === B)?.institution_id).toBeNull();
+    }
+    const [receipt] = await db`SELECT detail FROM registry_ingest_partitions WHERE partition_key = '2025-MD'`;
+    expect(receipt.detail.identity_writes_enabled).toBe(false);
+  });
+
+  it("waits for the shared year lock before canonical reads and keeps it through every state write", async () => {
+    await db`INSERT INTO institution_sources (id, lei) VALUES (1, ${A}), (2, NULL)`;
+    await run({ loans: [{ lei: A }] });
+    await db.unsafe(`CREATE FUNCTION require_year_lock() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND pid = pg_backend_pid()
+          AND classid = 2253 AND objid = 2025 AND granted) THEN
+          RAISE EXCEPTION 'year lock missing during HMDA write';
+        END IF;
+        RETURN NULL;
+      END $$`);
+    for (const table of ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"]) {
+      await db.unsafe(`CREATE TRIGGER require_year_lock BEFORE INSERT OR UPDATE OR DELETE ON ${table}
+        FOR EACH STATEMENT EXECUTE FUNCTION require_year_lock()`);
+    }
+    const blocker = postgres(connection!, { ssl: false, max: 1, prepare: false,
+      connection: { search_path: schema }, types: { json: JSON_TEXT_PASSTHROUGH } });
+    let normal!: ReturnType<typeof run>;
+    try {
+      await blocker.begin(async (raw) => {
+        const tx = raw as unknown as RegistryDb;
+        await lockHmdaYear(tx, 2025);
+        normal = run({ state: "MD", loans: [{ lei: A }] });
+        let waiting = false;
+        const deadline = Date.now() + 1_000;
+        while (Date.now() < deadline) {
+          const [locks] = await tx`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory'
+            AND classid = 2253 AND objid = 2025 AND NOT granted`;
+          if (locks.n > 0) { waiting = true; break; }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        expect(waiting).toBe(true);
+        await tx`UPDATE institution_sources SET lei = NULL WHERE id = 1`;
+        await tx`UPDATE institution_sources SET lei = ${A} WHERE id = 2`;
+      });
+      await normal;
+      const rows = await identities();
+      expect(rows.lenders).toHaveLength(1);
+      expect(rows.originations).toHaveLength(2);
+      expect(rows.costs).toHaveLength(2);
+      for (const table of [rows.lenders, rows.originations, rows.costs]) {
+        expect(table.every((row) => Number(row.institution_id) === 2)).toBe(true);
+      }
+    } finally {
+      await blocker.end();
+      for (const table of ["hmda_lenders", "hmda_lender_originations", "hmda_lender_loan_costs"]) {
+        await db.unsafe(`DROP TRIGGER require_year_lock ON ${table}`);
+      }
+      await db.unsafe("DROP FUNCTION require_year_lock()");
+    }
+  });
+
+  it("rolls back the complete state stage if a later cost metric write fails", async () => {
+    await db`INSERT INTO institution_sources (id, lei) VALUES (1, ${A}), (2, NULL)`;
+    await run({ state: "MD", loans: [{ lei: A }] });
+    await db`UPDATE institution_sources SET lei = NULL WHERE id = 1`;
+    await db`UPDATE institution_sources SET lei = ${A} WHERE id = 2`;
+    const before = await snapshot();
+    await db.unsafe(`CREATE FUNCTION reject_cost_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'fixture later cost write failure'; END $$`);
+    await db.unsafe(`CREATE TRIGGER reject_cost_insert BEFORE INSERT ON hmda_lender_loan_costs
+      FOR EACH ROW EXECUTE FUNCTION reject_cost_insert()`);
+    try {
+      await expect(run({ loans: [{ lei: A, amount: 990000 }] })).rejects.toThrow("fixture later cost write failure");
+    } finally {
+      await db.unsafe("DROP TRIGGER reject_cost_insert ON hmda_lender_loan_costs");
+      await db.unsafe("DROP FUNCTION reject_cost_insert()");
+    }
+    expect(await snapshot()).toBe(before);
+  });
+
   it("uses only the historical respondent RSSD, excluding parent and top-holder identity", async () => {
     await db`INSERT INTO institution_sources (id, rssd_id) VALUES (1, '480228'), (2, '999'), (3, '888')`;
     const { result } = await run({ year: 2023, loans: [{ lei: A }, { lei: B }], panel: [
@@ -244,6 +345,19 @@ describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", (
       expect(table.find((row) => row.lei === A)?.institution_id).toBe(1);
       expect(table.find((row) => row.lei === B)?.institution_id).toBeNull();
     }
+  });
+
+  it.each(["own", "key", "ambiguous"])("holds unique respondent RSSD with conflicting %s LEI facts", async (kind) => {
+    await db`INSERT INTO institution_sources (id, lei, rssd_id) VALUES (1, ${kind === "own" ? B : null}, '480228')`;
+    if (kind !== "own") await db`INSERT INTO institution_lei_links (institution_id, status, lei, match_basis, candidate_leis)
+      VALUES (1, ${kind === "key" ? "linked" : "ambiguous"}, ${kind === "key" ? B : null}, 'rssd', ${kind === "key" ? [] : [B, C]})`;
+    const { result } = await run({ year: 2023, loans: [{ lei: A }], panel: [{ lei: A, rssd: "480228" }] });
+    expect(result.matching).toMatchObject({ matched: 0, ambiguous: 1 });
+    const rows = await identities();
+    expect(rows.lenders[0]).toMatchObject({ institution_id: null, match_method: null,
+      reason: kind === "ambiguous" ? "canonical_lei_conflict" : "identifier_disagreement" });
+    expect(rows.originations[0].institution_id).toBeNull();
+    expect(rows.costs[0].institution_id).toBeNull();
   });
 
   it.each(["direct LEI", "canonical LEI", "respondent RSSD", "LEI/RSSD disagreement"])("holds a conflicting %s in all three HMDA tables", async (kind) => {

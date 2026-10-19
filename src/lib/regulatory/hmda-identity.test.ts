@@ -106,6 +106,17 @@ describe("HMDA exact institution identity", () => {
     expect(match([bank(1, A), bank(2, B, "480228")], "480228")).toMatchObject({ status: "ambiguous", reason: "identifier_disagreement", institutionId: null });
   });
 
+  it.each(["own", "key", "ambiguous"])("does not let unique RSSD bypass %s LEI evidence", (kind) => {
+    const institution: HmdaInstitutionIdentity = bank(8, kind === "own" ? B : null, "480228");
+    if (kind === "key") institution.leiLink = { status: "linked", lei: B, basis: "fdic_cert" };
+    if (kind === "ambiguous") institution.leiLink = { status: "ambiguous", lei: null, basis: "rssd", candidates: [B, C] };
+    expect(match([institution], "480228")).toMatchObject({
+      status: "ambiguous", institutionId: null, candidateIds: [8],
+      reason: kind === "ambiguous" ? "canonical_lei_conflict" : "identifier_disagreement",
+      canonicalSnapshots: [expect.objectContaining({ id: 8 })],
+    });
+  });
+
   it("holds disagreement between an own LEI and an accepted canonical key link", () => {
     expect(match([{ ...bank(1, A), leiLink: { status: "linked", lei: B, basis: "fdic_cert" } }])).toMatchObject({ status: "ambiguous", reason: "canonical_lei_conflict" });
   });

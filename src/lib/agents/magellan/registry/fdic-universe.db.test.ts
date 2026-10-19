@@ -7,6 +7,9 @@ import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 import { runRegistryFdicUniverse } from "./fdic-universe";
 import type { RegistryDb } from "./partitions";
 
+const release = vi.hoisted(() => ({ FDIC_OWN_LEI_WRITES_ENABLED: true }));
+vi.mock("@/lib/agents/hoovie/hmda-repair-release", () => release);
+
 const connection = process.env.FDIC_UNIVERSE_TEST_DATABASE_URL ?? process.env.E2E_DATABASE_URL;
 const schema = `fdic_lei_${randomBytes(8).toString("hex")}`;
 const lei = "549300OSSFHX7ABQ2Y81";
@@ -48,6 +51,7 @@ describe.skipIf(!connection)("FDIC own-LEI collection in isolated PostgreSQL", (
   });
 
   beforeEach(async () => {
+    release.FDIC_OWN_LEI_WRITES_ENABLED = true;
     await db`TRUNCATE institution_sources RESTART IDENTITY`;
     receipts.length = 0;
   });
@@ -123,5 +127,18 @@ describe.skipIf(!connection)("FDIC own-LEI collection in isolated PostgreSQL", (
     expect([...rows]).toEqual([{ cert_number: "1", lei: knownLei }]);
     expect(result.leiIdentity.conflicts).toEqual([{ certificate: "1", stored_lei: knownLei, reported_lei: lei }]);
     expect(receipts).toEqual([]);
+  });
+
+  it("keeps broad own-LEI writes disabled while still reporting source proposals and conflicts", async () => {
+    release.FDIC_OWN_LEI_WRITES_ENABLED = false;
+    await db`INSERT INTO institution_sources (cert_number, source, lei)
+      VALUES ('1', 'fdic', NULL), ('2', 'fdic', ${` ${knownLei.toLowerCase()} `})`;
+    const result = await run([active(1, lei), active(2, thirdLei), active(3, knownLei)]);
+    expect([...await db`SELECT cert_number, lei FROM institution_sources ORDER BY cert_number`]).toEqual([
+      { cert_number: "1", lei: null }, { cert_number: "2", lei: ` ${knownLei.toLowerCase()} ` }, { cert_number: "3", lei: null },
+    ]);
+    expect(result.leiIdentity.unique_source_institutions).toBe(3);
+    expect(result.leiIdentity.conflicts).toEqual([{ certificate: "2", stored_lei: ` ${knownLei.toLowerCase()} `, reported_lei: thirdLei }]);
+    expect(receipts[0].own_lei_writes_enabled).toBe(false);
   });
 });

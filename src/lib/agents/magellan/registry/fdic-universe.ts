@@ -7,6 +7,7 @@ import {
 } from "@/lib/regulatory/fdic";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
 import { normalizeLei } from "@/lib/regulatory/gleif";
+import { FDIC_OWN_LEI_WRITES_ENABLED } from "@/lib/agents/hoovie/hmda-repair-release";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -37,6 +38,7 @@ const REFRESH_HOURS = 24 * 7;
  * credit unions take theirs from nearby banks.
  */
 export const FDIC_UNIVERSE_PARSER_VERSION = 3;
+export const FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION = FDIC_OWN_LEI_WRITES_ENABLED ? FDIC_UNIVERSE_PARSER_VERSION : 2;
 
 export interface RegistryFdicUniverseOptions {
   runId?: number | null;
@@ -146,7 +148,7 @@ async function updateExisting(
                AND NOT EXISTS (SELECT 1 FROM institution_sources x WHERE x.rssd_id = r.rssd_id)
              THEN r.rssd_id END
       ),
-      lei = COALESCE(NULLIF(BTRIM(s.lei), ''), r.lei),
+      lei = CASE WHEN ${FDIC_OWN_LEI_WRITES_ENABLED} THEN COALESCE(NULLIF(BTRIM(s.lei), ''), r.lei) ELSE s.lei END,
       holding_company_rssd = r.holding_company_rssd,
       holding_company_name = r.holding_company_name,
       primary_regulator = r.primary_regulator,
@@ -266,7 +268,8 @@ async function insertNew(db: RegistryDb, rows: FdicInstitutionRow[]): Promise<nu
            CASE WHEN r.rssd_id IS NOT NULL
                   AND NOT EXISTS (SELECT 1 FROM institution_sources x WHERE x.rssd_id = r.rssd_id)
                 THEN r.rssd_id END,
-           r.lei, r.holding_company_rssd, r.holding_company_name, r.primary_regulator, r.charter_agency,
+           CASE WHEN ${FDIC_OWN_LEI_WRITES_ENABLED} THEN r.lei END,
+           r.holding_company_rssd, r.holding_company_name, r.primary_regulator, r.charter_agency,
            'active', NOW()
       FROM r
     ON CONFLICT (source, cert_number) DO NOTHING
@@ -383,7 +386,8 @@ export async function runRegistryFdicUniverse(
       missing_from_fdic: result.missingFromFdic,
       banks_district_changed: result.banksDistrictChanged,
       others_district_changed: result.othersDistrictChanged,
-      parser_version: FDIC_UNIVERSE_PARSER_VERSION,
+      parser_version: FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION,
+      own_lei_writes_enabled: FDIC_OWN_LEI_WRITES_ENABLED,
       lei_identity: result.leiIdentity,
     },
   });

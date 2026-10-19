@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { narrateEvent, narrateStepFinished } from "./narrate";
+import { narrateEvent, narrateStepFinished, STEP_OWNER } from "./narrate";
 
 describe("narrateStepFinished", () => {
+  it("attributes bounded HMDA repair to Hoovie and separates preview, apply and receipt replay", () => {
+    expect(STEP_OWNER["hmda-identity-repair"]).toBe("hoovie");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "preview", writes: 0 })).toBe("Reviewed the bounded HMDA identity scope; no source or identity data changed.");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "apply" })).toContain("receipt records the exact changed rows");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "apply", replayed: true })).toContain("no repeated identity writes");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "rollback" })).toContain("recorded post-images");
+  });
   it("separates pending selected-identity deferrals from already published or ineligible fees",()=>{
     expect(narrateStepFinished('publish',{processed_verified_fees:3,published_fees:0,skipped_verified_fees:3,identity_deferred_verified_fees:3},'GA'))
       .toBe('Published 0 fees in GA: 3 deferred after selected verification or identity changed (still pending).');
