@@ -60,6 +60,29 @@ const ARCHETYPES: { key: ArchetypeKey; label: string; rule: string; test: (v: nu
   { key: "premium", label: "Premium", rule: "Over $30", test: (v) => v > 30 },
 ];
 
+/** Each pricing group as the action title counts it ("11 at $15.01–$30"). */
+const ARCHETYPE_COUNT_TEXT: Record<ArchetypeKey, string> = {
+  zero_od: "at $0",
+  low_capped: "up to $15",
+  mid: "at $15.01–$30",
+  premium: "over $30",
+};
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The pricing groups' printed rules: fixed definitions, not data, so the answer eval skips their
+ * dollar edges ("$15.01" ties to no live fee). Only the printed forms match: the takeaway's
+ * "($15.01 to $30)" and the title's counted "11 at $15.01–$30", never a digit beyond the rule,
+ * so "up to $15.50" or "just over $30" in prose is still checked. The $0 group is left out.
+ */
+export const ARCHETYPE_RULE_PATTERN = new RegExp(
+  ARCHETYPES.filter((a) => a.key !== "zero_od")
+    .flatMap((a) => [escapeRegExp(`(${a.rule})`), `\\b\\d[\\d,]* ${escapeRegExp(ARCHETYPE_COUNT_TEXT[a.key])}(?![.,]?\\d)`])
+    .join("|"),
+  "g",
+);
+
 // ─── Small formatters ────────────────────────────────────────────────────────
 
 function money(n: number): string {
@@ -276,10 +299,10 @@ function archetypePiece(research: FeeResearch, name: string): Piece | null {
     key: "archetype",
     actionTitle: `Of ${count(n)} ${group.label}: ${listParts(
       [
-        [by.zero_od, "at $0"],
-        [by.low_capped, "up to $15"],
-        [by.mid, "at $15.01–$30"],
-        [by.premium, "over $30"],
+        [by.zero_od, ARCHETYPE_COUNT_TEXT.zero_od],
+        [by.low_capped, ARCHETYPE_COUNT_TEXT.low_capped],
+        [by.mid, ARCHETYPE_COUNT_TEXT.mid],
+        [by.premium, ARCHETYPE_COUNT_TEXT.premium],
       ],
     )}.`,
     exhibit: {
