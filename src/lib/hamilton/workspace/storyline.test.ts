@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
 import { buildAskResponse, parseAsk } from "./ask";
@@ -50,6 +51,17 @@ describe("storyline", () => {
     expect(asksAboutStructure("how does my overdraft fee compare?")).toBe(false);
   });
 
+  it("ranks a price among the peers the band counts, sister charters once (#2048)", () => {
+    const base = research();
+    // Six publishing rows, three of them sister charters of one schedule: four counted peers.
+    const peers = base.peers.slice(0, 6).map((p, i) => ({ ...p, amount: 20 + i, ...(i >= 3 ? { countedAs: base.peers[3].institutionId } : {}) }));
+    const thin = { ...base, current: 30, peers, band: { p25: 20.75, median: 21.5, p75: 22.75, n: 4 } };
+    const answer = buildFeeAnswer(thin);
+    expect(answer.headline).toBe("Your overdraft fee is $30; only 4 peers publish one, too few to rank.");
+    expect(answer.storyline!.exhibits.some((e) => e.exhibit.kind === "fee_position")).toBe(false);
+    expect(answer.storyline!.keyFigures.some((k) => /percentile|Highest|Lowest/.test(`${k.value} ${k.label}`))).toBe(false);
+  });
+
   it("never prints a 0th percentile, a range of one price, or the institution's name twice in a title (Space Coast review)", () => {
     const base = research();
     const lowest = {
@@ -84,7 +96,14 @@ describe("storyline", () => {
     const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
     expect(local.actionTitle).toBe("9 of 16 competitors in your market charge less than your $3; their range is $1 to $4.");
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.items.length).toBe(12);
-    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("The 12 largest by local deposits of 16.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("Charted: the 12 largest by local deposits.");
+    // Every competitor counted stays listable (#2036): the four smallest, lowest fee first.
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.rest?.map((r) => r.name)).toEqual(["Rival 13", "Rival 14", "Rival 15", "Rival 16"]);
+    // Past the 100-row cap the note names the total and stays within a note's 16 words.
+    const many = Array.from({ length: 120 }, (_, i) => ({ ...template, institutionId: 600 + i, institutionName: `Rival ${i + 1}`, amount: 2 + (i % 5) }));
+    const big = buildFeeAnswer({ ...base, current: 3, localCompetitors: many }).storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.note).toBe("Charted: the 12 largest by local deposits; 88 more listed, of 120.");
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.rest?.length).toBe(88);
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.allAmounts?.length).toBe(16);
     const lens = answer.storyline!.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]).join(" ")
       + " " + JSON.stringify(answer);
@@ -313,6 +332,33 @@ describe("storyline", () => {
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 2")?.cells[1]).toBe("$20 to $30 (NSF item $20; NSF ACH $30)");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[1]).toBe("$25");
     }
+  });
+
+  it("keeps every institution in the structure table, with no \"Showing 12 of 14\" note (#2036)", () => {
+    const peer = structure!.rows.find((r) => !r.own)!;
+    const others = Array.from({ length: 14 }, (_, i) => ({ ...peer, institutionId: 900 + i, name: `Local ${i + 1}` }));
+    const rows = [structure!.rows.find((r) => r.own)!, ...others];
+    const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
+    const matrix = story.exhibits[0];
+    expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.rows.length).toBe(15);
+    expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.note).toBeUndefined();
+  });
+
+  it("names the one peer group and how many institutions it holds on the position exhibit (#2046)", () => {
+    const story = buildFeeAnswer(research({ peerGroupSize: 38 })).storyline!;
+    const position = story.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    const n = buildFeeAnswer(research()).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    const publishing = n.exhibit.kind === "fee_position" ? n.exhibit.band.n : 0;
+    expect(position.exhibit.kind === "fee_position" && position.exhibit.note).toMatch(new RegExp(`^Peer group picked by Hamilton: (.+; )?${publishing} of its 38 institutions publish this fee\\.$`));
+    const saved = buildFeeAnswer(research({ peerGroupSize: 6, peerGroupSaved: true, peerLabel: "Lancaster rivals" })).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    expect(saved.exhibit.kind === "fee_position" && saved.exhibit.note).toBe("Saved peer group: Lancaster rivals (6 institutions).");
+  });
+
+  it("names the percentile method wherever the position exhibit places a price (#2048)", () => {
+    const position = buildFeeAnswer(research()).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    expect(position.exhibit.kind === "fee_position" && position.exhibit.method).toBe(PERCENTILE_METHOD);
+    const noOwn = buildFeeAnswer(research({ current: null })).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position");
+    expect(noOwn?.exhibit.kind === "fee_position" ? noOwn.exhibit.method : undefined).toBeUndefined();
   });
 
   it("drops a long competitor name rather than run past a storyline line's 20 words", () => {

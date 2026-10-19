@@ -14,7 +14,7 @@ export default async function VerifyDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const { id } = await params;
   const institutionId = parseInt(id, 10);

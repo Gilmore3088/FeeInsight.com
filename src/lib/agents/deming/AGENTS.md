@@ -46,7 +46,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 ## Fresh audit (accuracy)
 
 - `fresh-audit.ts`: the `deming-fresh-audit` step in Atlas's daily run. It draws a seeded sample
-  of `FRESH_AUDIT_SAMPLE` (200) live dollar fees from `published_fee_catalog` and checks each one
+  of `FRESH_AUDIT_SAMPLE` (500) live dollar fees from `published_fee_catalog` and checks each one
   against the bank's own stored schedule. A fee is right only when the amount (`traceLiveFee`, the
   shared source check), the category (`checkFeeCategory`), the evidence (the bank's own document,
   not an article; a product-page fee only when the bank's schedule does not price the same fee
@@ -55,12 +55,13 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
   hold. A fee with no stored text is unknown, never right or wrong. Below
   `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. The audit itself only reads.
-- This is the accuracy measure `CLAUDE.md` defines. The target is 99.5% (James, Oct 15; `ACCURACY_TARGET` in `src/lib/accuracy-target.ts`), averaged over a week.
+- This is an automated stored-copy support diagnostic. The launch accuracy measurement is the separate weekly live batch of 50 whole institutions (DECISIONS, 2026-10-19), covering every published fee plus missing tracked categories. The shared target value is 99.5%; this automated status cannot satisfy launch sign-off and creates no additional manual checks for James.
 - The step's detail (counts per check, up to 50 misses, the seed and sample ids) is in its
   `step.finished` event. `goal-scorecard.ts` pools the last 7 days of audits into the scorecard's
-  accuracy: right ÷ scorable, a 95% Wilson range (about ±3–4 points at 200 fees), misses per check,
+  accuracy: right ÷ unique scorable fees in the newest scoring series, a 95% Wilson range, misses per check,
   and one dated row per audit. Each daily scoreboard snapshot stores this in `detail.goal.accuracy`,
   so the dated results outlive the run history.
+- Confidence/history (#2071): [ACCURACY.md](ACCURACY.md) defines the 500/day request, 3,400 unique-scorable minimum and unrounded 95% lower-bound gate. Full per-fee receipts prevent retries or overlapping draws from inflating confidence; unknown versions stay legacy. Calendar-week history comes from existing daily snapshots, split at each reporting/audit/category/source/name version change. The admin scorecard and quality ledger distinguish this automated stored-copy diagnostic from independent live-source accuracy and missed-fee recall.
 - Each new miss (not one a Hamilton second look already holds) is kept and routed
   (`audit-misses.ts`, #1119, approved by James 2026-10-12; migration 20270110000045):
   - a `fresh_audit` eval case, `case_key` `fresh_audit:<fee_published_id>:<check>`, label
@@ -199,6 +200,7 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
+| `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
 | `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |

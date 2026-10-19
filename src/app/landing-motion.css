@@ -70,8 +70,23 @@
 
 .fi-home-question { transition: opacity 0.3s ease, transform 0.3s ease; }
 
+/* One question: as each card lights, a dot runs down its line (the research stage's dots, Oct 17). */
+.fi-oq-dot {
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  opacity: 0;
+  animation: fi-oq-travel 0.9s ease-in-out forwards;
+}
+@keyframes fi-oq-travel {
+  0% { offset-distance: 0%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fi-home-fade { animation: none; }
+  .fi-oq-dot { display: none; animation: none; }
   .fi-home-slide,
   .fi-home-slide[data-active="true"],
   .fi-home-question { transition: none; }

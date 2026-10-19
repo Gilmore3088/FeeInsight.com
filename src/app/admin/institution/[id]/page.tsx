@@ -40,7 +40,7 @@ export default async function InstitutionDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   const canHold = hasPermission(user, "approve");
   const { id } = await params;
   const institutionId = Number(id);

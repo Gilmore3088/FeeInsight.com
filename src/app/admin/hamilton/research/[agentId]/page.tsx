@@ -5,9 +5,8 @@ import { listConversations, ensureResearchTables } from "@/lib/research/history"
 import { ResearchChat } from "./research-chat";
 
 export default async function AgentChatPage() {
+  const user = await requireAuth("operate");
   const agent = await getHamilton("admin");
-
-  const user = await requireAuth("view");
 
   await ensureResearchTables();
   const conversations = await listConversations(user.id, "hamilton", 20);

@@ -41,7 +41,7 @@ function Stat({
 }
 
 export default async function ApiTrustPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const overview = await getApiTrustOverview();
 
   return (

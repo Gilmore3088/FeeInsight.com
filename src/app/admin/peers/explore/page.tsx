@@ -23,7 +23,7 @@ export default async function ExplorePeersPage({
     page?: string;
   }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const params = await searchParams;
 
   const peerFilters = parsePeerFilters({

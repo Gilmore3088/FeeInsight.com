@@ -1,6 +1,7 @@
 import { getApiRoutePolicy } from "./policies";
 import { getRequestSubjectKey, recordApiRouteAuditEvent, type ApiAuditOutcome } from "./audit";
 import { isRateLimited } from "./rate-limit";
+import { retainV1BackgroundTask } from "@/lib/api-v1-background";
 
 type RouteHandler<TArgs extends unknown[]> = (...args: TArgs) => Promise<Response> | Response;
 
@@ -59,7 +60,7 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
 
     try {
       const response = await handler(...args);
-      recordApiRouteAuditEvent({
+      const auditTask = recordApiRouteAuditEvent({
         policy,
         request,
         method,
@@ -69,9 +70,10 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
         subjectKey,
         metadata: requestShape(request),
       }).catch(() => {});
+      if (policy.surface === "v1") retainV1BackgroundTask(auditTask);
       return response;
     } catch (error) {
-      recordApiRouteAuditEvent({
+      const auditTask = recordApiRouteAuditEvent({
         policy,
         request,
         method,
@@ -84,6 +86,7 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
           error: error instanceof Error ? error.message : String(error),
         },
       }).catch(() => {});
+      if (policy.surface === "v1") retainV1BackgroundTask(auditTask);
       throw error;
     }
   };

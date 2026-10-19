@@ -81,7 +81,7 @@ describe("/api/v1/rate-fees", () => {
       fee_name: "Foreign Transaction Fee",
       name_is_category_fallback: false,
       category: "card_foreign_txn",
-      display_name: "International ATM & Card",
+      display_name: "Foreign Transaction",
       rate_percent: 3,
       rate_min_amount: 1,
       rate_max_amount: null,

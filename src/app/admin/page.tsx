@@ -54,7 +54,7 @@ const ELSEWHERE: Array<{ href: string; label: string }> = [
  * read says so.
  */
 export default async function TodayPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [center, health, snapshot, failureAlerts, spend, leads, holds] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getPipelineHealth().catch((error) => {

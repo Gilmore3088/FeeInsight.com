@@ -9,6 +9,7 @@
  * are never ranked or picked; nothing here says to raise, lower or drop a fee.
  */
 
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -17,7 +18,7 @@ import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
-import { MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
+import { countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
@@ -42,6 +43,8 @@ export const MIN_STORY_EXHIBITS = 3;
 export const MAX_STORY_EXHIBITS = 5;
 /** Rows a structure matrix shows after the bank's own. */
 const MAX_MATRIX_ROWS = 12;
+/** Most rows a table carries; the page shows the first MAX_MATRIX_ROWS and folds the rest under "Show N more" (#2036). */
+export const MAX_LISTED_ROWS = 100;
 /** Names an archetype lists. */
 const MAX_ARCHETYPE_NAMES = 5;
 /** A peer within this many dollars of the bank's price is "close" for the watch list. */
@@ -156,7 +159,7 @@ function middleHalfCharges(who: string, band: { p25: number; p75: number }): str
 function positionPiece(research: FeeResearch, name: string): Piece | null {
   const band = research.band;
   if (!band || band.n < MIN_PEERS_FOR_POSITION) return null;
-  const position = research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
+  const position = research.current !== null ? pricePosition(research.current, countedPeerAmounts(research)) : null;
   const actionTitle =
     research.current !== null && position !== null
       ? `${middleHalfCharges("Peers' middle half", band)}; ${subjectPossessive(research, false)} ${money(research.current)} sits ${placeAmong(position, band.n, true)}.`
@@ -169,6 +172,7 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
     own: research.current,
     ownLabel: research.institutionName,
     band: { label: research.peerLabel, p25: band.p25, median: band.median, p75: band.p75, n: band.n },
+    ...(research.current !== null && band.n >= MIN_PEERS_FOR_POSITION ? { method: PERCENTILE_METHOD } : {}),
     markers: [
       { label: "Peer median", scope: "peer", value: band.median, n: band.n },
       ...research.layers
@@ -176,6 +180,7 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
         .map((l) => ({ label: l.scope === "national" ? "National median" : `${l.label} median`, scope: l.scope, value: l.median as number, n: l.n })),
     ],
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
+    note: peerGroupNote(research, { publishing: true }),
   };
   return {
     key: "position",
@@ -229,10 +234,26 @@ function largestPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
+type LocalCompetitor = NonNullable<FeeResearch["localCompetitors"]>[number];
+
+function competitorItem(p: LocalCompetitor) {
+  return { name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) };
+}
+
+/** The chart shows the largest by local deposits; the rest fold under "Show N more" (#2036). */
+export function largestNote(total: number, shown: number, listed: number): string {
+  const unlisted = total - listed;
+  return unlisted > 0
+    ? `Charted: the ${shown} largest by local deposits; ${listed - shown} more listed, of ${total}.`
+    : `Charted: the ${shown} largest by local deposits.`;
+}
+
 function localPiece(research: FeeResearch, name: string): Piece | null {
   const list = research.localCompetitors ?? [];
   if (list.length === 0) return null;
   const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
+  // The rest stay listable under "Show N more" (#2036), lowest fee first like the chart.
+  const rest = list.slice(MAX_MATRIX_ROWS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount);
   // The title counts every local competitor, as the market lens does, so the exhibit's line and
   // the memo never give two different counts; the chart shows the largest and its note says so.
   // Range and counts come from the same one value per institution; named fees stay on the rows (#1931).
@@ -263,10 +284,10 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       unit: "dollars",
       own: research.current,
       ownLabel: research.institutionName,
-      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) })),
-      ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts } : {}),
+      items: items.map(competitorItem),
+      ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts, rest: rest.map(competitorItem) } : {}),
       sources: [research.localMarket?.source ?? feeSource(research)],
-      note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
+      note: list.length > MAX_MATRIX_ROWS ? largestNote(list.length, items.length, items.length + rest.length) : undefined,
     },
   };
 }
@@ -339,7 +360,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const transfer = has("od_protection_transfer");
   const cap = has("od_daily_cap");
   const label = set.groupLabel.startsWith("peers") ? "peers" : set.groupLabel;
-  const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_MATRIX_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
+  const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_LISTED_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
   return {
     key: "structure",
     actionTitle: `Of ${count(group.length)} ${label}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
@@ -358,7 +379,7 @@ function structurePiece(research: FeeResearch): Piece | null {
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
-      note: group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : undefined,
+      note: group.length > MAX_LISTED_ROWS ? `Showing ${MAX_LISTED_ROWS} of ${group.length}.` : undefined,
     },
   };
 }
@@ -389,7 +410,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
     group.length >= MIN_PEERS_FOR_POSITION
       ? `${ownLead}; ${count(withFree)} of ${count(group.length)} ${label} offer a no-fee account.`
       : `${ownLead}; too few ${label} publish their lineup to compare.`;
-  const shown = [own, ...group.slice(0, MAX_MATRIX_ROWS)];
+  const shown = [own, ...group.slice(0, MAX_LISTED_ROWS)];
   return {
     key: "lineup",
     actionTitle,
@@ -409,7 +430,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
-      note: [group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : null, "A blank balance means the schedule states none."]
+      note: [group.length > MAX_LISTED_ROWS ? `Showing ${MAX_LISTED_ROWS} of ${group.length}.` : null, "A blank balance means the schedule states none."]
         .filter(Boolean)
         .join(" "),
     },
@@ -616,12 +637,22 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
-/** Which peers these are: the saved group, or the one Hamilton picked, with its filters. */
-function peerGroupNote(research: FeeResearch): string {
+/**
+ * Which peers these are: the saved group, or the one Hamilton picked, with its filters and size
+ * (#2046). With `publishing`, the size says how many of the group publish the fee, so the band's
+ * count and the group's never stand side by side unexplained.
+ */
+export function peerGroupNote(research: FeeResearch, { publishing = false }: { publishing?: boolean } = {}): string {
   const who = research.peerGroupSaved ? "Saved peer group" : "Peer group picked by Hamilton";
-  // The label's widening clause ("; only 3 of ... publish this fee") is left to the source note.
-  const note = `${who}: ${research.peerLabel.split(";")[0].trim()}.`;
-  return words(note) <= MAX_NOTE_WORDS ? note : `${who}.`;
+  const total = research.peerGroupSize;
+  const n = research.band?.n;
+  const share = publishing && total && n !== undefined && n < total ? `${count(n)} of its ${count(total)} institutions publish this fee` : null;
+  // The label's thin-fee clause ("; only 3 of them publish this fee") is left to the title.
+  const group = research.peerLabel.split(";")[0].trim();
+  const note = share ? `${who}: ${group}; ${share}.` : `${who}: ${group}${total ? ` (${count(total)} institutions)` : ""}.`;
+  if (words(note) <= MAX_NOTE_WORDS) return note;
+  if (share) return `${who}: ${share}.`;
+  return total ? `${who} (${count(total)} institutions).` : `${who}.`;
 }
 
 /** Every local competitor by name with its fee and source: a list question about the market. */
@@ -755,7 +786,7 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
     out.push({ value: money(research.band.median), label: "Peer median", source: feeSource(research), n: research.band.n });
   }
   const position =
-    seg && seg.problem === null ? seg.ownPosition : research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
+    seg && seg.problem === null ? seg.ownPosition : research.current !== null ? pricePosition(research.current, countedPeerAmounts(research)) : null;
   if (position !== null && research.current !== null) {
     const inSegment = seg && seg.problem === null;
     const n = inSegment ? seg.band?.n ?? seg.members.length : research.band?.n;
@@ -993,7 +1024,7 @@ function sampleOf(exhibit: Exhibit): number | undefined {
 /** Where a price would sit, and what the filed income line implies at the same item count. */
 function priceConsequences(research: FeeResearch, name: string, price: number): Fact[] {
   const out: Fact[] = [];
-  const amounts = research.peers.map((p) => p.amount);
+  const amounts = countedPeerAmounts(research);
   const position = pricePosition(price, amounts);
   if (position !== null && research.band) {
     out.push({

@@ -15,7 +15,7 @@ import { ArticleTextEditor } from "./article-text-editor";
  * below it.
  */
 export default async function ArticlePreviewPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   await ensureResearchTables();
   const { id } = await params;
   const articleId = Number(id);

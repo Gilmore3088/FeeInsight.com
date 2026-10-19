@@ -21,7 +21,7 @@ const getCachedDataRoomCounts = unstable_cache(() => readDataRoomCounts(), ["adm
 
 /** The Data room (#1122 step 5): what we hold, the data piles a data change clears, how fresh each feed is, and the jobs that keep it right. Its screens are in the room menu. */
 export default async function DataPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [freshness, counts] = await Promise.all([
     getCachedFeedFreshness().catch((error) => {
       console.error("Data room feed freshness failed", error);
