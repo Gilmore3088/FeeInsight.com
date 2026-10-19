@@ -44,14 +44,14 @@ export const RECOMMENDATION =
  * In particular, "should not raise your fee" and "should annualize" stay advice.
  */
 export function findUnrequestedAdvice(text: string): RegExpMatchArray | null {
-  const cautions = /\b(?:figures?|amounts?|totals?|(?:fee|dividend|reported|year[ -]to[ -]date|YTD)\s+(?:income|expense))\s+(?:and\s+)?(should\s+not\s+be)\s+(annuali[sz]ed|doubled)\b/gi;
+  const cautions = /\b(?:figures?|amounts?|totals?|(?:fee|dividend|reported|year[ -]to[ -]date|YTD)\s+(?:income|expense))\s+(?:(?:is|are)\s+not\s+annuali[sz]ed\s+and\s+|and\s+)?(should\s+not\s+be)\s+(annuali[sz]ed|doubled)\b/gi;
   const withoutCautionModal = text.replace(cautions, (full: string, modal: string, operation: string, offset: number) => {
     // "Your fee figure should not be doubled" is still a pricing instruction.
     if (/\b(?:fees?|price|pricing)\s+$/i.test(text.slice(Math.max(0, offset - 30), offset))) return full;
     if (operation.toLowerCase() === "doubled") {
       const before = text.slice(0, offset).split(/[.!?\n]/).at(-1) ?? "";
       const after = text.slice(offset + full.length).split(/[.!?\n]/)[0];
-      if (!/\b(?:YTD|year[ -]to[ -]date|(?:three|six|nine|twelve|\d+)[ -]month|quarter|yearly|annual)\b/i.test(`${before}${full}${after}`)) return full;
+      if (!/\b(?:YTD|year[ -]to[ -]date|(?:three|six|nine|twelve|\d+)[ -]month|quarter|yearly|full[ -]year|annuali[sz]ed|annual)\b/i.test(`${before}${full}${after}`)) return full;
     }
     return full.replace(modal, "must not be");
   });

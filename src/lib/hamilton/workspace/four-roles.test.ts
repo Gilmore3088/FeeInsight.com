@@ -16,6 +16,7 @@ describe("source cautions versus unrequested fee advice (#2328)", () => {
     "This is a six-month figure and should not be doubled into a yearly one.",
     "Reported income should not be annualised.",
     "These amounts should not be annualized.",
+    "The total is not annualized and should not be doubled to estimate a full year.",
   ])("allows a narrowly stated reporting-basis caution: %s", (text) => expect(findUnrequestedAdvice(text)).toBeNull());
 
   it.each([
@@ -26,6 +27,8 @@ describe("source cautions versus unrequested fee advice (#2328)", () => {
     "The amount should not be doubled.",
     "The figure should not be doubled.",
     "Your fee figure should not be doubled.",
+    "Your fee total is not annualized and should not be doubled to estimate a full year.",
+    "The total is not annualized and should not be doubled to estimate a full year; you should raise the fee.",
     "This figure should be annualized.",
     "This figure should not be annualized, but you should raise your fee.",
     "The figure should not be doubled. We recommend lowering the fee.",

@@ -107,15 +107,15 @@ function evidenceFrom(data: unknown): Evidence {
 const MONTH_NUMBERS: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
 /** Month precision stays month precision; an explicitly stated day must also match. */
 function claimedPeriods(clause: string): string[] {
-  const periods = new Set([...clause.matchAll(/\b20\d{2}-\d{2}-\d{2}\b/g)].map((m) => m[0]));
+  const periods: { period: string; index: number }[] = [...clause.matchAll(/\b20\d{2}-\d{2}-\d{2}\b/g)].map((m) => ({ period: m[0], index: m.index! }));
   const years = [...new Set(clause.match(/\b20\d{2}\b/g) ?? [])];
   const months = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b(?:\s+(?:(\d{1,2}),?\s+)?(20\d{2}))?/gi;
   for (const m of clause.matchAll(months)) {
     const year = m[3] ?? (years.length === 1 ? years[0] : null);
-    periods.add(year ? `${year}-${MONTH_NUMBERS[m[1].slice(0, 3).toLowerCase()]}${m[2] ? `-${m[2].padStart(2, "0")}` : ""}` : "unresolved-month");
+    periods.push({ period: year ? `${year}-${MONTH_NUMBERS[m[1].slice(0, 3).toLowerCase()]}${m[2] ? `-${m[2].padStart(2, "0")}` : ""}` : "unresolved-month", index: m.index! });
   }
-  for (const m of clause.matchAll(/\bQ([1-4])\s*[,/-]?\s*(20\d{2})\b/gi)) periods.add(`${m[2]}-${["03", "06", "09", "12"][Number(m[1]) - 1]}`);
-  return [...periods];
+  for (const m of clause.matchAll(/\bQ([1-4])\s*[,/-]?\s*(20\d{2})\b/gi)) periods.push({ period: `${m[2]}-${["03", "06", "09", "12"][Number(m[1]) - 1]}`, index: m.index! });
+  return [...new Set(periods.sort((a, b) => a.index - b.index).map((entry) => entry.period))];
 }
 
 /** A dedicated line may answer the question; a price or another subject's line cannot. */
@@ -144,15 +144,34 @@ function memberGrowthSupported(clause: string, evidence: Evidence): boolean {
   for (const [id, dates] of contexts) {
     if (evidence.selectedId && id !== evidence.selectedId) continue;
     const sortedDates = [...dates].sort();
-    if (sortedDates.length < 2) continue;
-    const first = sortedDates[0], last = sortedDates.at(-1)!;
     const members = evidence.observations.filter((o) => o.metric === "member_count" && o.institutionId === id && o.unit === "count");
-    const earlier = members.find((o) => o.period === first);
-    const latest = members.find((o) => o.period === last);
+    const claimed = claimedPeriods(clause);
+    let interval: string[];
+    if (claimed.length === 2) {
+      // An explicit subinterval may sit inside a longer available history. Select
+      // its own endpoints from the member series, never the full-window extrema.
+      const memberDates = [...new Set(members.map((o) => o.period))];
+      const endpoints = claimed.map((period) => memberDates.filter((date) => date.startsWith(period)));
+      if (endpoints.some((matches) => matches.length !== 1)) continue;
+      interval = endpoints.map((matches) => matches[0]);
+    } else {
+      // Without two stated endpoints, only a clearly selected two-date window
+      // establishes the comparison. Extra periods must not choose the trend.
+      if (claimed.length > 2 || sortedDates.length !== 2) continue;
+      interval = sortedDates;
+    }
+    const [first, last] = interval;
+    if (first >= last) continue;
+    const at = (period: string) => {
+      const matches = members.filter((o) => o.period === period);
+      return new Set(matches.map((o) => o.value)).size === 1 ? matches[0] : undefined;
+    };
+    const earlier = at(first);
+    const latest = at(last);
     if (!earlier || !latest) continue;
     const years = clause.match(/\b20\d{2}\b/g) ?? [];
     if (years.some((year) => ![first.slice(0, 4), last.slice(0, 4)].includes(year))) continue;
-    if (claimedPeriods(clause).some((period) => ![first, last].some((date) => date.startsWith(period)))) continue;
+    if (claimed.some((period) => ![first, last].some((date) => date.startsWith(period)))) continue;
     const otherNames = evidence.observations.filter((o) => o.institutionId !== id && o.institutionName).map((o) => o.institutionName!);
     if (otherNames.some((name) => clause.toLowerCase().includes(name.toLowerCase()))) continue;
     if (/\b(?:fell|falling|declin\w*|decreas\w*|shrank|shrinking)\b/i.test(clause)) return latest.value < earlier.value;

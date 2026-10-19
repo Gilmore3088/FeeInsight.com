@@ -76,6 +76,29 @@ describe("bounded NCUA interpretation gate (#2331)", () => {
     expect(check(text, { ...data, facts }).join(" ")).toContain("same-period member-count series");
   });
 
+  it("selects explicitly claimed member-growth endpoints inside a longer history", () => {
+    const accounts = query("acct_452", [80, 100]);
+    accounts.output.rows = [
+      { ...accounts.output.rows[0], period: "2024-09-30", value: 80 },
+      { ...accounts.output.rows[0], period: "2025-06-30", value: 100 },
+      { ...accounts.output.rows[1], period: "2026-06-30", value: 120 },
+    ];
+    // The oldest member count deliberately exceeds the later counts: choosing
+    // full-window extrema would give the wrong answer for the claimed interval.
+    const facts = [fact("member_count", 900, "2024-09-30"), fact("member_count", 500, "2025-06-30"), fact("member_count", 550, "2026-06-30")];
+    const evidence = { toolResults: [accounts], facts, selected_institution_id: 8322 };
+    expect(check("Membership grew from June 2025 to June 2026.", evidence)).toEqual([]);
+    expect(check("Membership grew from 2025-06-30 to June 30, 2026.", evidence)).toEqual([]);
+    expect(check("Membership grew from March 2025 to June 2026.", evidence)).not.toEqual([]);
+    expect(check("Membership grew from September 2024 to June 2026.", evidence)).not.toEqual([]);
+    expect(check("Membership fell from June 2025 to June 2026.", evidence)).not.toEqual([]);
+    expect(check("Membership grew from June 2026 to June 2025.", evidence)).not.toEqual([]);
+    expect(check("Membership grew.", evidence)).not.toEqual([]);
+    // A two-date tool selection remains unambiguous even with an extra unrelated
+    // historical member fact; it does not borrow that fact as the start date.
+    expect(check("Membership grew.", { toolResults: [query("acct_452")], facts })).toEqual([]);
+  });
+
   it.each([
     "It had paid $255.8 million in share dividends year to date.",
     "Share dividends paid, year to date: $255.8 million.",
