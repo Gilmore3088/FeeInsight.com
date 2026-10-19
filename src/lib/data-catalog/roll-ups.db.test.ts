@@ -60,11 +60,20 @@ describe.skipIf(!connection)("roll-up SQL in isolated PostgreSQL", () => {
     const rows = await callPeerRollup(tx(), { itemKey: "svc", rowSources: ["ffiec", "ncua"], memberIds: [1, 2, 4, 5], from: null, to: null, limit: 10 });
     expect(rows.map((r) => r.period)).toEqual(["2026-06-30", "2026-06-30", "2026-03-31"]);
     // Equal dollar medians still represent distinct measures and distinct populations.
-    expect(rows[0]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 2, period_basis: "ytd", sources: ["ffiec"] });
-    expect(rows[1]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 1, period_basis: "ytd", sources: ["ncua"] });
+    expect(rows[0]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 2, reporting_institution_ids: [1, 2], reporter_ids_complete: true, period_basis: "ytd", sources: ["ffiec"] });
+    expect(rows[1]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 1, reporting_institution_ids: [4], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"] });
     const all = await callPeerRollup(tx(), { itemKey: "svc", rowSources: ["ffiec"], memberIds: null, from: "2026-04", to: "2026-06", limit: 10 });
     expect(all).toHaveLength(1);
     expect(all[0]).toMatchObject({ median: 200_000, institution_count: 2 });
+  });
+
+  it("caps only the SQL reporter manifest and keeps the actual median and coverage count", async () => {
+    await db`INSERT INTO institution_sources (id, charter_type) SELECT id, 'bank' FROM generate_series(1000, 1512) AS id`;
+    await db`INSERT INTO institution_call_report_items (institution_id, source, report_date, item_key, value, unit, period_basis)
+      SELECT id, 'ffiec', '2026-06-30'::date, 'large_manifest', id - 1000, 'thousands', 'ytd' FROM generate_series(1000, 1512) AS id`;
+    const rows = await callPeerRollup(tx(), { itemKey: "large_manifest", rowSources: ["ffiec"], memberIds: null, from: null, to: null, limit: 10 });
+    expect(rows[0]).toMatchObject({ institution_count: 513, median: 256000, reporter_ids_complete: false });
+    expect(rows[0].reporting_institution_ids).toEqual(Array.from({ length: 512 }, (_, at) => at + 1000));
   });
 
   it("reads one institution's own values, newest first", async () => {

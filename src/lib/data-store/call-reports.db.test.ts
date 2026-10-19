@@ -32,13 +32,14 @@ describe.skipIf(!connection)("comparable financial readers in isolated PostgreSQ
     context.db = db;
     await db`CREATE TEMP TABLE institution_sources (
       id bigint PRIMARY KEY, institution_name text, cert_number text,
-      charter_type text, asset_size_tier text, fed_district integer, state_code text DEFAULT 'VA', regulatory_status text)`;
+      charter_type text, asset_size_tier text, fed_district integer, state_code text DEFAULT 'VA', regulatory_status text, source text, ncua_charter_id text, closed_date date)`;
     await db`CREATE TEMP TABLE institution_financial_records (
       id bigint GENERATED ALWAYS AS IDENTITY, institution_id bigint, source text, report_date text,
       service_charge_income numeric, total_assets numeric, fee_income_ratio numeric,
       total_deposits numeric, other_noninterest_income numeric, total_revenue numeric DEFAULT 10000,
       roa numeric, roe numeric, efficiency_ratio numeric,
       UNIQUE (institution_id, source, report_date))`;
+    await db`CREATE TEMP TABLE institution_structure_events (id bigint, source text, event_key text, institution_id bigint, cert text, acquirer_cert text, outgoing_cert text, survivor_cert text, effective_date date, change_code text, change_description text, source_url text)`;
     await db`CREATE TEMP TABLE published_fee_catalog (
       institution_id bigint, canonical_fee_key text, fee_category text, fee_name text,
       amount numeric, review_status text, source_document_id bigint, fee_audience text,
@@ -46,7 +47,7 @@ describe.skipIf(!connection)("comparable financial readers in isolated PostgreSQ
   });
   afterAll(async () => { if (db) await db.end(); });
   beforeEach(async () => {
-    await db`TRUNCATE pg_temp.institution_financial_records, pg_temp.institution_sources, pg_temp.published_fee_catalog`;
+    await db`TRUNCATE pg_temp.institution_financial_records, pg_temp.institution_sources, pg_temp.published_fee_catalog, pg_temp.institution_structure_events`;
     for (let id = 1; id <= 10; id++) {
       await db`INSERT INTO institution_sources (id, institution_name, cert_number, charter_type, asset_size_tier, fed_district) VALUES (${id}, ${`Credit Union ${id}`}, ${String(id)}, ${id === 10 ? "unknown" : "credit_union"}, 'regional', 1)`;
     }
@@ -122,12 +123,32 @@ describe.skipIf(!connection)("comparable financial readers in isolated PostgreSQ
 
   it("partitions size-tier medians and suppresses thin intensity peers", async () => {
     const medians = await getPeerServiceChargeMedians("credit_union", "regional");
-    expect(medians[0]).toMatchObject({ quarter_end: "2026-06-30", median_thousands: 85, institutions: 6 });
+    expect(medians.quarters[0]).toMatchObject({ quarter_end: "2026-06-30", median_thousands: 85, institutions: 6 });
     // Five eligible positive CU peers excluding the subject initially include small CU 8.
     // After deleting its rows, only four remain; neither banks nor malformed-source CUs fill the gap.
     await db`DELETE FROM pg_temp.institution_financial_records WHERE institution_id = 8`;
     const intensity = await getServiceChargeIntensityTrend(1);
     expect(intensity.find((r) => r.quarterEnd === "2026-06-30")).toMatchObject({ own: 4, peerMedian: null, peers: 4 });
+  });
+
+  it("retains inactive historical reporters and merger context without certifying growth", async () => {
+    await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'inactive', closed_date = '2026-01-01' WHERE id = 7`;
+    await db`INSERT INTO pg_temp.institution_structure_events VALUES
+      (1, 'ncua-mergers', 'merger-7-1', 7, '7', '1', '7', '1', '2026-01-01', 'merger', 'Published merger', 'https://ncua.gov/event'),
+      (2, 'fdic-history', 'wrong-namespace', NULL, '1', NULL, NULL, NULL, '2026-01-01', 'merger', 'Bank cert collision', 'https://fdic.gov/event')`;
+    const history = await getPeerServiceChargeMedians("credit_union", "regional", 8, 7);
+    expect(history.cohort_history).toMatchObject({ growth_status: "not_established", merger_adjusted: false,
+      eligibility_basis: "positive_standalone_quarter_income_current_registry_charter_and_size", lifecycle: { read_status: "complete", coverage: "not_established" } });
+    const q1 = history.cohort_history!.periods.find((r) => r.period === "2026-03-31")!;
+    const q2 = history.cohort_history!.periods.find((r) => r.period === "2026-06-30")!;
+    expect(q1.reporting_institution_ids).toContain(7);
+    expect(q1.subject_included).toBe(true);
+    expect(q2.reporting_institution_ids).not.toContain(7); // Zero standalone income is not a positive reporter.
+    expect(history.cohort_history!.membership_changes[0].dropped_ids).toContain(7);
+    expect(history.cohort_history!.lifecycle.events.map((r) => r.event_key)).toEqual(["merger-7-1"]);
+    const trend = await getRevenueTrend(8, "ncua");
+    expect(trend.quarters.every((r) => r.yoy_change_pct === null)).toBe(true);
+    expect(trend.cohort_history?.periods.every((r) => r.source === "ncua")).toBe(true);
   });
 
   it("keeps the fee-price correlation's income and summaries source/date-specific", async () => {

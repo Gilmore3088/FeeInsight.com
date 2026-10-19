@@ -48,7 +48,7 @@ const QUARTER_END = /^(\d{4})-(03-31|06-30|09-30|12-31)$/;
 const LIMITATIONS = [
   "Derived figures retain their institution, reporting period and NCUA item definitions; they do not establish causes or effects of fee pricing.",
   "Share-draft accounts are not members or customers; full-time employees are headcount under NCUA's 26-hour rule, not FTEs; share dividends are expense, not evidence of cash paid.",
-  "No peer-median differences, ratios of medians or peer growth are derived. Historical peer growth requires confirmed identical institution membership, which these results do not establish.",
+  "No peer-median differences, ratios of medians or peer growth are derived. Historical peer growth requires reviewed membership plus comparable economic perimeter and lifecycle/merger treatment; identical charter IDs alone establish neither. These results do not establish that basis.",
 ];
 
 const record = (value: unknown): Record<string, unknown> | null => value !== null && typeof value === "object" && !Array.isArray(value)

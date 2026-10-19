@@ -165,7 +165,7 @@ describe("getRevenueTrend", () => {
     expect(result.latest?.quarter).toBe("2024-4Q");
   });
 
-  it("computes YoY change when 5+ quarters present", async () => {
+  it("holds cross-sectional growth even when five quarters are present", async () => {
     const buildRow = (q: string, total: string) => ({
       quarter: q,
       quarter_date: "2024-01-01",
@@ -187,8 +187,8 @@ describe("getRevenueTrend", () => {
 
     const result = await getRevenueTrend(5);
     const yoy = result.quarters[0].yoy_change_pct;
-    expect(yoy).not.toBeNull();
-    expect(yoy).toBeCloseTo(10, 1); // (11000 - 10000) / 10000 * 100 = 10%
+    expect(yoy).toBeNull();
+    expect(result.cohort_history?.growth_status).toBe("not_established");
   });
 
   it("passes quarterCount to query as LIMIT parameter", async () => {
@@ -815,7 +815,7 @@ describe("dollar passthrough (DB stores whole dollars)", () => {
     expect(result[0].avg_sc_income).toBe(400000);
   });
 
-  it("getRevenueTrend YoY calculation works correctly with whole-dollar values", async () => {
+  it("keeps whole-dollar amounts but withholds unsupported population growth", async () => {
     const buildRow = (q: string, total: string) => ({
       quarter: q,
       quarter_date: "2024-01-01",
@@ -835,7 +835,7 @@ describe("dollar passthrough (DB stores whole dollars)", () => {
     getMock().unsafe = vi.fn().mockResolvedValue(dbRows);
 
     const result = await getRevenueTrend(5);
-    expect(result.quarters[0].yoy_change_pct).toBeCloseTo(10, 1);
+    expect(result.quarters[0].yoy_change_pct).toBeNull();
     expect(result.quarters[0].total_service_charges).toBe(11000000);
     expect(result.quarters[4].total_service_charges).toBe(10000000);
   });
@@ -948,7 +948,7 @@ describe("comparable call report cohorts", () => {
   });
 
   it("does not infer a source for unknown peer charter identity", async () => {
-    expect(await getPeerServiceChargeMedians("unknown", "regional")).toEqual([]);
+    expect(await getPeerServiceChargeMedians("unknown", "regional")).toEqual({ quarters: [] });
     expect(getMock().unsafe).not.toHaveBeenCalled();
   });
 
@@ -962,14 +962,17 @@ describe("comparable call report cohorts", () => {
     }
   });
 
-  it("omits thin size-tier median quarters while retaining reported counts", async () => {
+  it("retains thin periods and their counts but suppresses their medians", async () => {
     getMock().unsafe.mockResolvedValueOnce([
       { quarter_end: "2026-06-30", median_thousands: "10", institutions: 4 },
       { quarter_end: "2026-03-31", median_thousands: "9", institutions: 5 },
     ]);
-    expect(await getPeerServiceChargeMedians("credit_union", "regional")).toEqual([
+    const history = await getPeerServiceChargeMedians("credit_union", "regional");
+    expect(history.quarters).toEqual([
+      { quarter_end: "2026-06-30", median_thousands: null, institutions: 4 },
       { quarter_end: "2026-03-31", median_thousands: 9, institutions: 5 },
     ]);
+    expect(history.cohort_history).toMatchObject({ growth_status: "not_established", periods: [expect.objectContaining({ reporter_ids_complete: false }), expect.objectContaining({ reporter_ids_complete: false })] });
   });
 
   it("withholds intensity-trend medians when fewer than five peers report", async () => {
