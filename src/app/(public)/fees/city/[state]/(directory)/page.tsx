@@ -105,15 +105,15 @@ export default async function StateCityDirectory({ params }: PageProps) {
             crumbs={crumbs}
             title={title}
             lede="Choose a city to explore published fees at institutions with local branches."
-            aside={map ? <ExplorerMap /> : undefined}
+            aside={<SelectedCity />}
           >
-            <div className="space-y-6">
-              <CitySearch />
-              <SelectedCity />
-            </div>
+            <CitySearch />
           </PageHero>
           <div className={`${PAGE_HERO_WRAP} pb-10 pt-10 text-left sm:pt-14`}>
-            <CityList cities={links} stateName={stateName} />
+            <div className={map ? "grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start" : ""}>
+              <CityList cities={links} stateName={stateName} />
+              {map && <ExplorerMap />}
+            </div>
             <p className="mt-6 max-w-[46rem] text-[12px] text-ink-muted">
               Sources: FDIC Summary of Deposits, NCUA branch records, U.S. Census Bureau outlines. A city is listed once at least
               one bank or credit union with a branch there has published fees. Spellings of one city in the branch records

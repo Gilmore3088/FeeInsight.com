@@ -207,7 +207,7 @@ export function SelectedCity() {
   const { city, map, economy, stateName } = useExplorer();
   const onMap = !map || map.points.some((p) => p.key === city.key);
   return (
-    <div aria-live="polite" className="max-w-[32rem] rounded-2xl bg-surface-0 p-5 text-ink sm:p-6">
+    <div id="selected-city" aria-live="polite" className="scroll-mt-24 rounded-2xl bg-surface-0 p-5 text-ink shadow-fi-2 sm:p-6">
       <h2 className="text-[26px] font-semibold leading-tight tracking-[-0.02em] sm:text-[30px]">{city.name}</h2>
       <p className="mt-2 text-[15px] text-ink-soft">
         <span className="tabular-nums">{COUNT.format(city.institutions)}</span>{" "}
@@ -248,7 +248,7 @@ function LocalEconomy({ economy, city, stateName }: { economy: StateLocalEconomy
             {view.rows.map((row) => (
               <div key={row.label}>
                 <dt className="text-[12px] text-ink-muted">{row.label}</dt>
-                <dd className="font-mono text-[18px] tabular-nums text-ink">{row.value}</dd>
+                <dd className="text-[18px] font-semibold tabular-nums text-ink">{row.value}</dd>
                 {row.compare && <dd className="text-[12px] tabular-nums text-ink-muted">{row.compare}</dd>}
               </div>
             ))}
@@ -289,12 +289,17 @@ export function ExplorerMap() {
     selectHref: c.href,
   }));
   return (
-    <figure className="mx-auto w-full max-w-[26rem] rounded-2xl bg-paper p-4 sm:max-w-none sm:p-5">
+    <figure className="mx-auto w-full max-w-[26rem] rounded-2xl border border-border bg-surface-0 p-4 sm:max-w-none sm:p-5">
       <StateCityMap
         map={map}
         markers={markers}
         selected={city.key}
-        onSelect={select}
+        onSelect={(key) => {
+          select(key);
+          // The chosen city's panel sits in the hero above the map: bring it into view.
+          const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          document.getElementById("selected-city")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+        }}
         dimmed={dimmed}
         label={`${stateName} cities with published fees, sized by institutions with a branch`}
         focusable={false}
