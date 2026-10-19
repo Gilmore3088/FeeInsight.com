@@ -602,6 +602,24 @@ belongs to the publish step once Knox reads the newer copy. Each pair is checked
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
+The Knox-row witness preserves the fee's normalized name, institution, audience (missing
+legacy values mean `unknown`), frequency, amount kind/rate basis, and available raw product
+scope (#2117). Price alone never identifies a fee; absent or incompatible witnesses follow
+the existing stored-source verdict and recognition gates. Quarantined rows are excluded from
+selection and planning, and retirement/restoration writes re-check the hold (#2118). A retirement
+also requires the selected lineage to remain unchanged. Only the publication rows returned by
+the guarded update can reject verified lineage; returned results, attempt counts and events
+describe actual changes, with planned counts retained separately in attempts. A hold or closure
+committed after selection cannot reject unchanged lineage.
+
+These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
+without reopening settled decisions; unlike the earlier text guards, tightening the witness
+can retire more. Bayes records the explicit no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
+list of wrong fees or approved takedowns. Any historical replay needs its own impact review and
+applicable official-source evidence. Different-URL editions (#1945/#1911) remain a separate
+source/product provenance problem.
+
 ## Current-copy check
 
 `current-copy.ts` (`secondLookFeesNotOnCurrentCopy`, after `refresh-copy.ts` in each publish

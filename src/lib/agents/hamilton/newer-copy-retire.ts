@@ -10,9 +10,9 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// The text-hash guards (identical text skipped, newer text read by Knox, a fee Knox read
-// from the newer text never retired) joined version 1 without a bump: they only retire
-// less, and in all of version 1 one fee was retired.
+// Keep v1 pair fingerprints closed (#2117/#2118): identity/hold fixes apply only to
+// pending pairs and future copies. Historical decisions are not automatically replayed;
+// Bayes documents this deliberate no-replay contract in VERSIONS_WITHOUT_REPLAY.
 export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 1 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
@@ -43,12 +43,14 @@ export interface NewerCopyFeeRow {
   canonical_fee_key: string;
   fee_name: string;
   amount: number | string | null;
+  /** An operator hold wins even when a caller supplies a row selected before the hold. */
+  quarantined_at?: string | Date | null;
   /** Retired by an earlier newer-copy check; restored if the newest copy states it again. */
   retired?: boolean | null;
   /**
-   * True when Knox holds a row with this fee's name or amount (under any category, held or
-   * not) read from the newer copy or from any document with the same text. Such a fee is
-   * never retired: the reader found it, whatever the text matcher says.
+   * True when Knox read a row of the same institution, normalized name, audience,
+   * frequency, amount kind/rate basis and product scope from the newer text. An amount
+   * alone is never identity; a row without this witness follows the source verdict.
    */
   newer_row_match?: boolean | null;
 }
@@ -150,6 +152,7 @@ export function judgeNewerCopy(fees: NewerCopyFeeRow[], newerText: string, older
   const dropped: NewerCopyFeeRow[] = [];
   const stated: NewerCopyFeeRow[] = [];
   for (const fee of fees) {
+    if (fee.quarantined_at != null) continue;
     const verdict = newerCopyVerdict(fee, newerText, olderText);
     if (verdict === "still_stated") {
       result.stillStated += 1;
@@ -228,6 +231,7 @@ export async function retireFeesDroppedFromNewerCopy(
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
           JOIN institution_sources inst ON inst.id = fp.institution_id
          WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${RETIRED})
+           AND fp.quarantined_at IS NULL
            AND fr.source_document_id IS NOT NULL
            AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
@@ -297,8 +301,13 @@ export async function retireFeesDroppedFromNewerCopy(
       WITH newer_rows AS MATERIALIZED (
         -- Every fee row Knox read from the newer copy's text, from whichever copy holds it.
         SELECT DISTINCT newer_text.source_document_id AS newer_id,
+               nr.institution_id,
                lower(regexp_replace(nr.fee_name, '[^a-zA-Z0-9]+', '', 'g')) AS name_key,
-               nr.amount
+               COALESCE(nr.fee_audience, 'unknown') AS fee_audience,
+               COALESCE(nr.frequency, '') AS frequency,
+               COALESCE(nr.amount_kind, 'flat') AS amount_kind,
+               COALESCE(nr.rate_basis, '') AS rate_basis,
+               COALESCE(nr.product_name, '') AS product_name
           FROM agent_source_texts newer_text
           JOIN agent_source_texts same ON same.text_hash = newer_text.text_hash AND same.status = 'completed'
           JOIN raw_fee_observations nr ON nr.source_document_id = same.source_document_id
@@ -307,20 +316,26 @@ export async function retireFeesDroppedFromNewerCopy(
            AND newer_text.text_hash IS NOT NULL
       )
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, pair.newer_id AS newer_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.rolled_back_at IS NOT NULL AS retired,
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.quarantined_at,
+             fp.rolled_back_at IS NOT NULL AS retired,
              EXISTS (
                SELECT 1 FROM newer_rows
                 WHERE newer_rows.newer_id = pair.newer_id
-                  AND (
-                    newer_rows.name_key = lower(regexp_replace(fp.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
-                    OR (fp.amount IS NOT NULL AND newer_rows.amount = fp.amount)
-                  )
+                  AND newer_rows.institution_id = fp.institution_id
+                  AND newer_rows.name_key <> ''
+                  AND newer_rows.name_key = lower(regexp_replace(fp.fee_name, '[^a-zA-Z0-9]+', '', 'g'))
+                  AND newer_rows.fee_audience = COALESCE(fp.fee_audience, 'unknown')
+                  AND newer_rows.frequency = COALESCE(fp.frequency, '')
+                  AND newer_rows.amount_kind = COALESCE(fp.amount_kind, 'flat')
+                  AND newer_rows.rate_basis = COALESCE(fp.rate_basis, '')
+                  AND newer_rows.product_name = COALESCE(fr.product_name, '')
              ) AS newer_row_match
         FROM unnest(${olderIds}::bigint[], ${newerIds}::bigint[]) AS pair(older_id, newer_id)
         JOIN raw_fee_observations fr ON fr.source_document_id = pair.older_id
         JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
         JOIN published_fee_records fp ON fp.lineage_ref = fv.fee_verified_id
-       WHERE fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${RETIRED}
+       WHERE (fp.rolled_back_at IS NULL OR fp.rolled_back_reason LIKE ${RETIRED})
+         AND fp.quarantined_at IS NULL
        ORDER BY fr.source_document_id, fp.fee_published_id
     `);
     const rows = await inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
@@ -358,29 +373,37 @@ export async function retireFeesDroppedFromNewerCopy(
   if (options.dryRun) return result;
 
   const change = live;
+  const retiredFeeIds = new Set<number>();
+  const restoredFeeIds = new Set<number>();
   const restoreIds = live ? documents.flatMap((doc) => doc.restore.map((fee) => Number(fee.fee_published_id))) : [];
   try {
     await inSavepoint(db, async (scope) => {
       if (change && result.retired.length > 0) {
-        await scope`
+        const retired = await scope<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NOW(),
                  rolled_back_by_batch_id = ${options.batchId},
                  rolled_back_reason = ${NEWER_COPY_RETIRE_REASON} || ':#' || retire.newer_id::text
             FROM unnest(${result.retired.map((fee) => Number(fee.fee_published_id))}::bigint[],
-                        ${result.retired.map((fee) => Number(fee.newer_document_id))}::bigint[])
-                 AS retire(fee_published_id, newer_id)
+                        ${result.retired.map((fee) => Number(fee.newer_document_id))}::bigint[],
+                        ${result.retired.map((fee) => Number(fee.lineage_ref))}::bigint[])
+                 AS retire(fee_published_id, newer_id, lineage_ref)
            WHERE fp.fee_published_id = retire.fee_published_id
+             AND fp.lineage_ref = retire.lineage_ref
              AND fp.rolled_back_at IS NULL
+             AND fp.quarantined_at IS NULL
+          RETURNING fp.fee_published_id, fp.lineage_ref
         `;
-        await scope`
+        for (const fee of retired) retiredFeeIds.add(Number(fee.fee_published_id));
+        result.retired = result.retired.filter((fee) => retiredFeeIds.has(Number(fee.fee_published_id)));
+        if (retired.length > 0) await scope`
           UPDATE verified_fee_observations
              SET review_status = 'rejected',
                  outlier_flags = CASE
                    WHEN outlier_flags ? ${NEWER_COPY_RETIRE_REASON} THEN outlier_flags
                    ELSE COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([NEWER_COPY_RETIRE_REASON])}::jsonb
                  END
-           WHERE fee_verified_id = ANY(${result.retired.map((fee) => Number(fee.lineage_ref))}::bigint[])
+           WHERE fee_verified_id = ANY(${retired.map((fee) => Number(fee.lineage_ref))}::bigint[])
              AND review_status IN ('verified', 'approved')
         `;
       }
@@ -393,6 +416,7 @@ export async function retireFeesDroppedFromNewerCopy(
                  rolled_back_reason = NULL
            WHERE fp.fee_published_id = ANY(${restoreIds}::bigint[])
              AND fp.rolled_back_reason LIKE ${RETIRED}
+             AND fp.quarantined_at IS NULL
              AND NOT EXISTS (
                SELECT 1 FROM published_fee_records other
                 WHERE other.rolled_back_at IS NULL
@@ -404,6 +428,7 @@ export async function retireFeesDroppedFromNewerCopy(
           RETURNING fp.lineage_ref, fp.fee_published_id, fp.institution_id
         `;
         await markRestoredForSourceCheck(scope, restored, { runId: options.runId, restoredBy: "hamilton.newer_copy_check" });
+        for (const fee of restored) restoredFeeIds.add(Number(fee.fee_published_id));
         result.restored = restored.length;
         if (restored.length > 0) {
           await scope`
@@ -417,6 +442,8 @@ export async function retireFeesDroppedFromNewerCopy(
         }
       }
       for (const doc of documents) {
+        const retiredCount = live ? doc.retire.filter((fee) => retiredFeeIds.has(Number(fee.fee_published_id))).length : doc.retire.length;
+        const restoredCount = live ? doc.restore.filter((fee) => restoredFeeIds.has(Number(fee.fee_published_id))).length : doc.restore.length;
         await recordAttempt(scope, {
           institutionId: doc.institutionId,
           sourceDocumentId: doc.olderDocumentId,
@@ -424,7 +451,7 @@ export async function retireFeesDroppedFromNewerCopy(
           strategy: NEWER_COPY_STRATEGY.strategy,
           version: NEWER_COPY_STRATEGY.version,
           fingerprint: newerCopyFingerprint(doc.olderDocumentId, doc.newerDocumentId, live),
-          outcome: !doc.recognized ? "wrong_document" : doc.retire.length > 0 ? "ok_partial" : "ok",
+          outcome: !doc.recognized ? "wrong_document" : retiredCount > 0 ? "ok_partial" : "ok",
           yieldCount: doc.stillStated,
           costMicrousd: 0,
           runId: options.runId,
@@ -436,8 +463,10 @@ export async function retireFeesDroppedFromNewerCopy(
             still_named: doc.stillNamed,
             dropped: doc.dropped,
             unproven: doc.unproven,
-            retired: doc.retire.length,
-            restored: doc.restore.length,
+            planned_retired: doc.retire.length,
+            planned_restored: doc.restore.length,
+            retired: retiredCount,
+            restored: restoredCount,
           },
         });
       }
