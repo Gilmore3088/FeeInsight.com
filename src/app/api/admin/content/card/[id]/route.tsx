@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** A draft's square card, drawn only from the facts stored with it. */
 async function handleGET(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
-  if (!user || !hasPermission(user, "view")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!user || !hasPermission(user, "operate")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await context.params;
   const draft = await getContentDraft(Number(id));
   if (!draft) return NextResponse.json({ error: "Draft not found" }, { status: 404 });

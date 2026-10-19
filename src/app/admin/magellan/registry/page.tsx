@@ -23,7 +23,7 @@ function formatWhen(iso: string | null): string {
 }
 
 export default async function RegistryPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [stats, review, stateBills] = await Promise.all([
     getRegistryPartitionStats().catch((): RegistryPartitionStats[] => []),
     getIdentityLinksNeedingReview(200).catch((): IdentityReviewItem[] => []),

@@ -36,7 +36,7 @@ function Callout({ children }: { children: React.ReactNode }) {
 }
 
 export default async function MethodologyPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   return (
     <div className="space-y-6 max-w-3xl">
