@@ -90,7 +90,10 @@ archives the result. A configured vault receives a real abort signal for HEAD/PU
 never activates R2. An unconfigured vault is terminal blocked without HTTP. Fresh capture must
 return the exact observed URL/hash, and its content-addressed vault receipt must match. The final
 transaction rechecks original request/claim/current identities and writes only an ordinary source
-side copy. Existing source pointers, keys, profiles, fees and human labels are unchanged.
+side copy. An existing row is reused only for the exact observed URL/hash, successful status and
+already-correct vault key. Failed, unvaulted or other-URL rows remain byte-for-byte unchanged; an
+insertion uniqueness conflict records blocked instead of repairing or relabelling them. Existing
+source pointers, keys, profiles, fees and human labels are unchanged.
 
 Each episode has at most three attempts/24 hours, ten-/sixty-minute retry backoff and an actual
 terminal captured/blocked/stale/failed disposition. Authority/identity drift is terminal; transient

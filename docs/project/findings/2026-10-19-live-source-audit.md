@@ -14,6 +14,9 @@ weekly 50 whole institutions remains the launch workflow; no additional checks a
 
 Review probes caught and guarded borrowed product/condition authority, a mismatched graph homepage,
 self-checksummed archive arithmetic, post-snapshot-lock state drift and malformed retained finals.
+A capture review also exposed same-hash reuse across URLs and key repair; exact successful existing
+URL/key reuse or a separate side copy now preserves old rows unchanged, with blocked disposition
+when insertion is unsafe.
 The archive's ordered immutable origin IDs/manifest digest does not reconstruct full origin bytes
 after retention. Missing/over-cap/expired evidence stays unknown or explicitly unavailable.
 

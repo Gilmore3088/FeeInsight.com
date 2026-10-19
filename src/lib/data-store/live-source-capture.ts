@@ -38,7 +38,8 @@ export async function readLiveCaptureDispositions(db:DB,requestIds:number[]):Pro
           AND dc.agent_run_id=d.agent_run_id AND dc.step_id=d.step_id AND dc.event_type=${EVENTS.captureClaim}))) AS valid,
       CASE WHEN octet_length(dc.detail::text)<=8192 THEN dc.detail ELSE NULL END AS claim_detail,dc.id AS claim_id,dc.created_at AS claim_created_at,
       dc.agent_run_id AS claim_run_id,dc.step_id AS claim_step_id,
-      sd.id AS document_id,sd.institution_id AS document_institution_id,sd.content_hash AS document_hash,sd.document_r2_key AS document_key
+      sd.id AS document_id,sd.institution_id AS document_institution_id,sd.content_hash AS document_hash,sd.document_r2_key AS document_key,
+      sd.document_url AS document_url,sd.status AS document_status
     FROM latest d CROSS JOIN limits l LEFT JOIN agent_run_steps ds ON ds.id=d.step_id LEFT JOIN agent_runs dr ON dr.id=d.agent_run_id
     LEFT JOIN agent_run_events dc ON dc.id::text=d.detail->>'claimId'
     LEFT JOIN source_documents sd ON sd.id::text=d.detail->>'sourceDocumentId'`;
@@ -57,7 +58,8 @@ export async function readLiveCaptureDispositions(db:DB,requestIds:number[]):Pro
           &&Date.parse(d.at)>=Date.parse(iso(row.claim_created_at))&&Date.parse(d.at)<=Date.parse(claim.data.leaseUntil);
       }
       if(d.state==='captured')valid=valid&&d.sourceDocumentId===Number(row.document_id)&&r.institutionId===Number(row.document_institution_id)
-        &&r.contentHash===row.document_hash&&row.document_key===`${r.contentHash.slice(0,2)}/${r.contentHash}`;
+        &&r.contentHash===row.document_hash&&row.document_key===`${r.contentHash.slice(0,2)}/${r.contentHash}`
+        &&row.document_url===r.url&&row.document_status==='success';
       else valid=valid&&d.sourceDocumentId===null;
     }
     results.set(requestId,valid&&parsed.success?parsed.data:'invalid');
@@ -200,15 +202,19 @@ export async function settleLiveSourceCapture(db:DB,context:LiveAuditContext,req
       if(outcome.document.key!==`${request.contentHash.slice(0,2)}/${request.contentHash}`||!Number.isSafeInteger(outcome.document.byteSize)
         ||outcome.document.byteSize<1||outcome.document.byteSize>LIMITS.responseBytes)throw new Error("live_audit_capture_vault_identity");
       await lockLiveAudit(tx,`captured-bytes:${request.institutionId}:${request.contentHash}`);
+      // A byte match at another URL, a failed copy or a missing key is not this capture.
+      // Never repair an existing source row/key or relabel its original provenance.
       const [existingDoc]=await tx<Row[]>`SELECT id FROM source_documents WHERE institution_id=${request.institutionId}
-        AND content_hash=${request.contentHash} ORDER BY id LIMIT 1 FOR UPDATE`;
-      if(existingDoc){sourceDocumentId=Number(existingDoc.id);await tx`UPDATE source_documents SET document_r2_key=${outcome.document.key}
-        WHERE id=${sourceDocumentId} AND document_r2_key IS NULL`;}
+        AND document_url=${request.url} AND content_hash=${request.contentHash} AND status='success'
+        AND document_r2_key=${outcome.document.key} ORDER BY id LIMIT 1 FOR UPDATE`;
+      if(existingDoc)sourceDocumentId=Number(existingDoc.id);
       else{
         const [doc]=await tx<Row[]>`INSERT INTO source_documents(institution_id,document_url,content_hash,status,document_r2_key,content_type,byte_size,etag,last_modified,crawled_at,last_checked_at,status_code)
           VALUES(${request.institutionId},${request.url},${request.contentHash},'success',
-          ${outcome.document.key},${outcome.document.contentType},${outcome.document.byteSize},${outcome.document.etag},${outcome.document.lastModified},clock_timestamp(),clock_timestamp(),200) RETURNING id`;
-        sourceDocumentId=Number(doc.id);
+          ${outcome.document.key},${outcome.document.contentType},${outcome.document.byteSize},${outcome.document.etag},${outcome.document.lastModified},clock_timestamp(),clock_timestamp(),200)
+          ON CONFLICT DO NOTHING RETURNING id`;
+        if(doc)sourceDocumentId=Number(doc.id);
+        else{state='blocked';reason='capture_sidecopy_identity_conflict';}
       }
     }
     if(state==="retry"&&(claim.attempt>=LIMITS.captureAttempts||now.getTime()+600_000>=Date.parse(request.expiresAt))){state="failed";reason="capture_attempts_or_age_exhausted";}

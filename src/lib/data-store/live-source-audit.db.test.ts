@@ -416,6 +416,60 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
     expect(store.mock.calls[0][3]?.signal).toBeInstanceOf(AbortSignal);
   });
+  it.each(['different_url','failed','missing_key','already_valid'] as const)("preserves an existing %s source byte-for-byte and records only an exact side copy or an honest conflict",async(mode)=>{
+    const bytes=new TextEncoder().encode('%PDF-owned sidecopy identity fixture'),hash=createHash('sha256').update(bytes).digest('hex'),key=hash.slice(0,2)+'/'+hash;
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const url=mode==='different_url'?'https://fixture.invalid/other-edition.pdf':'https://fixture.invalid/new-fees.pdf';
+    await db`INSERT INTO source_documents(id,institution_id,document_url,content_hash,status,document_r2_key,error_message)
+      VALUES(20,1,${url},${hash},${mode==='failed'?'failed':'success'},${mode==='already_valid'?key:null},'untouched original fixture')`;
+    const [before]=await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`;
+    const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{'content-type':'application/pdf'}})),
+      vault:{configured:true,store:vi.fn(async()=>({status:'stored' as const,key})),read:vi.fn(),presign:vi.fn()}});
+    expect(result.persisted).toBe(true);expect((await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`)[0]).toEqual(before);
+    const disposition=await latestLiveCaptureDisposition(appDb()!,id);
+    if(mode==='different_url'||mode==='missing_key'){
+      // Canonical partial uniqueness forbids another successful, nonduplicate copy.
+      expect(disposition).toMatchObject({state:'blocked',reason:'capture_sidecopy_identity_conflict',sourceDocumentId:null});
+      expect((await db`SELECT count(*)::int AS n FROM source_documents WHERE content_hash=${hash}`)[0].n).toBe(1);return;
+    }
+    expect(disposition).toMatchObject({state:'captured'});
+    if(!disposition||disposition==='invalid')throw new Error('missing_fixture_capture');
+    const [captured]=await db`SELECT id,document_url,content_hash,status,document_r2_key FROM source_documents WHERE id=${disposition.sourceDocumentId!}`;
+    expect(captured).toMatchObject({document_url:'https://fixture.invalid/new-fees.pdf',content_hash:hash,status:'success',document_r2_key:key});
+    expect(Number(captured.id)===20).toBe(mode==='already_valid');
+    expect((await db`SELECT count(*)::int AS n FROM source_documents WHERE content_hash=${hash}`)[0].n).toBe(mode==='already_valid'?1:2);
+  });
+  it("records blocked when a source uniqueness rule prevents a safe new side copy, without repairing the conflicting row",async()=>{
+    const bytes=new TextEncoder().encode('%PDF-owned uniqueness fixture'),hash=createHash('sha256').update(bytes).digest('hex'),key=hash.slice(0,2)+'/'+hash;
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    await db`INSERT INTO source_documents(id,institution_id,document_url,content_hash,status) VALUES(20,1,'https://fixture.invalid/different.pdf',${hash},'success')`;
+    const [before]=await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`;
+    await db.unsafe('CREATE UNIQUE INDEX owned_capture_hash_conflict ON source_documents(institution_id,content_hash)');
+    try{const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{'content-type':'application/pdf'}})),
+      vault:{configured:true,store:vi.fn(async()=>({status:'stored' as const,key})),read:vi.fn(),presign:vi.fn()}});
+      expect(result.persisted).toBe(true);expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:'blocked',reason:'capture_sidecopy_identity_conflict',sourceDocumentId:null});
+      expect((await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`)[0]).toEqual(before);
+    }finally{await db.unsafe('DROP INDEX owned_capture_hash_conflict');}
+  });
+
+  it("rejects a captured receipt after its exact URL or successful source status changes",async()=>{
+    const bytes=new TextEncoder().encode('%PDF-owned captured provenance fixture'),hash=createHash('sha256').update(bytes).digest('hex'),key=hash.slice(0,2)+'/'+hash;
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{'content-type':'application/pdf'}})),
+      vault:{configured:true,store:vi.fn(async()=>({status:'stored' as const,key})),read:vi.fn(),presign:vi.fn()}});
+    const disposition=await latestLiveCaptureDisposition(appDb()!,id);expect(disposition).toMatchObject({state:'captured'});
+    if(!disposition||disposition==='invalid')throw new Error('missing_fixture_capture');
+    await db`UPDATE source_documents SET document_url='https://fixture.invalid/unrelated.pdf' WHERE id=${disposition.sourceDocumentId!}`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toBe('invalid');
+    await db`UPDATE source_documents SET document_url='https://fixture.invalid/new-fees.pdf',status='failed' WHERE id=${disposition.sourceDocumentId!}`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toBe('invalid');
+    await db`UPDATE source_documents SET status='success' WHERE id=${disposition.sourceDocumentId!}`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:'captured'});
+  });
+
   it("aborts an injected stalled vault and rejects its late result without a source row",async()=>{
     const bytes=new TextEncoder().encode("%PDF-synthetic storage stall"),hash=createHash("sha256").update(bytes).digest("hex");
     const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
