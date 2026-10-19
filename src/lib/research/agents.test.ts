@@ -130,6 +130,18 @@ describe("getHamilton", () => {
     expect(config.systemPrompt).toContain("queryFeeRevenueCorrelation(view='peers'");
   });
 
+  it("quarter-comparison prompts use the dated financial ranking and preserve raw YTD limits", async () => {
+    for (const role of ["pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(config.systemPrompt).toContain("first call getInstitution(id)");
+      expect(config.systemPrompt).toContain("Raw NCUA queryData income is YTD even when period selects Q2");
+      expect(config.systemPrompt).toContain("matched per-institution differences before aggregation");
+      expect(config.systemPrompt).toContain("never the only true group");
+      expect(config.systemPrompt).toContain("Do not print internal account/item codes");
+      expect(config.systemPrompt).toContain("validated calculation ledger supplies that cohort-specific ratio");
+    }
+  });
+
   it("all Hamilton audiences preserve the financial measure boundary while allowing same-fee price comparisons", async () => {
     for (const role of ["consumer", "pro", "admin"] as const) {
       const config = await getHamilton(role);

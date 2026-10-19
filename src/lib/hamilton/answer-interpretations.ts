@@ -5,6 +5,9 @@
  * remains the caller's responsibility. Discovery alone never proves a reported value.
  */
 
+import { extractFigures } from "./figure-check";
+import { validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+
 export const HAMILTON_INTERPRETATION_INSTRUCTION = `
 SOURCE MEANING:
 - An NCUA share-draft count is accounts, not members or customers. Describe account growth as account growth; member growth needs its own same-institution, same-period member-count evidence.
@@ -13,6 +16,9 @@ SOURCE MEANING:
 - A cross-sectional peer median describes the filers for that date. Do not call changes between separately selected quarterly peer populations growth, outperformance, keeping pace or falling behind. A common comparable cohort, including merger treatment, is needed first. You may report the current median, its date and coverage.
 - Do not invent a reason for an unqueried peer filter. A nationwide sample does not establish that a Fed-district group would be too small. Read the exact district and otherwise matching group first, or say its coverage has not been checked.
 - A missing, unreported or unusable overdraft figure in the available evidence does not establish that NCUA's filing has no overdraft line or field. Describe the evidence's missing usable figure; do not infer absence from the publisher's schema.
+- For an explicit quarter-only question, answer that standalone quarter or say plainly that the requested comparison cannot be computed. A correctly labeled year-to-date figure is related context, not an answer to Q2. Never subtract separately rolled peer medians: quarter medians require matched per-institution quarter differences before aggregation.
+- A broad size band and nearest-in-assets peers are different legitimate cohort definitions. State which was used, its criteria, reported count and selected-subject inclusion. Never call one the only true or only valid peer group, or attribute a dollar-income gap to size rather than pricing without causal evidence.
+- Do not state a peer-income multiple (times, x or ×) unless the server's validated calculation ledger supplies that cohort-specific ratio. Report the two sourced totals instead.
 - Correlations, similar peer growth and fee-income totals do not identify a pricing or market cause. Do not conclude that pricing, the market or a zero-fee stance caused revenue, or rank a funding-cost change against an unmeasured fee-schedule change. Describe observed figures and the evidence missing to explain them.
 - Preserve missing overdraft income and payer counts as unavailable. Do not fill the gap with zero, a schedule price, account counts or a revenue/price quotient. Clearly separate a question for further research from a finding.`;
 
@@ -43,6 +49,8 @@ interface Evidence {
   selectedIds: Set<string>;
   selectedId: string | null;
   peerCoverage: PeerCoverage[];
+  quarterIncomes: { institutionId: string | null; period: string; value: number; role: "subject" | "peer_median" }[];
+  peerMultipliers: { period: string; value: number }[];
 }
 
 const record = (v: unknown): RecordValue | null => v !== null && typeof v === "object" && !Array.isArray(v) ? v as RecordValue : null;
@@ -51,7 +59,16 @@ const textValue = (v: unknown): string | null => typeof v === "string" && v.trim
 const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source ?? "")) || /\bNCUA\b/i.test(String(r.publisher ?? ""));
 
 function evidenceFrom(data: unknown): Evidence {
-  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [] };
+  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [], quarterIncomes: [], peerMultipliers: [] };
+  const root = record(data);
+  // Only server-computed candidates, never a tool's arbitrary ratio-like numeric fields.
+  if (Array.isArray(root?.validated_calculations)) for (const value of root.validated_calculations.slice(0, 40)) {
+    const calculation = record(value);
+    if (calculation?.source === "ncua" && calculation.metric === "fee_income_peer_multiple" && calculation.operation === "ratio"
+      && calculation.unit === "multiple" && typeof calculation.report_date === "string" && finite(calculation.value) !== null) {
+      result.peerMultipliers.push({ period: calculation.report_date, value: Number(calculation.value) });
+    }
+  }
   let visited = 0;
   const seen = new WeakSet<object>();
   function visit(value: unknown, depth: number, scopeId: string | null = null, peerScope: PeerScope | null = null): void {
@@ -70,7 +87,8 @@ function evidenceFrom(data: unknown): Evidence {
     if (finite(r.selected_institution_id) !== null && Number(r.selected_institution_id) > 0) result.selectedId = String(r.selected_institution_id);
     const input = record(r.input);
     const scope = record(input?.scope);
-    const id = scope?.kind === "institution" && scope.id != null ? String(scope.id) : scopeId;
+    const id = scope?.kind === "institution" && scope.id != null ? String(scope.id)
+      : r.toolName === "getInstitution" && finite(input?.id) !== null ? String(input?.id) : scopeId;
     let currentPeer = peerScope;
     if (scope?.kind === "peer_set") {
       const peer = record(scope.peer) ?? {};
@@ -80,6 +98,27 @@ function evidenceFrom(data: unknown): Evidence {
       currentPeer = { districts, fingerprint: JSON.stringify({ id: scope.id == null ? null : String(scope.id), measure: input?.measure, peer: otherFilters }) };
     }
     if (ncuaSource(r)) result.ncua = true;
+    const comparison = record(r.comparison);
+    if (validFinancialPeerComparison(comparison) && comparison.source === "ncua") {
+      const scale = comparison.unit === "thousands of dollars" ? 1000 : 1;
+      if (finite(r.sc_income) !== null) result.quarterIncomes.push({ institutionId: id, period: comparison.report_date, value: Number(r.sc_income) * scale, role: "subject" });
+      if (comparison.reported_count >= comparison.minimum_median_count && finite(r.peer_median_sc) !== null) result.quarterIncomes.push({ institutionId: id, period: comparison.report_date, value: Number(r.peer_median_sc) * scale, role: "peer_median" });
+    }
+    const trendDefinition = record(r.revenue_trend_definition);
+    if (trendDefinition?.source === "ncua" && trendDefinition.period_basis === "standalone_quarter" && trendDefinition.unit === "thousands of dollars" && Array.isArray(r.revenue_trend)) {
+      for (const raw of r.revenue_trend) {
+        const quarter = record(raw);
+        const match = typeof quarter?.quarter === "string" ? quarter.quarter.match(/^(20\d{2})-?Q([1-4])$/) : null;
+        if (match && finite(quarter?.service_charge_income) !== null) result.quarterIncomes.push({ institutionId: id,
+          period: `${match[1]}-${["03-31", "06-30", "09-30", "12-31"][Number(match[2]) - 1]}`, value: Number(quarter?.service_charge_income) * 1000, role: "subject" });
+      }
+    }
+    if (ncuaSource(r) && r.period_basis === "standalone_quarter" && r.unit === "USD"
+      && (r.operation === "ytd_to_quarter" || r.operation === "q1_ytd_as_quarter")
+      && (r.measure === "call:acct_131" || r.metric === "acct_131" || r.metric === "service_charge_income")
+      && finite(r.value) !== null && typeof r.report_date === "string") {
+      result.quarterIncomes.push({ institutionId: r.institution_id == null ? id : String(r.institution_id), period: r.report_date, value: Number(r.value), role: "subject" });
+    }
     const metadata = record(r.measure_metadata);
     // Captions identify a measure's limitations, even when its value is missing.
     // They never supply an observation or authorize a reported fact.
@@ -228,7 +267,7 @@ function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boole
   const before = clause.slice(Math.max(0, index - 160), index);
   const after = clause.slice(index + assertion[0].length);
   const epistemicPrefix = /\b(?:cannot|can't|do not|don't|does not|doesn't)\s+(?:infer|conclude|establish|prove|determine|show|know|say)\b(?:\s+(?:whether|if|that|from|the|a|an|missing|available|reported|figures?|values?|data|evidence)){0,12}\s*$/i;
-  const uncertainPrefix = /\b(?:unknown|not (?:known|established|determined|checked))\s+(?:whether|if|that)\s+(?:the\s+)?$|\bno (?:evidence|data)\s+(?:shows?|establishes?|proves?)\s+that\s+(?:the\s+)?$/i;
+  const uncertainPrefix = /\b(?:unknown|not (?:known|established|determined|checked))\s+(?:whether|if|that)\s+(?:the\s+)?$|\bno (?:evidence|data)\s+(?:shows?|establishes?|proves?)\s+that\s+(?:the\s+)?$|\bnot evidence that\s+(?:(?:size|scale)\s+or\s+)?(?:the\s+)?$/i;
   const withdrawnSuffix = /^\s*["'”’]?\s*(?:(?:is|was|remains)\s+(?:not (?:established|known|determined|shown)|unproven|unsupported)|(?:cannot|can't)\s+be\s+(?:established|shown|determined|inferred))\b/i;
   return epistemicPrefix.test(before) || uncertainPrefix.test(before) || withdrawnSuffix.test(after);
 }
@@ -240,12 +279,67 @@ function refuses(clause: string, topic: RegExp): boolean {
   return (refusal.test(clause) || absentLine.test(clause)) && topic.test(clause);
 }
 
+function requestedIncomeQuarter(question: string | undefined): { year: string; quarter: number; period: string } | null {
+  if (!question || !/\b(?:fee|service[ -]charge)\s+(?:income|revenue)\b/i.test(question)) return null;
+  const quarter = question.match(/\bQ([1-4])\s*[,/-]?\s*(20\d{2})\b/i)
+    ?? question.match(/\b(first|second|third|fourth)\s+quarter(?:\s+of)?\s+(20\d{2})\b/i);
+  const aprilJune = question.match(/\bApril\s*(?:through|to|[-–—])\s*June\s+(20\d{2})\b/i);
+  if (!quarter && !aprilJune) return null;
+  if (/\b(?:year[ -]to[ -]date|YTD|first six months|half[ -]year)\b/i.test(question)
+    && !/\b(?:alone|standalone|during|rather than)\b/i.test(question) && !aprilJune) return null;
+  const index = quarter ? Number(quarter[1]) || ["first", "second", "third", "fourth"].indexOf(quarter[1].toLowerCase()) + 1 : 2;
+  const year = quarter?.[2] ?? aprilJune![1];
+  return { year, quarter: index, period: `${year}-${["03-31", "06-30", "09-30", "12-31"][index - 1]}` };
+}
+
+function quarterQuestionProblems(text: string, question: string | undefined, evidence: Evidence): string[] {
+  const requested = requestedIncomeQuarter(question);
+  if (!requested || requested.quarter === 1) return []; // Q1 YTD and its standalone quarter cover the same months.
+  const primary = text.split(/^##?\s+Explore Further\b/im)[0];
+  const clauses = primary.split(/\r?\n+|(?<=[.!?])\s+|;\s*/).map((clause) => clause.replace(/^\s*[-*#]+\s*/, "").trim());
+  const quarterReference = /\bQ[1-4]\b|\b(?:first|second|third|fourth)[ -]quarter\b|\b(?:standalone[ -]quarter|quarter[ -]only)\b/i;
+  const window = /\bApril\s*(?:through|to|[-–—])\s*June\b/i;
+  const namesQuarter = (clause: string) => quarterReference.test(clause) || window.test(clause);
+  const refusal = (clause: string) => namesQuarter(clause) && /\b(?:cannot|can't|unable to|not enough|insufficient|unavailable|not available)\b/i.test(clause)
+    && /\b(?:comput\w*|calculat\w*|compar\w*|income|revenue|figure|median)\b/i.test(clause);
+  const clearRefusal = clauses.some(refusal);
+  const failure = "The question asks for standalone-quarter fee income. Answer that quarter from matched institution-quarter calculations or the dated comparable-quarter tool, or clearly state that the requested quarter comparison cannot be computed; a YTD substitute does not answer it.";
+  let answeredRequestedQuarter = false;
+  for (const clause of clauses) {
+    if (clause.endsWith("?") || /\bassets?\b/i.test(clause)) continue;
+    const explicitQuarter = namesQuarter(clause);
+    const peerMedian = /\bpeer(?:s|'s|s')?\s+median\b/i.test(clause);
+    const ytd = /\b(?:year[ -]to[ -]date|YTD|half[ -]year|six months)\b/i.test(clause);
+    if ((!explicitQuarter && !peerMedian) || (!explicitQuarter && ytd)) continue;
+    const quoted = extractFigures(clause).filter((figure) => figure.kind === "usd" && !figure.denominatorUnit);
+    if (quoted.length === 0) continue;
+    // A calculation's first amount is its result; source inputs remain checked by the numeric gate.
+    const figures = /[=−]|\b(?:minus|less|subtract\w*)\b/i.test(clause) ? quoted.slice(0, 1) : quoted;
+    const periods = claimedPeriods(clause).filter((period) => /^20\d{2}-(?:03|06|09|12)(?:-\d{2})?$/.test(period))
+      .map((period) => period.length === 7 ? `${period}-${["03", "12"].includes(period.slice(5)) ? "31" : "30"}` : period);
+    const dates = periods.length ? periods : [requested.period];
+    for (const figure of figures) {
+      const before = clause.slice(0, figure.index).split(/\b(?:vs|versus|while|against|compared with)\b/i).at(-1) ?? "";
+      const after = clause.slice(figure.index + figure.raw.length, figure.index + figure.raw.length + 20);
+      const role = /\b(?:peer|median)\b/i.test(before) || /^\s*(?:peer\s+)?median\b/i.test(after) ? "peer_median" : "subject";
+      const matches = evidence.quarterIncomes.filter((income) => income.role === role && dates.includes(income.period)
+        && (!evidence.selectedId || income.institutionId === evidence.selectedId)
+        && Math.abs(income.value - figure.value) <= figure.tolerance);
+      // A refusal in another sentence never excuses an affirmative quarter-dollar claim.
+      if (matches.length === 0) return [failure];
+      if (role === "subject" && matches.some((income) => income.period === requested.period) && !refusal(clause)) answeredRequestedQuarter = true;
+    }
+  }
+  return answeredRequestedQuarter || clearRefusal ? [] : [failure];
+}
+
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
-export function checkAnswerInterpretations(text: string, data: unknown): string[] {
+export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
   const evidence = evidenceFrom(data);
   if (!evidence.ncua) return [];
   const problems = new Set<string>();
   if (evidence.incomplete) problems.add("The NCUA interpretation check could not inspect all structured evidence within its limits. Narrow the evidence before presenting this answer.");
+  for (const problem of quarterQuestionProblems(text, question, evidence)) problems.add(problem);
   const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+|\s+and\s+(?=(?:its?|their|the|\w+'s)\s+)/i);
   for (const raw of clauses) {
     const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
@@ -293,10 +387,32 @@ export function checkAnswerInterpretations(text: string, data: unknown): string[
     if (peerTrend.test(clause) && !refuses(clause, /\b(?:peers?|group|median|trend|growth)\b/i)) {
       problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.");
     }
+    const sizeCause = /\b(?:gap|difference|income|revenue|comparison)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/i;
+    const sizeClaim = clause.match(sizeCause);
+    if (sizeClaim && !explicitlyWithdrawn(clause, sizeClaim) && !refuses(clause, /\b(?:cause|size|scale|gap|difference)\b/i)) {
+      problems.add("A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence.");
+    }
+    const soleCohort = /\b(?:only|sole)\s+(?:(?:true|valid|real|proper|genuine|appropriate|comparable)\s+)+(?:size\s+)?(?:peer\s+)?(?:group|cohort|comparison)\b/i;
+    const soleClaim = clause.match(soleCohort);
+    const solePrefix = soleClaim ? clause.slice(0, soleClaim.index) : "";
+    if (soleClaim && !explicitlyWithdrawn(clause, soleClaim) && !/\b(?:is|are|was|were)\s+not\s+(?:the\s+)?$/i.test(solePrefix)) {
+      problems.add("A selected size band is one stated cohort definition, not the only true or valid peer group. Name its criteria and limits without dismissing other legitimate cohorts.");
+    }
+    const peerMultiple = /\b(?:peers?|median|benchmark|comparison|gap)\b/i.test(clause)
+      ? [...clause.matchAll(/\b(\d+)(?:\.(\d+))?\s*(?:times\b|[x×])/gi)] : [];
+    for (const multiple of peerMultiple) {
+      const value = Number(`${multiple[1]}${multiple[2] ? `.${multiple[2]}` : ""}`);
+      const tolerance = 0.5 * 10 ** -(multiple[2]?.length ?? 0);
+      const periods = claimedPeriods(clause);
+      if (!evidence.peerMultipliers.some((ratio) => Math.abs(ratio.value - value) <= tolerance && (periods.length === 0 || periods.some((period) => ratio.period.startsWith(period))))) {
+        problems.add("The peer-income multiple is not in the server-validated calculation ledger. Report the sourced income and median without an unvalidated quotient.");
+      }
+    }
     const pricingCause = /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/i;
     const fundingCounterfactual = /\b(?:dividend|funding)\s+costs?\b.{0,90}\b(?:more|less|greater|larger|smaller)\b.{0,50}\b(?:fee schedule|fee pricing|pricing|fee change)\b/i;
     const onlyRates = /\b(?:earns?|earned|generates?|generated)\b.{0,45}\brevenue\b.{0,35}\b(?:through|from)\s+rates?\s*,?\s*(?:not|rather than)\s+fees?\b/i;
-    if ((pricingCause.test(clause) || fundingCounterfactual.test(clause) || onlyRates.test(clause)) && !refuses(clause, /\b(?:cause|pricing|market|fees?|revenue|income)\b/i)) {
+    const causalClaim = clause.match(pricingCause) ?? clause.match(fundingCounterfactual) ?? clause.match(onlyRates);
+    if (causalClaim && !explicitlyWithdrawn(clause, causalClaim) && !refuses(clause, /\b(?:cause|pricing|market|fees?|revenue|income)\b/i)) {
       problems.add("Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence.");
     }
   }

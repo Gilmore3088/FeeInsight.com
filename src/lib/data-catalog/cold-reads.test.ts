@@ -75,6 +75,20 @@ describe("cold reads", () => {
     ]);
   });
 
+  it("computes subject inclusion separately for each archived source and period", () => {
+    const rows = coldCallRollup([
+      row({ institution_id: 1, source: "ffiec", value: 1 }),
+      row({ institution_id: 2, source: "ncua", value: 2 }),
+      row({ institution_id: 1, source: "ffiec", report_date: "2019-03-31", value: 3 }),
+    ], 1);
+    expect(rows.map((r) => [r.period, r.sources, r.subject_included, r.institution_count])).toEqual([
+      ["2019-06-30", ["ffiec"], true, 1],
+      ["2019-06-30", ["ncua"], false, 1],
+      ["2019-03-31", ["ffiec"], true, 1],
+    ]);
+    expect(coldCallRollup([row({})], null)[0].subject_included).toBeNull();
+  });
+
   it("matches Postgres percentile_cont", () => {
     expect(percentileCont([1, 2, 3, 4], 0.5)).toBe(2.5);
     expect(percentileCont([1, 2, 3, 4], 0.25)).toBe(1.75);

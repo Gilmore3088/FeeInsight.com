@@ -505,6 +505,66 @@ describe("queryData: call-report lines", () => {
     });
   });
 
+  it("explains a nearest-20 cohort's resolved filters, eligibility gate and actual subject exclusion", async () => {
+    const members = Array.from({ length: 20 }, (_, i) => i + 20);
+    vi.mocked(getPeerSubject).mockResolvedValue({ id: 4956, charter_type: "credit_union", asset_size: 190000000 });
+    vi.mocked(resolvePeerRequest).mockResolvedValue({ definition: { charter_type: "credit_union", nearest: 20 },
+      filters: { institutionIds: members }, label: "The 20 credit unions closest in assets", market: null });
+    vi.mocked(peerSetMemberIds).mockResolvedValue(members);
+    nextRows = [{ period: "2026-06-30", unit: "USD", median: 100, p25: 50, p75: 150, institution_count: 18,
+      period_basis: "ytd", sources: ["ncua"], subject_included: false, source_url: "https://ncua.gov/a", fetched_at: null }];
+    const result = await queryData({ measure: "call:acct_131", scope: { kind: "peer_set", id: "4956", peer: { charter_type: "same", nearest: 20 } } });
+    expect(result).toMatchObject({ ok: true, peer_comparison: {
+      kind: "call_report_peer_comparison", definition: { charter_type: "credit_union", nearest: 20 }, filters: { institutionIds: members },
+      member_count: 20, subject_institution_id: 4956, subject_in_requested_cohort: false, minimum_median_count: 5,
+      nearest_requires_approved_published_fee: true,
+      size_criterion: { basis: "current institution registry assets", nearest_count: 20 },
+      income_basis_warning: expect.stringContaining("Never subtract independently rolled-up quarter medians"),
+    }, rows: [expect.objectContaining({ period: "2026-06-30", period_basis: "ytd", unit: "USD", sources: "ncua",
+      member_count: 20, reported_count: 18, minimum_median_count: 5, subject_included: false })] });
+    if (result.ok) expect(result.peer_comparison?.selection_limitations.join(" ")).toContain("require at least one approved published fee");
+  });
+
+  it("distinguishes requested membership from each source/date's actual reporting inclusion", async () => {
+    vi.mocked(getPeerSubject).mockResolvedValue({ id: 12, charter_type: "credit_union", asset_size_tier: "regional" });
+    vi.mocked(resolvePeerRequest).mockResolvedValue({ definition: { charter_type: "credit_union", asset_tiers: ["regional"], asset_min: 10000000000, asset_max: 250000000000 },
+      filters: { charter_type: "credit_union", asset_tiers: ["regional"] }, label: "Credit unions in the requested size group", market: null });
+    vi.mocked(peerSetMemberIds).mockResolvedValue([11, 12, 13, 14, 15]);
+    nextRows = [
+      { period: "2026-06-30", unit: "USD", median: 100, p25: 50, p75: 150, institution_count: 4, period_basis: "ytd", sources: ["ncua"], subject_included: false, source_url: null, fetched_at: null },
+      { period: "2026-03-31", unit: "USD", median: 90, p25: 40, p75: 140, institution_count: 5, period_basis: "ytd", sources: ["ncua"], subject_included: true, source_url: null, fetched_at: null },
+    ];
+    const result = await queryData({ measure: "call:acct_131", scope: { kind: "peer_set", id: "12", peer: { charter_type: "same", asset_tiers: "same" } } });
+    expect(result).toMatchObject({ ok: true, peer_comparison: {
+      subject_in_requested_cohort: true, member_count: 5, nearest_requires_approved_published_fee: false,
+      size_criterion: { asset_tiers: ["regional"], minimum_usd_inclusive: 10000000000, maximum_usd_inclusive: 250000000000 },
+    }, rows: [
+      expect.objectContaining({ period: "2026-06-30", subject_included: false, reported_count: 4, median: null }),
+      expect.objectContaining({ period: "2026-03-31", subject_included: true, reported_count: 5, median: 90 }),
+    ], note: expect.stringContaining("YTD equals standalone-quarter income only in Q1") });
+    expect(lastQuery().text).toContain("BOOL_OR(c.institution_id");
+    expect(lastQuery().values).toContain(12);
+  });
+
+  it.each(["credit_union", "bank"])("derives archived reporting inclusion only after canonical identity filtering for %s subject", async (subjectCharter) => {
+    vi.mocked(getPeerSubject).mockResolvedValue({ id: 12, charter_type: subjectCharter });
+    vi.mocked(resolvePeerRequest).mockResolvedValue({ definition: { charter_type: "credit_union" }, filters: { charter_type: "credit_union" }, label: "Credit unions", market: null });
+    vi.mocked(peerSetMemberIds).mockResolvedValue([12, 13, 14, 15, 16]);
+    nextIdentities = [12, 13, 14, 15, 16].map((id) => ({ id, charter_type: id === 12 ? subjectCharter : "credit_union" }));
+    const file = { source: "ncua", period: "2019-06-30", objectKey: "n", rowCount: 5, sha256: "a".repeat(64) };
+    vi.mocked(prunedCallFiles).mockResolvedValueOnce([file]);
+    vi.mocked(readColdCallRows).mockResolvedValueOnce({ failed: [], rows: nextIdentities.map(({ id }) => ({
+      institution_id: id, source: "ncua", report_date: "2019-06-30", item_code: "ACCT_131", item_key: "acct_131", item_description: "Fee income", schedule: "IS",
+      value: 100, unit: "dollars", period_basis: "ytd", source_url: "https://ncua.gov/old", fetched_at: null,
+    })) });
+    const included = subjectCharter === "credit_union";
+    expect(await queryData({ measure: "call:acct_131", scope: { kind: "peer_set", id: "12", peer: { charter_type: "credit_union" } } })).toMatchObject({ ok: true,
+      peer_comparison: { subject_in_requested_cohort: true, member_count: 5 },
+      rows: [expect.objectContaining({ period: "2019-06-30", sources: "ncua", subject_included: included,
+        reported_count: included ? 5 : 4, median: included ? 100 : null, minimum_median_count: 5 })],
+    });
+  });
+
   it("reads only NCUA archive files for a curated metric and preserves its semantics", async () => {
     nextIdentities = [{ id: 12, charter_type: "credit_union" }];
     const file = { source: "ncua", period: "2019-06-30", objectKey: "n", rowCount: 1, sha256: "a".repeat(64) };

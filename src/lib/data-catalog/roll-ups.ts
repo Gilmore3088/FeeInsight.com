@@ -58,6 +58,8 @@ export interface AreaRollupRow extends RollupRow {
 export interface CallRollupRow extends RollupRow {
   period_basis: string | null;
   sources: string[] | null;
+  /** Whether the scoped subject actually reported in this source/period group; null without a subject. */
+  subject_included?: boolean | null;
 }
 
 /**
@@ -121,7 +123,7 @@ const CALL_UNIT_SQL = `(CASE WHEN c.unit = 'count' THEN 'count' ELSE 'USD' END)`
  */
 export async function callPeerRollup(
   tx: Tx,
-  args: { itemKey: string; rowSources: string[]; memberIds: number[] | null; from: string | null; to: string | null; limit: number },
+  args: { itemKey: string; rowSources: string[]; memberIds: number[] | null; subjectId?: number | null; from: string | null; to: string | null; limit: number },
 ): Promise<CallRollupRow[]> {
   const measure = ncuaCallMeasure(args.itemKey);
   const rowSources = measure ? args.rowSources.filter((source) => source === "ncua") : args.rowSources;
@@ -132,6 +134,8 @@ export async function callPeerRollup(
            percentile_cont(0.75) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS p75,
            count(DISTINCT c.institution_id)::int AS institution_count,
            c.period_basis,
+           CASE WHEN ${args.subjectId ?? null}::bigint IS NULL THEN NULL
+             ELSE COALESCE(BOOL_OR(c.institution_id = ${args.subjectId ?? null}::bigint), FALSE) END AS subject_included,
            array_agg(DISTINCT c.source) AS sources,
            max(c.fetched_at) AS fetched_at,
            (array_agg(c.source_url ORDER BY c.fetched_at DESC NULLS LAST))[1] AS source_url

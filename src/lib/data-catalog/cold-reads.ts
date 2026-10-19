@@ -186,7 +186,7 @@ export function percentileCont(sorted: readonly number[], fraction: number): num
 }
 
 /** Pure: the hot roll-up (callPeerRollup), keeping period bases and units separate. */
-export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
+export function coldCallRollup(rows: readonly ColdCallRow[], subjectId?: number | null): CallRollupRow[] {
   const groups = new Map<string, ColdCallRow[]>();
   for (const row of rows) {
     const key = `${row.report_date}|${comparable(row).unit}|${row.period_basis}|${row.source}`;
@@ -208,6 +208,7 @@ export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
       institution_count: new Set(list.map((r) => r.institution_id)).size,
       period_basis: periodBasis,
       sources: [...new Set(list.map((r) => r.source))].sort(),
+      ...(subjectId !== undefined ? { subject_included: subjectId === null ? null : list.some((row) => row.institution_id === subjectId) } : {}),
       fetched_at: newest?.fetched_at ?? null,
       source_url: newest?.source_url ?? null,
     });

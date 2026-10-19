@@ -7,6 +7,7 @@ const context = vi.hoisted(() => ({
   db: null as unknown,
   refs: [] as Array<{ source: string; period: string; objectKey: string; rowCount: number; sha256: string }>,
   files: new Map<string, Uint8Array>(),
+  members: [] as number[],
 }));
 vi.mock("@/lib/data-store/connection", async (original) => ({
   ...(await original<typeof import("@/lib/data-store/connection")>()),
@@ -16,6 +17,12 @@ vi.mock("@/lib/data-store/connection", async (original) => ({
 vi.mock("./cold-reads", async (original) => ({
   ...(await original<typeof import("./cold-reads")>()),
   prunedCallFiles: async () => context.refs,
+}));
+vi.mock("@/lib/data-store/peer-sets", async (original) => ({
+  ...(await original<typeof import("@/lib/data-store/peer-sets")>()),
+  getPeerSubject: async (id: number) => ({ id }),
+  resolvePeerRequest: async () => ({ definition: { states: ["VA"] }, filters: { institutionIds: context.members }, label: "Institutions in Virginia", market: null }),
+  peerSetMemberIds: async () => context.members,
 }));
 vi.mock("@/lib/agents/hoovie/cold-files", async (original) => ({
   ...(await original<typeof import("@/lib/agents/hoovie/cold-files")>()),
@@ -50,10 +57,12 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
   beforeEach(async () => {
     context.refs = [];
     context.files.clear();
+    context.members = [];
     await db`TRUNCATE pg_temp.institution_sources, pg_temp.institution_call_report_items`;
   });
 
   async function seed(hot: "ffiec" | "ncua", cold: "ffiec" | "ncua") {
+    context.members = [1, 2, 3, 4, 5, 11, 12, 13, 14, 15];
     const hotCharter = hot === "ffiec" ? "bank" : "credit_union";
     const coldCharter = cold === "ffiec" ? "bank" : "credit_union";
     for (let id = 1; id <= 5; id++) {
@@ -97,4 +106,29 @@ describe.skipIf(!connection)("canonical cold call-report reads in isolated Postg
     const unknown = await queryData({ measure, scope: { kind: "institution", id: "21" } });
     expect(unknown).toMatchObject({ ok: true, rows: [], unit: null });
   });
+
+  it.each([1, 11, 99])("reports actual source-specific hot/cold inclusion for subject %s", async (subjectId) => {
+    await seed("ncua", "ffiec");
+    const result = await queryData({ measure, scope: { kind: "peer_set", id: String(subjectId), peer: { states: ["VA"] } } });
+    expect(result).toMatchObject({ ok: true, peer_comparison: {
+      subject_institution_id: subjectId, subject_in_requested_cohort: subjectId !== 99,
+      definition: { states: ["VA"] }, member_count: 10,
+    }, rows: [
+      expect.objectContaining({ period, sources: "ncua", subject_included: subjectId === 1, reported_count: 5, minimum_median_count: 5 }),
+      expect.objectContaining({ period, sources: "ffiec", subject_included: subjectId === 11, reported_count: 5, minimum_median_count: 5 }),
+    ] });
+  });
+
+  it("keeps a missing subject false in a thin latest filing instead of assuming requested membership", async () => {
+    await seed("ncua", "ffiec");
+    await db`DELETE FROM pg_temp.institution_call_report_items WHERE institution_id = 1`;
+    expect(await queryData({ measure, scope: { kind: "peer_set", id: "1", peer: { states: ["VA"] } } })).toMatchObject({ ok: true,
+      peer_comparison: { subject_in_requested_cohort: true, subject_institution_id: 1 },
+      rows: [
+        expect.objectContaining({ sources: "ncua", subject_included: false, reported_count: 4, median: null }),
+        expect.objectContaining({ sources: "ffiec", subject_included: false, reported_count: 5, median: 200 }),
+      ],
+    });
+  });
+
 });

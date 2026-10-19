@@ -194,7 +194,7 @@ export function renderNationalTrendsSection(trends: NationalTrends, options: Nat
     statePart(trends),
     tiers ? `<h4 style="${SUBHEAD_STYLE}">Asset size</h4>` : "",
     tiers ? tierPart(trends) : "",
-    `<h4 style="${SUBHEAD_STYLE}">Fee income, ${trends.income.length} quarters</h4>`,
+    `<h4 style="${SUBHEAD_STYLE}">Fee income by reporting source</h4>`,
     incomePart(trends),
     `<h4 style="${SUBHEAD_STYLE}">Highest published fees</h4>`,
     outlierPart(trends),
