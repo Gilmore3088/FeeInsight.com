@@ -33,6 +33,11 @@ const ownThree: RateResearch = {
 };
 
 describe("fees stated as a rate", () => {
+  it("never says the schedule lists no fee when it states the fee as a rate (#2035)", () => {
+    const answer = buildFeeAnswer(foreignResearch(ownThree, { ownSchedule: { documentUrl: "https://example.test/schedule.pdf", readAt: "2026-10-09" } }));
+    expect(JSON.stringify(answer)).not.toMatch(/lists no/);
+  });
+
   it("leads with the bank's own rate against the national median rate, never a dollar figure", () => {
     const answer = buildFeeAnswer(foreignResearch(ownThree));
     expect(answer.headline).toBe("Your international ATM & card fee is 3% of the transaction, above the 1% national median.");

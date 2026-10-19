@@ -45,6 +45,26 @@ export { COVERAGE_LABELS } from "@/lib/coverage-labels";
 /** Shown in place of a count whose read failed, so a failed read never renders as a real 0. */
 export const UNAVAILABLE_LABEL = "—";
 
+/**
+ * The summary a page shows when the counts could not be read in time (#1988): every label is
+ * UNAVAILABLE_LABEL, never "0", and `complete` is false so callers can shorten the cache life.
+ */
+export const UNAVAILABLE_PUBLIC_STATS: PublicStatsSummary = {
+  institutions: 0,
+  institutionsLabel: UNAVAILABLE_LABEL,
+  monitored: 0,
+  monitoredLabel: UNAVAILABLE_LABEL,
+  observations: 0,
+  observationsLabel: UNAVAILABLE_LABEL,
+  categories: 0,
+  categoriesLabel: UNAVAILABLE_LABEL,
+  states: 0,
+  statesLabel: UNAVAILABLE_LABEL,
+  refreshedOn: null,
+  freshnessLabel: "Data refresh pending",
+  complete: false,
+};
+
 const NUMBER = new Intl.NumberFormat("en-US");
 
 export function formatCount(n: number): string {
