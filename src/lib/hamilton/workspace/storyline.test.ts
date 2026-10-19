@@ -84,7 +84,14 @@ describe("storyline", () => {
     const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
     expect(local.actionTitle).toBe("9 of 16 competitors in your market charge less than your $3; their range is $1 to $4.");
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.items.length).toBe(12);
-    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("The 12 largest by local deposits of 16.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("Charted: the 12 largest by local deposits.");
+    // Every competitor counted stays listable (#2036): the four smallest, lowest fee first.
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.rest?.map((r) => r.name)).toEqual(["Rival 13", "Rival 14", "Rival 15", "Rival 16"]);
+    // Past the 100-row cap the note names the total and stays within a note's 16 words.
+    const many = Array.from({ length: 120 }, (_, i) => ({ ...template, institutionId: 600 + i, institutionName: `Rival ${i + 1}`, amount: 2 + (i % 5) }));
+    const big = buildFeeAnswer({ ...base, current: 3, localCompetitors: many }).storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.note).toBe("Charted: the 12 largest by local deposits; 88 more listed, of 120.");
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.rest?.length).toBe(88);
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.allAmounts?.length).toBe(16);
     const lens = answer.storyline!.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]).join(" ")
       + " " + JSON.stringify(answer);
@@ -313,6 +320,16 @@ describe("storyline", () => {
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 2")?.cells[1]).toBe("$20 to $30 (NSF item $20; NSF ACH $30)");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[1]).toBe("$25");
     }
+  });
+
+  it("keeps every institution in the structure table, with no \"Showing 12 of 14\" note (#2036)", () => {
+    const peer = structure!.rows.find((r) => !r.own)!;
+    const others = Array.from({ length: 14 }, (_, i) => ({ ...peer, institutionId: 900 + i, name: `Local ${i + 1}` }));
+    const rows = [structure!.rows.find((r) => r.own)!, ...others];
+    const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
+    const matrix = story.exhibits[0];
+    expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.rows.length).toBe(15);
+    expect(matrix.exhibit.kind === "structure_matrix" && matrix.exhibit.note).toBeUndefined();
   });
 
   it("drops a long competitor name rather than run past a storyline line's 20 words", () => {

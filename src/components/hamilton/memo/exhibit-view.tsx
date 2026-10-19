@@ -275,10 +275,62 @@ function fmtDeposits(v: number): string {
 
 const RANGE_COLS = "grid-cols-[minmax(0,7.5rem)_1fr_3rem] sm:grid-cols-[minmax(0,12rem)_1fr_3.5rem]";
 
+type RangeItem = Extract<ExhibitSpec, { kind: "competitor_range" }>["items"][number];
+
 function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_range" }> }) {
-  const axis = axisFor([...x.items.flatMap((i) => (i.several ? [i.several.low, i.several.high] : [i.amount])), ...(x.own != null ? [x.own] : [])]);
+  // The charted largest plus the rest under "Show N more" (#2036) share one axis and one legend.
+  const all = [...x.items, ...(x.rest ?? [])];
+  const axis = axisFor([...all.flatMap((i) => (i.several ? [i.several.low, i.several.high] : [i.amount])), ...(x.own != null ? [x.own] : [])]);
   // Local deposits (FDIC Summary of Deposits) size each competitor in the market, when the engine carries them.
-  const maxDeposits = Math.max(0, ...x.items.map((i) => i.deposits ?? 0));
+  const maxDeposits = Math.max(0, ...all.map((i) => i.deposits ?? 0));
+  const row = (item: RangeItem) => (
+    <div key={item.name} className={`grid ${RANGE_COLS} items-center gap-3 text-sm`}>
+      <span className="min-w-0">
+        <span className="block truncate text-warm-800" title={item.name}>
+          {item.url ? (
+            <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-terra-text hover:underline">
+              {item.name}
+            </a>
+          ) : (
+            item.name
+          )}
+        </span>
+        {maxDeposits > 0 ? (
+          <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]">
+            <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-warm-100">
+              <span className="block h-full rounded-full bg-warm-500" style={{ width: `${((item.deposits ?? 0) / maxDeposits) * 100}%` }} />
+            </span>
+            <span className="w-10 shrink-0 text-right">{item.deposits != null ? fmtDeposits(item.deposits) : "n/a"}</span>
+          </span>
+        ) : null}
+        {item.several ? (
+          <span className="mt-0.5 block text-[11px] text-warm-600">{ownFeeList(item.several, fmtMoney)}</span>
+        ) : null}
+      </span>
+      <span className="relative h-7">
+        <span className="absolute inset-x-0 top-1/2 h-px bg-warm-200" />
+        {item.several ? (
+          // Several different fees: a bar over their range, no single price set against yours (#1931).
+          <span
+            className="absolute top-2 h-3 rounded-sm bg-warm-300"
+            style={{ left: `${axis.at(item.several.low)}%`, width: `${Math.max(axis.at(item.several.high) - axis.at(item.several.low), 0.8)}%` }}
+          />
+        ) : x.own != null ? (
+          // A bar from your fee to theirs: the distance reads at a glance, and the side says more or less.
+          <span
+            className={`absolute top-1 h-5 ${item.amount > x.own ? "rounded-r-md bg-warm-700" : "rounded-l-md bg-warm-400"}`}
+            style={{ left: `${Math.min(axis.at(item.amount), axis.at(x.own))}%`, width: `${Math.max(Math.abs(axis.at(item.amount) - axis.at(x.own)), 0.8)}%` }}
+          />
+        ) : (
+          <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warm-700" style={{ left: `${axis.at(item.amount)}%` }} />
+        )}
+        {x.own != null ? <span className="absolute -inset-y-1 w-[3px] -translate-x-1/2 rounded bg-terra" style={{ left: `${axis.at(x.own)}%` }} /> : null}
+      </span>
+      <span className={`text-right font-semibold text-warm-900 [font-variant-numeric:tabular-nums] ${item.several ? "text-xs leading-tight" : ""}`}>
+        {statedFeeLabel(item.amount, item.several, fmtMoney)}
+      </span>
+    </div>
+  );
   return (
     <div className="flex flex-col gap-1.5">
       {maxDeposits > 0 ? (
@@ -288,54 +340,12 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
           <span className="text-right">Fee</span>
         </div>
       ) : null}
-      {x.items.map((item) => (
-        <div key={item.name} className={`grid ${RANGE_COLS} items-center gap-3 text-sm`}>
-          <span className="min-w-0">
-            <span className="block truncate text-warm-800" title={item.name}>
-              {item.url ? (
-                <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-terra-text hover:underline">
-                  {item.name}
-                </a>
-              ) : (
-                item.name
-              )}
-            </span>
-            {maxDeposits > 0 ? (
-              <span className="mt-0.5 flex items-center gap-1.5 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]">
-                <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-warm-100">
-                  <span className="block h-full rounded-full bg-warm-500" style={{ width: `${((item.deposits ?? 0) / maxDeposits) * 100}%` }} />
-                </span>
-                <span className="w-10 shrink-0 text-right">{item.deposits != null ? fmtDeposits(item.deposits) : "n/a"}</span>
-              </span>
-            ) : null}
-            {item.several ? (
-              <span className="mt-0.5 block text-[11px] text-warm-600">{ownFeeList(item.several, fmtMoney)}</span>
-            ) : null}
-          </span>
-          <span className="relative h-7">
-            <span className="absolute inset-x-0 top-1/2 h-px bg-warm-200" />
-            {item.several ? (
-              // Several different fees: a bar over their range, no single price set against yours (#1931).
-              <span
-                className="absolute top-2 h-3 rounded-sm bg-warm-300"
-                style={{ left: `${axis.at(item.several.low)}%`, width: `${Math.max(axis.at(item.several.high) - axis.at(item.several.low), 0.8)}%` }}
-              />
-            ) : x.own != null ? (
-              // A bar from your fee to theirs: the distance reads at a glance, and the side says more or less.
-              <span
-                className={`absolute top-1 h-5 ${item.amount > x.own ? "rounded-r-md bg-warm-700" : "rounded-l-md bg-warm-400"}`}
-                style={{ left: `${Math.min(axis.at(item.amount), axis.at(x.own))}%`, width: `${Math.max(Math.abs(axis.at(item.amount) - axis.at(x.own)), 0.8)}%` }}
-              />
-            ) : (
-              <span className="absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-warm-700" style={{ left: `${axis.at(item.amount)}%` }} />
-            )}
-            {x.own != null ? <span className="absolute -inset-y-1 w-[3px] -translate-x-1/2 rounded bg-terra" style={{ left: `${axis.at(x.own)}%` }} /> : null}
-          </span>
-          <span className={`text-right font-semibold text-warm-900 [font-variant-numeric:tabular-nums] ${item.several ? "text-xs leading-tight" : ""}`}>
-            {statedFeeLabel(item.amount, item.several, fmtMoney)}
-          </span>
-        </div>
-      ))}
+      {x.items.map(row)}
+      {x.rest && x.rest.length > 0 ? (
+        <More label={`Show ${x.rest.length.toLocaleString("en-US")} more`}>
+          <div className="flex flex-col gap-1.5">{x.rest.map(row)}</div>
+        </More>
+      ) : null}
       <div className={`grid ${RANGE_COLS} gap-3 text-[11px] text-warm-600 [font-variant-numeric:tabular-nums]`}>
         <span />
         <span className="flex justify-between">
@@ -351,13 +361,13 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
             {x.ownLabel}: {fmtMoney(x.own)}
           </span>
           {/* Only the sides that occur: "Charges less" with no one charging less reads as a finding. */}
-          {x.items.some((i) => !i.several && i.amount < x.own!) ? (
+          {all.some((i) => !i.several && i.amount < x.own!) ? (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-400" />
               Charges less
             </span>
           ) : null}
-          {x.items.some((i) => !i.several && i.amount > x.own!) ? (
+          {all.some((i) => !i.several && i.amount > x.own!) ? (
             <span className="inline-flex items-center gap-1.5">
               <span className="inline-block h-2.5 w-4 rounded-sm bg-warm-700" />
               Charges more
