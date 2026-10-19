@@ -2,7 +2,9 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { collapseCategories } from "@/lib/agents/hamilton/exact-duplicate";
 import { pageCopyRepeats, type PageCopyRow } from "@/lib/agents/hamilton/page-copy-collapse";
+import { feePageKey } from "./page-key";
 import { splitLiveCategory } from "@/lib/fee-fold";
+import { readPublicationEvidence, type PublicationEvidence } from "./publication-evidence";
 
 type SqlTag = typeof sql;
 
@@ -55,71 +57,76 @@ export function inFoldedCategory(copy: Pick<PageCopyRow, "canonical_fee_key" | "
 /**
  * The live row that would keep this row out, read the way `collapsePageCopies` reads rows: live,
  * not quarantined, dollar rows of the institution, category, variant and amount, with each
- * document's address, last read and replacement. Null when nothing would. A failed read refuses
- * nothing.
+ * document's address, last read and replacement. An available null means no keeper; a failed
+ * prerequisite read stays unavailable, so an enabled publish gate can leave the row pending.
  */
-export async function selectPageCopyKeeper(db: SqlTag, row: PageCopyCandidate): Promise<number | null> {
+export async function selectPageCopyKeeper(db: SqlTag, row: PageCopyCandidate): Promise<PublicationEvidence<number | null>> {
   const categories = collapseCategories(row.canonicalFeeKey, row.feeName);
-  try {
-    return await inSavepoint(db, async (scope) => {
-      const live = await scope<PageCopyRow[]>`
-        SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
-               GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded, sd.superseded_by_id,
-               fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fr.product_name
-          FROM published_fee_records fp
-          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
-          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
-          JOIN source_documents sd ON sd.id = fr.source_document_id
-         WHERE fp.institution_id = ${row.institutionId}
-           AND fp.canonical_fee_key = ANY(${categories}::text[])
-           AND COALESCE(fp.variant_type, '') = COALESCE(${row.variantType ?? null}, '')
-           AND fp.amount = ${row.amount}::numeric
-           AND fp.rate_percent IS NULL
-           AND fp.rolled_back_at IS NULL
-           AND fp.quarantined_at IS NULL
-           AND fr.source_document_id <> ${row.sourceDocumentId}
-      `;
-      if (live.length === 0) return null;
-      const [own] = await scope<{ document_url: string | null; crawled_at: string | Date | null; superseded: boolean; superseded_by_id: number | string | null }[]>`
-        SELECT document_url, GREATEST(last_checked_at, crawled_at) AS crawled_at,
-               superseded_by_id IS NOT NULL AS superseded, superseded_by_id
-          FROM source_documents
-         WHERE id = ${row.sourceDocumentId}
-      `;
-      if (!own) return null;
-      const category = categories.at(-1) ?? row.canonicalFeeKey;
-      const candidate: PageCopyRow = {
-        fee_published_id: CANDIDATE_ID,
-        institution_id: row.institutionId,
-        source_document_id: row.sourceDocumentId,
-        document_url: own.document_url,
-        crawled_at: own.crawled_at,
-        superseded: own.superseded,
-        superseded_by_id: own.superseded_by_id,
-        canonical_fee_key: category,
-        variant_type: row.variantType ?? null,
-        amount: row.amount,
-        fee_name: row.feeName,
-        frequency: row.frequency ?? null,
-        fee_audience: row.feeAudience ?? null,
-        product_name: row.productName,
-      };
-      // The collapse groups by the category a row is live under. A twin filed under the category
-      // the row moves from is read under the one it moves to only when its own name moves it there
-      // too, as the fold will leave it; one whose name stays put is never paired with the row.
-      const rows = live.map((copy) => (inFoldedCategory(copy, category) ? { ...copy, canonical_fee_key: category } : copy));
-      const documentIds = [...new Set([row.sourceDocumentId, ...rows.map((copy) => Number(copy.source_document_id))])];
-      const stored = await scope<{ source_document_id: number | string; normalized_text: string }[]>`
-        SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
-          FROM agent_source_texts
-         WHERE source_document_id = ANY(${documentIds}::bigint[]) AND normalized_text IS NOT NULL
-         ORDER BY source_document_id, id DESC
-      `;
-      const texts = new Map(stored.map((text) => [String(text.source_document_id), text.normalized_text]));
-      return pageCopyKeeper(candidate, rows, texts);
-    });
-  } catch (error) {
-    console.error("selectPageCopyKeeper failed:", error);
-    return null;
+  const liveRead = await readPublicationEvidence("page_copy_live", () => inSavepoint(db, (scope) => scope<PageCopyRow[]>`
+    SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
+           GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded, sd.superseded_by_id,
+           fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fr.product_name
+      FROM published_fee_records fp
+      JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      JOIN source_documents sd ON sd.id = fr.source_document_id
+     WHERE fp.institution_id = ${row.institutionId}
+       AND fp.canonical_fee_key = ANY(${categories}::text[])
+       AND COALESCE(fp.variant_type, '') = COALESCE(${row.variantType ?? null}, '')
+       AND fp.amount = ${row.amount}::numeric
+       AND fp.rate_percent IS NULL
+       AND fp.rolled_back_at IS NULL
+       AND fp.quarantined_at IS NULL
+       AND fr.source_document_id <> ${row.sourceDocumentId}
+  `));
+  if (liveRead.state === "unavailable") return liveRead;
+  const live = liveRead.value;
+  if (live.length === 0) return { state: "available", value: null };
+  const ownRead = await readPublicationEvidence("page_copy_document", () => inSavepoint(db, (scope) => scope<{ document_url: string | null; crawled_at: string | Date | null; superseded: boolean; superseded_by_id: number | string | null }[]>`
+    SELECT document_url, GREATEST(last_checked_at, crawled_at) AS crawled_at,
+           superseded_by_id IS NOT NULL AS superseded, superseded_by_id
+      FROM source_documents
+     WHERE id = ${row.sourceDocumentId}
+  `));
+  if (ownRead.state === "unavailable") return ownRead;
+  const [own] = ownRead.value;
+  if (!own || feePageKey(own.document_url) == null) return { state: "unavailable", check: "page_copy_document" };
+  const category = categories.at(-1) ?? row.canonicalFeeKey;
+  const candidate: PageCopyRow = {
+    fee_published_id: CANDIDATE_ID,
+    institution_id: row.institutionId,
+    source_document_id: row.sourceDocumentId,
+    document_url: own.document_url,
+    crawled_at: own.crawled_at,
+    superseded: own.superseded,
+    superseded_by_id: own.superseded_by_id,
+    canonical_fee_key: category,
+    variant_type: row.variantType ?? null,
+    amount: row.amount,
+    fee_name: row.feeName,
+    frequency: row.frequency ?? null,
+    fee_audience: row.feeAudience ?? null,
+    product_name: row.productName,
+  };
+  // The collapse groups by the category a row is live under. A twin filed under the category
+  // the row moves from is read under the one it moves to only when its own name moves it there
+  // too, as the fold will leave it; one whose name stays put is never paired with the row.
+  const rows = live.map((copy) => (inFoldedCategory(copy, category) ? { ...copy, canonical_fee_key: category } : copy));
+  // The existing collapse defines which pairs need text. Unrelated pages/products/names do
+  // not make every missing text in the institution a prerequisite for this candidate.
+  const paired = rows.filter((copy) => pageCopyRepeats([candidate, copy], new Map()).pairs > 0);
+  if (paired.length === 0) return { state: "available", value: null };
+  const documentIds = [...new Set([row.sourceDocumentId, ...rows.map((copy) => Number(copy.source_document_id))])];
+  const textRead = await readPublicationEvidence("page_copy_text", () => inSavepoint(db, (scope) => scope<{ source_document_id: number | string; normalized_text: string }[]>`
+    SELECT DISTINCT ON (source_document_id) source_document_id, normalized_text
+      FROM agent_source_texts
+     WHERE source_document_id = ANY(${documentIds}::bigint[]) AND normalized_text IS NOT NULL
+     ORDER BY source_document_id, id DESC
+  `));
+  if (textRead.state === "unavailable") return textRead;
+  const texts = new Map(textRead.value.map((text) => [String(text.source_document_id), text.normalized_text]));
+  if ([row.sourceDocumentId, ...paired.map((copy) => Number(copy.source_document_id))].some((id) => !texts.get(String(id))?.trim())) {
+    return { state: "unavailable", check: "page_copy_text" };
   }
+  return { state: "available", value: pageCopyKeeper(candidate, rows, texts) };
 }

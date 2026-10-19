@@ -52,6 +52,15 @@ describe("narrateStepFinished", () => {
     expect(narrateStepFinished('publish',{processed_verified_fees:3,published_fees:0,skipped_verified_fees:3,identity_deferred_verified_fees:3},'GA'))
       .toBe('Published 0 fees in GA: 3 deferred after selected verification or identity changed (still pending).');
   });
+  it("separates unavailable-evidence deferrals from identity deferrals and known refusals", () => {
+    const text = narrateStepFinished("publish", { processed_verified_fees: 4, published_fees: 0,
+      skipped_verified_fees: 4, identity_deferred_verified_fees: 1, evidence_deferred_verified_fees: 2 }, "GA");
+    expect(text).toContain("2 left pending because required publication evidence was unavailable");
+    expect(text).toContain("1 deferred after selected verification or identity changed");
+    expect(text).toContain("1 already published or not eligible");
+    expect(text).not.toContain("3 already published");
+  });
+
   it("names excluded references instead of implying no confirmed keys or a passing empty replay", () => {
     expect(narrateStepFinished("score-answer-key",{schema_ready:true,banks_scored:0,reference_eligibility:{state:"no_measurement",eligibleBanks:0,excludedBanks:3}})).toContain("No answer-key measurement: 0 eligible and 3 excluded");
     expect(narrateStepFinished("deming-knox-misses",{ready:true,fees_scored:0,reference_excluded_banks:3,reference_excluded_cases:9})).toContain("No eligible reference fees to replay; 3 reference banks and 9 unbound");
