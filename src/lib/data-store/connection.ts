@@ -46,14 +46,21 @@ export const TEXT_WITHOUT_NUL = {
  * json/jsonb parameters. postgres.js JSON-encodes every json/jsonb parameter, so the
  * common `${JSON.stringify(x)}::jsonb` pattern was stored as a JSON *string*
  * ("[\"a\"]") instead of an array or object. SQL JSON operators then never matched
- * (Darwin's `outlier_flags ? 'needs_darwin_verification'` selected nothing). Text
- * that already is a JSON object or array passes through unchanged; everything
- * else is encoded as before.
+ * (Darwin's `outlier_flags ? 'needs_darwin_verification'` selected nothing).
+ *
+ * Text that already is JSON passes through unchanged, whatever its kind (#2004): a lone
+ * number, string, true, false or null sent as `JSON.stringify(x)` came back as a JSON string
+ * (`1250000` read back `"1250000"`, `"Acme"` read back `"\"Acme\""`), because only objects and
+ * arrays passed. Everything else is encoded as before, so plain text ("hello") is stored as a
+ * JSON string. Raw text that happens to be JSON ("42", "true") is read as that JSON value: a
+ * caller that means the string sends `JSON.stringify(text)`, the codebase's one convention.
  */
+const JSON_TEXT_START = /^[{["\-0-9tfn]/;
+
 export function serializeJsonParam(value: unknown): string {
   if (typeof value === "string") {
     const trimmed = value.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    if (JSON_TEXT_START.test(trimmed)) {
       try {
         const parsed: unknown = JSON.parse(trimmed);
         // Re-encode only when a NUL escape is present, so clean text passes through as is.

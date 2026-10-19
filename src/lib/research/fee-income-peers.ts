@@ -1,10 +1,10 @@
 /**
  * Fee income against peers, for Hamilton's written answer (#1084): one institution's service
  * charge income beside the median of a peer group, on the same call report quarter and the
- * same filer. getFeeRevenueData gives each quarter's own income for both filers (#1245: NCUA
- * year-to-date less the prior quarter). Pure; the rows come from getFeeRevenueData.
+ * same filer. getFiledFeeIncomeData gives each quarter's own income for both filers (#1245:
+ * NCUA year-to-date less the prior quarter), independently of fee-schedule coverage.
  */
-import type { FeeRevenueCorrelation } from "@/lib/data-store/fee-revenue";
+import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
 import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 
 /** Below this many peers there is no median (the Pro evidence rule). */
@@ -26,7 +26,7 @@ function median(values: number[]): number | null {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-function matches(row: FeeRevenueCorrelation, filters: FeeIncomePeerFilters): boolean {
+function matches(row: FiledFeeIncome, filters: FeeIncomePeerFilters): boolean {
   // Hand-picked ids and the other filters both apply, as in the charts' peer readers.
   if (filters.institutionIds?.length && !filters.institutionIds.includes(row.institution_id)) return false;
   if (filters.states?.length && !filters.states.includes((row.state_code ?? "").toUpperCase())) return false;
@@ -36,7 +36,7 @@ function matches(row: FeeRevenueCorrelation, filters: FeeIncomePeerFilters): boo
   return true;
 }
 
-function describe(row: FeeRevenueCorrelation) {
+function describe(row: FiledFeeIncome) {
   return {
     institution_id: row.institution_id,
     name: row.institution_name,
@@ -54,7 +54,7 @@ function describe(row: FeeRevenueCorrelation) {
 }
 
 export function feeIncomeAgainstPeers(
-  rows: FeeRevenueCorrelation[],
+  rows: FiledFeeIncome[],
   institutionId: number,
   filters: FeeIncomePeerFilters,
 ) {
@@ -62,7 +62,7 @@ export function feeIncomeAgainstPeers(
   if (!subject) {
     return {
       view: "peers" as const,
-      error: "This institution has no call report service charge income on file with at least three published fees, so its fee income cannot be compared.",
+      error: "This institution has no computable standalone-quarter income in a canonical financial filing, so its fee income cannot be compared. Published fee-schedule coverage is not required.",
     };
   }
   const source = financialSourceForCharter(subject.charter_type);
@@ -98,7 +98,7 @@ export function feeIncomeAgainstPeers(
     measure: "income_per_10k_assets is service charge income per $10,000 of total assets",
     subject: describe(subject),
     peer_count: peers.length,
-    peers_rule: "Peers filed for the same quarter with the same canonical regulator and charter type; the institution itself is not counted. Bank deposit-account service charges and NCUA broad fee income are not comparable measures.",
+    peers_rule: "Peers filed for the same quarter with the same canonical regulator and charter type; the institution itself is not counted. Published fee-schedule coverage is not required. Bank deposit-account service charges and NCUA broad fee income are not comparable measures.",
     comparison: {
       ...financialMeasureDefinition(source),
       financial_source: source,
@@ -108,6 +108,10 @@ export function feeIncomeAgainstPeers(
       ratio_unit: "USD income per 10,000 USD assets",
       subject_included: false,
       sample_size: peers.length,
+      population_basis: "filed_financials",
+      fee_schedule_coverage_required: false,
+      eligibility: "Same canonical regulator and charter, the subject's exact filing quarter, computable standalone-quarter income and finite income per $10,000 of positive reported assets, matching the saved filters; the subject is excluded",
+      minimum_median_count: MIN_PEERS_FOR_MEDIAN,
       filters,
     },
     peer_median_income_per_10k_assets: peerMedian === null ? null : Math.round(peerMedian * 100) / 100,
