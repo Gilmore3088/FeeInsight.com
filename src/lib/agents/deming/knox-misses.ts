@@ -140,6 +140,9 @@ export interface KnoxMissesResult {
   banksLeftIds: number[];
 }
 
+const positiveReferenceEventId = (value: unknown): number | null =>
+  typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+
 export const caseKeyFor = (feeId: number, fingerprint?: string) => `answer_key_read:${feeId}${fingerprint ? `:reference:${fingerprint}` : ""}`;
 
 function ratio(numerator: number, denominator: number): number | null {
@@ -234,10 +237,12 @@ export async function runKnoxMisses({
      WHERE check_name = ${KNOX_MISS_CHECK}
   `;
   const expectedByCase = new Map(keyRows.map((row) => [caseKeyFor(Number(row.fee_id), row.reference_fingerprint), row]));
-  const origins = await loadReferenceOrigins(db, existing.map((row) => Number(row.input?.reference_event_id)));
+  const originIds = existing.map((row) => positiveReferenceEventId(row.input?.reference_event_id)).filter((id): id is number => id != null);
+  const origins = await loadReferenceOrigins(db, originIds);
   const trustedExisting = existing.filter((row) => {
     const fee = expectedByCase.get(row.case_key), input = row.input;
-    const origin = origins.get(Number(input?.reference_event_id));
+    const originId = positiveReferenceEventId(input?.reference_event_id);
+    const origin = originId == null ? undefined : origins.get(originId);
     return fee && input && origin && input.kind === "knox_answer_key_read" && input.reference_protocol === reference.protocol
       && input.reference_key_fingerprint === fee.reference_fingerprint
       && input.reference_fee_fingerprint === fee.reference_fee_fingerprint

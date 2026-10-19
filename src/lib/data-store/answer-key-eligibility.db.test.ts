@@ -205,10 +205,12 @@ describe.skipIf(!connection)("reference eligibility in isolated PostgreSQL", () 
     expect(after.status).toBe("active");expect(after.input).toEqual(before.input);
   });
 
-  it.each(["missing origin","forged origin","edited payload","ineligible key"])("excludes an old replay case with %s without relabelling it key_fee_removed", async (change) => {
+  it.each(["missing origin","forged origin","boolean origin","numeric string origin","null origin","fraction origin","zero origin","negative origin","unsafe origin","edited payload","ineligible key"])("excludes an old replay case with %s without relabelling it key_fee_removed", async (change) => {
     await createBoundMissCase();
     if(change==="missing origin") await db`UPDATE eval_cases SET input=input-'reference_event_id'`;
     if(change==="forged origin") await db`UPDATE eval_cases SET input=input||'{"reference_event_id":99999}'::jsonb`;
+    const malformedOrigins:Record<string,unknown>={"boolean origin":true,"numeric string origin":"1","null origin":null,"fraction origin":1.5,"zero origin":0,"negative origin":-1,"unsafe origin":Number.MAX_SAFE_INTEGER+1};
+    if(Object.hasOwn(malformedOrigins,change)) await db`UPDATE eval_cases SET input=input||${JSON.stringify({reference_event_id:malformedOrigins[change]})}::jsonb`;
     if(change==="edited payload") await db`UPDATE eval_cases SET input=input||'{"amount":999}'::jsonb`;
     if(change==="ineligible key") await db`UPDATE answer_key_institutions SET document_url='https://bank.example/other.pdf'`;
     const result=await runKnoxMisses({ db:asDb(),runId:11 });
