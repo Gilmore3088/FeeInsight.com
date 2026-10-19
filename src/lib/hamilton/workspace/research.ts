@@ -414,6 +414,25 @@ function numOrNull(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
+/** The schedule most of the bank's live fees were read from, and when; null when none is on file, undefined when the read fails. */
+async function loadOwnSchedule(institutionId: number): Promise<FeeResearch["ownSchedule"]> {
+  try {
+    const [row] = await sql`
+      SELECT sd.document_url, sd.crawled_at
+        FROM published_fee_catalog ef
+        JOIN source_documents sd ON sd.id = ef.source_document_id
+       WHERE ef.institution_id = ${institutionId}
+         AND ef.review_status = 'approved'
+       GROUP BY sd.id, sd.document_url, sd.crawled_at
+       ORDER BY COUNT(*) DESC, sd.crawled_at DESC NULLS LAST
+       LIMIT 1`;
+    if (!row) return null;
+    return { documentUrl: row.document_url ? String(row.document_url) : null, readAt: row.crawled_at ? new Date(row.crawled_at as string).toISOString().slice(0, 10) : null };
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadServiceChargeRows(institutionId: number): Promise<ServiceChargeRow[]> {
   const rows = await sql`
     SELECT report_date, source, service_charge_income, overdraft_revenue, nsf_revenue
@@ -1053,6 +1072,8 @@ export async function getFeeResearch(
     regulatorRead.then((r) => loadWire(base.stateCode, r?.primaryRegulator ?? null, now)),
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
+  // A fee with no row of its own is told apart: not listed on the schedule, or no schedule (#2035).
+  const ownSchedule = ownRows.length === 0 ? await loadOwnSchedule(institutionId) : undefined;
   const wireScope = { feeCategory, stateCode: base.stateCode, primaryRegulator: regulators?.primaryRegulator ?? null, today: now };
   const wire = wireFacts(wireRows, wireScope);
   const statePosts = statePostFacts(wireRows.posts, wireScope);
@@ -1113,6 +1134,7 @@ export async function getFeeResearch(
     // (IS0049) income, or the bank overdraft-and-NSF line (RIAD H032, banks over $1B).
     revenueLine,
     ownRows,
+    ...(ownSchedule !== undefined ? { ownSchedule } : {}),
     nationalIncomeSeries,
     institutionFinancials: financials,
     regulation: [

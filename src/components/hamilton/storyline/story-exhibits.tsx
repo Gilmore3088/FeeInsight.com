@@ -119,7 +119,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                 {x.columns.map((c, i) => (
                   <div key={c} className="contents">
                     <dt className="text-warm-600">{c}</dt>
-                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not published</span>}</dd>
+                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not listed</span>}</dd>
                   </div>
                 ))}
               </dl>
@@ -146,7 +146,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                   </th>
                   {r.cells.map((c, i) => (
                     <td key={i} className={`px-3 py-2 text-center text-warm-800 ${ANSWER_TYPE.num}`}>
-                      {c ?? <span className="text-warm-600">Not published</span>}
+                      {c ?? <span className="text-warm-600">Not listed</span>}
                     </td>
                   ))}
                 </tr>

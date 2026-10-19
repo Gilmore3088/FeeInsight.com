@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
 import { buildAskResponse, parseAsk } from "./ask";
 import { evaluateFourRoles } from "./four-roles";
@@ -116,11 +117,44 @@ describe("storyline", () => {
     expect([archetypeOf(0), archetypeOf(10), archetypeOf(15), archetypeOf(30), archetypeOf(30.5)]).toEqual(["zero_od", "low_capped", "low_capped", "mid", "premium"]);
   });
 
+  describe("missing, $0 and charged stay apart (#2035)", () => {
+    it("counts only a charge above $0 as charging, and shows a $0 as no fee", () => {
+      const zeroNsf = { ...structure!, rows: structure!.rows.map((r) => (r.institutionId === 3 || r.institutionId === 4 ? { ...r, values: { ...r.values, nsf: 0 } } : r)) };
+      const story = buildFeeAnswer(research({ structure: zeroNsf }), { story: { structure: true } }).storyline!;
+      const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
+      expect(matrix.actionTitle).toBe("Of 6 peers: 2 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+      if (matrix.exhibit.kind !== "structure_matrix") throw new Error("expected a matrix");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 3")?.cells[1]).toBe("No fee ($0)");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 5")?.cells[1]).toBeNull();
+    });
+
+    it("says the bank's schedule lists no such fee, with the schedule and its date, never a $0", () => {
+      const r = research({ current: null, ownRows: [], subjectName: "Space Coast Federal Credit Union", ownSchedule: { documentUrl: "https://example.org/fees.pdf", readAt: "2026-10-09" } });
+      const answer = buildFeeAnswer(r);
+      expect(answer.headline).toBe("Space Coast Federal Credit Union's schedule lists no overdraft fee; 16 peers' median is $29.50.");
+      expect(answer.claims[0]).toMatchObject({
+        text: "Space Coast Federal Credit Union's fee schedule, read October 9, 2026, lists no overdraft fee.",
+        source: { url: "https://example.org/fees.pdf", asOf: "2026-10-09" },
+      });
+      expect(JSON.stringify(answer)).not.toMatch(/not in the index/);
+      const none = buildFeeAnswer(research({ current: null, ownRows: [], subjectName: "Space Coast Federal Credit Union", ownSchedule: null }));
+      expect(none.headline).toBe("Space Coast Federal Credit Union has no fee schedule on file; 16 peers' median is $29.50.");
+      // Not read: the older wording stands.
+      expect(buildFeeAnswer(research({ current: null, ownRows: [] })).headline).toMatch(/is not in the index yet/);
+    });
+
+    it("never says \"item item\"", () => {
+      expect(feeItem("overdraft")).toBe("overdraft item");
+      expect(feeItem("NSF / returned item")).toBe("NSF / returned item");
+      expect(feeItem("NSF / returned item", true)).toBe("NSF / returned items");
+    });
+  });
+
   it("shows fee structure beyond the price, with blanks where a schedule shows nothing", () => {
     const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
     expect(story.kind).toBe("structure");
     const matrix = story.exhibits[0];
-    expect(matrix.actionTitle).toBe("Of 6 peers: 4 publish an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 6 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows[0]).toMatchObject({ name: "Example Valley Credit Union", own: true, cells: ["$32", "$32", null, null, null] });
       expect(matrix.exhibit.rows).toHaveLength(7);
@@ -258,7 +292,7 @@ describe("storyline", () => {
     const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
     const matrix = story.exhibits[0];
     // The counts stay one per institution.
-    expect(matrix.actionTitle).toBe("Of 6 peers: 4 publish an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    expect(matrix.actionTitle).toBe("Of 6 peers: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
     if (matrix.exhibit.kind === "structure_matrix") {
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 2")?.cells[1]).toBe("$20 to $30 (NSF item $20; NSF ACH $30)");
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[1]).toBe("$25");

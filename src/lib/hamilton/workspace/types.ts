@@ -29,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.19.1";
+export const WORKSPACE_ENGINE_VERSION = "1.19.2";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -432,6 +432,12 @@ export interface FeeResearch {
    * `current` (each row's schedule document and the event that verified it).
    */
   ownRows: OwnFeeRow[];
+  /**
+   * When the bank has no row for this fee: its main schedule in the index (the document most of
+   * its fees were read from) and when it was read, so a missing fee reads as "not listed on its
+   * schedule" (#2035). Null when no schedule is on file; absent when not read.
+   */
+  ownSchedule?: { documentUrl: string | null; readAt: string | null } | null;
   /** Industry deposit service charge income, newest quarter first (eight quarters), as on the Briefing. */
   nationalIncomeSeries: MarketIncome[];
   /** The bank's total deposit service charge income, as context for this fee. */

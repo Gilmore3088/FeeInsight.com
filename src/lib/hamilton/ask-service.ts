@@ -26,7 +26,7 @@ import { getHamiltonModel } from "@/lib/ai-provider";
 import { logUsage } from "@/lib/research/history";
 import { analysisFocusFor, analysisTitle, storylineAnalysis, withMemo } from "./workspace/analysis-record";
 import { buildAskResponse, clarifyAgain, parseAsk, parseObjective, type AskIntent } from "./workspace/ask";
-import { proseFeeName } from "./workspace/names";
+import { feeItem, proseFeeName } from "./workspace/names";
 import { getFeeResearch, getWorkspaceBriefing, type EnginePeerOptions } from "./workspace/research";
 import { getActivePeerSet } from "./active-peer-set";
 import { asksWholeSchedule, scheduleOverview, withOwnScheduleNote, type ScheduleOverview } from "./workspace/schedule";
@@ -104,9 +104,9 @@ function savedSentence(fieldKey: string, value: unknown, subjectName?: string): 
   const fee = fieldKey.match(/^fee\.([a-z0-9_]+)\./)?.[1];
   const name = fee ? proseFeeName(fee) : "";
   const n = typeof value === "number" ? value : NaN;
-  if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${name} items a year. Scenarios now use it.`;
+  if (fieldKey.endsWith(".annual_items")) return `Saved: about ${n.toLocaleString("en-US")} ${feeItem(name, true)} a year. Scenarios now use it.`;
   if (fieldKey.endsWith(".waiver_rate")) return `Saved: ${Math.round(n * 1000) / 10}% of ${name} fees waived or refunded. Scenarios now use it.`;
-  if (fieldKey.endsWith(".current_amount")) return `Saved: ${subjectName ? `${subjectName} charges` : "you charge"} $${n} for one ${name} item.`;
+  if (fieldKey.endsWith(".current_amount")) return `Saved: ${subjectName ? `${subjectName} charges` : "you charge"} $${n} for one ${feeItem(name)}.`;
   if (fieldKey.endsWith(".annual_volume")) return `Saved: ${subjectName ? `${subjectName}'s` : "your"} ${name} rate applied to about $${n.toLocaleString("en-US")} over the last 12 months.`;
   if (fieldKey === "decision.objective") return `Saved: weigh the options for ${String(value).replace(/_/g, " ")}.`;
   return "Saved.";
@@ -246,7 +246,7 @@ async function withResearchIdentity(
   let accountComparison: AskResponse["accountComparison"];
   if (asksAccountComparison(question)) {
     if (!account.institution) {
-      comparison = " A comparison with your account institution is withheld until one linked institution can be verified.";
+      comparison = ` This answer is research on ${subject}; no institution is linked to this account, so none is compared.`;
     } else if (account.institution.id === identity.researchInstitutionId) {
       comparison = ` ${subject} is also the linked account institution; the figures above refer to ${subject}.`;
     } else if (!feeCategory) {
