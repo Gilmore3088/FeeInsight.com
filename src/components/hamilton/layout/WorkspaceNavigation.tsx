@@ -1,22 +1,33 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
 import { HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive } from "@/lib/hamilton/navigation";
 import { NavAccount } from "@/components/nav-account";
+import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
+import { subjectSwitchHref } from "@/lib/hamilton/navigation-context";
 import { useHamiltonNavigationHref } from "./hamilton-navigation-context";
 
 const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, MessageCircle, Search, Settings };
 
 /**
  * The workspace's left navigation and institution bar, from #1011 (James's Oct 11 unified
- * workspace). One sidebar serves desktop and, behind the menu button, phones. The bar names
- * three things separately: the reader's own institution, the institution being researched and
- * the peer group it is compared with.
+ * workspace). One sidebar serves desktop and, behind the menu button, phones. The context bar
+ * (#2043) leads with what every screen reads: the institution or market being researched, its
+ * state, charter and size, and whether it is the reader's own. Below it: the peer group and
+ * whether it was saved or picked by Hamilton, the reader's own institution, and the switch to
+ * another institution or the U.S. market, which keeps the reader on the same screen.
  */
-export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, homeName = null, homeHref = "/pro/research", accountUnlinked = false, accountNeedsInfo = false, researchIsHome = false, peerLabel }: {
+export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchLabel, researchFacts = null, researchIsMarket = false, subjectNotLinked = false, homeName = null, homeHref = "/pro/research", accountUnlinked = false, accountNeedsInfo = false, researchIsHome = false, peerLabel }: {
   pathname: string; isAdmin: boolean; accountLabel: string; researchLabel: string | null;
+  /** The subject's state, charter and size, e.g. "Florida · Community bank, $1B to $10B". */
+  researchFacts?: string | null;
+  /** The subject is a market (U.S. or a state), not one institution. */
+  researchIsMarket?: boolean;
+  /** The subject is an institution the account is known not to be linked to. */
+  subjectNotLinked?: boolean;
   /** The reader's own institution, when their account is linked to exactly one. */
   homeName?: string | null;
   /** No membership links the account to an institution yet (not ambiguous, not a load error). */
@@ -54,20 +65,42 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
     </aside>
     <section aria-label="Institution context">
       <header className="workspace-topbar print:hidden">
-        <div>
+        {researchLabel ? <div className="workspace-subject">
+          <span>{researchIsMarket ? "Market view" : "Researching"}: <strong>{researchLabel}</strong>{researchIsHome ? " (your institution)" : null}</span>
+          {researchFacts ? <span className="workspace-muted">{researchFacts}</span> : null}
+          {subjectNotLinked ? <span className="workspace-tag">Not linked to your account</span> : null}
+        </div> : <div>
           <span className="workspace-muted">Your institution: </span><strong>{accountLabel}</strong>
           {accountUnlinked ? <> · <Link href="/pro/settings#account-institution">Link your institution</Link></> : null}
           {accountNeedsInfo ? <> · <Link href="/pro/settings#account-institution">More information needed</Link></> : null}
-        </div>
+        </div>}
         <NavAccount />
       </header>
       {researchLabel ? <div className="workspace-research-context print:hidden">
-        <span>Researching: <strong>{researchLabel}</strong>{researchIsHome ? " (your institution)" : null}</span>
         {peerLabel === undefined ? null : peerLabel
-          ? <span>Compared with: <strong>{peerLabel}</strong></span>
-          : <span>Compared with: no peer group saved · <Link href="/pro/settings#peer-sets">Choose peers</Link></span>}
-        {homeName && !researchIsHome && !researchLabel.endsWith(" market") ? <Link href={homeHref}>Back to {homeName}</Link> : null}
+          ? <span>Compared with: <strong>{peerLabel}</strong>, your saved peer group</span>
+          : <span>Compared with: peers Hamilton picks for this institution · <Link href="/pro/settings#peer-sets">Save your own</Link></span>}
+        {researchIsHome ? null : <span>
+          Your institution: {homeName ? <Link href={homeHref}>{homeName}</Link> : <strong>{accountLabel}</strong>}
+          {accountUnlinked ? <> · <Link href="/pro/settings#account-institution">Link your institution</Link></> : null}
+          {accountNeedsInfo ? <> · <Link href="/pro/settings#account-institution">More information needed</Link></> : null}
+        </span>}
+        <SubjectSwitch pathname={pathname} showMarket={!(researchIsMarket && researchLabel === "U.S. market")} />
       </div> : null}
     </section>
   </>;
+}
+
+/** Research another institution on the same screen, or open the U.S. market view (#2043). */
+function SubjectSwitch({ pathname, showMarket }: { pathname: string; showMarket: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  return <span className="workspace-switch">
+    <button type="button" aria-expanded={open} aria-controls="workspace-switch-picker" onClick={() => setOpen(!open)}>Research another institution</button>
+    {showMarket ? <Link href="/pro/intelligence">U.S. market</Link> : null}
+    {open ? <span id="workspace-switch-picker" className="workspace-switch-picker">
+      <InstitutionPicker inputId="workspace-switch-institution" label="Institution" help="Pick a match to open it on this screen."
+        onSelect={(result) => { if (result) { setOpen(false); router.push(subjectSwitchHref(pathname, result.id)); } }} />
+    </span> : null}
+  </span>;
 }

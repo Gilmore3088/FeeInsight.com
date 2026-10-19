@@ -50,3 +50,13 @@ export function hrefWithHamiltonNavigation(href: string, selection: HamiltonNavi
   }
   return hrefWithInstitutionContext(href, selection.institutionId);
 }
+
+/** Screens that read one institution keep the reader where they are when the subject changes (#2043). */
+const SWITCH_IN_PLACE = new Set(["/pro/analyze", "/pro/research", "/pro/simulate", "/pro/reports", "/pro/monitor"]);
+
+/** Where the context bar's switch goes: the same screen for the new institution, else its own page. */
+export function subjectSwitchHref(pathname: string, institutionId: string | number): string {
+  const id = normalizeCanonicalInstitutionId(institutionId);
+  if (!id) return "/pro/research";
+  return `${SWITCH_IN_PLACE.has(pathname) ? pathname : "/pro/research"}?instId=${id}`;
+}
