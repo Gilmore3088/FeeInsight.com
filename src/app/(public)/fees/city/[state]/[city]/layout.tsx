@@ -1,6 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { cityHasBranches, fullCityForCut } from "@/lib/data-store";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { STATE_NAMES } from "@/lib/us-states";
 import { cityPath, dottedCityName, loadCityInstitutions, titleCase } from "./city-lookup";
 
 /**
@@ -29,10 +30,16 @@ export default async function CityLayout({
   const { state, city } = await params;
   const stateCode = state.toUpperCase();
   const cityName = titleCase(city);
+  // An unknown state never reaches the cached read, so junk addresses add no cache entries.
+  if (!STATE_NAMES[stateCode]) notFound();
   const asked = cityName.toUpperCase();
   const directory = await getStateMarketCitiesCached(stateCode).catch(() => []);
   const folded = directory.find((c) => c.city !== asked && c.spellings.includes(asked));
-  if (folded) permanentRedirect(cityPath(state, folded.city));
+  // The address already reads as the directory's spelling ("wilkes-barre" for WILKES-BARRE, which
+  // titleCase reads as "Wilkes Barre"): redirecting would send it to itself.
+  if (folded && titleCase(folded.city) !== cityName && cityPath(state, folded.city) !== cityPath(state, cityName)) {
+    permanentRedirect(cityPath(state, folded.city));
+  }
   const institutions = await loadCityInstitutions(cityName, stateCode);
   // A city is a market when a bank or credit union has a branch there, wherever it is headquartered.
   if (institutions.length === 0 && !(await cityHasBranches(cityName, stateCode))) {

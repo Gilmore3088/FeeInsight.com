@@ -16,10 +16,10 @@ import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { correctSpelling } from "@/lib/geo/city-names";
+import { displayCity } from "@/lib/format";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
 import { CitySearch, ExplorerMap, SelectedCity, StateExplorer, type ExplorerCity } from "./state-explorer";
 import { CityList } from "./city-list";
-import { titleCase } from "../[city]/city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string }>;
@@ -57,7 +57,8 @@ export default async function StateCityDirectory({ params }: PageProps) {
   // getStateMarketCities folds each city's spellings into one and ranks by institutions with a branch there, most first.
   const links: ExplorerCity[] = cities.map((c) => ({
     key: c.city.toLowerCase(),
-    name: correctSpelling(titleCase(c.city)),
+    // Hyphens kept: WINSTON-SALEM reads "Winston-Salem".
+    name: correctSpelling(displayCity(c.city)),
     href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
     institutions: c.institutions,
     withFees: c.with_fees,

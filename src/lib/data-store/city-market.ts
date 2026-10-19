@@ -513,8 +513,8 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
            ARRAY_AGG(DISTINCT p.institution_id) FILTER (WHERE p.institution_id IS NOT NULL) AS published_ids,
            COUNT(*) AS branches,
            MAX(b.msa_name) AS metro,
-           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.latitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0) AS lat,
-           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.longitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0) AS lon
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.latitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0 AND b.longitude <> 0) AS lat,
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.longitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0 AND b.longitude <> 0) AS lon
       FROM branches b
       LEFT JOIN published p ON p.institution_id = b.institution_id
      GROUP BY b.city

@@ -16,4 +16,4 @@ city address redirects to the one the directory links to. Stored records are unc
 **Lesson:** any count by place name must fold spellings first. The same variation is likely in
 `institution_sources.city` (headquarters), which the institution directory and headquarters
 counts read without a fold; that is not checked here and is worth a read-only count before
-anyone relies on headquarters-city totals.
+anyone relies on headquarters-city totals (tracked as #2092).

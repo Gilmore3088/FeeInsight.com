@@ -67,6 +67,20 @@ describe("city layout (#1165, #1213, #1267)", () => {
     await expect(render("fl", "st.%20petersburg")).resolves.toBeNull();
   });
 
+  it("never redirects a hyphenated city to its own address", async () => {
+    getCityInstitutions.mockResolvedValue([{ id: 1 }]);
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "WILKES-BARRE", spellings: ["WILKES-BARRE", "WILKES BARRE"] }]);
+    await expect(render("pa", "wilkes-barre")).resolves.toBeNull();
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "WILKES-BARRE", spellings: ["WILKES-BARRE", "WILKES BARRE"] }]);
+    await expect(render("pa", "wilkes%20barre")).resolves.toBeNull();
+  });
+
+  it("answers 404 for an unknown state without reading the city directory", async () => {
+    getStateMarketCitiesCached.mockClear();
+    await expect(render("zz", "tampa")).rejects.toThrow("NOT_FOUND");
+    expect(getStateMarketCitiesCached).not.toHaveBeenCalled();
+  });
+
   it("answers 404, not 500, for a malformed escape", async () => {
     getCityInstitutions.mockResolvedValue([]);
     fullCityForCut.mockResolvedValue(null);
