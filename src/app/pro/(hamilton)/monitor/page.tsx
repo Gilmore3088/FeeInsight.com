@@ -10,7 +10,7 @@ import { DecisionLedger } from "@/components/hamilton/monitor/DecisionLedger";
 import { decisionsOverview } from "@/lib/hamilton/decision-service";
 import { LinkButton, MemoHeader, MemoPage, MemoSection } from "@/components/hamilton/memo/memo";
 
-export const metadata: Metadata = { title: "All changes" };
+export const metadata: Metadata = { title: "Alerts and watches" };
 
 // No ISR — fresh signal data on every page load
 export const dynamic = "force-dynamic";
@@ -64,7 +64,7 @@ export default async function MonitorPage({
     <MemoPage>
       <MemoHeader
         kicker={selectedInstitution ? `What changed · ${selectedInstitution.name}` : "What changed"}
-        title="All changes"
+        title="Alerts and watches"
         dek="Fee moves at the institutions you watch, as they reach the index."
         actions={<LinkButton href={refreshHref}>Refresh</LinkButton>}
       />

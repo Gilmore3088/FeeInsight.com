@@ -180,16 +180,28 @@ describe("labels open the screen of the same name", () => {
 });
 
 
-describe("workspace left navigation: Your institution (James, Oct 15, \"Nav only\")", () => {
-  it("opens My fees right after Overview and lights up there, not Research", async () => {
-    const { HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive } = await import("./navigation");
-    const labels = HAMILTON_WORKSPACE_NAV.map(item => item.label);
-    expect(labels.slice(0, 2)).toEqual(["Overview", "Your institution"]);
-    const mine = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Your institution")!;
+describe("workspace left navigation: five areas (#2044, James's Oct 19 review)", () => {
+  it("lists Overview, Research, Ask Hamilton, Try a price and Reports, and keeps each area lit on its sub-pages", async () => {
+    const { HAMILTON_WORKSPACE_NAV, HAMILTON_ALERTS_NAV, isWorkspaceNavActive } = await import("./navigation");
+    expect(HAMILTON_WORKSPACE_NAV.map(item => item.label).filter(l => l !== "Admin")).toEqual(["Overview", "Research", "Ask Hamilton", "Try a price", "Reports"]);
     const research = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Research")!;
-    expect(mine.href).toBe("/pro/research");
-    expect(isWorkspaceNavActive("/pro/research", mine)).toBe(true);
-    expect(isWorkspaceNavActive("/pro/research", research)).toBe(false);
+    const price = HAMILTON_WORKSPACE_NAV.find(item => item.label === "Try a price")!;
+    expect(isWorkspaceNavActive("/pro/research", research)).toBe(true);
     expect(isWorkspaceNavActive("/pro/intelligence", research)).toBe(true);
+    expect(isWorkspaceNavActive("/pro/saved", price)).toBe(true);
+    expect(isWorkspaceNavActive("/pro/simulate", price)).toBe(true);
+    expect(isWorkspaceNavActive("/pro/simulate", research)).toBe(false);
+    expect(HAMILTON_ALERTS_NAV).toEqual({ label: "Alerts and watches", href: "/pro/monitor" });
+  });
+
+  it("names the institution tab for the institution being researched", async () => {
+    const { workspaceSubnav } = await import("./navigation");
+    expect(workspaceSubnav("/pro/research", "Capital City Bank")).toEqual([
+      { label: "Market", href: "/pro/intelligence" },
+      { label: "Capital City Bank fees", href: "/pro/research" },
+    ]);
+    expect(workspaceSubnav("/pro/intelligence", null)?.[1].label).toBe("Institution fees");
+    expect(workspaceSubnav("/pro/saved", null)?.map(t => t.label)).toEqual(["Try a price", "Saved analyses"]);
+    expect(workspaceSubnav("/pro/analyze", "Capital City Bank")).toBeNull();
   });
 });

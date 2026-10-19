@@ -22,6 +22,9 @@
  *     (HAMILTON_WORKSPACE_NAV) replaces the header tabs inside /pro; HAMILTON_NAV still drives the
  *     site header for Pro users on public pages.
  *   - 2026-10-15 James ("Nav only" card): a "Your institution" entry opens My fees; Overview stays national.
+ *   - 2026-10-19 James's redesign review (#2044): eight areas become five. Your institution joins
+ *     Research and Saved analyses joins Try a price, each as a sub-tab (HAMILTON_WORKSPACE_SUBNAV);
+ *     Monitor becomes "Alerts and watches", a secondary link beside Settings.
  */
 
 /** Base path for Hamilton screens. Change here if route group structure changes in Phase 40. */
@@ -42,28 +45,53 @@ export const HAMILTON_NAV = [
  */
 export const HAMILTON_WORKSPACE_NAV = [
   { label: "Overview",       href: `${HAMILTON_BASE}/hamilton`,     icon: "ChartNoAxesColumnIncreasing" },
-  { label: "Your institution", href: `${HAMILTON_BASE}/research`,   icon: "Landmark" },
-  { label: "Ask Hamilton",   href: `${HAMILTON_BASE}/analyze`,      icon: "MessageCircle" },
   { label: "Research",       href: `${HAMILTON_BASE}/intelligence`, icon: "Search" },
+  { label: "Ask Hamilton",   href: `${HAMILTON_BASE}/analyze`,      icon: "MessageCircle" },
   { label: "Try a price",    href: `${HAMILTON_BASE}/simulate`,     icon: "Calculator" },
   { label: "Reports",        href: `${HAMILTON_BASE}/reports`,      icon: "FileText" },
-  { label: "Monitor",        href: `${HAMILTON_BASE}/monitor`,      icon: "Activity" },
-  { label: "Saved analyses", href: `${HAMILTON_BASE}/saved`,        icon: "Bookmark" },
   { label: "Admin",          href: "/admin",                        icon: "Settings" },
 ] as const;
 
-const RESEARCH_PATHS = ["/pro/intelligence", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+/** The secondary link beside Settings: managing watches, whose alerts show across the workspace. */
+export const HAMILTON_ALERTS_NAV = { label: "Alerts and watches", href: `${HAMILTON_BASE}/monitor` } as const;
 
-export function isWorkspaceNavActive(pathname: string | null, item: (typeof HAMILTON_WORKSPACE_NAV)[number]): boolean {
+const RESEARCH_PATHS = ["/pro/intelligence", "/pro/research", "/pro/data", "/pro/market", "/pro/categories", "/pro/districts", "/pro/news"];
+const TRY_A_PRICE_PATHS = ["/pro/simulate", "/pro/saved"];
+
+const under = (pathname: string, paths: readonly string[]) => paths.some(path => pathname === path || pathname.startsWith(`${path}/`));
+
+export function isWorkspaceNavActive(pathname: string | null, item: { label: string; href: string }): boolean {
   if (!pathname) return false;
-  if (item.label === "Research") return RESEARCH_PATHS.some(path => pathname === path || pathname.startsWith(`${path}/`));
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+  if (item.label === "Research") return under(pathname, RESEARCH_PATHS);
+  if (item.label === "Try a price") return under(pathname, TRY_A_PRICE_PATHS);
+  return under(pathname, [item.href]);
+}
+
+/**
+ * The sub-tabs of the two areas that hold two pages (#2044). The institution tab is named for the
+ * institution being researched, so the reader sees whose fees it shows.
+ */
+export function workspaceSubnav(pathname: string | null, institutionName: string | null): { label: string; href: string }[] | null {
+  if (!pathname) return null;
+  if (under(pathname, ["/pro/intelligence", "/pro/research"])) {
+    return [
+      { label: "Market", href: `${HAMILTON_BASE}/intelligence` },
+      { label: institutionName ? `${institutionName} fees` : "Institution fees", href: `${HAMILTON_BASE}/research` },
+    ];
+  }
+  if (under(pathname, TRY_A_PRICE_PATHS)) {
+    return [
+      { label: "Try a price", href: `${HAMILTON_BASE}/simulate` },
+      { label: "Saved analyses", href: `${HAMILTON_BASE}/saved` },
+    ];
+  }
+  return null;
 }
 
 /** Account menu: the bank and its data, and what changed, outside the four tabs. */
 export const HAMILTON_ACCOUNT_NAV = [
   { label: "My bank and data", href: `${HAMILTON_BASE}/settings` },
-  { label: "All changes",      href: `${HAMILTON_BASE}/monitor`  },
+  { label: "Alerts and watches", href: `${HAMILTON_BASE}/monitor`  },
 ] as const;
 
 export type HamiltonScreen = (typeof HAMILTON_NAV)[number]["label"];
