@@ -19,6 +19,12 @@ require their own authorization/evidence. A green branch that is stacked on an u
 or release dependency is not merge-ready. Record the merge receipt and continue; do not ask James
 again merely because a routine code PR reached a clean merge-ready state.
 
+Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
+first fix the pipeline step that caused it (Magellan discovery, Rosetta document capture, Knox
+extraction or categorisation, Darwin verification) so the whole class of error is fixed, then
+re-run the affected institutions and validate the output. A one-off data fix comes only as the
+last step after that process fix, never instead of it.
+
 ## Current Runtime
 
 - Agent runs start in `agent_runs`, advance through `agent_run_steps`, and write `agent_run_events`.
