@@ -2,6 +2,9 @@
 
 Issue: #2127 under #978. Inspected base: `866ba11f80f85de255777dccd823b3faa3d54eff`.
 
+**Guard:** `src/lib/fee-corrections.db.test.ts` exercises condition propagation, explicit clearing,
+evidence reversal, unchanged ordinary rows and the catalog reader privilege contract in PostgreSQL.
+
 A source-checked condition-only correction writes a new published version and a correction
 history row. Its raw/verified lineage is intentionally retained. The dollar catalog still
 read conditions and source-document ID from that original raw row, and public readers preferred
