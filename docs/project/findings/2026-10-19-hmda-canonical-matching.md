@@ -1,6 +1,6 @@
 # 2026-10-19: HMDA matching repair and bounded rerun review
 
-Status: code prepared for review; **no production writes, rerun, migration, deployment, or automation-setting changes**. Outcome #2232, under #2225. Producer omission #2249; cross-state consistency #2250.
+Status: code prepared for review; **no production writes, rerun, migration, deployment, or automation-setting changes**. Outcome #2232, under #2225. Producer omission #2249; cross-state consistency #2250; panel conflict holds #2254; decision evidence #2255.
 
 **Guard:** HMDA parser/resolver/loader tests and isolated PostgreSQL identity tests run in CI; the pure review planner enforces explicit lender and cell bounds. Production execution requires a separately reviewed drift-checked ledger path.
 
@@ -78,7 +78,7 @@ The [committed review manifest](../evidence/2026-10-19-hmda-rerun-manifest.json)
 
 **This is a review plan, not a queued or enabled apply operation.** Production mutation remains a separate boundary. The current ordinary FDIC and HMDA loaders are broader than this matching-only proposal and must not be used as a substitute for it.
 
-1. Review code, source evidence, identity sample, exact manifest and authorization scope. Five official same-year HMDA institution lookups corroborate cohort labels and LEIs; they do not supply missing RSSDs or replace identifier evidence.
+1. Review code, source evidence, identity sample, exact manifest and authorization scope. All ten official same-year HMDA institution lookups and ten direct GLEIF records corroborate cohort labels and LEIs. Eight GLEIF records additionally carry the exact FDIC certificate; two use state business-registration namespaces. These reads do not supply missing HMDA RSSDs. HomePride's GLEIF entity is active but its LEI registration is lapsed, a freshness limitation to retain in the review; current FDIC/HMDA still corroborate the legal identity. Display names are a human cross-check, never an automatic matching input.
 2. Before any production execution, implement and review a matching-only path within the existing TypeScript run ledger that accepts this exact manifest, has no automatic schedule, checks all preconditions, and cannot widen scope. No direct SQL-console repair or ad hoc script is approved.
 3. Reconcile overlapping scheduled writes. Under a bounded transaction, lock the reviewed annual/canonical rows and verify all selected child keys and null preimages, source digest, ownership uniqueness and match results. Abort on changed or additional rows. Record the intended scope and zero provider work in the run steps/events before writes.
 4. Update only the approved fields, capture actual returned row keys and before/after identities, and fail on any unexpected count. Require 10 canonical fills, 10 annual links, 85 origination links and 39 cost links. Check full selected source facts against hashes, annual/child consistency, and no new metric rows. Verify the selected institution lookup and downstream read behavior using the stored evidence tier.
