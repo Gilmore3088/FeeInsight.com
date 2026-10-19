@@ -58,7 +58,7 @@ const SHAPES: Record<string, ShapeInfo> = {
     hasExit: false,
   },
   eligibility: {
-    label: "A price limited to an age or product tier",
+    label: "A price with restricted or unresolved product ownership",
     owner: "Knox and the product-tier comparison contract (#1060, #1911)",
     wayOut: "Retained with complete source conditions; no automatic release until represented eligibility and standard-tier comparisons can keep this price scoped.",
     hasExit: false,

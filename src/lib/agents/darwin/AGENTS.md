@@ -2,6 +2,16 @@
 
 Darwin owns verification and classification.
 
+Monthly eligibility admission (#2277/#2259, Oct 19): `insertVerifiedFee` locks the current
+monthly raw identity and checks its current strong eligibility hold, including NULL or
+legacy unrepresented products. A stale selected row cannot verify after that hold wins
+the lock. Conversely, the monthly writer locks an exact conflict in a real transaction,
+then checks all verified history in a fresh statement before changing it. Ordinary
+historical rejudge callers need not carry `needs_darwin_verification`; no global needs
+flag requirement or replay version is added. Two-connection loopback PostgreSQL tests
+prove both actual blocking orders and normal pending controls. The existing caller
+transaction precondition on `insertVerifiedFee` still applies.
+
 ## Ancillary product ownership (#1911 code phase, 2026-10-19)
 
 A bounded single-primary-deposit-product document can assign its own ancillary priced fee
@@ -59,6 +69,14 @@ always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILIT
   Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
   fees it would take down. Takedowns go through the shared second look and the run ledger
   (`docs/project/DECISIONS.md`, 2026-10-15).
+  #2259 has an explicit prospective-phase exception approved in the 2026-10-19 review,
+  following #1911's boundary: unresolved monthly-account ownership is an eligibility hold,
+  not a claim the bank's stated price is false. Its free and common paid/raw writer gates
+  retain full bounded evidence and decline unavailable source witnesses. Existing judged
+  rows are untouched; the current-source candidate and published-exposure packet is a
+  read-only measurement, not an automatic historical takedown. No shared unsupported-price
+  refusal, broad second-look rule or old-decision replay is added for this phase. Historical
+  recovery remains separately reviewed, including #2269's legacy owner correction.
   #2209's fee-count dollar-total refusal uses the shared source check. Its live twin is the
   existing Hamilton rules re-check: the Knox v84 free-team fingerprint reselects documents,
   checks the missing read against its own original source, and uses the normal first flag and

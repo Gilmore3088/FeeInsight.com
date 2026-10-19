@@ -25,6 +25,7 @@ import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names"
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
+import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -137,7 +138,9 @@ import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/st
 // dollar totals of a fee count fail the shared source check. Existing re-read floors stay settled.
 // v85 (#2240/#2241): explicit stacked fee labels own their prices; an own annual
 // overdraft-program charge stays held instead of losing its period on the paid-item path.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 85 } as const;
+// v86 (#2259): repeated monthly price prose without one literal account owner stays
+// eligibility-held; paid and minimal-row callers share the source-bearing writer gate.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 86 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -474,7 +477,14 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
-  // #2209: preserve literal age/product prices without pooling them into standard benchmarks.
+  const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
+  for (const candidate of candidates) {
+    const owners = monthlyOwnerReview(candidate);
+    if (!owners) continue;
+    candidate.eligibilityReview = true;
+    candidate.linkedConditions = [candidate.linkedConditions, owners].filter(Boolean).join("\n\n");
+  }
+  // #2209/#2259: preserve literal product prices without pooling them into standard benchmarks.
   // This explicit shape is not one of the automatic range/name/source promoters' inputs.
   for (let at = candidates.length - 1; at >= 0; at--) {
     const read = candidates[at];
