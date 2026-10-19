@@ -270,6 +270,8 @@ export async function recheckHeldRows(
                 AND lower(other.fee_name) = lower(${promotedName(row, candidate)})
                 AND COALESCE(other.amount, -1) = COALESCE(fr.amount, -1)
                 AND other.fee_audience = ${applicability.feeAudience}
+                -- v82 (#2123): the key also has the line share; a held row has none.
+                AND other.line_share = fr.line_share
                 AND other.fee_raw_id <> fr.fee_raw_id
            )
         RETURNING fr.fee_raw_id
@@ -982,6 +984,8 @@ export async function fileHeldByName(
                 AND lower(other.fee_name) = lower(fr.fee_name)
                 AND COALESCE(other.amount, -1) = COALESCE(fr.amount, -1)
                 AND other.fee_audience = ${applicability.feeAudience}
+                -- v82 (#2123): the key also has the line share; a held row has none.
+                AND other.line_share = fr.line_share
                 AND other.fee_raw_id <> fr.fee_raw_id
            )
         RETURNING fr.fee_raw_id

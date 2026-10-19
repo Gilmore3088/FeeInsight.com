@@ -39,9 +39,10 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
       source_url text, extraction_confidence numeric, agent_event_id uuid, fee_name text, amount numeric,
       frequency text, conditions text, extraction_note text, outlier_flags jsonb, source text, product_name text,
       min_balance_to_avoid numeric, min_opening_deposit numeric, waiver_text text,
-      fee_audience text NOT NULL DEFAULT 'unknown', audience_evidence text, fee_treatment text NOT NULL DEFAULT 'unknown')`;
+      fee_audience text NOT NULL DEFAULT 'unknown', audience_evidence text, fee_treatment text NOT NULL DEFAULT 'unknown',
+      line_share text NOT NULL DEFAULT '')`;
     await db`CREATE UNIQUE INDEX ON raw_fee_observations
-      (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience)
+      (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL`;
     await db`CREATE TEMP TABLE verified_fee_observations (fee_verified_id bigserial PRIMARY KEY, fee_raw_id bigint)`;
   });
@@ -104,6 +105,22 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     await db`INSERT INTO verified_fee_observations (fee_raw_id) VALUES (${id})`;
     expect(await insertCandidate(db as unknown as Db, { runId: 2, row: reread, candidate: overdraft })).toBe(false);
     expect((await flagsOf())[0].flags).toContain("superseded_by_reread");
+  });
+
+  it("stores a combined Overdraft/NSF line's twin as its own row (v82)", async () => {
+    // Inst 2254: "Overdraft/NSF Fee | $30" kept only the overdraft row; the NSF twin met the same key.
+    const shared = { ...overdraft, feeName: "Overdraft/NSF Fee", amount: 30, excerpt: "Overdraft/NSF Fee | $30.00" };
+    expect(await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: shared })).toBe(true);
+    expect(await insertCandidate(db as unknown as Db, {
+      runId: 1, row: firstRead, candidate: { ...shared, canonicalHint: "nsf", lineShare: "twin:nsf" },
+    })).toBe(true);
+    const rows = await db`SELECT line_share, COALESCE(extraction_note, conditions) AS conditions FROM raw_fee_observations ORDER BY fee_raw_id`;
+    expect(rows.map((row) => row.line_share)).toEqual(["", "twin:nsf"]);
+    expect(String(rows[1].conditions)).toContain("canonical_hint=nsf;");
+    // Read again from the same text, neither row is added twice.
+    expect(await insertCandidate(db as unknown as Db, {
+      runId: 2, row: firstRead, candidate: { ...shared, canonicalHint: "nsf", lineShare: "twin:nsf" },
+    })).toBe(false);
   });
 
   it("does not touch a live, unretired row read again from the same text", async () => {

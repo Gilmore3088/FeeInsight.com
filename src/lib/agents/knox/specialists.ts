@@ -121,7 +121,13 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // that find's name, is that fee read from its tail and is not kept (`tailOfEarlierRead`): "ACH or Bill
 // Pay" from "Stop Payment (check, ACH or Bill Pay) | $25" is no bill pay fee. The stale-read floor
 // stays at v78: no page is read again for this alone.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 81 } as const;
+// v82 (round 2 live check, #2123): a combined NSF/overdraft line's twin is stored as its own raw row
+// (`line_share`, migration 20270110000065); before, the raw key (document, name, price, audience)
+// dropped it. The joined name also matches with the abbreviation in brackets ("Non-sufficient funds
+// (NSF) or Overdraft (OD)") and with a returned item for NSF ("Overdraft/Return Item Fee"). The
+// stale-read floor stays at v78; only pages with a combined row and no twin are read again
+// (`KNOX_TWIN_READ_BELOW_VERSION`).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 82 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -148,10 +154,15 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
 const MAX_HELD_PER_DOCUMENT = 40;
 /** v76: a $0 or "prices vary" hold, untraced $0 rows included, counts in the unpriced half of the held cap. */
 const unpricedHalf = (row: HeldFeeCandidate): boolean => isUnpricedHeldShape(row.shape) || (row.shape === "untraced" && row.amount === 0);
-/** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
-const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
+/**
+ * NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item".
+ * v82: also with the abbreviation in brackets ("Non-sufficient funds (NSF) or Overdraft (OD) per
+ * item") and a returned item for NSF ("Overdraft/Return Item Fee", "Returned Item/Overdraft fee").
+ */
+const NSF_TERM = String.raw`(?:(?:non[-\s]?sufficient|insufficient) funds?(?:\s*\(nsfs?\))?|nsfs?|return(?:ed)? items?)`;
+const OD_TERM = String.raw`(?:overdrafts?(?:\s*\(od\))?|OD)`;
 const NSF_AND_OVERDRAFT = new RegExp(
-  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*(?:overdrafts?|OD)\b|\b(?:overdrafts?|OD)\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
+  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*${OD_TERM}(?![\w-])|\b${OD_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}\b`,
   "i",
 );
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
@@ -427,7 +438,8 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     if (!twin || !NSF_AND_OVERDRAFT.test(candidate.feeName)) continue;
     if (candidates.some((prior) => prior.canonicalHint === twin && prior.feeAudience === candidate.feeAudience && prior.amount === candidate.amount)) continue;
     if (candidates.length >= MAX_FEES_PER_DOCUMENT || !passesDarwinChecks(twin, candidate.feeName, candidate.amount)) continue;
-    candidates.push({ ...candidate, canonicalHint: twin });
+    // v82: the twin has the line's own name and price, so it needs its own raw key (`line_share`).
+    candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
   // An untraced read is held once, and only when no specialist read the same fee traceably.

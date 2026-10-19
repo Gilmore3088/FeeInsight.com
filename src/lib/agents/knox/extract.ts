@@ -94,6 +94,20 @@ export const KNOX_STALE_READ_BELOW_VERSION = 78;
  */
 export const KNOX_LINEUP_READ_BELOW_VERSION = 73;
 /**
+ * v82 (round 2 live check, 19 Oct 2026): a current copy with an overdraft or NSF row named for both
+ * and no twin row, last read below this version, is read again once so the twin is stored now that
+ * the raw key has `line_share`. Free: rules only. On prod, 101 live combined-name overdraft fees sat
+ * at banks with no NSF fee (Oct 19).
+ */
+export const KNOX_TWIN_READ_BELOW_VERSION = 82;
+/**
+ * A loose match for a name that joins NSF (or a returned item) and overdraft; the rules decide
+ * whether the line really is shared. Postgres regex: `\m`/`\M` are word boundaries.
+ */
+export const COMBINED_NSF_OVERDRAFT_SQL =
+  // `\mnsf`: "transfer" holds "nsf", and "Overdraft Transfer" is no shared line.
+  String.raw`(\mnsf|sufficient funds|return(ed)? items?).*(overdraft|\mod\M)|(overdraft|\mod\M).*(\mnsf|sufficient funds|return(ed)? items?)`;
+/**
  * v73 (#1100): the raw-row flag a read that recorded the account carries. A product stored without
  * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
  */
@@ -400,6 +414,42 @@ function textArtifactQuery(
              )
            )`;
     }
+    // v82: a current copy with an overdraft or NSF row named for both ("Overdraft/NSF Fee") and no
+    // twin row is read again once, so the second fee the raw key used to drop is stored.
+    if (currentCopy) {
+      const twinParam = `$${params.push(KNOX_TWIN_READ_BELOW_VERSION)}`;
+      thinTextReextract += `
+           OR (
+             EXISTS (
+               SELECT 1 FROM raw_fee_observations shared
+                WHERE shared.source = 'knox'
+                  AND shared.source_document_id = adt.source_document_id
+                  AND shared.line_share = ''
+                  AND (COALESCE(shared.extraction_note, shared.conditions) LIKE '%canonical_hint=overdraft;%'
+                       OR COALESCE(shared.extraction_note, shared.conditions) LIKE '%canonical_hint=nsf;%')
+                  AND shared.fee_name ~* '${COMBINED_NSF_OVERDRAFT_SQL}'
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM raw_fee_observations twin
+                WHERE twin.source = 'knox'
+                  AND twin.source_document_id = adt.source_document_id
+                  AND twin.line_share <> ''
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM source_documents copy
+                WHERE copy.id = adt.source_document_id
+                  AND copy.superseded_by_id IS NOT NULL
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM pipeline_attempts recent
+                WHERE recent.stage = 'extract'
+                  AND recent.institution_id = adt.institution_id
+                  AND recent.input_fingerprint = adt.text_hash
+                  AND recent.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+                  AND recent.strategy_version >= ${twinParam}
+             )
+           )`;
+    }
     // A priority bank or market leader with no live overdraft fee has its current page read
     // again once per rules version, so a rules fix reaches it. asset_size is in thousands, so
     // the large-bank floor above misses most state leaders (2026-10-08: MVB, Starion, Stride,
@@ -658,7 +708,7 @@ export async function insertCandidate(
   const lineup = read && options.candidate.canonicalHint !== LINEUP_CATEGORY
     ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
     : read;
-  // The dedupe index is (document, lowercased fee name, amount, audience), so an existing
+  // The dedupe index is (document, lowercased fee name, amount, audience, line share), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
   //   - a row an earlier read of this document retired on this re-read
@@ -689,7 +739,8 @@ export async function insertCandidate(
       min_balance_to_avoid,
       min_opening_deposit,
       waiver_text,
-      fee_audience, audience_evidence, fee_treatment
+      fee_audience, audience_evidence, fee_treatment,
+      line_share
     )
     VALUES (
       ${institutionId},
@@ -708,9 +759,10 @@ export async function insertCandidate(
       ${lineup?.minBalanceToAvoid ?? null},
       ${lineup?.minOpeningDeposit ?? null},
       ${lineup?.waiverText ?? null},
-      ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
+      ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
+      ${options.candidate.lineShare ?? ""}
     )
-    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience)
+    ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
     DO UPDATE SET
       extraction_confidence = EXCLUDED.extraction_confidence,
@@ -790,6 +842,7 @@ export async function insertCandidate(
          AND lower(fee_name) = lower(${options.candidate.feeName})
          AND amount = ${options.candidate.amount}
          AND fee_audience = ${applicability.feeAudience}
+         AND line_share = ${options.candidate.lineShare ?? ""}
     `;
   }
   return inserted.length > 0;
