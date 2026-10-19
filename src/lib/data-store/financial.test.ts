@@ -41,7 +41,7 @@ function templateText(strings: unknown): string {
 
 // ── dollarOrNull helper ───────────────────────────────────────────────────────
 
-describe("dollarOrNull (passthrough — DB stores whole dollars since migration 023)", () => {
+describe("dollarOrNull (passthrough — FDIC/NCUA stored thousands)", () => {
   it("passes through non-null values unchanged", () => {
     expect(dollarOrNull(48200000)).toBe(48200000);
   });
@@ -99,7 +99,7 @@ describe("getFinancialsByInstitution - stored financial values", () => {
     expect(result).toHaveLength(1);
     const r = result[0];
 
-    // Dollar columns pass through unchanged (DB stores whole dollars)
+    // Dollar columns pass through unchanged (FDIC/NCUA readers preserve stored thousands)
     expect(r.total_assets).toBe(500000);
     expect(r.total_deposits).toBe(400000);
     expect(r.total_loans).toBe(300000);
@@ -236,12 +236,12 @@ describe("getFinancialsByInstitution - stored financial values", () => {
 
 // ── getRevenueIndexByDate ─────────────────────────────────────────────────────
 
-describe("getRevenueIndexByDate - thousands scaling", () => {
+describe("getRevenueIndexByDate - stored-unit contract", () => {
   beforeEach(() => {
     resetMock(getMock());
   });
 
-  it("multiplies avg_service_charge by 1000", async () => {
+  it("preserves the average service-charge unit", async () => {
     // Mock returns rows with service_charge_income in thousands
     const dbRows = [
       { fee_income_ratio: 0.04, service_charge_income: 1200 },
@@ -254,7 +254,7 @@ describe("getRevenueIndexByDate - thousands scaling", () => {
 
     const result = await getRevenueIndexByDate();
     expect(result).not.toBeNull();
-    // Average of 1200 and 1800 = 1500 (DB stores whole dollars, no multiplication)
+    // Average of 1200 and 1800 = 1500 (FDIC/NCUA readers preserve stored thousands, no multiplication)
     expect(result!.avg_service_charge).toBe(1500);
   });
 
