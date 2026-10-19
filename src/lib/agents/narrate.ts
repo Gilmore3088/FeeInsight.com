@@ -1,4 +1,5 @@
 import { isMarketingStep, type AdminAgent } from "./types";
+import { recheckReceiptNote } from "./darwin/verified-recheck-receipt";
 
 /**
  * Turns run-ledger events into one plain-English sentence each, for the crew
@@ -147,11 +148,12 @@ function narrateFinished(
     case "classify":
     case "verify": {
       const processed = n(detail, "processed_raw_fees");
-      if (processed === 0) return `Had no new fees to check ${scope}.`;
+      const recheck = recheckReceiptNote(detail.recheck);
+      if (processed === 0) return `Had no new fees to check ${scope}.${recheck}`;
       return `Verified ${count(n(detail, "verified_fee_observations"), "fee")} of ${processed.toLocaleString("en-US")} checked ${scope}${joinParts([
         n(detail, "verified_free_fees") > 0 && `${n(detail, "verified_free_fees")} of them free ($0)`,
         n(detail, "skipped_raw_fees") > 0 && `${n(detail, "skipped_raw_fees")} not verified`,
-      ])}.`;
+      ])}.${recheck}`;
     }
     case "publish":
     case "publish-index":
