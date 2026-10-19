@@ -1282,11 +1282,13 @@ fees every fucking day", "I gave you four live batches of data yesterday. How is
 enough?", then "I'm happy to do a live batch of a hundred every week, but I don't wanna then be asked
 to do ten more." At 03:52 he asked for whatever size is statistically sound, sampled across areas,
 sizes and institutions; at 03:53 he rejected a few fees per institution ("We have fifty fees that
-we track"). His only recurring check is a weekly Claude in Chrome live batch of 10 whole
-institutions: every published fee on each page against the bank's own current schedule, plus any of
-the 50 tracked categories on the schedule but missing from the page. The 10 rotate across big banks,
-community banks and credit unions and the four Census regions (about 150 fees a week, roughly +/-10
-points because errors cluster by institution; a pooled month is 40 institutions, about 600 fees).
+we track"), and at 03:54 he set the size at 50 institutions a week. His only recurring check is a
+weekly Claude in Chrome live batch of 50 whole institutions, run as five prompts of 10: every
+published fee on each page against the bank's own current schedule, plus any of the 50 tracked
+categories on the schedule but missing from the page. The 50 are a fresh random draw each week
+across big banks, community banks and credit unions and the four Census regions (about 750 fees,
+roughly +/-3-4 points at 65% accuracy). The data quality lane supplies the draw and takes every miss
+with its error type; James sees the score, not the misses.
 That batch is the accuracy measurement against the 99.5% target, and the data
 quality lane works from what it finds. No lane asks him to confirm answer
 keys, press Confirm on rows, or check more fees by hand on top of it. A person's bank-level Confirm
