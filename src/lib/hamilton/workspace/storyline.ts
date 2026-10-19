@@ -42,7 +42,7 @@ export const MIN_STORY_EXHIBITS = 3;
 export const MAX_STORY_EXHIBITS = 5;
 /** Rows a structure matrix shows after the bank's own. */
 const MAX_MATRIX_ROWS = 12;
-/** Most rows a table carries; the page shows the first MAX_MATRIX_ROWS and folds the rest under "Show all" (#2036). */
+/** Most rows a table carries; the page shows the first MAX_MATRIX_ROWS and folds the rest under "Show N more" (#2036). */
 export const MAX_LISTED_ROWS = 100;
 /** Names an archetype lists. */
 const MAX_ARCHETYPE_NAMES = 5;
@@ -237,18 +237,19 @@ function competitorItem(p: LocalCompetitor) {
   return { name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) };
 }
 
-/** The chart shows the largest by local deposits; the rest fold under "Show all" (#2036). */
+/** The chart shows the largest by local deposits; the rest fold under "Show N more" (#2036). */
 export function largestNote(total: number, shown: number, listed: number): string {
-  const others = listed - shown;
   const unlisted = total - listed;
-  return `The ${shown} largest by local deposits are charted; Show all lists the other ${others}.${unlisted > 0 ? ` ${unlisted} more are not listed.` : ""}`;
+  return unlisted > 0
+    ? `Charted: the ${shown} largest by local deposits; ${listed - shown} more listed, of ${total}.`
+    : `Charted: the ${shown} largest by local deposits.`;
 }
 
 function localPiece(research: FeeResearch, name: string): Piece | null {
   const list = research.localCompetitors ?? [];
   if (list.length === 0) return null;
   const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
-  // The rest stay listable under "Show all" (#2036), lowest fee first like the chart.
+  // The rest stay listable under "Show N more" (#2036), lowest fee first like the chart.
   const rest = list.slice(MAX_MATRIX_ROWS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount);
   // The title counts every local competitor, as the market lens does, so the exhibit's line and
   // the memo never give two different counts; the chart shows the largest and its note says so.

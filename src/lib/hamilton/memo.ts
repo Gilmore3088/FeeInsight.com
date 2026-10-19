@@ -26,6 +26,8 @@ import type { HamiltonIdentitySnapshot } from "./account-context";
 const MAX_TOKENS = 4_000;
 const REQUEST_TIMEOUT_MS = 90_000;
 const MAX_ATTEMPTS = 2;
+/** Institution rows a table gives the memo: the institution and the 12 the page shows first. */
+const MEMO_MATRIX_ROWS = 13;
 /** The Ask memo's own line in provider spend and its own budget row (#1080, #1125). */
 export const MEMO_ROUTE_ID = "api.hamilton.ask.memo";
 
@@ -77,7 +79,7 @@ function withoutPayloadName(text: string): string {
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
 const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
 /** A sentence that points back instead of naming its subject: "That one is Bank of America at $10." (#2036) */
-const POINTING_OPENER = /(?:^|[.!?]\s+)((?:That|This) ones?\b|(?:Those|These) (?:are|were|charge|include|sit)\b)[^.!?]{0,40}/;
+const POINTING_OPENER = /(?:^|[.!?]["')\]]*\s+|;\s+)((?:[Tt]hat|[Tt]his) ones?\b(?!-)|(?:Those|These) (?:are|were|charge|include|sit)\b)[^.!?\n]{0,40}/m;
 /** An opening sentence that leads with what the data lacks. */
 const LIMIT_OPENING = /^(?:the data|DATA|hamilton|we|this (?:data|index))\b[^.]{0,40}\b(?:cannot|can't|does not|doesn't|has no|holds no|lacks)\b/i;
 
@@ -92,11 +94,31 @@ function ownFeeMissing(payload: unknown): boolean {
 }
 
 /** Everything the model may draw on: the storyline, plus every figure its sentences state. */
+/** Rows folded under "Show N more" stay on the page, not in the memo's prompt (#2036). */
+function memoStoryline(storyline: Storyline): Storyline {
+  return {
+    ...storyline,
+    exhibits: storyline.exhibits.map((e) => {
+      const x = e.exhibit;
+      if (x.kind === "competitor_range" && x.rest) {
+        const kept = { ...x };
+        delete kept.rest;
+        return { ...e, exhibit: kept };
+      }
+      if (x.kind === "structure_matrix" && x.rows.some((r) => r.own) && x.rows.length > MEMO_MATRIX_ROWS) {
+        return { ...e, exhibit: { ...x, rows: [...x.rows.filter((r) => r.own), ...x.rows.filter((r) => !r.own).slice(0, MEMO_MATRIX_ROWS - 1)] } };
+      }
+      return e;
+    }),
+  };
+}
+
 export function memoPayload(
   storyline: Storyline,
   factEvidence?: HamiltonEvidenceBundle | null,
   identityContext?: HamiltonIdentitySnapshot,
 ): Record<string, unknown> {
+  storyline = memoStoryline(storyline);
   const text = JSON.stringify(storyline);
   const figures = extractFigures(text);
   return {
@@ -211,7 +233,7 @@ export function memoProblems(draft: MemoDraft, payload: unknown, question?: stri
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
   if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. No price for its fee is in the index; say it as DATA's claims word it.`);
   const pointing = all.match(POINTING_OPENER);
-  if (pointing) problems.push(`"${pointing[0].replace(/^[.!?]?\s*/, "")}" points back at an earlier sentence. Name the institution or fee instead.`);
+  if (pointing) problems.push(`"${pointing[0].replace(/^[.!?;"')\]]*\s*/, "")}" points back at an earlier sentence. Name the institution or fee instead.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;

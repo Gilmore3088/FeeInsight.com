@@ -582,7 +582,7 @@ export type Exhibit =
       items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
-      /** The competitors beyond the charted largest, lowest fee first; the page lists them under "Show all" (#2036). */
+      /** The competitors beyond the charted largest, lowest fee first; the page lists them under "Show N more" (#2036). */
       rest?: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       sources: SourceRef[];
       note?: string;

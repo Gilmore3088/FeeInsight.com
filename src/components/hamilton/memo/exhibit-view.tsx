@@ -278,7 +278,7 @@ const RANGE_COLS = "grid-cols-[minmax(0,7.5rem)_1fr_3rem] sm:grid-cols-[minmax(0
 type RangeItem = Extract<ExhibitSpec, { kind: "competitor_range" }>["items"][number];
 
 function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_range" }> }) {
-  // The charted largest plus the rest under "Show all" (#2036) share one axis and one legend.
+  // The charted largest plus the rest under "Show N more" (#2036) share one axis and one legend.
   const all = [...x.items, ...(x.rest ?? [])];
   const axis = axisFor([...all.flatMap((i) => (i.several ? [i.several.low, i.several.high] : [i.amount])), ...(x.own != null ? [x.own] : [])]);
   // Local deposits (FDIC Summary of Deposits) size each competitor in the market, when the engine carries them.
@@ -342,7 +342,7 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
       ) : null}
       {x.items.map(row)}
       {x.rest && x.rest.length > 0 ? (
-        <More label={`Show all ${(x.items.length + x.rest.length).toLocaleString("en-US")}`}>
+        <More label={`Show ${x.rest.length.toLocaleString("en-US")} more`}>
           <div className="flex flex-col gap-1.5">{x.rest.map(row)}</div>
         </More>
       ) : null}

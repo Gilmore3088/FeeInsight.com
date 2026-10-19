@@ -124,10 +124,10 @@ describe("every row is listable (#2036)", () => {
     const rows = [{ name: "Subject CU", cells: ["$30"], own: true }, ...Array.from({ length: 14 }, (_, i) => ({ name: `Local ${i + 1}`, cells: ["$35"] }))];
     const item: StoryExhibit = { id: "structure", actionTitle: "Of 14 local competitors: 1 charge an NSF fee.", exhibit: { kind: "structure_matrix", title: "t", columns: ["Overdraft fee"], rows, sources: [] } };
     const html = renderToStaticMarkup(<StoryExhibitView item={item} number={4} />);
-    expect(html).toContain("Show all 14");
+    expect(html).toContain("Show 2 more");
     expect(html).toContain("Local 14");
-    expect(html.indexOf("Local 12")).toBeLessThan(html.indexOf("Show all 14"));
-    expect(html.indexOf("Local 13")).toBeGreaterThan(html.indexOf("Show all 14"));
+    expect(html.indexOf("Local 12")).toBeLessThan(html.indexOf("Show 2 more"));
+    expect(html.indexOf("Local 13")).toBeGreaterThan(html.indexOf("Show 2 more"));
   });
 
   it("lists the competitors beyond the charted largest under Show all", () => {
@@ -137,8 +137,17 @@ describe("every row is listable (#2036)", () => {
       exhibit: { kind: "competitor_range", title: "t", unit: "dollars", own: 30, ownLabel: "Subject CU", items: [{ name: "Big", amount: 35, url: null }], rest: [{ name: "Small A", amount: 10, url: null }, { name: "Small B", amount: 40, url: null }], sources: [] },
     };
     const html = renderToStaticMarkup(<StoryExhibitView item={item} number={4} />);
-    expect(html).toContain("Show all 3");
-    expect(html.indexOf("Small A")).toBeGreaterThan(html.indexOf("Show all 3"));
+    expect(html).toContain("Show 2 more");
+    expect(html.indexOf("Small A")).toBeGreaterThan(html.indexOf("Show 2 more"));
     expect(html).toContain("Charges less");
+  });
+
+  it("never folds a table with no institution row, such as every fee against its median", () => {
+    const rows = Array.from({ length: 20 }, (_, i) => ({ name: `Fee ${i + 1}`, cells: ["$5"] }));
+    const item: StoryExhibit = { id: "schedule-overview", actionTitle: "Every fee", exhibit: { kind: "structure_matrix", title: "t", columns: ["Median"], rows, sources: [] } };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={1} />);
+    expect(html).not.toContain("more</summary>");
+    expect(html).not.toMatch(/Show \d+ more/);
+    expect(html).toContain("Fee 20");
   });
 });

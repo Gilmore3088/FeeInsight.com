@@ -15,8 +15,8 @@ const th = ANSWER_TYPE.th;
 
 type MatrixRow = Extract<StoryExhibit["exhibit"], { kind: "structure_matrix" }>["rows"][number];
 
-/** Rows a matrix shows before the rest fold under "Show all" (#2036): the institution and 12 others. */
-const MATRIX_SHOWN = 13;
+/** Other institutions a matrix shows beside the institution before the rest fold under "Show N more" (#2036). */
+const MATRIX_SHOWN = 12;
 
 function MatrixRows({ columns, rows }: { columns: string[]; rows: MatrixRow[] }) {
   return (
@@ -152,6 +152,12 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     );
   }
   if (x.kind === "structure_matrix") {
+    // Only an institution table folds: the institution and 12 others, the rest under "Show N more" (#2036).
+    const own = x.rows.filter((r) => r.own);
+    const others = x.rows.filter((r) => !r.own);
+    const fold = own.length > 0 && others.length > MATRIX_SHOWN;
+    const shown = fold ? [...own, ...others.slice(0, MATRIX_SHOWN)] : x.rows;
+    const folded = fold ? others.slice(MATRIX_SHOWN) : [];
     // The income split carries its numbers (engine 1.12.1), so it is drawn rather than tabled.
     const split = item.id === "income-split" ? incomeSplitOf(x) : null;
     if (split) {
@@ -166,11 +172,11 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     }
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
-        <MatrixRows columns={x.columns} rows={x.rows.slice(0, MATRIX_SHOWN)} />
-        {x.rows.length > MATRIX_SHOWN ? (
+        <MatrixRows columns={x.columns} rows={shown} />
+        {folded.length > 0 ? (
           <div className="mt-2">
-            <More label={`Show all ${(x.rows.filter((r) => !r.own).length).toLocaleString("en-US")}`}>
-              <MatrixRows columns={x.columns} rows={x.rows.slice(MATRIX_SHOWN)} />
+            <More label={`Show ${folded.length.toLocaleString("en-US")} more`}>
+              <MatrixRows columns={x.columns} rows={folded} />
             </More>
           </div>
         ) : null}

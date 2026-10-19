@@ -84,9 +84,14 @@ describe("storyline", () => {
     const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
     expect(local.actionTitle).toBe("9 of 16 competitors in your market charge less than your $3; their range is $1 to $4.");
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.items.length).toBe(12);
-    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("The 12 largest by local deposits are charted; Show all lists the other 4.");
+    expect(local.exhibit.kind === "competitor_range" && local.exhibit.note).toBe("Charted: the 12 largest by local deposits.");
     // Every competitor counted stays listable (#2036): the four smallest, lowest fee first.
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.rest?.map((r) => r.name)).toEqual(["Rival 13", "Rival 14", "Rival 15", "Rival 16"]);
+    // Past the 100-row cap the note names the total and stays within a note's 16 words.
+    const many = Array.from({ length: 120 }, (_, i) => ({ ...template, institutionId: 600 + i, institutionName: `Rival ${i + 1}`, amount: 2 + (i % 5) }));
+    const big = buildFeeAnswer({ ...base, current: 3, localCompetitors: many }).storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.note).toBe("Charted: the 12 largest by local deposits; 88 more listed, of 120.");
+    expect(big.exhibit.kind === "competitor_range" && big.exhibit.rest?.length).toBe(88);
     expect(local.exhibit.kind === "competitor_range" && local.exhibit.allAmounts?.length).toBe(16);
     const lens = answer.storyline!.exhibits.flatMap((e) => [e.actionTitle, e.takeaway?.text ?? ""]).join(" ")
       + " " + JSON.stringify(answer);

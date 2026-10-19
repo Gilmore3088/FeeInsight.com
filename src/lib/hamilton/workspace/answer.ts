@@ -281,11 +281,11 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
   if (list.length === 0) return null;
   const item = (p: (typeof list)[number]) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) });
   const items = list.slice(0, MAX_COMPETITORS).sort((a, b) => a.amount - b.amount).map(item);
-  // Every competitor counted stays listable under "Show all" (#2036).
+  // Every competitor counted stays listable under "Show N more" (#2036).
   const rest = list.slice(MAX_COMPETITORS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount).map(item);
   return {
     kind: "competitor_range",
-    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${items.length} institutions in ${subjectPossessive(research, false)} market`,
+    title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${list.length} institutions in ${subjectPossessive(research, false)} market`,
     unit: "dollars",
     own: research.current,
     ownLabel: research.institutionName,
