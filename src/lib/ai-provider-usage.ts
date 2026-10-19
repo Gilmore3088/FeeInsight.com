@@ -1,4 +1,5 @@
 import { sql } from "./data-store/connection";
+import { IncompleteProviderResponseError } from "./ai-response-budget";
 import { anthropicPriceFor } from "@/lib/ai-provider";
 import {
   assertAutomationEnabled,
@@ -26,6 +27,24 @@ export interface ProviderUsage {
   cacheCreationInputTokens?: number;
   /** Server web searches the response ran; billed per search on top of tokens. */
   webSearchRequests?: number;
+}
+
+/** Missing SDK totals are unknown; do not turn mapper defaults into observed zero. */
+export function observedProviderUsage(value: unknown): ProviderUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const usage = value as Record<string, unknown>;
+  const input = usage.input_tokens ?? usage.inputTokens;
+  const output = usage.output_tokens ?? usage.outputTokens;
+  if (typeof input !== "number" || !Number.isSafeInteger(input) || input < 0
+      || typeof output !== "number" || !Number.isSafeInteger(output) || output < 0) return undefined;
+  const details = usage.inputTokenDetails as { noCacheTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } | undefined;
+  const read = nonNegative(usage.cache_read_input_tokens ?? details?.cacheReadTokens);
+  const write = nonNegative(usage.cache_creation_input_tokens ?? details?.cacheWriteTokens);
+  return {
+    inputTokens: nonNegative(usage.input_tokens ?? details?.noCacheTokens ?? Math.max(0, input - read - write)),
+    outputTokens: nonNegative(output), cacheReadInputTokens: read, cacheCreationInputTokens: write,
+    webSearchRequests: nonNegative((usage.server_tool_use as { web_search_requests?: number } | undefined)?.web_search_requests),
+  };
 }
 
 /** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
@@ -193,9 +212,9 @@ export async function recordProviderUsage(
   context: ProviderCallContext,
   status: ProviderStatus,
   usage: ProviderUsage = {},
-  options: { latencyMs?: number; error?: string } = {},
+  options: { latencyMs?: number; error?: string; usageObservation?: "observed" | "unknown" } = {},
 ): Promise<void> {
-  const estimatedCost = context.provider === "anthropic"
+  const estimatedCost = options.usageObservation === "unknown" ? null : context.provider === "anthropic"
     ? estimateAnthropicCostMicrousd(context.model, usage)
     : null;
   try {
@@ -217,6 +236,11 @@ export async function recordProviderUsage(
          ${options.error?.slice(0, 1000) ?? null},
          ${JSON.stringify({
            ...(context.metadata ?? {}),
+           ...(options.usageObservation ? {
+             usage_observation: options.usageObservation,
+             response_complete: status === "completed",
+             ...(options.usageObservation === "unknown" ? { token_counts_are_placeholders: true } : {}),
+           } : {}),
            route_id: context.routeId ?? null,
            budget_policy_id: context.budgetPolicyId ?? null,
            user_id: context.userId ?? null,
@@ -293,9 +317,11 @@ export async function trackAnthropicRequest<T>(
     return response;
   } catch (error) {
     const message = providerErrorMessage(error);
-    await recordProviderUsage(fullContext, "failed", {}, {
+    const observed = error instanceof IncompleteProviderResponseError ? error.observedUsage : undefined;
+    await recordProviderUsage(fullContext, "failed", observed ?? {}, {
       latencyMs: Date.now() - startedAt,
       error: message,
+      usageObservation: observed ? "observed" : "unknown",
     });
     throw error;
   }

@@ -1,3 +1,4 @@
+import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish, requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 /**
  * POST /api/hamilton/chat
@@ -12,8 +13,8 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
  * Tool loop cap: stepCountIs(10) (T-17-03)
  */
 
-import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
-import { guardProviderCall, recordProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { streamText, convertToModelMessages, stepCountIs, createUIMessageStreamResponse, type UIMessage } from "ai";
+import { guardProviderCall, recordProviderUsage, observedProviderUsage, type ProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import {
   getAnthropicLanguageModel,
   getHamiltonModel,
@@ -148,15 +149,39 @@ async function handlePOST(request: Request) {
   }
 
   let providerFailed = false;
+  let failureRecorded = false;
+  let terminalFailure: unknown;
+  let failureUsage: ProviderUsage | undefined;
+  const scope = new ProviderResponseOperation({ timeoutMs: AI_PROVIDER_TIMEOUT_MS });
+  const failProvider = async (error: unknown, observed?: ProviderUsage) => {
+    scope.dispose();
+    if (observed) failureUsage = observed;
+    if (!providerFailed) terminalFailure = error;
+    providerFailed = true;
+  };
+  const flushProviderFailure = async () => {
+    if (!providerFailed || failureRecorded) return;
+    failureRecorded = true;
+    const failure = scope.error ?? terminalFailure;
+    await recordProviderUsage(providerContext, "failed", failureUsage ?? {}, {
+      latencyMs: Date.now() - providerStartedAt, error: failure instanceof Error ? failure.message : String(failure),
+      usageObservation: failureUsage ? "observed" : "unknown",
+    });
+  };
   try {
     const result = streamText({
-      model: getAnthropicLanguageModel(HAMILTON_MODEL, "hamilton"),
+      model: getAnthropicLanguageModel(HAMILTON_MODEL, "hamilton", scope),
+      abortSignal: scope.signal,
       system: systemPrompt,
       messages: await convertToModelMessages(messages),
       tools: buildHamiltonTools(),
       maxOutputTokens: 3000,
       stopWhen: stepCountIs(10),
-      onFinish: async ({ totalUsage: usage, text }) => {
+      onFinish: async ({ totalUsage: usage, text, finishReason }) => {
+        if (providerFailed) { await failProvider(terminalFailure, observedProviderUsage(usage)); return; }
+        try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
+        catch (error) { await failProvider(error, observedProviderUsage(usage)); return; }
+        scope.dispose();
         try {
           const inputTokens = usage?.inputTokens ?? 0;
           const outputTokens = usage?.outputTokens ?? 0;
@@ -194,24 +219,19 @@ async function handlePOST(request: Request) {
           // Non-critical — don't fail the stream
         }
       },
-      onError: async ({ error }) => {
-        providerFailed = true;
-        await recordProviderUsage(providerContext, "failed", {}, {
-          latencyMs: Date.now() - providerStartedAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      },
+      onAbort: async () => { scope.abort("cancelled"); await failProvider(scope.error); },
+      onError: async ({ error }) => { await failProvider(error); },
     });
 
-    return result.toUIMessageStreamResponse();
+    // Drain the SDK observer to retain terminal usage; outgoing cancellation still aborts this scope.
+    const observeFailure = (error: unknown) => { void failProvider(error); };
+    // consumeStream swallows reader failures unless its public onError observer is supplied.
+    void Promise.resolve(result.consumeStream({ onError: observeFailure })).catch(observeFailure).finally(async () => { scope.dispose(); await flushProviderFailure(); });
+    return scope.wrapOutgoingResponse(createUIMessageStreamResponse({ stream: requireCompletedProviderUIStream(result.toUIMessageStream()) }), () => failProvider(scope.error));
   } catch (err) {
-    if (!providerFailed) {
-      providerFailed = true;
-      await recordProviderUsage(providerContext, "failed", {}, {
-        latencyMs: Date.now() - providerStartedAt,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    await failProvider(err);
+    await flushProviderFailure();
+
     const message = err instanceof Error ? err.message : "An unexpected error occurred";
     const stack = err instanceof Error ? err.stack : "";
     console.error("[hamilton/chat] Error:", message, "\nStack:", stack);

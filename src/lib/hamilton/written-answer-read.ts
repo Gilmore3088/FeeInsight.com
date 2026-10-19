@@ -7,9 +7,11 @@
  * the tool outputs the model saw, and no line tells the bank what to do. Server only.
  */
 
+import { assertCompletedProviderFinish, withProviderResponseOperation } from "@/lib/ai-response-budget";
+
 import { generateText, convertToModelMessages, stepCountIs, type UIMessage } from "ai";
 import { getAnthropicLanguageModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, observedProviderUsage } from "@/lib/ai-provider-usage";
 import { getHamilton, buildAnalyzeModeSuffix, buildMonitorModeSuffix, buildSavedPeerSetPrompt, type AgentConfig } from "@/lib/research/agents";
 import { detectSkill, buildSkillInjection, buildSkillExecution, isSkillOptIn, findOfferedSkill } from "@/lib/research/skills";
 import { cacheLatestMessage, cachedSystem, trackerUsage } from "@/lib/research/tool-output";
@@ -166,20 +168,21 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
         ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
         metadata: { institution_id: institutionId },
       },
-      async () => {
+      () => withProviderResponseOperation(WRITTEN_ANSWER_TIMEOUT_MS, async (scope) => {
         const generated = await generateText({
-          model: getAnthropicLanguageModel(agent.model, "hamilton"),
+          model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
           system: cachedSystem(prompt.systemPrompt),
           messages: await convertToModelMessages(contract.messages),
           prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
           tools: agent.tools,
           maxOutputTokens: agent.maxTokens,
           stopWhen: stepCountIs(agent.maxSteps),
-          abortSignal: AbortSignal.timeout(WRITTEN_ANSWER_TIMEOUT_MS),
+          abortSignal: scope.signal,
         });
+        assertCompletedProviderFinish(generated.finishReason, observedProviderUsage(generated.totalUsage));
         // The ledger records `usage`: every step's tokens and the cache reads and writes, not the last step's alone.
         return { generated, usage: trackerUsage(generated.totalUsage) };
-      },
+      }),
     );
     const text = (result.generated.text ?? "").trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };

@@ -17,6 +17,8 @@
  * Per T-37-01: thesis fields are Hamilton-internal, not user-controlled — no sanitization needed.
  */
 
+import { RAW_PROVIDER_TIMEOUT_MS, withRawProviderResponseOperation } from "@/lib/ai-response-budget";
+
 import {
   extractAnthropicText,
   getAnthropicMessagesClient,
@@ -154,7 +156,6 @@ export async function runEditorReview(
   sections: ValidatedSection[],
   thesis: ThesisOutput | null = null,
 ): Promise<EditorReviewResult> {
-  const client = getAnthropicMessagesClient("Hamilton editor review", "hamilton");
   const userMessage = buildUserMessage(sections, thesis);
 
   const response = await trackAnthropicRequest(
@@ -164,11 +165,14 @@ export async function runEditorReview(
       operation: "review_report_draft",
       routeId: "api.reports.generate",
     },
-    () => client.messages.create({
-      model: EDITOR_MODEL,
-      max_tokens: MAX_TOKENS,
-      system: EDITOR_SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
+    () => withRawProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => {
+      const client = getAnthropicMessagesClient("Hamilton editor review", "hamilton", scope);
+      return (attempt) => client.messages.create({
+        model: EDITOR_MODEL,
+        max_tokens: MAX_TOKENS,
+        system: EDITOR_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      }, attempt);
     }),
   );
 

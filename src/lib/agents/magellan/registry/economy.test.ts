@@ -176,6 +176,32 @@ describe("urban-rural fill", () => {
 });
 
 describe("branch tracts", () => {
+  it("keeps good batch results when one historic branch has invalid coordinates", async () => {
+    const rows = [
+      {branch_kind:"bank",branch_key:"1:0",institution_id:1,address:"1 Main",city:"Dallas",state:"TX",zip:"75001",latitude:32,longitude:-97,address_hash:"h1",pending:3},
+      {branch_kind:"bank",branch_key:"2:0",institution_id:2,address:"2 Main",city:"Yap",state:"FM",zip:null,latitude:138.097,longitude:9.538,address_hash:"h2",pending:3},
+      {branch_kind:"bank",branch_key:"3:0",institution_id:3,address:"3 Main",city:"Dallas",state:"TX",zip:"75001",latitude:33,longitude:-97,address_hash:"h3",pending:3},
+    ];
+    let written: Array<Record<string,unknown>> = [];
+    const db = vi.fn((strings: TemplateStringsArray,...values:unknown[]) => {
+      const text = strings.join(" ");
+      if(text.includes("WITH bank AS")) return Promise.resolve(rows);
+      if(text.includes("INSERT INTO branch_census_tracts")) {
+        written=JSON.parse(values.find(v=>typeof v==="string" && v.startsWith("[")) as string);
+        return Promise.resolve(written.map(()=>({})));
+      }
+      return Promise.resolve([]);
+    }) as unknown as RegistryDb;
+    const fetchImpl = vi.fn(async(url:string) => url.includes("addressbatch")
+      ? new Response('0,"input",Match,Exact,"address","-97,32",1,L,48,113,010000,1000\n1,"input",No_Match\n2,"input",No_Match')
+      : new Response(JSON.stringify({result:{geographies:{"Census Tracts":[{GEOID:"48113020000"}]}}}))) as unknown as typeof fetch;
+    const r = await runRegistryEconomy({source:ECONOMY_SOURCES.branchTracts,partitionKey:"pending",runId:7,db,fetchOptions:{fetchImpl}});
+    expect(r.detail).toMatchObject({invalid_coordinates:1,point_lookups:1,remaining:0});
+    expect(written.map(x=>x.status)).toEqual(["matched","no_match","matched_coordinates"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(vi.mocked(fetchImpl).mock.calls)).not.toContain("y=138.097");
+  });
+
   it("dry run reports the pending count without calling the geocoder", async () => {
     const statements: string[] = [];
     const db = vi.fn((strings: unknown) => {

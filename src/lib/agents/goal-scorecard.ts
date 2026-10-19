@@ -221,6 +221,10 @@ export interface AnswerQuality {
   /** When the latest paid sample finished (ISO), the date the paid rates are for; null when none ran in the window. */
   paidAt?: string | null;
   timedOut: boolean;
+  institutionsAsked?: number | null;
+  institutionsPlanned?: number | null;
+  proQuestionsAsked?: number | null;
+  proQuestionsPlanned?: number | null;
   paths: AnswerPathQuality[];
 }
 
@@ -285,6 +289,10 @@ export function answerQualityFrom(
     at,
     paidAt: newestPaid,
     timedOut: detail.timedOut === true,
+    institutionsAsked: detail.institutions == null ? null : Number(detail.institutions),
+    institutionsPlanned: detail.planned == null ? null : Number(detail.planned),
+    proQuestionsAsked: pro?.questions == null ? null : Number(pro.questions),
+    proQuestionsPlanned: pro?.planned == null ? null : Number(pro.planned),
     paths: [
       path("free_ask", "Free Ask, standard questions", detail.answers, detail.passed, detail.correctness),
       ...(pro ? [path("pro_replay", "Free Ask, Pro readers' questions", pro.questions, pro.passed, pro.correctness)] : []),
@@ -1010,10 +1018,16 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
     const parts = measured.map((p) => `${p.label}${sampleDay(p)}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
     const unmeasured = q.paths.filter((p) => !p.measured).map((p) => p.label.replace(/ \(paid\)$/, "").toLowerCase());
     const paidAt = q.paidAt ? `; paid sample of ${q.paidAt.slice(0, 16).replace("T", " ")} UTC` : "";
+    const completeness = [
+      q.institutionsAsked != null && q.institutionsPlanned != null ? `${q.institutionsAsked} of ${q.institutionsPlanned} planned institutions asked` : null,
+      q.proQuestionsAsked != null && q.proQuestionsPlanned != null ? `${q.proQuestionsAsked} of ${q.proQuestionsPlanned} Pro questions replayed` : null,
+    ].filter(Boolean).join(", ");
+    const smallPaid = measured.some(p => PAID_ANSWER_PATHS.some(paid => paid.path === p.path) && (p.answers ?? 0) < 10)
+      ? " Paid paths with fewer than 10 answers are small samples, not reliability estimates." : "";
     const rest = unmeasured.length === PAID_ANSWER_PATHS.length
       ? " Paid paths not measured yet."
       : unmeasured.length > 0 ? ` Not measured yet: ${unmeasured.join(", ")}.` : "";
-    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}): ${parts.join("; ")}.${rest}`);
+    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}${completeness ? `; ${completeness}` : ""}): ${parts.join("; ")}.${rest}${smallPaid}`);
   }
   const d = goal.dataQuality;
   if (d) {

@@ -18,7 +18,8 @@ vi.mock("@/lib/ai-provider", () => ({
   hasAnthropicApiKey: mocks.hasKey,
   isProviderLimitError: (error: unknown) => error instanceof Error && error.message === "provider limit",
 }));
-vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: mocks.track }));
+vi.mock("@/lib/ai-provider-usage", async () => ({
+  observedProviderUsage: (await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage")).observedProviderUsage, trackAnthropicRequest: mocks.track }));
 vi.mock("@/lib/research/agents", () => ({
   getHamilton: async () => ({ systemPrompt: "Hamilton.", model: "test-model", tools: { t: {} }, maxTokens: 900, maxSteps: 4 }),
   buildAnalyzeModeSuffix: (focus: string) => ` ANALYZE ${focus}.`,
@@ -44,6 +45,7 @@ describe("writeWrittenAnswer, the paid eval's written answer (#1414)", () => {
   it("records every step's tokens and cache use, tags the call and checks the answer against its tools and question", async () => {
     mocks.generateText.mockResolvedValue({
       text: "At $40 the fee would sit above the $30 peer median.",
+      finishReason: "stop",
       steps: [{ toolResults: [{ toolName: "queryFeeData", output: { peer_median: 30 } }] }],
       totalUsage: { inputTokens: 900, outputTokens: 120, inputTokenDetails: { noCacheTokens: 300, cacheReadTokens: 500, cacheWriteTokens: 100 } },
     });
@@ -67,7 +69,7 @@ describe("writeWrittenAnswer, the paid eval's written answer (#1414)", () => {
   it("reports a missing key, an empty answer, a refused provider and a spent budget as unavailable", async () => {
     mocks.hasKey.mockReturnValueOnce(false);
     expect(await writeWrittenAnswer(input)).toEqual({ status: "unavailable", reason: "Hamilton's writer is not configured." });
-    mocks.generateText.mockResolvedValueOnce({ text: "  ", steps: [], totalUsage: {} });
+    mocks.generateText.mockResolvedValueOnce({ text: "  ", finishReason: "stop", steps: [], totalUsage: {} });
     expect(await writeWrittenAnswer(input)).toEqual({ status: "unavailable", reason: "Hamilton wrote no answer within its steps." });
     mocks.generateText.mockRejectedValueOnce(new Error("provider limit"));
     expect((await writeWrittenAnswer(input)).status).toBe("unavailable");

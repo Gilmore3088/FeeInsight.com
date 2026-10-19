@@ -32,7 +32,8 @@ unconfirmed, never guessed.
 
 Every table a source writes has a size budget in MB (`size-budgets.ts`): 7,000 for
 `institution_call_report_items` and 2,000 for `area_statistics` (about double their Oct 17, 2026
-sizes after the back-fill), and 1,000 for every other
+sizes after the back-fill), 1,600 for `institution_financial_records` (Oct 19 measured history,
+eight more quarters and 25% headroom; `docs/plans/financial-records-budget-2026-10-19.md`), and 1,000 for every other
 table until a measured size says otherwise. Atlas's daily storage step measures each one. While a
 table with its own budget is over it, the registry scheduler starts no partition for any source
 that writes it; a table over the unmeasured 1,000 MB default is only warned about, until a PR
@@ -196,3 +197,8 @@ and one run writes at most 1,000 changed rows (key partitions) or 60 institution
 one GLEIF call a second). Leftover work waits for the next run of the partition, an hour or two
 later; a register longer than 75 pages is walked over several runs (`detail.walk_resume`), and
 only a walk that read every page in one run may clear a link its key no longer finds.
+
+The source-health brief includes the newest nonblocked empty partition’s actual recorded reason
+when a source has loaded nothing. It bounds and redacts that evidence; holds and newer failures
+keep precedence. Missing legacy reasons remain unknown. A recorded parser/weight/URL problem
+must be repaired at its source, never replaced with guessed data to make the status fresh.

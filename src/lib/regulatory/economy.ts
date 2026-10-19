@@ -2,9 +2,10 @@ import { strFromU8, Unzip, UnzipInflate, unzipSync } from "fflate";
 import { FIPS_TO_STATE } from "@/lib/geo/state-fips";
 import { STATE_NAMES } from "@/lib/us-states";
 import { CensusKeyError } from "./census-acs";
+import { validCoordinates } from "./coordinates";
 import { toCensusCsv, type GeocodeInput } from "./census-geocoder";
 import { FDIC_API_BASE } from "./fdic";
-import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
+import { registryFetch, registryFetchJson, RegistryHttpError, redactRegistrySecrets, type RegistryFetchOptions } from "./http";
 import { checkValues, flaggedOnly, type KeyValueReport, type ValueCheckInput } from "./data-checks";
 import { parseCsv } from "./ncua";
 import { streamXlsxSheets } from "./xlsx-stream";
@@ -517,6 +518,7 @@ export function parsePointTract(body: unknown): string | null {
 }
 
 export async function placePointInTract(latitude: number, longitude: number, options: RegistryFetchOptions = {}): Promise<string | null> {
+  if (!validCoordinates(latitude, longitude)) return null;
   const params = new URLSearchParams({
     x: String(longitude),
     y: String(latitude),
@@ -872,28 +874,47 @@ export function beaUrl(key: string, line: number, geoFips: string, year: number)
   return `${BEA_API_URL}?${params.toString()}`;
 }
 
+interface BeaApiError {
+  APIErrorCode?: string | number;
+  APIErrorDescription?: string;
+  error?: string;
+  AdditionalDetails?: unknown;
+  ErrorDetail?: { Description?: string };
+}
+interface BeaResult {
+  Error?: BeaApiError | BeaApiError[];
+  Data?: Array<Record<string, unknown>>;
+}
 interface BeaResponse {
-  BEAAPI?: {
-    Error?: { APIErrorDescription?: string; ErrorDetail?: { Description?: string } };
-    Results?: {
-      Error?: { APIErrorDescription?: string; ErrorDetail?: { Description?: string } };
-      Data?: Array<Record<string, unknown>>;
-    };
-  };
+  BEAAPI?: { Error?: BeaApiError | BeaApiError[]; Results?: BeaResult | BeaResult[] };
+}
+
+function beaResults(body: unknown): BeaResult[] {
+  const results = (body as BeaResponse)?.BEAAPI?.Results;
+  return results ? Array.isArray(results) ? results : [results] : [];
 }
 
 export const BEA_FIELDS = ["GeoFips", "GeoName", "TimePeriod", "DataValue"] as const;
 
-/** BEA's error text, when the reply carries one. */
-export function beaError(body: unknown): string | null {
+/** BEA's official client documents both error locations, arrays and AdditionalDetails. */
+export function beaError(body: unknown, key?: string): string | null {
   const api = (body as BeaResponse)?.BEAAPI;
-  const err = api?.Error ?? api?.Results?.Error;
-  if (!err) return null;
-  return text(err.APIErrorDescription) ?? text(err.ErrorDetail?.Description) ?? "BEA returned an error";
+  const errors = [api?.Error, ...beaResults(body).map(result => result.Error)]
+    .flatMap(error => error ? Array.isArray(error) ? error : [error] : []);
+  if (errors.length === 0) return null;
+  const bounded = (value: unknown) => typeof value === "string" || typeof value === "number"
+    ? redactRegistrySecrets(key ? String(value).replaceAll(key, "***") : String(value)).replace(/\s+/g, " ").trim().slice(0, 500) : "";
+  return errors.slice(0, 5).map(error => {
+    const code = bounded(error.APIErrorCode);
+    const details = [...new Set([error.APIErrorDescription, error.error, error.ErrorDetail?.Description, error.AdditionalDetails]
+      .map(bounded).filter(Boolean))];
+    return `${code ? `code=${code}; ` : ""}${details.join("; ") || "BEA returned an error"}`;
+  }).join(" | ").slice(0, 2000);
 }
 
 export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeof BEA_LINES)[number], year: number): AreaFetch {
-  const data = (body as BeaResponse)?.BEAAPI?.Results?.Data;
+  const results = beaResults(body);
+  const data = results.length > 0 && results.every(result => Array.isArray(result.Data)) ? results.flatMap(result => result.Data!) : null;
   if (!Array.isArray(data)) return emptyFetch(null, beaError(body) ?? "BEA reply held no Data array");
   const missing = data.length > 0 ? BEA_FIELDS.filter((f) => !data.some((d) => f in d)) : [];
   const skipped: Record<string, number> = {};
@@ -941,13 +962,17 @@ export async function fetchBea(year: number, key: string, options: RegistryFetch
     for (const geo of BEA_GEOS) {
       const url = beaUrl(key, series.line, geo.geoFips, year);
       const body = await registryFetchJson<unknown>(url, options);
-      const error = beaError(body);
-      if (error && /user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(error);
-      if (error && /year|not available|no data/i.test(error)) {
+      const rawError = beaError(body, key);
+      const error = rawError ? redactRegistrySecrets(rawError.replaceAll(key, "***")) : null;
+      const context = `BEA Regional/CAINC1 year=${year} line=${series.line} GeoFips=${geo.geoFips}`;
+      if (error && /code=1(?:;|$)|user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(`${context}: ${error}`);
+      if (error && /no data|data.*not available/i.test(error)) {
         combined.missingFields.push(`${series.key} ${geo.geo_type}: ${error.slice(0, 120)}`);
         continue;
       }
-      if (error) throw new Error(`BEA: ${error}`);
+      if (error) throw new Error(`${context}: ${error}`);
+      const results = beaResults(body);
+      if (results.length === 0 || results.some(result => !Array.isArray(result.Data))) throw new Error(`${context}: missing Data array`);
       const parsed = parseBeaData(body, geo.geo_type, series, year);
       combined.url ??= url.replace(/UserID=[^&]+/, "UserID=***");
       combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation")));

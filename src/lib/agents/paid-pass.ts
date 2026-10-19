@@ -1,4 +1,5 @@
 import { getAnthropicMessagesClient, type Anthropic, type ProviderAgent } from "@/lib/ai-provider";
+import { RAW_PROVIDER_TIMEOUT_MS, withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 import type { sql } from "@/lib/data-store/connection";
 import { estimateAnthropicCostMicrousd, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD } from "@/lib/ai-provider-usage";
 
@@ -65,11 +66,13 @@ export async function paidModelCall({
   metadata?: Record<string, unknown>;
 }): Promise<PaidCallResult> {
   const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent);
-  const send: PaidMessageCreator = create ?? ((body) => getAnthropicMessagesClient(`${agent} ${operation}`, billTo).messages.create(body));
   const searchSettings = webSearchSettings(params.tools);
   const message = await trackAnthropicRequest(
     { model: params.model, agent, operation, agentRunId: runId, metadata: searchSettings ? { ...metadata, ...searchSettings } : metadata },
-    () => send(params),
+    () => withRawProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => {
+      const client = create ? null : getAnthropicMessagesClient(`${agent} ${operation}`, billTo, scope);
+      return (attempt) => create ? create(params) : client!.messages.create(params, attempt);
+    }),
   );
   return { message, costMicrousd: paidCallCostMicrousd(params.model, message) };
 }
