@@ -68,11 +68,20 @@ const ARCHETYPE_COUNT_TEXT: Record<ArchetypeKey, string> = {
   premium: "over $30",
 };
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * The pricing groups' printed rules: fixed definitions, not data, so the answer eval skips their
- * dollar edges ("$15.01" ties to no live fee). The $0 group is left out so a real $0 still counts.
+ * dollar edges ("$15.01" ties to no live fee). Only the printed forms match: the takeaway's
+ * "($15.01 to $30)" and the title's counted "11 at $15.01–$30", never a digit beyond the rule,
+ * so "up to $15.50" or "just over $30" in prose is still checked. The $0 group is left out.
  */
-export const ARCHETYPE_RULE_TEXTS: string[] = ARCHETYPES.filter((a) => a.key !== "zero_od").flatMap((a) => [`(${a.rule})`, ARCHETYPE_COUNT_TEXT[a.key]]);
+export const ARCHETYPE_RULE_PATTERN = new RegExp(
+  ARCHETYPES.filter((a) => a.key !== "zero_od")
+    .flatMap((a) => [escapeRegExp(`(${a.rule})`), `\\b\\d[\\d,]* ${escapeRegExp(ARCHETYPE_COUNT_TEXT[a.key])}(?![.,]?\\d)`])
+    .join("|"),
+  "g",
+);
 
 // ─── Small formatters ────────────────────────────────────────────────────────
 

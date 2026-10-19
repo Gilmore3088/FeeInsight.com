@@ -24,7 +24,7 @@
 import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
 import { countedAmounts, summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
 import { extractFigures } from "./figure-check";
-import { ARCHETYPE_RULE_TEXTS } from "./workspace/storyline";
+import { ARCHETYPE_RULE_PATTERN } from "./workspace/storyline";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
 
@@ -202,7 +202,7 @@ function around(text: string, index: number): string {
 
 /** The text with the pricing groups' rules blanked (same length, so indices still point into it). */
 function withoutGroupRules(text: string): string {
-  return ARCHETYPE_RULE_TEXTS.reduce((t, rule) => t.split(rule).join(" ".repeat(rule.length)), text);
+  return text.replace(ARCHETYPE_RULE_PATTERN, (rule) => " ".repeat(rule.length));
 }
 
 function tieText(text: string, anchors: number[], singles: number[], failures: string[]): CorrectnessResult {

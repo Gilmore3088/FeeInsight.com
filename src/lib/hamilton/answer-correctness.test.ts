@@ -168,6 +168,17 @@ describe("answer correctness", () => {
       expect(untied.failures).toEqual([expect.stringMatching(/^figures that tie to no live catalog value: \$15\.01 \(/)]);
     });
 
+    it.each([
+      ["Peers charge up to $15.50.", "$15.50"],
+      ["2 peers charge up to $150.", "$150"],
+      ["3 over $300 stand out.", "$300"],
+      ["The top fee is just over $30.33 here.", "$30.33"],
+    ])("still checks a fee that only starts like a group rule: %s", (text, figure) => {
+      const { r, response } = setup();
+      const result = reconcileMemoText({ question: q, response, research: r, live: liveFor(r), text });
+      expect(result.failures).toEqual([expect.stringContaining(`value: ${figure} (`)]);
+    });
+
     it("leaves the memo unchecked when the catalog could not be read", () => {
       const { r, response } = setup();
       expect(reconcileMemoText({ question: q, response, research: r, live: null, text: "$32" })).toEqual({ checked: false, figures: 0, failures: [] });

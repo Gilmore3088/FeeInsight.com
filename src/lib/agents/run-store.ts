@@ -356,7 +356,7 @@ async function executeAgenticStep(
     const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions}${result.pro.planned && result.pro.planned > result.pro.questions ? ` of ${result.pro.planned}` : ""} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }

@@ -372,6 +372,8 @@ export async function evaluateProQuestions(institutionId: number, questions: Pro
 
 export interface ProReplaySummary {
   questions: number;
+  /** Questions drawn for the replay; more than `questions` when the time budget ran out first. */
+  planned?: number;
   passed: number;
   /** Questions Hamilton still answers with a question of its own. */
   askedBack: number;
@@ -526,5 +528,5 @@ export async function runAnswerEval({
     done += batch.length;
   }
   const summary = { ...summarizeEval(results, done, timedOut, institutions.length), institutionIds: institutions.slice(0, done).map((i) => i.id) };
-  return proResults.length > 0 ? { ...summary, pro: summarizeProReplay(proResults) } : summary;
+  return proResults.length > 0 ? { ...summary, pro: { ...summarizeProReplay(proResults), planned: proQuestions.length } } : summary;
 }
