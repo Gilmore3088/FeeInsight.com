@@ -87,4 +87,54 @@ describe("createReadBudget", () => {
       process.off("unhandledRejection", unhandled);
     }
   });
+
+  it("never starts a lazy read after the shared deadline", async () => {
+    const retain = vi.fn(), start = vi.fn(async () => "late");
+    const budget = createReadBudget(100, "Test page", Date.now, retain);
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(budget.required(start, "institution")).rejects.toBeInstanceOf(ReadDeadlineError);
+    await expect(budget.optional(start, "footprint", "fallback")).resolves.toBe("fallback");
+    expect(start).not.toHaveBeenCalled();
+    expect(retain).not.toHaveBeenCalled();
+    expect(budget.failed()).toBe(true);
+  });
+
+  it("passes synchronous factory errors through and preserves optional fallback", async () => {
+    const error = new Error("read could not start"), retain = vi.fn();
+    const budget = createReadBudget(100, "Test page", Date.now, retain);
+    const start = () => { throw error; };
+    await expect(budget.required(start, "institution")).rejects.toBe(error);
+    await expect(budget.optional(start, "footprint", null)).resolves.toBeNull();
+    expect(retain).not.toHaveBeenCalled();
+  });
+
+  it("retains one shared pending task once while preserving both read outcomes", async () => {
+    const retain = vi.fn(), pending = hanging<string>();
+    const budget = createReadBudget(100, "Test page", Date.now, retain);
+    const required = budget.required(() => pending, "institution");
+    const requiredOutcome = expect(required).rejects.toBeInstanceOf(ReadDeadlineError);
+    const optional = budget.optional(pending, "footprint", "fallback");
+    await vi.advanceTimersByTimeAsync(100);
+    await requiredOutcome;
+    await expect(optional).resolves.toBe("fallback");
+    expect(retain).toHaveBeenCalledExactlyOnceWith(pending, "institution");
+  });
+
+  it("does not retain settled successes or failures", async () => {
+    const retain = vi.fn(), budget = createReadBudget(100, "Test page", Date.now, retain);
+    await expect(budget.required(() => Promise.resolve("ok"), "institution")).resolves.toBe("ok");
+    await expect(budget.optional(() => Promise.reject(new Error("failed")), "footprint", null)).resolves.toBeNull();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(retain).not.toHaveBeenCalled();
+  });
+
+  it("preserves the deadline when a retention adapter throws", async () => {
+    const retain = vi.fn(() => { throw new Error("outside request"); });
+    const budget = createReadBudget(100, "Test page", Date.now, retain);
+    const read = budget.optional(hanging<string>(), "footprint", "fallback");
+    await vi.advanceTimersByTimeAsync(100);
+    await expect(read).resolves.toBe("fallback");
+    expect(retain).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith("Test page footprint abandoned read retention failed:", expect.any(Error));
+  });
 });
