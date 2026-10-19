@@ -325,7 +325,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   AUDIENCE_RELABEL_VERSION: "Its own step reads every live unknown-audience fee on each run; nothing to replay.",
   // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
   // it works through are picked by the same query every publish step, so there is nothing to replay.
-  REFRESH_COPY_STRATEGY: "Writes the same refresh in place; the next publish steps pick up every stale fee as before.",
+  // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
+  // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
+  REFRESH_COPY_STRATEGY: "Refreshes matching-audience stale fees in place on normal publish steps. The audience safety restriction keeps v2 decisions closed; no historical correction or replay is queued.",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live

@@ -35,6 +35,9 @@ Knox owns conservative raw fee extraction.
   `20270110000040_fee_audience_integrity.sql`), so one document may hold the same name and price
   once per audience. A traced read that meets a row of the same key held as `unclassified` or
   `untraced` takes it over (`knox_promoted_from_held`); any other existing row is left as it is.
+  A same-row lineup enrichment after an insert conflict matches that audience too (#2108),
+  so a consumer, business, both or unknown row never fills another audience's account facts.
+  This restricts future enrichment only: extraction rules stay v81 and no old text is requeued.
 - One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
   `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
   a text. Each extract step also retires up to 2,000 unverified rows from older copies
