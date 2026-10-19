@@ -3465,15 +3465,15 @@ const DEFAULT_STEP_EXPECTED_MS = 120_000;
  * (`atlas.priority_institution`) reads one institution, so its steps are far shorter than a
  * state lane's; priced at lane p99s it waited 17-20 minutes per step (runs 8086 and 8104, Oct 17).
  * Re-measured over the 24 hours to 22:20 UTC 2026-10-17 (about p99, `agent_run_steps`): publish
- * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. Publish raised to 65 s on 2026-10-18:
- * the two Read-now publishes reaped that day (IA 44517, WA 44631) took 61 s and 58 s on retry,
- * and over the 24 hours to 23:55 UTC Read-now publishes ran p50 28 s, p90 64 s, p99 117 s
- * (16 of 89 over 55 s, 8 over 65 s). A state re-search run
+ * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. Publish re-priced to its p99, 120 s, on
+ * 2026-10-18 like every other step: over the 24 hours to 23:55 UTC Read-now publishes ran p50 28 s,
+ * p90 64 s, p99 117 s, max 127 s (16 of 89 over 55 s), and the two reaped that day (IA 44517,
+ * WA 44631) took 61 s and 58 s on retry. A state re-search run
  * (`atlas.priority_state_research`) ran no step in that window, so it keeps the lane's prices.
  * A step not listed here uses `STEP_EXPECTED_MS`.
  */
 const RUN_SOURCE_STEP_EXPECTED_MS: Record<string, Record<string, number>> = {
-  "atlas.priority_institution": { publish: 65_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
+  "atlas.priority_institution": { publish: 120_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
 };
 /**
  * A publish step's row loop stops this long after the step began (once it has decided

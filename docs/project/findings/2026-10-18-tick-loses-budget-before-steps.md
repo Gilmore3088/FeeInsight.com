@@ -26,7 +26,7 @@ The two slow queries, from `pg_stat_statements` since 2026-10-05:
   - It is priced at 200 s, its measured in-tick maximum.
   - Its step detail records each part's milliseconds.
   - A failed priority refresh still goes on the newest lane run's ledger (#1264), and on the step itself.
-- **Read-now publish price** (`RUN_SOURCE_STEP_EXPECTED_MS`) raised from 55 s to 65 s. The two reaped Read-now publishes took 61 s and 58 s on retry. Over the day, Read-now publishes ran p50 28 s, p90 64 s, p99 117 s.
+- **Read-now publish price** (`RUN_SOURCE_STEP_EXPECTED_MS`) raised from 55 s to 120 s, its p99, as every other step is priced. Over the day, Read-now publishes ran p50 28 s, p90 64 s, p99 117 s, max 127 s. The two reaped Read-now publishes took 61 s and 58 s on retry.
 
 **Replay (estimate, 2026-10-18 UTC):** with the sync out of the tick, each top-of-hour tick gets back its first-step delay less the 6 s baseline.
 - The 16 ticks over 60 s get back 57–194 s each; 8 of them get back 80 s or more.
