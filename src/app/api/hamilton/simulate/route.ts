@@ -191,7 +191,9 @@ async function handlePOST(request: Request) {
   });
 
   // Drain the SDK observer to retain terminal usage; outgoing cancellation still aborts this scope.
-  void Promise.resolve(result.consumeStream()).catch(failProvider).finally(async () => { scope.dispose(); await flushProviderFailure(); });
+  const observeFailure = (error: unknown) => { void failProvider(error); };
+  // consumeStream swallows reader failures unless its public onError observer is supplied.
+  void Promise.resolve(result.consumeStream({ onError: observeFailure })).catch(observeFailure).finally(async () => { scope.dispose(); await flushProviderFailure(); });
   return scope.wrapOutgoingResponse(result.toTextStreamResponse(), () => failProvider(scope.error), async () => {
     // The SDK text-only projection discards error/finish parts; reject its body instead of silent partial success.
     assertCompletedProviderFinish(await result.finishReason);

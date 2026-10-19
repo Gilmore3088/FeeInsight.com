@@ -466,10 +466,12 @@ async function handlePOST(request: Request) {
     });
 
     // Run to the end even if the reader's browser drops the stream, so onFinish saves the answer.
-    void Promise.resolve(result.consumeStream()).catch(async (error: unknown) => {
+    const observeFailure = (error: unknown) => {
       resolveVerdict(null); resolveSaved(null);
-      await failProvider(error);
-    }).finally(async () => { scope.dispose(); await flushProviderFailure(); });
+      void failProvider(error); // Captures synchronously; never waits for consumer/final accounting.
+    };
+    // The public observer is essential: consumeStream catches reader errors and otherwise resolves.
+    void Promise.resolve(result.consumeStream({ onError: observeFailure })).catch(observeFailure).finally(async () => { scope.dispose(); await flushProviderFailure(); });
 
     // The saved row's id follows the answer as message metadata, after the text has streamed.
     return createUIMessageStreamResponse({

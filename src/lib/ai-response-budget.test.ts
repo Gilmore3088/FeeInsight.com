@@ -147,11 +147,11 @@ it.each(["length", "content-filter", "tool-calls", "error", "other", undefined] 
   expect((await reader.read()).done).toBe(true); reader.releaseLock();
 });
 it("UI completion keeps ordinary stop/abort/error semantics and fails silent missing completion", async () => {
-  for (const [part, errorCount] of [[{ type: "finish", finishReason: "stop" }, 0], [{ type: "abort" }, 0], [{ type: "error", errorText: "fixture" }, 1], [undefined, 1]] as const) {
+  for (const [part, errorCount] of [[{ type: "finish", finishReason: "stop" }, 0], [{ type: "abort" }, 1], [{ type: "error", errorText: "fixture" }, 1], [undefined, 1]] as const) {
     const stream = new ReadableStream<import("ai").UIMessageChunk>({ start(c) { if (part) c.enqueue(part); c.close(); } });
     const reader = requireCompletedProviderUIStream(stream).getReader(); const output: Array<import("ai").UIMessageChunk> = [];
     while (true) { const next = await reader.read(); if (next.done) break; output.push(next.value); }
-    expect(output.filter(p => p.type === "error")).toHaveLength(errorCount); reader.releaseLock();
+    expect(output.filter(p => p.type === "error")).toHaveLength(errorCount); if (part) expect(output).toContainEqual(part); reader.releaseLock();
   }
 });
 

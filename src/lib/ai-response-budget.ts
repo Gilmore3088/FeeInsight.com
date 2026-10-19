@@ -40,6 +40,10 @@ export function requireCompletedProviderUIStream(stream: ReadableStream<UIMessag
   let terminated = false;
   return stream.pipeThrough(new TransformStream<UIMessageChunk, UIMessageChunk>({
     transform(part, controller) {
+      // A native abort chunk is not interpreted as isAbort by the installed Chat client.
+      if (part.type === "abort" && !terminated) {
+        controller.enqueue({ type: "error", errorText: new IncompleteProviderResponseError("abort").message });
+      }
       if (part.type === "error" || part.type === "abort") terminated = true;
       if (part.type === "finish") {
         if (part.finishReason !== "stop" && !terminated) {

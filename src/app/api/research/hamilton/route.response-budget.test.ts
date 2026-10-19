@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DefaultChatTransport, tool, type ChatInit, type UIMessage } from "ai";
+import { DefaultChatTransport, createUIMessageStreamResponse, tool, type ChatInit, type UIMessage } from "ai";
 import { Chat } from "@ai-sdk/react";
 import { act, cleanup, render } from "@testing-library/react";
 import { createElement } from "react";
@@ -50,6 +50,7 @@ vi.mock("@/lib/research/skills", () => ({
   detectSkill: () => null, buildSkillInjection: () => "", buildSkillExecution: () => "", isSkillOptIn: () => false, findOfferedSkill: () => null,
 }));
 import { POST } from "./route";
+import { requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { AnalyzeWorkspace } from "@/components/hamilton/analyze/AnalyzeWorkspace";
 const encoder = new TextEncoder();
 const text = "## Hamilton's View\nThe fee is $0.";
@@ -75,7 +76,7 @@ beforeEach(() => {
   mocks.save.mockResolvedValue("saved-fixture"); mocks.clientSave.mockResolvedValue({ id: "client-fallback" }); mocks.options.length = 0; mocks.execute.mockResolvedValue({ amount: 0 }); mocks.withTool = false;
   vi.stubEnv("ANTHROPIC_API_KEY", "fixture-shared"); vi.stubEnv("ANTHROPIC_API_KEY_HAMILTON", "fixture-own"); vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "");
 });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("actual research consumer, callbacks and ledger arguments", () => {
   it.each(["provider-error", "max_tokens", "refusal", "tool_use"])("settles held UI promises and records one failure for %s", async (reason) => {
@@ -156,4 +157,75 @@ it.each(["max_tokens", "refusal", "tool_use", "provider-error", "end_turn"])("ac
   expect(mocks.clientSave).not.toHaveBeenCalled();
   expect(mocks.save).toHaveBeenCalledTimes(reason === "end_turn" ? 1 : 0);
   await vi.waitFor(() => expect(inserts()).toHaveLength(1)); expect(receipt().status).toBe(reason === "end_turn" ? "completed" : "failed");
+});
+
+
+// An in-memory HTTP bridge must honor the client's fetch signal for a meaningful local Stop control.
+async function fetchResearch(_url: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await POST(new Request("https://fixture.invalid/api/research/hamilton", init));
+  const signal = init?.signal; if (!signal || !response.body) return response;
+  const reader = response.body.getReader(); let closed = false;
+  let output!: ReadableStreamDefaultController<Uint8Array>;
+  const cleanup = (cancel = false) => { signal.removeEventListener("abort", abort); if (cancel) void reader.cancel().catch(() => {}); reader.releaseLock(); };
+  const abort = () => { if (closed) return; closed = true; cleanup(true); output.error(signal.reason ?? new DOMException("Aborted", "AbortError")); };
+  return new Response(new ReadableStream<Uint8Array>({
+    start(c) { output = c; if (signal.aborted) abort(); else signal.addEventListener("abort", abort, { once: true }); },
+    async pull(c) { try { const next = await reader.read(); if (closed) return; if (next.done) { closed = true; cleanup(); c.close(); } else c.enqueue(next.value); }
+      catch (error) { if (closed) return; closed = true; cleanup(); c.error(error); } },
+    cancel() { if (!closed) { closed = true; cleanup(true); } },
+  }), { status: response.status, headers: response.headers });
+}
+function mountedClient(fetcher = fetchResearch) {
+  render(createElement(AnalyzeWorkspace, { userId: 7, institutionId: "202" }));
+  const callback = mocks.options.at(-1)!.onFinish!;
+  const terminal: Array<{ isError: boolean; isAbort: boolean }> = []; const settled: Array<Promise<void> | void> = [];
+  const client = new Chat({ transport: new DefaultChatTransport({ api: "https://fixture.invalid/api/research/hamilton", fetch: fetcher,
+    body: { mode: "analyze", institutionId: 202 } }),
+    onFinish: finish => { terminal.push(finish); settled.push(callback(finish)); }, onError: () => {} });
+  return { client, terminal, settled };
+}
+it.each(["oversized event", "byte idle"] as const)("actual %s abort settles held research UI/client/ledger and prevents fallback saving", async (kind) => {
+  if (kind === "byte idle") vi.useFakeTimers();
+  let body!: ReadableStreamDefaultController<Uint8Array>; const cancel = vi.fn();
+  const fetch = vi.fn(async () => new Response(new ReadableStream({ start(c) { body = c; c.enqueue(encoder.encode(parts().slice(0, 3).map(event).join(""))); }, cancel }),
+    { headers: { "content-type": "text/event-stream" } })); vi.stubGlobal("fetch", fetch);
+  const { client, terminal, settled } = mountedClient();
+  await act(async () => {
+    const pending = client.sendMessage({ text: "Is the fee $0?" });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    if (kind === "byte idle") await vi.advanceTimersByTimeAsync(60_000);
+    else { await new Promise(resolve => setTimeout(resolve, 0)); body.enqueue(encoder.encode(":" + "x".repeat(1024 * 1024))); }
+    await pending; await Promise.all(settled);
+  });
+  expect(terminal).toHaveLength(1); expect(terminal[0].isError || terminal[0].isAbort).toBe(true);
+  expect(mocks.clientSave).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
+  await vi.waitFor(() => expect(inserts()).toHaveLength(1));
+  expect(receipt()).toMatchObject({ status: "failed", cost: null, metadata: { response_complete: false, usage_observation: "unknown" } });
+  expect(cancel).toHaveBeenCalledOnce(); expect(fetch).toHaveBeenCalledOnce();
+  if (kind === "byte idle") expect(vi.getTimerCount()).toBe(0);
+});
+it("ordinary local Stop remains isAbort and cannot trigger Analyze's fallback; research stays detached", async () => {
+  let body!: ReadableStreamDefaultController<Uint8Array>; const cancel = vi.fn();
+  const fetch = vi.fn(async () => new Response(new ReadableStream({ start(c) { body = c; c.enqueue(encoder.encode(parts().slice(0, 3).map(event).join(""))); }, cancel }),
+    { headers: { "content-type": "text/event-stream" } })); vi.stubGlobal("fetch", fetch);
+  const { client, terminal, settled } = mountedClient();
+  await act(async () => { const pending = client.sendMessage({ text: "Is the fee $0?" });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce()); await client.stop(); await pending; await Promise.all(settled); });
+  expect(terminal).toHaveLength(1); expect(terminal[0]).toMatchObject({ isAbort: true, isError: false });
+  expect(mocks.clientSave).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+  body.enqueue(encoder.encode(parts().slice(3).map(event).join(""))); body.close();
+  await vi.waitFor(() => expect(inserts()).toHaveLength(1)); expect(receipt().status).toBe("completed");
+  expect(mocks.save).toHaveBeenCalledOnce(); expect(mocks.clientSave).not.toHaveBeenCalled(); expect(cancel).not.toHaveBeenCalled();
+});
+
+it("a native abort protocol remains unsuccessful for the actual Chat client and current Analyze fallback", async () => {
+  vi.stubGlobal("fetch", () => { throw new Error("Native protocol fixture forbids network/provider requests"); });
+  const chunks: Array<import("ai").UIMessageChunk> = [{ type: "start" }, { type: "text-start", id: "partial" },
+    { type: "text-delta", id: "partial", delta: text }, { type: "text-end", id: "partial" }, { type: "abort" }];
+  const { client, terminal, settled } = mountedClient(async () => createUIMessageStreamResponse({
+    stream: requireCompletedProviderUIStream(new ReadableStream({ start(c) { for (const part of chunks) c.enqueue(part); c.close(); } })),
+  }));
+  await act(async () => { await client.sendMessage({ text: "Is the fee $0?" }); await Promise.all(settled); });
+  expect(terminal).toHaveLength(1); expect(terminal[0]).toMatchObject({ isError: true, isAbort: false });
+  expect(mocks.clientSave).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled(); expect(inserts()).toHaveLength(0);
 });
