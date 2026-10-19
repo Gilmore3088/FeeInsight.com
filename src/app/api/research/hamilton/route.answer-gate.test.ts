@@ -36,7 +36,8 @@ vi.mock("@/lib/ai-provider", () => ({
   getAnthropicLanguageModel: () => ({}), hasAnthropicApiKey: () => true,
   isProviderLimitError: () => false, MISSING_ANTHROPIC_API_KEY_MESSAGE: "missing",
 }));
-vi.mock("@/lib/ai-provider-usage", () => ({
+vi.mock("@/lib/ai-provider-usage", async () => ({
+  observedProviderUsage: (await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage")).observedProviderUsage,
   ProviderBudgetBlockedError: class extends Error {}, ProviderCircuitOpenError: class extends Error {},
   guardProviderCall: async () => Date.now(), recordProviderUsage: mocks.usage, estimateAnthropicCostMicrousd: () => 0,
   trackAnthropicRequest: async (_context: unknown, call: () => Promise<unknown>) => call(),
@@ -82,11 +83,12 @@ const request = (text = "How does our overdraft fee compare?") => new Request("h
 function answers(text: string) {
   mocks.stream.mockImplementation((options) => ({
     consumeStream: async () => options.onFinish({
+      finishReason: "stop",
       totalUsage: { inputTokens: 1, outputTokens: 1 },
       text,
       steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }],
     }),
-    toUIMessageStream: () => ({ synthetic: "answer stream" }),
+    toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
   }));
 }
 
@@ -105,6 +107,22 @@ beforeEach(() => {
 });
 
 describe("written answer evidence gate", () => {
+  it.each(["error", "length", "content-filter", "tool-calls", "other"])("does not save a terminal %s stream as a completed answer", async (finishReason) => {
+    mocks.stream.mockImplementation((options) => ({
+      consumeStream: async () => {
+        if (finishReason === "error") await options.onError({ error: new Error("synthetic response failure") });
+        await options.onFinish({ totalUsage: { inputTokens: 1, outputTokens: 1 }, text: PASSING, finishReason,
+          steps: [{ toolResults: [{ output: TOOL_OUTPUT }] }] });
+      },
+      toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "error" }); c.close(); } }),
+    }));
+    await POST(request());
+    expect(mocks.save).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.usage.mock.calls.filter((call) => call[1] === "failed")).toHaveLength(1));
+    expect(mocks.usage.mock.calls.some((call) => call[1] === "completed")).toBe(false);
+    expect(metadata()).not.toHaveProperty("savedAnalysisId");
+  });
+
   it("saves a passing answer with its verdict and streams it", async () => {
     answers(PASSING);
     expect((await POST(request())).status).toBe(200);
@@ -205,13 +223,14 @@ describe("written answer sentence binding (#981, H06-T06)", () => {
     streamOptions = [];
     mocks.stream.mockImplementation((options) => ({
       consumeStream: async () => options.onFinish({
+        finishReason: "stop",
         totalUsage: { inputTokens: 1, outputTokens: 1 },
         text,
         steps: [{ toolResults: outputs.map((output) => ({ output })) }],
       }),
       toUIMessageStream: (streamOptionsIn: (typeof streamOptions)[number]) => {
         streamOptions.push(streamOptionsIn);
-        return { synthetic: "answer stream" };
+        return new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } });
       },
     }));
   }
