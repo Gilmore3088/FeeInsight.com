@@ -9,7 +9,9 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => ({
   getHamiltonModel: () => "test-model",
   hasAnthropicApiKey: () => false,
 }));
-vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
+vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/ai-provider-usage")>(), trackAnthropicRequest: vi.fn(),
+}));
 
 import { MEMO_ROUTE_ID, memoPayload, memoProblems, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
