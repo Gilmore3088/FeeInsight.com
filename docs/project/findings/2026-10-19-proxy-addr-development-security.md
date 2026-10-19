@@ -37,7 +37,8 @@ objects only. Under 2.0.7, both short IPv6 trust configurations incorrectly acce
 `203.0.113.7` and resolve the supplied `198.51.100.66`. Under 2.0.8, both keep the
 untrusted direct peer. There is no network listener or exploit request.
 
-Seven focused regressions cover those two failures plus ordinary IPv4 subnet
+Fifteen focused regressions cover those failures for single and multiple trust-subnet
+configurations, plain and mapped peers, plus ordinary IPv4 subnet
 boundaries, mapped IPv4 peers, correctly specified `/104` mapped trust, actual IPv6
 subnets, exact mapped addresses, forwarded chains and requests without forwarded
 headers. They call the real package without a mocked resolver or copied implementation.

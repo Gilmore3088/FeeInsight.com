@@ -14,14 +14,24 @@ const request = (remoteAddress: string, forwarded?: string): SyntheticRequest =>
 });
 
 describe("actual proxy-addr trust-subnet security", () => {
-  it.each(["::ffff:10.0.0.0/8", "::/1"])("does not trust an IPv4 peer through short IPv6 subnet %s", (subnet) => {
-    const trust = proxyaddr.compile(subnet);
-    expect(trust("203.0.113.7", 0)).toBe(false);
-    expect(proxyaddr(request("203.0.113.7", "198.51.100.66"), trust)).toBe("203.0.113.7");
+  const unsafeCases = ["::ffff:10.0.0.0/8", "::/1"].flatMap((subnet) =>
+    ["203.0.113.7", "::ffff:203.0.113.7"].flatMap((peer) => [false, true].map((multiple) => ({ subnet, peer, multiple }))),
+  );
+  it.each(unsafeCases)("rejects cross-family trust: $subnet / $peer / multiple=$multiple", ({ subnet, peer, multiple }) => {
+    const trust = proxyaddr.compile(multiple ? [subnet, "192.0.2.0/24"] : subnet);
+    expect(trust(peer, 0)).toBe(false);
+    expect(proxyaddr(request(peer, "198.51.100.66"), trust)).toBe(peer);
+  });
+
+  it.each([false, true])("does not admit native IPv6 through a mapped subnet (multiple=%s)", (multiple) => {
+    const subnet = "::ffff:10.0.0.0/8";
+    const trust = proxyaddr.compile(multiple ? [subnet, "192.0.2.0/24"] : subnet);
+    expect(trust("::1", 0)).toBe(false);
+    expect(proxyaddr(request("::1", "198.51.100.66"), trust)).toBe("::1");
   });
 
   it("retains ordinary IPv4 subnet boundaries and mapped-peer compatibility", () => {
-    const trust = proxyaddr.compile("10.0.0.0/8");
+    const trust = proxyaddr.compile(["10.0.0.0/8", "192.0.2.0/24"]);
     for (const peer of ["10.23.4.5", "::ffff:10.23.4.5"]) {
       expect(trust(peer, 0)).toBe(true);
       expect(proxyaddr(request(peer, "198.51.100.66"), trust)).toBe("198.51.100.66");
@@ -42,7 +52,7 @@ describe("actual proxy-addr trust-subnet security", () => {
   });
 
   it("retains actual IPv6 subnets without admitting unrelated IPv4 peers", () => {
-    const trust = proxyaddr.compile("2001:db8:1234::/48");
+    const trust = proxyaddr.compile(["2001:db8:1234::/48", "192.0.2.0/24"]);
     expect(trust("2001:db8:1234::9", 0)).toBe(true);
     expect(trust("2001:db8:5678::9", 0)).toBe(false);
     expect(trust("203.0.113.7", 0)).toBe(false);
