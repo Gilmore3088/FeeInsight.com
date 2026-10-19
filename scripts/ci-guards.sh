@@ -700,7 +700,9 @@ findings_file_kill() {
   elif git rev-parse --quiet --verify origin/main >/dev/null; then
     base_ref=$(git merge-base origin/main HEAD 2>/dev/null) || base_ref="origin/main"
   fi
-  if [[ -n "$base_ref" ]]; then
+  if [[ -z "$base_ref" ]]; then
+    echo "findings-file-kill: no base branch to compare with; new-finding guard check skipped"
+  else
     added=$(git diff --name-only --diff-filter=A "$base_ref" -- 'docs/project/findings/*.md' 2>/dev/null \
       | grep -v '/README\.md$' || true)
     unguarded=""
@@ -714,7 +716,7 @@ findings_file_kill() {
     fi
   fi
   old=$(find docs/project/findings -maxdepth 1 -type f -name '*.md' ! -name README.md \
-    -exec grep -LE '^\*\*Guard:\*\*' {} + 2>/dev/null | wc -l | tr -d ' ' || true)
+    -exec grep -LE '^\*\*Guard:\*\*[[:space:]]*[^[:space:]]' {} + 2>/dev/null | wc -l | tr -d ' ' || true)
   echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/ and name their guard; ${old} older findings name none)"
 }
 
