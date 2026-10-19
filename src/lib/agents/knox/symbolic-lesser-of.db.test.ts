@@ -143,6 +143,28 @@ describe.skipIf(!connection)("Symbolic lesser-of source eligibility in actual Po
     });
   });
 
+  it("creates the protected raw formula from the actual fresh free extractor before any paid/direct write", async () => {
+    await rolledBack(async tx => {
+      const f = await seed(tx);
+      await extract.runKnoxExtract({ db: tx, runId: f.runId, institutionId: f.institutionId, limit: 10 });
+      const rows = await tx`SELECT * FROM raw_fee_observations WHERE institution_id=${f.institutionId}
+        AND fee_name='Late Payment Fee' AND amount=10`;
+      expect(rows).toHaveLength(1);
+      const raw = rows[0];
+      expect(raw.outlier_flags).toContain(FLAG);
+      expect(raw.outlier_flags).toContain("knox_review:eligibility");
+      expect(raw.outlier_flags).not.toContain("needs_darwin_verification");
+      expect(raw.conditions).toBe(OWN);
+      await automaticHeldPasses(tx, f);
+      await darwin.runDarwinVerify({ db: tx, runId: f.runId, institutionId: f.institutionId, limit: 100 });
+      await fullPublish(tx, f);
+      expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${raw.fee_raw_id}`)[0]).toEqual(raw);
+      expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${raw.fee_raw_id}`).toHaveLength(0);
+      expect(await tx`SELECT id FROM published_fee_catalog WHERE institution_id=${f.institutionId}
+        AND fee_category='late_payment' AND amount=10`).toHaveLength(0);
+    });
+  });
+
   it("applies the same gate to learning and free-held writers, with independent line-share identities", async () => {
     await rolledBack(async tx => {
       const f = await seed(tx);
