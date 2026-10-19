@@ -176,6 +176,8 @@ export interface ReadResult {
   routerReason: string | null;
   /** True when the bytes came from our stored copy instead of a new download. */
   fromVault: boolean;
+  /** Identity of the initially selected document's loaded bytes, not a linked fallback's bytes. */
+  primaryByteIdentity?: SourceByteIdentity;
   pageCheck: FeePageScore | null;
   /** HTML data-table rows written as one line each. */
   tableRows: number;
@@ -424,23 +426,45 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export interface SourceByteIdentity {
+  status: "verified" | "unbound" | "mismatch" | "invalid_selected_hash";
+  selectedHash: string | null;
+  observedHash: string | null;
+}
 export type DocumentBytes =
-  | { ok: true; bytes: Uint8Array; contentType: string | null; finalUrl: string; fromVault: boolean }
-  | { ok: false; error: string; outcome: AttemptOutcome; contentType: string | null; finalUrl: string };
+  | { ok: true; bytes: Uint8Array; contentType: string | null; finalUrl: string; fromVault: boolean; byteIdentity: SourceByteIdentity }
+  | { ok: false; error: string; outcome: AttemptOutcome; contentType: string | null; finalUrl: string; fromVault?: boolean; byteIdentity?: SourceByteIdentity };
 
 /**
  * The document's bytes: our stored copy first (no second download, and the exact bytes
  * Magellan saw), otherwise a bounded download.
  */
 export async function loadDocumentBytes(
-  input: { sourceUrl: string; vaultKey?: string | null; storedContentType?: string | null },
+  input: { sourceUrl: string; vaultKey?: string | null; storedContentType?: string | null; selectedHash?: string | null },
   fetchImpl: Fetcher,
   vault: DocumentVault | null,
 ): Promise<DocumentBytes> {
+  const selectedHash = input.selectedHash ?? null;
+  if (selectedHash !== null && (typeof selectedHash !== "string" || selectedHash.length !== 64 || !/^[a-f0-9]{64}$/i.test(selectedHash))) {
+    return { ok: false, error: "The captured document hash is invalid; capture the source again before reading it.",
+      outcome: "evidence_mismatch", contentType: input.storedContentType ?? null, finalUrl: input.sourceUrl,
+      byteIdentity: { status: "invalid_selected_hash", selectedHash: null, observedHash: null } };
+  }
+  const checked = (bytes: Uint8Array, contentType: string | null, finalUrl: string, fromVault: boolean): DocumentBytes => {
+    const observedHash = createHash("sha256").update(bytes).digest("hex");
+    const byteIdentity: SourceByteIdentity = { status: selectedHash === null ? "unbound"
+      : observedHash === selectedHash.toLowerCase() ? "verified" : "mismatch", selectedHash, observedHash };
+    if (byteIdentity.status === "mismatch") {
+      return { ok: false, error: "Loaded source bytes do not match the captured document; capture the current source before reading it.",
+        outcome: "evidence_mismatch", contentType, finalUrl, fromVault, byteIdentity };
+    }
+    // Missing legacy hashes remain explicitly unbound; an observed digest is never promoted to an original hash.
+    return { ok: true, bytes, contentType, finalUrl, fromVault, byteIdentity };
+  };
   if (vault?.configured && isVaultKey(input.vaultKey)) {
     try {
       const bytes = await vault.read(input.vaultKey);
-      return { ok: true, bytes, contentType: input.storedContentType ?? null, finalUrl: input.sourceUrl, fromVault: true };
+      return checked(bytes, input.storedContentType ?? null, input.sourceUrl, true);
     } catch (error) {
       console.error(`Vault read failed for ${input.vaultKey}; downloading instead:`, error);
     }
@@ -476,7 +500,7 @@ export async function loadDocumentBytes(
   if (bytes.byteLength > MAX_TEXT_DOCUMENT_BYTES) {
     return { ok: false, error: `Document too large for Rosetta text read: ${bytes.byteLength} bytes`, outcome: "too_large", contentType, finalUrl };
   }
-  return { ok: true, bytes, contentType, finalUrl, fromVault: false };
+  return checked(bytes, contentType, finalUrl, false);
 }
 
 interface ReadContext {
@@ -737,19 +761,20 @@ async function readCandidate(
   }
 
   const loaded = await loadDocumentBytes(
-    { sourceUrl, vaultKey: row.document_r2_key, storedContentType: row.stored_content_type },
+    { sourceUrl, vaultKey: row.document_r2_key, storedContentType: row.stored_content_type, selectedHash: row.content_hash },
     row.pdf_stacked_repair_due
       ? async () => new Response("Stored PDF required for column repair", { status: 503 })
       : ctx.fetchImpl,
     ctx.vault,
   );
   base.contentType = loaded.contentType;
+  base.primaryByteIdentity = loaded.byteIdentity;
+  base.fromVault = loaded.fromVault ?? false;
   if (!loaded.ok) {
     base.documentType = documentTypeForFormat(detectFormat(null, loaded.contentType, loaded.finalUrl));
     return finish({ status: "failed", error: loaded.error, attemptOutcome: loaded.outcome, strategy: DOCUMENT_ACCESS_STRATEGY });
   }
   const { bytes, finalUrl } = loaded;
-  base.fromVault = loaded.fromVault;
   if (row.pdf_stacked_repair_due && (!loaded.fromVault
     || createHash("sha256").update(bytes).digest("hex") !== row.content_hash)) {
     return finish({ status: "failed", error: "Stacked-column repair vault bytes do not match the selected source hash", attemptOutcome: "parse_error", strategy: DOCUMENT_ACCESS_STRATEGY });
@@ -2097,8 +2122,10 @@ async function settleReadInScope(
   repairProof?: { artifactId: number; lossless: boolean },
 ): Promise<"sent_back" | "handed_to_magellan" | null> {
   const { learning, vaultSchema, textColumns } = env;
+  const byteIdentityUnavailable = result.primaryByteIdentity?.status === "mismatch"
+    || result.primaryByteIdentity?.status === "invalid_selected_hash";
   // A companion page's reads stay out of the bank's playbook (its main fee link's).
-  const foldIntoPlaybook = row.companion_source_id == null && !(row.pdf_stacked_repair_due && result.status !== "completed");
+  const foldIntoPlaybook = !byteIdentityUnavailable && row.companion_source_id == null && !(row.pdf_stacked_repair_due && result.status !== "completed");
   let settled: "sent_back" | "handed_to_magellan" | null = null;
   // A re-read replaces the earlier text only with a better answer; otherwise the old
   // text stays and only the attempt is logged. A text whose fees did not hold up still
@@ -2109,7 +2136,7 @@ async function settleReadInScope(
     !(result.status === "completed" && normalizedText != null
       && (rungTextNotWorse(normalizedText, row.last_lost_text) || repairProof?.lossless === true));
   const keepEarlierText =
-    keepLostText || (row.pdf_stacked_repair_due && result.status !== "completed")
+    byteIdentityUnavailable || keepLostText || (row.pdf_stacked_repair_due && result.status !== "completed")
     || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
   if (!keepEarlierText) await recordReadResult(db, env.runId, result, normalizedText, textColumns);
   if (keepLostText) {
@@ -2163,6 +2190,7 @@ async function settleReadInScope(
         content_type: result.contentType,
         router: result.routerReason,
         from_vault: result.fromVault,
+        primary_byte_identity: result.primaryByteIdentity,
         table_rows: result.tableRows,
         reader: result.reader,
         reader_version: ROSETTA_READ_VERSION,

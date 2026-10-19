@@ -8,6 +8,8 @@ import {
   getTopCitiesByState,
 } from "@/lib/data-store";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { canonicalCityName, cityPath } from "./(public)/fees/city/[state]/[city]/city-address";
 import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { loadGuides } from "@/lib/guides/source";
 import { getSql } from "@/lib/data-store/connection";
@@ -127,13 +129,23 @@ async function loadIndexableStates(): Promise<Set<string> | null> {
 async function loadCityPages(dataUpdated: Date): Promise<Entry[]> {
   const listedStates = new Set<string>(STATE_CODES);
   try {
-    const cities = await getTopCitiesByState(MIN_INDEXABLE_CITY_INSTITUTIONS, TOP_CITIES_PER_STATE);
-    return cities
-      .filter((c) => listedStates.has(c.state_code))
-      .map((c) => {
-        const citySlug = encodeURIComponent(c.city.toLowerCase());
-        return entry(`/fees/city/${c.state_code.toLowerCase()}/${citySlug}`, dataUpdated, "weekly", 0.6);
-      });
+    const cities = (await getTopCitiesByState(MIN_INDEXABLE_CITY_INSTITUTIONS, TOP_CITIES_PER_STATE)).filter((c) =>
+      listedStates.has(c.state_code),
+    );
+    // Each city under the address the city layout keeps (#2092): the directory's spelling when the
+    // state directory lists it, else the headquarters spelling. Any other spelling would 301. A
+    // state whose directory read failed is left out of this build rather than listed under a name
+    // the layout may not keep; the next hourly build lists it.
+    const states = [...new Set(cities.map((c) => c.state_code))];
+    const directories = new Map(
+      await Promise.all(states.map(async (state) => [state, await getStateMarketCitiesCached(state).catch(() => null)] as const)),
+    );
+    const paths = cities.flatMap((c) => {
+      const directory = directories.get(c.state_code);
+      if (!directory) return [];
+      return [cityPath(c.state_code, canonicalCityName(c.city, directory, c.city) ?? c.city)];
+    });
+    return [...new Set(paths)].map((path) => entry(path, dataUpdated, "weekly", 0.6));
   } catch {
     return [];
   }

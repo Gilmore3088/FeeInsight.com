@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>, policy?: PaidResponsePolicy) => {
   const response = await request() as Parameters<PaidResponsePolicy>[0];
@@ -28,7 +29,7 @@ const scan = (id: number) => ({
   institution_id: 40 + id,
   institution_name: `Scan Bank ${id}`,
   document_url: `https://scan${id}.example/fees.pdf`,
-  content_hash: `hash-${id}`,
+  content_hash: createHash("sha256").update(pdfBytes).digest("hex"),
 });
 
 function paidDb(rows: Array<Record<string, unknown>>, { learning = true } = {}): DbMock {
@@ -62,6 +63,22 @@ function attempts(db: DbMock): Array<[string, string, number]> {
 }
 
 describe("Rosetta paid read (pass 3)", () => {
+  it.each([null, "hash-1", "f".repeat(64)])("never calls or settles paid transcription with unavailable identity %j", async (contentHash) => {
+    const db = paidDb([{ ...scan(1), content_hash: contentHash }]);
+    const create = vi.fn(); const pageCounter = vi.fn(async () => 2);
+    const previousTracking = trackAnthropicRequest.mock.calls.length;
+    const result = await runRosettaPaidRead({ runId: 900, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter });
+    expect(result).toMatchObject({ selected: 1, processed: 1, failed: 1, succeeded: 0,
+      costMicrousd: 0, unknownCostResponses: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "evidence_mismatch", response_received: false });
+    expect(create).not.toHaveBeenCalled(); expect(pageCounter).not.toHaveBeenCalled();
+    expect(trackAnthropicRequest.mock.calls).toHaveLength(previousTracking);
+    expect(attempts(db)).toEqual([["read.document_access", "evidence_mismatch", 0]]);
+    const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+    expect(statements).not.toContain("INSERT INTO agent_source_texts");
+    expect(statements).not.toContain("UPDATE institution_source_profiles");
+  });
+
   it("sends a scan as a PDF document block and stores the transcription like a normal read", async () => {
     const db = paidDb([scan(1)]);
     const transcription = ["SCHEDULE OF FEES", "Overdraft fee | $35.00", "NSF fee | $35.00", "Stop payment | $30.00"].join("\n");

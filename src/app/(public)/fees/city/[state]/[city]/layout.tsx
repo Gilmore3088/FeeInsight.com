@@ -1,8 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { cityHasBranches, fullCityForCut } from "@/lib/data-store";
-import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { STATE_NAMES } from "@/lib/us-states";
-import { cityPath, dottedCityName, loadCityInstitutions, titleCase } from "./city-lookup";
+import { cityPath, decodedSegment, dottedCityName, loadCanonicalCityName, loadCityInstitutions, titleCase } from "./city-lookup";
 
 /**
  * A city with no institutions and no bank or credit union branch answers 404 (#1165). The check sits in this layout, outside the
@@ -16,9 +15,11 @@ import { cityPath, dottedCityName, loadCityInstitutions, titleCase } from "./cit
  * - an address that dropped the period of a short word ("st-louis") goes to the stored
  *   spelling ("st.%20louis") (#1267).
  *
- * A second spelling of a city the state directory folds into one ("saint petersburg" beside
- * "st. petersburg", `src/lib/geo/city-names.ts`) redirects permanently to the spelling the
- * directory links to, so one market has one address. The check reads the directory's cached list.
+ * Every spelling of a city the fold reads as one ("saint petersburg", "st-louis", "st.-louis",
+ * `src/lib/geo/city-names.ts`) redirects permanently to its one address (#2092): the spelling
+ * the state directory links to, or, for a city the directory does not list, the headquarters
+ * spelling the city lists and the sitemap use. The headquarters list folds spellings too, so
+ * without this every spelling would render its own copy of the page.
  */
 export default async function CityLayout({
   children,
@@ -32,13 +33,12 @@ export default async function CityLayout({
   const cityName = titleCase(city);
   // An unknown state never reaches the cached read, so junk addresses add no cache entries.
   if (!STATE_NAMES[stateCode]) notFound();
-  const asked = cityName.toUpperCase();
-  const directory = await getStateMarketCitiesCached(stateCode).catch(() => []);
-  const folded = directory.find((c) => c.city !== asked && c.spellings.includes(asked));
-  // The address already reads as the directory's spelling ("wilkes-barre" for WILKES-BARRE, which
-  // titleCase reads as "Wilkes Barre"): redirecting would send it to itself.
-  if (folded && titleCase(folded.city) !== cityName && cityPath(state, folded.city) !== cityPath(state, cityName)) {
-    permanentRedirect(cityPath(state, folded.city));
+  const canonical = await loadCanonicalCityName(stateCode, cityName);
+  // Compared as the address itself, so "wilkes-barre" for WILKES-BARRE (which titleCase reads as
+  // "Wilkes Barre") is already home and never redirects to itself.
+  const segment = decodedSegment(city);
+  if (canonical && segment !== null && cityPath(state, canonical) !== cityPath(state, segment)) {
+    permanentRedirect(cityPath(state, canonical));
   }
   const institutions = await loadCityInstitutions(cityName, stateCode);
   // A city is a market when a bank or credit union has a branch there, wherever it is headquartered.

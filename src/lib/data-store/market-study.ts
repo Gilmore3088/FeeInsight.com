@@ -284,13 +284,6 @@ export function assembleMarketStudy(rows: MarketStudyRows): MarketStudyData | nu
   };
 }
 
-/** The counties holding most of a bank's branch deposits, largest first. */
-export function topCounties(branches: MarketStudyBranch[], n: number): string[] {
-  const by = new Map<string, number>();
-  for (const b of branches) by.set(b.county_fips, (by.get(b.county_fips) ?? 0) + b.deposits);
-  return [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([f]) => f);
-}
-
 export interface MarketCandidate {
   fips: string;
   deposits: number;

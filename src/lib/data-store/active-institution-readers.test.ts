@@ -284,7 +284,6 @@ const WITHOUT_RULE: Record<string, string> = {
   "benchmark-export.ts": "not yet reviewed",
   "competitor-coverage.ts": "not yet reviewed",
   "custom-report-market.ts": "not yet reviewed",
-  "designation-lists-aggregates.ts": "not yet reviewed",
   "hamilton-peer-fees.ts": "not yet reviewed",
   "hamilton-peer-list.ts": "not yet reviewed",
   "local-market.ts": "not yet reviewed",

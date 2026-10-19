@@ -13,7 +13,7 @@ import { getCityMarketCached, getStateFeeIndexesCached } from "@/lib/data-store/
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { softRead } from "@/lib/soft-read";
 import type { CityArea, CityMarket } from "@/lib/data-store";
-import { titleCase } from "./city-lookup";
+import { cityCanonicalPath, titleCase } from "./city-lookup";
 import { CompareRows, type CompareRow } from "./market-exhibits";
 import { evidenceHeadline, FeeEvidence } from "./fee-evidence";
 import { BranchMapLive } from "./branch-map";
@@ -50,8 +50,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   return {
     robots: { index: indexable, follow: true },
-    // One address per city: "little-rock" and "little%20rock" render the same page.
-    alternates: { canonical: `/fees/city/${state.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}` },
+    alternates: { canonical: await cityCanonicalPath(state, city) },
     title: `${cityName}, ${stateCode} Bank Fees: Overdraft, ATM and More Compared`,
     description: cov
       ? `${cov.with_fees} of ${cov.institutions} banks and credit unions with branches in ${cityName}, ${stateCode} publish fees in the Bank Fee Index. See each fee with its source, set beside ${stateName} and the U.S.`

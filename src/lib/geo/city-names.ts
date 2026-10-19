@@ -128,3 +128,65 @@ export function cityMatches(query: string, name: string): boolean {
   }
   return false;
 }
+
+/**
+ * The stored spellings that name the same city as `asked`, upper case, `asked` first. A read that
+ * matches one city by name sends this list (`UPPER(city) = ANY(...)`), so "Saint Petersburg" on a
+ * headquarters record and "ST. PETERSBURG" on a branch record land on the same page. A name the
+ * fold does not know still matches itself. Pure.
+ */
+export function sameCitySpellings(asked: string, stored: Iterable<string>): string[] {
+  const upper = asked.toUpperCase();
+  const key = cityKey(upper);
+  const out = new Set<string>([upper]);
+  if (!key) return [...out];
+  for (const s of stored) {
+    const name = String(s ?? "").toUpperCase();
+    if (name && cityKey(name) === key) out.add(name);
+  }
+  return [...out];
+}
+
+/** One place as a record spells it: a state code and a city name. */
+export interface StatePlace {
+  state: string;
+  city: string;
+}
+
+/**
+ * The candidate places that are one of the target places once spellings are folded, as
+ * "STATE|CITY" with the candidate's own upper-case spelling, so a query can match them exactly
+ * (`(state || '|' || UPPER(city)) = ANY(...)`). Pure.
+ */
+export function placesInFold(targets: Iterable<StatePlace>, candidates: Iterable<StatePlace>): string[] {
+  const wanted = new Set<string>();
+  for (const t of targets) {
+    const key = cityKey(String(t.city ?? ""));
+    if (key && t.state) wanted.add(`${String(t.state).toUpperCase()}|${key}`);
+  }
+  const out = new Set<string>();
+  for (const c of candidates) {
+    const city = String(c.city ?? "").toUpperCase();
+    const state = String(c.state ?? "").toUpperCase();
+    if (city && state && wanted.has(`${state}|${cityKey(city)}`)) out.add(`${state}|${city}`);
+  }
+  return [...out];
+}
+
+/**
+ * The prefixes a typed city search is matched with, so its first word reads in each of its folded
+ * forms: "st pete" also looks for "SAINT pete" and "ST. pete", "fort worth" also for "FT worth".
+ * The search as typed always comes first. A first word typed alone ("st") gets its other forms
+ * only as whole words ("SAINT ", "ST. "), since it may be the start of another name. Pure.
+ */
+export function citySearchPrefixes(query: string): string[] {
+  const typed = query.trim();
+  const match = /^(\p{L}+)\.?(\s.*)?$/u.exec(typed);
+  if (!match) return [typed];
+  const first = match[1].toUpperCase();
+  const short = SAME_WORD[first] ?? (first in LONG_FORM ? first : null);
+  if (!short) return [typed];
+  const rest = match[2] ? ` ${match[2].trim()}` : " ";
+  const forms = [LONG_FORM[short], short, `${short}.`];
+  return [...new Set([typed, ...forms.map((form) => `${form}${rest}`)])];
+}

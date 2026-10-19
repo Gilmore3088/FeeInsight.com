@@ -2,6 +2,7 @@ import { sql } from "./connection";
 import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { cityKey, foldCitySpellings } from "@/lib/geo/city-names";
+import { branchCitySpellings, storedBranchCities } from "./city-spellings";
 import { readerFeeConditions } from "@/lib/fee-conditions";
 import { feeEvidence, storedLineOf } from "@/lib/fee-evidence";
 import { productNameFromFeeName, readableProductName, waiverForDisplay } from "@/lib/agents/knox/lineup";
@@ -136,23 +137,6 @@ async function latestSodYear(): Promise<number> {
 }
 
 /**
- * Every spelling the branch records use for this city in the state ("ST. PETERSBURG",
- * "SAINT PETERSBURG", "ST PETERSBURG"), folded by `cityKey`, upper case. Always includes the
- * spelling asked for, so a city the fold does not know still reads as before.
- */
-async function citySpellings(upperCity: string, state: string, year: number): Promise<string[]> {
-  const rows = (await sql`
-    SELECT DISTINCT UPPER(city) AS city FROM institution_branch_deposits
-     WHERE year = ${year} AND state = ${state} AND city IS NOT NULL AND city <> ''
-    UNION
-    SELECT DISTINCT UPPER(city) FROM credit_union_branches
-     WHERE state = ${state} AND city IS NOT NULL AND city <> ''
-  `) as { city: unknown }[];
-  const key = cityKey(upperCity);
-  return [...new Set([upperCity, ...rows.map((r) => String(r.city)).filter((c) => cityKey(c) === key)])];
-}
-
-/**
  * The market for one city. Null when no bank or credit union branch sits in the city, so the
  * page can answer 404 or fall back.
  */
@@ -161,7 +145,7 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
   const upperCity = city.toUpperCase();
   const year = await latestSodYear();
   // One market under every spelling of the city's name, as the state directory counts it.
-  const spellings = await citySpellings(upperCity, state, year);
+  const spellings = await branchCitySpellings(upperCity, state, year);
 
   const metroRows = (await sql`
     SELECT msa_code, MAX(msa_name) AS msa_name, COUNT(*) AS n
@@ -551,18 +535,11 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
   );
 }
 
-/** True when any bank or credit union branch sits in the city: the city page has a market to show. */
+/**
+ * True when any bank or credit union branch sits in the city, under any spelling the fold reads as
+ * the same city (`cityKey`, #2092): the city page has a market to show.
+ */
 export async function cityHasBranches(city: string, stateCode: string): Promise<boolean> {
-  const state = stateCode.toUpperCase();
-  const upperCity = city.toUpperCase();
-  const rows = (await sql`
-    SELECT EXISTS (
-             SELECT 1 FROM institution_branch_deposits
-              WHERE state = ${state} AND UPPER(city) = ${upperCity}
-                AND year = (SELECT MAX(year) FROM institution_branch_deposits)
-           ) OR EXISTS (
-             SELECT 1 FROM credit_union_branches WHERE state = ${state} AND UPPER(city) = ${upperCity}
-           ) AS found
-  `) as { found: unknown }[];
-  return rows[0]?.found === true;
+  const key = cityKey(city);
+  return key !== "" && (await storedBranchCities(stateCode)).some((stored) => cityKey(stored) === key);
 }
