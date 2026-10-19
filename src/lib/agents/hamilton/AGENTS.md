@@ -1,5 +1,20 @@
 # Hamilton Agent Guide
 
+## Literal charging units and comparisons (#2248)
+
+Prospective source-owned hourly, page, document, image, statement, half-hour, quarter-hour
+and minute rows retain their literal numeric price, frequency and full readable conditions
+through publication and frequency fill. No amount is converted or unit inferred from a blank
+or legacy `per_item` value. Existing category-period/per-event checks still apply; an explicit
+paper-statement `per_statement` unit is preserved without inferring a calendar month.
+
+Those finite known special units stay visible on evidence surfaces but are excluded from
+legacy category medians, ranges, counts and numeric subject comparisons until same-unit
+cohorts exist. `fee-unit.ts` defines the exact SQL/client normalized predicate; report deltas,
+local-competitor own prices and profile comparison eligibility use it. Statistics method
+17/18, population stamp descriptions and national summary cache keys change together.
+Historical metadata recovery and the live hourly recheck switch remain separate.
+
 Hamilton is the last agent in the pipeline and the one people meet. It has four faces,
 all built on the same live published fees, and one rule across them: every output can be
 retraced without asking Hamilton (see Audit trail).

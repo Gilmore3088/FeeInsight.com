@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { insertCandidate, retireRowsFromOlderText, type KnoxTextRow } from "./extract";
 import type { FeeAudience } from "@/lib/fee-audience";
+import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = Parameters<typeof insertCandidate>[0];
@@ -130,6 +131,30 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     const [row] = await flagsOf();
     expect(row.flags).toContain("needs_darwin_verification");
     expect(row.flags).not.toContain("knox_reread_took_over");
+  });
+
+  it("#2283 cannot enrich ordinary, held or judged historical monthly rows through the separate lineup update", async () => {
+    const text = "Everyday Checking\nMonthly Service Fee | $5.00 (Plus ATM charges)\nMinimum opening deposit $25\nWaived with a $500 minimum balance";
+    const candidate = withOwnFeeUnit({ feeName: "Monthly Service Fee", amount: 5, canonicalHint: "monthly_maintenance",
+      frequency: "monthly", confidence: .95, excerpt: "Monthly Service Fee | $5.00", waivable: false,
+      lineup: { productName: "Everyday Checking", minBalanceToAvoid: 500, minOpeningDeposit: 25,
+        waiverText: "Waived with a $500 minimum balance" } }, text);
+    expect(candidate.ownCondition).toContain("Plus ATM charges");
+    expect(candidate.ownUnit).toBeUndefined();
+    for (const mode of ["ordinary", "held", "judged"]) {
+      await db`TRUNCATE raw_fee_observations, verified_fee_observations`;
+      const flags = mode === "held" ? ["knox_review:unclassified"] : [];
+      const [{ fee_raw_id: id }] = await db`INSERT INTO raw_fee_observations
+        (institution_id,source_document_id,source,fee_name,amount,frequency,conditions,extraction_note,outlier_flags,fee_audience)
+        VALUES(42,501,'knox','Monthly Service Fee',5,NULL,'Retained historical condition','Retained historical note',
+          ${JSON.stringify(flags)}::jsonb,'unknown') RETURNING fee_raw_id`;
+      if (mode === "judged") await db`INSERT INTO verified_fee_observations(fee_raw_id) VALUES(${id})`;
+      const [before] = await db`SELECT to_jsonb(fr)::text AS row FROM raw_fee_observations fr WHERE fee_raw_id=${id}`;
+      expect(await insertCandidate(db as unknown as Db, { runId: 1,
+        row: { ...firstRead, normalized_text: text, text_hash: createHash("sha256").update(text).digest("hex") }, candidate,
+      })).toBe(false);
+      expect((await db`SELECT to_jsonb(fr)::text AS row FROM raw_fee_observations fr WHERE fee_raw_id=${id}`)[0]).toEqual(before);
+    }
   });
 
   it.each(["consumer", "business", "unknown", "both"] as const)("enriches only the %s sibling of a same-name, same-price fee (#2108)", async (audience) => {

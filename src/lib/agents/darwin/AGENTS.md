@@ -1,5 +1,16 @@
 # Darwin Agent Guide
 
+## Literal charging units (#2248)
+
+Fresh raw rows with a bounded own name/price/unit witness retain their hourly, page, document,
+image, statement, half-hour, quarter-hour or minute frequency and full readable conditions.
+This metadata does not override existing price, canonical period or per-event checks. A
+quarter-hour remains a quarter-hour, never quarterly; `per_statement` never implies monthly.
+The literal paper-statement basis is retained while hourly/per-event category guards remain.
+Existing raw identities and metadata are not silently enriched by held or superseded rechecks.
+Known special-unit prices remain visible evidence but leave mixed-unit comparisons under the
+shared SQL/client predicate. The historical hourly switch and provider controls are unchanged.
+
 Darwin owns verification and classification.
 
 Monthly eligibility admission (#2277/#2259, Oct 19): `insertVerifiedFee` locks the current
