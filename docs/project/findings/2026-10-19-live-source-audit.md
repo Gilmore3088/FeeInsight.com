@@ -36,6 +36,11 @@ primary goal now consumes the current validated live draw, including unknown/una
 and absent snapshots, without a stored or historical fallback. Stored-copy support and its
 unchanged weekly series are explicitly secondary diagnostics; live daily cohorts have no generic
 week delta, 99.5% qualification or launch-certification claim.
+An actual shared-validator integration control then caught a cap-first price under a parenthetical
+youth/age heading being treated as general support. The checker now carries its exact selected
+helper witness's existing bounded eligibility/unknown-scope metadata without changing other callers'
+price/ok policy or ordinary success shape. The live evaluator keeps that applicability unresolved;
+explicit standard witnesses and separate same-name own prices remain supported.
 The archive's ordered immutable origin IDs/manifest digest does not reconstruct full origin bytes
 after retention. Missing/over-cap/expired evidence stays unknown or explicitly unavailable.
 

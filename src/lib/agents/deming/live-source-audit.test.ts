@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { auditHash, boundedAuditJson, evaluateLiveAuditFee, freezeLiveAuditFee, liveAuditPolicyFingerprint,
   makeLiveAuditDraw, LIVE_SOURCE_AUDIT, type LiveAuditCatalogRow, type LiveAuditFee, type LiveAuditGraph,
   type LiveAuditGroup, type LiveAuditPage, type LiveAuditPolicy } from "./live-source-audit";
@@ -119,6 +120,79 @@ describe("separate fresh official-source policy", () => {
     const stale=liveGraph();stale.pages[1].checkedAt="2026-10-17T00:00:00.000Z";expect(evaluateLiveAuditFee(liveFee(),liveGroup(),stale,at).reason).toBe("live_observation_stale");
   });
 
+});
+
+describe("stacked price dependency integration", () => {
+  const capSchedule = (heading = "") => `Consumer Fee Schedule\nEffective January 1, 2026\n${heading ? `${heading}\n` : ""}NSF Fee\n• $140 Maximum. $35 per item\nStop Payment Fee\n• $30 per request\nWire Transfer Fee\n• $20 per item`;
+
+  it("supports the own per-item35 after a leading maximum140 with complete general identity", () => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 35 });
+    expect(checkFeeAgainstSource(capSchedule(), "NSF Fee", 35, ".", "nsf")).toEqual({
+      ok: true, sourceLine: "NSF Fee | • $140 Maximum. $35 per item",
+    });
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(capSchedule()), at)).toMatchObject({
+      status: "supported", sourceLine: "NSF Fee | • $140 Maximum. $35 per item",
+    });
+  });
+
+  it("never supports the leading maximum140 as the own item price", () => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 140 });
+    const result = evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(capSchedule()), at);
+    expect(["unknown", "mismatch"]).toContain(result.status);
+    if (result.status === "mismatch") {
+      expect(result.dimensions).toContain("amount");
+      expect(result.sourceLine).toContain("$35 per item");
+    }
+  });
+
+  it("keeps a positively annual protection program from becoming per-item support", () => {
+    const fee = liveFee({ fee_name: "Ready Reserve Overdraft Protection Fee", amount: 25 });
+    const text = "Consumer Fee Schedule\nEffective January 1, 2026\nReady Reserve Overdraft Protection Fee\n• $25.00 (annually)\nStop Payment Fee\n• $35 per request\nWire Transfer Fee\n• $20 per item";
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(text), at).status).toBe("unknown");
+  });
+
+  it.each([
+    ["Youth Checking (ages 18 and under)", { eligibilityContext: "Youth Checking (ages 18 and under)" }],
+    ["Ages 18 and under", { eligibilityContext: "Ages 18 and under" }],
+    ["Youth Checking (ages 18 and under)\nOther available services", { producerScopeUnknown: true }],
+  ])("retains the exact restricted/unknown witness for %s instead of general-product support", (heading, metadata) => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 5 });
+    const text = capSchedule(heading).replace("$35 per item", "$5 per item");
+    expect(checkFeeAgainstSource(text, "NSF Fee", 5, ".", "nsf")).toEqual({
+      ok: true, sourceLine: "NSF Fee | • $140 Maximum. $5 per item", ...metadata,
+    });
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(text), at)).toMatchObject({
+      status: "unknown", reason: "own_applicability_unproven", dimensions: [],
+    });
+  });
+
+  it("retains applicability through the actual checker's dropped-decimal normalization", () => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 5 });
+    const text = capSchedule("Ages 18 and under").replace("$35 per item", "$5. 00 per item");
+    expect(checkFeeAgainstSource(text, "NSF Fee", 5, ".", "nsf")).toMatchObject({
+      ok: true, eligibilityContext: "Ages 18 and under",
+    });
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(text), at)).toMatchObject({
+      status: "unknown", reason: "own_applicability_unproven", dimensions: [],
+    });
+  });
+
+  it("uses the selected standard witness instead of another restricted same-name price", () => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 35 });
+    const text = capSchedule("Youth Checking (ages 18 and under)\nNSF Fee\n• $140 Maximum. $5 per item\nStandard Services");
+    expect(checkFeeAgainstSource(text, "NSF Fee", 35, ".", "nsf")).toEqual({
+      ok: true, sourceLine: "NSF Fee | • $140 Maximum. $35 per item",
+    });
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(text), at).status).toBe("supported");
+  });
+
+  it("preserves another exact same-name price on its own physical row", () => {
+    const fee = liveFee({ fee_name: "NSF Fee", canonical_fee_key: "nsf", amount: 25 });
+    const text = capSchedule().replace("Stop Payment Fee", "NSF Fee | $25 per item\nStop Payment Fee");
+    expect(evaluateLiveAuditFee(fee, liveGroup(fee), liveGraph(text), at)).toMatchObject({
+      status: "supported", sourceLine: expect.stringContaining("$25 per item"),
+    });
+  });
 });
 
 describe("bounded immutable draw", () => {

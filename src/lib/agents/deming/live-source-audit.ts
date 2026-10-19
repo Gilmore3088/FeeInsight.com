@@ -266,6 +266,7 @@ export function evaluateLiveAuditFee(fee: LiveAuditFee, group: LiveAuditGroup, g
   const categoryCheck = checkFeeAgainstSource(text, fee.catalog.fee_name, fee.catalog.amount, ".", fee.catalog.canonical_fee_key);
   const check = !categoryCheck.ok && categoryCheck.reason === "category_not_in_text" && categoryMismatch
     ? checkFeeAgainstSource(text, fee.catalog.fee_name, fee.catalog.amount, ".", null) : categoryCheck;
+  if (check.ok && (check.eligibilityContext || check.producerScopeUnknown)) return unknown("own_applicability_unproven");
   const dimensions: string[] = []; let line: string | null = check.ok ? check.sourceLine : null;
   let witnessedAmount = fee.catalog.amount;
   if (!check.ok) {
