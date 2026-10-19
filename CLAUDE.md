@@ -28,8 +28,10 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   version number or a shared check its gates use), or a new migration: a PR that adds one always
   merges `main` and re-runs `migration-version-kill` before merging, since a clashing number shows
   no conflict.
-- Every change a review finds is documented as its own issue under a tracker: one tracker per
-  agent, plus the Foundation tracker for infrastructure, documentation and process work that
+- A review finding the PR can fix is fixed in that PR before merge. Anything else becomes a
+  checklist line on the issue for its root cause, or on the tracker if no such issue exists. A new
+  issue is opened only for a new root cause (James, 2026-10-19; DECISIONS). There is one tracker
+  per agent, plus the Foundation tracker for infrastructure, documentation and process work that
   belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
   pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
   The lane that owns an agent keeps that agent's tracker current (Data quality: Magellan, Rosetta,
