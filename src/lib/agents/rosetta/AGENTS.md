@@ -62,9 +62,19 @@ Rosetta owns source text normalization.
   text, make no outside request and leave one explicit failed request for review rather
   than retrying every lane run. Failed requests use `read.pdf_stacked_repair` v1 and do
   not enter the ordinary reader's playbook or settle its retries.
-  Each requested check records `detail.pdf_stacked_requested`; only a completed PDF
-  check records `detail.pdf_stacked`. The same source/version settles once, including
-  unchanged geometry. Bayes counts successful checks and failed-review exclusions
+  Each requested check records `detail.pdf_stacked_requested`. A successful check
+  records `detail.pdf_stacked` only in the same transaction as the saved artifact,
+  bound by `persisted_text_id` and `persisted_text_hash`. Earlier unbound successful
+  outputs do not settle a still-interleaved incumbent (#2313); the same v1 owner
+  witness selects them through normal Extract, without a global reader replay.
+  Replacement locks and rechecks the selected incumbent and source hash. The ordinary
+  text-survival score remains unchanged. Only intrinsic stacked-column geometry on
+  the exact vault bytes may use an alternate conservation proof: every literal token
+  except whitespace and table separators must be retained with the same multiplicity.
+  Prices, punctuation, units and qualifying words cannot be added, lost or changed.
+  A rejected/stale replacement retains the incumbent and remains unsettled; unavailable
+  or mismatched vault bytes retain their existing explicit review exclusion. The same
+  committed artifact settles once, including unchanged geometry. Bayes counts successful checks and failed-review exclusions
   separately. State readiness first checks the repair capability schema, preserving ordinary backlog
   on older schemas, then uses the owner's exact query with LIMIT 1/EXISTS; Bayes
   and daily health (`stackedPdfRepairsDue`) use its full count. Reading a better text
