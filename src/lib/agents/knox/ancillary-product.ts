@@ -18,6 +18,53 @@ const GENERIC = /^(?:(?:consumer|personal|business|commercial|retail|deposit|che
 const NON_DEPOSIT = /\b(?:loans?|mortgage|lending|credit\s+card|ira|hsa|certificates?|retirement)\b/i;
 const HEADING = /^(?:ACCOUNT\s+FEATURES|OTHER\s+(?:ACCOUNT\s+)?PRODUCTS|TERMS\s+AND\s+CONDITIONS|DISCLOSURES?|IMPORTANT\s+INFORMATION)\s*$/i;
 const compact = (value: string) => value.replace(/\s+/g, " ").trim();
+const MONEY = /\$\s*\d+(?:,\d{3})*(?:\.\d{1,2})?|\b\d+\.\d{2}\b/g;
+const explicitNoFee = (line: string) => /^No\s+[A-Za-z][A-Za-z' -]{0,100}\s+fees?(?:\s*\([^)]{1,80}\))?$/i
+  .test(line.replace(/^[•●▪◦*\-–]\s*/, ""));
+
+/** Unknown column labels never inherit the primary title. Only an unambiguous block qualifies. */
+function unambiguousFeeBlock(lines: string[]): boolean {
+  let exceptionContinuation = false;
+  for (const physical of lines) {
+    const line = compact(physical);
+    if (!line) continue;
+    const plain = line.replace(/^[•●▪◦*\-–]\s*/, "");
+    if (exceptionContinuation) {
+      // The supported wrapped applicability clause ends explicitly; arbitrary intervening
+      // labels/columns are not silently absorbed as prose.
+      if (!/^exceptions\s*:\s*$/i.test(plain)) return false;
+      exceptionContinuation = false;
+      continue;
+    }
+    if (/^Subject to miscellaneous fees\b/i.test(plain)) {
+      if (line.includes("|") || line.length > 300 || [...line.matchAll(MONEY)].length > 0) return false;
+      if (!/exceptions\s*:\s*$/i.test(plain)) {
+        if (!/following\s*$/i.test(plain)) return false;
+        exceptionContinuation = true;
+      }
+      continue;
+    }
+    // More than one price can be different products' columns, even at the same amount.
+    // Conditional/tiered or otherwise ambiguous blocks remain unassigned in this first phase.
+    const prices = [...line.matchAll(MONEY)];
+    if (prices.length > 1) return false;
+    if (line.includes("|")) {
+      const cells = line.split("|").map(compact);
+      if (cells.length !== 2 || cells.some((cell) => !cell)) return false;
+      if (prices.length === 0) {
+        // The actual Safe Debit layout places two explicit no-fee statements side by side.
+        if (!cells.every(explicitNoFee)) return false;
+      } else {
+        const priceCell = cells.findIndex((cell) => [...cell.matchAll(MONEY)].length > 0);
+        // Ordinary label | price, or one complete priced fee beside an explicit no-fee line.
+        if (!/^(?:\$|\d+\.\d{2})/.test(cells[priceCell]) && !explicitNoFee(cells[1 - priceCell])) return false;
+      }
+    } else if (prices.length === 0 && !explicitNoFee(plain)) {
+      return false;
+    }
+  }
+  return !exceptionContinuation;
+}
 
 /** One primary account document, not section/column inference within a multi-product guide. */
 export function primaryAncillaryProduct(text: string, institutionName?: string | null): {
@@ -49,7 +96,7 @@ export function primaryAncillaryProduct(text: string, institutionName?: string |
   if (end < 0) end = lines.length;
   if (end - start > 48) return null;
   const block = lines.slice(start + 1, end).join("\n");
-  if (block.length > 5_000) return null;
+  if (block.length > 5_000 || !unambiguousFeeBlock(lines.slice(start + 1, end))) return null;
   const applicability = compact(block.match(/Subject to miscellaneous fees[^$]{0,300}?exceptions\s*:/i)?.[0] ?? "") || null;
   return { productName: own.name, title: own.title, block, applicability };
 }

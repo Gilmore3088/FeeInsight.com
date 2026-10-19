@@ -1,4 +1,4 @@
-import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, recordIdentitySkips, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
 import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import type { FeeAudience } from "@/lib/fee-audience";
 import { CHECKING_ONLY_CATEGORIES, heldAccountType } from "@/lib/account-type";
@@ -108,6 +108,8 @@ const BLOCKING_FLAGS = new Set([
 ]);
 
 export interface VerifiedFeeRow extends RateFields {
+  /** PostgreSQL snapshot of every consumed verification field; compare after the write lock. */
+  selected_verified_state?: string;
   product_name?: string | null;
   fee_audience?: FeeAudience;
   fee_verified_id: number | string;
@@ -155,6 +157,8 @@ export interface PriorPublishedFeeRow extends RateFields, Partial<Omit<Published
 }
 
 export interface HamiltonPublishResult {
+  /** Selected state changed under the final lock: visible guard skip, no settled fingerprint. */
+  identityDeferred?: boolean;
   feeVerifiedId: number;
   institutionId: number;
   feeName: string;
@@ -226,6 +230,8 @@ export interface RunHamiltonPublishResult {
   processedVerifiedFees: number;
   publishedFees: number;
   skippedFees: number;
+  /** Still-undecided selected-state guard skips, included in skippedFees. */
+  identityDeferredFees?: number;
   /** Live rows closed because the same fee was published at a new amount. */
   supersededFees: number;
   /** Published rows that are explicit $0 (free) fees. */
@@ -539,6 +545,7 @@ async function selectVerifiedFees(
     `
       WITH ${deepCte} eligible AS (
       SELECT fv.fee_verified_id,
+             to_jsonb(fv)::text AS selected_verified_state,
              fv.fee_raw_id,
              fv.institution_id,
              fv.source_url,
@@ -2023,6 +2030,7 @@ const NO_MOVEMENT = {
 
 function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome {
   if (result.status === "published") return "ok";
+  if (result.identityDeferred) return "evidence_mismatch";
   return result.reason === "Identical fee already published" ||
     result.reason === "Duplicate published row" ||
     result.reason === OLDER_DOCUMENT_REASON
@@ -2308,19 +2316,25 @@ export async function runHamiltonPublish(
       let heldBy: number | null = null;
       let correctedBy: CorrectionBlock | null = null;
       const written = await withPublishedIdentityWrite(db, async (scope) => {
+        const defer = async () => {
+          await recordIdentitySkips(scope, options.runId, "publish", 1);
+          return { feePublishedId: null, superseded: false, changeRecorded: false, identityChanged: true };
+        };
         // Real selectors carry product ownership even when unassigned. Legacy pure/test rows
         // omit the field; they keep their established contract. Lock before validating the
         // selected raw lineage so product metadata cannot change under this insertion.
         if (row.product_name !== undefined) {
+          if (!row.selected_verified_state) return defer();
           const prior = priorPublishedFee?.published_state ? [priorPublishedFee as PublishedIdentity] : [];
           const unchanged = await unchangedPublishedIdentities(scope, prior, [Number(row.fee_verified_id)]);
           const current = await scope<{ fee_raw_id: number | string; product_name: string | null }[]>`
             SELECT fv.fee_raw_id, fr.product_name FROM verified_fee_observations fv
             JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
             WHERE fv.fee_verified_id = ${Number(row.fee_verified_id)} AND fv.fee_raw_id = ${Number(row.fee_raw_id)}
+              AND to_jsonb(fv)::text = ${row.selected_verified_state}
               AND ${scope.unsafe(productKeySql("fr.product_name"))} = ${productKey(row.product_name)}`;
           if (current.length === 0 || (prior.length && !unchanged.has(Number(prior[0].fee_published_id)))) {
-            return { feePublishedId: null, superseded: false, changeRecorded: false, identityChanged: true };
+            return defer();
           }
         }
         const feePublishedId = await insertPublishedFee(scope, {
@@ -2346,8 +2360,9 @@ export async function runHamiltonPublish(
       result = {
         ...base,
         status: feePublishedId ? "published" : "skipped",
-        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected product or lineage changed; deferred" : "Duplicate published row"),
+        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
         feePublishedId,
+        ...("identityChanged" in written && written.identityChanged ? { identityDeferred: true } : {}),
         ...(feePublishedId ? movementFor(priorPublishedFee, row) : NO_MOVEMENT),
         supersededFeePublishedId:
           written.superseded && priorPublishedFee ? Number(priorPublishedFee.fee_published_id) : null,
@@ -2372,7 +2387,9 @@ export async function runHamiltonPublish(
     }
     results.push(result);
 
-    if (learning) {
+    // A stale selected tuple is not a decision about the current verified input. Its guard
+    // event is durable; leave the ordinary pending input eligible without replaying history.
+    if (learning && !result.identityDeferred) {
       await recordAttempt(db, {
         institutionId: result.institutionId,
         stage: "publish",
@@ -2469,6 +2486,7 @@ export async function runHamiltonPublish(
     processedVerifiedFees: results.length,
     publishedFees: published.length,
     skippedFees: results.length - published.length,
+    identityDeferredFees: results.filter((result) => result.identityDeferred).length,
     supersededFees: results.filter((result) => result.supersededFeePublishedId != null).length,
     zeroFeesPublished: published.filter((result) => result.amount === 0).length,
     learning,

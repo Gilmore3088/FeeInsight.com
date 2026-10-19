@@ -28,6 +28,21 @@ describe("Explicit primary-document ancillary account ownership", () => {
   ])("leaves mixed, generic or non-deposit scope unassigned: %s", (title) => {
     expect(primaryAncillaryProduct(ancillaryAccountText().replace("Everyday Debit Account Pricing and Information", title))).toBeNull();
   });
+  it.each([
+    "Premium no fee | Standard no fee\nPersonal money order | $5.00 each",
+    "Premium | Standard\nPersonal money order | $5.00 each | $1.65 each",
+    "Premium | Standard\nPersonal money order | $5.00 each | $5.00 each",
+    "Premium\nStandard\nPersonal money order | $5.00 each",
+    "Premium |\n| Standard\nPersonal money order | $5.00 each",
+    "Premium | Standard\nPersonal money order $5.00 each",
+    "Personal money order | $5.00 each | $1.65 each",
+    "Personal money order $5.00 each $1.65 each",
+    "Personal money order | 5.00 each | 1.65 each",
+  ])("keeps shorthand/multiline/multiple-price columns unassigned: %s",(block)=>{
+    const text=`Everyday Debit Account Pricing and Information\nACCOUNT TERMS AND FEES\n${block}`;
+    expect(primaryAncillaryProduct(text)).toBeNull();
+    expect(withAncillaryProduct({feeName:'Personal money order',canonicalHint:'money_order',amount:5},text).ancillaryProduct).toBeUndefined();
+  });
   it("fails closed outside the title/block budgets",()=>{
     expect(primaryAncillaryProduct("\n".repeat(13)+ancillaryAccountText())).toBeNull();
     expect(primaryAncillaryProduct(ancillaryAccountText()+"\n".repeat(49))).toBeNull();

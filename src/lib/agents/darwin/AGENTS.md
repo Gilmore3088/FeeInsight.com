@@ -34,7 +34,8 @@ Darwin's v4 batch key and second-source comparison include the represented norma
 New v1-owned rows must still have the matching primary-product title and their own price inside
 its bounded fee block; generic neighbouring prices are insufficient. The verifier locks and
 rechecks the selected raw product before writing its new verified lineage inside the run-ledger
-transaction. Existing peer/category/source/zero policies and settled decisions remain intact.
+transaction. That transaction is a precondition of exported insertVerifiedFee; inSavepoint
+alone does not start one, and standalone autocommit is not supported. Existing peer/category/source/zero policies and settled decisions remain intact.
 ## Reference eligibility (2026-10-19, #1862)
 
 Current answer-key feedback is admitted only through the shared durable eligibility snapshot

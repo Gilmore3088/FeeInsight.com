@@ -38,7 +38,10 @@ their published members, current verified lineage and raw rows in stable ID orde
 the selected full published state, exact raw lineage and normalized product after waits. Changed
 pairs are skipped visibly; only UPDATE RETURNING rows count as changes. This is a selected-row
 Read Committed guard, not serializable phantom-insertion isolation. Refresh also rechecks the
-selected new raw/product, audience, verification and scalar/rate identity. Existing closure,
+selected new raw/product, audience, verification and scalar/rate identity. Publication compares
+the complete selected verified PostgreSQL JSON after its lock. identityDeferred rows emit a
+visible guard event/count/reason, leave the v3 fingerprint undecided and teach no negative lesson;
+a stable ordinary retry remains eligible. Parent summaries distinguish them from ineligible fees. Existing closure,
 full-precision timestamp, target hold and conservative restore-twin guards remain in force.
 
 ## Hamilton's faces (James, 2026-10-06 00:08 UTC)

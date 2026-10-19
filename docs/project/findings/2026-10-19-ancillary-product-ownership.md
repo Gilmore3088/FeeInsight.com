@@ -55,7 +55,12 @@ conservative broader applicability; metadata cannot be used to bypass them.
 Planned destructive/refresh pairs lock only their selected published members, verified lineage and
 raw rows in stable ID order. After waits, the write checks the selected full published state,
 exact raw lineage and normalized raw product; new refresh lineage/scalars are rechecked too.
-Changed pairs are visible guard skips and actual counts come from RETURNING. Existing holds,
+Changed pairs are visible guard skips and actual counts come from RETURNING. Publication also
+captures the complete selected PostgreSQL verification JSON and compares it after the lock,
+covering review status/flags, audience, all scalar/rate fields and source/event lineage. A drift
+emits a guard event and explicit identityDeferred count/reason; it does not settle a v3 attempt.
+Ordinary stable retry remains eligible. Actual feedback sync/calibration controls show no wrong
+teaching, movement signal or supersession from the deferred selection. Existing holds,
 selected exact closure and full-precision timestamps remain protected. Two-session SQL controls
 change raw product or lineage on either duplicate member while the writer waits. These selected-row
 Read Committed guards do not claim serializable phantom-insertion isolation.
@@ -75,6 +80,20 @@ No migration, production write, provider work, switch, backfill, blanket takedow
 benchmark policy change is included. Mixed sections/columns, exact metadata/rejudge recovery and
 numeric aggregation policy remain explicit work in #1911, which stays open. Code PR relates to
 that umbrella; only its bounded code checkbox can be completed after merge.
+
+**Independent review corrections.** At198d1f3dc, shorthand headers such as Premium | Standard
+could inherit the primary title, and the initial new publication guard locked verification but
+compared only raw ID/product. Review retained eight failing generic column cases, a descriptive
+no-fee-header failure and three actual-schema stale audience/status/amount publication failures.
+The final block requires unambiguous single-price lines/columns, with anchored explicit no-fee
+statements (including the actual Safe Debit layout), not arbitrary header token presence. Mixed
+shorthand/multiline/equal-price columns remain unassigned. The final publication JSON guard has
+actual tuple/raw drift, selected-prior preservation and real two-session verified-status wait
+controls. The wait fixture alone commits a private cohort on the loopback database so both
+sessions can see it; finally removes that institution/run cohort. All other new SQL fixtures roll
+back. No standalone autocommit guarantee is claimed for Darwin's exported insert helper: its
+selected raw product lock spans the write inside the runtime run-ledger transaction; inSavepoint
+alone does not begin a transaction.
 
 **Overlap.** PR1736 at `15b0340b38ff20c7303f604d1829a8f22d3af2dc` separately owns report-only category-context
 options in the shared source checker. Its option contract is not absorbed here; this phase uses

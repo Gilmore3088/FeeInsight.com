@@ -1199,6 +1199,9 @@ async function selectRawFees(
   );
 }
 
+/** Caller must hold the run-ledger transaction: the raw product lock spans this insert.
+ * inSavepoint alone does not start a transaction; standalone autocommit is not supported here.
+ */
 export async function insertVerifiedFee(
   db: SqlTag,
   options: {

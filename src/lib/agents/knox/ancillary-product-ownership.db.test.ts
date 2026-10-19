@@ -19,6 +19,8 @@ type Fixture = { institutionId: number; runId: number; documentId: number; textI
 describe.skipIf(!connection)("Ancillary account ownership in actual SQL (#1911 code phase)", () => {
   let db: postgres.Sql;
   let appSql: Db;
+  let syncPipelineFeedback: typeof import("../learning/feedback-sync").syncPipelineFeedback;
+  let loadKnoxCalibration: typeof import("./calibration").loadKnoxCalibration;
   let extract: typeof import("./extract");
   let verify: typeof import("../darwin/verify");
   let publish: typeof import("../hamilton/publish");
@@ -33,6 +35,8 @@ describe.skipIf(!connection)("Ancillary account ownership in actual SQL (#1911 c
     vi.stubEnv("DATABASE_URL", connection);
     const connectionModule = await import("@/lib/data-store/connection");
     appSql = connectionModule.sql;
+    ({syncPipelineFeedback}=await import("../learning/feedback-sync"));
+    ({loadKnoxCalibration}=await import("./calibration"));
     db = postgres(connection, { max: 1, ssl: "require", types: {
       numeric: connectionModule.NUMERIC_AS_NUMBER, json: connectionModule.JSON_TEXT_PASSTHROUGH, text: connectionModule.TEXT_WITHOUT_NUL,
     } }) as unknown as postgres.Sql;
@@ -220,5 +224,144 @@ describe.skipIf(!connection)("Ancillary account ownership in actual SQL (#1911 c
       expect(await collapse.collapsePublishedDuplicates(tx, { runId:first.runId,batchId:'ancillary-test',dryRun:false,institutionId:first.institutionId })).toEqual([]);
       expect(await tx`SELECT 1 FROM published_fee_records WHERE institution_id=${first.institutionId} AND rolled_back_at IS NULL`).toHaveLength(2);
     });
-  }, 30_000);
+  }, 30_000);  it.each(["audience", "status", "amount", "flags", "frequency", "rate", "source_event", "raw_product", "raw_lineage"])("defers frozen publication after selected verification/raw %s changed", async (changed) => {
+    await rollback(async (tx) => {
+      const f=await seed(tx,ancillaryAccountText()); await read(tx,f);
+      let changedOnce=false;
+      const wrap=(scope:Db):Db => {
+        const tag=async(strings:TemplateStringsArray,...values:unknown[])=>{
+          if(!changedOnce && strings.join(" ").includes("SELECT fp.lineage_ref FROM published_fee_records fp")) {
+            changedOnce=true;
+            if(changed==="audience") {
+              await tx`UPDATE raw_fee_observations SET fee_audience='business',audience_evidence='Fixture changed to business' WHERE institution_id=${f.institutionId} AND product_name='Everyday Debit Account'`;
+              await tx`UPDATE verified_fee_observations SET fee_audience='business' WHERE institution_id=${f.institutionId}`;
+            }
+            if(changed==="status") await tx`UPDATE verified_fee_observations SET review_status='rejected' WHERE institution_id=${f.institutionId}`;
+            if(changed==="amount") await tx`UPDATE verified_fee_observations SET amount=99 WHERE institution_id=${f.institutionId}`;
+            if(changed==='flags') await tx`UPDATE verified_fee_observations SET outlier_flags=outlier_flags||'["needs_human"]'::jsonb WHERE institution_id=${f.institutionId}`;
+            if(changed==='frequency') await tx`UPDATE verified_fee_observations SET frequency='annual' WHERE institution_id=${f.institutionId}`;
+            if(changed==='rate') await tx`UPDATE verified_fee_observations SET amount=NULL,amount_kind='percent',rate_percent=5,rate_basis='transaction' WHERE institution_id=${f.institutionId}`;
+            if(changed==='source_event') await tx`UPDATE verified_fee_observations SET source_url='https://product.example/changed.pdf',verified_by_agent_event_id='00000000-0000-4000-8000-000000000999' WHERE institution_id=${f.institutionId}`;
+            if(changed==='raw_product') await tx`UPDATE raw_fee_observations SET product_name='Premium Debit Account' WHERE institution_id=${f.institutionId}`;
+            if(changed==='raw_lineage') {
+              const originals=await tx`SELECT fv.fee_verified_id,fr.* FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id WHERE fv.institution_id=${f.institutionId}`;
+              for(const original of originals) {
+                const [fresh]=await tx`INSERT INTO raw_fee_observations (institution_id,source_document_id,fee_name,amount,source,fee_audience,product_name,agent_event_id)
+                  VALUES (${f.institutionId},${f.documentId},${original.fee_name+' fresh lineage'},${original.amount},'knox',${original.fee_audience},${original.product_name},${original.agent_event_id}::uuid) RETURNING fee_raw_id`;
+                await tx`UPDATE verified_fee_observations SET fee_raw_id=${fresh.fee_raw_id} WHERE fee_verified_id=${original.fee_verified_id}`;
+              }
+            }
+          }
+          return (scope as unknown as (...args:unknown[])=>Promise<unknown>)(strings,...values);
+        };
+        Object.assign(tag,{unsafe:scope.unsafe.bind(scope),savepoint:(work:(inner:Db)=>Promise<unknown>)=>(scope as unknown as {savepoint:(work:(inner:Db)=>Promise<unknown>)=>Promise<unknown>}).savepoint(inner=>work(wrap(inner)))});
+        return tag as unknown as Db;
+      };
+      const feedbackBefore=await tx`SELECT * FROM pipeline_feedback WHERE institution_id=${f.institutionId} ORDER BY id`;
+      const calibrationBefore=changed==='status'?await loadKnoxCalibration(tx):null;
+      const result=await published(wrap(tx),f);
+      const rows=await tx`SELECT fp.amount,fp.fee_audience,fv.review_status,fv.amount AS current_verified_amount FROM published_fee_records fp JOIN verified_fee_observations fv ON fv.fee_verified_id=fp.lineage_ref WHERE fp.institution_id=${f.institutionId}`;
+      expect(changedOnce).toBe(true);
+      expect(rows,JSON.stringify({changed,rows,result})).toHaveLength(0);
+      expect(result.results).toHaveLength(3);
+      expect(result.results.every((row)=>row.reason?.includes('deferred') && row.identityDeferred)).toBe(true);
+      expect(await tx`SELECT 1 FROM fee_change_records WHERE institution_id=${f.institutionId}`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE institution_id=${f.institutionId} AND strategy=${publish.HAMILTON_PUBLISH_STRATEGY.strategy}`).toHaveLength(0);
+      if(changed==='status') {
+        await syncPipelineFeedback(tx,{runId:f.runId});
+        expect(await tx`SELECT * FROM pipeline_feedback WHERE institution_id=${f.institutionId} ORDER BY id`).toEqual(feedbackBefore);
+        expect(await loadKnoxCalibration(tx)).toEqual(calibrationBefore);
+        expect(await tx`SELECT 1 FROM hamilton_signals WHERE institution_id=${f.institutionId}
+          AND signal_type IN ('hamilton_publication_completed','hamilton_fee_movement_detected')`).toHaveLength(0);
+        expect(result).toMatchObject({identityDeferredFees:3,outcomes:{evidence_mismatch:3}});
+        await tx`UPDATE verified_fee_observations SET review_status='verified' WHERE institution_id=${f.institutionId}`;
+        expect((await published(tx,f)).publishedFees).toBe(3);
+      }
+    });
+  });
+
+  it.each([false,true])("preserves a selected prior fee when replacement verification changes=%s",async(change)=>{
+    await rollback(async(tx)=>{
+      const f=await seed(tx,ancillaryAccountText()); await read(tx,f); await published(tx,f);
+      const [prior]=await tx`SELECT fee_published_id FROM published_fee_records WHERE institution_id=${f.institutionId} AND canonical_fee_key='money_order'`;
+      const fresh=await addDocument(tx,f,ancillaryAccountText('Everyday Debit Account',7));
+      await tx`UPDATE source_documents SET document_url='https://product.example/fees.pdf',crawled_at='2026-01-01' WHERE id=${f.documentId}`;
+      await tx`UPDATE source_documents SET document_url='https://product.example/fees.pdf',crawled_at='2026-02-01' WHERE id=${fresh.documentId}`;
+      await read(tx,fresh);
+      let changed=false;
+      const wrap=(scope:Db):Db=>{
+        const tag=async(strings:TemplateStringsArray,...values:unknown[])=>{
+          if(change && !changed && strings.join(' ').includes('SELECT fp.lineage_ref FROM published_fee_records fp')) {
+            changed=true;
+            await tx`UPDATE verified_fee_observations fv SET amount=99 FROM raw_fee_observations fr WHERE fv.fee_raw_id=fr.fee_raw_id
+              AND fr.source_document_id=${fresh.documentId} AND fv.canonical_fee_key='money_order'`;
+          }
+          return (scope as unknown as (...args:unknown[])=>Promise<unknown>)(strings,...values);
+        };
+        return Object.assign(tag,{unsafe:scope.unsafe.bind(scope),savepoint:(work:(inner:Db)=>Promise<unknown>)=>
+          (scope as unknown as {savepoint:(work:(inner:Db)=>Promise<unknown>)=>Promise<unknown>}).savepoint(inner=>work(wrap(inner)))}) as unknown as Db;
+      };
+      const result=await published(wrap(tx),fresh);
+      const rows=await tx`SELECT fee_published_id,amount FROM published_fee_records WHERE institution_id=${f.institutionId}
+        AND canonical_fee_key='money_order' AND rolled_back_at IS NULL`;
+      expect(rows).toHaveLength(1); expect(Number(rows[0].amount)).toBe(change?5:7);
+      expect((await tx`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id=${prior.fee_published_id}`)[0].rolled_back_at===null).toBe(change);
+      if(change) expect(result.results.some((row)=>row.reason?.includes('deferred'))).toBe(true);
+    });
+  });
+
+  it("defers current verified status committed during a real two-connection lock wait",async()=>{
+    // This one fixture must commit for another session to see it. The owned loopback-only
+    // cohort is removed by institution/run ID in finally; no public sequence run IDs are used.
+    let f:Fixture|undefined;
+    const holder=postgres(connection!,{max:1,ssl:'require'}),writer=postgres(connection!,{max:1,ssl:'require'});
+    let release!:()=>void,locked!:()=>void,started!:(pid:number)=>void;
+    const canCommit=new Promise<void>((resolve)=>{release=resolve;});
+    const hasLock=new Promise<void>((resolve)=>{locked=resolve;});
+    const writerPid=new Promise<number>((resolve)=>{started=resolve;});
+    let holding:Promise<unknown>|undefined,writing:Promise<unknown>|undefined;
+    try {
+      f=await db.begin(async(scope)=>{const tx=scope as unknown as Db;const fixture=await seed(tx,ancillaryAccountText());await read(tx,fixture);return fixture;});
+      const fixture=f;
+      holding=holder.begin(async(scope)=>{
+        const tx=scope as unknown as Db;
+        await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE institution_id=${fixture.institutionId} ORDER BY fee_verified_id FOR UPDATE`;
+        await tx`UPDATE verified_fee_observations SET review_status='rejected' WHERE institution_id=${fixture.institutionId}`;
+        locked();await canCommit;
+      });
+      await hasLock;
+      writing=writer.begin(async(scope)=>{
+        const tx=scope as unknown as Db;
+        const [{pid}]=await tx`SELECT pg_backend_pid() AS pid`;started(Number(pid));
+        return published(tx,fixture);
+      });
+      const pid=await writerPid;
+      let blocked=false;
+      for(let i=0;i<200;i++) {
+        const [state]=await db`SELECT wait_event_type FROM pg_stat_activity WHERE pid=${pid}`;
+        if(state?.wait_event_type==='Lock') {blocked=true;break;}
+        await new Promise((resolve)=>setTimeout(resolve,10));
+      }
+      expect(blocked).toBe(true);release();await holding;
+      const result=await writing as Awaited<ReturnType<typeof published>>;
+      expect(result.publishedFees).toBe(0);
+      expect(result.results.every((row)=>row.reason?.includes('deferred') && row.identityDeferred)).toBe(true);
+      expect(await db`SELECT 1 FROM published_fee_records WHERE institution_id=${fixture.institutionId}`).toHaveLength(0);
+    } finally {
+      release();await Promise.allSettled([holding,writing]);await holder.end();await writer.end();
+      if(f) await db.begin(async(scope)=>{
+        const tx=scope as unknown as Db;
+        await tx`DELETE FROM fee_change_records WHERE institution_id=${f!.institutionId}`;
+        await tx`DELETE FROM published_fee_records WHERE institution_id=${f!.institutionId}`;
+        await tx`DELETE FROM verified_fee_observations WHERE institution_id=${f!.institutionId}`;
+        await tx`DELETE FROM raw_fee_observations WHERE institution_id=${f!.institutionId}`;
+        await tx`DELETE FROM hamilton_signals WHERE institution_id=${f!.institutionId}`;
+        await tx`DELETE FROM source_documents WHERE institution_id=${f!.institutionId}`;
+        await tx`DELETE FROM institution_sources WHERE id=${f!.institutionId}`;
+        await tx`DELETE FROM agent_institution_run_results WHERE agent_run_id=${f!.runId}`;
+        await tx`DELETE FROM agent_runs WHERE id=${f!.runId}`;
+      });
+    }
+  },15_000);
+
 });
