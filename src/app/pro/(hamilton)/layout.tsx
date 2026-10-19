@@ -17,7 +17,10 @@ import {
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
 import { subscribeReason } from "@/lib/subscribe-reason";
+import { getActivePeerSet } from "@/lib/hamilton/peer-index";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
+import { sql } from "@/lib/data-store/connection";
+import { getPendingInstitutionLink } from "@/lib/pro-institution-link";
 
 export const metadata: Metadata = {
   title: {
@@ -136,6 +139,17 @@ async function HamiltonLayoutInner({
         selectedSource: "none" as const,
         selectedFromUrl: false,
       };
+  // The comparison group is the third context the bar names: the subject's active peer set, the
+  // one Ask, Reports and the briefing read. Read beside the account; a failed read names no group.
+  const [accountContext, activePeers] = await Promise.all([
+    loadHamiltonAccountContext(user),
+    selectedInstitution
+      ? getActivePeerSet({ userId: user.id, institutionId: selectedInstitution.id }).then((set) => set ?? null, () => undefined)
+      : Promise.resolve(undefined),
+  ]);
+  // No membership yet: the institution named at signup may be waiting for the admin check
+  // (#1407). The bar names it as pending, as Settings does; it grants no access.
+  const pendingLink = accountContext.status === "unlinked" ? await getPendingInstitutionLink(sql, user.id) : null;
   return (
     <HamiltonShell
       initialRequestPath={requestPath}
@@ -144,7 +158,9 @@ async function HamiltonLayoutInner({
       viewAsCustomer={isAdmin && isViewAsCustomerCookie((await cookies()).get(VIEW_AS_CUSTOMER_COOKIE)?.value)}
       institutionContext={institutionContext}
       selectedInstitutionId={selectedInstitutionId}
-      accountContext={await loadHamiltonAccountContext(user)}
+      peerLabel={activePeers === undefined ? undefined : activePeers?.label ?? null}
+      accountContext={accountContext}
+      pendingInstitution={pendingLink ? { name: pendingLink.institutionName, needsInfo: pendingLink.needsInfo } : null}
     >
       {children}
     </HamiltonShell>

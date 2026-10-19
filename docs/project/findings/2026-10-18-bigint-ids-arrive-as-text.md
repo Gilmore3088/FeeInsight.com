@@ -1,0 +1,5 @@
+# 2026-10-18: bigint ids arrive as text
+**What happened:** every Pro checkout failed with "We could not confirm checkout" (James, user 26, three tries on Oct 18; the #1961 log line read `Invalid checkout owner`). The Oct 18 Stripe audit then found the same cause behind three other bugs: every password reset link read as expired, Hamilton owners never saw seat management, and resolving a payment email in review threw.
+**Cause:** `users.id` and other ids are `bigint`. `src/lib/data-store/connection.ts` overrides only the numeric, json and text types, so postgres.js returns int8 as a string ("26"). `User.id` is typed `number`, so TypeScript never flagged `"26" === 26` or `Number.isSafeInteger("26")`.
+**Fix:** #1969 (checkout, merged). The follow-up PR for #1970 maps the row with `userFromRow` in `src/lib/auth.ts`, which fixes password reset, settings, payment emails and the settings self-revoke guard.
+**Lesson:** convert a bigint column with `Number()` where the row is read, never at each comparison. Any new `=== user.id` against a raw row value needs the same conversion and a test where the id arrives as text.

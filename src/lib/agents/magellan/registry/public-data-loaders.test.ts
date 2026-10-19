@@ -2,7 +2,8 @@ import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
 import { fdicHistoryPartitions, runRegistryFdicHistory } from "./fdic-history";
-import { runRegistryFfiecCallDetail } from "./ffiec-call-detail";
+import { ffiecCallDetailPartitions, runRegistryFfiecCallDetail } from "./ffiec-call-detail";
+import { ffiecOverdraftPartitions } from "./ffiec-overdraft";
 import { ncuaExtrasPartitions, runRegistryNcuaExtras } from "./ncua-extras";
 import type { RegistryDb } from "./partitions";
 
@@ -61,10 +62,19 @@ describe("registry ffiec-call-detail", () => {
 });
 
 describe("registry ncua-extras", () => {
-  it("lists newest quarters first back to 2020", () => {
+  it("lists newest quarters first, only back to the 13 quarters already loaded", () => {
     const parts = ncuaExtrasPartitions(new Date("2026-10-17T00:00:00Z"));
     expect(parts[0]).toBe("2026Q2");
-    expect(parts.at(-1)).toBe("2020Q1");
+    expect(parts.at(-1)).toBe("2023Q2");
+    expect(parts).toHaveLength(13);
+  });
+
+  it("stops FFIEC call detail at 2023, finishing that year, while the overdraft line keeps its 2015 floor", () => {
+    const now = new Date("2026-10-17T00:00:00Z");
+    const detail = ffiecCallDetailPartitions(now);
+    expect(detail).toHaveLength(14);
+    expect(detail.slice(-4)).toEqual(["2023Q1", "2023Q2", "2023Q3", "2023Q4"]);
+    expect(ffiecOverdraftPartitions(now).at(-1)).toBe("2015Q4");
   });
 
   it("records an empty partition when the zip has no description file", async () => {

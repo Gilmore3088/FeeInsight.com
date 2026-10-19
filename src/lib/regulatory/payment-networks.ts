@@ -5,12 +5,9 @@ import { parseCsv } from "./ncua";
 import { registryFetch, RegistryHttpError, type RegistryFetchOptions } from "./http";
 
 /**
- * Published payment-network participant lists and the Fed's Regulation II tables. Pure: fetches
+ * The Fed's Regulation II issuer lists and interchange tables, and OpenStreetMap ATMs. Pure: fetches
  * and parses, never writes to the database.
  *
- * - Zelle's participating banks and credit unions page.
- * - The Federal Reserve Financial Services list of FedNow participants.
- * - The Clearing House's alphabetical list of RTP participants (with states).
  * - The Fed's Regulation II issuer lists, "Exempt" and "Not Exempt" (assets of $10 billion or
  *   more with affiliates), each with the as-of date the Fed gives it, read from the Fed's page
  *   or the CSV / HTML file it links.
@@ -29,7 +26,11 @@ import { registryFetch, RegistryHttpError, type RegistryFetchOptions } from "./h
  * says why; a blank cell stays null.
  */
 
-export type MembershipPartition = "zelle" | "fednow" | "rtp" | "reg-ii-exempt" | "reg-ii-not-exempt";
+/**
+ * The Zelle, FedNow and RTP participant lists were removed on 2026-10-17: their sites allow only
+ * personal or non-commercial use, and Fee Insight loads no non-commercial data (DECISIONS.md).
+ */
+export type MembershipPartition = "reg-ii-exempt" | "reg-ii-not-exempt";
 export type PaymentNetworkPartition = MembershipPartition | "reg-ii-survey";
 
 export interface PaymentNetworkSourceConfig {
@@ -39,10 +40,10 @@ export interface PaymentNetworkSourceConfig {
   label: string;
   pageUrl: string;
   /**
-   * html-list: names in a page list or table. fed-list: a Fed page holding the list as a table,
-   * or linking to it (CSV or HTML). tables: every table on the page, cell by cell.
+   * fed-list: a Fed page holding the list as a table, or linking to it (CSV or HTML). tables:
+   * every table on the page, cell by cell.
    */
-  kind: "html-list" | "fed-list" | "tables";
+  kind: "fed-list" | "tables";
   /** fed-list only: which linked list to follow. */
   fedList?: "exempt" | "not-exempt";
   /** Fewer listed rows than this means the page was not read as a list. */
@@ -52,30 +53,6 @@ export interface PaymentNetworkSourceConfig {
 const REG_II_LISTS_PAGE = "https://www.federalreserve.gov/paymentsystems/regii-about.htm";
 
 export const PAYMENT_NETWORK_SOURCES: Record<PaymentNetworkPartition, PaymentNetworkSourceConfig> = {
-  zelle: {
-    partition: "zelle",
-    network: "zelle",
-    label: "Zelle participating banks and credit unions",
-    pageUrl: "https://www.zellepay.com/participating-banks-and-credit-unions",
-    kind: "html-list",
-    minRows: 100,
-  },
-  fednow: {
-    partition: "fednow",
-    network: "fednow",
-    label: "FedNow participants",
-    pageUrl: "https://www.frbservices.org/financial-services/fednow/organizations",
-    kind: "html-list",
-    minRows: 100,
-  },
-  rtp: {
-    partition: "rtp",
-    network: "rtp",
-    label: "RTP participating financial institutions",
-    pageUrl: "https://www.theclearinghouse.org/payment-systems/rtp/rtp-participating-financial-institutions",
-    kind: "html-list",
-    minRows: 100,
-  },
   "reg-ii-not-exempt": {
     partition: "reg-ii-not-exempt",
     network: "reg-ii-not-exempt",

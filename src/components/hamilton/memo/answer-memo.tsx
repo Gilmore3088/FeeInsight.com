@@ -8,6 +8,8 @@ import type { ReactNode } from "react";
 import type { Exhibit, Fact } from "@/lib/hamilton/workspace/types";
 import { ANSWER_EVIDENCE_LABELS, ExhibitView, SourceChip, type AnswerSpec } from "./exhibit-view";
 import { ANSWER_TYPE, AnswerLead, KeyFigures, More, SectionHeading, fmtMoney } from "./memo";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 export interface KeyFigure {
   value: string;
@@ -27,6 +29,7 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
   }
   if (exhibit.kind === "competitor_range") {
     if (exhibit.items.length === 0) return [];
+    // Range and count read the same one value per institution; named fees stay on the rows (#1931).
     const amounts = exhibit.items.map((i) => i.amount);
     const lo = Math.min(...amounts);
     const hi = Math.max(...amounts);
@@ -100,7 +103,7 @@ function DriverCards({ facts }: { facts: readonly Fact[] }) {
   );
 }
 
-export function AnswerMemo({ answer, nextSteps }: { answer: AnswerSpec; nextSteps?: ReactNode }) {
+export function AnswerMemo({ answer, nextSteps, stamps }: { answer: AnswerSpec; nextSteps?: ReactNode; stamps?: readonly StampedFigure[] | null }) {
   const figures = keyFiguresFor(answer.exhibit);
   const lead = answer.claims.slice(0, 3);
   const rest = answer.claims.slice(3);
@@ -108,7 +111,13 @@ export function AnswerMemo({ answer, nextSteps }: { answer: AnswerSpec; nextStep
     <article className="flex flex-col gap-7">
       <AnswerLead>{answer.headline}</AnswerLead>
 
-      <KeyFigures figures={figures.map((f) => ({ value: f.value, label: f.label, title: f.label }))} />
+      {figures.length > 0 || (stamps && stamps.length > 0) ? (
+        <div className="flex flex-col gap-3">
+          <KeyFigures figures={figures.map((f) => ({ value: f.value, label: f.label, title: f.label }))} />
+          {/* Where the medians and counts came from (#1924); nothing without a stamp. */}
+          <DatasetNote figures={stamps ?? []} />
+        </div>
+      ) : null}
 
       {answer.exhibit ? <ExhibitView exhibit={answer.exhibit} number={1} /> : null}
 

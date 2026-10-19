@@ -4,6 +4,7 @@
  * Provides the LLM with access to:
  * - Fee data tools (national index, peer index, institution lookup)
  * - Fed district data + Beige Book
+ * - The data catalog: public data by area and published fees by scope (listData, queryData)
  * - Report generation trigger
  * - Admin pipeline tools
  */
@@ -15,6 +16,7 @@ import { publicTools } from "@/lib/research/tools";
 import { internalTools } from "@/lib/research/tools-internal";
 import { searchExternalIntelligence } from "@/lib/data-store/intelligence";
 import { getLocalCompetitors } from "@/lib/research/tool-local-competitors";
+import { DATA_CATALOG_INSTRUCTION, listData, queryData, warmDataCatalog } from "@/lib/research/tool-query-data";
 import {
   LEGACY_GENERATABLE_REPORT_TYPES,
   legacyReportTypeError,
@@ -29,6 +31,7 @@ import {
  * - Date anchor
  */
 export function buildHamiltonSystemPrompt(): string {
+  warmDataCatalog();
   const today = new Date().toISOString().split("T")[0];
 
   return `${HAMILTON_SYSTEM_PROMPT}
@@ -46,6 +49,8 @@ When the user asks about an institution's position, call getLocalCompetitors and
 
 EXTERNAL INTELLIGENCE:
 When you use the searchIntelligence tool and reference external sources, ALWAYS cite them inline as [Source: {source_name}, {date}]. Format only, with placeholders and not a fact: "According to [source_name] [Source: {source_name}, {date}], [finding exactly as the tool returned it]." Never present external intelligence as your own analysis — always attribute.
+
+${DATA_CATALOG_INSTRUCTION}
 
 Today's date: ${today}. Always ground analysis in tool results — never invent statistics.`;
 }
@@ -163,5 +168,7 @@ export function buildHamiltonTools() {
     triggerReport,
     searchIntelligence,
     getLocalCompetitors,
+    listData,
+    queryData,
   };
 }

@@ -9,12 +9,13 @@ import {
   MAX_PEER_MEDIAN_RECORDS,
   PEER_AGGREGATE_LIMITATION,
   PEER_MEDIAN_RECORDS_LIMITATION,
+  peerMedianCoverage,
   peerMedianEvidence,
 } from "./evidence-contract";
 import { savedEvidenceAppendix } from "./evidence-export";
 import { bindNarrative, MEDIAN_AS_FEE_LIMITATION } from "./narrative-bound";
 import { readNarrativeBinding } from "./written-answer-binding";
-import { evidenceRecordsExhibit, readerLimitation } from "./board-brief";
+import { evidenceRecordsExhibit, readerLimitation, savedAnswerLimits } from "./board-brief";
 import { overdraftResearch } from "./workspace/test-fixtures";
 import type { FeeResearch, PeerValue } from "./workspace/types";
 
@@ -52,6 +53,36 @@ describe("peer median evidence", () => {
       expect(buildFeeResearchEvidence(r).limitations).toContain(PEER_AGGREGATE_LIMITATION);
     }
     expect(buildFeeResearchEvidence(base).derivations.some(d => d.derivation.kind === "peer_median")).toBe(false);
+  });
+  it("reads peer frequencies spelled differently as one frequency (#1975)", () => {
+    const spellings = ["per_item", "per item", "Per-Item", "PER  ITEM"];
+    const respelled = { ...research, peers: research.peers.map((p, i) => ({ ...p, feeRecords: p.feeRecords!.map(r => ({ ...r, frequency: spellings[i % spellings.length] })) })) };
+    expect(peerMedianEvidence(respelled)?.derivation.value).toBe(29.5);
+  });
+  it("says how many peers were left out of the record check and why, and never 0 of N (#1717)", () => {
+    const three = { ...research, peers: research.peers.map((p, i) => (i < 3 ? { ...p, feeRecords: undefined } : p)) };
+    expect(peerMedianCoverage(three)).toEqual({ context: "peer_median", total: 16, leftOut: 3, byReason: { not_verified: 3 } });
+    const bundle = buildFeeResearchEvidence(three);
+    const line = "3 of 16 peers left out of the record check: not yet verified.";
+    expect(bundle.peerCoverage).toEqual(peerMedianCoverage(three));
+    expect(bundle.limitations).toContain(line);
+    expect(readerLimitation(line)).toBe(line);
+    // The line reaches the saved answer's limits, as the board brief and export print them.
+    expect(savedAnswerLimits({ title: "t", confidence: { level: "medium" as const, basis: [] }, hamiltonView: "", whatThisMeans: "", whyItMatters: [], evidence: { metrics: [] }, exploreFurther: [], factEvidence: bundle })).toContain(line);
+    expect(peerMedianCoverage(research)).toBeNull();
+    const full = buildFeeResearchEvidence(research);
+    expect(full.peerCoverage).toBeUndefined();
+    expect(full.limitations.some(l => /left out/.test(l))).toBe(false);
+    // Peers without records but a median that fails for another reason (frequencies differ): no per-peer line.
+    const mixed = { ...research, peers: research.peers.map((p, i) => (i === 3 ? { ...p, feeRecords: p.feeRecords!.map(r => ({ ...r, frequency: "per_day" })) } : p)) };
+    expect(buildFeeResearchEvidence(mixed).limitations.some(l => /left out/.test(l))).toBe(false);
+    // A group the record check can't take at all (too large, or not the band's size) names no left-out peers.
+    const big = { ...research, peers: Array.from({ length: MAX_PEER_MEDIAN_RECORDS + 1 }, (_, i) => ({ ...research.peers[0], institutionId: 200 + i, amount: 30, feeRecords: undefined })), band: { ...research.band!, median: 30, n: MAX_PEER_MEDIAN_RECORDS + 1 } };
+    const offCount = { ...three, band: { ...research.band!, n: 17 } };
+    for (const r of [big, offCount]) {
+      expect(peerMedianCoverage(r)).toBeNull();
+      expect(buildFeeResearchEvidence(r).limitations.some(l => /left out/.test(l))).toBe(false);
+    }
   });
   it("binds a sentence that calls the figure the median, and leaves out the median stated as the bank's fee", () => {
     const evidence = buildFeeResearchEvidence(research);

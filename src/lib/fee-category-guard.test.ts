@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { cardProductMisfile, checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
+import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -879,11 +879,12 @@ describe("checkFeeCategory", () => {
       "Wire Transfers: Early Account Closure Fee",
       "Checking & Savings Early Closing (Within 90 days of opening account)",
       "Card Account Closure",
-      "Christmas Club Early Withdrawal/Transfer",
       "Early closing of share draft VISA debit card",
     ]) {
       expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
     }
+    // v75 (#2023): a club's withdrawal is not closing the account.
+    expect(checkFeeCategory("early_closure", "Christmas Club Early Withdrawal/Transfer").ok).toBe(false);
   });
 
   it("v53: a business account's wire price is not the consumer wire price", () => {
@@ -1531,7 +1532,6 @@ describe("guard v69 (Oct 17)", () => {
       "Early closure of CD (fee to close prior to maturity)",
       "CD Early Withdrawal Penalty",
       "Christmas Club & CD Early Withdrawal Fee",
-      "Christmas/Vacation Club early withdrawal (1 per year allowed)",
       "HSA Account Closure Fee",
       "IRA Early Withdrawal Processing Fee",
     ]) {
@@ -1880,5 +1880,135 @@ describe("guard v72 (#1788): international ATM fees, add-ons, sustained overdraf
     for (const name of ["All Wires - In/Out", "Wire Out/Wire In", "Wire Transfer - Domestic outbound/inbound", "Outgoing Wire (In Person)", "Domestic Wire Transfer Fee - Out Going", "Domestic outgoing wire charge in branch"]) {
       expect(refileCategory("wire_domestic_outgoing", name)).toBe("wire_domestic_outgoing");
     }
+  });
+});
+
+describe("borrowed direction (#1837): a direction row read under the other column's heading", () => {
+  it.each([
+    ["check_printing", "Check Printing: Incoming"],
+    ["check_printing", "Check Printing: Outgoing"],
+    ["safe_deposit_box", "SAFE DEPOSIT BOXES15: Outgoing (domestic)"],
+    ["stop_payment", "Stop Payment: Incoming"],
+    ["notary_fee", "Notary Service: Foreign Incoming"],
+    ["coin_counting", "Coin Counting: International Outgoing"],
+  ])("flags %s %s when switched on", (key, name) => {
+    expect(borrowedDirection(key, name, true)).not.toBeNull();
+    const result = checkFeeCategory(key, name, undefined, { borrowedDirection: true });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? "" : result.reason).toContain("borrowed direction");
+  });
+
+  it.each([
+    ["wire_domestic_incoming", "Wire Transfers: Incoming"],
+    ["wire_intl_outgoing", "Wires: Outgoing (international)"],
+    ["document_reproduction", "Fax: Incoming"],
+    ["collection_item", "Collections: Foreign"],
+    ["card_foreign_txn", "Debit Card: International"],
+    ["atm_non_network", "ATM Withdrawal: Foreign"],
+    ["card_replacement", "Card Replacement: International"],
+    ["returned_mail", "Returned Mail: Domestic/Foreign"],
+    ["stop_payment", "Stop Payment: Outgoing Wire"],
+    ["account_research", "Research: International Wire"],
+  ])("leaves a category priced by direction alone: %s %s", (key, name) => {
+    expect(borrowedDirection(key, name, true)).toBeNull();
+  });
+
+  it.each([
+    ["check_printing", "Check Printing"],
+    ["check_printing", "Check Printing: Personal"],
+    ["overdraft", "Non-Sufficient Funds / Overdraft: Non-members"],
+    ["stop_payment", "International Wire Stop Payment: Outgoing"],
+    ["stop_payment", "Stop Payment: Outgoing ACH item placed by phone or online"],
+  ])("leaves a name that is not a bare direction row: %s %s", (key, name) => {
+    expect(borrowedDirection(key, name, true)).toBeNull();
+  });
+
+  it("is on since guard v73, and reads nothing when switched off", () => {
+    expect(borrowedDirection("check_printing", "Check Printing: Incoming")).toBe("Incoming");
+    expect(checkFeeCategory("check_printing", "Check Printing: Incoming").ok).toBe(false);
+    expect(borrowedDirection("check_printing", "Check Printing: Incoming", false)).toBeNull();
+    expect(checkFeeCategory("check_printing", "Check Printing: Incoming", undefined, { borrowedDirection: false }).ok).toBe(true);
+  });
+});
+
+describe("guard v74 (#2018): James's 20-defect register", () => {
+  it("re-files a payment investigation from bill pay to account research", () => {
+    expect(checkFeeCategory("bill_pay", "Online Bill Payment Investigation").ok).toBe(false);
+    expect(refileCategory("bill_pay", "Online Bill Payment Investigation")).toBe("account_research");
+    expect(checkFeeCategory("bill_pay", "Bill Pay monthly fee")).toEqual({ ok: true });
+  });
+
+  it("moves withdrawal limits and returned mail out of account research, and keeps real research", () => {
+    expect(refileCategory("account_research", "service charge for each withdrawal over 6 per calendar month")).toBe("excess_withdrawal");
+    expect(refileCategory("account_research", "Excessive savings withdrawals")).toBe("excess_withdrawal");
+    expect(refileCategory("account_research", "Returned mail")).toBe("returned_mail");
+    for (const name of ["Account Research (per hour)", "Excess withdrawal research", "Returned mail research"]) {
+      expect(checkFeeCategory("account_research", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("re-files excess IRA withdrawals to IRA administration and keeps IRA closing", () => {
+    expect(refileCategory("ira_termination", "Excessive IRA Withdrawals")).toBe("ira_administration");
+    expect(checkFeeCategory("ira_termination", "IRA Closing Fee")).toEqual({ ok: true });
+  });
+
+  it("re-files foreign currency shipping from rush card to courier delivery", () => {
+    expect(refileCategory("rush_card", "Foreign Currency – Expedited Shipping")).toBe("courier_delivery");
+    expect(checkFeeCategory("rush_card", "Rush debit card delivery")).toEqual({ ok: true });
+  });
+
+  it("re-files a loan payment from returned deposited items to other lending", () => {
+    expect(refileCategory("deposited_item_return", "Foreign Returned Item | Varies | ACH Loan Payment on Website")).toBe("other_lending_fee");
+    expect(checkFeeCategory("deposited_item_return", "Deposited Item Returned")).toEqual({ ok: true });
+  });
+
+  it("fails a withdrawal at the institution's own named ATM, and keeps other banks' and networks' ATMs", () => {
+    for (const name of ["ATM Withdrawal Fee at JSFCU ATM", "ATM Cash Withdrawal at NCB ATM", "ATM Transactions at DFCU ATM (Local ATM)"]) {
+      expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
+    }
+    for (const name of [
+      "ATM withdrawal at other bank ATM",
+      "Withdrawal at non-network ATMs",
+      "Withdrawal at Allpoint ATMs",
+      "Withdrawals at Nonproprietary ATMs",
+      "Free at our ATM's; $2 at others",
+      "Withdrawal at Bank's ATM network excluded",
+      "Cash withdrawal at foreign ATMs",
+      // #2024 review: words and network acronyms are not an institution's own name.
+      ...["Partner", "Third-Party", "Visa", "Mastercard", "NYCE", "Accel", "Exchange", "Shazam", "Cardtronics", "Walgreens", "7-Eleven",
+        "Unaffiliated", "Independent", "Remote", "Off-Site", "Retail", "Affiliate", "Correspondent", "U.S.", "CU", "Local",
+        "CO-OP", "MoneyPass", "Allpoint", "PLUS", "STAR", "Any", "Partner Credit Union", "FCU", "CU24", "MAESTRO", "COOP", "CUSO",
+        "OTHER", "FOREIGN", "SHAZAM", "MAC", "TYME", "ATH"].map((word) => `Withdrawal at ${word} ATMs`),
+      "ATM FEE AT FOREIGN ATM", "WITHDRAWAL AT ANY ATM", "WITHDRAWAL AT AN ATM", "FEE AT ANOTHER ATM", "Transaction at OTHER ATM",
+      "WITHDRAWAL AT NONBANK ATM", "Withdrawal at NONBANK ATM", "Fee at OTHER ATMS",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(true);
+    }
+  });
+
+  it("v75 (#2023, James's \"Take down\"): a club withdrawal fails early closure; closing a club stays", () => {
+    expect(CLUB_WITHDRAWAL_LIVE).toBe(true);
+    expect(CLUB_WITHDRAWAL.test("Holiday Account Early Withdrawal")).toBe(true);
+    expect(CLUB_WITHDRAWAL.test("Christmas Club closed early")).toBe(false);
+    // Names from the Oct 19 sample of live rows.
+    for (const name of ["Holiday Account Early Withdrawal", "Christmas Club early withdrawal", "Unscheduled Club Withdrawal",
+      "Early Christmas Club Withdrawal", "Vacation Club Withdrawal/Transfer Fee", "Club Accounts Early Withdrawal",
+      "Early Withdrawal From Holiday Club"]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(false);
+    }
+    // A line that also prices a certificate's early withdrawal (early closure's own fee) stays.
+    expect(checkFeeCategory("early_closure", "Christmas Club & CD Early Withdrawal Fee").ok).toBe(true);
+    expect(checkFeeCategory("early_closure", "Christmas/Vacation Club early withdrawal (1 per year allowed)").ok).toBe(false);
+    for (const name of ["Early Christmas Club Closing", "Christmas Club closed early", "Early Account Closure within 90 days", "Account closed within 180 days"]) {
+      expect(checkFeeCategory("early_closure", name).ok, name).toBe(true);
+    }
+  });
+});
+
+describe("guard v74: an excess withdrawal that names IRA only to exclude it", () => {
+  it("stays where it is", () => {
+    const name = "Excessive Withdrawal/Transfer -- Savings and other non-club accounts, excluding IRA/Cert";
+    expect(refileCategory("ira_termination", name)).not.toBe("ira_administration");
+    expect(refileCategory("ira_termination", "IRA withdrawals over 2 per year")).toBe("ira_administration");
   });
 });

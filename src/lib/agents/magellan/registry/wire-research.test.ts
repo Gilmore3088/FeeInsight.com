@@ -160,8 +160,11 @@ describe("pickCandidates", () => {
       [
         { guid: "f1", source: "FED", title: "Fed release", link: "https://fed/1", published: "2026-10-01" },
         { guid: "n1", source: "news:CA", title: "Overdraft bill story - Paper", link: "https://news/1", published: "2026-10-05" },
-        { guid: "s1", source: "state:NY", title: "DFS announces holiday schedule", link: "https://dfs/1", published: "2026-10-04" },
-        { guid: "s2", source: "state:NY", title: "DFS fines bank for overdraft fee practices", link: "https://dfs/2", published: "2026-10-03" },
+        { guid: "s1", source: "state:NJ", title: "DOBI announces holiday schedule", link: "https://dobi/1", published: "2026-10-04" },
+        { guid: "s2", source: "state:NJ", title: "DOBI fines bank for overdraft fee practices", link: "https://dobi/2", published: "2026-10-03" },
+        // New York, North Carolina and Florida posts are struck (non-commercial site terms, 2026-10-18).
+        { guid: "x1", source: "state:NY", title: "DFS fines bank for overdraft fee practices", link: "https://dfs/2", published: "2026-10-06" },
+        { guid: "x2", source: "state:NC", title: "Commissioner fines bank over overdraft fees", link: "https://nccob/2", published: "2026-10-06" },
       ],
       [{ source: "open_states", external_id: "ocd-bill/9", jurisdiction: "CA", identifier: "AB 1520", title: "Overdraft fees", url: "https://os/9", published: "2026-10-02" }],
       3,

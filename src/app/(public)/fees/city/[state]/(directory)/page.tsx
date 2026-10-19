@@ -1,4 +1,11 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * the public read cache its read carries (#1811). The page reads no session, cookies or search
+ * params. A render whose city list came back empty is cached for a minute instead
+ * (`shortenPageLife`, as the homepage), so a failed read is retried.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,11 +14,17 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { CityList, type CityLink } from "./city-list";
 import { titleCase } from "../[city]/city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string }>;
+}
+
+/** Nothing is rendered at build time; each state renders on its first visit, then from cache. */
+export function generateStaticParams() {
+  return [];
 }
 
 /** Markets offered as one-tap links under the search. */
@@ -38,6 +51,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
   if (!stateName) notFound();
 
   const cities = await getStateMarketCitiesCached(stateCode);
+  if (cities.length === 0) await shortenPageLife();
   // getStateMarketCities ranks by institutions with a branch in the city, most first.
   const links: CityLink[] = cities.map((c) => ({
     name: titleCase(c.city),

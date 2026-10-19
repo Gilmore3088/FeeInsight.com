@@ -16,6 +16,28 @@ function request(
 }
 
 describe("proxy", () => {
+  it("serves a profile's ?fee= view from its own cached path, keeping the address (#1811)", () => {
+    const response = proxy(request("https://feeinsight.com/institution/82?fee=overdraft"));
+    expect(response.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/institution/82/fee/overdraft?fee=overdraft");
+
+    // An unknown fee is no focus: the plain cached profile answers.
+    for (const url of ["https://feeinsight.com/institution/82?fee=nope", "https://feeinsight.com/institution/82?utm_source=x"]) {
+      const plain = proxy(request(url));
+      expect(plain.headers.get("x-middleware-rewrite")).toBeNull();
+      expect(plain.headers.get("x-middleware-next")).toBe("1");
+    }
+  });
+
+  it("serves a filtered directory per request and the plain directory from cache (#1811)", () => {
+    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf"]) {
+      const response = proxy(request(`https://feeinsight.com/institutions?${query}`));
+      expect(response.headers.get("x-middleware-rewrite")).toBe(`https://feeinsight.com/institutions/results?${query}`);
+    }
+    for (const url of ["https://feeinsight.com/institutions", "https://feeinsight.com/institutions?utm_source=x&q="]) {
+      expect(proxy(request(url)).headers.get("x-middleware-rewrite")).toBeNull();
+    }
+  });
+
   it("folds an uppercase route name to lowercase, keeping later segments and the query", () => {
     const response = proxy(request("https://feeinsight.com/INSTITUTION/496?tab=fees"));
     expect(response.status).toBe(301);
@@ -105,5 +127,25 @@ describe("proxy", () => {
     const response = proxy(request("https://feeinsight.com/products"));
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+  it("rewrites a signed-in reader of a cached research page to its per-request route (#1811)", async () => {
+    const { signSessionId } = await import("@/lib/session-cookie");
+    const signedIn = proxy(
+      request("https://feeinsight.com/research/state/TX", "feeinsight.com", { cookie: `fsh_session=${signSessionId("b".repeat(64))}` }),
+    );
+    expect(signedIn.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/research/state/TX/signed-in");
+
+    const signedOut = proxy(request("https://feeinsight.com/research/state/TX"));
+    expect(signedOut.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(signedOut.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("answers 404 to a direct request for a per-request route, so it cannot skip the cache", () => {
+    expect(proxy(request("https://feeinsight.com/research/national-fee-index/signed-in")).status).toBe(404);
+  });
+
+  it("serves a city's metro view from its cached route, keeping the address", () => {
+    const response = proxy(request("https://feeinsight.com/fees/city/tx/austin?area=metro&fee=nsf"));
+    expect(response.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/fees/city/tx/austin/metro?area=metro&fee=nsf");
   });
 });

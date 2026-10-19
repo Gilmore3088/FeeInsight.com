@@ -3,8 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runRegistryCfpb } from "./cfpb";
 import { runRegistryFdicSod, latestSodYear } from "./fdic-sod";
-import { beigeEmptyRetryHours, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
-import { REQUIRED_FRED_SERIES } from "@/lib/regulatory/fed";
+import { beigeEmptyRetryHours, expectedLatestPeriod, FED_INDICATORS_PARSER_VERSION, frbPackageDue, runRegistryBeigeBook, runRegistryFomcMinutes, runRegistryFred } from "./fed";
+import { STRUCK_FRED_SERIES } from "@/lib/data-store/struck-sources";
+import { sdmxPackage } from "@/lib/regulatory/fed-board-fixtures";
+import { PUBLISHER_INDICATORS } from "@/lib/regulatory/federal-indicators";
 import { decideIdentityLink, matchCompany, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
@@ -361,90 +363,176 @@ describe("registry Federal Reserve workers", () => {
     expect(beigeEmptyRetryHours("202610", new Date("2026-10-03T00:00:00Z"))).toBe(24 * 3);
   });
 
-  it("refreshes FRED-native series and skips other loaders' series", async () => {
+  it("refreshes indicators from their original publishers, never from FRED", async () => {
+    vi.stubEnv("BEA_API_KEY", "bea-key");
+    vi.stubEnv("BLS_API_KEY", "");
     const { db, statements } = createDb([
       [
         "FROM fed_economic_indicators",
         () => [
-          { series_id: "UNRATE", series_title: "Unemployment", fed_district: null, units: "%", frequency: "Monthly" },
-          { series_id: "NYFED_SOFR", series_title: "SOFR", fed_district: null, units: "%", frequency: "Daily" },
+          { series_id: "UNRATE", series_title: "Unemployment", fed_district: null, units: "%" },
+          { series_id: "NYFED_SOFR", series_title: "SOFR", fed_district: null, units: "%" },
+          { series_id: "CUUR0100SEMC", series_title: "CPI: Professional Services, Northeast", fed_district: null, units: null },
+          { series_id: "T10YIE", series_title: "Breakeven inflation", fed_district: null, units: "Percent" },
         ],
       ],
+      ["publisher_cutover_at", () => []],
+      ["SELECT NOW() AS now", () => [{ now: new Date("2026-10-18T12:00:00Z") }]],
     ]);
-    const bls = { status: "REQUEST_SUCCEEDED", Results: { series: [{ data: [{ year: "2026", period: "M08", value: "4.2" }] }] } };
-    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
-      String(url).includes("api.bls.gov") ? new Response(JSON.stringify(bls)) : new Response("observation_date,X\n2026-08-01,4.2\n"),
-    );
-
-    const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
-
-    // UNRATE plus the required series; the NY Fed series belongs to another loader.
-    const expected = 1 + REQUIRED_FRED_SERIES.length;
-    expect(fetchImpl).toHaveBeenCalledTimes(expected);
-    expect(result).toMatchObject({ series: expected, refreshedSeries: expected, observations: expected });
-    expect(statements.some((s) => s.text.includes("INSERT INTO fed_economic_indicators"))).toBe(true);
-  });
-});
-
-describe("registry FRED worker: BLS and required series", () => {
-  it("pulls BLS CPI series from the BLS API and seeds the GDP price index", async () => {
-    const { db, statements } = createDb([
-      [
-        "FROM fed_economic_indicators",
-        () => [{ series_id: "CUUR0100SEMC", series_title: "CPI: Professional Services, Northeast", fed_district: null, units: null, frequency: "Monthly" }],
-      ],
-    ]);
-    const bls = {
-      status: "REQUEST_SUCCEEDED",
-      Results: { series: [{ seriesID: "CUUR0000SS68021", data: [
-        { year: "2026", period: "M08", value: "301.5" },
-        { year: "2025", period: "M13", value: "290.0" },
-      ] }] },
+    const blsAsked: string[][] = [];
+    const h15 = sdmxPackage("H15_H15", [{ name: "RIFSPFF_N.M", unitMult: "1", obs: [["2026-08", "4.33"], ["2026-09", "4.08"]] }]);
+    const bea = {
+      BEAAPI: {
+        Results: {
+          Data: [
+            { TableName: "T10104", LineNumber: "1", LineDescription: "Gross domestic product", TimePeriod: "2026Q2", UNIT_MULT: "0", DataValue: "128.412" },
+            { TableName: "T10104", LineNumber: "2", LineDescription: "Personal consumption expenditures", TimePeriod: "2026Q2", UNIT_MULT: "0", DataValue: "127.1" },
+          ],
+        },
+      },
     };
-    const fetchImpl = vi.fn().mockImplementation(async (url: string) =>
-      url.includes("api.bls.gov")
-        ? new Response(JSON.stringify(bls))
-        : new Response("observation_date,GDPCTPI\n2026-04-01,128.4\n"),
-    );
+    const fetchImpl = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("api.bls.gov")) {
+        const ids = JSON.parse(String(init?.body)).seriesid as string[];
+        blsAsked.push(ids);
+        return json({ status: "REQUEST_SUCCEEDED", Results: { series: ids.map((id) => ({ seriesID: id, data: [{ year: "2026", period: "M08", value: "4.2" }, { year: "2025", period: "M13", value: "4.0" }] })) } });
+      }
+      if (u.endsWith("FRB_h15_xml.zip")) return new Response(Buffer.from(h15));
+      if (u.startsWith("https://apps.bea.gov/api/data") && u.includes("TableName=T10104")) return json(bea);
+      if (u.startsWith("https://apps.bea.gov/api/data")) return json({ BEAAPI: { Results: { Error: { APIErrorDescription: "Unknown table" } } } });
+      return new Response("not found", { status: 404 });
+    });
 
     const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    vi.unstubAllEnvs();
 
     const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
-    expect(urls).toEqual(expect.arrayContaining([
-      "https://api.bls.gov/publicAPI/v1/timeseries/data/",
-      expect.stringContaining("fredgraph.csv?id=GDPCTPI"),
-    ]));
-    // A plain GET returns about 3 years; the POST asks for 7 so 5-year charts are complete.
-    const blsCall = fetchImpl.mock.calls.find((call) => String(call[1]?.body ?? "").includes("CUUR0100SEMC"))!;
-    const year = new Date().getUTCFullYear();
-    expect(blsCall[1]).toMatchObject({ method: "POST" });
-    expect(JSON.parse(String(blsCall[1].body))).toEqual({
-      seriesid: ["CUUR0100SEMC"],
-      startyear: String(year - 6),
-      endyear: String(year),
-    });
-    expect(result).toMatchObject({ series: 1 + REQUIRED_FRED_SERIES.length, missingSeries: [] });
+    expect(urls.some((u) => /stlouisfed|fredgraph/.test(u))).toBe(false);
+    // Keyless BLS takes 25 series a request; every catalogue BLS id is asked once.
+    expect(blsAsked.every((batch) => batch.length <= 25)).toBe(true);
+    const askedIds = blsAsked.flat();
+    expect(new Set(askedIds).size).toBe(askedIds.length);
+    expect(askedIds).toEqual(expect.arrayContaining(["LNS14000000", "CUSR0000SA0", "LASST480000000000003", "SMS48000000000000001", "CUUR0100SEMC"]));
+    // A FRED-only series stored earlier (T10YIE) and other loaders' series (NYFED_) are not fetched.
     const inserts = statements.filter((s) => s.text.includes("INSERT INTO fed_economic_indicators"));
-    expect(inserts.map((s) => s.values[0])).toEqual(expect.arrayContaining(["CUUR0100SEMC", "CUUR0000SS68021", "GDPCTPI"]));
-    const regional = inserts.find((s) => s.values[0] === "CUUR0100SEMC")!;
-    // A stored medical series keeps refreshing but under its real name, not a bank label.
-    expect(regional.values[1]).toBe("CPI: Medical Professional Services, Northeast");
-    // Rows older than the pull window are relabelled too.
+    const inserted = inserts.map((s) => s.values[0]);
+    expect(inserted).not.toContain("T10YIE");
+    expect(inserted).not.toContain("NYFED_SOFR");
+    expect(inserted).toEqual(expect.arrayContaining(["UNRATE", "CPIAUCSL", "TXUR", "TXNA", "FEDFUNDS", "GDPCTPI", "CUUR0100SEMC"]));
+    expect(payloadOf(inserts.find((s) => s.values[0] === "FEDFUNDS")!.values)).toEqual([
+      { observation_date: "2026-08-01", value: 4.33 },
+      { observation_date: "2026-09-01", value: 4.08 },
+    ]);
+    expect(payloadOf(inserts.find((s) => s.values[0] === "GDPCTPI")!.values)).toEqual([{ observation_date: "2026-04-01", value: 128.412 }]);
+    expect(payloadOf(inserts.find((s) => s.values[0] === "UNRATE")!.values)).toEqual([{ observation_date: "2026-08-01", value: 4.2 }]);
+    // A stored medical series keeps refreshing but under its real name, older rows relabelled too.
+    expect(inserts.find((s) => s.values[0] === "CUUR0100SEMC")!.values[1]).toBe("CPI: Medical Professional Services, Northeast");
     const relabel = statements.find((s) => s.text.includes("UPDATE fed_economic_indicators") && s.values.includes("CUUR0100SEMC"));
     expect(relabel?.values).toContain("CPI: Medical Professional Services, Northeast");
-    const blsRows = payloadOf(regional.values);
-    expect(blsRows).toEqual([{ observation_date: "2026-08-01", value: 301.5 }]);
+    // GDPC1 and PSAVERT: BEA answered with an error for their tables; named, not substituted.
+    expect(result.missingSeries).toEqual(expect.arrayContaining([expect.stringMatching(/^GDPC1 \(bea: Unknown table\)$/), expect.stringMatching(/^PSAVERT \(bea: /)]));
+    expect(result.refreshedSeries).toBe(result.series - result.missingSeries.length);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
+    const detail = JSON.parse(String(partition.values.find((v) => typeof v === "string" && v.startsWith("{"))));
+    expect(detail).toMatchObject({ parser_version: FED_INDICATORS_PARSER_VERSION, publisher_cutover_at: "2026-10-18T12:00:00.000Z" });
+    expect(detail.publishers.frb).toEqual({ series: 1, refreshed: 1 });
+  });
+
+  it("keeps the first cutover on later runs and reports missing BEA keys by name", async () => {
+    vi.stubEnv("BEA_API_KEY", "");
+    const { db, statements } = createDb([
+      ["FROM fed_economic_indicators", () => []],
+      ["publisher_cutover_at", () => [{ cutover: "2026-10-18T12:00:00.000Z" }]],
+    ]);
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("down", { status: 404 }));
+    const result = await runRegistryFred({ db, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    vi.unstubAllEnvs();
+    expect(statements.some((s) => s.text.includes("SELECT NOW()"))).toBe(false);
+    expect(result.refreshedSeries).toBe(0);
+    expect(result.missingSeries).toContain("GDPCTPI (bea: BEA_API_KEY is not set)");
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
+    expect(String(partition.values.find((v) => typeof v === "string" && v.startsWith("{")))).toContain('"publisher_cutover_at":"2026-10-18T12:00:00.000Z"');
+  });
+
+  it("skips a recent H.15 download and names series still on FRED-era values", async () => {
+    vi.stubEnv("BEA_API_KEY", "");
+    const now = new Date("2026-10-20T12:00:00Z");
+    const { db, statements } = createDb([
+      ["publisher_cutover_at", () => [{ cutover: "2026-10-18T12:00:00.000Z", frb_fetched: { h15: "2026-10-20T06:00:00.000Z" } }]],
+      // Rows written by a publisher since the cutover: FEDFUNDS (H.15) and UNRATE (BLS).
+      ["GROUP BY series_id", () => [{ series_id: "FEDFUNDS", latest: "2026-09-01" }, { series_id: "UNRATE", latest: "2026-09-01" }]],
+      [
+        "FROM fed_economic_indicators",
+        () => ["UNRATE", "FEDFUNDS", "GDPC1", "TXUR", "T10YIE"].map((id) => ({ series_id: id, series_title: id, fed_district: null, units: null })),
+      ],
+    ]);
+    // Every request fails, so no BLS or BEA series gets a publisher row this run.
+    const fetchImpl = vi.fn().mockImplementation(async () => new Response("down", { status: 404 }));
+    const result = await runRegistryFred({ db, now, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    vi.unstubAllEnvs();
+
+    const urls = fetchImpl.mock.calls.map((call) => String(call[0]));
+    expect(urls.some((u) => u.includes("FRB_h15_xml.zip"))).toBe(false);
+    expect(result.skippedPackages).toEqual(["H15 (downloaded within the last day)"]);
+    expect(result.missingSeries.some((m) => m.startsWith("FEDFUNDS"))).toBe(false);
+    // Stored, publisher-loaded, no publisher row yet: still served from FRED-era rows, and named.
+    expect(result.stillOnFredEra).toEqual(["GDPC1", "TXUR"]);
+    // UNRATE has a publisher row from an earlier run (its FRED-era rows are hidden); T10YIE is loaded by no publisher.
+    expect(result.stillOnFredEra).not.toContain("UNRATE");
+    expect(result.stillOnFredEra).not.toContain("T10YIE");
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
+    const detail = JSON.parse(String(partition.values.find((v) => typeof v === "string" && v.startsWith("{"))));
+    expect(detail.still_on_fred_era_values).toEqual(["GDPC1", "TXUR"]);
+    expect(detail.frb_package_fetched_at).toEqual({ h15: "2026-10-20T06:00:00.000Z" });
+    expect(detail.publisher_series).toEqual(expect.arrayContaining(["UNRATE", "FEDFUNDS", "GDPC1", "TXUR"]));
+    expect(detail.publisher_series).not.toContain("T10YIE");
+    expect(detail.publisher_series.some((id: string) => STRUCK_FRED_SERIES.includes(id))).toBe(false);
+  });
+
+  it("downloads a Fed Board package at most daily, daily while a new period is due, and otherwise weekly", () => {
+    const now = new Date("2026-11-03T12:00:00Z");
+    expect(expectedLatestPeriod("monthly", now)).toBe("2026-10-01");
+    expect(expectedLatestPeriod("quarterly", now)).toBe("2026-07-01");
+    expect(expectedLatestPeriod("monthly", new Date("2026-01-15T00:00:00Z"))).toBe("2025-12-01");
+    expect(frbPackageDue(null, [], now)).toEqual({ due: true, reason: "never downloaded" });
+    // Within a day: never, even when October's FEDFUNDS is not in yet.
+    expect(frbPackageDue("2026-11-03T01:00:00Z", [{ latest: "2026-09-01", frequency: "monthly" }], now).due).toBe(false);
+    // Over a day and October is missing: fetch.
+    expect(frbPackageDue("2026-11-02T06:00:00Z", [{ latest: "2026-09-01", frequency: "monthly" }], now)).toEqual({ due: true, reason: "a new period is due" });
+    expect(frbPackageDue("2026-11-02T06:00:00Z", [{ latest: null, frequency: "monthly" }], now).due).toBe(true);
+    // Up to date: wait for the weekly refresh.
+    expect(frbPackageDue("2026-11-02T06:00:00Z", [{ latest: "2026-10-01", frequency: "monthly" }], now).due).toBe(false);
+    expect(frbPackageDue("2026-10-27T06:00:00Z", [{ latest: "2026-10-01", frequency: "monthly" }], now)).toEqual({ due: true, reason: "weekly refresh" });
+  });
+
+  it("writes nothing on a dry run", async () => {
+    const { db, statements } = createDb([["FROM fed_economic_indicators", () => []]]);
+    const fetchImpl = vi.fn();
+    const result = await runRegistryFred({ db, dryRun: true, fetchOptions: { fetchImpl, backoffMs: 0 } });
+    expect(result).toMatchObject({ dryRun: true, series: PUBLISHER_INDICATORS.length });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(statements.filter((s) => !s.text.includes("FROM fed_economic_indicators"))).toEqual([]);
   });
 });
 
-describe("required FRED series", () => {
-  it("covers unemployment and payroll jobs for the 50 states and DC, tagged with their Fed district", () => {
-    const ids = REQUIRED_FRED_SERIES.map((s) => s.series_id);
-    expect(ids).toContain("GDPCTPI");
+describe("publisher indicator catalogue", () => {
+  it("covers unemployment and payroll jobs for the 50 states and DC from BLS, tagged with their Fed district", () => {
+    const ids = PUBLISHER_INDICATORS.map((s) => s.series_id);
+    expect(ids).toEqual(expect.arrayContaining(["GDPCTPI", "UNRATE", "FEDFUNDS", "CPIAUCSL", "CUUR0000SS68021"]));
     expect(ids.filter((id) => /^[A-Z]{2}UR$/.test(id))).toHaveLength(51);
     expect(ids.filter((id) => /^[A-Z]{2}NA$/.test(id))).toHaveLength(51);
-    expect(REQUIRED_FRED_SERIES.find((s) => s.series_id === "WYUR")).toMatchObject({ fed_district: 10, units: "Percent" });
-    expect(REQUIRED_FRED_SERIES.find((s) => s.series_id === "DCNA")?.series_title).toBe("All Employees: Total Nonfarm in the District of Columbia");
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(PUBLISHER_INDICATORS.find((s) => s.series_id === "WYUR")).toMatchObject({ fed_district: 10, units: "Percent", publisher: "bls", publisher_id: "LASST560000000000003" });
+    expect(PUBLISHER_INDICATORS.find((s) => s.series_id === "DCNA")).toMatchObject({
+      series_title: "All Employees: Total Nonfarm in the District of Columbia",
+      publisher_id: "SMS11000000000000001",
+    });
+    for (const s of PUBLISHER_INDICATORS) {
+      if (s.publisher === "bls") expect(s.publisher_id).toMatch(/^(LNS|CES|CU[US]R|LASST|SMS)[0-9A-Z]+$/);
+      expect(s.publisher_id.length).toBeGreaterThan(0);
+    }
+    expect(PUBLISHER_INDICATORS.filter((s) => STRUCK_FRED_SERIES.includes(s.series_id))).toEqual([]);
   });
 });
 
@@ -875,7 +963,6 @@ describe("registry dispatch", () => {
       "fed-shed",
       "fdic-industry-totals",
       "fdic-national-rates",
-      "atlanta-fed-payment-choice",
       "world-bank-remittance-prices",
       "hud-zip-county",
       "census-permits",
@@ -884,10 +971,7 @@ describe("registry dispatch", () => {
       "census-bfs",
       "bls-laus",
       "census-lehd",
-      "kcfed-sb-lending",
-      "fed-sbcs",
       "fed-payments",
-      "nacha-volume",
       "national-series",
       "nyfed-household-debt",
       "nyfed-sce-credit",
@@ -895,8 +979,6 @@ describe("registry dispatch", () => {
       "uscourts-bankruptcy",
       "usda-farm",
       "bls-oews",
-      "finra-nfcs",
-      "fhlb-advance-rates",
       "bank-merger-orders",
       "cfpb-making-ends-meet",
       "state-payday-reports",
@@ -922,6 +1004,7 @@ describe("registry dispatch", () => {
       "enforcement",
       "state-enforcement",
       "wire-research",
+      "bank-zelle",
     ]);
   });
 

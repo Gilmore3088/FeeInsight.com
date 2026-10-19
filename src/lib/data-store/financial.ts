@@ -1,5 +1,6 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
+import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
 // Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
 // ingest scaling). No query-layer multiplication needed.
@@ -235,7 +236,7 @@ export async function getCountyDemographics(
   return [...rows] as DemographicData[];
 }
 
-// --- Economic Indicators (FRED / BLS / NY Fed / OFR) ---
+// --- Economic Indicators (BLS / BEA / Fed Board; older NY Fed and OFR rows) ---
 
 export interface IndicatorObservation {
   series_id: string;
@@ -250,6 +251,8 @@ export interface IndicatorObservation {
 export async function getLatestIndicators(
   seriesIds: string[]
 ): Promise<IndicatorObservation[]> {
+  // Struck series (DECISIONS.md "No non-commercial data") are never returned.
+  seriesIds = seriesIds.filter((id) => !STRUCK_FRED_SERIES.includes(id));
   if (seriesIds.length === 0) return [];
   const rows = await sql`
     SELECT e.series_id, e.series_title, e.fed_district,
@@ -259,9 +262,11 @@ export async function getLatestIndicators(
       SELECT series_id, MAX(observation_date) as max_date
       FROM fed_economic_indicators
       WHERE series_id IN ${sql(seriesIds)}
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       GROUP BY series_id
     ) latest ON e.series_id = latest.series_id
-             AND e.observation_date = latest.max_date`;
+             AND e.observation_date = latest.max_date
+    WHERE ${sql.unsafe(fedIndicatorServedSql("e"))}`;
   return [...rows] as IndicatorObservation[];
 }
 
@@ -269,6 +274,7 @@ export async function getIndicatorTimeSeries(
   seriesId: string,
   opts?: { fromDate?: string; limit?: number }
 ): Promise<IndicatorObservation[]> {
+  if (STRUCK_FRED_SERIES.includes(seriesId)) return [];
   const from = opts?.fromDate ?? "2020-01-01";
   const limit = opts?.limit ?? 500;
   const rows = await sql`
@@ -276,6 +282,7 @@ export async function getIndicatorTimeSeries(
            observation_date, value, units, frequency
     FROM fed_economic_indicators
     WHERE series_id = ${seriesId} AND observation_date >= ${from}
+      AND ${sql.unsafe(fedIndicatorServedSql())}
     ORDER BY observation_date DESC
     LIMIT ${limit}`;
   return [...rows] as IndicatorObservation[];
@@ -311,6 +318,7 @@ export async function getCpiContext(): Promise<CpiContext> {
       FROM fed_economic_indicators
       WHERE series_id = ${seriesId}
         AND (${asOf ?? null}::text IS NULL OR observation_date <= ${asOf ?? null}::text)
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY observation_date DESC
       LIMIT 25` as { observation_date: string; value: number }[];
 

@@ -4,48 +4,14 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { sql, withTransaction } from "@/lib/data-store/connection";
+import { SESSION_COOKIE, signSessionId, verifyAndExtractSessionId } from "@/lib/session-cookie";
 
-export const SESSION_COOKIE = "fsh_session";
+export { SESSION_COOKIE, getCookieSecret } from "@/lib/session-cookie";
+
 /** Sessions last 30 days and slide: any visit with under 15 days left renews them. */
 /** Keep in step with the `interval '30 days'` renewal in `getCurrentUser`. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 export const SESSION_RENEW_BELOW_MS = 15 * 24 * 60 * 60 * 1000;
-/** The secret that signs session cookies and password-reset links. */
-export function getCookieSecret(): string {
-  const secret = process.env.BFI_COOKIE_SECRET;
-  if (!secret && process.env.NODE_ENV === "production") {
-    throw new Error("BFI_COOKIE_SECRET must be set in production");
-  }
-  return secret || "dev-secret-change-in-production";
-}
-
-function signSessionId(sessionId: string): string {
-  const sig = crypto
-    .createHmac("sha256", getCookieSecret())
-    .update(sessionId)
-    .digest("hex");
-  return `${sessionId}.${sig}`;
-}
-
-function verifyAndExtractSessionId(signed: string): string | null {
-  const dotIdx = signed.lastIndexOf(".");
-  if (dotIdx === -1) return null;
-  const sessionId = signed.substring(0, dotIdx);
-  const sig = signed.substring(dotIdx + 1);
-  if (!sessionId || !sig || sig.length !== 64) return null;
-  try {
-    const expected = crypto
-      .createHmac("sha256", getCookieSecret())
-      .update(sessionId)
-      .digest("hex");
-    if (!crypto.timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expected, "hex"))) {
-      return null;
-    }
-    return sessionId;
-  } catch {
-    return null;
-  }
-}
 
 export interface User {
   id: number;
@@ -70,6 +36,14 @@ export interface User {
    * or false everywhere else, so it fails closed.
    */
   workspace_seat?: boolean;
+}
+
+/** A users row as the driver returns it: `id` is a bigint, which arrives as text ("26"). */
+export type UserRow = Omit<User, "id"> & { id: number | string };
+
+/** Every `User` built from a users row goes through here, so `id` is always a number (#1970). */
+export function userFromRow<T extends UserRow>(row: T): Omit<T, "id"> & { id: number } {
+  return { ...row, id: Number(row.id) };
 }
 
 export type Permission =
@@ -231,7 +205,7 @@ export async function login(
            fed_district, job_role, interests
     FROM users WHERE (username = ${username} OR email = ${username}) AND is_active = true
   `;
-  const row = rows[0] as (User & { password_hash: string }) | undefined;
+  const row = rows[0] as (UserRow & { password_hash: string }) | undefined;
 
   if (!row) return null;
 
@@ -239,10 +213,10 @@ export async function login(
   const { valid } = await verifyPw(password, row.password_hash);
   if (!valid) return null;
 
-  const { signed } = await issueSession(row.id);
+  const { password_hash: _, ...user } = userFromRow(row);
+  const { signed } = await issueSession(user.id);
   await setSessionCookie(signed);
 
-  const { password_hash: _, ...user } = row;
   return user;
 }
 
@@ -280,9 +254,9 @@ export const getCurrentUser = cache(async (): Promise<User | null> => {
     WHERE s.id = ${sessionId} AND s.expires_at > NOW() AND u.is_active = true
   `;
 
-  const row = rows[0] as (User & { session_expires_at?: string | Date | null }) | undefined;
+  const row = rows[0] as (UserRow & { session_expires_at?: string | Date | null }) | undefined;
   if (!row) return null;
-  const { session_expires_at: sessionExpiresAt, ...user } = row;
+  const { session_expires_at: sessionExpiresAt, ...user } = userFromRow(row);
   user.workspace_seat = await hasWorkspaceSeat(user.id);
   if (shouldRenewSession(sessionExpiresAt)) {
     // Sliding expiry. A database write is allowed during render; the cookie is refreshed

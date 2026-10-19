@@ -38,15 +38,16 @@ async function handlePOST(req: Request) {
       if (!(await recordStripeEvent(tx, event))) return; // Already processed
 
       const effects = await applyStripeEvent(tx, event);
-      await stagePaymentEmails(tx, event.id, effects);
-      activated = effects.welcome.map((welcome) => welcome.email);
+      // Only welcomes staged now: a second event for the same checkout adds none.
+      activated = await stagePaymentEmails(tx, event.id, effects);
     });
   } catch (err) {
     console.error(`[stripe-webhook] Failed to process ${event.id} (${event.type}):`, err);
     return new Response("Processing failed", { status: 500 });
   }
 
-  // Preserve activation telemetry once per freshly committed event, not per email retry.
+  // The one pro_activated count: once per checkout session, when its welcome is first staged.
+  // activateIfPaid no longer counts it, so a fallback activation is not counted twice.
   for (const email of activated) {
     await trackServerEvent("pro_activated", { source: "webhook" }).catch(() => {});
     // Pro onboarding emails start, and every free sequence and upgrade prompt stops.

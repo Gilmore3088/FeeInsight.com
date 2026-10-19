@@ -111,7 +111,13 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // a checking account's own free row is its monthly fee at $0; and the next name families the 62-bank
 // key held (`V78_RECALL_PATTERNS`; statement printouts fold to document reproduction). Every current
 // copy read before v78 is read once more (`KNOX_STALE_READ_BELOW_VERSION`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 78 } as const;
+// v79 (#1827): a price-first row keeps its own price. A table row that opens with its price ("| **$20** |
+// Key Deposit |", Valley Strong CU; "$10 | Replacement Debit Card") is the name after it, not the line
+// above, so the rows no longer each take the next row's price; under a name that says its price varies
+// ("Mortgage satisfaction fee (varies)", Citadel FCU) a price with a name after it is that name's. A
+// bare price still goes to the name above, and so does any price under a name that runs on ("...
+// Savings Account per"). The stale-read floor stays at v78: no page is read again for this alone.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 80 } as const;
 
 export interface SpecialistRun {
   strategy: string;

@@ -4,6 +4,8 @@
  * No imports from react, next, or server-side modules.
  */
 
+import type { DatasetStamp } from "@/lib/dataset-stamp";
+
 export interface DistributionData {
   fee_category: string;
   median_amount: number;
@@ -18,6 +20,8 @@ export interface DistributionData {
   peer_source?: "saved-peer-set" | "selected-institution-default" | "national";
   peer_set_id?: string | null;
   peer_fallback_reason?: string | null;
+  /** The data behind the distribution (#1924). */
+  stamp?: DatasetStamp;
 }
 
 export interface FeePosition {

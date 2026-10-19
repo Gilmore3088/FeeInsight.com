@@ -17,6 +17,8 @@ import type { StorylineMemo } from "@/lib/hamilton/workspace/storyline-types";
 import type { HamiltonIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { splitIntoSentences } from "@/lib/hamilton/citation-gate";
 import type { Storyline } from "./types";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 /** Hamilton's written memo over the storyline: still being written, written, or not written and why. */
 export type MemoState =
@@ -147,7 +149,14 @@ function withoutInterpretation(text: string, reading: ReadonlySet<string>): stri
   return splitIntoSentences(text).map((s) => s.text).filter((t) => !reading.has(t.trim())).join(" ");
 }
 
-export function StorylineView({ story, nextSteps, memo, identityContext }: { story: Storyline; nextSteps?: ReactNode; memo?: MemoState; identityContext?: HamiltonIdentitySnapshot | null }) {
+export function StorylineView({ story, nextSteps, memo, identityContext, stamps }: {
+  story: Storyline;
+  nextSteps?: ReactNode;
+  memo?: MemoState;
+  identityContext?: HamiltonIdentitySnapshot | null;
+  /** The stamps of the reads behind the figures (#1924): the answer's own, or a saved answer's as saved. */
+  stamps?: readonly StampedFigure[] | null;
+}) {
   const memoWritten = memo?.state === "written" ? memo.memo : null;
   const reading = memoWritten?.narrativeBinding?.interpretation ?? [];
   const readingSet = new Set(reading.map((t) => t.trim()));
@@ -177,18 +186,24 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
         {story.governingThought}
       </AnswerLead>
 
-      <KeyFigures
-        figures={figures.map((f) => ({
-          value: f.value,
-          title: f.label,
-          label: (
-            <>
-              {f.label}
-              <Note n={notes.noteFor(f.source)} />
-            </>
-          ),
-        }))}
-      />
+      {figures.length > 0 || (stamps && stamps.length > 0) ? (
+        <div className="flex flex-col gap-3">
+          <KeyFigures
+            figures={figures.map((f) => ({
+              value: f.value,
+              title: f.label,
+              label: (
+                <>
+                  {f.label}
+                  <Note n={notes.noteFor(f.source)} />
+                </>
+              ),
+            }))}
+          />
+          {/* Where the medians and counts came from (#1924); nothing without a stamp. */}
+          <DatasetNote figures={stamps ?? []} />
+        </div>
+      ) : null}
 
       {story.situation.length > 0 || story.complication.length > 0 ? (
         <div className="grid gap-x-8 gap-y-6 border-t border-warm-300 pt-6 md:grid-cols-2">
@@ -225,7 +240,8 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
         </section>
       ) : null}
 
-      <section className="border-t border-warm-300 pt-6">
+      {/* A list answer carries no readings (#2033). */}
+      {story.kind === "list" ? null : <section className="border-t border-warm-300 pt-6">
         <Kicker>What it means for you</Kicker>
         <LensSwitch
           initial={story.defaultView ?? "finance"}
@@ -242,7 +258,7 @@ export function StorylineView({ story, nextSteps, memo, identityContext }: { sto
             </div>
           }
         />
-      </section>
+      </section>}
 
       {written && written.questions.length > 0 ? (
         <section className="border-t border-warm-300 pt-6">

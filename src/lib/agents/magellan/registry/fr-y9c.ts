@@ -17,7 +17,7 @@ import {
   type Y9cRead,
   type Y9cValue,
 } from "@/lib/regulatory/fr-y9c";
-import type { RegistryFetchOptions } from "@/lib/regulatory/http";
+import { blockedHost, type RegistryBlockedHost, type RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   latestPublishableQuarter,
   parseQuarterKey,
@@ -42,6 +42,10 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * thousands of dollars, income lines year to date. A line missing from the file or described
  * differently (file description row, else the MDRM dictionary) is listed in the partition
  * detail and nothing is written for it.
+ *
+ * When NIC refuses the request (HTTP 401/403; www.ffiec.gov answers production's Vercel requests
+ * with 403, #1806), the quarter is recorded empty with `detail.missing_source` naming the host.
+ * FR Y-9C has no official second host, so nothing stands in for it.
  */
 
 export const FR_Y9C_SOURCE = "fr-y9c";
@@ -52,7 +56,17 @@ export const FR_Y9C_FIRST: Quarter = { year: 2015, quarter: 1 };
 const RECENT_REFRESH_HOURS = 24 * 7;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;
 const EMPTY_RETRY_HOURS = 24;
+/** A refused host is asked again weekly, not daily. */
+const BLOCKED_RETRY_HOURS = 24 * 7;
 const WRITE_CHUNK = 5_000;
+
+export interface Y9cMissingSource {
+  host: string;
+  url: string;
+  status: number;
+  /** FR Y-9C has no official second host. */
+  second_host: null;
+}
 
 export function frY9cPartitions(now: Date, from: Quarter = FR_Y9C_FIRST): string[] {
   return quartersNewestFirst(from, latestPublishableQuarter(now, FR_Y9C_FILING_LAG_DAYS)).map(quarterKey);
@@ -86,6 +100,8 @@ export interface RegistryFrY9cResult {
   missingLines: Y9cColumnCheck[];
   usedMdrm: boolean;
   quality: Y9cQualityReport | null;
+  /** Set when NIC refused the request: the host and what it answered. */
+  missingSource: Y9cMissingSource | null;
   dryRun: boolean;
   empty: boolean;
   emptyReason: string | null;
@@ -171,6 +187,50 @@ async function countMatched(db: RegistryDb, rssds: string[]): Promise<number> {
   return Number(row?.matched ?? 0);
 }
 
+/**
+ * NIC refused the request (#1806: HTTP 403 to Vercel). FR Y-9C has no official second host, so
+ * the quarter is recorded empty with `detail.missing_source` naming the host. Nothing is written.
+ */
+async function recordBlocked(
+  db: RegistryDb,
+  input: { partitionKey: string; reportDate: string; dryRun: boolean; runId: number | null; blocked: RegistryBlockedHost },
+): Promise<RegistryFrY9cResult> {
+  const missingSource: Y9cMissingSource = { host: input.blocked.host, url: input.blocked.url, status: input.blocked.status, second_host: null };
+  const emptyReason = `FR Y-9C source missing: ${input.blocked.host} answered HTTP ${input.blocked.status} and FR Y-9C has no official second host`;
+  const base: RegistryFrY9cResult = {
+    source: FR_Y9C_SOURCE,
+    partitionKey: input.partitionKey,
+    reportDate: input.reportDate,
+    sourceUrl: input.blocked.url,
+    fileName: null,
+    filers: 0,
+    matchedHoldingCompanies: 0,
+    values: 0,
+    writtenRows: 0,
+    writtenFilers: 0,
+    loadedLines: [],
+    missingLines: [],
+    usedMdrm: false,
+    quality: null,
+    missingSource,
+    dryRun: input.dryRun,
+    empty: true,
+    emptyReason,
+  };
+  if (input.dryRun) return base;
+  await recordRegistryPartition(db, {
+    source: FR_Y9C_SOURCE,
+    partitionKey: input.partitionKey,
+    status: "empty",
+    rowCount: 0,
+    sourceUrl: input.blocked.url,
+    runId: input.runId,
+    nextAttemptAfterHours: BLOCKED_RETRY_HOURS,
+    detail: { parser_version: FR_Y9C_PARSER_VERSION, report_date: input.reportDate, missing_source: missingSource, reason: emptyReason },
+  });
+  return base;
+}
+
 export async function runRegistryFrY9c(options: RegistryFrY9cOptions): Promise<RegistryFrY9cResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
@@ -179,7 +239,14 @@ export async function runRegistryFrY9c(options: RegistryFrY9cOptions): Promise<R
   const reportDate = quarterEndDate(quarter);
   const now = options.now ?? new Date();
 
-  const download = await fetchBhcfZip(quarter, options.fetchOptions);
+  let download: Awaited<ReturnType<typeof fetchBhcfZip>>;
+  try {
+    download = await fetchBhcfZip(quarter, options.fetchOptions);
+  } catch (error) {
+    const blocked = blockedHost(error);
+    if (!blocked) throw error;
+    return recordBlocked(db, { partitionKey: options.partitionKey, reportDate, dryRun, runId: options.runId ?? null, blocked });
+  }
   const sourceUrl = download?.url ?? bhcfZipUrls(quarter)[0];
   let fileName: string | null = null;
   let read: Y9cRead | null = null;
@@ -233,6 +300,7 @@ export async function runRegistryFrY9c(options: RegistryFrY9cOptions): Promise<R
     missingLines,
     usedMdrm,
     quality,
+    missingSource: null,
     dryRun,
     empty: emptyReason !== null,
     emptyReason,

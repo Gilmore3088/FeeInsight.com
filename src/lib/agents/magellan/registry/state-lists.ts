@@ -27,7 +27,8 @@ import {
   STATE_DEPOSITORY_LISTS,
   URBAN_DEBT_COUNTY_URL_ENV,
   URBAN_DEBT_DEFAULT_PAGE_URL,
-  URBAN_DEBT_LICENSE_CONFIRMED_ENV,
+  URBAN_DEBT_ATTRIBUTION,
+  URBAN_DEBT_LICENCE,
   URBAN_DEBT_PAGE_URL_ENV,
   URBAN_DEBT_STATE_URL_ENV,
   yearInName,
@@ -38,7 +39,6 @@ import {
   type MatchedDepository,
 } from "@/lib/regulatory/state-lists";
 import { upsertAreaStats } from "./economy";
-import { flagOn } from "./live-flag";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -51,10 +51,10 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * - state-nonbank-lenders: one partition per configured Socrata dataset (`<STATE>-<id>`), written
  *   to state_nonbank_licensees; then the state's licensee counts per license category, by state
  *   and county, are recounted from the table into area_statistics.
- * - urban-debt-in-america: one partition ("current"). License is unconfirmed: the step reads the
- *   files, records the license wording it found and what it would load, and writes nothing to
- *   area_statistics until URBAN_DEBT_LICENSE_CONFIRMED=true (area_statistics is read by
- *   getAreaStatistics for every source, so a written row would reach Hamilton).
+ * - urban-debt-in-america: one partition ("current"), into area_statistics. Licence ODC-By 1.0
+ *   (commercial use allowed, attribution required; released 2026-10-18, DECISIONS.md "No
+ *   non-commercial data"): each row's raw carries URBAN_DEBT_ATTRIBUTION, and the step still
+ *   records the licence wording it finds on the catalog page so a change shows in the ledger.
  */
 
 export const STATE_LISTS_PARSER_VERSION = 1;
@@ -62,9 +62,11 @@ export const STATE_DEPOSITORIES_SOURCE = "state-public-depositories";
 export const STATE_NONBANK_LENDERS_SOURCE = "state-nonbank-lenders";
 export const URBAN_DEBT_SOURCE = "urban-debt-in-america";
 export const STATE_LISTS_SOURCES = [STATE_DEPOSITORIES_SOURCE, STATE_NONBANK_LENDERS_SOURCE, URBAN_DEBT_SOURCE] as const;
-export const STATE_DEPOSITORIES_PARSER_VERSION = STATE_LISTS_PARSER_VERSION;
+/** v2: Florida's list removed (2026-10-17, DECISIONS.md "No non-commercial data"). */
+export const STATE_DEPOSITORIES_PARSER_VERSION = 2;
 export const STATE_NONBANK_LENDERS_PARSER_VERSION = STATE_LISTS_PARSER_VERSION;
-export const URBAN_DEBT_PARSER_VERSION = STATE_LISTS_PARSER_VERSION;
+/** v2: licence confirmed (ODC-By 1.0); rows written with their attribution (2026-10-18). */
+export const URBAN_DEBT_PARSER_VERSION = 2;
 export const URBAN_DEBT_PARTITION = "current";
 
 const HOURS = { day: 24, week: 24 * 7, month: 24 * 30 };
@@ -125,8 +127,6 @@ export interface RegistryStateListsResult {
   dryRun: boolean;
   empty: boolean;
   emptyReason: string | null;
-  /** Rows read but held back (license not confirmed). */
-  held: boolean;
   summary: string;
   detail: Record<string, unknown>;
 }
@@ -150,7 +150,6 @@ function base(source: string, options: RegistryStateListsOptions): RegistryState
     dryRun: Boolean(options.dryRun),
     empty: false,
     emptyReason: null,
-    held: false,
     summary: "",
     detail: {},
   };
@@ -608,7 +607,7 @@ export async function runRegistryStateNonbankLenders(options: RegistryStateLists
 }
 
 // ===========================================================================
-// Urban Institute, Debt in America (license held until confirmed)
+// Urban Institute, Debt in America (ODC-By 1.0, attribution required)
 // ===========================================================================
 
 export async function runRegistryUrbanDebt(options: RegistryStateListsOptions): Promise<RegistryStateListsResult> {
@@ -618,7 +617,6 @@ export async function runRegistryUrbanDebt(options: RegistryStateListsOptions): 
   const env = options.env ?? process.env;
   const fetchOptions = options.fetchOptions ?? {};
   const pageUrl = env[URBAN_DEBT_PAGE_URL_ENV]?.trim() || URBAN_DEBT_DEFAULT_PAGE_URL;
-  const confirmed = flagOn(env[URBAN_DEBT_LICENSE_CONFIRMED_ENV]);
 
   let licenseText: string[] = [];
   let pageError: string | null = null;
@@ -632,9 +630,10 @@ export async function runRegistryUrbanDebt(options: RegistryStateListsOptions): 
     if (!unavailable(error)) throw error;
     pageError = (error as Error).message;
   }
-  const license = { page_url: pageUrl, text_found: licenseText, page_error: pageError, confirmed, confirm_env: URBAN_DEBT_LICENSE_CONFIRMED_ENV };
+  const license = { name: URBAN_DEBT_LICENCE, attribution: URBAN_DEBT_ATTRIBUTION, page_url: pageUrl, text_found: licenseText, page_error: pageError };
   if (!links.county && !links.state) {
     return recordEmpty(db, source, options, "No Debt in America county or state file found (set URBAN_DEBT_COUNTY_CSV_URL / URBAN_DEBT_STATE_CSV_URL once checked)", pageUrl, HOURS.week, {
+      parser_version: URBAN_DEBT_PARSER_VERSION,
       license,
       links_on_page: links.all,
     });
@@ -669,35 +668,19 @@ export async function runRegistryUrbanDebt(options: RegistryStateListsOptions): 
   }
   const deduped = dedupeAreaStats(rows);
   const checks = checkAreaStats(rows);
-  const detail: Record<string, unknown> = { parser_version: STATE_LISTS_PARSER_VERSION, license, files, missing_fields: missing, rows: deduped.length, checks };
+  const detail: Record<string, unknown> = { parser_version: URBAN_DEBT_PARSER_VERSION, license, files, missing_fields: missing, rows: deduped.length, checks };
   const sourceUrl = links.county ?? links.state;
   if (deduped.length === 0) return recordEmpty(db, source, options, "No Debt in America rows read", sourceUrl, HOURS.week, detail);
 
-  if (options.dryRun || !confirmed) {
-    const reason = confirmed ? null : `License not confirmed: ${n(deduped.length)} values read and held, nothing written (set ${URBAN_DEBT_LICENSE_CONFIRMED_ENV}=true after reading license.text_found)`;
-    if (!options.dryRun) {
-      await recordRegistryPartition(db, {
-        source,
-        partitionKey: options.partitionKey,
-        status: "empty",
-        rowCount: 0,
-        sourceUrl,
-        runId: options.runId ?? null,
-        nextAttemptAfterHours: HOURS.week,
-        detail: { ...detail, reason, held_rows: deduped.length },
-      });
-    }
+  if (options.dryRun) {
     return {
       ...base(source, options),
       sourceUrl,
       rowsRead: deduped.length,
       records: deduped.length,
       missingFields: missing,
-      held: !confirmed,
-      empty: !confirmed,
-      emptyReason: reason,
-      detail: { ...detail, held_rows: confirmed ? 0 : deduped.length },
-      summary: `Urban Debt in America: read ${n(deduped.length)} values${confirmed ? "" : ", held until the license is confirmed"}${dryText(options.dryRun)}.`,
+      detail,
+      summary: `Urban Debt in America: read ${n(deduped.length)} values${dryText(options.dryRun)}.`,
     };
   }
   const written = await upsertAreaStats(db, source, deduped, sourceUrl, options.runId ?? null);

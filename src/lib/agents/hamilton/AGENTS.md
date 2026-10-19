@@ -152,7 +152,13 @@ Hamilton supports the decision; it does not make it.
   its read-only tools, `getLocalCompetitors` (shared with chat, `research/tool-local-competitors.ts`),
   `queryFeeRevenueCorrelation` (its `peers` view compares one institution's service charge
   income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
-  `queryDistrictData` and `queryStateData` (#1084). The reader's saved default peer set
+  `queryDistrictData` and `queryStateData` (#1084), and the data catalog through `listData` and
+  `queryData` (shared with chat, `research/tool-query-data.ts`, #1855): listData names the servable
+  public-data series, fee measures and bank call-report lines for a question, queryData reads one at one scope through
+  `data-catalog/query-data.ts` and returns its citation or a refusal. A `peer_set` scope resolves the
+  group through the shared `data-store/peer-sets.ts` definition; public data and call-report lines roll
+  up over its members when read (`data-catalog/roll-ups.ts`: median, spread, `institution_count`, no
+  median under 5 institutions), with nothing stored. The reader's saved default peer set
   (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
   baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
@@ -337,6 +343,34 @@ transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
 
+The publish-sweeps split (`hamilton/publish-sweeps.ts`, off: `PUBLISH_SWEEPS_SPLIT_LIVE`;
+turning it on is James's call). Of the step's 51 timed calls, 40 are scoped only by
+institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
+state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
+state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
+this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
+at most one at a time and only after a lane publish completed. A Read-now or hand-found
+publish keeps every sweep it can scope to its institution, and leaves the seven that take no
+institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
+the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
+publish, scoped to the bank, so the bank's own non-checking monthly fees are held before its
+rows publish. While
+the switch is off, every publish still runs all 51, and the `publish-sweeps` step is a dry run
+at most hourly. That dry run passes `dryRun: true` to every sweep, runs inside a savepoint that
+is always rolled back, takes no lock, and records `dry_run_write_check`. It writes
+`sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`. Its takedown ids
+hold only rows coming down: category-guard first looks and fees awaiting their second look
+go in `second_look_candidate_ids` (`confirmedFeeIds` on the guard's result).
+
+The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
+the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
+after the step began, once it has decided `PUBLISH_MIN_ROWS_PER_STEP` (50) rows. Rows it did
+not reach get no attempt and publish on the next step. The cross-state top-up read is
+skipped only when the step is already `PUBLISH_TOP_UP_DEADLINE_MS` (160 s) in; the sweeps before
+the rows take 96-129 s, so a skip tied to the row deadline cut NC's and WI's publishes to their
+own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (each sweep's milliseconds, keyed by its result) and `phase_ms`
+(`sweeps_before`, `publish_rows`, `sweeps_after`).
+
 1. Outlier restore (`restoreOutliersNowInRange`, `outlier-rollback.ts`): brings back an
    outlier takedown whose amount is inside today's range, unless the bank already shows that
    fee at that amount. No reason written; it clears one.
@@ -468,6 +502,15 @@ the detail.
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
+    v15 (#1901): Knox cuts its stored line at 180 characters, so a blank fee's line can end
+    before its price ("Dormant Checking fee: Assessed ... no other Navy Fede", Navy Federal
+    80997). A blank whose stored line is at least `CUT_EXCERPT_CHARS` long and does not print
+    its price is read on the one line of its own stored document that holds the cut line's
+    opening and prints the price (`fullStoredLine`; "... | $3.00 per quarter" fills quarterly).
+    The lines are found in SQL, so only lines holding the opening come back and every cut row is
+    read on every step; a flattened document (no line breaks) gives no line. A line holding
+    another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
+    line the row is read only if it was a pre-v15 candidate.
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
     in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
@@ -499,7 +542,9 @@ the detail.
     above it, up to 40 banks a step (`name_account_added` feedback row). No rollback. v2 (#1810):
     with no heading above it, the account Knox's lineup recorded on the raw row names it, when that
     account reads as an account name, is printed in the fee's own schedule and is on no other
-    generic fee of that schedule (`evidence.heading_from` says which).
+    generic fee of that schedule (`evidence.heading_from` says which). v3: a heading followed by its
+    opening deposit traces (source check v18), and "Interest Checking", "Club 2 Checking" and
+    "Money Market Checking" read as accounts.
 26. Lineup correct (`correctStoredLineups`, `knox/lineup-correct.ts`): lineup values stored
     before Knox v55 that came from a neighbouring account are corrected from the stored text,
     up to 200 documents a step (`lineup_corrected` feedback row). No rollback.
@@ -785,6 +830,16 @@ when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_
 on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
 take it down: <the sweep's reason>`). Set it back to false to count only.
 
+**Page copies at publish (live).** Each dollar row about to publish is read with the page-copy
+collapse's own test (`pageCopyRepeats`, via `page-copy-refuse.ts`) against the live rows of its
+institution, category, variant and amount from other documents. A row the collapse would close
+behind a live copy of the same page is counted in the step's `page_copy_check` and, while
+`PUBLISH_REFUSE_PAGE_COPIES_LIVE` is on, skipped (`Copy of the page of live fee #<kept id>`). A row
+the collapse would keep (the newer edition) publishes as before. The collapse stays the live
+re-check; this check takes nothing down, and a failed read refuses nothing. Dry count: 51 of the 53
+rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
+when they published.
+
 ## Rules Re-check
 
 In state-lane (or single-institution) publish steps, `rules-recheck.ts` re-runs Knox's
@@ -1053,16 +1108,16 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v2 | `hamilton/account-names.ts` |
+| `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
-| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v17 | `hamilton/source-check.ts` |
+| `SOURCE_CHECK_STRATEGY` | `hamilton.source_check` | v18 | `hamilton/source-check.ts` |
 | `SOURCE_LINK_VERSION` | `hamilton.source_link` | v2 | `hamilton/source-link.ts` |
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |

@@ -174,7 +174,8 @@ describe("buildProDigestEmail", () => {
     const email = buildProDigestEmail(digest, { site: "https://feeinsight.com", unsubscribePage: "https://feeinsight.com/stop" });
     expect(email.subject).toBe("This week: Home Bank's position moved on 1 fee(s)");
     expect(email.text).toContain("2 of 5 institutions charge less (last week $30.00, 1 of 4)");
-    expect(email.text).toContain("Texas: 2 published fee change(s) at 2 institution(s) this week, 1 higher and 1 lower.");
+    expect(email.text).toContain("Texas\n2 published fee change(s) at 2 institution(s) this week, 1 higher and 1 lower.");
+    expect(email.html).toContain(">Home Bank against Texas&nbsp;peers</h2>");
     expect(email.text).toContain("$30.00 to $33.00 ($3.00 higher)");
     expect(email.text).toContain("$28.00 to $25.00 ($3.00 lower)");
     expect(email.text).toContain("https://feeinsight.com/stop");

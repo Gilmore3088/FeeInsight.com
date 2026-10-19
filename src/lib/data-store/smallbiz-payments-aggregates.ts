@@ -1,19 +1,20 @@
 import { sql } from "./connection";
+import { areaRowServedSql } from "./struck-sources";
 
 /**
- * Reads over the small business lending and payment volume series Magellan's
- * kcfed-sb-lending, fed-sbcs, fed-payments and nacha-volume steps load into area_statistics.
- * Server only; nothing here fetches from outside. Values stay in the publisher's units (the
- * `unit` says "count (millions)" or "dollars (billions)"); changes are computed only between
- * periods of the same series and unit, and a blank value yields no change, never a zero.
+ * Reads over the payment volume series Magellan's fed-payments step loads into area_statistics
+ * (the Federal Reserve Board's FedACH commercial table and Payments Study). Server only; nothing
+ * here fetches from outside. Values stay in the publisher's units (the `unit` says "count
+ * (millions)" or "dollars (billions)"); changes are computed only between periods of the same
+ * series and unit, and a blank value yields no change, never a zero.
  *
- * Shaped for Hamilton questions: "how are community bank small business loan rates moving",
- * "how fast is FedNow / Same Day ACH growing", and "do small businesses rate credit unions and
- * small banks better than large banks".
+ * The KC Fed lending survey, Fed Small Business Credit Survey, Nacha and frbservices.org (FedNow,
+ * Fed check and the old FedACH page) series were struck on 2026-10-17 (DECISIONS.md "No
+ * non-commercial data"). Rows already loaded stay in the table, so this reader names its source,
+ * its rails and excludes rows read from frbservices.org.
  */
 
-export const SMALLBIZ_SOURCES = ["kcfed-sb-lending", "fed-sbcs"] as const;
-export const PAYMENT_SOURCES = ["fed-payments", "nacha-volume"] as const;
+export const PAYMENT_SOURCES = ["fed-payments"] as const;
 
 export interface SeriesRow {
   source: string;
@@ -120,132 +121,26 @@ async function nationalSeries(sources: readonly string[], prefix: string | null)
      WHERE source = ANY(${[...sources]}::text[])
        AND geo_type = 'nation' AND geo_code = 'US'
        AND (${prefix}::text IS NULL OR series_key LIKE ${`${prefix ?? ""}%`})
+       AND ${sql.unsafe(areaRowServedSql())}
   `;
   return [...rows];
 }
 
-/** Kansas City Fed survey: each loan-rate and index series, latest quarter with quarter and year changes. */
-export async function getSmallBusinessLendingConditions(): Promise<SeriesChange[]> {
-  return seriesChanges(await nationalSeries(["kcfed-sb-lending"], null));
-}
-
 export interface PaymentRailTrend extends SeriesChange {
-  /** fedach, fednow, fed_check, frps, nacha_ach_network, nacha_same_day_ach. */
+  /** fedach or frps. */
   rail: string;
 }
 
-const RAILS = ["nacha_same_day_ach", "nacha_ach_network", "fed_check", "fedach", "fednow", "frps"];
+const RAILS = ["fedach", "frps"];
 
 export function railOf(seriesKey: string): string {
   return RAILS.find((r) => seriesKey === r || seriesKey.startsWith(`${r}_`)) ?? "other";
 }
 
-/** Payment volumes and values by rail, latest period with changes; `rail` narrows to one (e.g. "fednow"). */
+/** Payment volumes and values by rail, latest period with changes; `rail` narrows to one (e.g. "fedach"). */
 export async function getPaymentVolumeTrends(rail: string | null = null): Promise<PaymentRailTrend[]> {
-  const rows = await nationalSeries(PAYMENT_SOURCES, rail ? `${rail}_` : null);
+  if (rail !== null && !RAILS.includes(rail)) return [];
+  // Struck rails (fednow_, fed_check_) have no rail here, so their rows are never returned.
+  const rows = (await nationalSeries(PAYMENT_SOURCES, rail ? `${rail}_` : null)).filter((r) => railOf(r.series_key) !== "other");
   return seriesChanges(rows).map((c) => ({ ...c, rail: railOf(c.series_key) }));
-}
-
-// ---------------------------------------------------------------------------
-// SBCS: lenders compared
-// ---------------------------------------------------------------------------
-
-export interface SbcsRow {
-  geo_type: string;
-  geo_code: string;
-  period: string;
-  value: number | null;
-  unit: string;
-  note: string | null;
-  topic: string | null;
-  metric_key: string | null;
-  metric: string | null;
-  lender_type: string | null;
-}
-
-export interface LenderComparison {
-  geo_type: string;
-  geo_code: string;
-  /** SBCS report year. */
-  period: string;
-  topic: string | null;
-  metric_key: string;
-  metric: string | null;
-  unit: string;
-  by_lender: Record<string, number | null>;
-  /** Lender types with a value, out of those listed. */
-  lenders_with_value: number;
-  /** Credit union minus large bank, in the metric's unit (percentage points when the unit is percent). */
-  credit_union_vs_large_bank: number | null;
-  small_bank_vs_large_bank: number | null;
-  /** The publisher's flags on blank values, by lender. */
-  notes: Record<string, string>;
-}
-
-/** One row per (area, year, topic, metric, unit) with every lender type side by side and the gaps to large banks. */
-export function compareLenders(rows: SbcsRow[]): LenderComparison[] {
-  const groups = new Map<string, SbcsRow[]>();
-  for (const row of rows) {
-    if (!row.metric_key || !row.lender_type) continue;
-    const key = [row.geo_type, row.geo_code, row.period, row.topic, row.metric_key, row.unit].join("|");
-    const list = groups.get(key);
-    if (list) list.push(row);
-    else groups.set(key, [row]);
-  }
-  const out: LenderComparison[] = [];
-  for (const list of groups.values()) {
-    const first = list[0];
-    const byLender: Record<string, number | null> = {};
-    const notes: Record<string, string> = {};
-    for (const r of list) {
-      byLender[r.lender_type!] = r.value;
-      if (r.value === null && r.note) notes[r.lender_type!] = r.note;
-    }
-    const gap = (a: string) => {
-      const x = byLender[a];
-      const large = byLender.large_bank;
-      return x === undefined || x === null || large === undefined || large === null ? null : round(x - large);
-    };
-    out.push({
-      geo_type: first.geo_type,
-      geo_code: first.geo_code,
-      period: first.period,
-      topic: first.topic,
-      metric_key: first.metric_key!,
-      metric: first.metric,
-      unit: first.unit,
-      by_lender: byLender,
-      lenders_with_value: Object.values(byLender).filter((v) => v !== null).length,
-      credit_union_vs_large_bank: gap("credit_union"),
-      small_bank_vs_large_bank: gap("small_bank"),
-      notes,
-    });
-  }
-  return out.sort((a, b) => b.period.localeCompare(a.period) || String(a.topic).localeCompare(String(b.topic)) || a.metric_key.localeCompare(b.metric_key));
-}
-
-/**
- * SBCS lender comparison for one report year (default: the newest loaded for the area), the
- * nation by default or one state by postal code.
- */
-export async function getSbcsLenderComparison(options: { year?: number | null; state?: string | null } = {}): Promise<LenderComparison[]> {
-  const state = options.state?.trim().toUpperCase() || null;
-  if (state && !/^[A-Z]{2}$/.test(state)) return [];
-  const geoType = state ? "state" : "nation";
-  const geoCode = state ?? "US";
-  const year = options.year ? String(options.year) : null;
-  const rows = await sql<SbcsRow[]>`
-    WITH latest AS (
-      SELECT COALESCE(${year}::text, MAX(period)) AS period
-        FROM area_statistics
-       WHERE source = 'fed-sbcs' AND geo_type = ${geoType} AND geo_code = ${geoCode}
-    )
-    SELECT a.geo_type, a.geo_code, a.period, a.value::float8 AS value, a.unit, a.note,
-           a.raw_json->>'topic' AS topic, a.raw_json->>'metric_key' AS metric_key,
-           a.raw_json->>'metric' AS metric, a.raw_json->>'lender_type' AS lender_type
-      FROM area_statistics a, latest
-     WHERE a.source = 'fed-sbcs' AND a.geo_type = ${geoType} AND a.geo_code = ${geoCode}
-       AND a.period = latest.period
-  `;
-  return compareLenders([...rows]);
 }

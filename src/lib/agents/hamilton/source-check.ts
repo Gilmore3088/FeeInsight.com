@@ -64,7 +64,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // under "Fee through | Fee as of") is what the fee was, not the fee now (Jeanne D'Arc, Oct 8).
 // Version 17: a fee name's words are matched where a word begins, and a short word ("Star") only
 // as that word or its plural, so "Star Checking" no longer traces to "getting started" (#1646).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 17 } as const;
+// Version 18: an opening deposit printed under an account heading ("Now Checking" / "$1,000.00
+// opening deposit required") is not the heading's price, so a name composed from that heading
+// traces, and a fee whose only price was an opening deposit no longer does (#1810).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 18 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

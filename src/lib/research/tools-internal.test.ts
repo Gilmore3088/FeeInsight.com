@@ -39,12 +39,22 @@ vi.mock("@/lib/data-store/financial", () => ({
   getOfrData: vi.fn().mockResolvedValue([]),
 }));
 
-vi.mock("@/lib/data-store/fee-index", () => ({
-  getNationalIndex: vi.fn().mockResolvedValue([]),
-  getPeerIndex: vi.fn().mockResolvedValue([]),
-  getIndexSnapshot: vi.fn().mockResolvedValue([]),
-  getContractFeeRows: vi.fn().mockResolvedValue([]),
-}));
+vi.mock("@/lib/data-store/fee-index", async () => {
+  const { makeStamp } = await vi.importActual<typeof import("@/lib/dataset-stamp")>("@/lib/dataset-stamp");
+  const stamp = makeStamp({
+    dataset: "published_fee_catalog", mode: "live", readAt: "2026-10-18T14:10:00Z", runId: null, newestRecordAt: null,
+    methodVersion: 3, counting: "counted_once", filters: [{ key: "sourced", label: "Only sourced fees" }],
+  });
+  const entry = (i: number) => ({ fee_category: `fee_${i}`, median_amount: 10 + i });
+  return {
+    getNationalIndex: vi.fn().mockResolvedValue([]),
+    getPeerIndex: vi.fn().mockResolvedValue([]),
+    getNationalIndexStamped: vi.fn().mockResolvedValue({ entries: Array.from({ length: 20 }, (_, i) => entry(i)), stamp }),
+    getPeerIndexStamped: vi.fn().mockResolvedValue({ entries: [], stamp }),
+    getIndexSnapshot: vi.fn().mockResolvedValue([]),
+    getContractFeeRows: vi.fn().mockResolvedValue([]),
+  };
+});
 
 vi.mock("@/lib/data-store/derived-analytics", () => ({
   getRevenueConcentration: vi.fn().mockResolvedValue({ dollar_volume: [], institution_prevalence: [], summary: {} }),
@@ -226,23 +236,27 @@ describe("queryNationalData", () => {
 
   // ── fee_index source ────────────────────────────────────────────────────
   describe("source: fee_index", () => {
-    it("returns national index snapshot by default", async () => {
-      const result = await execute({ source: "fee_index", limit: 15, quarters: 8, top_n: 5 });
-      expect(feeIndex.getIndexSnapshot).toHaveBeenCalledWith(undefined, 15);
-      expect(result).toHaveProperty("index");
+    it("returns national index snapshot by default, cut to the limit, with its dataset stamp (#1924)", async () => {
+      const result = await execute({ source: "fee_index", limit: 15, quarters: 8, top_n: 5 }) as { index: unknown[]; dataset: { stamp_id: string; summary: string; filters: string[] } };
+      expect(feeIndex.getNationalIndexStamped).toHaveBeenCalled();
+      expect(result.index).toHaveLength(15);
+      expect(result.dataset.stamp_id).toMatch(/^ds_/);
+      expect(result.dataset.summary).toBe("Published fee schedules, read live 18 Oct 2026 14:10 UTC. Institutions sharing one fee schedule count once.");
+      expect(result.dataset.filters).toEqual(["Only sourced fees"]);
     });
 
     it("returns peer index when charter provided", async () => {
       const result = await execute({ source: "fee_index", charter: "bank", quarters: 8, limit: 10, top_n: 5 });
-      expect(feeIndex.getPeerIndex).toHaveBeenCalledWith(
+      expect(feeIndex.getPeerIndexStamped).toHaveBeenCalledWith(
         expect.objectContaining({ charter_type: "bank" }),
       );
       expect(result).toHaveProperty("index");
+      expect(result).toHaveProperty("dataset.stamp_id");
     });
 
     it("returns peer index when tiers provided", async () => {
       const result = await execute({ source: "fee_index", tiers: ["community"], quarters: 8, limit: 10, top_n: 5 });
-      expect(feeIndex.getPeerIndex).toHaveBeenCalledWith(
+      expect(feeIndex.getPeerIndexStamped).toHaveBeenCalledWith(
         expect.objectContaining({ asset_tiers: ["community"] }),
       );
       expect(result).toHaveProperty("index");

@@ -9,10 +9,8 @@ import { runRegistryStateLists, STATE_DEPOSITORIES_SOURCE, STATE_NONBANK_LENDERS
 import { ALLTHEPLACES_SOURCE, runRegistryAlltheplaces } from "./alltheplaces";
 import { GLEIF_SOURCE, runRegistryGleif } from "./gleif";
 import { SEC_MARKET_VALUE_SOURCE, runRegistrySecMarketValue } from "./sec-market-value";
-import { FHLB_ADVANCE_RATES_SOURCE, runRegistryFhlbAdvanceRates } from "./fhlb-advance-rates";
 import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
 import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
-import { FINRA_NFCS_SOURCE, runRegistryFinraNfcs } from "./finra-nfcs";
 import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
 import { runRegistryUscourtsBankruptcy, USCOURTS_BANKRUPTCY_SOURCE } from "./uscourts-bankruptcy";
 import { MARKET_GROWTH_DEFINITIONS, runRegistryMarketGrowth } from "./market-growth";
@@ -64,6 +62,7 @@ import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRe
 import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNews } from "./state-reg-news";
 import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
 import { WIRE_RESEARCH_PARTITION, WIRE_RESEARCH_SOURCE, WIRE_RESEARCH_STEP_KEY, runRegistryWireResearch } from "./wire-research";
+import { BANK_ZELLE_PARTITION, BANK_ZELLE_SOURCE, runRegistryBankZelle } from "./bank-zelle";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
@@ -377,6 +376,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           missing_lines: r.missingLines,
           used_mdrm: r.usedMdrm,
           quality: r.quality,
+          missing_source: r.missingSource,
           empty: r.empty,
           empty_reason: r.emptyReason,
         },
@@ -406,6 +406,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           header_checks: r.headerChecks,
           missing_files: r.missingFiles,
           quality: r.quality,
+          missing_source: r.missingSource,
           empty: r.empty,
           empty_reason: r.emptyReason,
         },
@@ -446,7 +447,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: DESIGNATION_LISTS_SOURCE,
     stepKey: "registry-designation-lists",
-    title: "Pull designation lists (FDIC MDI and charter flags, NCUA low-income and FOM, NCUA MDI, CDFI Fund, Bank On)",
+    title: "Pull designation lists (FDIC MDI and charter flags, NCUA low-income and FOM, NCUA MDI, CDFI Fund)",
     run: async (input) => {
       const r = await runRegistryDesignationLists({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const gaps = r.fieldsMissing.length > 0 ? `; fields not found: ${r.fieldsMissing.join(", ")}` : "";
@@ -527,7 +528,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: PAYMENT_NETWORKS_SOURCE,
     stepKey: "registry-payment-networks",
-    title: "Pull payment-network lists (Zelle, FedNow, RTP, Reg II exempt / not exempt, Reg II interchange tables, OpenStreetMap ATMs and branches)",
+    title: "Pull payment-network lists (Reg II exempt / not exempt, Reg II interchange tables, OpenStreetMap ATMs and branches)",
     run: async (input) => {
       const r = await runRegistryPaymentNetworks({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const what = r.network === null ? `${n(r.figures)} Regulation II table cells` : r.network === "osm" ? `${n(r.listedRows)} OpenStreetMap ATMs and branches` : `${n(r.listedRows)} listed institutions`;
@@ -558,7 +559,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: INDUSTRY_EVENTS_SOURCE,
     stepKey: "registry-industry-events",
-    title: "Pull industry events (failures, mergers, applications, fee lawsuits, rule comments, SBA lending, CDFI awards, FHLBank members, SEC fee lines)",
+    title: "Pull industry events (failures, mergers, applications, rule comments, SBA lending, CDFI awards, FHLBank members, SEC fee lines)",
     run: async (input) => {
       const r = await runRegistryIndustryEvents({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
@@ -802,24 +803,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     },
   },
   {
-    source: FINRA_NFCS_SOURCE,
-    stepKey: "registry-finra-nfcs",
-    title: "Pull FINRA NFCS state survey shares",
-    run: async (input) => {
-      const r = await runRegistryFinraNfcs({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
-      return { summary: r.summary, detail: r.detail };
-    },
-  },
-  {
-    source: FHLB_ADVANCE_RATES_SOURCE,
-    stepKey: "registry-fhlb-advance-rates",
-    title: "Pull FHLBank posted advance rates",
-    run: async (input) => {
-      const r = await runRegistryFhlbAdvanceRates({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
-      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason } };
-    },
-  },
-  {
     source: BANK_MERGER_ORDERS_SOURCE,
     stepKey: "registry-bank-merger-orders",
     title: "Pull Fed and OCC merger decisions with their stated competitive figures",
@@ -865,7 +848,7 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: URBAN_DEBT_SOURCE,
     stepKey: "registry-urban-debt",
-    title: "Read Urban Institute debt in collections by county and state (held until license confirmed)",
+    title: "Read Urban Institute debt in collections by county and state",
     fixedPartition: URBAN_DEBT_PARTITION,
     run: async (input) => {
       const r = await runRegistryStateLists({ source: URBAN_DEBT_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
@@ -877,7 +860,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           area_rows: r.areaRows,
           written_rows: r.writtenRows,
           missing_fields: r.missingFields,
-          held: r.held,
           dry_run: r.dryRun,
           empty: r.empty,
           empty_reason: r.emptyReason,
@@ -905,16 +887,18 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: GLEIF_SOURCE,
     stepKey: "registry-gleif",
-    title: "Pull GLEIF legal entities (level 1) and parent relationships (level 2) for tracked institutions",
+    title: "Link tracked institutions to GLEIF LEIs, then pull GLEIF legal entities (level 1) and parent relationships (level 2)",
     run: async (input) => {
       const r = await runRegistryGleif({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return {
         summary: r.empty
           ? `No GLEIF rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.leiMatch
+            ? `GLEIF LEI match ${r.partitionKey}: ${n(r.leiMatch.read)} ${r.leiMatch.basis === "name_state" ? "institutions searched" : "GLEIF records read"}, ${n(r.leiMatch.changes)} link changes, ${n(r.writtenRows)} written${r.leiMatch.remaining > 0 ? ", more next run" : ""}${r.leiMatch.coverage ? `; ${n(r.leiMatch.coverage.linked)} of ${n(r.leiMatch.coverage.institutions)} institutions linked` : ""}${dry(r.dryRun)}.`
           : r.partitionKey === "level2"
             ? `Magellan read ${n(r.relationships)} GLEIF parent relationships for ${n(r.seeds)} tracked LEIs (publish ${r.publishDate}), ${n(r.writtenRows)} written${dry(r.dryRun)}.`
             : `Magellan read ${n(r.entities)} GLEIF entities for ${r.partitionKey}: ${n(r.linked)} linked, ${n(r.unlinked)} unlinked, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
-        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, ...(r.leiMatch ? { lei_match: { basis: r.leiMatch.basis, proposals: r.leiMatch.proposals, changes: r.leiMatch.changes, remaining: r.leiMatch.remaining, coverage: r.leiMatch.coverage, ...r.leiMatch.detail } } : {}), empty: r.empty, empty_reason: r.emptyReason },
       };
     },
   },
@@ -936,7 +920,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           removed_rows: r.removedRows,
           area_rows: r.areaRows,
           missing_fields: r.missingFields,
-          held: r.held,
           dry_run: r.dryRun,
           empty: r.empty,
           empty_reason: r.emptyReason,
@@ -962,7 +945,6 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           removed_rows: r.removedRows,
           area_rows: r.areaRows,
           missing_fields: r.missingFields,
-          held: r.held,
           dry_run: r.dryRun,
           empty: r.empty,
           empty_reason: r.emptyReason,
@@ -1035,13 +1017,23 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: FRED_SOURCE,
     stepKey: "registry-fred",
-    title: "Refresh FRED economic indicators",
+    title: "Refresh economic indicators from BLS, BEA and the Federal Reserve Board",
     fixedPartition: FRED_PARTITION,
     run: async (input) => {
       const r = await runRegistryFred({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       return {
-        summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
-        detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
+        summary:
+          `Magellan refreshed ${r.refreshedSeries} of ${r.series} economic indicators from BLS, BEA and the Fed Board (${n(r.observations)} observations)` +
+          (r.stillOnFredEra.length > 0 ? `; ${r.stillOnFredEra.length} still on FRED-era values (${r.stillOnFredEra.slice(0, 8).join(", ")}${r.stillOnFredEra.length > 8 ? ", ..." : ""})` : "") +
+          `${dry(r.dryRun)}.`,
+        detail: {
+          series: r.series,
+          refreshed_series: r.refreshedSeries,
+          missing_series: r.missingSeries,
+          still_on_fred_era_values: r.stillOnFredEra,
+          skipped_packages: r.skippedPackages,
+          observations: r.observations,
+        },
       };
     },
   },
@@ -1317,6 +1309,34 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
           budget_waiting: r.items.filter((i) => i.outcome === "budget_stopped").length,
           cost_microusd: r.costMicrousd,
           items: r.items,
+        },
+      };
+    },
+  },
+  {
+    source: BANK_ZELLE_SOURCE,
+    stepKey: "registry-bank-zelle",
+    title: "Read whether each institution offers Zelle from its own documents",
+    fixedPartition: BANK_ZELLE_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryBankZelle({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const next = r.passFinished ? "the pass is finished and starts again in a week" : `the next run starts after institution ${r.cursorTo}`;
+      return {
+        summary: `Hoovie read ${n(r.documentsRead)} current documents of ${n(r.institutionsRead)} institutions for Zelle: ${n(r.documentsNamingZelle)} name it; ${n(r.offers)} institutions offer it, ${n(r.doesNotOffer)} say they do not, ${n(r.unclear)} unclear; ${n(r.written)} rows written, ${n(r.removed)} removed; ${next}${dry(r.dryRun)}.`,
+        detail: {
+          matcher_version: r.matcherVersion,
+          cursor_from: r.cursorFrom,
+          cursor_to: r.cursorTo,
+          pass_finished: r.passFinished,
+          institutions_read: r.institutionsRead,
+          documents_read: r.documentsRead,
+          documents_naming_zelle: r.documentsNamingZelle,
+          documents_skipped: r.documentsSkipped,
+          offers: r.offers,
+          does_not_offer: r.doesNotOffer,
+          unclear: r.unclear,
+          written: r.written,
+          removed: r.removed,
         },
       };
     },

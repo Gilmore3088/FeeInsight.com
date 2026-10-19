@@ -45,6 +45,32 @@ describe("Hamilton account names", () => {
     expect(plan.skipped.no_heading).toBe(1);
   });
 
+  it("names a fee whose account heading prints its opening deposit (v3, #1810)", () => {
+    // Frontier Bank (prod, Oct 18): each heading is followed by its opening deposit, which the
+    // shared check read as the heading's price, so the composed name could not trace.
+    const page = {
+      source_document_id: 40,
+      normalized_text: [
+        "Frontier Bank Classic Checking",
+        "$100.00 opening deposit required",
+        "Monthly maintenance fee of $7.00",
+        "Now Checking",
+        "$1,000.00 opening deposit required",
+        "Monthly maintenance fee $10.00",
+      ].join("\n\n"),
+    };
+    const at = (id: number, amount: string, excerpt: string): AccountNameFee => ({
+      ...fee(id, amount, "Monthly maintenance fee"),
+      source_document_id: 40,
+      conditions: `Knox deterministic extraction. excerpt="${excerpt}"`,
+    });
+    const plan = planAccountNames([at(117545, "7.00", "Monthly maintenance fee of $7.00"), at(117602, "10.00", "Monthly maintenance fee $10.00")], [page]);
+    expect(plan.renames.map((rename) => [rename.feePublishedId, rename.newName])).toEqual([
+      [117545, "Frontier Bank Classic Checking Monthly maintenance fee"],
+      [117602, "Now Checking Monthly maintenance fee"],
+    ]);
+  });
+
   describe("Knox's recorded account (v2, #1810)", () => {
     const page = {
       source_document_id: 30,

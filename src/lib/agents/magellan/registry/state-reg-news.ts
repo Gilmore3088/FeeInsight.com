@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { classify } from "@/lib/data-store/news";
+import { STRUCK_REGULATOR_STATES } from "@/lib/data-store/struck-sources";
 import { registryFetch, type RegistryFetchOptions } from "@/lib/regulatory/http";
 import type { FeedArticle } from "@/lib/regulatory/news";
 import { STATE_REGULATORS, type StateRegulator } from "@/lib/regulatory/state-regulators";
@@ -33,8 +34,9 @@ export const STATE_REG_NEWS_PARTITION = "current";
  * Bumped when either state news reader changes, so the scheduler re-reads at once
  * (REGISTRY_PARSER_VERSIONS). 2: own-host feeds only, menus left out of news pages,
  * entities decoded, news kept only when the headline names the state and is on topic.
+ * 3: New York, North Carolina and Florida sites no longer read (non-commercial terms, 2026-10-18).
  */
-export const STATE_NEWS_PARSER_VERSION = 2;
+export const STATE_NEWS_PARSER_VERSION = 3;
 const REFRESH_HOURS = 24;
 const CONCURRENCY = 8;
 /** No new agency starts after this long, so the run ends inside its expected time. */
@@ -77,10 +79,15 @@ export interface StateAgencySite {
   website: string | null;
 }
 
-/** Every regulator site: the bank regulator, plus a separate credit union regulator's site. */
+/**
+ * Every regulator site: the bank regulator, plus a separate credit union regulator's site.
+ * States whose sites allow only non-commercial reuse (STRUCK_REGULATOR_STATES: New York, North
+ * Carolina, Florida; DECISIONS.md "No non-commercial data", 2026-10-18) are never read.
+ */
 export function stateAgencySites(regulators: readonly StateRegulator[] = STATE_REGULATORS): StateAgencySite[] {
   const sites: StateAgencySite[] = [];
   for (const r of regulators) {
+    if (STRUCK_REGULATOR_STATES.includes(r.stateCode)) continue;
     sites.push({ state: r.stateCode, agency: r.agency, website: r.website });
     if (r.creditUnionAgency && r.creditUnionWebsite && r.creditUnionWebsite !== r.website) {
       sites.push({ state: r.stateCode, agency: r.creditUnionAgency, website: r.creditUnionWebsite });

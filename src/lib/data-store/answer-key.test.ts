@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { banksToCheck, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
+import { banksToCheck, confirmAnswerKeyInstitution, feeCheckedBy, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
 
 describe("normalizeFeeAmount", () => {
   it("derives the amount kind when it is missing", () => {
@@ -66,6 +66,29 @@ describe("person-checked answer keys", () => {
   it("queues every bank a person still has to check, shortest key first", () => {
     const rows = [bank(1, "confirmed", "knox-hand-key", 38), bank(2, "confirmed", "james", 5), bank(3, "prefilled", null, 21), bank(4, "confirmed", "knox-hand-key", 14)];
     expect(banksToCheck(rows).map((row) => row.id)).toEqual([4, 3, 1]);
+  });
+
+  it("a person's bank-level confirm covers rows a Claude thread keyed, so nobody re-presses Confirm", () => {
+    expect(feeCheckedBy("knox-hand-key", { status: "confirmed", confirmed_by: "hello@bankfeeindex.com" })).toBe("hello@bankfeeindex.com");
+    expect(feeCheckedBy("knox-hand-key", { status: "confirmed", confirmed_by: "knox-hand-key" })).toBe("knox-hand-key");
+    expect(feeCheckedBy("knox-hand-key", { status: "prefilled", confirmed_by: null })).toBe("knox-hand-key");
+    expect(feeCheckedBy("james", { status: "confirmed", confirmed_by: "hello@bankfeeindex.com" })).toBe("james");
+  });
+
+  it("Confirm all re-stamps rows a Claude thread keyed to the person, not only unconfirmed rows (#629)", async () => {
+    const queries: { text: string; values: unknown[] }[] = [];
+    const tx = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries.push({ text: strings.join("?"), values });
+      return [];
+    });
+    const db = { begin: async (fn: (tx: unknown) => Promise<void>) => fn(tx) };
+    await confirmAnswerKeyInstitution(12, "hello@bankfeeindex.com", db as never);
+    const feeUpdate = queries[0];
+    expect(feeUpdate.text).toContain("UPDATE answer_key_fees");
+    expect(feeUpdate.text).toContain("confirmed_by = ANY(");
+    expect(feeUpdate.text).not.toContain("COALESCE(confirmed_by");
+    expect(feeUpdate.values).toEqual(["hello@bankfeeindex.com", 12, ["knox-hand-key"]]);
+    expect(queries[1].text).toContain("UPDATE answer_key_institutions");
   });
 });
 

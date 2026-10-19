@@ -3,7 +3,7 @@ import { registryFetch, RegistryHttpError, type RegistryFetchOptions } from "./h
 
 /**
  * Small pure helpers shared by the risk-and-cost loaders (US Courts bankruptcy, USDA farm,
- * BLS OEWS, FINRA NFCS). No DB access.
+ * BLS OEWS). No DB access.
  */
 
 /** First URL that answers; 404 and 403 move on to the next candidate, other errors throw. */

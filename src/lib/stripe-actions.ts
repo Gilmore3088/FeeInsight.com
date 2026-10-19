@@ -1,5 +1,6 @@
 "use server";
 
+import { checkoutFailure } from "@/lib/billing/checkout-failure";
 import { createGuardedCheckout } from "@/lib/billing/checkout";
 import { getStripe } from "@/lib/stripe";
 import { getCurrentUser } from "@/lib/auth";
@@ -103,7 +104,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   const customerId = await ensureStripeCustomer(user);
 
   try {
-    const result = await createGuardedCheckout(user.id, customerId, {
+    // getCurrentUser already returns a number (#1970); the checkout lock only accepts one.
+    const result = await createGuardedCheckout(Number(user.id), customerId, {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
     customer: customerId,
@@ -122,7 +124,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
       pro_plan: plan,
       ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
       ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
-      ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
+      // Stripe refuses a metadata value over 500 characters; success_url carries the address either way.
+      ...(hasReturnTo && sanitizedReturnTo.length <= 500 ? { return_to: sanitizedReturnTo } : {}),
     },
     // Kept on the subscription itself so the consultant report cap can tell who it covers.
     subscription_data: {
@@ -135,9 +138,9 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   });
 
     return "error" in result ? { url: null, error: result.error } : { url: result.url };
-  } catch {
+  } catch (error) {
     // Ambiguous provider/database failures retain the reservation; never make a new key here.
-    console.error("[checkout] Could not confirm the persisted checkout attempt", { userId: user.id });
+    console.error("[checkout] Could not confirm the persisted checkout attempt", { userId: user.id, ...checkoutFailure(error) });
     return { url: null, error: "We could not confirm checkout. Please retry from your account; do not submit a second payment." };
   }
 }

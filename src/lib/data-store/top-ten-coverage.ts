@@ -1,5 +1,6 @@
 import { sql } from "./connection";
 import { getMarketLeaders, type MarketLeader } from "./market-leaders";
+import { isNonRetail, NON_RETAIL_INSTITUTIONS } from "@/lib/non-retail";
 
 type SqlTag = typeof sql;
 
@@ -8,6 +9,8 @@ type SqlTag = typeof sql;
  * 50 states and DC (510 slots, the market-leaders deposit ranking), and how many of those slots
  * show live fees. One shared count, so the admin page, Magellan and the coordinator stop
  * producing different numbers by hand. A bank in several states' top 10 counts once per slot.
+ * A non-retail institution (`non-retail.ts`, James 2026-10-18) holds no slot: the next
+ * institution in that state by deposits takes it, so each state still has ten.
  */
 export const TOP_TEN_PER_STATE = 10;
 
@@ -40,7 +43,15 @@ export interface TopTenCoverage {
 /** Pure: count the 50-state-plus-DC top-10 slots against what is live. */
 export function summarizeTopTen(leaders: MarketLeader[], live: Map<number, LiveFacts>): TopTenCoverage {
   const states = new Set<string>(STATES_AND_DC);
-  const slots = leaders.filter((l) => l.deposit_rank <= TOP_TEN_PER_STATE && states.has(l.state_code));
+  // A retail institution moves up one rank for each non-retail one above it in its state.
+  const nonRetailRanks = new Map<string, number[]>();
+  for (const l of leaders) {
+    if (isNonRetail(l.institution_id)) nonRetailRanks.set(l.state_code, [...(nonRetailRanks.get(l.state_code) ?? []), l.deposit_rank]);
+  }
+  const slots = leaders
+    .filter((l) => states.has(l.state_code) && !isNonRetail(l.institution_id))
+    .map((l) => ({ ...l, deposit_rank: l.deposit_rank - (nonRetailRanks.get(l.state_code) ?? []).filter((rank) => rank < l.deposit_rank).length }))
+    .filter((l) => l.deposit_rank <= TOP_TEN_PER_STATE);
   const missing = new Map<number, TopTenSlot[]>();
   let liveCount = 0;
   let liveOverdraft = 0;
@@ -59,7 +70,8 @@ export function summarizeTopTen(leaders: MarketLeader[], live: Map<number, LiveF
 }
 
 export async function getTopTenCoverage(db: SqlTag = sql): Promise<TopTenCoverage> {
-  const leaders = await getMarketLeaders({ db, perState: TOP_TEN_PER_STATE });
+  // Enough ranks past ten that every non-retail slot has a next institution to take it.
+  const leaders = await getMarketLeaders({ db, perState: TOP_TEN_PER_STATE + NON_RETAIL_INSTITUTIONS.size });
   const ids = [...new Set(leaders.map((l) => l.institution_id))];
   const rows =
     ids.length === 0

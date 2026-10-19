@@ -19,6 +19,7 @@ import { assetSizeFor, type AssetSize } from "@/lib/hamilton/asset-size";
 import { ScopeControls } from "./ScopeControls";
 import { BoardBriefButton } from "./BoardBriefButton";
 import { EvidenceDetails } from "./EvidenceDetails";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { FeeLandscapeChart, HorizontalBars, MultiTrend, StateFeeMap } from "./IntelligenceCharts";
 import { LandingResearchResults } from "@/components/hamilton/landing/LandingResearchResults";
 
@@ -187,14 +188,14 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
       lens: "economy",
       title: `${place} unemployment is ${e.state_unemployment.latest.value.toFixed(1)}%.`,
       body: `${e.national_unemployment ? `The U.S. rate is ${e.national_unemployment.latest.value.toFixed(1)}% (${e.national_unemployment.latest.date.slice(0, 7)})` : "The U.S. comparison is unavailable"}; state figure as of ${e.state_unemployment.latest.date.slice(0, 7)}.`,
-      source: "BLS via FRED",
+      source: "Bureau of Labor Statistics",
     });
   } else if (bankYoY !== null) {
     findings.push({
       lens: "economy",
       title: `Prices for bank services rose ${pct(bankYoY)} over twelve months.`,
       body: `${allYoY !== null ? `All consumer prices rose ${pct(allYoY)} over the same period` : "The all-items comparison is unavailable"}, to ${bank!.latest.date.slice(0, 7)}.`,
-      source: "BLS consumer price index via FRED",
+      source: "BLS consumer price index",
     });
   }
   const years = data.complaints?.years ?? [];
@@ -203,8 +204,8 @@ export function readFindings(data: Loaded, place: string, state: string | null, 
     const prior = years[years.length - 2];
     findings.push({
       lens: "complaints",
-      title: `${year.total.toLocaleString()} CFPB complaints in ${year.year} named institutions headquartered in ${place}.`,
-      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; the year before there were ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
+      title: `${year.total.toLocaleString()} CFPB complaints in ${yearLabel(year.year)} named institutions headquartered in ${place}.`,
+      body: `${((year.feeRelated / year.total) * 100).toFixed(1)}% were about fees${prior ? `; ${prior.year}${isCurrentYear(year.year) ? ", a full year," : ""} had ${prior.total.toLocaleString()}` : ""}. Counts follow who complains and how complaints are matched, so they do not rank institutions.`,
       source: "CFPB Consumer Complaint Database",
     });
   }
@@ -278,6 +279,10 @@ function FeePanels({ data, selection, place, state, stateHrefs, compact, explore
             </tr>)}</tbody>
           </table>
         </div> : null}
+        {result?.stamps ? <DatasetNote className="mt-4" figures={[
+          { label: place, stamp: result.stamps.selected },
+          result.stamps.national ? { label: "the U.S. reference", stamp: result.stamps.national } : null,
+        ]} /> : null}
         <EvidenceDetails source="Bank Fee Index · published fee catalog" period="Per-category record dates in the table" geography={place} coverage="Published consumer fees from the selected institution type; cohorts under the minimum are withheld" method="One value per institution; median and 25th–75th percentiles. State figures use the same institution type as the national reference. Missing is not zero; record dates are not a fresh schedule recheck." />
       </Panel>
       <Panel title={`${primaryName} by state`} subtitle={`Published median by state · ${CHARTER_LABEL[selection.charter]}${sizeNote ? ` ${sizeNote}` : ""}${data.feeMap?.nationalMedian != null ? ` · U.S. ${dollars(data.feeMap.nationalMedian)}` : ""}`}>
@@ -370,8 +375,17 @@ function EconomyPanel({ economy, place, state, district, compact, exploreHref }:
         <p className="mt-2 text-xs text-[var(--fi-muted)]">District commentary covers the whole {DISTRICT_NAMES[district] ?? ""} Federal Reserve district, not {place} alone.{economy.beige_book.source_url ? <> <a href={economy.beige_book.source_url} target="_blank" rel="noreferrer" className="text-[var(--fi-brick)]">Source ↗</a></> : null}</p>
       </div> : null}
     </> : null}
-    <EvidenceDetails source="BLS (LAUS, CES, CPI) and Federal Reserve, via FRED; Beige Book" period={[economy.state_unemployment?.latest.date, economy.national_unemployment?.latest.date, economy.cpi_bank_services?.latest.date].filter(Boolean).map(d => d!.slice(0, 7)).join(" · ") || "Unavailable"} geography={state ? `${place} and United States` : "United States"} coverage="Monthly observations as published; months BLS did not publish stay gaps" method="Rates as reported; price and payroll lines are twelve-month percent changes. State and national dates are shown separately." />
+    <EvidenceDetails source="BLS (LAUS, CES, CPI) and Federal Reserve Board (H.15); Beige Book" period={[economy.state_unemployment?.latest.date, economy.national_unemployment?.latest.date, economy.cpi_bank_services?.latest.date].filter(Boolean).map(d => d!.slice(0, 7)).join(" · ") || "Unavailable"} geography={state ? `${place} and United States` : "United States"} coverage="Monthly observations as published; months BLS did not publish stay gaps" method="Rates as reported; price and payroll lines are twelve-month percent changes. State and national dates are shown separately." />
   </Panel>;
+}
+
+/** The current calendar year is still being counted, so its total is labelled as partial. */
+function isCurrentYear(year: string | number): boolean {
+  return Number(year) === new Date().getUTCFullYear();
+}
+
+function yearLabel(year: string | number): string {
+  return isCurrentYear(year) ? `${year} to date` : String(year);
 }
 
 function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaints: ComplaintTrend | null; place: string; compact: boolean; exploreHref: string | null }) {
@@ -379,12 +393,12 @@ function ComplaintPanel({ complaints, place, compact, exploreHref }: { complaint
   const latest = years[years.length - 1];
   return <Panel title="Consumer complaints" subtitle={`${place} · CFPB complaints matched to institutions headquartered here`} explore={exploreHref}>
     {!complaints ? <Unavailable>Complaint records could not load.</Unavailable> : years.length === 0 ? <Unavailable>No complaint records are matched to institutions in this scope.</Unavailable> : <>
-      {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> complaints in {latest.year}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
-      <div className="mt-3"><MultiTrend rows={years.map(y => ({ period: y.year, total: y.total, fees: y.feeRelated }))} series={[{ key: "total", name: "All complaints" }, { key: "fees", name: "Fee-related" }]} label="Complaints per year" unit="complaints" height={compact ? 200 : 240} /></div>
-      {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest?.year}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
+      {latest ? <p className="mt-3 text-sm"><span className="text-2xl font-semibold" style={{ fontVariantNumeric: "tabular-nums" }}>{latest.total.toLocaleString()}</span> complaints in {yearLabel(latest.year)}, {latest.total ? `${((latest.feeRelated / latest.total) * 100).toFixed(1)}%` : "0%"} about fees, across {latest.institutions.toLocaleString()} institutions.</p> : null}
+      <div className="mt-3"><MultiTrend rows={years.map(y => ({ period: isCurrentYear(y.year) ? `${y.year} to date` : y.year, total: y.total, fees: y.feeRelated }))} series={[{ key: "total", name: "All complaints" }, { key: "fees", name: "Fee-related" }]} label="Complaints per year" unit="complaints" height={compact ? 200 : 240} /></div>
+      {!compact && complaints.products.length ? <div className="mt-5"><h3 className="text-sm font-semibold">Products complained about, {latest ? yearLabel(latest.year) : null}</h3><HorizontalBars label="Complaints by product" valueLabel="Complaints" rows={complaints.products.map(p => ({ name: p.product, value: p.count }))} /></div> : null}
     </>}
     <p className="mt-3 text-xs text-[var(--fi-muted)]">Counts reflect who complains and how complaints are matched; they do not rank institutions.</p>
-    <EvidenceDetails source="CFPB Consumer Complaint Database" period={latest ? `${years[0].year}–${latest.year}` : "Unavailable"} geography={`${place}, by institution headquarters (not the consumer's location)`} coverage="Complaints matched to institutions in the registry; unmatched complaints are not counted" method="Annual totals; fee-related uses the shared fee-issue definition." />
+    <EvidenceDetails source="CFPB Consumer Complaint Database" period={latest ? `${years[0].year}–${latest.year}${isCurrentYear(latest.year) ? " (latest year to date)" : ""}` : "Unavailable"} geography={`${place}, by institution headquarters (not the consumer's location)`} coverage="Complaints matched to institutions in the registry; unmatched complaints are not counted" method="Annual totals; the current year counts complaints received so far. Fee-related uses the shared fee-issue definition." />
   </Panel>;
 }
 

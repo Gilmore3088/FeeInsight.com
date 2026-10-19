@@ -172,7 +172,12 @@ function ActionTimeline({ watch }: { watch: RegulatoryWatch }) {
 /** Higher than the market reads terra, lower reads blue (RD.series[1]), level reads soft ink. */
 const gapColor = (gap: number) => (gap > 0 ? RD.terraText : gap < 0 ? RD.series[1] : RD.inkSoft);
 
-function FeeVsMarket({ fees }: { fees: readonly WatchFeeTie[] }) {
+/** A tie's own price, or the range of its fees when the schedule states several (#1913). */
+const tieAmount = (f: WatchFeeTie) => (f.amount !== null ? money(f.amount) : `${money(f.amount_low)} to ${money(f.amount_high)}`);
+
+function FeeVsMarket({ fees: ties }: { fees: readonly WatchFeeTie[] }) {
+  // Only a stated price is set against the market median (fee_focus carries no others).
+  const fees = ties.flatMap((f) => (f.amount === null ? [] : [{ ...f, amount: f.amount }]));
   const hi = Math.ceil(Math.max(...fees.flatMap((f) => [f.amount, f.market_median ?? 0])) * 1.15) || 1;
   const at = (v: number) => (v / hi) * 100;
   return (
@@ -271,7 +276,7 @@ function FeeChips({ fees, allFees }: { fees: readonly WatchFeeTie[]; allFees: bo
       <span style={small}>{allFees && fees.length === 0 ? "Covers every fee it publishes" : "Its fees:"}</span>
       {fees.map((f) => (
         <span key={f.fee_category} style={{ ...small, color: RD.ink2, border: `1px solid ${RD.rule2}`, background: RD.paper, borderRadius: 3, padding: "1px 6px" }}>
-          {f.display_name} <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", color: RD.ink }}>{money(f.amount)}</span>
+          {f.display_name} <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums", color: RD.ink }}>{tieAmount(f)}</span>
         </span>
       ))}
       {allFees && fees.length > 0 ? <span style={small}>and every other fee it publishes</span> : null}

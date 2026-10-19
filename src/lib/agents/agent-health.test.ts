@@ -10,11 +10,14 @@ import {
   growthRules,
   gutenbergRules,
   healthChanges,
+  hoovieRules,
   knoxRules,
   magellanRules,
   readDarwinNumbers,
   readGutenbergNumbers,
   readHamiltonNumbers,
+  readHoovieNumbers,
+  readMagellanNumbers,
   summarizeAgentHealth,
   type HealthNumbers,
 } from "./agent-health";
@@ -115,7 +118,8 @@ describe("agent health", () => {
     };
     const keys = [...PUBLISHER_STEP_KEYS];
     const gutenberg = await run(readGutenbergNumbers);
-    expect(gutenberg.texts[0]).toContain("THEN 'gutenberg' ELSE agent_name END) = $");
+    expect(gutenberg.texts[0]).toContain("THEN 'gutenberg'");
+    expect(gutenberg.texts[0]).toContain("ELSE agent_name END) = $");
     // Both names are scanned, so pre-switch publish steps under Hamilton's name still count.
     expect(gutenberg.values[0]).toEqual([["hamilton", "gutenberg"], keys, "gutenberg", ["hamilton", "gutenberg"], keys, "gutenberg", "gutenberg"]);
     expect(gutenberg.texts[1]).toContain("published_fee_records");
@@ -126,6 +130,17 @@ describe("agent health", () => {
     expect(hamilton.values[0]).toEqual([["hamilton"], keys, "hamilton", ["hamilton"], keys, "hamilton", "hamilton"]);
     expect(hamilton.texts[1]).toContain("policy_key = 'agent:hamilton'");
     expect(hamilton.texts[1]).not.toContain("published_fee_records");
+
+    // #1865: registry steps under Magellan's name before the switch are Hoovie's, so Hoovie reads
+    // both names and Magellan, reading only its own, leaves them out through the same CASE.
+    const hoovie = await run(readHoovieNumbers);
+    expect(hoovie.texts[0]).toContain("WHEN agent_name = 'magellan' AND step_key LIKE 'registry-%' THEN 'hoovie'");
+    expect(hoovie.values[0]).toEqual([["magellan", "hoovie"], keys, "hoovie", ["magellan", "hoovie"], keys, "hoovie", "hoovie"]);
+    const magellan = await run(readMagellanNumbers);
+    expect(magellan.values[0]).toEqual([["magellan"], keys, "magellan", ["magellan"], keys, "magellan", "magellan"]);
+    expect(hoovieRules({ stepsCompleted: 12, stepsFailed: 1, spendUsd: 0 })).toEqual([
+      expect.objectContaining({ key: "no_failed_steps", ok: false, detail: "1 failed of 13" }),
+    ]);
   });
 
   it("breaks Gutenberg's rule when it spends on a model", () => {

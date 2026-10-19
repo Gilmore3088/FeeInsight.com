@@ -2,7 +2,6 @@ import { sql } from "@/lib/data-store/connection";
 import { CensusKeyError } from "@/lib/regulatory/census-acs";
 import type { GeocodeInput } from "@/lib/regulatory/census-geocoder";
 import {
-  ATLANTA_FED_PAYMENTS_URL_ENV,
   BeaKeyError,
   checkAreaStats,
   dedupeAreaStats,
@@ -25,10 +24,14 @@ import {
   industryStats,
   parseHudCrosswalk,
   parseNationalWideCsv,
-  parseRemittancePrices,
+  locateRpwWorkbook,
+  parseRemittanceFile,
   placeAddressesInTracts,
   placePointInTract,
-  RPW_URL_ENV,
+  readRpwBytes,
+  REMITTANCE_PRICES_ATTRIBUTION,
+  REMITTANCE_PRICES_LICENCE,
+  RpwFileTooLargeError,
   RUCC_VINTAGES,
   sumIndustry,
   type AreaFetch,
@@ -57,6 +60,12 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 
 export const ECONOMY_PARSER_VERSION = 1;
 
+/**
+ * The remittance source's own reader version, so a change to it re-runs only that source.
+ * v2: reads the RPW workbook from the World Bank's data page with no env var set.
+ */
+export const REMITTANCE_PARSER_VERSION = 2;
+
 export const ECONOMY_SOURCES = {
   rucc: "usda-rucc",
   ffiecTracts: "ffiec-census-tracts",
@@ -71,7 +80,6 @@ export const ECONOMY_SOURCES = {
   shed: "fed-shed",
   fdicIndustry: "fdic-industry-totals",
   fdicRates: "fdic-national-rates",
-  paymentChoice: "atlanta-fed-payment-choice",
   remittances: "world-bank-remittance-prices",
   hudCrosswalk: "hud-zip-county",
 } as const;
@@ -147,12 +155,6 @@ export const ECONOMY_DEFINITIONS: EconomyDefinition[] = [
   {
     source: ECONOMY_SOURCES.fdicRates,
     title: "Pull FDIC national deposit rates and rate caps",
-    fixedPartition: ECONOMY_CURRENT_PARTITION,
-    partitions: () => [ECONOMY_CURRENT_PARTITION],
-  },
-  {
-    source: ECONOMY_SOURCES.paymentChoice,
-    title: "Pull Atlanta Fed consumer payment choice summary tables",
     fixedPartition: ECONOMY_CURRENT_PARTITION,
     partitions: () => [ECONOMY_CURRENT_PARTITION],
   },
@@ -779,13 +781,29 @@ async function runFdicIndustry(db: RegistryDb, options: RegistryEconomyOptions):
 
 async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): Promise<RegistryEconomyResult> {
   const env = options.env ?? process.env;
-  const url = env[RPW_URL_ENV]?.trim();
-  if (!url) return skipFor(db, options, "World Bank remittance prices", `No ${RPW_URL_ENV} set; the RPW dataset is published as a workbook and no CSV download is confirmed`, HOURS.week);
+  // The env var is an optional override; unset, the workbook is found on the World Bank's data page.
+  const located = await locateRpwWorkbook(env, options.fetchOptions);
+  const url = located.url;
   const response = await registryFetch(url, { timeoutMs: 180_000, ...options.fetchOptions });
-  const parsed = parseRemittancePrices(await response.text());
+  let bytes: Uint8Array;
+  try {
+    bytes = await readRpwBytes(response, url);
+  } catch (error) {
+    if (!(error instanceof RpwFileTooLargeError)) throw error;
+    const detail = { parser_version: REMITTANCE_PARSER_VERSION, problem: error.problem, bytes_at_refusal: error.bytes, located_via: located.via, page_problem: located.pageProblem };
+    await recordEmpty(db, options, error.message, HOURS.week, url, detail);
+    return result(options, { sourceUrl: url, empty: true, emptyReason: error.message, summary: `World Bank remittance prices: nothing loaded. ${error.message}${dry(Boolean(options.dryRun))}.`, detail });
+  }
+  const parsed = parseRemittanceFile(bytes);
   const unique = [...new Map(parsed.rows.map((r) => [`${r.period}|${r.destination_country}|${r.firm}|${r.product ?? ""}`, r])).values()];
   const detail = {
-    parser_version: ECONOMY_PARSER_VERSION,
+    parser_version: REMITTANCE_PARSER_VERSION,
+    licence: REMITTANCE_PRICES_LICENCE,
+    attribution: REMITTANCE_PRICES_ATTRIBUTION,
+    located_via: located.via,
+    page_problem: located.pageProblem,
+    file_bytes: bytes.length,
+    sheets: parsed.sheets ?? null,
     rows: unique.length,
     duplicate_keys: parsed.rows.length - unique.length,
     non_us_rows: parsed.nonUsRows,
@@ -804,7 +822,8 @@ async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): 
   let written = 0;
   let linked = 0;
   for (const group of chunk(unique, UPSERT_CHUNK)) {
-    const payload = JSON.stringify(group.map((r) => ({ ...r, raw_json: r.raw, raw: undefined })));
+    // CC BY 4.0: each stored quote carries the attribution its licence requires.
+    const payload = JSON.stringify(group.map((r) => ({ ...r, raw_json: { ...r.raw, attribution: REMITTANCE_PRICES_ATTRIBUTION }, raw: undefined })));
     const out = await db<Array<{ linked: boolean }>>`
       WITH r AS (
         SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
@@ -1004,15 +1023,13 @@ export async function runRegistryEconomy(options: RegistryEconomyOptions): Promi
     }
     case ECONOMY_SOURCES.fdicIndustry:
       return runFdicIndustry(db, options);
-    case ECONOMY_SOURCES.fdicRates:
-    case ECONOMY_SOURCES.paymentChoice: {
-      const rates = options.source === ECONOMY_SOURCES.fdicRates;
-      const envName = rates ? FDIC_NATIONAL_RATES_URL_ENV : ATLANTA_FED_PAYMENTS_URL_ENV;
-      const label = rates ? "FDIC national rates and rate caps" : "Atlanta Fed payment choice tables";
+    case ECONOMY_SOURCES.fdicRates: {
+      const envName = FDIC_NATIONAL_RATES_URL_ENV;
+      const label = "FDIC national rates and rate caps";
       const url = env[envName];
       if (!url?.trim()) return skipFor(db, options, label, `No ${envName} set; no confirmed plain-file download for this source`, HOURS.week);
-      const fetched = await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, rates ? { prefix: "fdic_national_rate", unit: "percent (APY)" } : { prefix: "atlanta_fed_payment_choice", unit: "as published" }), fo);
-      return runAreaSource(db, options, fetched, { label, refreshHours: rates ? HOURS.week : HOURS.quarter, emptyRetryHours: HOURS.week });
+      const fetched = await fetchConfiguredCsv(envName, url, (csv) => parseNationalWideCsv(csv, { prefix: "fdic_national_rate", unit: "percent (APY)" }), fo);
+      return runAreaSource(db, options, fetched, { label, refreshHours: HOURS.week, emptyRetryHours: HOURS.week });
     }
     case ECONOMY_SOURCES.remittances:
       return runRemittances(db, options);

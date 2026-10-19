@@ -342,7 +342,18 @@ const spec = {
           category: { type: "string", example: "overdraft" },
           display_name: { type: "string" },
           family: { type: "string", nullable: true },
-          amount: { type: "number", description: "The institution's own value for the category, in dollars: the middle of its published amounts (the highest tier for overdraft)." },
+          amount: {
+            type: "number",
+            nullable: true,
+            description: "The price the institution's schedule states for the category, in dollars (the highest tier for overdraft). Null when it states several different fees in the category; amount_low, amount_high and fees then give them, and peers_lower, peers_same, peers_higher and percentile are null.",
+          },
+          amount_low: { type: "number", description: "The lowest of the institution's fees in the category, in dollars." },
+          amount_high: { type: "number", description: "The highest of the institution's fees in the category, in dollars." },
+          fees: {
+            type: "array",
+            description: "Each of the institution's fees in the category, lowest first.",
+            items: { type: "object", properties: { name: { type: "string" }, amount: { type: "number" } } },
+          },
           peer_count: { type: "integer", description: "Peers with a published dollar amount for this fee." },
           peer_median: { type: "number", nullable: true },
           peer_p25: { type: "number", nullable: true },
@@ -575,7 +586,7 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv) or view=regulatory_watch for its enforcement actions and complaint counts. view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
+          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for its enforcement actions and complaint counts (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
         tags: ["Institutions"],
         parameters: [
           {

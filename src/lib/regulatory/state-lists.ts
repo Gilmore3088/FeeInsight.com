@@ -15,8 +15,9 @@ import { normalizeName } from "./enforcement";
  * bytes or JSON and never touches the database.
  *
  * 1. State qualified public depository lists: which banks may hold public funds in a state.
- *    Florida's CFO list is the only one wired in (see STATE_DEPOSITORY_LISTS); no other state's
- *    list could be confirmed as a machine-readable file.
+ *    No list is wired in (STATE_DEPOSITORY_LISTS is empty): Florida's CFO list was removed on
+ *    2026-10-17 (its site allows only educational, personal or training use; DECISIONS.md "No
+ *    non-commercial data"), and no other state's list could be confirmed as a machine-readable file.
  * 2. State open-data (Socrata) lists of non-bank small-dollar lenders: licensed lenders, money
  *    transmitters, check cashers and payday/deferred-deposit lenders. No dataset id could be
  *    confirmed from the sandbox, so none is hard-coded; datasets are named in
@@ -122,27 +123,17 @@ export interface StateDepositoryList {
 }
 
 /**
- * Florida only. The Florida CFO's Bureau of Collateral Management designates qualified public
- * depositories under s. 280, Florida Statutes, and publishes the list quarterly (also printed in
- * the Florida Administrative Register in the fourth week of January, April, July and October).
- * The page is confirmed; the file format behind it is not. The Register notice groups names under
- * the home-office state and city; an asterisk marks a depository that has limited the public
- * deposits it takes, and a date beside a name means it is withdrawing from the program.
+ * No list is wired in. Florida's CFO list (s. 280, Florida Statutes) was removed on 2026-10-17:
+ * the CFO site allows use only for educational, personal or training purposes (DECISIONS.md "No
+ * non-commercial data"). The generic readers below stay for a state whose terms allow commercial
+ * use. A state's list is added here only after its terms are read.
  *
  * Not wired (no machine-readable list confirmed): Texas (no statewide list; collateral is pledged
  * per entity under the Public Funds Collateral Act), California, Washington (PDPC), Oregon, Utah
  * (an HTML page whose table shape is unconfirmed), Massachusetts (approved banks list, PDF), Georgia,
  * Tennessee and others.
  */
-export const STATE_DEPOSITORY_LISTS: readonly StateDepositoryList[] = [
-  {
-    state: "FL",
-    title: "Florida qualified public depositories",
-    pageUrl: "https://www.myfloridacfo.com/division/treasury/collateral-management/qualified-public-depositories",
-    urlEnv: "FL_QPD_LIST_URL",
-    linkHint: /qpd|qualified|depositor/i,
-  },
-];
+export const STATE_DEPOSITORY_LISTS: readonly StateDepositoryList[] = [];
 
 export const DEPOSITORY_COLUMN_ALIASES = {
   name: [
@@ -199,7 +190,7 @@ export interface DepositoryRead {
 }
 
 /**
- * The marks the Florida notice puts on a name: a trailing or leading asterisk (limited) and a
+ * The marks a depository notice (such as Florida's Register notice) puts on a name: a trailing or leading asterisk (limited) and a
  * date beside the name (withdrawing). Returns the bare name and what was marked.
  */
 export function readNameMarks(cell: string): { name: string; limited: boolean; date: string | null; dateText: string | null } {
@@ -758,14 +749,18 @@ export function lenderAreaStats(counts: LenderCountRow[], period: string): AreaS
 }
 
 // ===========================================================================
-// 3. Urban Institute, Debt in America (license: Check)
+// 3. Urban Institute, Debt in America (ODC-By 1.0)
 // ===========================================================================
 
 export const URBAN_DEBT_PAGE_URL_ENV = "URBAN_DEBT_PAGE_URL";
 export const URBAN_DEBT_COUNTY_URL_ENV = "URBAN_DEBT_COUNTY_CSV_URL";
 export const URBAN_DEBT_STATE_URL_ENV = "URBAN_DEBT_STATE_CSV_URL";
-/** Set to true only after a person has read the license text the loader recorded. */
-export const URBAN_DEBT_LICENSE_CONFIRMED_ENV = "URBAN_DEBT_LICENSE_CONFIRMED";
+/**
+ * Licence read 2026-10-17 (licence audit): Open Data Commons Attribution 1.0, "These rights
+ * explicitly include commercial use". Every row and every read carries the attribution.
+ */
+export const URBAN_DEBT_LICENCE = "ODC-By 1.0";
+export const URBAN_DEBT_ATTRIBUTION = "Braga et al., Debt in America, Urban Institute";
 /** Urban's data catalog entry for the 2023 release (from memory; checked at run time). */
 export const URBAN_DEBT_DEFAULT_PAGE_URL = "https://datacatalog.urban.org/dataset/debt-america-2023";
 
@@ -931,7 +926,7 @@ export function parseUrbanDebt(bytes: Uint8Array, geoType: "county" | "state", p
         value,
         unit: scale[measure],
         note: value === null && cell !== null ? cell.slice(0, 40) : null,
-        raw: { column: headers[col], cell, scale: scale[measure] },
+        raw: { column: headers[col], cell, scale: scale[measure], attribution: URBAN_DEBT_ATTRIBUTION },
       });
     }
   }

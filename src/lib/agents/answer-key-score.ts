@@ -10,6 +10,7 @@ import {
   type ConfirmedAnswerKeyEntry,
 } from "@/lib/data-store/answer-key";
 import { getFeeFamily } from "@/lib/fee-taxonomy";
+import { splitLiveCategory } from "@/lib/fee-fold";
 
 /**
  * Atlas's score-answer-key step: compares the pipeline against the hand-checked
@@ -352,6 +353,22 @@ function scopeFees(version: AnswerKeyScorerVersion, fees: PipelineFee[], rightId
   };
 }
 
+/**
+ * v5: the key's fees in today's taxonomy. A key line filed under a category that a live split has
+ * since divided (account research's returned mail and excess withdrawals, #1398) is read under the
+ * category the split gives its printed line, the same rule that re-filed the live fee
+ * (`splitLiveCategory`). Without it a correctly re-filed fee scores as wrong and the key's line as
+ * missed: "Return Mail $5" live as returned mail against the key's account research $5. Earlier
+ * versions keep the key as confirmed. Pure.
+ */
+export function keyFeesForVersion<T extends ExpectedFee>(fees: T[], version: AnswerKeyScorerVersion): T[] {
+  if (version < 5) return fees;
+  return fees.map((fee) => {
+    const to = splitLiveCategory(fee.canonicalKey, fee.sourceLine ?? null)?.to;
+    return to && to !== fee.canonicalKey ? { ...fee, canonicalKey: to } : fee;
+  });
+}
+
 /** Pure: scores the pipeline against the confirmed answer key under one scorer version. */
 export function scoreAnswerKey(
   entries: ConfirmedAnswerKeyEntry[],
@@ -383,7 +400,8 @@ export function scoreAnswerKey(
       darwin: [],
       hamilton: [],
     };
-    feesExpected += entry.fees.length;
+    const expectedFees = keyFeesForVersion(entry.fees, version);
+    feesExpected += expectedFees.length;
     const docType = (byDocumentType[entry.documentType] ??= {
       banks: 0,
       stages: Object.fromEntries(SCORED_STAGES.map((stage) => [stage, emptyCounts()])) as Record<ScoredStage, PrecisionRecall>,
@@ -414,9 +432,9 @@ export function scoreAnswerKey(
         ? [...evidence.hamilton, ...(evidence.hamiltonRates ?? [])]
         : evidence[stage as FeeStage];
       const scope = scopeFees(version, rows, rightIds);
-      const comparison = compareFees(entry.fees, scope.scored);
+      const comparison = compareFees(expectedFees, scope.scored);
       const counts: Counts = {
-        expected: entry.fees.length,
+        expected: expectedFees.length,
         predicted: comparison.predictions.length,
         matched: comparison.matchedExpected.filter(Boolean).length,
         correct: comparison.correctPredicted.filter(Boolean).length,
@@ -428,9 +446,9 @@ export function scoreAnswerKey(
         right: counts.expected > 0 ? counts.matched === counts.expected && counts.correct === counts.predicted : null,
         ...counts,
       };
-      if (stage === "knox" && rosettaRight && entry.fees.length > 0) {
+      if (stage === "knox" && rosettaRight && expectedFees.length > 0) {
         knoxMissBanks += 1;
-        entry.fees.forEach((fee, index) => {
+        expectedFees.forEach((fee, index) => {
           const missed = !comparison.matchedExpected[index];
           for (const bucket of [
             knoxMissTotal,
@@ -441,10 +459,10 @@ export function scoreAnswerKey(
             if (missed) bucket.missed += 1;
           }
         });
-        knoxMissed = entry.fees.filter((_, index) => !comparison.matchedExpected[index]).map((fee) => formatFee(fee));
+        knoxMissed = expectedFees.filter((_, index) => !comparison.matchedExpected[index]).map((fee) => formatFee(fee));
       }
       if (stage === "hamilton") {
-        entry.fees.forEach((fee, index) => {
+        expectedFees.forEach((fee, index) => {
           const bucket = category(fee.canonicalKey);
           bucket.expected += 1;
           if (comparison.matchedExpected[index]) bucket.matched += 1;
@@ -454,7 +472,7 @@ export function scoreAnswerKey(
           bucket.predicted += 1;
           if (comparison.correctPredicted[index]) bucket.correct += 1;
         });
-        missing = entry.fees
+        missing = expectedFees
           .filter((_, index) => !comparison.matchedExpected[index])
           .map((fee) => formatFee(fee));
         extra = comparison.predictions

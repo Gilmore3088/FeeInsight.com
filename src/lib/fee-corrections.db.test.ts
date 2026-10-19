@@ -29,9 +29,9 @@ const admin = { id: 1, name: "James", role: "admin" };
 const analyst = { id: 2, name: "Ana", role: "analyst" };
 
 describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () => {
-  let raw: ReturnType<typeof postgres>;
+  let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   let db: Db;
-  let rawPool: ReturnType<typeof postgres>;
+  let rawPool: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   let pool: Db;
   let wrongFeeId = 0;
   let overdraftFeeId = 0;

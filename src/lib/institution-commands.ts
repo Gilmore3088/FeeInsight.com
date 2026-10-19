@@ -37,6 +37,8 @@ function normalizeHttpUrl(value: string): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("URL must use http or https");
   }
+  // "https://HTTP://WWW.BANKWITHCHOICE.COM" parses with the host "http" (#1754).
+  if (!url.hostname.includes(".")) throw new Error("URL needs a full domain name, like https://www.example.com");
   return url.toString();
 }
 
@@ -46,6 +48,20 @@ function revalidateInstitutionSurfaces(institutionId: number, stateCode?: string
   if (stateCode) revalidatePath(`/admin/states/${stateCode}`);
   revalidatePath("/admin/magellan");
   revalidatePath("/admin");
+}
+
+/**
+ * A fee link a person sets replaces the profile's remembered address too (#1881). Magellan fetches
+ * the remembered address first, so changing only `fee_schedule_url` left Texas Capital's new PDF
+ * unread on Oct 18. A person's link wins over a locked correction as well: it is the newer word.
+ */
+async function rememberPersonFeeUrl(tx: typeof sql, institutionId: number, url: string): Promise<void> {
+  await tx`
+    UPDATE institution_source_profiles
+       SET canonical_source_url = ${url},
+           updated_at = NOW()
+     WHERE institution_id = ${institutionId}
+  `;
 }
 
 export async function createInstitutionCommand(
@@ -85,10 +101,41 @@ export async function setInstitutionFeeUrl(
   try {
     validateInstitutionId(institutionId);
     const url = normalizeHttpUrl(value);
+    const rows = await withTransaction(async (tx) => {
+      const updated = await tx`
+        UPDATE institution_sources
+           SET fee_schedule_url = ${url},
+               document_type = NULL
+         WHERE id = ${institutionId}
+         RETURNING state_code
+      `;
+      if (updated.length > 0) await rememberPersonFeeUrl(tx, institutionId, url);
+      return updated;
+    });
+    if (rows.length === 0) return { success: false, error: "Institution not found" };
+    revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * An institution's website, set by a person on its admin page (#1754: Choice Financial's was stored
+ * as "https://HTTP://WWW.BANKWITHCHOICE.COM" and James had no way to fix it). The homepage, without
+ * a trailing slash, as the registry stores it.
+ */
+export async function setInstitutionWebsiteUrl(
+  institutionId: number,
+  value: string,
+): Promise<InstitutionCommandResult> {
+  await requireAuth("edit");
+  try {
+    validateInstitutionId(institutionId);
+    const url = normalizeHttpUrl(value).replace(/\/$/, "");
     const rows = await sql`
       UPDATE institution_sources
-         SET fee_schedule_url = ${url},
-             document_type = NULL
+         SET website_url = ${url}
        WHERE id = ${institutionId}
        RETURNING state_code
     `;
@@ -220,6 +267,7 @@ export async function bulkSetInstitutionFeeUrls(
            WHERE id = ${item.id}
           RETURNING id
         `;
+        if (rows.length > 0) await rememberPersonFeeUrl(tx, item.id, item.url);
         if (rows.length > 0) updated += 1;
         else errors.push(`Institution ID ${item.id} not found`);
       }
