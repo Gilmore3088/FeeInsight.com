@@ -9,7 +9,6 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { Logo } from "@/brand/components";
-import { InfoTip } from "@/components/public/info-tip";
 import { getPublicFeeTypes, getPublicSnapshot } from "@/lib/public-stats";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessAllCategories } from "@/lib/access";
@@ -443,6 +442,7 @@ export default async function BankFeeIndexPage({ searchParams }: PageProps) {
                   <InstitutionRow
                     key={i.id}
                     inst={i}
+                    category={sel.fee}
                     counted={counted}
                     prices={(pricesOf.get(i.id) ?? []).map((r) => ({
                       id: r.id,

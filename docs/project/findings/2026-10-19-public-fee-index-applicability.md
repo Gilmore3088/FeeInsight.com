@@ -1,0 +1,35 @@
+# Public fee-index applicability and source attribution
+
+Issue: #2207, a bounded child of Hamilton #1911. Relates to the completed profile-table #2124 / PR #2125 and evidence contract #981. Parent #1911's wider numeric/context and recovery work remains open.
+
+## Demonstrated defect
+
+At main `77a05bdb081140219153be7692b59384ab2eccec`, public `/fees` InstitutionRow deduplicated on amount and fee wording alone. A controlled actual-component fixture with four $5 records (Alpha, Beta, unassigned, and an equivalent Alpha copy from another document) rendered one line and one source URL. Its inferred heading could replace the recorded product; its inferred condition could replace the complete canonical condition. A name/amount text match was labelled as a verified fee/account relationship. The `read_on` projection is catalog `created_at::date::text`; calling that date a source read also overstated what the record proves.
+
+The cached quote reader returned no catalog-context receipt or selected text identity. A correction could change a row's conditions/document while an old cached quote remained keyed by the same published ID. Independently, a shared PDF can state the same name/price under different products, so even a correctly bound name/amount match does not prove applicability.
+
+This is code-confirmed and fixture-reproduced. It is not a measured current-bank error count, current-web confirmation, or benchmark accuracy estimate. The original component probe and red logs are preserved in `/tmp/feeinsight-audit-2026-10-18/1911-main4da-applicability-probe.*`, `public-applicability-render-initial-red.log`, and `public-applicability-patched-initial-red.log`. The first renderer baseline was 4 failures / 1 ordinary numerical control passing. After the patched test-runner dependency, the two-suite baseline was 6 failures / 3 controls passing, including two actual PostgreSQL projection/provenance failures and passing population/correction controls.
+
+## Connected correction
+
+`getFeeRowDetails` now selects the represented canonical product, audience, treatment, own charging frequency, variant/kind/rate fields, complete cleaned conditions, lineage and source identities. The catalog's current correction overlay remains authoritative; no raw join or competing correction overlay is added. The existing document/source URL fallback is retained.
+
+The local public-index grouping requires complete represented identity. Equal-price Alpha, Beta and unassigned records remain distinct; normalized true copies can share an applicability line while retaining every source observation and row ID. A missing/incomplete record cannot establish equivalence. NULL ownership is not a wildcard and is not labelled as a general/all-products fee. Missing record context is separately labelled unavailable. Direct ownership and canonical conditions do not come from the quote matcher.
+
+The two data-store SELECTs use one shared SQL SHA-256 consistency expression over all matcher inputs (including extraction note), displayed applicability, source and lineage fields. PostgreSQL computes the fixed-size stamp from the selected tuple, before any JavaScript number/date conversion. It is not attached by looking up a later catalog row. The quote result separately records the actual selected completed text ID, institution, document, digest of normalized text and stored artifact date; a mismatching stored digest or source ownership is unknown. An extraction-note fallback carries no later text artifact as original proof.
+
+The public consumer also binds cached index amount, institution, category and published ID. Old cache shapes, mismatched tuples/source identities and correction races do not attach their quotes. Stored price context is explicitly separate from recorded applicability and current-web freshness. A same-document Beta heading cannot become Alpha's owner or conditions. Publication and stored-text dates receive their actual meanings.
+
+**Guard:** `src/lib/data-store/public-fee-applicability.db.test.ts`, `src/lib/data-store/fee-evidence.test.ts`, `src/app/(public)/fees/(index)/institution-row.test.tsx`, `src/app/(public)/fees/(index)/index-view.test.ts`, `src/app/(public)/fees/(index)/index-invariants.test.ts`; the actual SQL suite is explicitly included in `.github/workflows/test.yml`'s E2E inventory.
+
+The SQL suite executes the production reader against current production column types and the actual canonical catalog view definition over connection-local temporary rows. It covers reader → grouping → rendering, same-price ownership/source preservation, active/unknown/inactive controls, exact original row/value/schedule inputs, shared-schedule counting, corrected conditions/source, a correction between the evidence SELECT and text SELECT, individual selected-context field changes, wrong text institution/document/owner/hash, stored-note fallback, same-document misleading heading and held/rate exclusions. It does not claim production constraints/RLS or browser acceptance from the temporary-table fixture.
+
+## Preserved contracts and remaining scope
+
+`getIndexRows`, eligibility/active/status/stats/schedule predicates, `index-view` reductions, count-once representatives, numerical inputs/weights, medians/percentiles, institution/fee counts, bins/list membership/order, overdraft highest-tier and existing range/no-rank policy remain unchanged. Display grouping never feeds back into those calculations. No numerical method version or statistics cache key changes. The additive context receipt is version 1; existing `fee-evidence-v2` entries without it remain unknown until normal cache refresh.
+
+PR #2125 changed only the institution-profile fee table and its mapping/context helpers, not this public index caller. Active #1736's separate percentile hunk, #1779's opt-in peer conditions and #1785's exact peer membership remain outside this change. The actual patched test-runner dependency #2197 was integrated before SQL/final verification; unused cache exports removed by #2192 stay removed. Preserve every current E2E test when reconciling a real shared workflow conflict.
+
+This child is only the canonical `/fees` reader/consumer slice. Own/peer/segment readers, Intelligence/board/PDF/tooltips, market/study/exhibit and saved artifacts remain explicit follow-up callers under #1911. Mixed-document ownership extraction is process work; existing settled NULL ownership requires separately designed and authorized recovery. Rate-product ownership remains unknown under its existing contract. This code does not repair those records or complete parent numeric/context or recovery acceptance.
+
+There is no production write, source request, provider activation, switch change, metadata rejudge, historical replay/backfill, hold release, migration or numerical-policy rewrite. The receipt is stored-context consistency, not global freshness, live-source verification, or serializability across cached reads.
