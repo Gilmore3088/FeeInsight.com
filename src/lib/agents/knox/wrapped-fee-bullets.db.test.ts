@@ -178,6 +178,7 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       ["Research Fee $25 per hour", "Research Fee", 25, "account_research", "hourly"],
       ["Research Fee (per half hour) | $15.00", "Research Fee", 15, "account_research", "per_half_hour"],
       ["Research Fee (per quarter hour) | $10.00", "Research Fee", 10, "account_research", "per_quarter_hour"],
+      ["| Research fee (1/2-hour minimum charge) | $50.00 per 1/2 hour |", "Research fee (1/2-hour minimum charge)", 50, "account_research", "per_half_hour"],
       ["Photocopies $1 per page", "Photocopies", 1, "document_reproduction", "per_page"],
       ["Check Images $10 per statement", "Check Images", 10, "check_image", "per_statement"],
     ] as const;
@@ -224,6 +225,27 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
         expect(catalog.conditions).not.toContain("Unsupported model-supplied condition");
       });
     }
+  }, 30_000);
+
+  it("#2248 retains the hash-checked Morton whole-source half-hour price and minimum through normal free stages", async () => {
+    await rolledBack(async tx => {
+      const source = JSON.parse(readFileSync(new URL("./__fixtures__/morton-own-half-hour-unit.json", import.meta.url), "utf8"));
+      expect(createHash("sha256").update(source.normalizedText).digest("hex")).toBe(source.textSHA256);
+      const f = await seed(tx, source.normalizedText, {
+        name: "Morton Community Bank", website: "https://hometownbanks.com/", url: source.sourceURL,
+      });
+      await stages(tx, f);
+      const [catalog] = await tx`SELECT amount,frequency,conditions FROM published_fee_catalog
+        WHERE institution_id=${f.institutionId} AND fee_name='Research fee (1/2-hour minimum charge)'`;
+      expect(catalog).toMatchObject({ amount: 50, frequency: "per_half_hour" });
+      expect(catalog.conditions).toContain("$50.00 per 1/2 hour");
+      expect(catalog.conditions).toContain("1/2-hour minimum charge");
+      const { fillBlankFrequencies } = await import("../hamilton/frequency-fill");
+      await fillBlankFrequencies(tx, { runId: f.runId, institutionId: f.institutionId, dryRun: false });
+      const [after] = await tx`SELECT amount,frequency,conditions FROM published_fee_catalog
+        WHERE institution_id=${f.institutionId} AND fee_name='Research fee (1/2-hour minimum charge)'`;
+      expect(after).toEqual(catalog);
+    });
   }, 30_000);
 
   it("#2248 keeps SQL and client comparison exclusion equal for every transport whitespace and unit code", async () => {

@@ -19,6 +19,7 @@ const cases = [
   ["Research Fee | $50 per half hour", "Research Fee", 50, "account_research", "per_half_hour"],
   ["Research Fee (per quarter hour) | $10 Each", "Research Fee", 10, "account_research", "per_quarter_hour"],
   ["Research Fee | $2 per minute", "Research Fee", 2, "account_research", "per_minute"],
+  ["| Research fee (1/2-hour minimum charge) | $50.00 per 1/2 hour |", "Research fee (1/2-hour minimum charge)", 50, "account_research", "per_half_hour"],
 ] as const;
 
 describe("#2248 literal own charging units", () => {
@@ -35,6 +36,16 @@ describe("#2248 literal own charging units", () => {
     const row = runFreeSpecialists(source.normalizedText).candidates.find(candidate => candidate.feeName === "Faxed Transmissions" && candidate.amount === 1)!;
     expect(row).toMatchObject({ frequency: "per_page", amount: 1 });
     expect(readerFeeConditions(candidateWriteFacts(row).sourceConditions)).toContain("$1/page");
+  });
+
+  it("keeps Morton's exact hash-bound outer-pipe table price and half-hour minimum through the free team", () => {
+    const source = JSON.parse(readFileSync(new URL("../agents/knox/__fixtures__/morton-own-half-hour-unit.json", import.meta.url), "utf8"));
+    expect(createHash("sha256").update(source.normalizedText).digest("hex")).toBe(source.textSHA256);
+    const row = runFreeSpecialists(source.normalizedText).candidates.find(candidate =>
+      candidate.feeName === "Research fee (1/2-hour minimum charge)" && candidate.amount === 50);
+    expect(row).toMatchObject({ amount: 50, frequency: "per_half_hour" });
+    expect(readerFeeConditions(candidateWriteFacts(row!).sourceConditions)).toContain("$50.00 per 1/2 hour");
+    expect(candidateWriteFacts(row!).sourceConditions).toContain("1/2-hour minimum charge");
   });
 
   it.each([
@@ -60,6 +71,8 @@ describe("#2248 literal own charging units", () => {
       "Research Fee (per hour) | $25 per half hour",
       "Research Fee | $25 (1/2 hour minimum)",
       "Research Fee | $25 within 24 hours",
+      "| Research Fee | $25 each | Photocopies | $25 per page |",
+      "| Research Fee | $25 per hour |\n| Research Fee | $25 per page |",
     ]) expect(ownFeeUnit(source, "Research Fee", 25, "account_research"), source).toBeNull();
   });
 

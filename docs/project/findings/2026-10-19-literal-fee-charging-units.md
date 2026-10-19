@@ -29,4 +29,4 @@ stages, frequency fills, historical conflict/recheck preservation and actual Pos
 normalization parity. `comparable-market-index.test.ts`, `report-evidence.test.ts`,
 `tool-local-competitors.test.ts`, `fee-cache.test.ts` and `fee-stats.test.ts` protect subject,
 population, cache and stamp parity. Independent tests additionally check all transport
-whitespace and every numeric consumer family.
+whitespace; a separate code-path review maps the remaining numeric consumer families.

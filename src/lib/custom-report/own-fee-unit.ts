@@ -12,7 +12,7 @@ const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g;
 const MAX_OWN_TEXT = 2_000;
 
 function labelKey(label: string): string {
-  return stackedLabelKey(label.replace(/^[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/[|•]\s*$/, "").trim());
+  return stackedLabelKey(label.replace(/^\s*\|\s*/, "").replace(/^[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/[|•]\s*$/, "").trim());
 }
 
 function readLine(line: string, name: string, amount: number): OwnFeeUnit | null | undefined {
