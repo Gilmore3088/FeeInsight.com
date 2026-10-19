@@ -72,6 +72,22 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
               AND last_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
          ) END ASC NULLS FIRST, `;
 
+// A text no rules version at or above KNOX_STALE_READ_BELOW_VERSION has read (a stale read or a
+// first read) goes before a $10B+ bank's once-per-version repeat. On 2026-10-19 the rules moved
+// v80-v88 in 18 hours and each bump queued the 722 large-bank texts first: 779 of the 854 reads
+// in six hours repeated a v78+ read, 17 reached the stale backlog, and the backlog grew to 12,449
+// pages. 130 of the 198 W43 missing fees Knox never read were on those stale pages.
+function staleReadFirstOrder(): string {
+  return `NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts current_read
+            WHERE current_read.stage = 'extract'
+              AND current_read.institution_id = adt.institution_id
+              AND current_read.input_fingerprint = adt.text_hash
+              AND current_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+              AND current_read.strategy_version >= ${KNOX_STALE_READ_BELOW_VERSION}
+         ) DESC, `;
+}
+
 /**
  * A current copy last read by a rules version below this is read again once (2026-10-07:
  * 5,474 current copies at 4,265 banks were last read before v26, when Knox missed plural
@@ -557,7 +573,7 @@ function textArtifactQuery(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
+       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `${currentCopy ? staleReadFirstOrder() : ""}(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
        LIMIT $1
     `;
   return { query, params };
