@@ -2,6 +2,7 @@
 /** Full deterministic raw→Darwin→Hamilton stages in disposable loopback SQL; every fixture rolls back. */
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { officialFeeDisclosure, wrappedPair } from "./wrapped-bullet-fixtures";
 
@@ -11,7 +12,7 @@ vi.mock("@/lib/agents/fee-source-fetch", async (original) => ({
 }));
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
-type Fixture = { institutionId: number; runId: number; documentId: number; textId: number; text: string };
+type Fixture = { institutionId: number; runId: number; documentId: number; textId: number; text: string; sourceUrl?: string };
 
 describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)", () => {
   let db: postgres.Sql;
@@ -47,26 +48,26 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
     await db.begin(async (scope) => { await test(scope as unknown as Db); throw rollback; })
       .catch((error) => { if (error !== rollback) throw error; });
   }
-  async function seed(tx: Db, text: string): Promise<Fixture> {
+  async function seed(tx: Db, text: string, identity: { name?: string; website?: string; url?: string } = {}): Promise<Fixture> {
     const [{ id: institutionId }] = await tx`INSERT INTO institution_sources
       (institution_name,website_url,fee_schedule_url,charter_type,state,state_code,asset_size,source,status)
-      VALUES ('SchoolsFirst Federal Credit Union','https://www.schoolsfirstfcu.org/',
-      'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf',
+      VALUES (${identity.name ?? 'SchoolsFirst Federal Credit Union'},${identity.website ?? 'https://www.schoolsfirstfcu.org/'},
+      ${identity.url ?? 'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf'},
       'credit_union','California','CA',35000000,'e2e','active') RETURNING id`;
     const [{ id: runId }] = await tx`INSERT INTO agent_runs (id,agent_name,run_kind,title,status)
       VALUES (${nextRunId--},'knox','state_agent','Wrapped fee bullets SQL fixture','running') RETURNING id`;
     expect(Number(runId)).toBeLessThan(0);
-    return addDocument(tx, { institutionId: Number(institutionId), runId: Number(runId) }, text);
+    return addDocument(tx, { institutionId: Number(institutionId), runId: Number(runId), sourceUrl: identity.url }, text);
   }
-  async function addDocument(tx: Db, base: Pick<Fixture, "institutionId" | "runId">, text: string): Promise<Fixture> {
+  async function addDocument(tx: Db, base: Pick<Fixture, "institutionId" | "runId" | "sourceUrl">, text: string): Promise<Fixture> {
     const hash = createHash("sha256").update(text).digest("hex");
     const [{ id: documentId }] = await tx`INSERT INTO source_documents
       (institution_id,status,document_url,content_hash,content_type)
-      VALUES (${base.institutionId},'success','https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf',${hash},'application/pdf') RETURNING id`;
+      VALUES (${base.institutionId},'success',${base.sourceUrl ?? 'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf'},${hash},'application/pdf') RETURNING id`;
     const [{ id: textId }] = await tx`INSERT INTO agent_source_texts
       (agent_run_id,source_document_id,institution_id,source_url,document_type,content_type,status,normalized_text,text_hash,char_count)
       VALUES (${base.runId},${documentId},${base.institutionId},
-      'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf','text_pdf','application/pdf','completed',${text},${hash},${text.length}) RETURNING id`;
+      ${base.sourceUrl ?? 'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf'},'text_pdf','application/pdf','completed',${text},${hash},${text.length}) RETURNING id`;
     return { ...base, documentId: Number(documentId), textId: Number(textId), text };
   }
   async function stages(tx: Db, fixture: Fixture) {
@@ -109,6 +110,124 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       }
       await stages(tx, f);
       expect(await live(tx, f)).toEqual(rows);
+    });
+  }, 30_000);
+  it("#2209 keeps standard prices public and literal restricted twins held through raw, verify, catalog and replay", async () => {
+    await rolledBack(async tx => {
+      const policy = readFileSync(new URL("./__fixtures__/newvalley-nsf-policy.txt", import.meta.url), "utf8");
+      const text = [
+        "Stop Payment | $30.00",
+        "Money Order | $3.00",
+        "Official Bank Check | $5.00",
+        "NOTE: NSF fees will not be charged to a Rise Checking account.",
+        policy,
+      ].join("\n");
+      const f = await seed(tx, text, {
+        name: "New Valley Bank & Trust",
+        website: "https://banknewvalley.com/",
+        url: "https://banknewvalley.com/personal/consumer-fees/",
+      });
+      await stages(tx, f);
+      const rows = await live(tx, f);
+      expect(rows.map(row => [row.canonical_fee_key, Number(row.amount)]).sort()).toEqual([
+        ["nsf", 34],
+        ["overdraft", 34],
+      ].sort());
+      expect(rows.filter(row => row.line_share === "twin:overdraft")).toHaveLength(1);
+
+      const catalog = await tx`
+        SELECT fee_category, amount, frequency, conditions, account_product_type, source_document_id
+        FROM published_fee_catalog
+        WHERE institution_id=${f.institutionId} AND fee_category IN ('nsf', 'overdraft')`;
+      expect(catalog).toHaveLength(2);
+      for (const row of catalog) {
+        expect(Number(row.amount)).toBe(34);
+        expect(row.frequency).toBe("per_item");
+        expect(row.account_product_type).toBeNull();
+        expect(Number(row.source_document_id)).toBe(f.documentId);
+        expect(row.conditions).toContain("less than $10.00");
+        expect(row.conditions).toContain("Rise Checking account");
+        const [own, alternate] = row.conditions.split("Other stated price tier:");
+        expect(own).toContain("($136)");
+        expect(own).not.toContain("18/65 checking product");
+        expect(alternate).toContain("18/65 checking product");
+      }
+
+      const held = await tx`
+        SELECT fee_raw_id, amount, line_share, conditions, extraction_note, outlier_flags
+        FROM raw_fee_observations
+        WHERE institution_id=${f.institutionId} AND amount=5
+          AND fee_name='NSF/Overdraft Fee'
+        ORDER BY fee_raw_id`;
+      expect(held).toHaveLength(2);
+      expect(held.map(row => row.line_share).sort()).toEqual(["", "twin:overdraft"]);
+      for (const row of held) {
+        expect(JSON.stringify(row.outlier_flags)).toContain("knox_review:eligibility");
+        expect(JSON.stringify(row.outlier_flags)).not.toContain("needs_darwin_verification");
+        expect(row.conditions).toContain("18/65 checking product");
+        expect(row.conditions).toContain("18 or younger or 65 and older");
+        expect(row.conditions).toContain("($20)");
+        expect(row.conditions).not.toContain("($136)");
+        expect(row.conditions).toContain("Rise Checking account");
+        expect(row.extraction_note).toContain("18/65 checking product");
+        expect(row.extraction_note).toContain("($20)");
+        expect(row.extraction_note).toContain("Rise Checking account");
+      }
+
+      const { nsfPolicyPrices } = await import("@/lib/custom-report/nsf-policy-prices");
+      const restricted = nsfPolicyPrices(text).find(row => row.amount === 5)!;
+      for (const row of held) {
+        // A later ordinary candidate cannot take over an eligibility-held raw identity.
+        const inserted = await extract.insertCandidate(tx, {
+          runId: f.runId,
+          row: {
+            document_text_id: f.textId,
+            source_document_id: f.documentId,
+            institution_id: f.institutionId,
+            source_url: f.sourceUrl,
+            text_hash: createHash("sha256").update(f.text).digest("hex"),
+          } as Parameters<typeof extract.insertCandidate>[1]["row"],
+          candidate: {
+            feeName: "NSF/Overdraft Fee",
+            amount: 5,
+            frequency: "per_item",
+            canonicalHint: row.line_share ? "overdraft" : "nsf",
+            confidence: .95,
+            excerpt: restricted.sourceLine,
+            waivable: false,
+            ownedPolicy: true,
+            linkedConditions: restricted.linkedConditions,
+            lineShare: String(row.line_share),
+          },
+        });
+        expect(inserted).toBe(false);
+      }
+
+      const { pickHeadlineFees, toDisplayFees } = await import("@/app/(public)/institution/[id]/profile-data");
+      const { institutionValue } = await import("@/lib/data-store/fee-stats");
+      const visible = await tx`SELECT * FROM published_fee_catalog WHERE institution_id=${f.institutionId}`;
+      const fees = visible as unknown as Parameters<typeof pickHeadlineFees>[0];
+      expect(pickHeadlineFees(fees)).toMatchObject({ nsf: 34, overdraft: 34 });
+      expect(toDisplayFees(fees)
+        .filter(row => row.feeCategory === "nsf" || row.feeCategory === "overdraft")
+        .map(row => row.amount)).toEqual([34, 34]);
+      for (const key of ["nsf", "overdraft"]) {
+        const amounts = catalog.filter(row => row.fee_category === key).map(row => Number(row.amount));
+        expect(institutionValue(key, amounts)).toBe(34);
+      }
+
+      await stages(tx, f);
+      expect(await live(tx, f)).toEqual(rows);
+      expect(await tx`
+        SELECT fee_raw_id, amount, line_share, conditions, extraction_note, outlier_flags
+        FROM raw_fee_observations
+        WHERE institution_id=${f.institutionId} AND amount=5
+          AND fee_name='NSF/Overdraft Fee'
+        ORDER BY fee_raw_id`).toEqual(held);
+      expect(await tx`
+        SELECT fee_verified_id FROM verified_fee_observations
+        WHERE institution_id=${f.institutionId} AND amount=5
+          AND canonical_fee_key IN ('nsf', 'overdraft')`).toHaveLength(0);
     });
   }, 30_000);
   it.each([false, true])("keeps unequal prices in reverse order=%s and rejects the wrong neighbor price", async (reverse) => {

@@ -132,7 +132,9 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 // v83 (#2151): explicitly labeled, bounded wrapped bullets keep their own terminal price and
 // complete conditions. All readers and the source witness share physical ownership, so a
 // neighboring paid/returned row cannot donate its price. Stale-read floor remains v78.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 83 } as const;
+// v84 (#2209): bounded returned/paid-item policy paragraphs keep literal tier/exception scope;
+// dollar totals of a fee count fail the shared source check. Existing re-read floors stay settled.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 84 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -448,6 +450,16 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
+  // #2209: preserve literal age/product prices without pooling them into standard benchmarks.
+  // This explicit shape is not one of the automatic range/name/source promoters' inputs.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!read.eligibilityReview) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
+      ownedPolicy: true, linkedConditions: read.linkedConditions, lineShare: read.lineShare });
+  }
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {
     if (held.filter((prior) => !unpricedHalf(prior)).length >= MAX_HELD_PER_DOCUMENT) break;

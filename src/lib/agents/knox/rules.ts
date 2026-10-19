@@ -61,14 +61,22 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   lineShare?: string;
   /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */
   ownedBullet?: true;
+  /** Complete single-column price paragraph with a bounded, explicit exception policy. */
+  ownedPolicy?: true;
+  /** Literal product/age eligibility not yet represented safely by benchmark selection. */
+  eligibilityReview?: true;
   /** Bounded, explicitly referenced context; never read as the price's charging unit. */
   linkedConditions?: string;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies";
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility";
 
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
+  /** Eligibility holds retain their complete own-price policy and independent event key. */
+  ownedPolicy?: true;
+  linkedConditions?: string;
+  lineShare?: string;
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */

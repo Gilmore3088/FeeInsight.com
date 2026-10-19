@@ -198,7 +198,7 @@ export interface InstitutionSubmissionState {
 }
 
 const INSTITUTION_EVIDENCE_CACHE_TTL_MS = 60_000;
-const institutionEvidenceCache = new Map<number, {
+const institutionEvidenceCache = new Map<string, {
   expiresAt: number;
   value: InstitutionFeeScheduleEvidence;
 }>();
@@ -380,7 +380,10 @@ export async function getInstitutionFeeScheduleEvidence(
     raw_fee_preview: [],
     verified_fee_preview: [],
   };
-  const cached = institutionEvidenceCache.get(id);
+  // The evidence projection includes operator notes and held rows only in admin mode.
+  // Cache each projection separately so a prior admin read cannot expose them to readers.
+  const cacheKey = `${id}:${options.pipelineNotes ? "pipeline" : "reader"}`;
+  const cached = institutionEvidenceCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.value;
   }
@@ -483,9 +486,11 @@ export async function getInstitutionFeeScheduleEvidence(
           extraction_confidence,
           source_url,
           source,
+          outlier_flags,
           created_at
         FROM raw_fee_observations
         WHERE institution_id = ${id}
+          AND (${options.pipelineNotes ?? false} OR NOT (COALESCE(outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'))
         ORDER BY created_at DESC NULLS LAST, fee_raw_id DESC
         LIMIT 12
       ),
@@ -573,7 +578,8 @@ export async function getInstitutionFeeScheduleEvidence(
         raw_without_verified_count: Number(countRow?.raw_without_verified_count ?? 0),
         verified_without_published_count: Number(countRow?.verified_without_published_count ?? 0),
       },
-      raw_fee_preview: rawRows.map((r) => ({
+      raw_fee_preview: rawRows.filter(r => options.pipelineNotes ||
+        !(safeJsonb<string[]>(r.outlier_flags) ?? []).includes("knox_review:eligibility")).map((r) => ({
         fee_raw_id: Number(r.fee_raw_id),
         source_document_id: r.source_document_id != null ? Number(r.source_document_id) : null,
         fee_name: String(r.fee_name),
@@ -602,7 +608,7 @@ export async function getInstitutionFeeScheduleEvidence(
         created_at: toDateStr(r.created_at as string | Date | null),
       })),
     };
-    institutionEvidenceCache.set(id, {
+    institutionEvidenceCache.set(cacheKey, {
       value: evidence,
       expiresAt: Date.now() + INSTITUTION_EVIDENCE_CACHE_TTL_MS,
     });

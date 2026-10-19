@@ -150,6 +150,32 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v84 (Oct 19, #2209) reads bounded, single-column NSF policy paragraphs only when their own
+price explicitly covers returned items and paid overdrafts and retains a complete exception
+list. Both event categories use the existing twin key; an age/product price keeps its own
+eligibility, balance exception and count cap. A general paragraph also carries the explicitly
+stated alternate tier as separately labeled context, plus a nearby explicit NSF exemption.
+Neither tier is assigned ancillary product ownership from a multiproduct document. Incomplete,
+equal-price ambiguous, interleaved-table or over-budget policies stay outside this exact path;
+evidence is never truncated to make a flat fee eligible. Fee-count dollar totals fail the shared
+source check, including Darwin and the live rules re-check's independent source second look.
+
+Explicit age/product-restricted prices are retained as `knox_review:eligibility`, without
+`needs_darwin_verification`, rather than published into unscoped comparisons. Full literal
+conditions and the twin's `line_share` survive in raw storage. Ordinary extract/held/verify
+passes cannot promote this shape. Customer/research raw previews exclude it; admin inspection
+and the held queue retain it with the product-tier contract (#1060/#1911) as its unresolved
+exit. Standard prices retain the separately stated alternate-tier context and their own
+exceptions. Numeric benchmark/headline policy is unchanged.
+
+The stale-read floor remains v78, lineup floor v73 and twin floor v82. The ordinary due-text
+selection/Bayes `knox.rules` counter determines the v84 replay cohort. The changed free-team
+signature makes existing state-lane and institution rules re-checks revisit their live documents,
+with the existing first flag and 12-hour second look; confirmed changes use their normal cache
+invalidation. Source-check v2, verify.rules v3 and Hamilton source-check v18 stay unchanged:
+old rejected decisions are not globally reopened. Read-only impact and release evidence belong
+to #2209; no provider/control switch, hand fee update or broad metadata backfill is part of it.
+
 v83 (Oct 19, #2151) preserves an explicitly labeled single-column fee bullet across at most six
 physical lines and 2,000 characters, before blank separators disappear. Its primary title and
 own terminal dot-leader price are read together; the complete condition text is retained beyond
@@ -1445,7 +1471,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v83 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v84 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
