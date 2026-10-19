@@ -30,10 +30,14 @@ Knox owns conservative raw fee extraction.
   When a Rosetta re-read changes a document's text, Knox extracts the new text and retires the
   unverified rows it took from the older text (`needs_darwin_verification` removed,
   `superseded_by_reread` added). Rows Darwin already verified are left alone.
-- The raw-row dedupe index is (document, lowercased name, amount, `fee_audience`)
-  (`raw_fee_observations_knox_agentic_dedup_idx`, migration
-  `20270110000040_fee_audience_integrity.sql`), so one document may hold the same name and price
-  once per audience. A traced read that meets a row of the same key held as `unclassified` or
+- The raw-row dedupe index is (document, lowercased name, amount, `fee_audience`, `line_share`)
+  (`raw_fee_observations_knox_agentic_dedup_idx`, migrations
+  `20270110000040_fee_audience_integrity.sql` and `20270110000065_raw_line_share.sql`), so one
+  document may hold the same name and price once per audience. `line_share` is empty except on
+  the second fee a shared line carries: since v82 (#2123) a combined "Overdraft/NSF Fee | $30"
+  stores its NSF twin as `twin:nsf`, where before the key dropped it. A current copy with a
+  combined overdraft or NSF row and no twin, last read below v82, is read again once
+  (`KNOX_TWIN_READ_BELOW_VERSION`). A traced read that meets a row of the same key held as `unclassified` or
   `untraced` takes it over (`knox_promoted_from_held`); any other existing row is left as it is.
   A same-row lineup enrichment after an insert conflict matches that audience too (#2108),
   so a consumer, business, both or unknown row never fills another audience's account facts.
@@ -1357,7 +1361,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v81 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v82 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
