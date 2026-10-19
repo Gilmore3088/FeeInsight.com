@@ -1,4 +1,6 @@
 import type { RegistryDb } from "./partitions";
+import { sql } from "@/lib/data-store/connection";
+import { recordRegistryFailure } from "./failure";
 import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
@@ -1366,7 +1368,28 @@ export async function runRegistryStep(input: RegistryStepInput): Promise<Registr
       detail: { registry_source: definition.source, missing_partition: true },
     };
   }
-  const output = await definition.run({ ...input, partitionKey });
+  let output: WorkerOutput;
+  try {
+    output = await definition.run({ ...input, partitionKey });
+  } catch (error) {
+    if (!input.dryRun) {
+      try {
+        const receipt = await recordRegistryFailure(input.db ?? sql, {
+          source: definition.source, partitionKey, runId: input.runId, error,
+        });
+        if (receipt.blocked) return {
+          status: "skipped",
+          summary: `${definition.title}: publisher refused the request; no data loaded. ${receipt.message}`,
+          detail: { registry_source: definition.source, partition_key: partitionKey,
+            missing_source: true, failure_recorded: receipt.recorded },
+        };
+      } catch {
+        // Keep the original worker error; a failed receipt must not replace its cause.
+        console.error("Registry failure receipt could not be stored", { source: definition.source, partitionKey });
+      }
+    }
+    throw error;
+  }
   return {
     status: output.skipped ? "skipped" : "completed",
     summary: output.summary,
