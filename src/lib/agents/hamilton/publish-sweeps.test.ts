@@ -117,7 +117,9 @@ import {
   KEPT_PUBLISH_CALLS,
   MOVED_PUBLISH_SWEEPS,
   movedSweepCounts,
+  movedSweepSecondLookIds,
   movedSweepTakedownIds,
+  GLOBAL_ONLY_PUBLISH_SWEEPS,
   publishSweepMode,
   PUBLISH_SWEEPS_SPLIT_LIVE,
   runPublishSweepsStep,
@@ -213,7 +215,10 @@ describe("which steps run the moved sweeps", () => {
     expect(publishSweepMode({ stepKey: "publish-index", stateCode: "TX", live: true })).toBe("full");
     expect(publishSweepMode({ stepKey: "publish-sweeps", live: false })).toBe("sweeps");
     expect(MOVED_PUBLISH_SWEEPS.filter((key) => runsMovedSweep("lane", key))).toEqual([]);
-    expect(MOVED_PUBLISH_SWEEPS.filter((key) => !runsMovedSweep("institution", key))).toEqual(["feedbackSync"]);
+    expect(MOVED_PUBLISH_SWEEPS.filter((key) => !runsMovedSweep("institution", key))).toEqual([
+      "handAmounts", "cutNameDuplicates", "handTakedowns", "handAudience", "extractionNotes", "feedbackSync", "holdFeedback",
+    ]);
+    expect([...GLOBAL_ONLY_PUBLISH_SWEEPS].sort()).toEqual(MOVED_PUBLISH_SWEEPS.filter((key) => !runsMovedSweep("institution", key)).sort());
     expect(MOVED_PUBLISH_SWEEPS.every((key) => runsMovedSweep("sweeps", key) && runsMovedSweep("full", key))).toBe(true);
   });
 
@@ -253,14 +258,22 @@ describe("the moved sweep groups", () => {
     expect(movedSweepCounts(out, (key) => runsMovedSweep("lane", key))).toEqual({});
   });
 
-  it("a Read-now publish with the split on scopes each sweep to its institution and skips only the feedback sync", async () => {
+  it("a Read-now publish with the split on runs only sweeps scoped to its institution, each with that institution", async () => {
     await allGroups(context("institution", { institutionId: 77 }));
-    expect(calls.map((call) => call.key)).toEqual(MOVED_PUBLISH_SWEEPS.filter((key) => key !== "feedbackSync"));
-    const scoped = calls.filter((call) => {
+    expect(calls.map((call) => call.key)).toEqual(MOVED_PUBLISH_SWEEPS.filter((key) => !GLOBAL_ONLY_PUBLISH_SWEEPS.includes(key)));
+    for (const call of calls) {
       const options = (call.key === "categoryGuard" ? call.args[0] : call.args[1]) as Record<string, unknown>;
-      return "institutionId" in options;
-    });
-    expect(scoped.every((call) => ((call.key === "categoryGuard" ? call.args[0] : call.args[1]) as Record<string, unknown>).institutionId === 77)).toBe(true);
+      expect(options.institutionId, call.key).toBe(77);
+    }
+  });
+
+  it("the account type hold runs over every bank except in a Read-now publish with the split on", async () => {
+    await allGroups(context("full", { institutionId: 77 }));
+    const full = calls.find((call) => call.key === "accountTypeHold");
+    expect((full?.args[1] as Record<string, unknown>).institutionId).toBeUndefined();
+    calls.length = 0;
+    await allGroups(context("sweeps"));
+    expect((calls.find((call) => call.key === "accountTypeHold")?.args[1] as Record<string, unknown>).institutionId).toBeUndefined();
   });
 });
 
@@ -277,14 +290,16 @@ describe("sweep counts", () => {
     expect(counts).toHaveProperty("businessSchedule.flagged", 0);
   });
 
-  it("list each would-be takedown once", () => {
+  it("list each would-be takedown once, and keep category-guard first looks out of them", () => {
     const base = results as unknown as MovedSweepResults;
-    const ids = movedSweepTakedownIds({
+    const swept = {
       ...base,
       outlierRollbacks: [{ feePublishedId: 9 }, { feePublishedId: 3 }] as never,
-      categoryGuard: { ...base.categoryGuard, failures: [{ feePublishedId: 3 }] as never },
-    });
-    expect(ids).toEqual([3, 9]);
+      // Fee 3 failed and is confirmed; 12 failed for the first time; 15 waits for its second look.
+      categoryGuard: { ...base.categoryGuard, failures: [{ feePublishedId: 3 }, { feePublishedId: 12 }, { feePublishedId: 15 }] as never, confirmedFeeIds: [3] },
+    };
+    expect(movedSweepTakedownIds(swept)).toEqual([3, 9]);
+    expect(movedSweepSecondLookIds(swept)).toEqual([12, 15]);
   });
 });
 

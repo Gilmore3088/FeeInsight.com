@@ -350,11 +350,17 @@ state's live fees. With the switch on, a state lane's `publish` skips those 40 a
 state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
 this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
 at most one at a time and only after a lane publish completed. A Read-now or hand-found
-publish keeps every sweep, scoped to its institution, except the global `feedbackSync`. While
+publish keeps every sweep it can scope to its institution, and leaves the seven that take no
+institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
+the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
+publish, scoped to the bank, so the bank's own non-checking monthly fees are held before its
+rows publish. While
 the switch is off, every publish still runs all 51, and the `publish-sweeps` step is a dry run
 at most hourly. That dry run passes `dryRun: true` to every sweep, runs inside a savepoint that
 is always rolled back, takes no lock, and records `dry_run_write_check`. It writes
-`sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`.
+`sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`. Its takedown ids
+hold only rows coming down: category-guard first looks and fees awaiting their second look
+go in `second_look_candidate_ids` (`confirmedFeeIds` on the guard's result).
 
 The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
 the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
