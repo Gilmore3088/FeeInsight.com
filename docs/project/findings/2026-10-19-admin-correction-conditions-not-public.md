@@ -84,4 +84,3 @@ conditions/source behavior and therefore restores the known propagation defect.
 Current Supabase documentation checked: https://supabase.com/docs/guides/database/tables
 (Views link). The changelog index was retrieved on October 19; the listed TLS cipher retirement
 does not affect this SQL-only view replacement.
-
