@@ -31,7 +31,13 @@ export type SourceCheckFailure =
   | "tiered_fee"
   | "category_not_in_text";
 
-export type SourceCheckResult = { ok: true; sourceLine: string } | { ok: false; reason: SourceCheckFailure };
+export type SourceCheckResult = {
+  ok: true;
+  sourceLine: string;
+  /** Exact cap-first witness context; price support alone does not establish applicability. */
+  eligibilityContext?: string;
+  producerScopeUnknown?: true;
+} | { ok: false; reason: SourceCheckFailure };
 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
@@ -1099,7 +1105,10 @@ export function checkFeeAgainstSource(
     const item = capFirstItemPrices(text).find(row => stackedLabelKey(row.label) === stackedLabelKey(feeName) && row.amount === amount &&
       (canonicalFeeKey == null || row.canonicalKey === canonicalFeeKey));
     if (item && new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i").test(item.ownText)) {
-      return { ok: true, sourceLine: item.ownText };
+      return { ok: true, sourceLine: item.ownText,
+        ...(item.eligibilityContext ? { eligibilityContext: item.eligibilityContext } : {}),
+        ...(item.producerScopeUnknown ? { producerScopeUnknown: true as const } : {}),
+      };
     }
   }
   // #2240/#2241: an exact physical label with an unambiguous price run cannot borrow
