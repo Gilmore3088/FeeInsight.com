@@ -940,8 +940,10 @@ export async function fetchAndRecordLink(
   const result = await fetchCandidate(row, fetchImpl, previous);
   if (dryRun) return { result, sourceDocumentId: null, supersededCopies };
   const sourceDocumentId = ctx.keepRemembered ? await recordSideCopy(db, result) : await recordFetchResult(db, result, learning);
-  // The copy this fetch stored or confirmed is the page's current one.
-  if (result.outcome === "success" || result.outcome === "unchanged") {
+  // The copy this fetch stored or confirmed is the page's current one. A side copy marks only a
+  // document it stored itself: bytes it matched belong to another page's stream (often an old copy
+  // of the remembered page), and marking that one current would roll its page back.
+  if (ctx.keepRemembered ? result.outcome === "success" : result.outcome === "success" || result.outcome === "unchanged") {
     supersededCopies += await markCurrentCopy(db, sourceDocumentId);
   }
   if (!ctx.keepRemembered && linkIsGone(result)) {

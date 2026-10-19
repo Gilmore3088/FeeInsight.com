@@ -403,7 +403,10 @@ describe("Magellan agentic fetch", () => {
       const matched = learningDb(null, { id: 900 });
       const same = await fetchAndRecordLink(asFetchDb(matched), saved, vi.fn().mockResolvedValueOnce(response(body)), sideContext);
       expect(same).toMatchObject({ sourceDocumentId: 900, result: { outcome: "unchanged", reusedDocument: true } });
-      expect(matched.mock.calls.map((call) => templateText(call[0])).join("\n")).not.toContain("INSERT INTO source_documents");
+      const matchedText = matched.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(matchedText).not.toContain("INSERT INTO source_documents");
+      // Matched bytes belong to another page's stream: no copy of it is marked current or superseded.
+      expect(matchedText).not.toContain("superseded_by_id");
 
       const gone = learningDb(null);
       const missing = await fetchAndRecordLink(asFetchDb(gone), saved, vi.fn().mockResolvedValueOnce(response("Not found", "text/html", 404)), sideContext);

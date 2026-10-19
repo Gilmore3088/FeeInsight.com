@@ -184,6 +184,8 @@ describe("retired documents (no longer a source, Oct 19)", () => {
     expect(retired).toContain("ias.status <> 'rejected'");
     expect(retired).toContain("d.doc_key <> d.link_key");
     expect(retired).toContain("t.status = 'completed'");
+    expect(retired).toContain("FROM institution_source_profiles profile");
+    expect(retired).toContain("c.status = 'success'");
   });
 
   it("judges a retired document's fees like a superseded copy's and reports them apart", async () => {
@@ -228,6 +230,9 @@ describe("retired documents (no longer a source, Oct 19)", () => {
 
   it("reads the latest year a link names", () => {
     expect(linkYear("https://x.org/uploads/2024/08/NHFCU.Fee_.Schedule.Oct_.1.2024.pdf")).toBe(2024);
+    // The upload folder dates the upload, not the schedule.
+    expect(linkYear("https://x.org/wp-content/uploads/2024/01/Schedule-of-Fees-2020-Nov.pdf")).toBe(2020);
+    expect(linkYear("https://x.org/wp-content/uploads/2024/01/fees.pdf")).toBeNull();
     expect(linkYear("https://x.org/2021-Fee-Schedule-102021.pdf")).toBe(2021);
     expect(linkYear("https://x.org/fees/12345.pdf")).toBeNull();
     expect(linkYear(null)).toBeNull();

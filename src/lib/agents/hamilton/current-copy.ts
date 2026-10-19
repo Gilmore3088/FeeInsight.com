@@ -39,7 +39,8 @@ type SqlTag = typeof sql;
  * (Cedar Falls, #1945). Such a document is judged the same way against the newest read copy
  * at the bank's current fee link (`retiredCopiesSql`). Prod, read-only, Oct 19: 8,385 live fees
  * cite 543 such documents; 258 of them (3,607 fees) have a read copy at the current link. The
- * other 285 have no read copy there, so they wait on capture, not on this check.
+ * other 285 have no read copy there, so they wait on capture (`magellan/saved-link-fetch.ts`).
+ * The address the plain fetch asks for (the profile's remembered one) also counts as a source.
  *
  * `CURRENT_COPY_CONFIRM_LIVE` false logs first looks and confirms none, until a hand check of
  * the flags passes (18 of 20 stale), then a fix PR turns it on.
@@ -76,6 +77,8 @@ export function retiredCopiesSql(db: SqlTag) {
          WHERE c.institution_id = d.institution_id
            AND c.id <> d.older_document_id
            AND c.superseded_by_id IS NULL
+           AND c.status = 'success'
+           AND c.duplicate_of_id IS NULL
            AND lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.link_key
            AND EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = c.id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
          ORDER BY c.id DESC
@@ -83,6 +86,12 @@ export function retiredCopiesSql(db: SqlTag) {
       ) cur ON TRUE
      WHERE d.link_key <> ''
        AND d.doc_key <> d.link_key
+       -- The address the plain fetch asks for (the profile's remembered one) is still a source.
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = d.institution_id
+            AND lower(regexp_replace(regexp_replace(btrim(COALESCE(profile.canonical_source_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.doc_key
+       )
        AND NOT EXISTS (
          SELECT 1 FROM institution_additional_sources ias
           WHERE ias.institution_id = d.institution_id
@@ -215,7 +224,7 @@ export function retiredCopyIsNewer(fee: Pick<CurrentCopyFeeRow, "older_url" | "c
   return olderYear == null || currentYear == null || currentYear >= olderYear;
 }
 
-/** The latest year (1990-2099) a link's path names, or null. Pure. */
+/** The latest year (1990-2099) a link's file name names, or null. Pure. */
 export function linkYear(url: string | null | undefined): number | null {
   if (!url) return null;
   let path = url;
@@ -224,7 +233,9 @@ export function linkYear(url: string | null | undefined): number | null {
   } catch {
     // Not a full URL: read it as written.
   }
-  const years = [...path.matchAll(/(?<!\d)(?:199\d|20\d\d)(?!\d)/g)].map((m) => Number(m[0]));
+  // The file name only: a WordPress upload folder ("/uploads/2024/08/") dates the upload, not the schedule.
+  const file = path.split("/").filter(Boolean).at(-1) ?? "";
+  const years = [...file.matchAll(/(?<!\d)(?:199\d|20\d\d)(?!\d)/g)].map((m) => Number(m[0]));
   return years.length > 0 ? Math.max(...years) : null;
 }
 
