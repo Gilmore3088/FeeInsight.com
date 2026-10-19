@@ -155,3 +155,27 @@ No extraction/reader/verification/source-check/relabel version, manifest epoch o
 changes. Already-recorded decisions are not reopened, and no existing public row is rewritten.
 The source/lock/CAS availability boundary remains explicit; the dated offline projection is
 conditional policy evidence, not a historical error census or proof of live admission.
+
+## Final main composition and regression contract
+
+The CI database inventory includes both factual-source and prospective caller suites,
+alongside every existing suite and the dedicated public applicability suite. Native files
+remain serialized because existing suites install transactional test DDL. The existing
+monthly, cap-eligibility and symbolic-price races still observe a real blocking dependency
+when Darwin wins first. When a held writer wins, the new nonwaiting read defers before
+that transaction commits, without a judgment, attempt, feedback or pending-row change.
+After commit, the identical stale callback defers on changed raw identity; a normal fresh
+selection under the same stale category still reaches the existing held-eligibility refusal.
+No assertion deadline or runtime guard was weakened to accommodate that lock contract.
+
+The complete repaired-source stage fixture now supplies its actual artifact source hash
+and transactionally installs the already-released audience trigger47 before testing the
+consumer outcome. Rollback restores the shared fixture's prior trigger. This is local test
+schema alignment, with no new migration or production table change.
+
+A dated offline projection joins 3,794 saved monthly rows and 6,407 saved wire rows to their
+exact saved sources and separates raw from catalog names, known raw labels and original
+binding availability. Neither category-selected frame contains a matching own exclusive
+clause, so this measured projection introduces no audience change in those dated inputs.
+It is not an all-fee census or a live admission test. Current repaired Oakwood is a separate
+positive control; its current text is not substituted into either historical source frame.
