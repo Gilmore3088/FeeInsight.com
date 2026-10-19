@@ -1251,3 +1251,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
+
+The shared figure gate and paid eval use the same explicit monetary-unit normalization
+(`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,
+including financial container captions and compacted JSON evidence. Explicit rates/counts and
+unsupported currencies do not become dollar candidates; fee-catalog exclusions in the eval stay.
+Named financial ratios retain their ratio interpretation. This remains numerical consistency,
+not institution/category/period/direction claim verification. FDIC/NCUA readers preserve stored
+thousands as documented in `data-store/financial-sources.ts`; no stored values are rewritten.
