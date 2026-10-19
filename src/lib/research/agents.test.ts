@@ -140,7 +140,14 @@ describe("getHamilton", () => {
       expect(config.systemPrompt).toContain("never the only true group");
       expect(config.systemPrompt).toContain("Do not print internal account/item codes");
       expect(config.systemPrompt).toContain("validated calculation ledger supplies that cohort-specific ratio");
+      expect(config.systemPrompt).toContain("not a strong, reliable, robust or representative benchmark");
     }
+  });
+
+  it("limits sample-maturity labels to verified fee prices, separately from financial filing coverage", async () => {
+    const config = await getHamilton("pro");
+    expect(config.systemPrompt).toContain("Verified fee-price benchmarks state sample maturity");
+    expect(config.systemPrompt).toContain("count or completeness alone does not establish benchmark quality");
   });
 
   it("all Hamilton audiences preserve the financial measure boundary while allowing same-fee price comparisons", async () => {

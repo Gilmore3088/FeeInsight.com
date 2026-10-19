@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import retained from "./test-fixtures/navy-comparable-peers-4003.json";
+import operandRetained from "./test-fixtures/navy-comparable-peers-017b.json";
 import { writtenAnswerCheck } from "./answer-save";
 import { HAMILTON_INTERPRETATION_INSTRUCTION } from "./answer-interpretations";
 import { profileQuarterCalculations } from "./profile-quarter-evidence";
@@ -101,5 +102,94 @@ describe("retained Navy profile answer (#2365, #2366, #2367)", () => {
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("This is a six-month total; no full-year estimate is established.");
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("gap, lead or ranking");
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("these figures do not establish whether size, pricing or member volume explains the lead");
+  });
+});
+
+describe("retained Navy operand-only explanation and scope claims (#2379, #2380, #2381)", () => {
+  const context = operandRetained.context as WrittenAnswerEvidenceContext;
+  const outputs = operandRetained.context.toolResults.map((read) => read.output);
+  const explanation = "The quarter is $297.36 million year to date minus $144.28 million for Q1 (NCUA 5300 call report).";
+  const result = "Navy Federal reported $153.08 million in standalone Q2 2026 fee income.";
+  const check = (text: string, question: string | undefined = operandRetained.question) => writtenAnswerCheck(text, outputs, question, context);
+
+  it("keeps the exact captured candidate held for quality and overdraft-exclusion claims after validating its arithmetic", () => {
+    const checked = check(operandRetained.answer);
+    expect(checked.figureCheck.unmatched).toEqual([]);
+    expect(checked.passed).toBe(false);
+    expect(checked.problems).toHaveLength(2);
+    expect(checked.problems.join(" ")).toContain("coverage, not benchmark strength");
+    expect(checked.problems.join(" ")).toContain("includes overdraft fees");
+    expect(checked.problems.join(" ")).not.toContain("standalone-quarter");
+  });
+
+  it("passes a test-only copy correcting just the two unsupported semantic claims", () => {
+    const bounded = operandRetained.answer.replace(", so the benchmark is strong", "")
+      .replace("This is not overdraft income or bank deposit service charges.", "This is not overdraft income alone or bank deposit service charges.");
+    expect(check(bounded)).toMatchObject({ passed: true, problems: [], figureCheck: { unmatched: [] } });
+    expect(operandRetained.answer).toContain(", so the benchmark is strong");
+    expect(operandRetained.answer).toContain("This is not overdraft income or bank deposit service charges.");
+  });
+
+  it("accepts source-bound operand explanations only when the requested quarter result is validated elsewhere", () => {
+    expect(check(`${result} ${explanation}`).passed).toBe(true);
+    expect(check(`${explanation} ${result}`).passed).toBe(true);
+    expect(check(explanation).passed).toBe(false);
+    expect(check(`${explanation} The Q2 comparison is unavailable.`).passed).toBe(false);
+  });
+
+  it.each(["cohort", "group", "benchmark"])("retains the requested-quarter role and date for an unqualified %s median", (label) => {
+    const wrong = check(`${result} The ${label} median was $297.36 million.`);
+    expect(wrong.figureCheck.unmatched).toEqual([]);
+    expect(wrong.passed).toBe(false);
+    expect(wrong.problems.join(" ")).toContain("standalone-quarter");
+    expect(check(`${result} The ${label} median was $11.125 million.`)).toMatchObject({ passed: true, problems: [] });
+  });
+
+  it("does not apply the income-period rule to an explicitly sourced published fee-price median", () => {
+    const priceRead = { toolName: "queryData", input: { measure: "fee:atm_non_network" }, output: {
+      measure: "fee:atm_non_network", period_basis: "fee_schedule", source: "published_fee_catalog", unit: "USD", median: 1, institution_count: 25,
+    } };
+    expect(writtenAnswerCheck(`${result} The cohort median published ATM fee price was $1.`, [...outputs, priceRead.output], operandRetained.question, { ...context, toolResults: [...context.toolResults!, priceRead] })).toMatchObject({ passed: true, problems: [] });
+  });
+
+  it.each([
+    "The quarter is $297.36 million year to date minus $144.28 million for Q2 (NCUA 5300 call report).",
+    "The quarter is $297.36 million year to date minus $144.28 million for Q1 2025 (NCUA 5300 call report).",
+    "The Q3 2026 quarter is $297.36 million year to date minus $144.28 million for Q1 (NCUA 5300 call report).",
+    "The quarter is $297.36 million year to date minus $144.28 million for Q1, the Q2 peer median.",
+    "The quarter is $297.36 million year to date minus $144.28 million for Q1 and the Q2 peer median was $144.28 million.",
+    "The quarter is $297.36 million year to date minus $153.08 million for Q1 (NCUA 5300 call report).",
+  ])("holds incorrect or relabeled operands: %s", (explanation) => {
+    expect(check(`${result} ${explanation}`).passed).toBe(false);
+  });
+
+  it.each([
+    "All 25 reported a usable figure for this date; coverage for this cohort is complete.",
+    "All 25 reported, but coverage alone cannot establish a strong benchmark.",
+    "All 25 reported. Benchmark strength has not been established from coverage.",
+    "Broad NCUA fee income includes overdraft fees but does not isolate their amount.",
+    "This is not overdraft-only income or bank deposit service charges.",
+    "This is not overdraft income alone.",
+    "Separate overdraft income is not reported in the available evidence.",
+    "Overdraft income cannot be determined from this broad total.",
+  ])("preserves precise coverage and overdraft limitations: %s", (answer) => {
+    expect(check(answer, "")).toMatchObject({ passed: true, problems: [] });
+  });
+
+  it.each([
+    "All 25 reported a usable figure, so the benchmark is strong.",
+    "All 25 reported, making this a reliable benchmark.",
+    "This is not overdraft income or bank deposit service charges.",
+    "Broad fee income excludes overdraft fees.",
+    "Overdraft income is excluded from broad NCUA fee income.",
+  ])("holds unsupported quality or exclusion claims: %s", (answer) => {
+    const checked = check(answer, "");
+    expect(checked.passed).toBe(false);
+    expect(checked.problems.join(" ")).not.toContain("standalone-quarter");
+  });
+
+  it("instructs generation to separate coverage from quality and preserve overdraft inclusion", () => {
+    expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("not a strong, reliable, robust or representative benchmark");
+    expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("Broad NCUA fee income includes overdraft fees");
   });
 });

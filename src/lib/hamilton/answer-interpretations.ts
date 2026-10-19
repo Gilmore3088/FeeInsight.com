@@ -14,11 +14,13 @@ SOURCE MEANING:
 - NCUA dividends on shares are reported year-to-date expense, not evidence of cash paid. Keep the expense label even when the question says "paid".
 - State period limits as observations, not advice: "This is a six-month total; no full-year estimate is established." Do not tell the reader that they "should" or "should not" annualize it.
 - A current fee schedule is a price, not realized revenue or a historical record of prices, waivers, refunds or charged items. A $0 overdraft price cannot establish zero overdraft income or zero paying members in a prior period. Broad fee income cannot identify either figure; say unavailable unless a dedicated reported line answers it.
+- Broad NCUA fee income includes overdraft fees among other member-service and membership fees. Say "not overdraft-only income" or "overdraft income cannot be isolated from this total"; never say this broad line is not overdraft income or excludes overdraft fees.
 - A cross-sectional peer median describes the filers for that date. Do not call changes between separately selected quarterly peer populations growth, outperformance, keeping pace or falling behind. A common comparable cohort, including merger treatment, is needed first. You may report the current median, its date and coverage.
 - Do not invent a reason for an unqueried peer filter. A nationwide sample does not establish that a Fed-district group would be too small. Read the exact district and otherwise matching group first, or say its coverage has not been checked.
 - A missing, unreported or unusable overdraft figure in the available evidence does not establish that NCUA's filing has no overdraft line or field. Describe the evidence's missing usable figure; do not infer absence from the publisher's schema.
 - For an explicit quarter-only question, answer that standalone quarter or say plainly that the requested comparison cannot be computed. A correctly labeled year-to-date figure is related context, not an answer to Q2. Never subtract separately rolled peer medians: quarter medians require matched per-institution quarter differences before aggregation.
 - A broad size band and nearest-in-assets peers are different legitimate cohort definitions. State which was used, its criteria, reported count and selected-subject inclusion. Never call one the only true or only valid peer group, or attribute a dollar-income gap, lead or ranking to size rather than pricing without causal evidence. A dollar lead does not establish that it reflects size, comes from scale, or is explained by assets. Use neutral observations: "The institution leads this cohort in reported fee-income dollars; these figures do not establish whether size, pricing or member volume explains the lead."
+- All eligible financial filers reporting establishes completeness for that dated cohort, not a strong, reliable, robust or representative benchmark. State the eligible/reported counts and limitations; do not apply fee-price sample-maturity labels to financial filing comparisons or infer benchmark quality from coverage alone.
 - Do not state a peer-income multiple (times, x or ×) unless the server's validated calculation ledger supplies that cohort-specific ratio. Report the two sourced totals instead.
 - Correlations, similar peer growth and fee-income totals do not identify a pricing or market cause. Do not conclude that pricing, the market or a zero-fee stance caused revenue, or rank a funding-cost change against an unmeasured fee-schedule change. Describe observed figures and the evidence missing to explain them.
 - Preserve missing overdraft income and payer counts as unavailable. Do not fill the gap with zero, a schedule price, account counts or a revenue/price quotient. Clearly separate a question for further research from a finding.`;
@@ -54,6 +56,8 @@ interface Evidence {
   peerMultipliers: { period: string; value: number }[];
   quarterCalculations: { institutionId: string; period: string; value: number; inputs: [number, number] }[];
   canonicalSources: Map<string, Set<"fdic" | "ncua">>;
+  broadIncomeIds: Set<string>;
+  financialPeerComparison: boolean;
 }
 
 const record = (v: unknown): RecordValue | null => v !== null && typeof v === "object" && !Array.isArray(v) ? v as RecordValue : null;
@@ -62,7 +66,7 @@ const textValue = (v: unknown): string | null => typeof v === "string" && v.trim
 const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source ?? "")) || /\bNCUA\b/i.test(String(r.publisher ?? ""));
 
 function evidenceFrom(data: unknown): Evidence {
-  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [], quarterIncomes: [], peerMultipliers: [], quarterCalculations: [], canonicalSources: new Map() };
+  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [], quarterIncomes: [], peerMultipliers: [], quarterCalculations: [], canonicalSources: new Map(), broadIncomeIds: new Set(), financialPeerComparison: false };
   const root = record(data);
   // Only server-computed candidates, never a tool's arbitrary ratio-like numeric fields.
   if (Array.isArray(root?.validated_calculations)) for (const value of root.validated_calculations.slice(0, 40)) {
@@ -112,6 +116,8 @@ function evidenceFrom(data: unknown): Evidence {
         const sources = result.canonicalSources.get(id) ?? new Set<"fdic" | "ncua">();
         sources.add(source);
         result.canonicalSources.set(id, sources);
+        if (source === "ncua" && (definition?.measure === "broad_credit_union_fee_income"
+          || comparison?.measure === "broad_credit_union_fee_income")) result.broadIncomeIds.add(id);
       }
     }
     let currentPeer = peerScope;
@@ -124,6 +130,7 @@ function evidenceFrom(data: unknown): Evidence {
     }
     if (ncuaSource(r)) result.ncua = true;
     const comparison = record(r.comparison);
+    if (validFinancialPeerComparison(comparison)) result.financialPeerComparison = true;
     if (validFinancialPeerComparison(comparison) && comparison.source === "ncua") {
       const scale = comparison.unit === "thousands of dollars" ? 1000 : 1;
       if (finite(r.sc_income) !== null) result.quarterIncomes.push({ institutionId: id, period: comparison.report_date, value: Number(r.sc_income) * scale, role: "subject" });
@@ -154,6 +161,7 @@ function evidenceFrom(data: unknown): Evidence {
     // and peer member_count (number of institutions) cannot establish member counts.
     if (r.ok === true && typeof r.measure === "string" && Array.isArray(r.rows) && metadata && ncuaSource(metadata)) {
       const metric = r.measure.replace(/^call:/, "");
+      if (r.scope === "institution" && metric === "acct_131" && id) result.broadIncomeIds.add(id);
       for (const value of r.rows) {
         const row = record(value);
         const period = textValue(row?.period);
@@ -335,10 +343,15 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
   const clearRefusal = clauses.some(refusal);
   const failure = "The question asks for standalone-quarter fee income. Answer that quarter from matched institution-quarter calculations or the dated comparable-quarter tool, or clearly state that the requested quarter comparison cannot be computed; a YTD substitute does not answer it.";
   let answeredRequestedQuarter = false;
+  const validatedClaims: { institutionId: string | null; period: string; value: number; tolerance: number }[] = [];
+  const operandExplanations: Evidence["quarterCalculations"][] = [];
   for (const clause of clauses) {
     if (clause.endsWith("?")) continue;
     const explicitQuarter = namesQuarter(clause);
-    const peerMedian = /\bpeer(?:s|'s|s')?\s+median\b/i.test(clause);
+    const feePrice = /\b(?:fee[ -]schedule|published\s+(?:fee|price)|fee\s+price|prices?|overdraft|NSF|ATM|wire|monthly maintenance)\b/i.test(clause);
+    const explicitIncome = /\b(?:fee|service[ -]charge)\s+(?:income|revenue)\b/i.test(clause);
+    const peerMedian = /\b(?:peer(?:s|'s|s')?|cohort|group|benchmark)\s+(?:(?:fee[ -])?income\s+)?median\b/i.test(clause)
+      && (!feePrice || explicitIncome);
     const ytd = /\b(?:year[ -]to[ -]date|YTD|half[ -]year|six months)\b/i.test(clause);
     if ((!explicitQuarter && !peerMedian) || (!explicitQuarter && ytd)) continue;
     const allFigures = extractFigures(clause);
@@ -350,6 +363,25 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
       .map((period) => period.length === 7 ? `${period}-${["03", "12"].includes(period.slice(5)) ? "31" : "30"}` : period);
     const dates = periods.length ? periods : [requested.period];
     const calculationInputs = new Set<(typeof quoted)[number]>();
+    if (quoted.length === 2 && evidence.selectedId) {
+      const [current, prior] = quoted;
+      const label = /^(?:(?:the|this)\s+)?(?:(?:standalone\s+)?Q([1-4])(?:\s+(20\d{2}))?(?:\s+quarter)?|(?:standalone\s+)?quarter)\s+(?:is|equals?)\s*$/i.exec(clause.slice(0, current.index));
+      const connector = clause.slice(current.index + current.raw.length, prior.index);
+      const priorLabel = /^\s*for\s+Q([1-4])(?:\s+(20\d{2}))?(?:\s+(YTD|year[ -]to[ -]date))?\s*(?:\(NCUA(?:\s+5300)?\s+call report\))?\s*[.!]?\s*$/i.exec(clause.slice(prior.index + prior.raw.length));
+      if (label && (!label[1] || Number(label[1]) === requested.quarter) && (!label[2] || label[2] === requested.year)
+        && /^\s*(?:YTD|year[ -]to[ -]date)\s*(?:minus|−|-)\s*$/i.test(connector)
+        && priorLabel && Number(priorLabel[1]) === requested.quarter - 1 && (!priorLabel[2] || priorLabel[2] === requested.year)
+        && (priorLabel[1] === "1" || priorLabel[3])) {
+        const calculations = evidence.quarterCalculations.filter((calculation) => calculation.institutionId === evidence.selectedId
+          && calculation.period === requested.period && dates.includes(calculation.period)
+          && Math.abs(calculation.inputs[0] - current.value) <= current.tolerance
+          && Math.abs(calculation.inputs[1] - prior.value) <= prior.tolerance);
+        if (calculations.length) {
+          calculationInputs.add(current); calculationInputs.add(prior);
+          operandExplanations.push(calculations);
+        }
+      }
+    }
     const matchingCalculations = (value: (typeof quoted)[number], first: (typeof quoted)[number], second: (typeof quoted)[number]) =>
       evidence.quarterCalculations.filter((calculation) => dates.includes(calculation.period)
         && (!evidence.selectedId || calculation.institutionId === evidence.selectedId)
@@ -399,23 +431,47 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
         && Math.abs(income.value - figure.value) <= figure.tolerance);
       // A refusal in another sentence never excuses an affirmative quarter-dollar claim.
       if (matches.length === 0) return [failure];
+      if (role === "subject") for (const income of matches) validatedClaims.push({
+        institutionId: income.institutionId, period: income.period, value: figure.value, tolerance: figure.tolerance,
+      });
       if (role === "subject" && matches.some((income) => income.period === requested.period) && !refusal(clause)) answeredRequestedQuarter = true;
     }
   }
+  // An operand-only explanation never supplies the answer itself: its matching
+  // selected-institution quarter result must also have passed elsewhere.
+  if (operandExplanations.some((calculations) => !calculations.some((calculation) => validatedClaims.some((claim) =>
+    claim.institutionId === calculation.institutionId && claim.period === calculation.period
+      && Math.abs(claim.value - calculation.value) <= claim.tolerance)))) return [failure];
   return answeredRequestedQuarter || clearRefusal ? [] : [failure];
 }
 
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
 export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
   const evidence = evidenceFrom(data);
-  if (!evidence.ncua) return [];
+  if (!evidence.ncua && !evidence.financialPeerComparison) return [];
   const problems = new Set<string>();
-  if (evidence.incomplete) problems.add("The NCUA interpretation check could not inspect all structured evidence within its limits. Narrow the evidence before presenting this answer.");
-  for (const problem of quarterQuestionProblems(text, question, evidence)) problems.add(problem);
+  if (evidence.ncua && evidence.incomplete) problems.add("The NCUA interpretation check could not inspect all structured evidence within its limits. Narrow the evidence before presenting this answer.");
+  if (evidence.ncua) for (const problem of quarterQuestionProblems(text, question, evidence)) problems.add(problem);
+  if (evidence.financialPeerComparison) for (const sentence of text.split(/\r?\n+|(?<=[.!?])\s+/)) {
+    const completeness = /\ball\s+(?:\d+\s+)?(?:(?:eligible\s+)?(?:credit unions?|banks?|institutions?|peers?|filers?)\s+)?(?:reported|filed)\b|\b(?:complete|full)\s+(?:filing\s+)?coverage\b/i;
+    const quality = sentence.match(/\b(?:benchmark|comparison|cohort|sample)\s+(?:is|was|looks?|seems?|remains?)\s+(?:strong|reliable|robust|representative)\b|\b(?:strong|reliable|robust|representative)\s+(?:financial\s+)?(?:benchmark|comparison|cohort|sample)\b/i);
+    if (completeness.test(sentence) && quality && !explicitlyWithdrawn(sentence, quality)) {
+      problems.add("Complete reporting for the stated financial cohort establishes coverage, not benchmark strength, reliability or representativeness. State the counts and limitations without inferring quality from completeness.");
+    }
+  }
+  if (!evidence.ncua) return [...problems];
+  const broadIncome = evidence.selectedId ? evidence.broadIncomeIds.has(evidence.selectedId) : evidence.broadIncomeIds.size > 0;
   const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+|\s+and\s+(?=(?:its?|their|the|\w+'s)\s+)/i);
   for (const raw of clauses) {
     const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
     if (!clause || (/^(?:how|what|which|could|can|would|does|do)\b/i.test(clause) && clause.endsWith("?"))) continue;
+    if (broadIncome && !/\b(?:schedule|published price|fee price)\b/i.test(clause)) {
+      const exclusion = clause.match(/\b(?:is|was)\s+not\s+(?:an?\s+)?overdraft\s+(?:income|revenue)\b|\b(?:excludes?|excluding|does not include|doesn't include|contains? no)\s+(?:any\s+)?overdraft(?:\s+(?:fees?|income|revenue))?\b|\boverdraft(?:\s+(?:fees?|income|revenue))?\s+(?:(?:is|are|was|were)\s+)?excluded\s+from\s+(?:broad\s+)?(?:NCUA\s+)?fee income\b/i);
+      const qualified = exclusion && /^\s*(?:only|alone)\b/i.test(clause.slice((exclusion.index ?? 0) + exclusion[0].length));
+      if (exclusion && !qualified && !explicitlyWithdrawn(clause, exclusion)) {
+        problems.add("Broad NCUA fee income includes overdraft fees; it does not isolate them. Say not overdraft-only income or that a separate overdraft amount is unavailable, rather than excluding overdraft from the broad total.");
+      }
+    }
     const memberTopic = /\b(?:members?(?:hip)?|customers?)\b/i;
     const memberChange = /\b(?:members?(?:hip)?|customers?)(?:\s+(?:base|count|numbers?|growth|is|are|has|have|was|were|had)){0,4}\s+(?:grow\w*|grew|increas\w*|expanded|rose|rising|fell|falling|declin\w*|decreas\w*|shrank|shrinking)\b|\b(?:member|membership|customer)\s+growth\b|\b(?:more|fewer|new|additional)\s+(?:members?|customers?)\b/i;
     if (memberChange.test(clause) && !refuses(clause, memberTopic) && !memberGrowthSupported(clause, evidence)) {
