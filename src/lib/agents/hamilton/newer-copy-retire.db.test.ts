@@ -49,11 +49,13 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
       (900, 42, 'https://testbank.example/fees', '2026-10-02', 'success', 'new-bytes')`;
     await db`INSERT INTO agent_source_texts VALUES
       (1, 500, 'completed', ${olderText}, 'old-text'), (2, 900, 'completed', ${newerText}, 'new-text')`;
+    // These generic source fixtures have unassigned product scope. Explicit product controls below
+    // supply a complete primary-document witness rather than relying on metadata alone.
     await db`INSERT INTO raw_fee_observations VALUES
       (1, 42, 500, 'Overdraft Fee', 32, 'consumer', 'per_item', 'flat', NULL, NULL),
       (2, 42, 500, 'Stop Payment', 30, 'consumer', 'per_item', 'flat', NULL, NULL),
-      (4, 42, 500, 'Coin Counting', 5, 'consumer', 'per_item', 'flat', NULL, 'Basic Checking'),
-      (901, 42, 900, 'Paper Statement', 5, 'consumer', 'per_item', 'flat', NULL, 'Basic Checking')`;
+      (4, 42, 500, 'Coin Counting', 5, 'consumer', 'per_item', 'flat', NULL, NULL),
+      (901, 42, 900, 'Paper Statement', 5, 'consumer', 'per_item', 'flat', NULL, NULL)`;
     await db`INSERT INTO verified_fee_observations VALUES
       (1001, 1, 'verified', '[]'), (1002, 2, 'approved', '[]'), (1004, 4, 'verified', '[]')`;
     await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id,

@@ -1,3 +1,5 @@
+import { ANCILLARY_PRODUCT_FLAG, primaryAncillaryProduct } from "../knox/ancillary-product";
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { darwinAudience, type DarwinAudience } from "./audience";
 import { tierPerkZero } from "./tier-perk";
@@ -671,6 +673,7 @@ function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
 }
 
 export interface RawFeeRow extends RateFields {
+  product_name?: string | null;
   fee_audience?: FeeAudience;
   fee_raw_id: number | string;
   institution_id: number | string;
@@ -853,13 +856,20 @@ export function verificationReasonText(
   return (code === "missing_lineage" ? sourceLinkSkipReason(row) : null) ?? DARWIN_REASON_TEXT[code];
 }
 
+/** New v1 ownership must be witnessed again; a generic neighbouring price is insufficient. */
+function ownedSourceText(row: Partial<Pick<RawFeeRow, "product_name" | "outlier_flags">>, text: string): string | null {
+  if (!parseFlags(row.outlier_flags).includes(ANCILLARY_PRODUCT_FLAG)) return text;
+  const owner = primaryAncillaryProduct(text);
+  return owner && productKey(row.product_name) && sameProduct(row.product_name, owner.productName) ? owner.block : null;
+}
+
 /**
  * Is the fee stated in the stored text of the document Knox read it from? The shared
  * accuracy check (`checkFeeAgainstSource`), with Hamilton's reading: a tiered price is the
  * bank's real price for its band. A row with no stored text cannot be traced. Exported for tests.
  */
 export function statedInOwnSource(
-  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent">,
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent"> & Partial<Pick<RawFeeRow,"product_name" | "outlier_flags">>,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
 ): boolean {
@@ -870,7 +880,8 @@ export function statedInOwnSource(
   }
   const amount = normalizedAmount(row.amount);
   if (amount == null || row.source_document_id == null) return false;
-  const text = texts.get(Number(row.source_document_id));
+  const stored = texts.get(Number(row.source_document_id));
+  const text = stored ? ownedSourceText(row, stored) : null;
   if (!text) return false;
   const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
   return result.ok || result.reason === "tiered_fee";
@@ -878,14 +889,15 @@ export function statedInOwnSource(
 
 /** The schedule line the shared source check traced the fee to, or null when it did not. */
 export function sourceLineFor(
-  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent">,
+  row: Pick<RawFeeRow, "fee_name" | "amount" | "source_document_id" | "amount_kind" | "rate_percent"> & Partial<Pick<RawFeeRow,"product_name" | "outlier_flags">>,
   texts: ReadonlyMap<number, string>,
   canonicalFeeKey?: string | null,
 ): string | null {
   if (isPercentFee(row)) return null;
   const amount = normalizedAmount(row.amount);
   if (amount == null || row.source_document_id == null) return null;
-  const text = texts.get(Number(row.source_document_id));
+  const stored = texts.get(Number(row.source_document_id));
+  const text = stored ? ownedSourceText(row, stored) : null;
   if (!text) return null;
   const result = checkFeeAgainstSource(text, row.fee_name, amount, ".", canonicalFeeKey);
   if (!result.ok) return null;
@@ -1000,6 +1012,7 @@ function batchKey(row: RawFeeRow, canonicalFeeKey: string): string {
       : (row.source_url ?? row.document_r2_key ?? "").trim(),
     sourceLineKey(row.conditions),
     row.fee_audience ?? "unknown",
+    productKey(row.product_name),
   ].join("|");
 }
 
@@ -1152,6 +1165,7 @@ async function selectRawFees(
              fr.outlier_flags,
              COALESCE(fr.extraction_note, fr.conditions) AS conditions,
              fr.fee_audience,
+             fr.product_name,
              fr.amount_kind,
              fr.rate_percent,
              fr.rate_min_amount,
@@ -1218,6 +1232,13 @@ export async function insertVerifiedFee(
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   // With no decision the trigger copies the raw row's audience, as before.
   const audience = options.audience !== undefined ? options.audience : darwinAudience(options.row, amount, options.sourceText);
+  if (options.row.product_name !== undefined) {
+    const current = await db`
+      SELECT fr.fee_raw_id FROM raw_fee_observations fr WHERE fr.fee_raw_id = ${feeRawId}
+        AND ${db.unsafe(productKeySql("fr.product_name"))} = ${productKey(options.row.product_name)}
+      FOR UPDATE OF fr`;
+    if (current.length === 0) return null;
+  }
   const inserted = await db`
     INSERT INTO verified_fee_observations (
       fee_raw_id,
@@ -1653,6 +1674,7 @@ export async function runDarwinVerify(
           canonicalFeeKey,
           amount: base.amount,
           feeAudience: row.fee_audience ?? "unknown",
+          productName: row.product_name,
         },
         sourceCopies,
       );

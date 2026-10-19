@@ -2,6 +2,7 @@ import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
+import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
@@ -54,6 +55,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
   lineup?: AccountLineup | null;
+  /** Explicit primary-document ownership, independent of monthly balance/waiver fields. */
+  ancillaryProduct?: AncillaryProduct;
   /** v82: the second fee a shared priced line carries (`twin:nsf`), part of the raw dedupe key. */
   lineShare?: string;
   /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */

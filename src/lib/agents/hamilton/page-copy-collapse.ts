@@ -1,3 +1,5 @@
+import { productKey, sameProduct } from "@/lib/fee-product";
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, recordIdentitySkips, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -26,7 +28,8 @@ export const PAGE_COPY_COLLAPSE_LIVE = true;
 export const PAGE_COPY_COLLAPSE_INSTITUTIONS = 25;
 export const PAGE_COPY_COLLAPSE_REASON_SUFFIX = " (copy of the page)";
 
-export interface PageCopyRow {
+export interface PageCopyRow extends Partial<PublishedIdentity> {
+  product_name?: string | null;
   fee_published_id: number | string;
   institution_id: number | string;
   source_document_id: number | string;
@@ -249,7 +252,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
   for (const row of rows) {
     const page = feePageKey(row.document_url);
     if (page == null) continue;
-    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", String(Number(row.amount))].join("|");
+    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", productKey(row.product_name), String(Number(row.amount))].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   // The kept copy is a current one (not superseded), then the latest edition: by the editions the
@@ -286,7 +289,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     const replacedBy = (row: PageCopyRow, keep: PageCopyRow) =>
       row.superseded_by_id != null && String(row.superseded_by_id) === String(keep.source_document_id) && shareWord(row.fee_name, keep.fee_name);
     const agree = (row: PageCopyRow, keep: PageCopyRow) => {
-      if (String(keep.source_document_id) === String(row.source_document_id)) return false;
+      if (!sameProduct(keep.product_name, row.product_name) || String(keep.source_document_id) === String(row.source_document_id)) return false;
       const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
       const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
       return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
@@ -368,7 +371,7 @@ export async function collapsePageCopies(
         `WITH live AS (
            SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
                   GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded, sd.superseded_by_id,
-                  fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience
+                  fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fr.product_name, ${PUBLISHED_IDENTITY_COLUMNS}
              FROM published_fee_records fp
              JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
              JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -417,15 +420,21 @@ export async function collapsePageCopies(
   if (!live || options.dryRun || found.collapses.length === 0) return result;
 
   try {
-    const closed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+    const closed = await withPublishedIdentityWrite(db, async (scope) => {
+      const pairIds = new Set(found.collapses.flatMap((r) => [r.feePublishedId, r.keptFeePublishedId]));
+      const unchanged = await unchangedPublishedIdentities(scope, rows.filter((r) => pairIds.has(Number(r.fee_published_id))) as PublishedIdentity[]);
+      const eligible = found.collapses.filter((r) => unchanged.has(r.feePublishedId) && unchanged.has(r.keptFeePublishedId));
+      await recordIdentitySkips(scope, options.runId, "page-copy-collapse", found.collapses.length - eligible.length);
+      if (eligible.length === 0) return [];
+      return scope<{ fee_published_id: number | string }[]>`
       UPDATE published_fee_records fp
          SET rolled_back_at = NOW(),
              rolled_back_by_batch_id = ${options.batchId},
              rolled_back_reason = ${DUPLICATE_COLLAPSE_REASON_PREFIX} || pick.kept::text || ${PAGE_COPY_COLLAPSE_REASON_SUFFIX}
-        FROM unnest(${found.collapses.map((row) => row.feePublishedId)}::bigint[], ${found.collapses.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
-       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL
+        FROM unnest(${eligible.map((row) => row.feePublishedId)}::bigint[], ${eligible.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
+       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL
       RETURNING fp.fee_published_id
-    `);
+    `; });
     const ids = new Set(closed.map((row) => Number(row.fee_published_id)));
     result.collapses = found.collapses.filter((row) => ids.has(row.feePublishedId));
     // The kept row takes the closed copy's fuller name (`carriedName`), only while it is live and
@@ -434,17 +443,22 @@ export async function collapsePageCopies(
     if (carried.length > 0) {
       let renamed: { fee_published_id: number | string }[] = [];
       try {
-        renamed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+        renamed = await withPublishedIdentityWrite(db, async (scope) => {
+          const keeperIds = new Set(carried.map((r) => r.keptFeePublishedId));
+          const unchanged = await unchangedPublishedIdentities(scope, rows.filter((r) => keeperIds.has(Number(r.fee_published_id))) as PublishedIdentity[]);
+          const eligible = carried.filter((r) => unchanged.has(r.keptFeePublishedId));
+          if (eligible.length === 0) return [];
+          return scope<{ fee_published_id: number | string }[]>`
           UPDATE published_fee_records fp
              SET fee_name = carry.new_name
             FROM unnest(
-                   ${carried.map((row) => row.keptFeePublishedId)}::bigint[],
-                   ${carried.map((row) => row.keptFeeName)}::text[],
-                   ${carried.map((row) => row.keptNewName as string)}::text[]
+                   ${eligible.map((row) => row.keptFeePublishedId)}::bigint[],
+                   ${eligible.map((row) => row.keptFeeName)}::text[],
+                   ${eligible.map((row) => row.keptNewName as string)}::text[]
                  ) AS carry(id, old_name, new_name)
-           WHERE fp.fee_published_id = carry.id AND fp.rolled_back_at IS NULL AND fp.fee_name = carry.old_name
+           WHERE fp.fee_published_id = carry.id AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL AND fp.fee_name = carry.old_name
           RETURNING fp.fee_published_id
-        `);
+        `; });
       } catch (error) {
         // The closes stand; a failed rename only leaves the kept row's shorter name.
         console.error("page-copy kept-name carry failed:", error);

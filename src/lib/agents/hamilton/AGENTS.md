@@ -4,6 +4,43 @@ Hamilton is the last agent in the pipeline and the one people meet. It has four 
 all built on the same live published fees, and one rule across them: every output can be
 retraced without asking Hamilton (see Audit trail).
 
+## Ancillary product ownership (#1911 code phase, 2026-10-19)
+
+A bounded single-primary-deposit-product document can assign its own ancillary priced fee
+rows to the literal product. `ANCILLARY_PRODUCT_VERSION` is v1 (Knox's evidence format,
+`ancillary_product:v1`); this is not a re-read selector or permission to repair old metadata.
+The title and printed applicability clause stay with the bank's own fee conditions; frequency
+comes only from the fee's own price line. Mixed sections/columns, generic guides, unsupported
+headings and exceeded budgets remain unassigned. The general U.S. Bank $3 ATM/$5 money-order
+rows keep their existing unassigned scope; the Safe Debit exceptions belong to Safe Debit.
+
+Only newly inserted ancillary raw rows receive v1 ownership. A same-document raw insert
+conflict, including an ordinary due read or held takeover, keeps the existing row unchanged.
+Monthly-maintenance/minimum-balance lineup behavior is unchanged. Therefore simply re-running
+existing rows cannot recover missing ownership. Existing NULL metadata, numeric pooling policy
+and any exact metadata/rejudge recovery remain separate unchecked work in #1911.
+
+Shared `fee-product.ts` identity folds ASCII case and explicit transport whitespace (including
+NBSP). Unsupported Unicode case/separators stay distinct. Null/blank is one unassigned identity,
+never every product. Represented distinct products and represented/unassigned pairs cannot
+supply one another's duplicate, refresh or source-applicability witness. Holds and admin
+correction blockers keep their conservative broader overlap rules.
+
+Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
+refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
+policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
+records the exception; old settled decisions need a separately designed and authorized path.
+
+Actual matching consumers retain raw product identity through prior/same-line/exact/in-step,
+near-name/page-copy, refresh and current/newer-copy checks. Selected mutation pairs lock only
+their published members, current verified lineage and raw rows in stable ID order, then compare
+the selected full published state, exact raw lineage and normalized product after waits. Changed
+pairs are skipped visibly; only UPDATE RETURNING rows count as changes. This is a selected-row
+Read Committed guard, not serializable phantom-insertion isolation. Refresh also rechecks the
+selected new raw/product, audience, verification and scalar/rate identity. Existing closure,
+full-precision timestamp, target hold and conservative restore-twin guards remain in force.
+
 ## Hamilton's faces (James, 2026-10-06 00:08 UTC)
 
 1. **Fee verifier and publisher.** Publishes Darwin-verified fees and keeps the live

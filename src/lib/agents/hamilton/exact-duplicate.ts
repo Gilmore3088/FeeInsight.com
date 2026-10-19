@@ -1,3 +1,4 @@
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { splitLiveCategory } from "@/lib/fee-fold";
@@ -25,6 +26,7 @@ export function frequencyClass(frequency: string | null | undefined): string | n
 
 /** A live copy of the line a row is about to publish: same institution, category, variant, value and name. */
 export interface ExactCopyRow {
+  product_name?: string | null;
   fee_published_id: number | string;
   frequency: string | null;
   fee_audience: string | null;
@@ -64,10 +66,11 @@ function copyRank(entry: { frequency?: string | null }): number {
  * one of the two (13 rows of step 42289 on Oct 17).
  */
 export function exactDuplicateDecision(
-  row: { frequency?: string | null; fee_audience?: string | null },
+  row: { frequency?: string | null; fee_audience?: string | null; product_name?: string | null },
   copies: ExactCopyRow[],
 ): ExactDuplicateDecision {
-  const matching = copies.filter((copy) => copy.quarantined_at == null && audienceKey(copy.fee_audience) === audienceKey(row.fee_audience));
+  const matching = copies.filter((copy) => copy.quarantined_at == null && audienceKey(copy.fee_audience) === audienceKey(row.fee_audience)
+    && sameProduct(copy.product_name, row.product_name));
   if (matching.length === 0) return { kind: "none" };
   const classes = new Set(
     [row.frequency, ...matching.map((copy) => copy.frequency)].map(frequencyClass).filter((value): value is string => value != null),
@@ -98,6 +101,7 @@ export function collapseCategories(canonicalFeeKey: string, feeName: string | nu
 }
 
 export interface CollapseLine {
+  productName?: string | null;
   institutionId: number;
   canonicalFeeKey: string;
   variantType: string | null | undefined;
@@ -116,7 +120,7 @@ export function collapseLineKey(line: CollapseLine): string {
   const category = collapseCategories(line.canonicalFeeKey, line.feeName).at(-1);
   return [line.institutionId, category, line.variantType ?? "", line.amountKind, line.amount ?? "",
     line.ratePercent ?? "", line.rateMinAmount ?? "", line.rateMaxAmount ?? "", line.rateBasis ?? "",
-    audienceKey(line.feeAudience), line.feeName.trim().toLowerCase()].join("|");
+    audienceKey(line.feeAudience), productKey(line.productName), line.feeName.trim().toLowerCase()].join("|");
 }
 
 /**
@@ -158,8 +162,10 @@ export async function selectExactCopies(
 ): Promise<ExactCopyRow[]> {
   try {
     return await inSavepoint(db, (scope) => scope<ExactCopyRow[]>`
-      SELECT fp.fee_published_id, fp.frequency, fp.fee_audience, fp.published_at, fp.quarantined_at
+      SELECT fp.fee_published_id, fp.frequency, fp.fee_audience, fp.published_at, fp.quarantined_at, fr.product_name
         FROM published_fee_records fp
+        LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.institution_id = ${line.institutionId}
          AND fp.canonical_fee_key = ANY(${collapseCategories(line.canonicalFeeKey, line.feeName)}::text[])
          AND COALESCE(fp.variant_type, '') = COALESCE(${line.variantType ?? null}, '')
@@ -173,6 +179,7 @@ export async function selectExactCopies(
          AND lower(btrim(fp.fee_name)) = lower(btrim(${line.feeName}))
          AND fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
+         AND ${scope.unsafe(productKeySql("fr.product_name"))} = ${productKey(line.productName)}
     `);
   } catch (error) {
     // A failed shadow check never blocks a publish.

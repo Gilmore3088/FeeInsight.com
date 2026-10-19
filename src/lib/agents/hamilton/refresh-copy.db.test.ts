@@ -19,7 +19,7 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
     await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, state_code text)`;
     await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, superseded_by_id bigint, document_url text)`;
     await db`CREATE TEMP TABLE raw_fee_observations (fee_raw_id bigint PRIMARY KEY, source_document_id bigint,
-      agent_event_id uuid, extraction_note text, conditions text)`;
+      agent_event_id uuid, extraction_note text, conditions text, product_name text)`;
     await db`CREATE TEMP TABLE verified_fee_observations (fee_verified_id bigint PRIMARY KEY, fee_raw_id bigint,
       institution_id bigint, source_url text, document_r2_key text, extraction_confidence numeric,
       canonical_fee_key text, variant_type text, outlier_flags jsonb, verified_by_agent_event_id uuid,
@@ -99,6 +99,34 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
     expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("601");
   });
 
+  it.each([[null,"Premium Debit Account"],["Everyday Debit Account",null],["Everyday Debit Account","Premium Debit Account"]])(
+    "never selects product %s for %s",async (one,two) => {
+      await seed("consumer","consumer");
+      await db`UPDATE raw_fee_observations SET product_name=${one} WHERE fee_raw_id=501`;
+      await db`UPDATE raw_fee_observations SET product_name=${two} WHERE fee_raw_id=9701`;
+      expect(await run()).toMatchObject({checked:0,refreshed:0});
+      expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("601");
+    });
+  it.each(["old_product","new_product","old_lineage","new_lineage","value","review_status"]) (
+    "defers a selected pair after its %s changes",async (change) => {
+      await seed("consumer","consumer");
+      const tagged=Object.assign(async(strings:TemplateStringsArray,...values:postgres.ParameterOrJSON<never>[])=>{
+        const result=await db(strings,...values);
+        if(strings.join(" ").includes("WITH stale AS MATERIALIZED")) {
+          if(change==='old_product') await db`UPDATE raw_fee_observations SET product_name='Premium Debit Account' WHERE fee_raw_id=501`;
+          if(change==='new_product') await db`UPDATE raw_fee_observations SET product_name='Premium Debit Account' WHERE fee_raw_id=9701`;
+          if(change==='old_lineage') await db`UPDATE published_fee_records SET lineage_ref=9999`;
+          if(change==='new_lineage') await db`UPDATE verified_fee_observations SET fee_raw_id=501 WHERE fee_verified_id=9801`;
+          if(change==='value') await db`UPDATE verified_fee_observations SET amount=36 WHERE fee_verified_id=9801`;
+          if(change==='review_status') await db`UPDATE verified_fee_observations SET review_status='rejected' WHERE fee_verified_id=9801`;
+        }
+        return result;
+      },{unsafe:db.unsafe.bind(db)});
+      expect(await refreshFeesFromCurrentCopy(tagged as unknown as Db,{runId:9,batchId:'product-guard',dryRun:false}))
+        .toMatchObject({checked:1,refreshed:0});
+      expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe(change==='old_lineage'?"9999":"601");
+    });
+
   it.each(["published", "verified"])("refuses an audience change on the %s row after selecting the pair", async (changed) => {
     await seed("consumer", "consumer");
     const racingDb = async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
@@ -109,6 +137,7 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
       }
       return result;
     };
+    Object.assign(racingDb, { unsafe: db.unsafe });
     expect(await refreshFeesFromCurrentCopy(racingDb as unknown as Db, { runId: 9, batchId: "test-run-9", dryRun: false }))
       .toMatchObject({ checked: 1, refreshed: 0 });
     expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("601");

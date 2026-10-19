@@ -70,7 +70,7 @@ function createDb(fees: NewerCopyFeeRow[], text = newerText): DbMock {
     if (sqlText.includes("RETURNING fp.lineage_ref")) return Promise.resolve([{ lineage_ref: 1005 }]);
     return Promise.resolve([]);
   }) as DbMock;
-  db.unsafe = vi.fn((text: string) => ({ rawSql: text }));
+  db.unsafe = vi.fn((text: string) => text.startsWith("SELECT fp.fee_published_id") ? Promise.resolve(fees) : ({ rawSql: text }));
   return db;
 }
 
