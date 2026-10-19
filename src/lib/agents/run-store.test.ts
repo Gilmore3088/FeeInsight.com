@@ -1051,6 +1051,56 @@ describe("agentic run store", () => {
     );
   });
 
+  it.each([true, false])("saves the real publisher's evidence availability through finishAgenticStep (fault=%s)", async (fault) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: "publish", agent_name: "hamilton", title: "Publish verified fees" }];
+    const run = { ...runRow, agent_name: "hamilton", run_kind: "manual_repair", progress_total: 1,
+      params_json: { institution_id: 42, publish_limit: 10, publish_min_institution_fees: 1 } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+    const base = txMock.getMockImplementation() as (strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown[]>;
+    txMock.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) =>
+      templateText(strings).includes("INSERT INTO published_fee_records")
+        ? Promise.resolve([{ fee_published_id: 1201 }]) : base(strings, ...params));
+    txMock.unsafe.mockImplementation((query: string) => {
+      if (query.includes("same_line_reselect") && query.includes("document_crawled_at")) return Promise.resolve([{
+        fee_verified_id: 801, fee_raw_id: 701, institution_id: 42, source_url: "https://testbank.example/fees",
+        extraction_confidence: 0.92, canonical_fee_key: "overdraft", fee_audience: "consumer",
+        outlier_flags: ["agentic_darwin_verified"], verified_by_agent_event_id: "00000000-0000-4000-8000-000000000801",
+        fee_name: "Overdraft fee", amount: 35, frequency: "per_item", source_document_id: 77,
+      }]);
+      if (fault && query.includes("consumer_fee_id") && query.includes("fv.fee_verified_id = ANY")) {
+        return Promise.reject(new Error("SECRET SQL source stack"));
+      }
+      return Promise.resolve([]);
+    });
+    const actual = await vi.importActual<typeof import("./hamilton/publish")>("./hamilton/publish");
+    let publication: Awaited<ReturnType<typeof actual.runHamiltonPublish>> | undefined;
+    runHamiltonPublishMock.mockImplementationOnce(async (options: Parameters<typeof actual.runHamiltonPublish>[0]) => {
+      publication = await actual.runHamiltonPublish(options);
+      return publication;
+    });
+    const result = await executeAgentRun(101);
+    expect(result).toMatchObject({ status: "completed", executedSteps: 1 });
+    expect(runHamiltonPublishMock).toHaveBeenCalledTimes(1);
+    expect(publication?.selectedVerifiedFees, "real publisher selected the controlled fee").toBe(1);
+    expect(publication?.publishedFees).toBe(fault ? 0 : 1);
+    const finished = txMock.mock.calls.filter(call =>
+      templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    expect(finished, "real finishAgenticStep saved one JSON receipt").toHaveLength(1);
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ published_fees: fault ? 0 : 1, evidence_deferred_verified_fees: fault ? 1 : 0,
+      publication_evidence_check: { protocol: "publish.evidence.v1", readState: fault ? "unavailable" : "available", deferred: fault ? 1 : 0 } });
+    if (fault) {
+      expect(detail.publication_evidence_check.unavailableChecks).toEqual(["business_schedule"]);
+      expect(String(finished[0].at(-2))).toContain("left pending because required publication evidence was unavailable");
+      expect(combinedTransactionSql()).not.toContain("INSERT INTO published_fee_records");
+      expect(combinedTransactionSql()).not.toContain("INSERT INTO pipeline_attempts");
+    }
+    expect(JSON.stringify(detail)).not.toContain("SECRET");
+    expect(combinedTransactionSql()).not.toContain("'step.failed'");
+  });
+
   it("reuses an active idempotent run instead of creating a duplicate", async () => {
     sqlMock
       .mockResolvedValueOnce([{ ...runRow, status: "running" }])

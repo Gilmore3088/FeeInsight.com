@@ -390,6 +390,34 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - A fee line the bank removed from a newer copy of its page comes down (Newer-copy
   check below).
 
+## Unavailable publication evidence (#1069)
+
+The three existing enabled prepublication gates (exact copies, shared sweep rules and page
+copies) distinguish an available no-match from an unavailable read. The same boundary covers
+prior live rows and document/listed-line evidence needed by a publication or supersession
+decision. Only required branch inputs gate that decision. Already-proved identical/older
+outcomes and positive independent refusals retain their existing meanings; off/shadow controls
+stay diagnostic.
+
+A candidate whose required evidence is unavailable stays pending: no insertion, supersession,
+fee rejection, negative lesson or settled publish.rules v3 fingerprint. Its ordinary next
+healthy run can decide the same input. This does not reopen historical settled tuples or
+change any rule version, switch, recovery or clearing authority. Shared historical consumers
+keep their existing healthy contracts and conservative fallbacks.
+
+The saved publish detail carries publication_evidence_check (publish.evidence.v1), finite
+check codes, affected/deferred counts and at most 20 sampled verified IDs. Raw exceptions,
+SQL, source text and stacks are not copied into that receipt. An unavailable read is not a
+zero-match complete validation; summary/narration distinguish pending evidence deferrals from
+known refusals. A completed run step can report incomplete evidence.
+With live copy candidates, the own document row and a URL accepted by the existing page-key
+parser are required; missing, blank or unparseable own URLs stay unavailable. This does not
+require timestamps or text for unrelated copies and does not change the historical collapse.
+This is a bounded publication-read receipt; it does not certify whole-pipeline validation,
+source fidelity, successfully returned fields outside required prospective branch inputs,
+or the completeness of the primary selector or other maintenance producers.
+The original #1069 weekly below-1% takedown target remains a separate measured acceptance.
+
 ## Publish step order
 
 Every `publish`, `publish-index` and `publish-context` step (`src/lib/agents/run-store.ts`)
@@ -969,7 +997,7 @@ its category (`businessScheduleFeesSql`; a footnote-only business fee stays the 
 needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
 the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
 is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
-when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+when a read failed; an enabled unavailable check leaves an otherwise publishable row pending). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
 on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
 take it down: <the sweep's reason>`). Set it back to false to count only.
 
@@ -979,7 +1007,7 @@ institution, category, variant and amount from other documents. A row the collap
 behind a live copy of the same page is counted in the step's `page_copy_check` and, while
 `PUBLISH_REFUSE_PAGE_COPIES_LIVE` is on, skipped (`Copy of the page of live fee #<kept id>`). A row
 the collapse would keep (the newer edition) publishes as before. The collapse stays the live
-re-check; this check takes nothing down, and a failed read refuses nothing. Dry count: 51 of the 53
+re-check; this check takes nothing down. An enabled unavailable read leaves the candidate pending. Dry count: 51 of the 53
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
 

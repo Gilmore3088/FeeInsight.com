@@ -15,6 +15,12 @@ Rosetta owns source text normalization.
   `institution_additional_sources`; it never sends the bank's main link back to Magellan,
   and its reads never change the bank's source profile or playbook.
 - Rosetta writes normalized text artifacts to `agent_source_texts`.
+- The shared `recordReadResult` boundary groups its artifact, document-kind, table and
+  main-source profile writes in a real transaction (root client) or savepoint (caller
+  transaction), even when normalized-witness capability is unavailable. Injected clients
+  must provide one of those primitives; there is no direct-write fallback. Releasing a
+  savepoint does not commit the outer transaction. Companion reads still leave the main
+  profile unchanged, and legacy reads still skip unavailable text columns.
 - After migration 67, the shared `recordReadResult` boundary retains exact future
   normalized bytes in private `agent_source_text_witnesses` (#2220). It inserts the
   current row if absent, locks it, retains a hash-valid incumbent, replaces the
@@ -209,10 +215,13 @@ Rosetta owns source text normalization.
     NULL. Pre-call budget denials are not unknown returned responses. Generic paid tools,
     no-return transport uncertainty and the existing incurred-spend predicate stay unchanged.
     The provider receipt and paid attempt remain outside the artifact write group
-    (#1050/#1048). With witness schema ready, main's shared transaction/savepoint makes
-    artifact/table/profile and witness writes atomic; without it, the legacy fallback
-    can still leave partial subwrites. A successfully committed usage receipt survives
-    a later artifact-write failure, but that error can prevent the normal paid
+    (#1050/#1048). The shared transaction/savepoint makes artifact/kind/table/profile
+    writes atomic regardless of witness capability; private witness writes join that
+    group only when capability is ready. Witness retention is still reported unavailable
+    otherwise. Owner/hash validation in the witness-ready path is unchanged; this does
+    not add ordinary-reader selected-state CAS or historical source authority. A
+    successfully committed usage receipt survives a later artifact-write failure, but
+    that error can prevent the normal paid
     result/attempt/summary. A first text-write failure retains earlier text and can leave
     later paid selection eligible. This policy adds no atomic provider/artifact/attempt
     settlement or global no-retry guarantee.

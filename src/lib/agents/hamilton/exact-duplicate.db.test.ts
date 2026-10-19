@@ -4,7 +4,14 @@ import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { collapsePublishedDuplicates } from "./duplicate-collapse";
-import { selectExactCopies, type CollapseLine } from "./exact-duplicate";
+import { selectExactCopies as readExactCopies, type CollapseLine } from "./exact-duplicate";
+
+async function selectExactCopies(...args: Parameters<typeof readExactCopies>) {
+  const read = await readExactCopies(...args);
+  expect(read.state).toBe("available");
+  if (read.state !== "available") throw new Error("Required exact-copy SQL fixture unavailable");
+  return read.value;
+}
 
 const connection = process.env.E2E_DATABASE_URL;
 const audiences = ["consumer", "business", "both", "unknown"] as const;
