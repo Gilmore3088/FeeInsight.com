@@ -107,6 +107,37 @@ describe("runtime-ddl-kill", () => {
     expect(output).toContain("src/app/research/page.tsx");
   });
 
+  it.each([
+    "aLtEr TaBlE t ADD COLUMN a int",
+    "DROP INDEX idx_t",
+    "CREATE TEMPORARY TABLE t (a int)",
+    "CREATE OR REPLACE VIEW v AS SELECT 1",
+    "CREATE MATERIALIZED VIEW v AS SELECT 1",
+    "CREATE FUNCTION f() RETURNS int AS 1",
+  ])("rejects runtime schema writes with portable identifier boundaries: %s", (ddl) => {
+    const { status, output } = ddlRepo({ "src/lib/runtime.ts": `await sql\`${ddl}\`;\n` });
+    expect(status, output).toBe(1);
+    expect(output).toContain("src/lib/runtime.ts");
+  });
+
+  it("recognizes statement boundaries at the start and end of a line", () => {
+    const { status, output } = ddlRepo({ "src/lib/runtime.ts": "CREATE TABLE\n" });
+    expect(status, output).toBe(1);
+    expect(output).toContain("src/lib/runtime.ts");
+  });
+
+  it("does not interpret identifier prefixes or suffixes as SQL statements", () => {
+    const { status, output } = ddlRepo({
+      "src/lib/runtime.ts": [
+        'export const a = "recreate table";',
+        'export const b = "_CREATE TABLE";',
+        'export const c = "CREATE TABLE_ROWS";',
+        'export const d = "create indexed";',
+      ].join("\n"),
+    });
+    expect(status, output).toBe(0);
+  });
+
   it("passes tests that build throwaway tables and comments that name DDL", () => {
     const { status, output } = ddlRepo({
       "src/lib/news.db.test.ts": "await sql`CREATE TEMP TABLE t (a int)`;\n",
