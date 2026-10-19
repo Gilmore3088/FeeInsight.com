@@ -5,6 +5,7 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
+import { planHandRefiles } from "./taxonomy-fold";
 import {
   applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
   HAND_WAITING_REJECTIONS, handAudienceEvidence, handTakedownBatchSizes, JAMES_APPROVED_BATCHES, planHandAudienceFixes, planHandTakedowns,
@@ -225,9 +226,21 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 97256, lineage_ref: 103695, institution_id: 162, canonical_fee_key: "monthly_maintenance", fee_name: "Safe Start Checking Account Monthly service charge", amount: "1.00" },
   { fee_published_id: 137275, lineage_ref: 159774, institution_id: 6942, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "1.00" },
   { fee_published_id: 59691, lineage_ref: 51654, institution_id: 418, canonical_fee_key: "atm_non_network", fee_name: "Non-Penn Community Bank network ATM transactions", amount: "1.00" },
+  // #2018: James's 20-defect register, live on prod, read-only, Oct 19; 154181 and 144344 are the fees two of them repeat.
+  { fee_published_id: 154182, lineage_ref: 122264, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "per month with eStatements4 Paper statements available for an additional", amount: "3.00" },
+  // 154181 as the taxonomy fold leaves it: its hand re-file renames it earlier in the same publish.
+  { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "Paper statements", amount: "3.00" },
+  { fee_published_id: 154134, lineage_ref: 193235, institution_id: 7603, canonical_fee_key: "early_closure", fee_name: "Holiday Account Early Withdrawal", amount: "10.00" },
+  { fee_published_id: 152985, lineage_ref: 189585, institution_id: 4522, canonical_fee_key: "early_closure", fee_name: "Savings Accounts: Holiday Savings Account early withdrawal", amount: "10.00" },
+  { fee_published_id: 154075, lineage_ref: 193019, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "7.00" },
+  { fee_published_id: 154076, lineage_ref: 193020, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "10.00" },
+  { fee_published_id: 154101, lineage_ref: 193183, institution_id: 2675, canonical_fee_key: "bill_pay", fee_name: "Interac e-Transfer service fee (beyond included transactions)", amount: "1.50" },
+  { fee_published_id: 152916, lineage_ref: 46342, institution_id: 7756, canonical_fee_key: "check_image", fee_name: "Members enrolled in Mobile or Online Banking have unlimited access to check copies", amount: "2.00" },
+  { fee_published_id: 144344, lineage_ref: 174279, institution_id: 7756, canonical_fee_key: "check_image", fee_name: "Copy of Member Check", amount: "2.00" },
+  { fee_published_id: 152612, lineage_ref: 188765, institution_id: 54, canonical_fee_key: "atm_non_network", fee_name: "Other out-of-network ATMs", amount: "0.00" },
 ];
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
-const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691];
+const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691, 154182, 154134, 152985, 154075, 154076, 154101, 152916, 152612];
 
 // The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
 const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
@@ -369,6 +382,15 @@ describe("hand takedowns (James, Oct 16)", () => {
       [97256, "source_mismatch: #1946"],
       [137275, "source_mismatch: #1946"],
       [59691, "source_mismatch: #1946"],
+      // #2018: James's 20-defect register (Oct 19), the listed rows guard v74 cannot reach by name.
+      [154182, "duplicate of #154181 (#2018)"],
+      [154134, "source_mismatch: #2018"],
+      [152985, "source_mismatch: #2018"],
+      [154075, "source_mismatch: #2018"],
+      [154076, "source_mismatch: #2018"],
+      [154101, "source_mismatch: #2018"],
+      [152916, "duplicate of #144344 (#2018)"],
+      [152612, "source_mismatch: #2018"],
     ]);
     expect(CARD_PRODUCT_TAKEDOWN_LIVE).toBe(true);
     // A wrong read names its issue; a second read of one printed fee names the live copy it repeats too.
@@ -382,6 +404,26 @@ describe("hand takedowns (James, Oct 16)", () => {
     expect([...JAMES_APPROVED_BATCHES.keys()]).toEqual([1880]);
     expect(handTakedownBatchSizes().filter((batch) => !JAMES_APPROVED_BATCHES.has(batch.issue))[0]).toEqual({ issue: 1755, entries: 18 });
     expect(handTakedownBatchSizes().every((batch) => batch.entries <= HAND_TAKEDOWN_BATCH_LIMIT || JAMES_APPROVED_BATCHES.has(batch.issue))).toBe(true);
+  });
+
+  it("#2018: a repeat waits on the fee it repeats", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.issue === 2018);
+    expect(batch).toHaveLength(8);
+    const withoutKept = LIVE.filter((row) => ![154181, 144344].includes(Number(row.fee_published_id)));
+    const planned = planHandTakedowns(withoutKept, batch);
+    expect(planned.takenDown.map((item) => item.feePublishedId)).toEqual([154134, 152985, 154075, 154076, 154101, 152612]);
+    expect(planned.skipped.map((item) => item.feePublishedId)).toEqual([154182, 152916]);
+  });
+
+  it("#2018: 154182 comes down once the fold has renamed 154181, and not before", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 154182);
+    const before = { fee_published_id: 154181, fee_verified_id: 193642, institution_id: 2954, source_document_id: 37121, canonical_fee_key: "paper_statement", fee_name: "Optional: Yes Paper Statements available", amount: "3.00" };
+    const [move] = planHandRefiles([before]);
+    expect(move.refile.name).toBe("Paper statements");
+    const dup = LIVE.find((row) => Number(row.fee_published_id) === 154182)!;
+    const renamed = { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: move.refile.name, amount: "3.00" };
+    expect(planHandTakedowns([dup, renamed], batch).takenDown.map((item) => item.feePublishedId)).toEqual([154182]);
+    expect(planHandTakedowns([dup, { ...renamed, fee_name: before.fee_name }], batch).takenDown).toEqual([]);
   });
 
   it("takes a row down only while it still reads as listed", () => {
@@ -504,6 +546,14 @@ describe("hand takedowns (James, Oct 16)", () => {
         { feePublishedId: 97256, feeVerifiedId: 103695, reason: "source_mismatch: #1946" },
         { feePublishedId: 137275, feeVerifiedId: 159774, reason: "source_mismatch: #1946" },
         { feePublishedId: 59691, feeVerifiedId: 51654, reason: "source_mismatch: #1946" },
+        { feePublishedId: 154182, feeVerifiedId: 122264, reason: "duplicate of #154181 (#2018)" },
+        { feePublishedId: 154134, feeVerifiedId: 193235, reason: "source_mismatch: #2018" },
+        { feePublishedId: 152985, feeVerifiedId: 189585, reason: "source_mismatch: #2018" },
+        { feePublishedId: 154075, feeVerifiedId: 193019, reason: "source_mismatch: #2018" },
+        { feePublishedId: 154076, feeVerifiedId: 193020, reason: "source_mismatch: #2018" },
+        { feePublishedId: 154101, feeVerifiedId: 193183, reason: "source_mismatch: #2018" },
+        { feePublishedId: 152916, feeVerifiedId: 46342, reason: "duplicate of #144344 (#2018)" },
+        { feePublishedId: 152612, feeVerifiedId: 188765, reason: "source_mismatch: #2018" },
       ],
       skipped: [],
     });

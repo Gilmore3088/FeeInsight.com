@@ -750,6 +750,36 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 59691, institutionId: 418, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Non-Penn Community Bank network ATM transactions",
     reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
     evidence: "Penn Community Bank (doc 13627, text 1096): \"Non-Penn Community Bank network ATM transactions | $01\" among rows of \"$0\": $0 with footnote 1, not $1." },
+  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees the v74
+  // guard cannot reach by name, each confirmed against its stored text. 8 entries, under the
+  // fewer-than-20 rule; James is asked before the PR that lists them merges.
+  { feePublishedId: 154182, institutionId: 2954, canonicalFeeKey: "paper_statement", amount: 3, feeName: "per month with eStatements4 Paper statements available for an additional",
+    reason: "duplicate of #154181 (#2018)", issue: 2018, kind: "duplicate",
+    // The taxonomy fold (HAND_REFILES) renames 154181 earlier in the same publish, so this waits on its new name.
+    requiresLive: { feePublishedId: 154181, amount: 3, feeName: "Paper statements" },
+    evidence: "Lyon County State Bank (doc 22417, text 19093, mylcsb.com/personal/personal-checking): \"Yes Paper Statements available for $3 per month\", the same page and line as live 154181 (doc 37121), which is renamed and kept." },
+  { feePublishedId: 154134, institutionId: 7603, canonicalFeeKey: "early_closure", amount: 10, feeName: "Holiday Account Early Withdrawal",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",
+    evidence: "Charlotte Fire Department CU (doc 30581, text 28188): \"Holiday Account Early Withdrawal | $10.00 each\": a withdrawal from a holiday club account, not closing an account early." },
+  { feePublishedId: 152985, institutionId: 4522, canonicalFeeKey: "early_closure", amount: 10, feeName: "Savings Accounts: Holiday Savings Account early withdrawal",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",
+    evidence: "LAFCU (doc 37237, text 35348): \"Holiday Savings Account early withdrawal | Per withdrawal | $10 (fee waived for withdrawals made Nov. 1 to Dec. 25)\": a per-withdrawal club fee, not closing an account early." },
+  { feePublishedId: 154075, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 7, feeName: "Monthly fee",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "not_on_schedule",
+    evidence: "Natbank (doc 37789, text 35890) is nbc.ca/en/business/accounts.html, National Bank of Canada's Canadian business packages (\"Digital Package ... Monthly fee | $7\", Interac e-Transfer, ABM deposits), not Natbank's U.S. schedule." },
+  { feePublishedId: 154076, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "Monthly fee",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "not_on_schedule",
+    evidence: "Natbank (doc 37789, text 35890): a Canadian business package's monthly fee on National Bank of Canada's nbc.ca page, not Natbank's U.S. schedule." },
+  { feePublishedId: 154101, institutionId: 2675, canonicalFeeKey: "bill_pay", amount: 1.5, feeName: "Interac e-Transfer service fee (beyond included transactions)",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "not_on_schedule",
+    evidence: "Natbank (doc 37789, text 35890): an Interac e-Transfer fee (a Canadian payment network) on National Bank of Canada's nbc.ca business page, not Natbank's U.S. schedule." },
+  { feePublishedId: 152916, institutionId: 7756, canonicalFeeKey: "check_image", amount: 2, feeName: "Members enrolled in Mobile or Online Banking have unlimited access to check copies",
+    reason: "duplicate of #144344 (#2018)", issue: 2018, kind: "duplicate",
+    requiresLive: { feePublishedId: 144344, amount: 2, feeName: "Copy of Member Check" },
+    evidence: "Utilities Employees CU (doc 13722, text 1224): \"Copy of Member Check (mailed to member) Please Note: Members enrolled in Mobile or Online Banking have unlimited access to check copies. $2.00 per check\": the note became the name; the fee is already live as 144344 \"Copy of Member Check\" $2 (doc 34338)." },
+  { feePublishedId: 152612, institutionId: 54, canonicalFeeKey: "atm_non_network", amount: 0, feeName: "Other out-of-network ATMs",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",
+    evidence: "Associated Bank (doc 6978, text 981): \"Other out-of-network ATMs ....... No charge\" sits in the balance inquiry rows beside \"MoneyPass® surcharge-free network ATMs ... No charge\": a free balance inquiry, not a withdrawal price." },
 ];
 
 export interface LiveTakedownRow {
