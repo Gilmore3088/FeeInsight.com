@@ -302,6 +302,55 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     }
   }));
 
+  it.each(["normal", "held", "paid_review", "recorded", "zero"] as const)("keeps unmarked source uncertainty nonsettling before the %s ordinary negative path", async path => rollback(async tx => {
+    const name = "International Wire Transfer Fee";
+    const zeroText = `${name} | FREE`;
+    const source: Source = path === "zero" ? { sourceURL: "https://example.invalid/synthetic-international-zero-fees",
+      normalizedText: zeroText, normalizedTextSHA256: createHash("sha256").update(zeroText).digest("hex"),
+      sourceBytesSHA256: createHash("sha256").update("synthetic zero source bytes").digest("hex") } : html;
+    const f = await seed(tx, source);
+    const amount = path === "zero" ? 0 : 35;
+    const line = `${name} | ${path === "zero" ? "FREE" : "$35.00"}`;
+    const note = `Knox deterministic extraction from Rosetta artifact #${f.textId}. canonical_hint=wire_intl_outgoing; text_hash=${f.hash}; excerpt="${line}"`;
+    const [{ fee_raw_id: rawId }] = await tx`INSERT INTO raw_fee_observations
+      (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,
+       extraction_confidence,extraction_note,conditions,outlier_flags,fee_audience,fee_treatment)
+      VALUES (${f.institutionId},${f.documentId},${source.sourceURL},'knox',gen_random_uuid(),${name},${amount},'per_item',.95,
+      ${note},${note},'["needs_darwin_verification","canonical_hint:wire_intl_outgoing"]'::jsonb,'unknown','charged') RETURNING fee_raw_id`;
+    const held = await import("../darwin/release-held");
+    const review = await import("../darwin/release-review");
+    const { recordAttempt } = await import("../learning/attempts");
+    if (path !== "normal") {
+      const strategy = path === "paid_review" ? held.DARWIN_RELEASE_STRATEGY : path === "recorded" ? review.DARWIN_RELEASE_REVIEW_STRATEGY : darwin.DARWIN_VERIFY_STRATEGY;
+      await recordAttempt(tx, { institutionId: f.institutionId, stage: "verify", strategy: strategy.strategy, version: strategy.version,
+        fingerprint: `raw:${rawId}`, outcome: "ok", yieldCount: 0, costMicrousd: 0, runId: f.runId, foldIntoPlaybook: false,
+        detail: { decision: "needs_review", reason_code: path === "zero" ? "conditional_zero" : "peer_outlier",
+          held_reason: "peer_outlier", canonical_fee_key: "wire_intl_outgoing", source_line: line,
+          source_context: source.normalizedText, verdict: "review", passes: true, acted: false } });
+    }
+    const [before] = await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`;
+    const attempts = await tx`SELECT * FROM pipeline_attempts WHERE institution_id=${f.institutionId} ORDER BY id`;
+    const category = await import("../darwin/category-model");
+    const modelSpy = vi.spyOn(category, "loadCategoryModel").mockResolvedValue(category.trainCategoryModel([{ name, categoryKey: "wire_intl_outgoing", count: 20 }]));
+    const transport = await import("../paid-pass");
+    const paidSpy = vi.spyOn(transport, "paidModelCall").mockResolvedValue({ costMicrousd: 0,
+      message: { content: [{ type: "text", text: JSON.stringify({ verdicts: [{ id: Number(rawId), is_fee: false,
+        category_fits: false, amount_is_price: false, reason: "Synthetic accepted negative; no provider request" }] }) }] } } as never);
+    try {
+      const result = path === "normal" ? await darwin.runDarwinVerify({ db: tx, runId: f.runId, institutionId: f.institutionId })
+        : path === "held" ? await held.runDarwinReleaseHeld({ db: tx, runId: f.runId, institutionId: f.institutionId })
+          : path === "paid_review" ? await review.runDarwinReleaseReview({ db: tx, runId: f.runId, calls: 1, acts: false })
+            : path === "recorded" ? await review.releaseRecordedPasses(tx, { runId: f.runId, acts: true })
+              : await (await import("../darwin/conditional-zero-resolve")).runDarwinConditionalZeroResolve({ db: tx, runId: f.runId, institutionId: f.institutionId });
+      expect(result).toMatchObject(path === "normal" ? { deferredRawFees: 1, results: [] } : { deferred: 1 });
+      expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`)[0]).toEqual(before);
+      expect(await tx`SELECT * FROM pipeline_attempts WHERE institution_id=${f.institutionId} ORDER BY id`).toEqual(attempts);
+      expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${rawId}`).toHaveLength(0);
+      expect(await tx`SELECT id FROM pipeline_feedback WHERE institution_id=${f.institutionId}`).toHaveLength(0);
+      expect(paidSpy).toHaveBeenCalledTimes(path === "paid_review" ? 1 : 0);
+    } finally { paidSpy.mockRestore(); modelSpy.mockRestore(); }
+  }));
+
   it("resolves only an exact legacy artifact and fails closed on incomplete or mismatched source", async () => rollback(async tx => {
     const f = await seed(tx, html);
     const row = { ...sourceRow(f), normalized_text: undefined };

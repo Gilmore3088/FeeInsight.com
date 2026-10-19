@@ -1,6 +1,7 @@
 import { sourceOwnedWireScope, reviewInternationalDirection } from "@/lib/custom-report/own-wire-scope";
 import { INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "../knox/international-wire-eligibility";
 import { matchOriginalRawSource, type LockedSourceSnapshot } from "./locked-raw-source";
+import { VerificationAudienceDeferred, type VerificationAudienceAdmission } from "./verification-audience";
 
 type ActualRaw = Parameters<typeof matchOriginalRawSource>[0] & {
   fee_name: string;
@@ -47,4 +48,13 @@ export function internationalVerificationDecision(raw: ActualRaw, finalCategory:
     return { kind: "deferred", reason: "original_unavailable" };
   return reviewInternationalDirection(scope, finalCategory).kind === "admit" ? { kind: "ready" }
     : { kind: "deferred", reason: "own_direction_unproven" };
+}
+
+/** Same transient protocol as the shared admission; no ordinary attempt/lesson on uncertainty. */
+export function requireInternationalVerification(admission: VerificationAudienceAdmission,
+  finalCategory: string | null, existingRawResolvedCategory: string | null): void {
+  const decision = internationalVerificationDecision({ ...admission.row,
+    extraction_note: admission.sourceContext.kind === "bound" ? admission.sourceContext.currentRaw.extraction_note : null },
+  finalCategory ?? "", existingRawResolvedCategory, admission.sourceContext);
+  if (decision.kind === "deferred") throw new VerificationAudienceDeferred(`international_${decision.reason}`);
 }

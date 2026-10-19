@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { prepareVerificationAudience, VerificationAudienceDeferred } from "./verification-audience";
+import { requireInternationalVerification } from "./international-verification";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
@@ -34,7 +35,7 @@ import { nameHasCutShape } from "@/lib/fee-name-fragments";
 
 import { withinAmountEnvelope } from "./envelopes";
 import { loadReviewMisses } from "./verdict-score";
-import { loadSourceTexts, rawFeeFingerprint } from "./verify";
+import { loadSourceTexts, rawFeeFingerprint, resolvedRawCategory } from "./verify";
 
 type SqlTag = typeof sql;
 
@@ -879,6 +880,7 @@ export async function runDarwinReleaseReview(
           // free checks and any ordinary positive/negative/parse decision, never during the call.
           const admission = await prepareVerificationAudience(scope, selectedCandidate.row, textOf(selectedCandidate));
           const raw = admission.row as HeldFeeRow;
+          requireInternationalVerification(admission, raw.held_canonical_fee_key, resolvedRawCategory(admission.row));
           const effectiveRow = admission.audience ? { ...raw, fee_audience: admission.audience.feeAudience } : raw;
           const currentText = admission.sourceText;
           const currentLine = admission.ownClause === "none" ? selectedCandidate.sourceLine
@@ -1112,6 +1114,7 @@ export async function releaseRecordedPasses(
         const legacyText = selected.source_document_id == null ? null : texts.get(Number(selected.source_document_id)) ?? null;
         const admission = options.dryRun || !switchOn ? null : await prepareVerificationAudience(scope, selected, legacyText);
         const original = (admission?.row ?? selected) as HeldFeeRow;
+        if (admission) requireInternationalVerification(admission, original.held_canonical_fee_key, resolvedRawCategory(admission.row));
         const raw = admission?.audience ? { ...original, fee_audience: admission.audience.feeAudience } : original;
         const text = admission ? admission.sourceText : legacyText;
         const currentLine = !admission || admission.ownClause === "none" ? source_line

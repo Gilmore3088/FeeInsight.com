@@ -9,6 +9,7 @@ import {
   VerificationAudienceDeferred, type VerificationAudienceAdmission,
 } from "./verification-audience";
 import { tierPerkZero } from "./tier-perk";
+import { requireInternationalVerification } from "./international-verification";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -804,6 +805,11 @@ export function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "condit
   return VALID_CANONICAL_KEYS.has(hint) ? hint : null;
 }
 
+/** Existing refile behavior, shared with prospective checks on the actual current raw row. */
+export function resolvedRawCategory(row: RawFeeRow): string | null {
+  return refileFromLine(canonicalHintFrom(row), row.fee_name, row) ?? refileCategory(canonicalHintFrom(row), row.fee_name);
+}
+
 function stableUuid(value: string): string {
   const hex = createHash("sha256").update(value).digest("hex");
   const variant = ((Number.parseInt(hex.slice(16, 18), 16) & 0x3f) | 0x80)
@@ -1241,6 +1247,7 @@ async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
   const callerRaw = admitted ? { ...options.row, fee_audience: admitted.row.fee_audience, frequency: admitted.row.frequency } : options.row;
   if (admitted && options.row.frequency !== admitted.writeFrequency) throw new VerificationAudienceDeferred("admitted_frequency_changed");
   if (!admittedRawMatches(callerRaw, current.row)) throw new VerificationAudienceDeferred("admitted_raw_changed");
+  requireInternationalVerification(current, options.canonicalFeeKey, resolvedRawCategory(current.row));
   const row = admitted ? { ...current.row, frequency: admitted.writeFrequency ?? current.row.frequency } : current.row;
   const feeRawId = Number(row.fee_raw_id);
   const institutionId = Number(row.institution_id);
@@ -1645,8 +1652,7 @@ export async function runDarwinVerify(
   const peers = new PeerLevelCache(db);
   // A row Knox filed under a neighbouring category is checked under the one its own source line
   // (guard v62) or its name says.
-  const categoryOf = (row: RawFeeRow) =>
-    refileFromLine(canonicalHintFrom(row), row.fee_name, row) ?? refileCategory(canonicalHintFrom(row), row.fee_name);
+  const categoryOf = resolvedRawCategory;
   const hintedRows = rows.filter((row) => canonicalHintFrom(row) != null);
   const sourceCopies = await loadSourceCopies(
     db,
@@ -1671,6 +1677,7 @@ export async function runDarwinVerify(
         const rowSourceTexts = new Map(sourceTexts);
         if (row.source_document_id != null && sourceText != null) rowSourceTexts.set(Number(row.source_document_id), sourceText);
         const canonicalFeeKey = categoryOf(row);
+        if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
         let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
         const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
         if (categoryHold) reasonCode = "category_lesson_pending";
