@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-catalog/series", () => ({ getAreaSeries: vi.fn() }));
+vi.mock("@/lib/data-catalog/ncua-call-series", () => ({ getNcuaCallSeries: vi.fn() }));
 vi.mock("@/lib/data-catalog/query-data", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/data-catalog/query-data")>()),
   queryData: vi.fn(),
@@ -9,6 +10,8 @@ vi.mock("@/lib/data-catalog/query-data", async (importOriginal) => ({
 import { PIPELINE_AGENT_NAMES } from "@/lib/data-catalog/catalog";
 import { queryData as runQueryData } from "@/lib/data-catalog/query-data";
 import { getAreaSeries } from "@/lib/data-catalog/series";
+import { getNcuaCallSeries } from "@/lib/data-catalog/ncua-call-series";
+import { NCUA_CALL_MEASURES } from "@/lib/data-catalog/ncua-call-measures";
 import { DATA_CATALOG_INSTRUCTION, LIST_DATA_MAX_SERIES, listDataCatalog, queryData } from "./tool-query-data";
 
 const series = (source: string, key: string, geo: string[] = ["national", "state", "county"]) => ({
@@ -25,9 +28,54 @@ const series = (source: string, key: string, geo: string[] = ["national", "state
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getNcuaCallSeries).mockResolvedValue([]);
 });
 
 describe("listData", () => {
+  it("lets a CU question discover real keys, period basis and caveats before querying them", async () => {
+    vi.mocked(getAreaSeries).mockResolvedValue([]);
+    vi.mocked(getNcuaCallSeries).mockResolvedValue(NCUA_CALL_MEASURES.map((m) => ({ ...m,
+      periodMin: "2023-03-31", periodMax: "2026-06-30", sourceUrl: "https://ncua.gov/quarter.zip", fetchedAt: "2026-10-19T00:00:00Z",
+    })));
+    const out = await listDataCatalog({ query: "credit union fee income", scope: "institution" });
+    const measure = out.call_measures?.find((m) => m.measure === "call:acct_131");
+    expect(measure).toMatchObject({ name: "NCUA: Fee income", source: "ncua-extras", item_code: "ACCT_131", publisher: expect.stringContaining("NCUA"), unit: "USD", period_basis: "ytd", period_min: "2023-03-31", period_max: "2026-06-30", caveat: expect.stringContaining("not a consumer fee price") });
+    expect(out.sources.find((s) => s.id === "ncua-extras")?.levels).toContain("peer_set");
+    expect(out.note).toContain("not coverage of every quarter");
+    const input = { measure: measure!.measure, scope: { kind: "institution" as const, id: "12" } };
+    vi.mocked(runQueryData).mockResolvedValue({ ok: true, measure: input.measure, scope: "institution", rows: [], unit: null, citation: { publisher: "NCUA", source_url: null, as_of: null, fetched_at: null } });
+    await queryData.execute!(input, { toolCallId: "discovered", messages: [] });
+    expect(runQueryData).toHaveBeenCalledWith(input);
+  });
+
+  it("returns only the curated loaded set and keeps county calls out of unsupported discovery", async () => {
+    vi.mocked(getAreaSeries).mockResolvedValue([]);
+    const m = NCUA_CALL_MEASURES[0];
+    vi.mocked(getNcuaCallSeries).mockResolvedValue([{ ...m, periodMin: "2024-03-31", periodMax: "2026-06-30", sourceUrl: null, fetchedAt: null }]);
+    const found = await listDataCatalog({ query: "NCUA" });
+    expect(found.call_measures?.filter((c) => c.measure.startsWith("call:acct_"))).toHaveLength(1);
+    expect(found.call_measures).toContainEqual(expect.objectContaining({ measure: "call:acct_452", unit: "count", period_basis: "point_in_time" }));
+    expect(JSON.stringify(found)).not.toContain("acct_is0048");
+    const county = await listDataCatalog({ query: "NCUA share drafts", scope: "county" });
+    expect(county.call_measures).toBeUndefined();
+    const unrelated = await listDataCatalog({ query: "unemployment" });
+    expect(unrelated.call_measures).toBeUndefined();
+    expect(getNcuaCallSeries).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes no comparable rows from unavailable discovery without hiding other sources", async () => {
+    vi.mocked(getAreaSeries).mockResolvedValue([series("bls-laus", "laus_unemployment_rate")] as never);
+    const empty = await listDataCatalog({ query: "NCUA unemployment" });
+    expect(empty.call_measures).toBeUndefined();
+    expect(empty.note).toContain("None of the six selected NCUA measures");
+    expect(empty.series).toHaveLength(1);
+    vi.mocked(getNcuaCallSeries).mockRejectedValueOnce(new Error("database unavailable"));
+    const failed = await listDataCatalog({ query: "NCUA unemployment" });
+    expect(failed.note).toContain("discovery is unavailable");
+    expect(failed.series).toHaveLength(1);
+    vi.mocked(getNcuaCallSeries).mockReturnValueOnce(new Promise(() => undefined));
+    expect((await listDataCatalog({ query: "NCUA" }, 5)).note).toContain("do not invent account keys");
+  });
   it("lists matching series from servable sources with publisher labels, and fee measures", async () => {
     vi.mocked(getAreaSeries).mockResolvedValue([
       series("bls-laus", "laus_unemployment_rate"),
