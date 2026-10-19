@@ -4,6 +4,7 @@ import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { readerFeeConditions } from "../fee-conditions";
+import { catalogContextStampSql, catalogRecordContext, type FeeRecordContext } from "./fee-record-context";
 
 export interface FeeCategorySummary {
   fee_category: string;
@@ -599,8 +600,8 @@ export async function getIndexRows(category: string): Promise<IndexRow[]> {
 
 /**
  * A listed row's facts: the fee as its schedule names it, its amount, how often it is charged,
- * the account it names, its conditions, the document and when it was read. The words of the
- * schedule that print its price come from `getFeeEvidence` (fee-evidence.ts).
+ * its recorded account and conditions, its document and recorded publication date. Stored
+ * price context comes from `getFeeEvidence`; a matching quote does not verify applicability.
  */
 export interface FeeRowDetail {
   fee_name: string | null;
@@ -610,16 +611,34 @@ export interface FeeRowDetail {
   conditions: string | null;
   document_url: string | null;
   read_on: string | null;
+  source_url: string | null;
+  fee_audience: string | null;
+  fee_treatment: string | null;
+  variant_type: string | null;
+  amount_kind: string | null;
+  rate_percent: number | null;
+  rate_min_amount: number | null;
+  rate_max_amount: number | null;
+  rate_basis: string | null;
+  context?: FeeRecordContext;
+  /** Conservative display-identity inputs only; not independently corroborated customer terms. */
+  waiver_text: string | null;
+  min_balance_to_avoid: number | null;
+  min_opening_deposit: number | null;
 }
 
 export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRowDetail>> {
   const clean = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))];
   if (clean.length === 0) return new Map();
   const rows = (await sql`
-    SELECT id, fee_name, amount, frequency, account_product_type, conditions,
-           COALESCE(document_url, source_url) AS document_url, created_at::date::text AS read_on
-      FROM published_fee_catalog
-     WHERE id = ANY(${clean}::bigint[])
+    SELECT ef.id, ef.institution_id, ef.fee_category, ef.fee_verified_id, ef.fee_raw_id, ef.source_document_id,
+           ef.fee_name, ef.amount, ef.frequency, ef.account_product_type, ef.conditions, ef.document_url, ef.source_url,
+           ef.fee_audience, ef.fee_treatment, ef.variant_type, ef.amount_kind,
+           ef.rate_percent, ef.rate_min_amount, ef.rate_max_amount, ef.rate_basis,
+           ef.waiver_text, ef.min_balance_to_avoid, ef.min_opening_deposit,
+           ef.created_at::date::text AS read_on, ${sql.unsafe(catalogContextStampSql("ef"))} AS context_stamp
+      FROM published_fee_catalog ef
+     WHERE ef.id = ANY(${clean}::bigint[])
   `) as Record<string, unknown>[];
   return new Map(
     rows.map((r) => [
@@ -630,8 +649,21 @@ export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRo
         frequency: r.frequency == null ? null : String(r.frequency),
         account: r.account_product_type == null ? null : String(r.account_product_type),
         conditions: readerFeeConditions(r.conditions == null ? null : String(r.conditions)),
-        document_url: r.document_url == null ? null : String(r.document_url),
+        document_url: r.document_url == null ? (r.source_url == null ? null : String(r.source_url)) : String(r.document_url),
         read_on: r.read_on == null ? null : String(r.read_on),
+        source_url: r.source_url == null ? null : String(r.source_url),
+        fee_audience: r.fee_audience == null ? null : String(r.fee_audience),
+        fee_treatment: r.fee_treatment == null ? null : String(r.fee_treatment),
+        variant_type: r.variant_type == null ? null : String(r.variant_type),
+        amount_kind: r.amount_kind == null ? null : String(r.amount_kind),
+        rate_percent: r.rate_percent == null ? null : Number(r.rate_percent),
+        rate_min_amount: r.rate_min_amount == null ? null : Number(r.rate_min_amount),
+        rate_max_amount: r.rate_max_amount == null ? null : Number(r.rate_max_amount),
+        rate_basis: r.rate_basis == null ? null : String(r.rate_basis),
+        context: catalogRecordContext(r),
+        waiver_text: r.waiver_text == null ? null : String(r.waiver_text),
+        min_balance_to_avoid: r.min_balance_to_avoid == null ? null : Number(r.min_balance_to_avoid),
+        min_opening_deposit: r.min_opening_deposit == null ? null : Number(r.min_opening_deposit),
       },
     ]),
   );

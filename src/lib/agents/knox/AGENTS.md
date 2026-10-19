@@ -1606,6 +1606,19 @@ only on what the free team could not read.
   budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
   stays eligible; any other call error records its outcome. Each attempt records its cost.
 
+## Printed generic account boundaries (#2269)
+
+Lineup source context stops at the nearer explicitly printed account kind, including generic
+Savings/Checking headings, and at the next account below the fee. The correction fallback uses
+that owner before an older heading. Display-name rejection alone cannot replace a specific
+retained product with a newly preferred generic kind. Fee captions, link/tagline labels and
+genuinely borrowed generic owners can still be corrected from the fee's own source context.
+The RNB tagline fixture now resolves to its printed Personal Savings owner rather than NULL.
+`LINEUP_CORRECT_STRATEGY` stays v2; no rules/epoch bump or settled-attempt replay is authorized.
+The dated published-monthly proposal frame omits stored opening deposits and held/unpublished
+rows, so it is not a full correction-population count or historical recovery authority.
+
+
 ## Boundaries
 
 - Do not write `verified_fee_observations` or `published_fee_records`.
