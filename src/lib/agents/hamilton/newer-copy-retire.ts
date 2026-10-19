@@ -419,13 +419,15 @@ export async function retireFeesDroppedFromNewerCopy(
              SET rolled_back_at = NULL,
                  rolled_back_by_batch_id = NULL,
                  rolled_back_reason = NULL
+            -- Bind closure timestamps as text: postgres.js timestamp-array serialization
+            -- otherwise passes them through Date and loses PostgreSQL microseconds.
             FROM unnest(${restoreIds}::bigint[], ${restoreFees.map((fee) => Number(fee.lineage_ref))}::bigint[],
-                        ${restoreFees.map((fee) => fee.rolled_back_at ?? null)}::timestamptz[],
+                        ${restoreFees.map((fee) => fee.rolled_back_at ?? null)}::text[],
                         ${restoreFees.map((fee) => fee.rolled_back_reason ?? null)}::text[])
-                 AS restore(fee_published_id, lineage_ref, rolled_back_at, rolled_back_reason)
+                 AS restore(fee_published_id, lineage_ref, rolled_back_at_text, rolled_back_reason)
            WHERE fp.fee_published_id = restore.fee_published_id
              AND fp.lineage_ref = restore.lineage_ref
-             AND fp.rolled_back_at = restore.rolled_back_at
+             AND fp.rolled_back_at = restore.rolled_back_at_text::timestamptz
              AND fp.rolled_back_reason = restore.rolled_back_reason
              AND fp.rolled_back_reason LIKE ${RETIRED}
              AND fp.quarantined_at IS NULL

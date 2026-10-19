@@ -614,8 +614,8 @@ committed after selection cannot reject unchanged lineage.
 
 A restore must still refer to the exact selected closure (reason and rollback timestamp),
 so an intervening newer-copy closure with the same lineage is never cleared. The selector
-reads that timestamp as text and the write compares it as `timestamptz`, preserving PostgreSQL
-microseconds that a JavaScript Date would truncate.
+reads and binds that timestamp as text; only the server casts it to `timestamptz`, preserving
+PostgreSQL microseconds that the driver's timestamp-array serializer would truncate through Date.
 
 The restore duplicate check compares the same audience, frequency, variant, amount kind,
 rate basis and rate values as well as the institution/category/name/amount (#2121). A live

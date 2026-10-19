@@ -24,8 +24,9 @@ counts reflect actual updates; attempt detail retains `planned_retired` and
 
 Restoration additionally requires the exact selected closure reason and timestamp, so a
 newer closure in the same `newer_copy_drops_fee:` family cannot be cleared using an old
-decision. Timestamps are selected as text and compared as `timestamptz` to preserve full
-PostgreSQL microsecond precision; a legitimate restore at `.123456` is a regression case.
+decision. Timestamps are selected and bound as text, then cast to `timestamptz` on the server
+to preserve full PostgreSQL microsecond precision; the driver's timestamp-array serializer
+would otherwise truncate through Date. A legitimate restore at `.123456` is a regression case.
 
 The restore duplicate guard also preserves audience, frequency, variant, amount kind,
 rate basis and rate value distinctions (#2121). A live consumer fee cannot suppress a
