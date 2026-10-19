@@ -253,13 +253,6 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
   };
 }
 
-export function isEmptyEconomicContext(ctx: StateEconomicContext): boolean {
-  return (
-    !ctx.state_unemployment && !ctx.state_payrolls && !ctx.national_unemployment && !ctx.fed_funds && !ctx.cpi_all_items &&
-    !ctx.cpi_bank_services && !ctx.beige_book && ctx.regulatory.length === 0
-  );
-}
-
 /** One national series' latest month and the month a year before it, without the chart history. */
 export interface NationalIndicator {
   series_id: string;

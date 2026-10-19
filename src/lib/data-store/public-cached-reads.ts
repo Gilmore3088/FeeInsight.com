@@ -2,19 +2,11 @@ import { cachedPublicRead } from "./public-read-cache";
 import { getCityMarket, getStateMarketCities } from "./city-market";
 import { getStateMarketFees } from "./state-markets";
 import { getDataFreshness, getPublicStats, getStats } from "./core";
-import { getDistrictMetrics } from "./dashboard";
-import { getCheapestAndMostExpensive, getFeeCategoryDetail, getIndexRows } from "./fees";
+import { getFeeCategoryDetail, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
 import { getDailyCapScope, getOverdraftComplaintThemes } from "./overdraft-policies";
 import { getComparableMarketIndex, getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
-import {
-  getCitiesInState,
-  getCityFeeAverages,
-  getDistrictStats,
-  getResearchCoverage,
-  getStateStats,
-  getStatesWithFeeData,
-} from "./geographic";
+import { getDistrictStats, getResearchCoverage, getStateStats } from "./geographic";
 import { getDataCoverageSummary, getMarketConcentration, getStateDemographics } from "./financial";
 import {
   getCharterFeeRevenueSummary,
@@ -23,12 +15,7 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
-import {
-  getNationalIndicators,
-  getStateEconomicContext,
-  isEmptyEconomicContext,
-  isEmptyNationalIndicators,
-} from "./economic-context";
+import { getNationalIndicators, isEmptyNationalIndicators } from "./economic-context";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
 import {
@@ -74,7 +61,6 @@ export const getOverdraftComplaintThemesCached = cachedPublicRead(
 export const getStatsCached = cachedPublicRead("collection-stats", getStats);
 // A failed read returns zeros; never cache those.
 export const getPublicStatsCached = cachedPublicRead("public-stats", getPublicStats, (s) => s.total_observations === 0);
-export const getDistrictMetricsCached = cachedPublicRead("district-metrics", getDistrictMetrics);
 export const getFeeCategoryDetailCached = cachedPublicRead(
   // v2: entries carry institution_points; older entries without them are not reused.
   "fee-category-detail-v2",
@@ -87,11 +73,6 @@ export const getIndexRowsCached = cachedPublicRead("index-rows-v2", getIndexRows
 export const getFeeEvidenceEntriesCached = cachedPublicRead("fee-evidence-v2", async (ids: number[]) => [
   ...(await getFeeEvidence(ids)).entries(),
 ]);
-export const getCheapestAndMostExpensiveCached = cachedPublicRead(
-  "cheapest-and-most-expensive",
-  getCheapestAndMostExpensive,
-  (extremes) => extremes.cheapest.length === 0 && extremes.mostExpensive.length === 0,
-);
 export const getNationalRateStatsCached = cachedPublicRead(
   "national-rate-stats",
   getNationalRateStats,
@@ -100,14 +81,11 @@ export const getNationalRateStatsCached = cachedPublicRead(
 export const getPeerIndexCached = cachedPublicRead("peer-index", getPeerIndex);
 export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats);
 export const getDistrictStatsCached = cachedPublicRead("district-stats", getDistrictStats);
-export const getStatesWithFeeDataCached = cachedPublicRead("states-with-fee-data", getStatesWithFeeData);
-export const getCitiesInStateCached = cachedPublicRead("cities-in-state", getCitiesInState);
 // v4: branch points carry their institution, fees carry account, conditions and source line, and every spelling of the city is read.
 export const getCityMarketCached = cachedPublicRead("city-market-v4", getCityMarket);
 // v3: cities carry the middle of their branch coordinates, for the state map, with the spellings of one city folded.
 export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v3", getStateMarketCities);
 export const getStateMarketFeesCached = cachedPublicRead("state-market-fees-v3", getStateMarketFees, (r) => r.length === 0);
-export const getCityFeeAveragesCached = cachedPublicRead("city-fee-averages", getCityFeeAverages);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
 export const getStateDemographicsCached = cachedPublicRead("state-demographics", getStateDemographics);
@@ -165,11 +143,6 @@ export const getDistrictFeeIndexesCached = cachedPublicRead(
  * (market-eligibility.ts). One entry per market (the U.S., each state, each district).
  */
 export const getComparableMarketIndexCached = cachedPublicRead("comparable-market-index-v1", getComparableMarketIndex);
-export const getStateEconomicContextCached = cachedPublicRead(
-  "state-economic-context",
-  getStateEconomicContext,
-  isEmptyEconomicContext,
-);
 /** The research hub's national indicator strip (BLS unemployment and CPI, Fed Board funds rate). */
 export const getNationalIndicatorsCached = cachedPublicRead(
   "national-indicators-v1",
