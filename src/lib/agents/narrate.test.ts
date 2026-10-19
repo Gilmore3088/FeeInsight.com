@@ -190,3 +190,20 @@ describe("Regulatory Wire notes stopped by a budget (#1149)", () => {
     expect(sentence).toBe("Wrote 0 Regulatory Wire research notes from 20 items; 0 unreadable, 0 failed. Stopped by a budget cap with 6 items waiting: Monthly cap agent:magellan: $150.02 used of $150.00; resets the 1st at 00:00 UTC.");
   });
 });
+
+
+describe("corrective source receipt narration", () => {
+  it("does not fill absent or malformed corrective counts with zero", () => {
+    for(const value of [undefined,null,-1,1.5,"2",false]) {
+      const sentence=narrateStepFinished("deming-regression",{schema_ready:true,corrective_source:{protocol:2,evaluated:value,caught:value,unavailable:{count:value}}});
+      expect(sentence).toContain("unknown evaluated, unknown matched; unavailable unknown");
+    }
+  });
+  it("does not turn unknown source evidence into a passing denominator", () => {
+    const sentence = narrateStepFinished("deming-regression", { schema_ready: true, promoted: 0, replayed: 0, caught: 0, regressions: 0,
+      corrective_source: { protocol: 2, evaluated: 0, caught: 0, unavailable: { count: null, atLeast: false } } });
+    expect(sentence).toContain("0 evaluated, 0 matched; unavailable unknown");
+    expect(sentence).toContain("Original extraction binding is unknown");
+    expect(sentence).not.toContain("100%");
+  });
+});

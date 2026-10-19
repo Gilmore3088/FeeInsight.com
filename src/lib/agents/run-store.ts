@@ -100,6 +100,7 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { persistCorrectiveArtifact } from "@/lib/agents/deming/corrective-source-store";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
@@ -2527,6 +2528,9 @@ async function executeAgenticStep(
     }
     case "deming-regression": {
       const result = await runDemingRegression({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const fixture = result.corrective && run.runKind !== "dry_run"
+        ? await persistCorrectiveArtifact(tx, run.id, step.id, result.corrective.artifact)
+        : { state: "not_stored", ciImport: "not_implemented" };
       return {
         status: "completed",
         summary: summarizeDemingRegression(result),
@@ -2545,6 +2549,11 @@ async function executeAgenticStep(
           retired: result.retired,
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
+          totals_scope: "historical_all_datasets",
+          corrective_source: result.corrective ? { protocol: 2, promoted: result.corrective.promoted, evaluated: result.corrective.evaluated,
+            caught: result.corrective.caught, activated: result.corrective.activated, regressions: result.corrective.regressions,
+            unavailable: result.corrective.unavailable, admission_limit_reached: result.corrective.admissionLimitReached,
+            replay_limit_reached: result.corrective.replayLimitReached, deferred: result.corrective.deferred, fixture } : null,
         },
       };
     }

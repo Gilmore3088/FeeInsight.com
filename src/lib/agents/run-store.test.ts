@@ -878,6 +878,34 @@ describe("agentic run store", () => {
     return { detail, message: String(finished[0].at(-2)) };
   }
 
+  it("saves corrective-source counts and an explicit artifact failure through the real finished-step INSERT", async () => {
+    const regression = await import("./deming/regression");
+    const source = await import("./deming/corrective-source-store");
+    const { fixtureArtifact } = await import("./deming/corrective-source");
+    const observed = { promoted: 1, admissionLimitReached: false, replayLimitReached: false, evaluated: 1, caught: 1, activated: 1, regressions: 0,
+      regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
+    const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
+      promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
+      activeTotal: 9, candidateTotal: 301, corrective: observed });
+    const persist = vi.spyOn(source, "persistCorrectiveArtifact").mockResolvedValue({ state: "unavailable", scope: "evaluated_this_run", complete: false,
+      bytes: 0, cases: 0, chunks: 0, digest: observed.artifact.digest, ciImport: "not_implemented" });
+    try {
+      getExecutionBackendMock.mockReturnValue("agentic_v1");
+      const steps = [{ ...queuedStepRows[0], step_key: "deming-regression", agent_name: "atlas", title: "Deming replay" }];
+      const run = { ...runRow, progress_total: 1 };
+      installSqlMocks({ finalRun: run, finalSteps: steps }); installTxMocks(steps, run);
+      expect(await executeAgentRun(101)).toMatchObject({ status: "completed", executedSteps: 1 });
+      expect(replay).toHaveBeenCalledTimes(1); expect(persist).toHaveBeenCalledWith(txMock,101,steps[0].id,observed.artifact);
+      const saved = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.finished'")); expect(saved).toHaveLength(1);
+      const detail = JSON.parse(String(saved[0].at(-1)));
+      expect(detail).toMatchObject({ replayed: 1, caught: 1, totals_scope: "historical_all_datasets", corrective_source: {
+        protocol: 2, evaluated: 1, caught: 1, unavailable: { count: null }, fixture: { state: "unavailable", ciImport: "not_implemented" } } });
+      expect(detail.corrective_source).not.toHaveProperty("artifact");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("unavailable unknown");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("CI fixture import remains unimplemented");
+    } finally { replay.mockRestore(); persist.mockRestore(); }
+  });
+
   const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
 
   it("saves bounded unresolved-admission receipts without source context and excludes deferred zeros from settled counts", async () => {
