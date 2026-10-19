@@ -189,7 +189,7 @@ export default async function ResearchHubPage() {
                   mapFees={mapFees}
                   initialFee={initialFee}
                   findings={districtLines}
-                  fallback={districtsFallback(initialFee)}
+                  fallback={mapFees.length > 0 ? districtsFallback(initialFee) : "Too few districts have enough published fees yet for a comparison."}
                   minInstitutions={STATE_FINDING_MIN_INSTITUTIONS}
                 />
                 <details className="group mt-3">
