@@ -272,8 +272,9 @@ export const V78_RECALL_PATTERNS: FeePattern[] = [
   { key: "check_cashing", pattern: /\bchecking cashing\b/i },
   { key: "wire_domestic_incoming", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\binbound wires?\b/i },
   { key: "wire_domestic_outgoing", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\boutbound wires?\b/i },
-  // v80: the bank's name may run to three words ("non-Beacon Bank ATMs").
-  { key: "atm_non_network", pattern: /\b[Nn][Oo][Nn][-\s]?[\w-]+(?:\s+[A-Z][\w&-]*){0,2}(?:\s+[Oo]wned)?(?:\s*\/\s*[Aa]ffiliated)?\s+(?:ATMs|[Mm]achines?)\b/ },
+  { key: "atm_non_network", pattern: /\bnon[-\s]?[\w-]+(?:\s+owned)?(?:\s*\/\s*affiliated)?\s+(?:ATMs|machines?)\b/i },
+  // v80: a bank's name of two or three capitalised words before "ATMs" ("non-Beacon Bank ATMs").
+  { key: "atm_non_network", pattern: /\b[Nn]on[-\s]?[\w-]+(?:\s+[A-Z][\w&-]*){1,2}\s+(?:ATMs|ATMS)\b/ },
   { key: "deposited_item_return", pattern: /\bdeposited items? returns\b/i },
   { key: "check_image", pattern: /\bimage cop(?:y|ies)\b/i },
   { key: "estatement_fee", pattern: /^\W*electronic statements?\W*$/i },

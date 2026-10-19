@@ -1789,6 +1789,8 @@ describe("v80 (#2032): rows named by the heading above them", () => {
   it("files another bank's ATMs named in more than one word", () => {
     expect(classifyFeeText("Direct S/C-Fee (non-Beacon Bank ATMs)")).toBe("atm_non_network");
     expect(classifyFeeText("non-cash vending machines")).not.toBe("atm_non_network");
+    expect(classifyFeeText("NON-BANK OWNED ATMS")).toBe("atm_non_network");
+    expect(classifyFeeText("Non-proprietary ATMS")).toBe("atm_non_network");
   });
 
   it("keeps box sizes and figure lines as they were", () => {
