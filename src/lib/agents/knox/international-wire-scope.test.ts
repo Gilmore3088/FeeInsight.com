@@ -205,4 +205,42 @@ describe("source-owned international wire scope, independent of price admission 
     const scope = sourceOwnedWireScope("International Wire Incoming | $35", "International Wire Incoming", 35);
     expect(reviewInternationalDirection(scope, "wire_domestic_incoming")).toMatchObject({ kind: "hold", reason: "category_mismatch" });
   });
+
+  it("recognizes the literal own outside-USA outgoing wire clause without residency inference", () => {
+    const name = "Outgoing Wire Transfer outside USA Consumer Customer";
+    expect(sourceOwnedWireScope(`${name} ..........$60.00 ea.`, name, 60)).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });
+    for (const label of ["Outgoing Wire Transfer for customers residing outside USA", "Outgoing Wire Transfer not outside USA", "Outgoing Wire Transfer outside USA unavailable"]) {
+      expect(reviewInternationalDirection(sourceOwnedWireScope(`${label} | $60`, label, 60), "wire_intl_outgoing").kind).not.toBe("admit");
+    }
+  });
+
+  it("retains only the exact adjacent same-row prefix on an already explicit own wire cell", () => {
+    const row = "Share Account Fees | Wire Transfer International (Outgoing) ................ $35.00 | The rate and fees appearing in the Schedule are accurate";
+    const name = "Share Account Fees: Wire Transfer International (Outgoing)";
+    expect(sourceOwnedWireScope(row, name, 35)).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });
+    expect(sourceOwnedWireScope("Share Account Fees\nWire Transfer International (Outgoing) | $35", name, 35).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope("Share Account Fees | Wire Transfer Domestic (Outgoing) | $35", name, 35).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope(`${row}\n${row}`, name, 35)).toMatchObject({ kind: "unresolved", reason: "ambiguous_owner" });
+  });
+
+  it("binds each already admitted own amount to its printed direction in a complete two-price pair", () => {
+    const text = "Wire Transfers – Foreign Incoming / Outgoing | $15 / $40";
+    for (const [name, amount, direction] of [["Wire Transfers – Foreign Incoming", 15, "incoming"], ["Wire Transfers – Foreign Outgoing", 40, "outgoing"]] as const) {
+      expect(sourceOwnedWireScope(text, name, amount)).toMatchObject({ kind: "owned", geography: "international", directions: [direction], ownText: text });
+    }
+    expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Incoming", 40).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Outgoing", 15).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Incoming / Outgoing", 15).kind).toBe("unresolved");
+  });
+
+  it.each([
+    "Wire Transfers – Foreign Incoming / Outgoing | $15 / $15",
+    "Wire Transfers – Foreign Incoming / Outgoing (Online/Manual) | $15 / $40",
+    "Wire Transfers – Foreign Incoming / Outgoing | $15 / $40 | $15 / $40",
+    "Wire Transfers – Foreign Incoming / Outgoing | $15 / $40 / $50",
+    "Wire Transfers – Foreign Incoming / Outgoing | $15 / $40 if eligible",
+    "Wire Transfers – Foreign Incoming / Outgoing | $15 / $40\nWire Transfers – Foreign Incoming / Outgoing | $15 / $40",
+  ])("declines ambiguous, repeated or tiered paired prices: %s", text => {
+    expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Incoming", 15).kind).toBe("unresolved");
+  });
 });

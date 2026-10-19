@@ -18,8 +18,9 @@ direction. The broad incoming guard preserves legacy paired-price support, so it
 a wrong supplied key. Prospective history preservation alone leaves old/new public prices
 mixed; changing a median or relabeling the older HTML $35 as incoming is not justified.
 
-**Current stage:** The factual source-scope helper and private extraction/common-writer
-eligibility checks are implemented; verifier and publisher integration remain pending.
+**Current stage:** The factual source-scope helper, private extraction/common-writer
+eligibility, final verification and prospective publication guards are implemented; final
+coverage classification and exact-head release gates remain pending.
 No epoch, selector or numeric matcher is changed. The helper binds a priced own cell/label or bounded
 literal heading and keeps geography/direction separate from price admission. Literal both
 directions or shared domestic/international scope requires explicit own wording. Repeated,
@@ -35,13 +36,33 @@ rows retain the existing trusted internal identity relation and check actual tex
 Only the exact still-unverified pending raw identity can become this hold; unrelated held
 and all judged histories keep their complete rows. No historical clean-up is claimed.
 
-Final verification and publication integration remain required. They must use the
-existing resolved category (the valid PDF incoming $35 starts with a domestic hint), actual
-current raw-owned source relations/digests and the shared doc/artifact/raw lock contract.
-The pending-row hold protocol must preserve judged histories. An independently justified
-nonsettling publication deferral must prevent the proven old-generic/new-explicit conflict;
-an operator hold cannot be assumed to precede automatic publication. Retained normalized
-witnesses do not gain fee authority. No provider activation or production mutation is made.
+Final verification uses the existing resolved category (the valid PDF incoming $35 starts
+with a domestic hint), fresh current raw-owned source facts and original-text binding under
+the shared doc/artifact/raw lock contract. Current raw names and private provenance route
+uncertainty even when selected and raw category hints are both stale nonwire keys. Affected
+unavailable or unproved source defers before ordinary negative settlement; ordinary domestic
+and unrelated International Money Order behavior stays unchanged. Judged histories stay intact.
+
+Prospective publication derives actual candidate/peer catalog lineage. It acquires the sorted
+source-document/artifact prefix, then published/verified/raw suffix, with NOWAIT, fresh state
+and membership checks inside a savepoint. Direction uncertainty or a market-comparable
+conflicting-price peer defers without a primary publish judgment. Unavailable original peer
+text does not erase that peer's existing public comparability. Normal run-store advisory
+serialization covers automatic publication; this is not serializable isolation for unrelated
+manual/external writers. Existing corrections and holds remain authoritative. Holding the old
+generic $35 makes the same pending proven $45 selectable on the next ordinary run, without
+an epoch bump. Retained normalized witnesses do not gain fee authority. No provider activation
+or production mutation is made.
+
+The factual parser preserves bounded literal directed cells, immediate label/price rows,
+dot-leader continuations, literal per-wire name suffixes and nearby wire/geography headings.
+An exact adjacent same-row prefix does not become a distant heading. Literal outgoing wire
+transfer `outside USA` is distinct from customer residency or negated wording. A complete
+two-direction/two-dollar pair binds each already admitted amount to its printed direction;
+equal-price, repeated, tiered or extra-column pairs remain unresolved. These are scope facts,
+not numeric admission. Missing direction, repeated ownership, multiple account/tier columns
+and component/total equations retain explicit finite uncertainty. The initial full-suite
+failures and exact 81-document old/new row packet are retained; no gate floor is lowered silently.
 
 **Lesson:** Literal price support, source direction and safe mixed-history publication are
 three separate facts. A source-scoped prospective guard must not invent a category or
@@ -52,6 +73,7 @@ and headings, named equal-price owners, literal both/shared scope, unknown/model
 direction, extra prices and domestic noninterference. Full normal PostgreSQL characterization
 retains the original one positive and three functional OLD-red assertions. Prospective fixtures
 now also carry the real source-byte hash and explicit consumer-companion stream; those fixture
-deltas do not retroactively alter the frozen baseline. The release gate still requires all common writers/final callers,
-real pending-versus-judged races, source-binding failures, all promoters and safe mixed-history
-publication under unchanged comparison policy.
+deltas do not retroactively alter the frozen baseline. Actual PostgreSQL controls cover all
+common writers/final callers, pending-versus-judged races, source-binding failures, all promoters
+and safe mixed-history publication under unchanged comparison policy. Final grammar changes
+must rerun those controls and pass the exact-head release gates.

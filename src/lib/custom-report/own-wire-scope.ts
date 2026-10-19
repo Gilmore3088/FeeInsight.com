@@ -22,6 +22,7 @@ const INTERNATIONAL = /\b(?:international|foreign|intl|int['’]?l|internacional
 const DOMESTIC = /\b(?:domestic|dom[eé]stic[oa]?|nacional)\b/i;
 const INCOMING = /\b(?:incoming|inbound|in\s+coming|receiv(?:ed|ing)|entrantes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-:]?\s*in\b|^\s*in\s*$/i;
 const OUTGOING = /\b(?:outgoing|outbound|out\s+going|send(?:ing)?|sent|salientes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-:]?\s*out\b|^\s*out\s*$/i;
+const OUTSIDE_USA_WIRE = /(?:^|[:|\n])\s*outgoing\s+wire\s+transfers?\s+outside\s+(?:the\s+)?USA\b/i;
 const MAX_ROW = 2_000;
 const WIRE_WORDS = /^(?:(?:international|foreign|intl|int['’]?l|domestic|incoming|outgoing|inbound|outbound|in|out|wires?|transfers?|fees?|charges?|and|or|each|per|item|on)\s*)+$/i;
 const clean = (text: string) => text.replace(/\*\*|__/g, "").replace(/^[•●▪‣*-]\s*/, "").replace(/\s+/g, " ").trim();
@@ -79,7 +80,8 @@ function labelKey(value: string): string {
 }
 
 function facts(own: string): { geography: WireGeography; directions: WireDirection[] } | null {
-  const intl = INTERNATIONAL.test(own), domestic = DOMESTIC.test(own);
+  const outsideUSA = OUTSIDE_USA_WIRE.test(own) && !/\b(?:not|no|unavailable|except|excluding)\b/i.test(own);
+  const intl = INTERNATIONAL.test(own) || outsideUSA, domestic = DOMESTIC.test(own);
   const incoming = INCOMING.test(own), outgoing = OUTGOING.test(own);
   // Both means literal common scope, never a merger of unrelated direction cells.
   if (intl && domestic && !/(?:domestic\s*(?:and|or|&|\/)\s*(?:international|foreign|intl)|(?:international|foreign|intl)\s*(?:and|or|&|\/)\s*domestic)/i.test(own)) return null;
@@ -133,6 +135,24 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
     if (!scope) { unsupported = true; continue; }
     found.push({ kind: "owned", ...scope, ownText: clause.ownText, sourceLine: clause.sourceLine, lineIndex: clause.lineIndex });
   }
+  // An exact two-direction/two-price physical cell owns its prices in printed order.
+  // This supplies scope only for the already admitted exact name and amount, never a read.
+  for (const { cells, sourceLine, lineIndex } of rows) {
+    if (cells.length !== 2 || /\n/.test(sourceLine)) continue;
+    const pair = cells[0].match(/^(.*?\b)(incoming|outgoing)\s*\/\s*(incoming|outgoing)\s*$/i);
+    const prices = cells[1].match(/^\$\s*(\d[\d,]*(?:\.\d{1,2})?)\s*\/\s*\$\s*(\d[\d,]*(?:\.\d{1,2})?)\s*$/);
+    if (!pair || !prices || pair[2].toLowerCase() === pair[3].toLowerCase()) continue;
+    const prefix = pair[1].trim();
+    if (!/\bwires?\b/i.test(prefix) || !INTERNATIONAL.test(prefix)
+      || DOMESTIC.test(prefix) || !WIRE_WORDS.test(prefix.replace(/[():/&–—-]/g, " ").replace(/\s+/g, " ").trim())) continue;
+    const amounts = prices.slice(1).map(value => Number(value.replace(/,/g, "")));
+    if (amounts.some(value => !Number.isFinite(value) || value <= 0) || amounts[0] === amounts[1]) continue;
+    for (let index = 0; index < 2; index++) {
+      const direction = pair[index + 2].toLowerCase() as WireDirection;
+      if (amounts[index] !== admittedAmount || labelKey(`${prefix} ${direction}`) !== key) continue;
+      found.push({ kind: "owned", geography: "international", directions: [direction], ownText: sourceLine, sourceLine, lineIndex });
+    }
+  }
   for (const { lineIndex, cells, sourceLine } of rows) {
     if (literalClauses.some(row => row.lineIndex === lineIndex)) continue;
     const heading = headingBefore(lines, simpleRows, lineIndex, admittedAmount === 0);
@@ -153,6 +173,13 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
       const after = clean(cell.slice(price.index! + price[0].length));
       const prefixes = heading ? [heading, heading.split("\n").reverse().join(" ")] : [];
       const aliases = [label, ...prefixes.map(prefix => `${prefix}: ${label}`)];
+      const preceding = cells[cellIndex - 1];
+      const ownFacts = facts(label);
+      if (label && preceding && preceding.length <= 80 && !/[$%]/.test(preceding)
+        && /^[\p{L}\p{N} &/'’():–—-]+$/u.test(preceding) && /\bwires?\b/i.test(label)
+        && ownFacts?.geography === "international" && ownFacts.directions.length === 1) {
+        aliases.push(`${preceding}: ${label}`);
+      }
       // Some existing readers name the noun printed immediately after this own price.
       if (/^per\s+wire\b/i.test(after)) aliases.push(...aliases.map(alias => `${alias} wire`));
       if (!aliases.some(alias => labelKey(alias) === key)) continue;
