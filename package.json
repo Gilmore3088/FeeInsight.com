@@ -16,7 +16,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.89",
     "@ai-sdk/react": "3.0.216",
-    "@anthropic-ai/sdk": "^0.80.0",
+    "@anthropic-ai/sdk": "0.91.1",
     "@aws-sdk/client-s3": "^3.1014.0",
     "@aws-sdk/s3-request-presigner": "^3.1025.0",
     "@react-pdf/renderer": "^4.5.1",
