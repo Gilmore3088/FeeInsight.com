@@ -87,7 +87,7 @@ describe("actual SDK through unchanged application factory, paid guard and accou
     if (guard === "automation") automation.mockRejectedValue(new EmergencyStopActiveError(
       { enabled: false, reason: "fixture pause", changedBy: "fixture", changedAt: "2026-10-19T00:00:00.000Z", revision: 1 }, "fixture"));
     if (guard === "circuit") circuit.mockResolvedValue({ createdAt: "2026-10-19T00:00:00.000Z", agentName: "knox", operation: "fixture" });
-    if (guard === "budget") budget.mockResolvedValue({ allowed: false, policyId: 7, policyKey: "agent:knox", reasonCode: "daily_cap", message: "fixture cap" });
+    if (guard === "budget") budget.mockResolvedValue({ allowed: false, policyId: 7, policyKey: "agent:knox", reasonCode: "budget_daily_exhausted", message: "fixture cap" });
     await expect(call()).rejects.toBeInstanceOf(guard === "automation" ? EmergencyStopActiveError
       : guard === "circuit" ? ProviderCircuitOpenError : ProviderBudgetBlockedError);
     expect(fetch).not.toHaveBeenCalled(); expect(inserts()).toHaveLength(1); expect(inserts()[0][5]).toBe("blocked");
