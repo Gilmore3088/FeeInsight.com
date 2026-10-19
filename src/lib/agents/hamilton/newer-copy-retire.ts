@@ -10,7 +10,7 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// Keep v1 pair fingerprints closed (#2117/#2118): identity/hold fixes apply only to
+// Keep v1 pair fingerprints closed (#2117/#2118/#2121): identity/hold fixes apply only to
 // pending pairs and future copies. Historical decisions are not automatically replayed;
 // Bayes documents this deliberate no-replay contract in VERSIONS_WITHOUT_REPLAY.
 export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 1 } as const;
@@ -375,7 +375,8 @@ export async function retireFeesDroppedFromNewerCopy(
   const change = live;
   const retiredFeeIds = new Set<number>();
   const restoredFeeIds = new Set<number>();
-  const restoreIds = live ? documents.flatMap((doc) => doc.restore.map((fee) => Number(fee.fee_published_id))) : [];
+  const restoreFees = live ? documents.flatMap((doc) => doc.restore) : [];
+  const restoreIds = restoreFees.map((fee) => Number(fee.fee_published_id));
   try {
     await inSavepoint(db, async (scope) => {
       if (change && result.retired.length > 0) {
@@ -414,7 +415,10 @@ export async function retireFeesDroppedFromNewerCopy(
              SET rolled_back_at = NULL,
                  rolled_back_by_batch_id = NULL,
                  rolled_back_reason = NULL
-           WHERE fp.fee_published_id = ANY(${restoreIds}::bigint[])
+            FROM unnest(${restoreIds}::bigint[], ${restoreFees.map((fee) => Number(fee.lineage_ref))}::bigint[])
+                 AS restore(fee_published_id, lineage_ref)
+           WHERE fp.fee_published_id = restore.fee_published_id
+             AND fp.lineage_ref = restore.lineage_ref
              AND fp.rolled_back_reason LIKE ${RETIRED}
              AND fp.quarantined_at IS NULL
              AND NOT EXISTS (
@@ -422,6 +426,14 @@ export async function retireFeesDroppedFromNewerCopy(
                 WHERE other.rolled_back_at IS NULL
                   AND other.institution_id = fp.institution_id
                   AND other.canonical_fee_key = fp.canonical_fee_key
+                  AND COALESCE(other.fee_audience, 'unknown') = COALESCE(fp.fee_audience, 'unknown')
+                  AND COALESCE(other.frequency, '') = COALESCE(fp.frequency, '')
+                  AND COALESCE(other.variant_type, '') = COALESCE(fp.variant_type, '')
+                  AND COALESCE(other.amount_kind, 'flat') = COALESCE(fp.amount_kind, 'flat')
+                  AND COALESCE(other.rate_basis, '') = COALESCE(fp.rate_basis, '')
+                  AND other.rate_percent IS NOT DISTINCT FROM fp.rate_percent
+                  AND other.rate_min_amount IS NOT DISTINCT FROM fp.rate_min_amount
+                  AND other.rate_max_amount IS NOT DISTINCT FROM fp.rate_max_amount
                   AND other.amount IS NOT DISTINCT FROM fp.amount
                   AND other.fee_name = fp.fee_name
              )

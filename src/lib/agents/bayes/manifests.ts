@@ -328,10 +328,10 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
   // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
   REFRESH_COPY_STRATEGY: "Refreshes matching-audience stale fees in place on normal publish steps. The audience safety restriction keeps v2 decisions closed; no historical correction or replay is queued.",
-  // #2117/#2118 deliberately retain v1 pair fingerprints. Tightening a positive witness can
+  // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
   // Previously settled pairs require a separately reviewed impact/official-source decision.
-  NEWER_COPY_STRATEGY: "Identity witnesses and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
+  NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live

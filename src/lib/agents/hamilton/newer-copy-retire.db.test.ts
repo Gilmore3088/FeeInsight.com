@@ -9,7 +9,7 @@ type Db = Parameters<typeof retireFeesDroppedFromNewerCopy>[0];
 const olderText = "Overdraft Fee | $32.00\nStop Payment | $30.00\nCoin Counting | $5.00";
 const newerText = "Overdraft Fee | $32.00\nStop Payment | $30.00\nPaper Statement | $5.00";
 
-describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#2117/#2118)", () => {
+describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#2117/#2118/#2121)", () => {
   let db: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
@@ -28,7 +28,8 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
       review_status text, outlier_flags jsonb)`;
     await db`CREATE TEMP TABLE published_fee_records (fee_published_id bigint PRIMARY KEY, lineage_ref bigint,
       institution_id bigint, canonical_fee_key text, fee_name text, amount numeric, fee_audience text,
-      frequency text, amount_kind text, rate_basis text, quarantined_at timestamptz, rolled_back_at timestamptz,
+      frequency text, amount_kind text, rate_basis text, rate_percent numeric, rate_min_amount numeric,
+      rate_max_amount numeric, variant_type text, quarantined_at timestamptz, rolled_back_at timestamptz,
       rolled_back_reason text, rolled_back_by_batch_id text)`;
     await db`CREATE TEMP TABLE pipeline_attempts (institution_id bigint, source_document_id bigint, stage text,
       strategy text, strategy_version int, input_fingerprint text, outcome text, yield_count int,
@@ -101,18 +102,37 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect((await verified()).review_status).toBe("verified");
   });
 
-  it.each(["audience", "frequency", "amount_kind", "rate_basis", "product", "institution"])(
+  it.each(["audience", "frequency", "amount_kind", "product", "institution"])(
     "does not borrow a same-name witness with a different %s", async (difference) => {
       await db`UPDATE raw_fee_observations SET fee_name = 'Coin Counting' WHERE fee_raw_id = 901`;
       if (difference === "audience") await db`UPDATE raw_fee_observations SET fee_audience = 'business' WHERE fee_raw_id = 901`;
       if (difference === "frequency") await db`UPDATE raw_fee_observations SET frequency = 'monthly' WHERE fee_raw_id = 901`;
-      if (difference === "amount_kind") await db`UPDATE raw_fee_observations SET amount_kind = 'percent' WHERE fee_raw_id = 901`;
-      if (difference === "rate_basis") await db`UPDATE raw_fee_observations SET rate_basis = 'transaction' WHERE fee_raw_id = 901`;
+      if (difference === "amount_kind") await db`UPDATE raw_fee_observations SET amount_kind = 'percent', amount = NULL WHERE fee_raw_id = 901`;
       if (difference === "product") await db`UPDATE raw_fee_observations SET product_name = 'Premium Checking' WHERE fee_raw_id = 901`;
       if (difference === "institution") await db`UPDATE raw_fee_observations SET institution_id = 43 WHERE fee_raw_id = 901`;
       expect((await run()).retired.map((fee) => Number(fee.fee_published_id))).toEqual([4]);
     },
   );
+
+  it("compares represented percentage bases without planning rate retirements", async () => {
+    await db`UPDATE published_fee_records SET amount = NULL, amount_kind = 'percent', rate_percent = 5,
+      rate_basis = 'balance' WHERE fee_published_id = 4`;
+    await db`UPDATE raw_fee_observations SET fee_name = 'Coin Counting', amount = NULL,
+      amount_kind = 'percent', rate_basis = 'transaction' WHERE fee_raw_id IN (4, 901)`;
+    let witnessed: boolean | undefined;
+    const observingDb = (async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
+      const result = await db(strings, ...values);
+      if (strings.join(" ").includes("WITH newer_rows AS MATERIALIZED")) {
+        witnessed = result.find((fee) => Number(fee.fee_published_id) === 4)?.newer_row_match;
+      }
+      return result;
+    }) as unknown as Db;
+    expect(await run(true, observingDb)).toMatchObject({ retired: [], restored: 0 });
+    expect(witnessed).toBe(false);
+    await db`UPDATE raw_fee_observations SET rate_basis = 'balance' WHERE fee_raw_id = 901`;
+    expect(await run(true, observingDb)).toMatchObject({ retired: [], restored: 0 });
+    expect(witnessed).toBe(true);
+  });
 
   it("does not treat unspecified audience or charging basis as a wildcard", async () => {
     await db`UPDATE raw_fee_observations SET fee_name = 'Coin Counting', fee_audience = NULL,
@@ -220,6 +240,57 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect(await verified()).toEqual({ review_status: "verified", outlier_flags: [] });
     expect((await attempt()).detail).toMatchObject({ planned_restored: 1, restored: 1 });
     expect(await db`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint = 'restored:4:9'`).toHaveLength(1);
+  });
+
+  it("does not restore changed lineage or alter either verified row after selection", async () => {
+    await db`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'newer_copy_drops_fee:#800' WHERE fee_published_id = 4`;
+    await db`UPDATE verified_fee_observations SET review_status = 'rejected', outlier_flags = '["newer_copy_drops_fee"]' WHERE fee_verified_id = 1004`;
+    await db`INSERT INTO verified_fee_observations VALUES (2004, 4, 'approved', '[]')`;
+    await db`UPDATE agent_source_texts SET normalized_text = ${olderText} WHERE id = 2`;
+    const changingDb = changeAfterSelection(() => db`UPDATE published_fee_records SET lineage_ref = 2004 WHERE fee_published_id = 4`);
+    expect(await run(false, changingDb)).toMatchObject({ retired: [], restored: 0 });
+    expect((await row()).rolled_back_reason).toBe("newer_copy_drops_fee:#800");
+    expect((await row()).lineage_ref).toBe("2004");
+    expect((await verified()).review_status).toBe("rejected");
+    expect((await verified(2004)).review_status).toBe("approved");
+    expect((await attempt()).detail).toMatchObject({ planned_restored: 1, restored: 0 });
+    expect(await db`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint = 'restored:4:9'`).toHaveLength(0);
+  });
+
+  it.each(["audience", "frequency", "variant", "missing_audience", "missing_frequency", "equivalent", "legacy_equivalent"])(
+    "distinguishes a %s sibling from a true live equivalent on restore", async (difference) => {
+    await db`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'newer_copy_drops_fee:#800',
+      fee_audience = 'business' WHERE fee_published_id = 4`;
+    await db`UPDATE verified_fee_observations SET review_status = 'rejected', outlier_flags = '["newer_copy_drops_fee"]' WHERE fee_verified_id = 1004`;
+    await db`UPDATE agent_source_texts SET normalized_text = ${olderText} WHERE id = 2`;
+    await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id, canonical_fee_key,
+      fee_name, amount, fee_audience, frequency, amount_kind)
+      VALUES (14, 1014, 42, 'coin_counting', 'Coin Counting', 5, 'consumer', 'per_item', 'flat')`;
+    if (difference !== "audience") await db`UPDATE published_fee_records SET fee_audience = 'consumer' WHERE fee_published_id = 4`;
+    if (difference === "frequency") await db`UPDATE published_fee_records SET frequency = 'monthly' WHERE fee_published_id = 14`;
+    if (difference === "variant") await db`UPDATE published_fee_records SET variant_type = 'premium' WHERE fee_published_id = 14`;
+    if (difference === "missing_audience") await db`UPDATE published_fee_records SET fee_audience = NULL WHERE fee_published_id = 4`;
+    if (difference === "missing_frequency") await db`UPDATE published_fee_records SET frequency = NULL WHERE fee_published_id = 4`;
+    if (difference === "legacy_equivalent") {
+      await db`UPDATE published_fee_records SET fee_audience = NULL, frequency = NULL, amount_kind = NULL WHERE fee_published_id = 4`;
+      await db`UPDATE published_fee_records SET fee_audience = 'unknown', frequency = NULL WHERE fee_published_id = 14`;
+    }
+    const equivalent = difference === "equivalent" || difference === "legacy_equivalent";
+    expect(await run()).toMatchObject({ retired: [], restored: equivalent ? 0 : 1 });
+    expect((await row()).rolled_back_at == null).toBe(!equivalent);
+    expect((await row(14)).rolled_back_at).toBeNull();
+    expect((await attempt()).detail).toMatchObject({ planned_restored: 1, restored: equivalent ? 0 : 1 });
+  });
+
+  it.each(["transaction", "balance"])("a live percent rate on %s does not block a flat-dollar restore", async (basis) => {
+    await db`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'newer_copy_drops_fee:#800' WHERE fee_published_id = 4`;
+    await db`UPDATE verified_fee_observations SET review_status = 'rejected', outlier_flags = '["newer_copy_drops_fee"]' WHERE fee_verified_id = 1004`;
+    await db`UPDATE agent_source_texts SET normalized_text = ${olderText} WHERE id = 2`;
+    await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id, canonical_fee_key,
+      fee_name, amount, fee_audience, frequency, amount_kind, rate_percent, rate_basis)
+      VALUES (14, 1014, 42, 'coin_counting', 'Coin Counting', NULL, 'consumer', 'per_item', 'percent', 5, ${basis})`;
+    expect(await run()).toMatchObject({ retired: [], restored: 1 });
+    expect((await row(14)).amount_kind).toBe("percent");
   });
 
   it("keeps an already-decided v1 pair closed", async () => {

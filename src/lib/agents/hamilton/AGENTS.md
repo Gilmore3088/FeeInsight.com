@@ -607,10 +607,17 @@ legacy values mean `unknown`), frequency, amount kind/rate basis, and available 
 scope (#2117). Price alone never identifies a fee; absent or incompatible witnesses follow
 the existing stored-source verdict and recognition gates. Quarantined rows are excluded from
 selection and planning, and retirement/restoration writes re-check the hold (#2118). A retirement
-also requires the selected lineage to remain unchanged. Only the publication rows returned by
+or restore also requires the selected lineage to remain unchanged. Only the publication rows returned by
 the guarded update can reject verified lineage; returned results, attempt counts and events
 describe actual changes, with planned counts retained separately in attempts. A hold or closure
 committed after selection cannot reject unchanged lineage.
+
+The restore duplicate check compares the same audience, frequency, variant, amount kind,
+rate basis and rate values as well as the institution/category/name/amount (#2121). A live
+consumer sibling cannot block a distinct business fee; unstated applicability is equal only
+to the same normalized unstated value, never a wildcard. An equivalent live twin still blocks
+restoration. Percentage fees have no dollar amount, so the existing planner does not select
+them for retirement or restoration; rate comparisons are defensive identity boundaries.
 
 These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
