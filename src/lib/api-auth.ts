@@ -79,9 +79,26 @@ export async function validateApiKey(
   // a team seat's key only while that person still holds a seat on the payer's workspace.
   const subscriberId = subscriberUserIdFromSlug(row.slug);
   if (subscriberId !== null) {
-    const users = await sql<{ subscription_status: string | null; past_due_since: string | null }[]>`
-      SELECT subscription_status, past_due_since FROM users WHERE id = ${subscriberId} LIMIT 1
+    const holderId = subscriberKeyUserId(row.name) ?? subscriberId;
+    const users = await sql<{
+      subscription_status: string | null; past_due_since: string | null;
+      payer_active: boolean | null; holder_active: boolean | null;
+    }[]>`
+      SELECT payer.subscription_status, payer.past_due_since,
+             payer.is_active AS payer_active, holder.is_active AS holder_active
+        FROM users payer
+        LEFT JOIN users holder ON holder.id = ${holderId}
+       WHERE payer.id = ${subscriberId} LIMIT 1
     `;
+    if (users[0]?.payer_active !== true || users[0]?.holder_active !== true) {
+      return {
+        valid: false,
+        organizationId: null,
+        tier: "free",
+        error: `This API key's account is unavailable. Contact ${CONTACT_EMAIL} for help with account access.`,
+        code: "invalid_api_key",
+      };
+    }
     if (!subscriberKeyAllowed(users[0] ?? null)) {
       return {
         valid: false,
@@ -91,8 +108,7 @@ export async function validateApiKey(
         code: "subscription_inactive",
       };
     }
-    const holderId = subscriberKeyUserId(row.name);
-    if (holderId !== null && holderId !== subscriberId && !(await seatStillCovered(holderId, subscriberId))) {
+    if (holderId !== subscriberId && !(await seatStillCovered(holderId, subscriberId))) {
       return {
         valid: false,
         organizationId: null,
