@@ -1,5 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkWireClausePrice } from "@/lib/custom-report/wire-clause-prices";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
@@ -223,6 +224,9 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
   if (!Number.isFinite(amount) || amount < 0 || amount > MAX_REASONABLE_FEE_AMOUNT) return "invalid_amount";
   if (namesALimit(feeName, mapped) || namesALimit(sourceLine.replace(/\$?\s*\d[\d,]*(?:\.\d+)?\s*$/, "").trim(), mapped)) return "limit_not_fee";
   const rounded = Math.round(amount * 100) / 100;
+  // A bounded own-direction refusal cannot be overridden by the broad quoted-line
+  // fallback below. This shares the free reader and live two-look authority (#2021).
+  if (checkWireClausePrice(text, feeName, rounded, mapped, ".")?.ok === false) return "not_in_text";
 
   const haystack = comparable(text);
   const lineGrounded = sourceLine.length >= 4 && haystack.includes(comparable(sourceLine)) && lineHasAmount(sourceLine, rounded);
