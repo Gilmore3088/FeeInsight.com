@@ -37,6 +37,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   let wrongFeeId = 0;
   let overdraftFeeId = 0;
   let nextRaw = 978200;
+  let rereadRunId: number;
 
   async function seedFee(name: string, key: string, amount: number, documentId: number): Promise<{ verifiedId: number; publishedId: number }> {
     const rawId = nextRaw++;
@@ -105,6 +106,11 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     db = raw as unknown as Db;
     pool = rawPool as unknown as Db;
     resetCorrectionsReadyCache();
+    // Other rollback-only suites can consume serial1 without retaining that run (#2294).
+    // Each simulated reread owns the real run referenced by its durable conflict receipt.
+    const [rereadRun] = await raw`INSERT INTO agent_runs (agent_name, run_kind, title, status)
+      VALUES ('hamilton', 'state_agent', 'H03 test reread', 'running') RETURNING id`;
+    rereadRunId = Number(rereadRun.id);
     // Re-runnable on a local database: remove this test's own rows (and only those) first.
     await raw`DELETE FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
     await raw`DELETE FROM published_fee_corrections WHERE institution_id = ${INST}`;
@@ -193,7 +199,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   it("should_not_republish_the_corrected_away_value_when_the_old_source_is_read_again", async () => {
     for (const amount of [25, 28]) {
       const blocked: unknown[] = [];
-      const published = await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-reread", row: await reread(amount, DOC_OLD), onCorrected: (block) => blocked.push(block) });
+      const published = await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-reread", row: await reread(amount, DOC_OLD), onCorrected: (block) => blocked.push(block) });
       expect(published).toBeNull();
       expect(blocked[0]).toMatchObject({ kind: "protected", feeChainId: wrongFeeId });
     }
@@ -205,12 +211,13 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   it("should_queue_a_newer_source_that_disagrees_once_without_publishing_it", async () => {
     const row = await reread(32, DOC_NEW);
     const blocked: Array<{ kind: string }> = [];
-    expect(await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-new", row, onCorrected: (block) => blocked.push(block) })).toBeNull();
+    expect(await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-new", row, onCorrected: (block) => blocked.push(block) })).toBeNull();
     expect(blocked[0].kind).toBe("conflict");
-    expect(await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-new", row })).toBeNull();
-    const conflicts = await raw`SELECT status, amount, source_document_id FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
+    expect(await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-new", row })).toBeNull();
+    const conflicts = await raw`SELECT status, amount, source_document_id, agent_run_id FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].status).toBe("open");
+    expect(Number(conflicts[0].agent_run_id)).toBe(rereadRunId);
     expect(Number(conflicts[0].source_document_id)).toBe(DOC_NEW);
     expect((await liveStopPayment()).map((row) => Number(row.amount))).toEqual([35]);
     const listed = await getInstitutionCorrections(db, INST);
@@ -293,7 +300,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   it("should_dismiss_a_conflict_with_a_reason_admin_only", async () => {
     // The current version was read from the 2027 document; a later one that disagrees is a conflict.
     const row = await reread(31, DOC_NEWEST);
-    await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-new2", row });
+    await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-new2", row });
     const [open] = await raw`SELECT id FROM published_fee_correction_conflicts WHERE institution_id = ${INST} AND status = 'open'`;
     expect(open).toBeDefined();
     expect((await dismissCorrectionConflict(db, Number(open.id), "Misread", analyst)).ok).toBe(false);
