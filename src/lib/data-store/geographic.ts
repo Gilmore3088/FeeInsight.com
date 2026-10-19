@@ -77,16 +77,6 @@ export async function getDistrictStats(districtId: number): Promise<GeoStats> {
   };
 }
 
-export async function getInstitutionIdsWithFees(): Promise<number[]> {
-  const rows = await sql`
-    SELECT DISTINCT institution_id as id
-    FROM published_fee_catalog
-    WHERE review_status = 'approved'
-    ORDER BY institution_id
-  ` as { id: number }[];
-  return rows.map((r) => Number(r.id));
-}
-
 export interface InstitutionFeeFreshness {
   id: number;
   /** Most recent approved fee observation for the institution (ISO string). */

@@ -202,14 +202,6 @@ export interface NationalEconomicSummary {
   cpi_yoy_pct: RichIndicator | null;
 }
 
-export interface DistrictBeigeBookSummary {
-  district_number: number;
-  district_name: string;
-  summary: string;
-  themes: string[];
-  release_date: string;
-}
-
 const DISTRICT_NAMES: Record<number, string> = {
   1: "Boston",
   2: "New York",
@@ -333,62 +325,6 @@ export async function getNationalEconomicSummary(): Promise<NationalEconomicSumm
     unemployment_rate: unemployment,
     cpi_yoy_pct: cpiRows,
   };
-}
-
-export async function getDistrictBeigeBookSummaries(
-  limit = 12
-): Promise<DistrictBeigeBookSummary[]> {
-  try {
-    // Fetch the latest Beige Book summary section per district
-    const rows = await sql`
-      SELECT DISTINCT ON (bb.fed_district)
-        bb.fed_district,
-        bb.content_text,
-        bb.release_date
-      FROM fed_beige_book bb
-      WHERE bb.section_name = 'Summary of Economic Activity'
-        AND bb.fed_district IS NOT NULL
-      ORDER BY bb.fed_district, bb.release_code DESC
-      LIMIT ${limit}
-    ` as { fed_district: number; content_text: string; release_date: string | Date }[];
-
-    return rows.map((row) => {
-      const districtNum = Number(row.fed_district);
-      const districtName = DISTRICT_NAMES[districtNum] ?? `District ${districtNum}`;
-
-      // Truncate summary to ~300 chars
-      const fullText = row.content_text ?? "";
-      const summary = fullText.length > 300
-        ? fullText.slice(0, 297) + "..."
-        : fullText;
-
-      // Extract simple themes from first few sentences (keywords)
-      const themes: string[] = [];
-      const lc = fullText.toLowerCase();
-      if (lc.includes("employment") || lc.includes("labor")) themes.push("Labor Market");
-      if (lc.includes("inflation") || lc.includes("prices")) themes.push("Inflation");
-      if (lc.includes("consumer") || lc.includes("spending")) themes.push("Consumer Spending");
-      if (lc.includes("manufacturing") || lc.includes("industrial")) themes.push("Manufacturing");
-      if (lc.includes("real estate") || lc.includes("housing")) themes.push("Real Estate");
-      if (lc.includes("lending") || lc.includes("credit") || lc.includes("loan")) themes.push("Credit");
-      if (lc.includes("agriculture") || lc.includes("farm")) themes.push("Agriculture");
-      if (lc.includes("energy") || lc.includes("oil")) themes.push("Energy");
-
-      const releaseDate = row.release_date instanceof Date
-        ? row.release_date.toISOString().slice(0, 10)
-        : String(row.release_date);
-
-      return {
-        district_number: districtNum,
-        district_name: districtName,
-        summary,
-        themes: themes.slice(0, 4),
-        release_date: releaseDate,
-      };
-    });
-  } catch {
-    return [];
-  }
 }
 
 const DISTRICT_UNEMPLOYMENT_SERIES: Record<number, string> = {

@@ -14,12 +14,10 @@ vi.mock("./connection", () => {
 import {
   getNationalEconomicSummary,
   getDistrictEconomicSummary,
-  getDistrictBeigeBookSummaries,
   getBeigeBookThemes,
   getFredSummary,
   type DistrictEconomicSummary,
   type BeigeBookTheme,
-  type DistrictBeigeBookSummary,
   type FredSummary,
 } from "./fed";
 import { getSql } from "./connection";
@@ -299,74 +297,6 @@ describe("getBeigeBookThemes", () => {
     const result = await getBeigeBookThemes();
 
     expect(result).toEqual([]);
-  });
-});
-
-// ── getDistrictBeigeBookSummaries audit (BEIGE-01) ────────────────────────────
-
-describe("getDistrictBeigeBookSummaries audit", () => {
-  beforeEach(() => {
-    resetMock(getMock());
-  });
-
-  it("returns array with district_number, district_name, summary, themes, release_date keys", async () => {
-    getMock().mockResolvedValueOnce([
-      {
-        fed_district: 1,
-        content_text: "Economic activity in Boston expanded modestly. Employment remained stable. Consumer spending increased. Prices rose.",
-        release_date: "2026-01-15",
-      },
-    ]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(1);
-    const item = result[0] as DistrictBeigeBookSummary;
-    expect(item).toHaveProperty("district_number");
-    expect(item).toHaveProperty("district_name");
-    expect(item).toHaveProperty("summary");
-    expect(item).toHaveProperty("themes");
-    expect(item).toHaveProperty("release_date");
-  });
-
-  it("themes field is a string array from keyword-based extraction", async () => {
-    getMock().mockResolvedValueOnce([
-      {
-        fed_district: 3,
-        content_text: "Employment grew modestly. Inflation pressures eased. Consumer spending was flat.",
-        release_date: "2026-01-15",
-      },
-    ]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    const themes = result[0].themes;
-    expect(Array.isArray(themes)).toBe(true);
-    themes.forEach((t: string) => expect(typeof t).toBe("string"));
-  });
-
-  it("returns empty array when DB returns no rows", async () => {
-    getMock().mockResolvedValueOnce([]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    expect(result).toEqual([]);
-  });
-
-  it("maps district numbers to names correctly", async () => {
-    getMock().mockResolvedValueOnce([
-      {
-        fed_district: 7,
-        content_text: "Chicago district activity grew at a moderate pace.",
-        release_date: "2026-01-15",
-      },
-    ]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    expect(result[0].district_number).toBe(7);
-    expect(result[0].district_name).toBe("Chicago");
   });
 });
 

@@ -135,14 +135,6 @@ export function ruccUrls(vintage: string): string[] {
   ];
 }
 
-/** RUCC 1-3 are metro counties, 4-9 nonmetro; institution_sources.urban_rural records them as urban / rural. */
-export function ruccClass(code: number | null): "urban" | "rural" | null {
-  if (code === null || !Number.isInteger(code)) return null;
-  if (code >= 1 && code <= 3) return "urban";
-  if (code >= 4 && code <= 9) return "rural";
-  return null;
-}
-
 /**
  * The 2023 file is long (FIPS, State, County_Name, Attribute, Value with Attribute
  * RUCC_2023 / Description / Population_2020); older ones are wide (a RUCC_<year> column).
@@ -1099,7 +1091,6 @@ export async function fetchFhfaHpi(options: RegistryFetchOptions = {}): Promise<
  * UNBANKED / UNDERBANKED columns, and refuses a file that has neither.
  */
 export const FDIC_SURVEY_URL_ENV = "FDIC_HOUSEHOLD_SURVEY_CSV_URL";
-export const FDIC_SURVEY_YEARS_FIRST = 2009;
 
 const STATE_BY_NAME: Record<string, string> = {
   ...Object.fromEntries(Object.entries(STATE_NAMES).map(([code, full]) => [full.toUpperCase(), code])),
