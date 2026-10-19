@@ -14,8 +14,8 @@ Knox's candidates, not the stored rows.
 
 On prod (read-only, current copies, Oct 19):
 - 101 live combined-name overdraft fees sat at banks with no NSF fee (strict name match);
-- a loose match finds 408 live combined rows with no twin on their document (371 banks);
-- 218 of those are at 198 banks with no live fee of the other category at all.
+- a loose match finds 245 live combined rows with no twin on their document (225 banks);
+- 179 of those are at 167 banks with no live fee of the other category at all.
 
 The twin's name test also missed "Non-sufficient funds (NSF) or Overdraft (OD)" and "Overdraft/Return
 Item Fee".

@@ -105,7 +105,8 @@ export const KNOX_TWIN_READ_BELOW_VERSION = 82;
  * whether the line really is shared. Postgres regex: `\m`/`\M` are word boundaries.
  */
 export const COMBINED_NSF_OVERDRAFT_SQL =
-  String.raw`(nsf|sufficient funds|return(ed)? items?).*(overdraft|\mod\M)|(overdraft|\mod\M).*(nsf|sufficient funds|return(ed)? items?)`;
+  // `\mnsf`: "transfer" holds "nsf", and "Overdraft Transfer" is no shared line.
+  String.raw`(\mnsf|sufficient funds|return(ed)? items?).*(overdraft|\mod\M)|(overdraft|\mod\M).*(\mnsf|sufficient funds|return(ed)? items?)`;
 /**
  * v73 (#1100): the raw-row flag a read that recorded the account carries. A product stored without
  * it was written by an older Knox version, and a v73+ read may replace it; one with it is kept.
