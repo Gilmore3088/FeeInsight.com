@@ -1,7 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { productKey, productKeySql } from "@/lib/fee-product";
 import { sourceOwnedWireScope } from "@/lib/custom-report/own-wire-scope";
-import { matchOriginalRawSource, withLockedSourcePrefix, type LockedSourceSnapshot } from "../darwin/locked-raw-source";
+import { matchOriginalRawSource, withLockedSourcePrefix, type LockedSourceSnapshot, type UnboundSource } from "../darwin/locked-raw-source";
 import { internationalPublicationPolicy, potentialInternationalPublicationPeer, type InternationalPublicationFacts } from "./international-publication-policy";
 import type { VerifiedFeeRow } from "./publish";
 
@@ -34,8 +34,13 @@ interface Peer {
   raw_extraction_note: string | null;
   peer_state: string;
 }
+type SourceUnavailableReason = Extract<UnboundSource, { kind: "unavailable" }>["reason"];
+export type InternationalPublicationReason = "candidate_scope_unproven" | "live_scope_conflict" | "missing_candidate"
+  | "selected_changed" | "candidate_source_unavailable" | "candidate_changed" | "peer_membership_changed"
+  | "candidate_original_unavailable" | "identity_busy_or_changed" | "source_busy" | "source_changed"
+  | `source_unavailable:${SourceUnavailableReason}`;
 export interface InternationalPublicationDeferral {
-  reason: string;
+  reason: InternationalPublicationReason;
   conflictingPublishedIds: number[];
 }
 export type InternationalPublicationWrite<T> = { kind: "written"; value: T }
@@ -44,7 +49,8 @@ export type InternationalPublicationWrite<T> = { kind: "written"; value: T }
 class Deferred extends Error {
   constructor(readonly detail: InternationalPublicationDeferral) { super("International publication remains undecided"); }
 }
-const defer = (reason: string, ids: number[] = []): never => { throw new Deferred({ reason, conflictingPublishedIds: ids }); };
+export const deferInternationalPublication = (reason: InternationalPublicationReason, ids: number[] = []): never => { throw new Deferred({ reason, conflictingPublishedIds: ids }); };
+const defer = deferInternationalPublication;
 const positive = (value: unknown) => Number.isSafeInteger(Number(value)) && Number(value) > 0;
 const key = (row: Peer) => `${row.published_id}:${row.peer_state}`;
 const samePeers = (one: Peer[], two: Peer[]) => one.length === two.length && one.every((row, at) => key(row) === key(two[at]));
@@ -129,7 +135,7 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
   expectedVerifiedState?: string;
   /** Direct legacy callers still cannot carry a stale international category through an ordinary exit. */
   expectedCategory?: string;
-}, work: (tx: Db, actual: VerifiedFeeRow | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
+}, work: (tx: Db, actual: VerifiedFeeRow | null, current: VerifiedFeeRow) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
   const savepoint = (db as unknown as { savepoint?: (work: (tx: Db) => Promise<InternationalPublicationWrite<T>>) => Promise<InternationalPublicationWrite<T>> }).savepoint;
   if (!savepoint) {
     const begin = (db as unknown as { begin?: (work: (tx: Db) => Promise<InternationalPublicationWrite<T>>) => Promise<InternationalPublicationWrite<T>> }).begin;
@@ -145,14 +151,15 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
       if (options.expectedCategory != null && (options.expectedCategory.startsWith("wire_intl_")
         || before.canonical_fee_key.startsWith("wire_intl_")) && options.expectedCategory !== before.canonical_fee_key)
         return defer("selected_changed");
-      if (!before.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(tx, null) };
+      if (!before.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(tx, null, before) };
       if (!positive(before.source_document_id) || !positive(before.fee_raw_id)) return defer("candidate_source_unavailable");
       const peers = await peersOf(tx, before);
       const relevantPeers = peers.filter(row => potentialInternationalPublicationPeer(candidateFacts(before), peerFacts(row)));
       const refs = [{ documentId: Number(before.source_document_id), institutionId: Number(before.institution_id) },
         ...relevantPeers.map(row => ({ documentId: Number(row.public_document_id), institutionId: Number(row.institution_id) }))];
       const prefix = await withLockedSourcePrefix(tx, refs);
-      if (prefix.kind !== "bound") return defer(`source_${prefix.kind}${"reason" in prefix ? `:${prefix.reason}` : ""}`);
+      if (prefix.kind !== "bound") return defer(prefix.kind === "unavailable"
+        ? `source_unavailable:${prefix.reason}` : prefix.kind === "busy" ? "source_busy" : "source_changed");
       const publishedIds = peers.map(row => Number(row.published_id)).sort((a, b) => a - b);
       const verifiedIds = [...new Set([Number(before.fee_verified_id), ...peers.filter(row => positive(row.verified_id)).map(row => Number(row.verified_id))])].sort((a, b) => a - b);
       const rawIds = [...new Set([Number(before.fee_raw_id), ...peers.filter(row => positive(row.raw_id)).map(row => Number(row.raw_id))])].sort((a, b) => a - b);
@@ -171,7 +178,7 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
       const policy = internationalPublicationPolicy(candidateFacts(current, source),
       freshPeers.map(row => peerFacts(row, prefix.sources.get(Number(row.public_document_id)))));
       if (policy.kind === "deferred") return defer(policy.reason, policy.conflictingPublishedIds);
-      return { kind: "written", value: await work(tx, current) };
+      return { kind: "written", value: await work(tx, current, current) };
     });
   } catch (error) {
     if (error instanceof Deferred) return { kind: "deferred", detail: error.detail };

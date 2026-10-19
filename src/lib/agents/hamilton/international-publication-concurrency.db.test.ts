@@ -158,4 +158,48 @@ describe.skipIf(!connection)("International publication source/identity races (#
       });
     } finally { await cleanup(f); }
   });
+
+  it.each(["direct", "normal"] as const)("keeps the full verified CAS at the %s ordinary→international transition", async mode => {
+    const f = await seed();
+    let transitioned = false;
+    try {
+      await observer`UPDATE verified_fee_observations SET canonical_fee_key='wire_domestic_outgoing',fee_name='Wire Transfer Fee'
+        WHERE fee_verified_id=${f.candidate.verifiedId}`;
+      const [stale] = await observer`SELECT fv.*,fr.agent_event_id AS raw_agent_event_id,fr.source_document_id,fr.product_name
+        FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id
+        WHERE fv.fee_verified_id=${f.candidate.verifiedId}`;
+      await worker.begin(async scope => {
+        const tx = observing(scope as unknown as Db, async (text, run) => {
+          if (!transitioned && mode === "normal" && text.includes("FOR UPDATE OF fv")) {
+            transitioned = true;
+            await observer`UPDATE verified_fee_observations SET canonical_fee_key='wire_intl_outgoing'
+              WHERE fee_verified_id=${f.candidate.verifiedId}`;
+          }
+          const result = await run();
+          if (!transitioned && mode === "direct" && text.includes("AS verified_state")) {
+            transitioned = true;
+            await observer`UPDATE verified_fee_observations SET canonical_fee_key='wire_intl_outgoing'
+              WHERE fee_verified_id=${f.candidate.verifiedId}`;
+          }
+          return result;
+        });
+        const publication = await import("./publish");
+        if (mode === "direct") {
+          const deferred = vi.fn();
+          expect(await publication.insertPublishedFee(tx, { runId: f.runId, batchId: `agentic-run-${f.runId}`,
+            row: stale as unknown as import("./publish").VerifiedFeeRow, onInternationalDeferred: deferred })).toBeNull();
+          expect(deferred).toHaveBeenCalledWith(expect.objectContaining({ reason: "selected_changed" }));
+        } else {
+          const result = await publication.runHamiltonPublish({ db: tx, runId: f.runId, institutionId: f.institutionId,
+            minInstitutionFees: 1, limit: 100 });
+          expect(result.publishedFees).toBe(0);
+          expect(result.results.find(row => row.feeVerifiedId === f.candidate.verifiedId)?.identityDeferred).toBe(true);
+        }
+        expect(transitioned).toBe(true);
+      });
+      expect(await observer`SELECT fee_published_id FROM published_fee_records WHERE institution_id=${f.institutionId}`).toHaveLength(0);
+      expect(await observer`SELECT id FROM pipeline_attempts WHERE stage='publish' AND strategy='publish.rules'
+        AND input_fingerprint=${`verified:${f.candidate.verifiedId}`}`).toHaveLength(0);
+    } finally { await cleanup(f); }
+  });
 });

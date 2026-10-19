@@ -131,6 +131,12 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     frequency: "per_item", canonicalHint: "wire_intl_outgoing", confidence: .95,
     excerpt: "invented incoming standard applicability", waivable: false });
   const flag = "knox_eligibility:international_wire";
+  function adminScope(tx: Db): Db {
+    const admin = ((strings: TemplateStringsArray, ...values: unknown[]) => tx(strings, ...values as never[])) as unknown as Db;
+    Object.assign(admin, { unsafe: tx.unsafe.bind(tx), begin: (work: (scope: Db) => Promise<unknown>) =>
+      (tx as unknown as { savepoint: (work: (scope: Db) => Promise<unknown>) => Promise<unknown> }).savepoint(work) });
+    return admin;
+  }
 
   async function historicalVerified(tx: Db, f: Seed, name: string, amount: number, category: string) {
     const note = `Knox deterministic extraction from Rosetta artifact #${f.textId}. canonical_hint=${category}; text_hash=${f.hash}; calibrated_confidence=0.98; excerpt="${name} | $${amount}"`;
@@ -224,6 +230,57 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     expect(await withInternationalPublicationWrite(tx, { feeVerifiedId: fresh.verifiedId }, write)).toMatchObject({ kind: "deferred", detail: { reason: "live_scope_conflict" } });
     expect(write).not.toHaveBeenCalled();
     expect((await live(tx, f)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount))).toEqual([35]);
+  }));
+
+  it("preserves a normal operator hold through the guarded direct international insertion", async () => rollback(async tx => {
+    const f = await seed(tx, pdf);
+    await sourceBackedDepth(tx, f);
+    const old = await historicalVerified(tx, f, "International Wire Outgoing", 45, "wire_intl_outgoing");
+    const [{ fee_published_id: oldId }] = await tx`INSERT INTO published_fee_records
+      (lineage_ref,institution_id,source_url,published_by_adversarial_event_id,canonical_fee_key,fee_name,amount,frequency,amount_kind,fee_audience)
+      VALUES (${old.verifiedId},${f.institutionId},${pdf.sourceURL},gen_random_uuid(),'wire_intl_outgoing','International Wire Outgoing',45,'per_item','flat','unknown') RETURNING fee_published_id`;
+    const { holdPublishedFee } = await import("@/lib/fee-hold");
+    expect(await holdPublishedFee(adminScope(tx), Number(oldId), "Reviewed hold remains protected", { id: 1, name: "Synthetic operator" })).toMatchObject({ ok: true });
+    const [heldBefore] = await tx`SELECT * FROM published_fee_records WHERE fee_published_id=${oldId}`;
+    const fresh = await seed(tx, pdf, f.institutionId);
+    const v = await historicalVerified(tx, fresh, "International Wire Outgoing", 45, "wire_intl_outgoing");
+    const protectedBy = vi.fn();
+    expect(await publish.insertPublishedFee(tx, { runId: fresh.runId, batchId: `agentic-run-${fresh.runId}`,
+      row: { fee_verified_id: v.verifiedId, canonical_fee_key: "wire_intl_outgoing" } as import("../hamilton/publish").VerifiedFeeRow,
+      onHeld: protectedBy })).toBeNull();
+    expect(protectedBy).toHaveBeenCalledWith(Number(oldId));
+    expect((await tx`SELECT * FROM published_fee_records WHERE fee_published_id=${oldId}`)[0]).toEqual(heldBefore);
+    expect(await tx`SELECT fee_published_id FROM published_fee_records WHERE lineage_ref=${v.verifiedId}`).toHaveLength(0);
+  }));
+
+  it("preserves the actual current manual correction overlay and history at the source-locked direct seam", async () => rollback(async tx => {
+    const old = await seed(tx, fixture.historicalHtml);
+    await sourceBackedDepth(tx, old);
+    const v = await historicalVerified(tx, old, "International Wire Transfer Fee", 35, "wire_intl_outgoing");
+    const [{ fee_published_id: oldId }] = await tx`INSERT INTO published_fee_records
+      (lineage_ref,institution_id,source_url,published_by_adversarial_event_id,canonical_fee_key,fee_name,amount,frequency,amount_kind,fee_audience)
+      VALUES (${v.verifiedId},${old.institutionId},${old.source.sourceURL},gen_random_uuid(),'wire_intl_outgoing','International Wire Transfer Fee',35,'per_item','flat','unknown') RETURNING fee_published_id`;
+    const f = await seed(tx, pdf, old.institutionId, true);
+    const fresh = await historicalVerified(tx, f, "International Wire Outgoing", 45, "wire_intl_outgoing");
+    const { correctPublishedFee } = await import("@/lib/fee-corrections");
+    const correction = await correctPublishedFee(adminScope(tx), { feePublishedId: Number(oldId), expectedVersion: 0,
+      idempotencyKey: `international-correction-${f.runId}`, canonicalFeeKey: "wire_intl_outgoing",
+      feeName: "International Wire Outgoing", amount: 45, frequency: "per_item", conditions: "International Wire Outgoing $45",
+      sourceDocumentId: f.documentId, sourceExcerpt: "International Wire Outgoing $45", sourceLocation: "Physical page 2, outgoing wire row",
+      reason: "Synthetic reviewed correction to explicit own direction" }, { id: 1, name: "Synthetic admin", role: "admin" });
+    expect(correction).toMatchObject({ ok: true });
+    if (!correction.ok) throw new Error(`Owned correction fixture failed: ${JSON.stringify(correction)}`);
+    const before = await tx`SELECT * FROM published_fee_records WHERE institution_id=${f.institutionId} ORDER BY fee_published_id`;
+    const rawBefore = await tx`SELECT * FROM raw_fee_observations WHERE institution_id=${f.institutionId} ORDER BY fee_raw_id`;
+    const historyBefore = await tx`SELECT * FROM published_fee_corrections WHERE institution_id=${f.institutionId} ORDER BY id`;
+    const protectedBy = vi.fn();
+    expect(await publish.insertPublishedFee(tx, { runId: f.runId, batchId: `agentic-run-${f.runId}`,
+      row: { fee_verified_id: fresh.verifiedId, canonical_fee_key: "wire_intl_outgoing" } as import("../hamilton/publish").VerifiedFeeRow,
+      priorFeePublishedId: correction.feePublishedId, onCorrected: protectedBy })).toBeNull();
+    expect(protectedBy).toHaveBeenCalledWith(expect.objectContaining({ kind: "protected", feeChainId: Number(oldId) }));
+    expect(await tx`SELECT * FROM published_fee_records WHERE institution_id=${f.institutionId} ORDER BY fee_published_id`).toEqual(before);
+    expect(await tx`SELECT * FROM raw_fee_observations WHERE institution_id=${f.institutionId} ORDER BY fee_raw_id`).toEqual(rawBefore);
+    expect(await tx`SELECT * FROM published_fee_corrections WHERE institution_id=${f.institutionId} ORDER BY id`).toEqual(historyBefore);
   }));
 
   it("rederives private direction provenance at both common writers, not model flags or excerpts", async () => rollback(async tx => {
@@ -350,9 +407,9 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     const [{ fee_verified_id: verifiedId }] = await tx`INSERT INTO verified_fee_observations
       (fee_raw_id,institution_id,source_url,verified_by_agent_event_id,canonical_fee_key,fee_name,amount,frequency,extraction_confidence,review_status,fee_audience,fee_treatment)
       VALUES (${rawId},${old.institutionId},${old.source.sourceURL},gen_random_uuid(),'wire_intl_outgoing','International Wire Transfer Fee',35,'per_item',.95,'verified','unknown','charged') RETURNING fee_verified_id`;
-    await tx`INSERT INTO published_fee_records
+    const [{ fee_published_id: oldPublishedId }] = await tx`INSERT INTO published_fee_records
       (lineage_ref,institution_id,published_by_adversarial_event_id,canonical_fee_key,fee_name,amount,frequency,amount_kind,fee_audience,fee_treatment,published_at)
-      VALUES (${verifiedId},${old.institutionId},gen_random_uuid(),'wire_intl_outgoing','International Wire Transfer Fee',35,'per_item','flat','unknown','charged',NOW()-interval '1 day')`;
+      VALUES (${verifiedId},${old.institutionId},gen_random_uuid(),'wire_intl_outgoing','International Wire Transfer Fee',35,'per_item','flat','unknown','charged',NOW()-interval '1 day') RETURNING fee_published_id`;
     const [before] = await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`;
     expect((await live(tx, old)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount))).toEqual([35]);
     const f = await seed(tx, pdf, old.institutionId, true);
@@ -364,5 +421,22 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`)[0]).toEqual(before);
     expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE institution_id=${f.institutionId}
       AND canonical_fee_key='wire_intl_outgoing' AND amount=45`).toHaveLength(1);
+    const [newVerification] = await tx`SELECT * FROM verified_fee_observations WHERE institution_id=${f.institutionId}
+      AND canonical_fee_key='wire_intl_outgoing' AND amount=45`;
+    await fullPublish(tx, f);
+    expect((await live(tx, f)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount))).toEqual([35]);
+    expect(await tx`SELECT id FROM pipeline_attempts WHERE stage='publish' AND strategy='publish.rules'
+      AND input_fingerprint=${`verified:${newVerification.fee_verified_id}`}`).toHaveLength(0);
+    // The normal supported admin transaction becomes a nested real savepoint only for
+    // this rollback-owned fixture. Its public hold/ledger/index code runs unchanged.
+    const { holdPublishedFee } = await import("@/lib/fee-hold");
+    expect(await holdPublishedFee(adminScope(tx), Number(oldPublishedId), "Exact source direction remains unspecified", { id: 1, name: "Synthetic reviewed operator" }))
+      .toMatchObject({ ok: true });
+    await fullPublish(tx, f);
+    const afterHold = (await live(tx, f)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount));
+    expect(afterHold).toEqual([45]);
+    expect(institutionValue("wire_intl_outgoing", afterHold)).toBe(45);
+    expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`)[0]).toEqual(before);
+    expect((await tx`SELECT * FROM verified_fee_observations WHERE fee_verified_id=${newVerification.fee_verified_id}`)[0]).toEqual(newVerification);
   }));
 });
