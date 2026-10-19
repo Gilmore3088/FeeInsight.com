@@ -49,37 +49,55 @@ export function createReadBudget(totalMs: number, logPrefix: string, now: () => 
   const remaining = () => Math.max(0, endsAt - now());
   let fellBack = false;
   const abandoned = new WeakSet<Promise<unknown>>();
+  const pending = new Map<Promise<unknown>, string>();
 
-  function required<T>(operation: ReadOperation<T>, label: string): Promise<T> {
-    if (typeof operation === "function" && remaining() === 0)
-      return Promise.reject(new ReadDeadlineError(label, totalMs));
-    let read: Promise<T>;
-    try { read = typeof operation === "function" ? operation() : operation; }
-    catch (error) { return Promise.reject(error); }
-    // A read that settles after the deadline must not surface as an unhandled rejection.
-    let settled = false;
-    void read.then(() => { settled = true; }, () => { settled = true; });
-    const retain = () => {
-      if (settled || abandoned.has(read) || !onAbandoned) return;
-      abandoned.add(read);
-      try { onAbandoned(read, label); }
-      catch (error) { console.error(`${logPrefix} ${label} abandoned read retention failed:`, error); }
-    };
-    const deadlineFailed = (error: unknown): never => {
-      if (error instanceof ReadDeadlineError) retain();
+  function retain(read: Promise<unknown>, label: string): void {
+    if (!pending.has(read) || abandoned.has(read) || !onAbandoned) return;
+    abandoned.add(read);
+    try { onAbandoned(read, label); }
+    catch (error) { console.error(`${logPrefix} ${label} abandoned read retention failed:`, error); }
+  }
+
+  function run<T>(operation: ReadOperation<T>, label: string, required: boolean): Promise<T> {
+    const failed = (error: unknown): never => {
+      // A required rejection can end the render before any sibling's deadline fires.
+      // Run this in the rejection microtask, including synchronous factory failures:
+      // later entries in the same Promise.all array have then started and are tracked.
+      if (required) {
+        for (const [read, readLabel] of pending) retain(read, readLabel);
+      }
       throw error;
     };
+    if (typeof operation === "function" && remaining() === 0) {
+      return Promise.reject(new ReadDeadlineError(label, totalMs)).catch(failed);
+    }
+    let read: Promise<T>;
+    try { read = typeof operation === "function" ? operation() : operation; }
+    catch (error) { return Promise.reject(error).catch(failed); }
+    // A read that settles after the deadline must not surface as an unhandled rejection.
+    if (onAbandoned && !pending.has(read)) pending.set(read, label);
+    void read.then(() => { pending.delete(read); }, () => { pending.delete(read); });
+    const readFailed = (error: unknown): never => {
+      // An optional fallback keeps its siblings in use; retain only its own timed-out
+      // work. A required failure abandons all still-pending work in this budget.
+      if (!required && error instanceof ReadDeadlineError) retain(read, label);
+      return failed(error);
+    };
     const left = remaining();
-    if (left === 0) return Promise.reject(new ReadDeadlineError(label, totalMs)).catch(deadlineFailed);
+    if (left === 0) return Promise.reject(new ReadDeadlineError(label, totalMs)).catch(readFailed);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(new ReadDeadlineError(label, totalMs)), left);
     });
-    return Promise.race([read, deadline]).catch(deadlineFailed).finally(() => clearTimeout(timer));
+    return Promise.race([read, deadline]).catch(readFailed).finally(() => clearTimeout(timer));
+  }
+
+  function required<T>(read: ReadOperation<T>, label: string): Promise<T> {
+    return run(read, label, true);
   }
 
   function optional<T>(read: ReadOperation<T>, label: string, fallback: T): Promise<T> {
-    return required(read, label).catch((error: unknown) => {
+    return run(read, label, false).catch((error: unknown) => {
       console.error(`${logPrefix} ${label} failed:`, error);
       fellBack = true;
       return fallback;
