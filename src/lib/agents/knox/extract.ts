@@ -705,7 +705,7 @@ async function writeCandidate(
   const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(options.candidate);
   if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
   const ownExcerpt = options.candidate.ownedBullet || options.candidate.ownedPolicy
-    ? options.candidate.excerpt : options.candidate.ownUnit?.sourceLine
+    ? options.candidate.excerpt : options.candidate.ownCondition ?? options.candidate.ownUnit?.sourceLine
       ?? ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
@@ -713,7 +713,7 @@ async function writeCandidate(
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
     // Keep a referenced count cap in the lineage evidence, before excerptOf's
     // final price-unit text so downstream frequency cannot borrow its day.
-    ((options.candidate.ownedBullet || options.candidate.ownedPolicy || options.candidate.ownUnit) && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
+    ((options.candidate.ownedBullet || options.candidate.ownedPolicy || options.candidate.ownUnit || options.candidate.ownCondition) && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
     `excerpt="${ownExcerpt}"`;
   // The dedupe index is (document, lowercased fee name, amount, audience, line share), so an existing
@@ -827,7 +827,7 @@ async function writeCandidate(
        -- existing observation, including held/verified history, for explicit recovery.
        AND ${!owner}
        -- #2248: prospective unit evidence does not overwrite any historical raw identity.
-       AND ${!options.candidate.ownUnit}
+       AND ${!options.candidate.ownUnit && !options.candidate.ownCondition}
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND (
          -- A line held because the self-check could not trace it, now read and traced, is that fee.
@@ -992,7 +992,7 @@ export async function insertHeldCandidate(
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (held.ownedPolicy && held.linkedConditions ? `linked_conditions="${held.linkedConditions}"; ` : "") +
-    `excerpt="${held.ownedPolicy ? held.excerpt : held.ownUnit?.sourceLine ?? held.excerpt.slice(0, 180)}"`;
+    `excerpt="${held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine ?? held.excerpt.slice(0, 180)}"`;
   const write = async (scope: SqlTag): Promise<boolean> => {
     const inserted = await scope`
     INSERT INTO raw_fee_observations AS fr (
@@ -1022,7 +1022,7 @@ export async function insertHeldCandidate(
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
       'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
-      ${held.lineShare ?? ""}, ${held.ownedPolicy || held.ownUnit ? [held.ownedPolicy ? held.excerpt : held.ownUnit?.sourceLine, held.linkedConditions].filter(Boolean).join(" ") : null}
+      ${held.lineShare ?? ""}, ${held.ownedPolicy || held.ownUnit || held.ownCondition ? [held.ownedPolicy ? held.excerpt : held.ownCondition ?? held.ownUnit?.sourceLine, held.linkedConditions].filter(Boolean).join(" ") : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id

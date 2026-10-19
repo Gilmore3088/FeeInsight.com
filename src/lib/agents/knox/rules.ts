@@ -67,6 +67,8 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   ownedPolicy?: true;
   /** Bounded literal own-unit evidence; metadata never supplies price/category admission. */
   ownUnit?: OwnFeeUnit;
+  /** Complete exact own additive charge clause; source metadata, never admission authority. */
+  ownCondition?: string;
   /** Literal product/age eligibility not yet represented safely by benchmark selection. */
   eligibilityReview?: true;
   /** Bounded, explicitly referenced context; never read as the price's charging unit. */
@@ -80,6 +82,7 @@ export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   /** Eligibility holds retain their complete own-price policy and independent event key. */
   ownedPolicy?: true;
   ownUnit?: OwnFeeUnit;
+  ownCondition?: string;
   linkedConditions?: string;
   lineShare?: string;
   shape: HeldShape;

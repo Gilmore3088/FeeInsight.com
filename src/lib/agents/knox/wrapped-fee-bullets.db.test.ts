@@ -105,6 +105,9 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       const { readerFeeConditions } = await import("@/lib/fee-conditions");
       const unitRows = catalog.filter(row => expected.has(String(row.fee_name)));
       expect(unitRows).toHaveLength(7);
+      const keyRow = catalog.find(row => row.fee_name === "Replace Safe Deposit Box Key");
+      expect(keyRow).toMatchObject({ amount: 50, frequency: "per_item", fee_category: "safe_deposit_box" });
+      expect(readerFeeConditions(keyRow?.conditions)).toContain("$50.00 per key (Plus Locksmith Fee if unable to locate both keys)");
       for (const row of unitRows) {
         const [amount, frequency] = expected.get(String(row.fee_name))!;
         expect(row).toMatchObject({ amount, frequency });
@@ -126,7 +129,43 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       const { fillBlankFrequencies } = await import("../hamilton/frequency-fill");
       await fillBlankFrequencies(tx, { ...scoped, dryRun: false });
       await fillBlankFrequencies(tx, { ...scoped, dryRun: false });
-      expect(await tx`SELECT * FROM published_fee_catalog WHERE id=ANY(${unitRows.map(row => Number(row.id))}::bigint[]) ORDER BY id`).toEqual(unitRows);
+      const protectedRows = [...unitRows, keyRow!].sort((a, b) => Number(a.id) - Number(b.id));
+      expect(await tx`SELECT * FROM published_fee_catalog WHERE id=ANY(${protectedRows.map(row => Number(row.id))}::bigint[]) ORDER BY id`).toEqual(protectedRows);
+    });
+  }, 30_000);
+
+  it("#2283 does not rewrite historical raw conditions or release held rows using new additive context", async () => {
+    await rolledBack(async tx => {
+      const text = "Replace Safe Deposit Box Key | $50.00 per key (Plus Locksmith Fee if unable to locate both keys)";
+      const f = await seed(tx, text);
+      const { withOwnFeeUnit } = await import("@/lib/custom-report/own-fee-unit");
+      const candidate = withOwnFeeUnit({ feeName: "Replace Safe Deposit Box Key", amount: 50, canonicalHint: "safe_deposit_box",
+        frequency: "per_item", confidence: .95, excerpt: "Replace Safe Deposit Box Key | $50.00 per key", waivable: false }, text);
+      expect(candidate.ownCondition).toContain("Plus Locksmith Fee");
+      expect(candidate.ownUnit).toBeUndefined();
+      for (const flags of [[], ["needs_darwin_verification"], ["knox_review:unclassified"], ["knox_review:untraced"], ["superseded_by_reread"]]) {
+        await tx`DELETE FROM raw_fee_observations WHERE institution_id=${f.institutionId}`;
+        const [old] = await tx`INSERT INTO raw_fee_observations
+          (institution_id,source_document_id,fee_name,amount,frequency,conditions,extraction_note,outlier_flags,source,fee_audience,agent_event_id,extraction_confidence)
+          VALUES (${f.institutionId},${f.documentId},${candidate.feeName},50,NULL,'Retained historical condition',
+            ${`Knox held for review (untraced) from Rosetta artifact #${f.textId}. canonical_hint=safe_deposit_box; text_hash=${createHash("sha256").update(text).digest("hex")}; excerpt="${text}"`},
+            ${JSON.stringify(flags)}::jsonb,'knox','unknown',gen_random_uuid(),.95) RETURNING fee_raw_id`;
+        const [before] = await tx`SELECT to_jsonb(fr)::text AS row FROM raw_fee_observations fr WHERE fee_raw_id=${old.fee_raw_id}`;
+        expect(await extract.insertCandidate(tx, { runId: f.runId,
+          row: { document_text_id: f.textId, source_document_id: f.documentId, institution_id: f.institutionId,
+            source_url: f.sourceUrl, text_hash: createHash("sha256").update(text).digest("hex"), normalized_text: text }, candidate,
+        })).toBe(false);
+        expect((await tx`SELECT to_jsonb(fr)::text AS row FROM raw_fee_observations fr WHERE fee_raw_id=${old.fee_raw_id}`)[0]).toEqual(before);
+        const promoters = await import("./held-recheck");
+        if (flags.includes("knox_review:untraced")) expect((await promoters.recheckUntracedRows(tx, { institutionId: f.institutionId })).promoted).toBe(0);
+        if (flags.includes("superseded_by_reread")) {
+          expect((await promoters.recheckSupersededRows(tx, { institutionId: f.institutionId, source: "free" })).promoted).toBe(0);
+          expect((await promoters.refileSupersededRows(tx, { institutionId: f.institutionId })).refiled).toBe(0);
+        }
+        const [after] = await tx`SELECT frequency,conditions,outlier_flags FROM raw_fee_observations WHERE fee_raw_id=${old.fee_raw_id}`;
+        expect(after).toMatchObject({ frequency: null, conditions: "Retained historical condition" });
+        for (const flag of flags) expect(after.outlier_flags).toContain(flag);
+      }
     });
   }, 30_000);
 
@@ -181,6 +220,7 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       ["| Research fee (1/2-hour minimum charge) | $50.00 per 1/2 hour |", "Research fee (1/2-hour minimum charge)", 50, "account_research", "per_half_hour"],
       ["Photocopies $1 per page", "Photocopies", 1, "document_reproduction", "per_page"],
       ["Check Images $10 per statement", "Check Images", 10, "check_image", "per_statement"],
+      ["Replace Safe Deposit Box Key | $50.00 per key (Plus Locksmith Fee if unable to locate both keys)", "Replace Safe Deposit Box Key", 50, "safe_deposit_box", "per_item"],
     ] as const;
     for (const [source, feeName, amount, category, frequency] of cases) {
       await rolledBack(async tx => {
@@ -188,7 +228,7 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
         const f = await seed(tx, text);
         const accepted = groundPaidRow({
           fee_name: feeName, canonical_key: category, amount, source_line: source,
-          frequency: "monthly", conditions: "Unsupported model-supplied condition",
+          frequency: category === "safe_deposit_box" ? "per_item" : "monthly", conditions: "Unsupported model-supplied condition",
         }, text);
         expect(typeof accepted).not.toBe("string");
         if (typeof accepted === "string") return;
@@ -202,7 +242,7 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
           candidate: {
             feeName: accepted.feeName, amount: accepted.amount, frequency: accepted.frequency,
             canonicalHint: accepted.canonicalKey, confidence: .95, excerpt: accepted.sourceLine,
-            waivable: false, lineup: accepted.lineup, ownUnit: accepted.ownUnit,
+            waivable: false, lineup: accepted.lineup, ownUnit: accepted.ownUnit, ownCondition: accepted.ownCondition,
           },
           extraFlags: ["knox_paid_extraction"],
         })).toBe(true);

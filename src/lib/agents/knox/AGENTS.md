@@ -4,6 +4,13 @@ Knox owns conservative raw fee extraction.
 
 ## Literal own charging units (#2248, prospective raw lineage)
 
+The same unreleased v87 outcome also closes #2283: after admission, one exact bounded own
+label/price can retain a complete additive parenthetical such as a separately incurred
+locksmith fee. Source text supplies it, including a single lowercase wrapped continuation;
+model claims, extra prices, columns, incomplete or repeated conflicting occurrences do not.
+Unknown units such as per-key stay literal conditions, without a new supported unit code.
+This condition-only annotation has the same historical conflict/promoter protections as units.
+
 After the existing name, price and category admission checks, an exact own label/price pair
 can carry its literal hourly, page, document, image, statement, half-hour, quarter-hour or
 minute unit. The numeric amount is unchanged. The full own price clause and existing linked

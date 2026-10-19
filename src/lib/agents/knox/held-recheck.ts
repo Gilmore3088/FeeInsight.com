@@ -12,6 +12,7 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { ownFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { ownAdditiveCondition } from "@/lib/custom-report/own-additive-condition";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
 import { KNOX_PAID_FLAG } from "@/lib/agents/knox/paid-extract";
@@ -954,7 +955,8 @@ export async function fileHeldByName(
     const key = row.filed_key;
     const by = row.filed_by;
     const ownUnit = ownFeeUnit(heldExcerpt(row.conditions) ?? "", row.fee_name ?? "", Number(row.amount), key);
-    const hold = ownUnit ? "unit_recovery" : nameFileHold({ ...row, filed_by: by });
+    const ownCondition = ownAdditiveCondition(heldExcerpt(row.conditions) ?? "", row.fee_name ?? "", Number(row.amount));
+    const hold = ownUnit ? "unit_recovery" : ownCondition ? "condition_recovery" : nameFileHold({ ...row, filed_by: by });
     if (hold) {
       result.kept[hold] = (result.kept[hold] ?? 0) + 1;
       checkedIds.push(Number(row.fee_raw_id));
@@ -1127,7 +1129,7 @@ export async function recheckUntracedRows(
   let promoted = 0;
   for (const row of rows) {
     const read = tracedRead(row, reads.get(Number(row.document_text_id)) ?? []);
-    if (!read || read.ownUnit) {
+    if (!read || read.ownUnit || read.ownCondition) {
       stillHeldIds.push(Number(row.fee_raw_id));
       continue;
     }
@@ -1298,7 +1300,7 @@ export async function recheckSupersededRows(
   let notRead = 0;
   for (const row of rows) {
     const read = tracedRead(row, reads.get(Number(row.document_text_id)) ?? []);
-    if (!read || read.ownUnit) {
+    if (!read || read.ownUnit || read.ownCondition) {
       notRead += 1;
       markedIds.push(Number(row.fee_raw_id));
       continue;
@@ -1575,7 +1577,7 @@ export async function refileSupersededRows(
 
   const found = readable
     .map((row) => ({ row, read: refiledRead(row, reads.get(Number(row.document_text_id)) ?? []) }))
-    .filter((entry): entry is { row: typeof entry.row; read: ExtractedFeeCandidate } => entry.read !== null && !entry.read.ownUnit);
+    .filter((entry): entry is { row: typeof entry.row; read: ExtractedFeeCandidate } => entry.read !== null && !entry.read.ownUnit && !entry.read.ownCondition);
   result.notRead = readable.length - found.length;
 
   // A live fee of today's category at that price already stands for the fee (a live twin).
