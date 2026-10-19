@@ -838,7 +838,8 @@ async function writeCandidate(
        )
     RETURNING fee_raw_id,outlier_flags
   `;
-  if (inserted.length === 0 && lineup && !owner && !options.takenDownBy) {
+  if (inserted.length === 0 && lineup && !owner && !options.takenDownBy &&
+      !options.candidate.ownUnit && !options.candidate.ownCondition) {
     // The same fee read again from the same document: fill lineup fields an earlier read
     // left empty, within its audience. The raw identity includes audience: a business fee
     // with the same label and price must not take a consumer account's product or waiver.
