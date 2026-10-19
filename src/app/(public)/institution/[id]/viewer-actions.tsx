@@ -1,6 +1,5 @@
 "use server";
 
-import type { ReactNode } from "react";
 import { canAccessPremium } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
 import { getAlertSubscriptionForInstitution } from "@/lib/data-store/alerts";
@@ -13,7 +12,7 @@ import {
 import { getRegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import { createReadBudget } from "@/lib/read-deadline";
 import { buildFinancialSeries, computeGrowth, findOutliers, toPeerMedianPoints, toPeerRankRows } from "./financial-history";
-import { FinancialProfileSection } from "./financial-profile-section";
+import type { ProFinancialProfileData } from "./financial-profile-data";
 import { formatReportQuarter } from "./financial-units";
 import { PAGE_READ_BUDGET_MS } from "./profile-budget";
 
@@ -40,12 +39,12 @@ export async function loadAlertSubscription(
   return { signedIn: true, saved: subscription !== null, feeCategories: subscription?.fee_categories ?? null };
 }
 
-/** Pro only: the financial profile section, rendered on the server; null for everyone else. */
+/** Pro only: chart-ready data, with no client component references in the action response. */
 export async function loadProFinancialProfile(input: {
   institutionId: number;
   institutionName: string;
   charterLabel: string;
-}): Promise<ReactNode> {
+}): Promise<ProFinancialProfileData | null> {
   const { institutionId: instId } = input;
   if (!validId(instId)) return null;
   const user = await getCurrentUser().catch(() => null);
@@ -61,22 +60,17 @@ export async function loadProFinancialProfile(input: {
   const financialSeries = buildFinancialSeries(financialHistory);
   if (financialSeries.length === 0 && !regulatoryWatch) return null;
   const financialGrowth = computeGrowth(financialSeries);
-  return (
-    <FinancialProfileSection
-      isPro
-      points={financialSeries}
-      peers={toPeerMedianPoints(peerMedians)}
-      insights={{
-        growth: financialGrowth,
-        ranks: toPeerRankRows(peerPercentiles),
-        flags: findOutliers(financialSeries, financialGrowth, peerPercentiles),
-        peerCount: peerPercentiles?.peer_count ?? null,
-        peerQuarter: formatReportQuarter(peerPercentiles?.report_date),
-      }}
-      charterLabel={input.charterLabel}
-      regulatoryWatch={regulatoryWatch}
-      exportHref={`/api/v1/institutions?id=${instId}&view=benchmark&format=csv`}
-      institutionName={input.institutionName}
-    />
-  );
+  return {
+    institutionId: instId,
+    points: financialSeries,
+    peers: toPeerMedianPoints(peerMedians),
+    insights: {
+      growth: financialGrowth,
+      ranks: toPeerRankRows(peerPercentiles),
+      flags: findOutliers(financialSeries, financialGrowth, peerPercentiles),
+      peerCount: peerPercentiles?.peer_count ?? null,
+      peerQuarter: formatReportQuarter(peerPercentiles?.report_date),
+    },
+    regulatoryWatch,
+  };
 }
