@@ -15,3 +15,6 @@ in `src/brand/tokens/tokens.css`. The Overview drawer uses `[font-family:var(--f
 Fix (not done here, it touches every page): point `--font-sans` and `--font-mono` in `globals.css`
 at `var(--fi-font-sans)` and `var(--fi-font-mono)`, or give the `var()` calls fallbacks, and check
 the admin tables and Pro plan cards that use `font-mono` for a visible change.
+
+**Guard:** none yet. #2166 carries the fix and adds a check that fails when `globals.css` names a
+custom property nothing defines.
