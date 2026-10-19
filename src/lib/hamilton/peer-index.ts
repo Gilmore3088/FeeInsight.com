@@ -327,8 +327,9 @@ export async function resolveHamiltonPeerIndex(
   for (const [index, filters] of candidates.entries()) {
     const candidate = candidateIndexes[index];
     const entries = candidate?.entries ?? [];
-    // The same group every answer uses (#2096), not the first with enough usable categories.
-    if (candidate && anchorsPeerGroup(entries)) {
+    // The group rule every answer uses (#2096), plus the caller's usable-fee floor: a report still
+    // needs its three comparable fees.
+    if (candidate && anchorsPeerGroup(entries) && hasUsablePeerIndex(entries, minUsableCategories)) {
       return {
         entries,
         label: describePeerFilters(filters),

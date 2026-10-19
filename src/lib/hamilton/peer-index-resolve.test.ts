@@ -84,6 +84,15 @@ describe("resolveHamiltonPeerIndex", () => {
     expect(result.entries[0].median_amount).toBe(2);
   });
 
+  it("still needs the caller's usable fees: a report's three are not met by overdraft alone", async () => {
+    const overdraftOnly = [{ fee_category: "overdraft", median_amount: 30, institution_count: 9 }];
+    mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map((_, i) => (i === 0 ? overdraftOnly : usable(i + 1))));
+
+    const result = await resolveHamiltonPeerIndex({ selectedInstitution: institution, minUsableCategories: 3 });
+
+    expect(result.entries[0].median_amount).toBe(2);
+  });
+
   it("falls back to the cached national index when every candidate is too sparse", async () => {
     mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map(() => []));
     mocks.getNationalIndexCached.mockResolvedValue(usable(9));

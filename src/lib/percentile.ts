@@ -23,5 +23,6 @@ export function midRankPercentile(
     else if (p < value) below++;
   }
   const scale = 10 ** decimals;
-  return Math.round(((below + same / 2) / peers.length) * 100 * scale) / scale;
+  // Multiply before dividing, so an exact half (57.5) rounds up as the peer comparison API always has.
+  return Math.round((100 * (below + same / 2) * scale) / peers.length) / scale;
 }
