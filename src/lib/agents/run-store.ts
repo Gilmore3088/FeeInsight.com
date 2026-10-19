@@ -2,6 +2,13 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { getExecutionBackend } from "@/lib/execution-backend";
+import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, positiveId } from "./deming/live-source-audit";
+import { createLiveAuditDraw } from "@/lib/data-store/live-source-audit";
+import { runLiveAuditChunk } from "./deming/live-source-audit-run";
+import { runLiveSourceCapture } from "./magellan/live-audit-capture";
+import { expireLiveCaptureEpisodes } from "@/lib/data-store/live-source-capture";
+import { withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
+import { archiveLiveSourceAudit,finalizeDueLiveAudits } from "@/lib/data-store/live-source-audit-read";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
@@ -149,6 +156,7 @@ import {
   MAX_STEP_ATTEMPTS,
   PAUSE_EXEMPT_STEP_KEYS,
   pauseScopeForStep,
+  OPTIONAL_PAID_PASS_STEP_KEYS,
   PROVIDER_STEP_KEYS,
   STALE_RUNNING_STEP_MINUTES,
 } from "./types";
@@ -858,6 +866,8 @@ async function executeAgenticStep(
           lesson_refiles: extraction.lessonRefiles,
           takedown_lessons_loaded: extraction.takedownLessonsLoaded,
           takedown_holds: extraction.takedownHolds,
+          takedown_lessons_unknown: extraction.takedownLessonsUnknown ?? {},
+          takedown_guard_declines: extraction.takedownGuardDeclines ?? {},
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
@@ -2591,7 +2601,7 @@ async function executeAgenticStep(
       };
     }
     case "atlas-storage-retention": {
-      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
+      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
       return {
@@ -2645,6 +2655,33 @@ async function executeAgenticStep(
           agent_health: result.agentHealth ?? null,
         },
       };
+    }
+    case "deming-live-source-draw": {
+      if(run.runKind!=="workflow")return {status:"completed",summary:"Live-source draw skipped outside a real workflow.",detail:{skipped:true}};
+      const receipt=await createLiveAuditDraw({db:tx,context:{runId:run.id,stepId:step.id,stepKey:step.stepKey}});
+      return {status:"completed",summary:`Live-source diagnostic draw ${receipt.id}: ${receipt.detail?.state??"unavailable"}; ${receipt.detail?.rows.length??0} frozen fees. Separate from the weekly live 50-institution launch review.`,detail:{drawId:receipt.id,state:receipt.detail?.state??"unavailable",reason:receipt.reason??receipt.detail?.reason??null}};
+    }
+    case "deming-live-source-audit": {
+      if(run.runKind!=="workflow"||!positiveId(run.params.drawId))throw new Error("Invalid live-source diagnostic draw");
+      const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
+      const result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});
+      const captures=result.captureRequestIds??[];
+      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}; ${captures.length} exact-document capture requests.`,detail:{...result,captureRequestIds:captures}};
+    }
+    case "magellan-live-audit-capture": {
+      if(run.runKind!=="workflow"||!positiveId(run.params.requestId))throw new Error("Invalid live-source capture request");
+      const result=await runLiveSourceCapture({db:tx,context:{runId:run.id,stepId:step.id,stepKey:step.stepKey},requestId:run.params.requestId});
+      return {status:"completed",summary:`Magellan diagnostic side-copy: ${result.reason}; ${result.persisted?"disposition persisted":"no new disposition"}.`,detail:result};
+    }
+    case "deming-live-source-archive": {
+      if(run.runKind!=="workflow"||run.params.source!==LIVE_AUDIT_SOURCE)throw new Error("Invalid live-source archival workflow");
+      const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
+      const {expiredCaptures,archived,finalized}=await withLiveAuditReceiptPhase(tx,Date.now()+10_000,async scope=>({
+        expiredCaptures:await expireLiveCaptureEpisodes(scope,context),
+        archived:positiveId(run.params.drawId)?await archiveLiveSourceAudit(scope,context,run.params.drawId):false,
+        finalized:await finalizeDueLiveAudits(scope,context),
+      }));
+      return {status:"completed",summary:`Live-source diagnostic history: ${archived?"current draw archived":"current draw still partial or unarchived"}; ${finalized} older finalizations, ${expiredCaptures} capture expirations.`,detail:{archived,finalized,expiredCaptures}};
     }
     case "content-market-spread": {
       // The brief: the drafting agent's lessons from skipped drafts, read before it drafts; a
@@ -2883,7 +2920,10 @@ interface PreparedAgenticStep {
   step: AgentRunStepSnapshot;
 }
 
-async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false }: { pauseExemptOnly?: boolean } = {}): Promise<
+async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, expectedStepKey }: {
+  pauseExemptOnly?: boolean;
+  expectedStepKey?: string;
+} = {}): Promise<
   | { kind: "ready"; prepared: PreparedAgenticStep }
   | { kind: "missing" }
   | { kind: "terminal"; status: AgentRunStatus; message: string }
@@ -2969,6 +3009,11 @@ async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false }
     // tick may have completed the peeked measurement and exposed the paused tail.
     if (pauseExemptOnly && !PAUSE_EXEMPT_STEP_KEYS.includes(step.stepKey)) {
       return { kind: "held", status: run.status, message: "Next step is outside the pause-exempt continuation; run left queued." };
+    }
+    // A concurrent executor may have advanced past the paid step we intended to skip.
+    // Never mark its newly exposed free work (or another provider job) as skipped.
+    if (expectedStepKey != null && step.stepKey !== expectedStepKey) {
+      return { kind: "held", status: run.status, message: "Next step changed before the paid skip; run left queued." };
     }
     const alreadyStarted = steps.some((candidate) => candidate.startedAt !== null);
 
@@ -3490,6 +3535,10 @@ async function providerStepGate(
 const STEP_EXPECTED_MS: Record<string, number> = {
   // Reference observation stops at120s, leaving30s for scorer/ledger queries.
   "score-answer-key": 150_000,
+  "deming-live-source-audit":150_000,
+  "magellan-live-audit-capture":150_000,
+  "deming-live-source-draw":30_000,
+  "deming-live-source-archive":30_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
@@ -3825,8 +3874,8 @@ export async function executeAgentRun(
 
   // The daily route only queues this workflow: even a tick's first run must leave
   // its 150-second reference score queued when it cannot fit the explicit deadline.
-  const scoreboardDeadline = existing.agent === "atlas" && existing.runKind === "workflow"
-    && runSource === "atlas.scoreboard" && options.deadlineAt != null;
+  const scoreboardDeadline = existing.runKind === "workflow" && options.deadlineAt != null
+    && ((existing.agent === "atlas" && runSource === "atlas.scoreboard")||runSource===LIVE_AUDIT_SOURCE);
   if ((options.alwaysRunFirstStep === false || scoreboardDeadline) && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
     if (Date.now() + expectedMsToFirstWork(keys, runSource) > options.deadlineAt) {
@@ -3875,7 +3924,10 @@ export async function executeAgentRun(
       if (!gate.allowed) {
         // A paid pass is optional: when the budget or the stop blocks it, record it as
         // skipped and let the free steps behind it run. It never stalls the run.
-        const blocked = await prepareNextAgenticStep(runId, { pauseExemptOnly: options.pauseExemptOnly });
+        const blocked = await prepareNextAgenticStep(runId, {
+          pauseExemptOnly: options.pauseExemptOnly,
+          expectedStepKey: nextStepKey,
+        });
         if (blocked.kind !== "ready") {
           return {
             runId,
@@ -3944,6 +3996,7 @@ export async function executeAgentRun(
           step.stepKey === "report-reconcile" ||
           // The lane sync writes through its own statements; a step transaction would sit idle.
           step.stepKey === "lane-sync" ||
+          Object.values(LIVE_AUDIT_STEPS).includes(step.stepKey as never) ||
           isRegistryStepKey(step.stepKey)
             ? await executeAgenticStep(sql, run, step)
             : await withTransaction((tx) => executeAgenticStep(tx, run, step));
@@ -4009,17 +4062,20 @@ export async function executeQueuedAgentRuns({
   pauseExemptOnly?: boolean;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
-  // When provider steps cannot run this tick, skip runs whose next queued step is a
-  // provider step so they do not crowd deterministic work out of the run limit.
+  // Keep mandatory paid jobs out of a capped tick's run limit. A state's optional
+  // paid pass must still reach executeAgentRun's skip receipt when free work follows;
+  // otherwise three lanes waiting at paid steps fill every active lane slot forever.
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
-           EXTRACT(EPOCH FROM NOW() - COALESCE(
-             (SELECT MAX(done.completed_at) FROM agent_run_steps done WHERE done.agent_run_id = r.id),
-             r.started_at)) * 1000 AS idle_ms
+           EXTRACT(EPOCH FROM NOW() - progress.last_work_at) * 1000 AS idle_ms
       FROM agent_runs r
       LEFT JOIN agent_state_lanes lane
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(MAX(done.completed_at), r.started_at) AS last_work_at
+          FROM agent_run_steps done WHERE done.agent_run_id = r.id
+      ) progress ON true
      WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.status = 'queued'
        AND (${scope === null}::boolean OR (
@@ -4029,6 +4085,28 @@ export async function executeQueuedAgentRuns({
        ))
        AND (
          ${allowProviderSteps}
+         OR (r.run_kind = 'workflow_lane' AND EXISTS (
+           SELECT 1 FROM agent_run_steps optional
+            WHERE optional.agent_run_id = r.id
+              AND optional.status = 'queued'
+              AND optional.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
+              AND optional.sequence = (
+                SELECT MIN(first_step.sequence) FROM agent_run_steps first_step
+                 WHERE first_step.agent_run_id = r.id AND first_step.status = 'queued'
+              )
+              AND EXISTS (
+                SELECT 1 FROM agent_run_steps later
+                 WHERE later.agent_run_id = r.id AND later.status = 'queued'
+                   AND later.sequence > optional.sequence
+                   AND NOT later.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM agent_run_steps required
+                 WHERE required.agent_run_id = r.id AND required.status = 'queued'
+                   AND required.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+                   AND NOT required.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
+              )
+         ))
          OR NOT EXISTS (
            SELECT 1
              FROM agent_run_steps s
@@ -4064,7 +4142,9 @@ export async function executeQueuedAgentRuns({
               OR s.step_key = ANY(${[...TICK_EXCLUDED_STEP_KEYS]}::text[])
             )
        )
-     -- Report runs go first: someone pressed Generate and is watching the page. Then a guard
+     -- Report runs go first: someone pressed Generate and is watching the page. An idle
+     -- state lane gets the next fresh tick before maintenance can consume its publication room.
+     -- Then a guard
      -- catch-up run. Then a
      -- run already under way finishes before a new one starts, then a direct run for one
      -- institution (hand-found schedules go that way, not by promoting their whole state
@@ -4073,6 +4153,11 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              (r.run_kind = 'workflow_lane'
+                AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
+              CASE WHEN r.run_kind = 'workflow_lane'
+                     AND progress.last_work_at < NOW() - INTERVAL '15 minutes'
+                   THEN progress.last_work_at END ASC NULLS LAST,
               -- A deployed guard or frequency fix (hamilton/guard-catch-up.ts): two short steps,
               -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
               -- Growth's stale-outreach withdrawal (growth/withdraw.ts) is one short step, at most
@@ -4356,7 +4441,12 @@ export async function cancelAllActiveAgentRuns(
   return result;
 }
 
-export async function startAgentRun(input: StartAgentRunInput): Promise<StartAgentRunResult> {
+export async function startAgentRun(input: StartAgentRunInput, transaction?: typeof sql): Promise<StartAgentRunResult> {
+  // The live diagnostic scheduler serializes admission+creation in one short transaction.
+  // No execution/HTTP/provider work is allowed in this opt-in deterministic creation seam.
+  if(transaction&&(!input.reuseTerminal||input.params?.source!=="deming.live_source_audit"||input.kind!=="workflow"
+    ||!["atlas","magellan"].includes(input.agent)||input.steps.some(s=>!["deming-live-source-audit","magellan-live-audit-capture","deming-live-source-archive"].includes(s.key))
+    ||getExecutionBackend()!=="agentic_v1"))throw new Error("Invalid live diagnostic transaction scope");
   const normalizedStateCode = normalizeStateCode(input.stateCode ?? input.params?.state_code);
   const params = normalizedStateCode
     ? { ...(input.params ?? {}), state_code: normalizedStateCode }
@@ -4383,7 +4473,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
     }
   }
 
-  const created = await withTransaction(async (tx) => {
+  const create = async (tx: typeof sql) => {
     if (input.idempotencyKey && input.reuseTerminal) {
       // One short transaction, no step/HTTP work or nested connection: concurrent
       // daily requests reuse the same original run, including failed/cancelled ones.
@@ -4463,7 +4553,8 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
       steps: stepRows.map(mapStep),
       reused: false,
     };
-  });
+  };
+  const created = transaction ? await create(transaction) : await withTransaction(create);
 
   if (created.reused) return created;
   if (getExecutionBackend() !== "agentic_v1") {

@@ -14,6 +14,12 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Every operator action needs a durable run/event receipt.
 - Every blocked state needs a concrete next safe action.
 - Scheduled advancement must remain deterministic and idempotent.
+- A state lane with no finished step for 15 minutes gets a fresh tick ahead of maintenance,
+  longest idle first. Customer reports remain first. Finishing any step resets that priority;
+  old launch dates alone do not promote a busy lane. Deadlines and publish serialization still apply.
+- A capped state lane whose next step is an optional paid pass still enters the tick when
+  deterministic work follows: the executor records the paid skip and advances the free work.
+  Mandatory paid jobs and paid-only lanes stay queued; operator pauses and scope guards still apply.
 - If provider automation is unavailable, Atlas can queue, label, or route manual validation, but cannot silently resume provider work.
 
 ## Boundaries
@@ -35,12 +41,22 @@ step is priced at 150 seconds and must fit an explicit tick deadline even when s
 other runs retain their existing first-step progress behavior. Both controls paused permits only
 recovery and already pause-exempt execution in Atlas `workflow` runs with source `atlas.scoreboard`.
 That path schedules no runs, consults no provider budget, and leaves unrelated alerts/digests,
-marketing/data runs and other sources untouched. City repair/storage remain queued until the
+marketing/data runs and other sources untouched. The new live-source draw and city repair/storage remain queued until the
 pipeline control permits them; backend disabled still does nothing. Run/step/events expose every
 completion, deferral and held tail. The narrow continuation's opt-in ceiling checks the existing
 exempt list in selection, before each step and on the actual step under the ledger claim lock,
 so a control change or concurrent progression cannot carry it into the held tail. No new
 exception is added to `PAUSE_EXEMPT_STEP_KEYS`; normal callers have no new ceiling.
+
+## Separate live-source diagnostic (#2061)
+
+The daily workflow has 13 steps. After all ten existing pause-exempt measurements and their
+snapshot, `deming-live-source-draw` freezes a capped current-dollar catalog frame without network
+I/O. This draw and all subsequent observation/capture/archive work obey the pipeline pause.
+The existing tick admits at most one finite `deming.live_source_audit` workflow per UTC ten-minute
+bucket, alternating fresh oldest-draw work and due capture episodes. Magellan's capture workflow
+has its own Atlas archive tail. No provider, R2 activation, extra pause exception or inline daily
+execution is introduced. See [the diagnostic contract](../deming/LIVE-SOURCE-AUDIT.md).
 
 ## Answer-key relabels (`answer-key-relabels.ts`, #1099)
 
@@ -227,6 +243,12 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   carries the run id. Every non-dry pass records a `state_expert.notes` event; before the
   migration (20270110000052) it is `skipped` and nothing is written. A dry run writes nothing.
   `/admin/states/<ST>/expert` lists the notes, newest first.
+
+The morning brief counts health/storage warnings alongside console items, includes bounded
+redacted reasons and admin action URLs, separates failed from blocked runs, and labels agent
+activity as completed steps. Spend includes the remaining monthly budget. Source dates distinguish
+successful checks from nonempty loads and attempts; answer evals show planned/completed samples
+when recorded and identify small paid samples. Historical snapshots may lack these fields.
 
 ## Goal scorecard (#1040)
 

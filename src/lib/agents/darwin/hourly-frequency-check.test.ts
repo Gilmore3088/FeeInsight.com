@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { W43_HOURLY_LINE_ROWS } from "./hourly-frequency-check.fixtures";
 
 import { hourlyFromLine, hourlyWording, settledFrequency } from "@/lib/fee-frequency";
 
@@ -267,6 +268,61 @@ describe("v2: a fee priced by the hour only on its own line (#1456)", () => {
     const read = texts(db).find((text) => text.includes("FROM published_fee_records"));
     expect(read).toContain("LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id");
     expect(read).toContain("from 'excerpt=\"(.*)\"\\s*$') AS source_line");
+  });
+});
+
+describe("own-price hourly attribution (#1456, production source witnesses)", () => {
+  it.each([
+    // Citizens Bank, published 19296, artifact 712: two distinct fees at the same price.
+    ["Stop Payment Order (ACH, Debit Card, Check)", "stop_payment", 30,
+      "Stop Payment Order (ACH, Debit Card, Check) $30.00 Research per hour (one hour minimum) $30.00"],
+    // First Service FCU, published 32264, artifact 6275: the previous price's unit.
+    ["Counter Check", "counter_check", 2,
+      "Account Research/Reconcillation $25 per hour Counter Check $2 each"],
+    // Mound City Bank, published 36105, artifact 6676: another equal-price fee.
+    ["3x5", "safe_deposit_box", 25,
+      "Subpoena Response (per hour) | $25.00 3x5 $25.00"],
+  ])("does not borrow an hour from another fee for %s", (name, category, amount, line) => {
+    expect(hourlyVerdict(name, category, null, line, amount)).toBeNull();
+  });
+
+  it("keeps every reviewed W43 whole-hour positive without activating the switch", () => {
+    const found = findHourlyFees(W43_HOURLY_LINE_ROWS);
+    expect(found.wouldSetFromLine).toBe(27);
+    expect(found.matches.map((fee) => fee.feePublishedId)).toEqual(
+      W43_HOURLY_LINE_ROWS.map((row) => Number(row.fee_published_id)).sort((a, b) => a - b),
+    );
+    expect(found.matches.every((fee) => fee.action === "set" && fee.basis === "line")).toBe(true);
+    expect(HOURLY_LINE_LIVE).toBe(false);
+  });
+
+  it("binds equal-price and previous-price units to their named fee", () => {
+    expect(hourlyFromLine("Account Research | $30 per hour", 30, "Stop Payment")).toBe(false);
+    expect(hourlyVerdict("Stop Payment", "stop_payment", null, "Account Research | $30 per hour", 30)).toBeNull();
+    const samePrice = "Stop Payment $30 Research (per hour) $30";
+    expect(hourlyFromLine(samePrice, 30, "Stop Payment")).toBe(false);
+    expect(hourlyFromLine(samePrice, 30, "Research")).toBe(true);
+    // With no named owner, incompatible readings of the same price stay unknown.
+    expect(hourlyFromLine(samePrice, 30)).toBe(false);
+    const previousPrice = "Research $25 per hour Counter Check $2 each";
+    expect(hourlyFromLine(previousPrice, 2)).toBe(false);
+    expect(hourlyFromLine(previousPrice, 25, "Research")).toBe(true);
+  });
+
+  it("reads a unit-only next cell but never a next fee's label", () => {
+    expect(hourlyFromLine("Research | $40 | per hour", 40, "Research")).toBe(true);
+    expect(hourlyFromLine("Research | $40 | Research per hour | $25", 40, "Research")).toBe(false);
+    expect(hourlyFromLine("Research | $40 | per hour | Stop Payment | $40", 40, "Stop Payment")).toBe(false);
+  });
+
+  it("keeps minimum prices separate and refuses an explicit partial-hour price", () => {
+    expect(hourlyFromLine("Research $25 per hour, $25 minimum", 25, "Research")).toBe(true);
+    expect(hourlyFromLine("Research (min. $10) | $25 per hour", 25, "Research (min. $10)")).toBe(true);
+    expect(hourlyFromLine("Reconciliation ($15 per Minimum) | $25 per Hour", 25, "Reconciliation ($15 per Minimum)")).toBe(true);
+    expect(hourlyFromLine("Research (per hour) | $25 minimum | $50 each", 25, "Research")).toBe(false);
+    expect(hourlyFromLine("Research (per hour) | $10 per 15 minutes", 10, "Research")).toBe(false);
+    expect(hourlyFromLine("Research (per hour) | $10 | per half hour", 10, "Research")).toBe(false);
+    expect(hourlyFromLine("Research fee (1/2-hour minimum charge) | $50 per 1/2 hour", 50, "Research fee")).toBe(false);
   });
 });
 

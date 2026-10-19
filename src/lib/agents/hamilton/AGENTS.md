@@ -581,6 +581,16 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 23. Rules re-check (`rules-recheck.ts`, state-lane or single-institution steps only): a Knox
     fee today's rules no longer read from its text, on its second look,
     `rules_recheck_unreproduced`; it also restores its own past takedowns.
+    #2209's explicit fee-count-total refusal participates through the Knox v84 signature:
+    already-passed documents are selected again at that signature, and their own source trace
+    must independently fail before the shared 12-hour second look can confirm a takedown.
+    General source-check v18 and its historical decisions are not reopened for this change.
+    #2240/#2241/#2246 use the v85 signature for their bounded physical-price refusal. This
+    exact refusal is checked before accepting a category/amount reproduction, because another
+    service may own the same figure. It then follows the unchanged original-source independent
+    check and 12-hour second look. No broader recheck epoch or selector changes. A full own-source
+    read-only impact scan at 14:38:38 UTC found zero current live matches; the ordinary v85
+    reread cohort still grows by two on the separately recorded same-snapshot due counter.
 24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.

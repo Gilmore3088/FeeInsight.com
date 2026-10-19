@@ -6,6 +6,7 @@ import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
+import { readHistoricalLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 
 /**
@@ -277,24 +278,19 @@ export async function runScoreboardSnapshot({
       })
     : null;
   if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth, goal };
-  await db`
-    INSERT INTO pipeline_scoreboard_snapshots (
-      snapshot_date, agent_run_id,
-      coverage_rate, coverage_numerator, coverage_denominator,
-      right_document_rate, right_document_numerator, right_document_denominator,
-      knox_yield, knox_yield_fees, knox_yield_priced_lines, knox_yield_sample_size,
-      depth_median_categories, depth_live_institutions,
-      accuracy_precision, accuracy_recall, accuracy_score_run_id,
-      freshness_median_days, freshness_live_fees, detail
-    ) VALUES (
-      ${snapshotDate}::date, ${runId},
-      ${numbers.coverage.rate}, ${numbers.coverage.numerator}, ${numbers.coverage.denominator},
-      ${numbers.rightDocument?.rate ?? null}, ${numbers.rightDocument?.numerator ?? null}, ${numbers.rightDocument?.denominator ?? null},
-      ${numbers.knoxYield?.yield ?? null}, ${numbers.knoxYield?.fees ?? null}, ${numbers.knoxYield?.pricedLines ?? null}, ${numbers.knoxYield?.sampleSize ?? null},
-      ${numbers.depth.median}, ${numbers.depth.liveInstitutions},
-      ${numbers.accuracy?.precision ?? null}, ${numbers.accuracy?.recall ?? null}, ${numbers.accuracy?.scoreRunId ?? null},
-      ${numbers.freshness.medianDays}, ${numbers.freshness.liveFees},
-      ${JSON.stringify({
+  await writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal});
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal };
+}
+
+/** Validate retained finals under a row lock; archive-field presence alone is never trust. */
+export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal}:{db:SqlTag;snapshotDate:string;runId:number|null;
+  numbers:ScoreboardNumbers;agentHealth:AgentHealthReport|null;goal:GoalScorecard|null}):Promise<void>{
+  const write=async(scope:SqlTag)=>{
+    // Serializes absent-row inserts too. Archive writers only update existing rows.
+    await scope`SELECT pg_advisory_xact_lock(hashtextextended(${`atlas.scoreboard.snapshot:${snapshotDate}`},0))`;
+    const [previous]=await scope<{detail:unknown}[]>`SELECT detail FROM pipeline_scoreboard_snapshots WHERE snapshot_date=${snapshotDate}::date FOR UPDATE`;
+    const retained=readHistoricalLiveSourceAudit(previous?.detail);
+    const detail={
         right_document_window_days: numbers.rightDocument?.windowDays ?? null,
         accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
         accuracy_scorer_version: numbers.accuracy?.scorerVersion ?? null,
@@ -312,7 +308,26 @@ export async function runScoreboardSnapshot({
           : {}),
         ...(agentHealth ? { agent_health: agentHealth } : {}),
         ...(goal ? { goal } : {}),
-      })}::jsonb
+      };
+    if(retained?.archive)detail.goal={...(goal??{}),liveSourceAudit:retained} as GoalScorecard;
+  await scope`
+    INSERT INTO pipeline_scoreboard_snapshots (
+      snapshot_date, agent_run_id,
+      coverage_rate, coverage_numerator, coverage_denominator,
+      right_document_rate, right_document_numerator, right_document_denominator,
+      knox_yield, knox_yield_fees, knox_yield_priced_lines, knox_yield_sample_size,
+      depth_median_categories, depth_live_institutions,
+      accuracy_precision, accuracy_recall, accuracy_score_run_id,
+      freshness_median_days, freshness_live_fees, detail
+    ) VALUES (
+      ${snapshotDate}::date, ${runId},
+      ${numbers.coverage.rate}, ${numbers.coverage.numerator}, ${numbers.coverage.denominator},
+      ${numbers.rightDocument?.rate ?? null}, ${numbers.rightDocument?.numerator ?? null}, ${numbers.rightDocument?.denominator ?? null},
+      ${numbers.knoxYield?.yield ?? null}, ${numbers.knoxYield?.fees ?? null}, ${numbers.knoxYield?.pricedLines ?? null}, ${numbers.knoxYield?.sampleSize ?? null},
+      ${numbers.depth.median}, ${numbers.depth.liveInstitutions},
+      ${numbers.accuracy?.precision ?? null}, ${numbers.accuracy?.recall ?? null}, ${numbers.accuracy?.scoreRunId ?? null},
+      ${numbers.freshness.medianDays}, ${numbers.freshness.liveFees},
+      ${JSON.stringify(detail)}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
       agent_run_id = EXCLUDED.agent_run_id,
@@ -336,7 +351,9 @@ export async function runScoreboardSnapshot({
       detail = EXCLUDED.detail,
       updated_at = NOW()
   `;
-  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal };
+  };
+  if(typeof (db as unknown as {savepoint?:unknown}).savepoint==='function')await inSavepoint(db,write);
+  else await db.begin(tx=>write(tx as unknown as SqlTag));
 }
 
 function pct(value: number | null | undefined): string {

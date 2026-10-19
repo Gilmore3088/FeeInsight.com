@@ -1,12 +1,31 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("next/navigation", () => ({ usePathname: () => "/fees" }));
+const route = vi.hoisted(() => ({ pathname: "/fees" }));
+vi.mock("next/navigation", () => ({ usePathname: () => route.pathname }));
 vi.mock("./use-session-chrome", () => ({ useSessionChrome: () => ({ signedIn: false }) }));
 
 import { NavLinks } from "./nav-links";
 
 describe("NavLinks Product menu", () => {
+  beforeEach(() => {
+    route.pathname = "/fees";
+  });
+
+  it("keeps For consumers visible without opening a menu", () => {
+    route.pathname = "/for-consumers";
+    render(<NavLinks />);
+    const consumerLink = screen.getByRole("link", { name: "For consumers" });
+    expect(consumerLink).toHaveAttribute("href", "/for-consumers");
+    expect(consumerLink).toHaveAttribute("aria-current", "page");
+  });
+
+  it("does not mark the consumer home as the current page when reading guides", () => {
+    route.pathname = "/guides";
+    render(<NavLinks />);
+    expect(screen.getByRole("link", { name: "For consumers" })).not.toHaveAttribute("aria-current");
+  });
+
   it("opens three cards with their links, the plans button on Hamilton's", () => {
     render(<NavLinks />);
     fireEvent.click(screen.getByRole("button", { name: "Product" }));
@@ -33,7 +52,7 @@ describe("NavLinks Product menu", () => {
     const m = within(menu);
     expect(m.getByRole("link", { name: /How the index is built/ })).toHaveAttribute("href", "/methodology");
     expect(m.getByRole("link", { name: /Data sources/ })).toHaveAttribute("href", "/research/data-sources");
-    for (const [name, href] of [["Guides", "/guides"], ["API", "/api-docs"], ["Submit a fee source", "/submit-fees"]]) {
+    for (const [name, href] of [["Consumer guides", "/guides"], ["API", "/api-docs"], ["Submit a fee source", "/submit-fees"]]) {
       expect(m.getByRole("link", { name: new RegExp(`^${name}`) })).toHaveAttribute("href", href);
     }
   });

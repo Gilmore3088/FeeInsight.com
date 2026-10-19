@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/guides/overdraft-fees" }));
@@ -15,7 +15,12 @@ describe("ConsumerMobileNav", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Menu" });
     expect(dialog).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
+    const consumerSection = screen.getByText("For consumers").parentElement as HTMLElement;
+    const consumers = within(consumerSection);
+    expect(consumers.getByRole("link", { name: "Consumer home" })).toHaveAttribute("href", "/for-consumers");
+    expect(consumers.getByRole("link", { name: "Consumer guides" })).toHaveAttribute("aria-current", "page");
+    expect(consumers.getByRole("link", { name: "Find your bank or credit union" })).toHaveAttribute("href", "/institutions");
+    expect(screen.getAllByRole("link", { name: "Consumer guides" })).toHaveLength(1);
     expect(screen.getByRole("button", { name: /Search banks, fees and guides/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Hamilton" })).toHaveAttribute("href", "/for-institutions#hamilton");
     expect(screen.getByRole("link", { name: "See plans" })).toHaveAttribute("href", "/subscribe");

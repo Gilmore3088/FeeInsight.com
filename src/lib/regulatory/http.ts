@@ -13,13 +13,19 @@ export const REGISTRY_USER_AGENT = `${crawlerUserAgent("Magellan")} ${CONTACT_EM
 
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
+/** Keep URL credentials out of step errors and partition receipts. */
+export function redactRegistrySecrets(value: string): string {
+  return value.replace(/((?:UserID|api[_-]?key|access[_-]?token|token|key|registrationkey)=)[^&\s]+/gi, "$1***");
+}
+
 export class RegistryHttpError extends Error {
   constructor(
     message: string,
     readonly url: string,
     readonly status: number | null,
   ) {
-    super(message);
+    super(redactRegistrySecrets(message));
+    this.url = redactRegistrySecrets(url);
     this.name = "RegistryHttpError";
   }
 }

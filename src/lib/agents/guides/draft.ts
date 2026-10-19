@@ -3,6 +3,7 @@ import { getFeeCategorySummaries } from "@/lib/data-store/fees";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { upsertGuide, getGuideBySlug } from "@/lib/data-store/guides";
 import { getAnthropicMessagesClient, extractAnthropicText } from "@/lib/ai-provider";
+import { RAW_PROVIDER_TIMEOUT_MS, withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 import { FEE_FAMILIES, DISPLAY_NAMES, getDisplayName } from "@/lib/fee-taxonomy";
 import {
   guideCategories,
@@ -297,13 +298,15 @@ export async function runGuideDraft(
     .slice(0, 3);
 
   // Step 2 — draft. Provider access is centralized; never a direct SDK import.
-  const client = getAnthropicMessagesClient("guide draft agent", "hamilton");
-  const response = await client.messages.create({
-    model: GUIDE_DRAFT_MODEL,
-    max_tokens: 8000,
-    messages: [
-      { role: "user", content: draftPrompt(primaryCategory, related, summaries) },
-    ],
+  const response = await withRawProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => {
+    const client = getAnthropicMessagesClient("guide draft agent", "hamilton", scope);
+    return (attempt) => client.messages.create({
+      model: GUIDE_DRAFT_MODEL,
+      max_tokens: 8000,
+      messages: [
+        { role: "user", content: draftPrompt(primaryCategory, related, summaries) },
+      ],
+    }, attempt);
   });
   const drafted = parseDraft(extractAnthropicText(response));
 

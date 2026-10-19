@@ -23,16 +23,15 @@ import { softRead } from "@/lib/soft-read";
 import {
   STATE_FINDING_MIN_INSTITUTIONS,
   buildCharterPairs,
-  buildComparisons,
   computeStateFindings,
-  nationalBandTakeaway,
 } from "@/lib/research-report/state-findings";
 import { LockedRows } from "../../../fees/[category]/exhibits";
 import { BoardChart, BoardLegend, BoardRows, FindingButtons, StateBoard } from "../../state/[code]/state-board";
-import { boardFees, charterFees, leadFindings, positionIn, splitForAccess } from "../../state/[code]/state-view";
+import { charterFees, leadFindings, positionIn } from "../../state/[code]/state-view";
 import { CharterField, type CharterFee } from "./district-charter";
 import { DistrictHero } from "./district-exhibits";
 import { stateShape } from "./district-geo";
+import { districtOpening, notableDifferences } from "./district-opening";
 import { HubStates, type HubFeeOption, type HubTableRow } from "./district-hub-states";
 import {
   ComplaintChart,
@@ -61,7 +60,7 @@ import {
   hubFeeKeys,
   hubFeeName,
   monthYear,
-  openingFinding,
+  nationalGap,
   quarterLabel,
   revenueTrend,
   stateHubRows,
@@ -149,12 +148,10 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
 
   // The board, the chart, the findings and the banks/credit unions split all read the
   // district's one index, so every figure on the page counts the same institutions.
-  const comparisons = buildComparisons(indexes.all, nationalIndex);
-  const fees = boardFees(comparisons, indexes.bank, indexes.credit_union, indexes.institution_values);
-  const { shown, locked } = splitForAccess(fees, showAllCategories);
+  // The opening sentence comes from the same helper the research hub's districts exhibit uses.
+  const { shown, locked, visibleComparisons, againstUs, statement } = districtOpening(indexes, nationalIndex, showAllCategories, place);
   const charted = shown.filter((f) => f.values.length > 0);
   const paired = charterFees(shown);
-  const visibleComparisons = comparisons.filter((c) => shown.some((f) => f.key === c.fee_category));
   // "In St. Louis district," reads as "In the St. Louis district," (the benchmark report words it the same way).
   const findings = leadFindings(
     computeStateFindings(place, visibleComparisons, buildCharterPairs(indexes.bank, indexes.credit_union, shown.map((f) => f.key))).map(
@@ -163,9 +160,11 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
     charted,
   );
 
-  const takeaway = nationalBandTakeaway(place, `the ${place}`, visibleComparisons);
-  const againstUs = shown.filter((f) => f.us);
-  const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
+  // The research hub's district cards follow one fee; each district's other large gaps are listed here.
+  // The fees the opening sentence names aren't repeated.
+  const notable = notableDifferences(againstUs, STATE_FINDING_MIN_INSTITUTIONS);
+  // Same 1% rule as nationalGap, so the heading and the shading agree at the boundary.
+  const aboveUs = againstUs.filter((f) => f.us && f.us.median > 0 && nationalGap(f) > 0).length;
   // The hero's band figure counts the same fees as the list and the heading below it.
   const insideBand = againstUs.filter((f) => positionIn(f.median, f.us!) === "within").length;
   const charter: CharterFee[] = paired.map((f) => ({
@@ -238,8 +237,6 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
       : []),
     ...(againstUs.length >= 3 ? [{ value: `${insideBand} of ${againstUs.length}`, label: "fee medians sit within the national middle range" }] : []),
   ];
-  // The opening takeaway is the district's sharpest specific gap; the band count sits beside it as context.
-  const statement = openingFinding(againstUs, STATE_FINDING_MIN_INSTITUTIONS) ?? takeaway;
 
   // The state cards: one fee at a time across every state, on one scale.
   const stateFees: HubFeeOption[] = feeKeys
@@ -337,6 +334,18 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
                 </h2>
               </div>
               {findings.length > 0 && <FindingButtons findings={findings} />}
+              {notable.length > 0 && (
+                <div className="max-w-3xl">
+                  <h3 className="text-[15px] font-semibold text-ink">Other notable differences from the U.S.</h3>
+                  <ul className="mt-2 space-y-1.5 text-[14px] leading-relaxed text-ink-soft">
+                    {notable.map((n) => (
+                      <li key={n.key} className="tabular-nums">
+                        {n.line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <BoardChart />
               <div>
                 <BoardLegend fees={charted} />
@@ -648,7 +657,7 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
           {!isPro && (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-[14px] text-ink-muted">
-                Hamilton, the Fee Insight Pro workspace, sets every fee you charge against institutions your size and in your
+                Hamilton, the Fee Insight workspace, sets every fee you charge against institutions your size and in your
                 district.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">

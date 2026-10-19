@@ -59,6 +59,56 @@ function live(id: number, key: string, name: string, amount: string, textHash: s
 const texts = [{ source_document_id: 9, text_hash: "abc", normalized_text: TEXT }];
 
 describe("Hamilton rules re-check", () => {
+  it("#2246 keeps the actual savings overdraft item price when its own maximum is printed first", async () => {
+    const row = live(56061, "overdraft", "Overdraft Fee Savings", "35.00");
+    const source = [{ source_document_id: 9, text_hash: "abc", normalized_text:
+      "Overdraft Fee Savings\n• $140.00 Maximum. $35.00 per item" }];
+    const db = createDbMock([row], source, []);
+    const result = await rollBackUnreproducedFees(asDb(db), { runId: 22460, batchId: "own-cap-item-keep", dryRun: false, takedownLive: true });
+    expect(result.flagged).toBe(0);
+    expect(result.rollbacks).toEqual([]);
+    expect(JSON.stringify(db.mock.calls)).not.toContain("UPDATE published_fee_records");
+  });
+
+  it.each([
+    ["Check Images", "5.00", "check_image", "Check Images\n• $10 per statement\nCopy of canceled check image\n• $5 per image"],
+    ["Ready Reserve Overdraft Protection Fee", "25.00", "overdraft", "Ready Reserve Overdraft Protection Fee\n• $25 (annually)\nStop Payment Fee\n• $35 per request"],
+    ["Overdraft Fee", "25.00", "overdraft", "Overdraft Fee\n• $25 Maximum. $5 per item"],
+  ])("gives the source-owned refusal for %s its existing first and independent second look", async (name, amount, key, text) => {
+    const row = live(2240, key, name, amount);
+    const source = [{ source_document_id: 9, text_hash: "abc", normalized_text: text }];
+    const first = createDbMock([row], source, []);
+    const flagged = await rollBackUnreproducedFees(asDb(first), { runId: 22401, batchId: "first-own-price-look", dryRun: false, takedownLive: true });
+    expect(flagged.flagged).toBe(1);
+    expect(flagged.rollbacks).toEqual([]);
+    expect(JSON.stringify(first.mock.calls)).not.toContain("UPDATE published_fee_records");
+    expect(first.unsafe.mock.calls[0][1][3]).toContain("extract.rules@85");
+    const second = createDbMock([row], source);
+    const confirmed = await rollBackUnreproducedFees(asDb(second), { runId: 22402, batchId: "confirmed-own-price-look", dryRun: false, takedownLive: true });
+    expect(confirmed.rollbacks).toContainEqual(expect.objectContaining({ feePublishedId: 2240, secondLook: "source_trace:amount_not_the_fee" }));
+    expect(JSON.stringify(second.mock.calls)).toContain("UPDATE published_fee_records");
+  });
+
+  it("#2209 reselects the new rules signature and gives a policy total the existing two looks", async () => {
+    const name = "Your account has already been charged a total of 4 NSF fees (";
+    const row = live(2209, "nsf", name, "20.00");
+    const source = [{ source_document_id: 9, text_hash: "abc", normalized_text:
+      "Your account has already been charged a total of 4 NSF fees ($20) for items processed for payment on that business day" }];
+    const first = createDbMock([row], source, []);
+    const firstResult = await rollBackUnreproducedFees(asDb(first), { runId: 22091, batchId: "first-policy-look", dryRun: false, takedownLive: true });
+    expect(firstResult.flagged).toBe(1);
+    expect(firstResult.rollbacks).toEqual([]);
+    expect(JSON.stringify(first.mock.calls)).not.toContain("UPDATE published_fee_records");
+    const [query, params] = first.unsafe.mock.calls[0] as [string, unknown[]];
+    expect(params[3]).toBe(knoxFreeSignature());
+    expect(String(params[3])).toContain("extract.rules@85");
+    expect(query).toContain("pending.unchecked OR pending.second_look_due");
+    const second = createDbMock([row], source);
+    const confirmed = await rollBackUnreproducedFees(asDb(second), { runId: 22092, batchId: "confirmed-policy-look", dryRun: false, takedownLive: true });
+    expect(confirmed.rollbacks).toContainEqual(expect.objectContaining({ feePublishedId: 2209, secondLook: "source_trace:amount_not_the_fee" }));
+    expect(JSON.stringify(second.mock.calls)).toContain("UPDATE published_fee_records");
+    expect(JSON.stringify(second.mock.calls)).toContain("UPDATE verified_fee_observations");
+  });
   it("reads the category and price of every fee today's rules find", () => {
     const fees = reproducibleFees(TEXT);
     expect(fees.has("stop_payment:3000")).toBe(true);

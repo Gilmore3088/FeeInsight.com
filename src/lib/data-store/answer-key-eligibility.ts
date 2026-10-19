@@ -143,7 +143,7 @@ export function referenceSourceFingerprint(sources: ReferenceSourceIdentity[]): 
 const fact = (status: ReferenceEligibilityFact["status"], reason: string): ReferenceEligibilityFact => ({ status, reasons: [reason] });
 const compact = (text: string): string => text.replace(/\s+/g, " ").trim();
 const CONSUMER = /\b(?:consumer|personal|individual|retail)\b/i;
-function audienceHeading(line: string, audience: "consumer" | "business"): boolean {
+export function audienceHeading(line: string, audience: "consumer" | "business"): boolean {
   const title = line.trim().replace(/\s+/g, " ").replace(/:$/, "");
   if (title.length > 120 || /[.$!?;0-9]/.test(title)) return false;
   const words = audience === "consumer" ? "consumer|personal|individual|retail" : "business|commercial|corporate|treasury";

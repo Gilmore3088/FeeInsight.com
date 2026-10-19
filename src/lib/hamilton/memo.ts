@@ -8,6 +8,8 @@
  * failures named, then withheld; it is never shown unchecked.
  */
 
+import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
+
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
@@ -262,7 +264,6 @@ export interface MemoTracking {
 }
 
 function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tracking?: MemoTracking): MemoClient {
-  const client = getAnthropicMessagesClient("Hamilton storyline memo", "hamilton");
   return {
     async create({ system, user, model }) {
       const response = await trackAnthropicRequest(
@@ -275,11 +276,13 @@ function anthropicMemoClient(institutionId: number | null, usage?: MemoUsage, tr
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
           metadata: { institution_id: institutionId },
         },
-        () =>
-          client.messages.create(
+        () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {
+          const client = getAnthropicMessagesClient("Hamilton storyline memo", "hamilton", scope);
+          return (attempt) => client.messages.create(
             { model, max_tokens: MAX_TOKENS, system, messages: [{ role: "user", content: user }] },
-            { timeout: REQUEST_TIMEOUT_MS },
-          ),
+            { ...attempt, timeout: REQUEST_TIMEOUT_MS },
+          );
+        }),
       );
       if (usage) {
         usage.inputTokens += response.usage?.input_tokens ?? 0;

@@ -13,6 +13,7 @@ vi.mock("./api-hardening/budget", async (original) => ({
   ...await original<typeof import("./api-hardening/budget")>(), assertProviderBudgetAllowed: budget,
 }));
 
+import { RAW_PROVIDER_TIMEOUT_MS, withProviderResponseOperation, ProviderResponseOperation, PROVIDER_RESPONSE_LIMITS } from "./ai-response-budget";
 import { getAnthropicMessagesClient, getHamiltonModel, isProviderLimitError } from "./ai-provider";
 import { EmergencyStopActiveError } from "./automation-control";
 import { ProviderBudgetBlockedError } from "./api-hardening/budget";
@@ -49,15 +50,16 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-describe("actual SDK through unchanged application factory, paid guard and accounting", () => {
-  it("retains own/shared key selection and configured model without changing the factory", async () => {
-    await getAnthropicMessagesClient("fixture", "knox").messages.create(params);
-    await getAnthropicMessagesClient("fixture").messages.create(params);
+describe("actual SDK through central application factory, paid guard and accounting", () => {
+  it("retains own/shared key selection and configured model", async () => {
+    await withProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => getAnthropicMessagesClient("fixture", "knox", scope).messages.create(params, { signal: scope.signal }));
+    await withProviderResponseOperation(RAW_PROVIDER_TIMEOUT_MS, (scope) => getAnthropicMessagesClient("fixture", undefined, scope).messages.create(params, { signal: scope.signal }));
     expect(new Headers(fetch.mock.calls[0][1]!.headers).get("x-api-key")).toBe("fixture-knox");
     expect(new Headers(fetch.mock.calls[1][1]!.headers).get("x-api-key")).toBe("fixture-shared");
     expect(getHamiltonModel()).toBe("fixture-model");
     vi.stubEnv("ANTHROPIC_API_KEY", ""); vi.stubEnv("ANTHROPIC_API_KEY_KNOX", "");
-    expect(() => getAnthropicMessagesClient("fixture", "knox")).toThrow(/not configured/);
+    const scope = new ProviderResponseOperation({ timeoutMs: 1000 });
+    expect(() => getAnthropicMessagesClient("fixture", "knox", scope)).toThrow(/not configured/); scope.dispose();
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -72,6 +74,20 @@ describe("actual SDK through unchanged application factory, paid guard and accou
     expect(JSON.parse(inserts()[0].at(-1))).toMatchObject({ web_search_max_uses: 1, web_search_own_site: true,
       web_search_domains: ["fixture.invalid"], budget_policy_id: 7 });
     expect(sql.mock.calls.find(([parts]) => parts.join(" ").includes("UPDATE agent_runs"))?.slice(1)).toEqual([1, result.costMicrousd, 9]);
+  });
+
+  it("records an actual bounded paid response rejection once with unknown NULL cost, not a billing stop", async () => {
+    const cancel = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new ReadableStream({ cancel }, { highWaterMark: 0 }), {
+      headers: { ...headers, "content-length": String(PROVIDER_RESPONSE_LIMITS.jsonBytes + 1) },
+    })));
+    await expect(call()).rejects.toMatchObject({ reason: "json_bytes" });
+    expect(globalThis.fetch).toHaveBeenCalledOnce(); expect(cancel).toHaveBeenCalledOnce();
+    expect(inserts()).toHaveLength(1); expect(inserts()[0][5]).toBe("failed"); expect(inserts()[0][11]).toBeNull();
+    expect(JSON.parse(inserts()[0].at(-1))).toMatchObject({ budget_policy_id: 7, response_complete: false,
+      usage_observation: "unknown", token_counts_are_placeholders: true, web_search_own_site: true });
+    expect(stop).not.toHaveBeenCalled();
+    expect(sql.mock.calls.some(([parts]) => parts.join(" ").includes("UPDATE agent_runs"))).toBe(false);
   });
 
   it("logs a real SDK billing refusal as failed and engages the existing credit stop", async () => {

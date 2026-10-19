@@ -610,7 +610,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
 | `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
 | `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
-| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (14 economy sources; remittances has its own) |
+| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (13 economy sources; remittances, branch tracts and BEA have their own) |
+| `BEA_PARSER_VERSION` | — | v3 | `magellan/registry/economy.ts` (BEA only: SAINC1 for states, CAINC1 for county/MSA; published-year metadata; NoteRef suppressions remain null; MSA code 101 retains supported values with explicit partial receipts and per-request source URLs; v2 added envelope diagnostics) |
+| `BRANCH_TRACT_PARSER_VERSION` | — | v2 (valid coordinate pairs only; invalid input counted, never swapped) | `magellan/registry/economy.ts` (branch-census-tracts) |
 | `REMITTANCE_PARSER_VERSION` | — | v2 (reads the RPW xlsx workbook found on the World Bank data page, no env var needed; `WORLD_BANK_RPW_CSV_URL` is an optional override; refuses a file over 50 MB as `rpw_file_too_large`) | `magellan/registry/economy.ts` (world-bank-remittance-prices) |
 | `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
 | `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
@@ -638,7 +640,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
-| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v2 (Download control read from the bulk page; an HTML answer names the page's title, messages and form fields, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
+| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v3 (TSV radio name/value and postback handler read from the page, or submit-only without a handler; no guessed target; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
 | `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
 | `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
@@ -652,3 +654,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v3 (top-10 first) | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v2 | `magellan/second-document.ts` |
 | `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |
+
+OEWS downloads are bounded to 64 MiB and the selected XLSX to 128 MiB. Corrupt or missing
+archives/workbooks fail with year, level, phase, byte/header and SHA-256 evidence; they are not
+successful empty checks. Missing HTTP 404 remains a not-yet-published file. These transport-only
+checks retain parser v1 so the failed 2022 partition retries under normal pacing without
+invalidating the six already-loaded years. No immediate corrupt-payload retry loop.

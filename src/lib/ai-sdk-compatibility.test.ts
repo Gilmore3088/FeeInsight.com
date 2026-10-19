@@ -5,12 +5,15 @@ import { Chat } from "@ai-sdk/react";
 import { DefaultChatTransport, generateText, Output, simulateReadableStream, stepCountIs, streamText, tool } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import type { LanguageModelV3GenerateResult, LanguageModelV3StreamPart } from "@ai-sdk/provider";
+import { ProviderResponseOperation } from "./ai-response-budget";
 import { getAnthropicLanguageModel } from "./ai-provider";
 import { recordProviderUsage } from "./ai-provider-usage";
 
 const mocks = vi.hoisted(() => ({ sql: vi.fn<(...args: unknown[]) => Promise<unknown[]>>() }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: mocks.sql }));
 
+const scopes: ProviderResponseOperation[] = [];
+function operation() { const scope = new ProviderResponseOperation({ timeoutMs: 1000 }); scopes.push(scope); return scope; }
 const usage = {
   inputTokens: { total: 10, noCache: 10, cacheRead: undefined, cacheWrite: undefined },
   outputTokens: { total: 3, text: 3, reasoning: undefined },
@@ -30,7 +33,7 @@ function streamed(text = "The fee is $0.") {
 
 describe("installed AI SDK compatibility without a provider call", () => {
   beforeEach(() => { mocks.sql.mockReset().mockResolvedValue([]); });
-  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+  afterEach(() => { for (const scope of scopes.splice(0)) scope.dispose(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
   it("keeps the existing app provider factory, injected JSON transport and usage-ledger counts", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY_HAMILTON", "synthetic-agent-key");
@@ -40,7 +43,7 @@ describe("installed AI SDK compatibility without a provider call", () => {
       usage: { input_tokens: 10, output_tokens: 3 },
     }), { headers: { "content-type": "application/json", "request-id": "fixture-request" } }));
     vi.stubGlobal("fetch", fetch);
-    const result = await generateText({ model: getAnthropicLanguageModel("fixture-model", "hamilton"), prompt: "Synthetic fee question", maxRetries: 0 });
+    const result = await generateText({ model: getAnthropicLanguageModel("fixture-model", "hamilton", operation()), prompt: "Synthetic fee question", maxRetries: 0 });
     expect(fetch).toHaveBeenCalledOnce();
     const [target, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(target).toBe("https://api.anthropic.com/v1/messages");
@@ -53,7 +56,7 @@ describe("installed AI SDK compatibility without a provider call", () => {
     expect(insert?.slice(1, 11)).toEqual(["anthropic", "fixture-model", "hamilton", "sdk-compat", "completed", 1, 10, 3, 0, 0]);
   });
 
-  it("parses actual Anthropic SSE through the unchanged app factory", async () => {
+  it("parses actual Anthropic SSE through the central app factory", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY_HAMILTON", "synthetic-agent-key");
     const events = [
       { type: "message_start", message: { id: "msg_fixture", type: "message", role: "assistant", model: "fixture-model", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 10, output_tokens: 0 } } },
@@ -72,7 +75,7 @@ describe("installed AI SDK compatibility without a provider call", () => {
       },
     }), { headers: { "content-type": "text/event-stream" } }));
     vi.stubGlobal("fetch", fetch);
-    const result = streamText({ model: getAnthropicLanguageModel("fixture-model", "hamilton"), prompt: "Synthetic fee question", maxRetries: 0 });
+    const result = streamText({ model: getAnthropicLanguageModel("fixture-model", "hamilton", operation()), prompt: "Synthetic fee question", maxRetries: 0 });
     expect(await result.text).toBe("The fee is $0.");
     expect(await result.usage).toMatchObject({ inputTokens: 10, outputTokens: 3 });
     expect(fetch).toHaveBeenCalledOnce();

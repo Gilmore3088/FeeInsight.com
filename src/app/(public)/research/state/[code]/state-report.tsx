@@ -627,7 +627,7 @@ export async function StateReport({ code, user }: { code: string; user: User | n
           {!isPro && (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-[14px] text-ink-muted">
-                Hamilton, the Fee Insight Pro workspace, sets an institution&apos;s own fees beside institutions its size in{" "}
+                Hamilton, the Fee Insight workspace, sets an institution&apos;s own fees beside institutions its size in{" "}
                 {stateName}.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
