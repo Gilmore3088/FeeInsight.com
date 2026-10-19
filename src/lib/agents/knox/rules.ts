@@ -12,6 +12,7 @@ export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
+import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
@@ -2485,8 +2486,16 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     candidates: scoped.map((fee) => ({ ...fee, frequency: null, confidence: 0.98, waivable: false })),
     held: [],
   };
-  const owned = recognizedFeeBullets(text);
-  const legacyText = withoutFeeBullets(text, owned);
+  const wires = domesticWireClausePrices(text);
+  const wireLines = new Set(wires.map(row => row.sourceLine));
+  const otherPrices = text.split("\n").filter(line => !wireLines.has(line.trim())).join("\n");
+  for (const row of wires) {
+    if (!passesDarwinChecks(row.canonicalKey, row.feeName, row.amount)) continue;
+    result.candidates.push({ feeName: row.feeName, amount: row.amount, canonicalHint: row.canonicalKey,
+      excerpt: row.ownText, ownedPolicy: true, frequency: detectFrequency(row.ownText), confidence: .94, waivable: false });
+  }
+  const owned = recognizedFeeBullets(otherPrices);
+  const legacyText = withoutFeeBullets(otherPrices, owned);
   for (const row of owned) {
     if (row.problem || row.price == null || row.priceText == null) {
       countDrop(result, "wrapped_bullet_unresolved");

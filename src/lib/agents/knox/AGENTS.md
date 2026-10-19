@@ -178,6 +178,19 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v88 (Oct 19, #2021/#2284/#2286) binds bounded slash-joined domestic wire prices to
+explicit incoming/outgoing clauses on their own physical row. Ordinary conflicting prices,
+including Wire In/Out aliases, disable the authority. New international or restricted-section
+admission is not granted. The free producer, paid grounding and shared source check use the
+same domestic witness, and the live rules recheck applies an explicit refusal before broader
+category/amount reproduction. Already-passed own-source rows return through the ordinary rules
+signature and genuine two-look path; source-check strategy 18, selector predicates, floors
+78/73/82 and controls stay unchanged. The full four-category impact corpus and same-snapshot
+87-to-88 due counter are recorded with the release receipts; no historical metadata rewrite
+or direct price patch is part of this version. #2021 stays open until normal production replay
+and output validation. International applicability (#2278) and unchanged legacy business
+heading classification (#2285) remain separate findings.
+
 v87 (Oct 19, #2248) annotates newly admitted raw lineage with literal own hourly, page,
 document, image, statement, half-hour, quarter-hour or minute frequency and complete source
 conditions. Physical ownership, exact repeated-name consistency and unchanged category guards
@@ -1588,7 +1601,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v87 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v88 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -20,6 +20,7 @@ import { feeBullets, ownsBulletName } from "./fee-bullets";
 import { accountTableRow } from "@/lib/custom-report/account-table";
 import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
 import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./stacked-fee-prices";
+import { checkWireClausePrice } from "./wire-clause-prices";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1101,6 +1102,8 @@ export function checkFeeAgainstSource(
   if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
   // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
   const text = droppedPointText(rawText);
+  const wire = checkWireClausePrice(text, feeName, amount, canonicalFeeKey, categoryPattern);
+  if (wire) return wire;
   if (canonicalFeeKey == null || NSF_POLICY_CATEGORIES.has(canonicalFeeKey)) {
     const item = capFirstItemPrices(text).find(row => stackedLabelKey(row.label) === stackedLabelKey(feeName) && row.amount === amount &&
       (canonicalFeeKey == null || row.canonicalKey === canonicalFeeKey));
