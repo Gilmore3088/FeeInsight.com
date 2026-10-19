@@ -2,6 +2,7 @@ import { strFromU8, Unzip, UnzipInflate, unzipSync } from "fflate";
 import { FIPS_TO_STATE } from "@/lib/geo/state-fips";
 import { STATE_NAMES } from "@/lib/us-states";
 import { CensusKeyError } from "./census-acs";
+import { validCoordinates } from "./coordinates";
 import { toCensusCsv, type GeocodeInput } from "./census-geocoder";
 import { FDIC_API_BASE } from "./fdic";
 import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
@@ -517,6 +518,7 @@ export function parsePointTract(body: unknown): string | null {
 }
 
 export async function placePointInTract(latitude: number, longitude: number, options: RegistryFetchOptions = {}): Promise<string | null> {
+  if (!validCoordinates(latitude, longitude)) return null;
   const params = new URLSearchParams({
     x: String(longitude),
     y: String(latitude),
