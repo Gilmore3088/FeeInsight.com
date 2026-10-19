@@ -19,7 +19,8 @@ vi.mock("@anthropic-ai/sdk", () => {
   };
 });
 
-vi.mock("@/lib/ai-provider-usage", () => ({
+vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/ai-provider-usage")>(),
   trackAnthropicRequest: async (_context: unknown, request: () => Promise<unknown>) => request(),
 }));
 
@@ -69,6 +70,7 @@ function makeThesis(): ThesisOutput {
 
 function makeApprovedResponse(usage = { input_tokens: 150, output_tokens: 30 }) {
   return {
+    stop_reason: "end_turn",
     content: [
       {
         type: "text",
@@ -92,6 +94,7 @@ describe("runEditorReview", () => {
 
   it("returns approved=false when any flaggedSection has severity major", async () => {
     mockCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
       content: [
         {
           type: "text",
@@ -122,6 +125,7 @@ describe("runEditorReview", () => {
 
   it("returns approved=true when flaggedSections is empty", async () => {
     mockCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
       content: [
         {
           type: "text",
@@ -145,6 +149,7 @@ describe("runEditorReview", () => {
 
   it("returns approved=true when all flags are minor severity", async () => {
     mockCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
       content: [
         {
           type: "text",
@@ -190,6 +195,7 @@ describe("Editor v2 — new checks", () => {
 
   it("thesis-alignment-major: returns approved=false when thesis contradiction flagged", async () => {
     mockCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
       content: [
         {
           type: "text",
@@ -236,6 +242,7 @@ describe("Editor v2 — new checks", () => {
 
   it("revenue-prioritization-minor: returns approved=true with minor revenue prioritization flag", async () => {
     mockCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
       content: [
         {
           type: "text",
@@ -277,6 +284,7 @@ describe("Editor v2 — new checks", () => {
 
   it("so-what-minor: returns approved=true with minor implication flag", async () => {
     mockCreate.mockResolvedValueOnce({
+      stop_reason: "end_turn",
       content: [
         {
           type: "text",
