@@ -168,6 +168,13 @@ function narrateFinished(
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }
+    case "lane-sync": {
+      if (typeof detail.priorities_error === "string") return `Synced every state's lane, but the priority refresh failed, so lanes kept their scores.`;
+      return `Synced every state's lane and rescored ${count(n(detail, "priorities_updated"), "lane")}${joinParts([
+        n(detail, "unchecked_woken") > 0 && `${count(n(detail, "unchecked_woken"), "lane")} woken for unchecked live fees`,
+        n(detail, "second_look_woken") > 0 && `${count(n(detail, "second_look_woken"), "lane")} woken for a pending second look`,
+      ])}.`;
+    }
     case "publish-sweeps": {
       const changed = n(detail, "changed");
       const verb = detail.dry_run === true ? "Would change" : "Changed";
@@ -755,6 +762,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   verify: "darwin",
   "public-cluster": "darwin",
   publish: "gutenberg",
+  "lane-sync": "atlas",
   "publish-index": "gutenberg",
   "publish-context": "gutenberg",
   "publish-sweeps": "gutenberg",

@@ -6,6 +6,10 @@
       "schedule": "*/10 * * * *"
     },
     {
+      "path": "/api/admin/crew/lane-sync",
+      "schedule": "6 * * * *"
+    },
+    {
       "path": "/api/admin/registry/tick",
       "schedule": "2-59/5 * * * *"
     },

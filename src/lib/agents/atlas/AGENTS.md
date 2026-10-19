@@ -142,6 +142,11 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   `magellan/website-find.ts` picks), or while any market leader is among them. A state with
   fewer of them due runs a weekly full pass until they are tried. The paid caps still bound
   the spend.
+- The hourly nationwide sync (`runNationwideLaneSync`: every state's lane and profile rows, the
+  unchecked-live-fee and second-look wakes, the priority refresh) is the `lane-sync` step of its own
+  run (`atlas.lane_sync`), started by `/api/admin/crew/lane-sync` at minute 6 of each hour. The tick
+  never runs it: inside the first tick of each hour it held that tick's first step back p50 80 s,
+  max 200 s (2026-10-18 finding, tick loses budget before steps).
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
   banks in the state with open work or a recent error: due a search, a fee link not fetched
