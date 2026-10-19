@@ -1,5 +1,16 @@
 # Darwin Agent Guide
 
+## Current cap applicability hold (#2304)
+
+The existing current-raw row lock also refuses verification when both
+`knox_review:eligibility` and source-derived `knox_eligibility:cap_first` are present,
+irrespective of a stale selected category or a legacy unrepresented product. The common
+Knox writer derives that provenance from hash-bound source, and takes over only an exact
+unverified pending identity in a transaction followed by a fresh judgment check. Whichever
+lock wins is respected. Judged histories and nonpending holds remain byte-identical; normal
+flagless rejudges remain eligible. This is prospective applicability admission, not a new
+price refusal or historical takedown predicate. Verification/source-check versions stay fixed.
+
 ## Literal charging units (#2248)
 
 Fresh raw rows with a bounded own name/price/unit witness retain their hourly, page, document,
@@ -71,6 +82,39 @@ fixture text and compact fees but records the absent original document mapping f
 Runtime verdict scoring v2 therefore reports no measurement, and unbound old chunks/lessons
 cannot teach or authorize promotion. Offline fixture history remains intact. Holdout weight is
 always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILITY.md`.
+
+## Saved recheck receipts (#2309, 2026-10-19)
+
+Every classify/verify completion saves `detail.recheck` using `darwin.recheck.receipt.v1`.
+The pure allowlist projector records returned counters and producer-reported outcome-array
+counts separately from at most 20 safe samples; it omits fee names, source text, arbitrary
+errors/stacks and unknown reason codes. `rejected`, `restored` and `takenDown` contain
+`reportedCount`, `samples`, `omittedCount` and `invalidSampleCount`. These are reports, not
+independently reconciled affected UPDATE rows. Missing/invalid counters stay null, never zero.
+
+`olderLive` and `dueSecondLooks` retain the producer's assessed-in-selected-batch counters and
+allowlisted would-outcome maps. Their sample projection is under `sample.samples`; map
+completeness is unknown. `sample.reportedCount` counts returned sample entries, not every
+would-outcome. Exposed errors become only `hasError` and a fixed code. Missing shadow
+packets say `not_reported` without guessing whether cadence, a switch or an error caused absence.
+The configured defaults remain older-live 200/every fourth run and due-second-look 100; those
+are configuration, not selected totals, backlog sizes, an exhaustion test or a universal cap
+on the top-level recheck. No missing pass/wouldClear complement is calculated.
+
+A received report, including all zeros, always has `assessmentCompleteness: "unknown"`:
+the producer can swallow primary/narrow-due selection errors. Returned restored/rejected IDs
+also follow UPDATEs without RETURNING. This receipt does not fix those producer limitations.
+Null in a known verification dry run is `not_run/dry_run`; null with learning false is
+`not_run/learning_unavailable`; other absent reports are unavailable with an unspecified cause.
+Malformed reports/fields are visibly invalid and cannot fail the enclosing valid step.
+Step completion does not attest assessment completeness. Both saved summary and activity
+narration include the receipt even when no new raw fees were processed.
+
+This changes only ledger receipt visibility. All switches, selectors, live actions, cadence,
+strategies, fee/feedback writes and teaching behavior stay as before. The top-level recheck
+can already report authorized live actions; only the shadow packets are assessment-only.
+Parent #2072's activation/deletion decisions and broader switch audit remain open, with no
+additional James task introduced here.
 
 ## Authority
 

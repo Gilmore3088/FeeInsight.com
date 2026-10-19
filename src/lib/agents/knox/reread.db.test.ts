@@ -9,15 +9,19 @@ import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 const connection = process.env.E2E_DATABASE_URL;
 type Db = Parameters<typeof insertCandidate>[0];
+const firstText = "Schedule revision A\nOverdraft fee $35.00 per item";
+const rereadText = "Schedule revision B\nOverdraft fee $35.00 per item";
 
 const firstRead: KnoxTextRow = {
   document_text_id: 701,
   source_document_id: 501,
   institution_id: 42,
   source_url: "https://testbank.example/fees",
-  text_hash: "old-hash",
+  normalized_text: firstText,
+  text_hash: createHash("sha256").update(firstText).digest("hex"),
 } as KnoxTextRow;
-const reread: KnoxTextRow = { ...firstRead, document_text_id: 702, text_hash: "new-hash" } as KnoxTextRow;
+const reread: KnoxTextRow = { ...firstRead, document_text_id: 702, normalized_text: rereadText,
+  text_hash: createHash("sha256").update(rereadText).digest("hex") } as KnoxTextRow;
 const overdraft = {
   feeName: "Overdraft fee",
   amount: 35,
@@ -64,7 +68,7 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
     expect(row.flags).toContain("needs_darwin_verification");
     expect(row.flags).toContain("knox_reread_took_over");
     expect(row.flags).not.toContain("superseded_by_reread");
-    expect(row.conditions).toContain("text_hash=new-hash;");
+    expect(row.conditions).toContain(`text_hash=${reread.text_hash};`);
   });
 
   it("files a re-read under today's category only, so Darwin does not judge it under the old one", async () => {

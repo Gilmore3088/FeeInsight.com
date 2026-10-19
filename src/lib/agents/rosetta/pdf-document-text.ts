@@ -1,6 +1,11 @@
-import { layoutPageText, type PdfTextItem } from "./pdf-layout";
+import { createHash } from "node:crypto";
+import { layoutPageResult, type PdfTextItem } from "./pdf-layout";
+import { textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 
-export interface PdfTextExtraction { text: string; totalPages: number; pages?: string[] }
+export interface PdfTextExtraction {
+  text: string; totalPages: number; pages?: string[];
+  stackedGeometry?: StackedGeometryReceipt;
+}
 
 /** Rosetta's existing complete-document layout reader, also used for reference checks. */
 export async function extractPdfDocumentText(bytes: Uint8Array, options: {
@@ -43,8 +48,14 @@ export async function extractPdfDocumentText(bytes: Uint8Array, options: {
           }
           pages.push(items);
         }
-        const pageTexts = pages.map(layoutPageText);
-        return { text: pageTexts.join("\n\n"), totalPages, pages: pageTexts };
+        const layouts = pages.map(layoutPageResult);
+        const pageTexts = layouts.map((page) => page.text);
+        const text = pageTexts.join("\n\n");
+        return { text, totalPages, pages: pageTexts, stackedGeometry: {
+          sourceHash: createHash("sha256").update(bytes).digest("hex"),
+          textHash: textSha256(text),
+          stackedPages: layouts.flatMap((page, index) => page.stackedColumns ? [index + 1] : []),
+        } };
       } finally { await pdf.destroy?.(); destroy = undefined; }
     })()]);
   } finally { clearTimeout(timeout); signal.removeEventListener("abort", onAbort); }
