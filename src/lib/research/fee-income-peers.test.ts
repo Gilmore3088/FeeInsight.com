@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { FeeRevenueCorrelation } from "@/lib/data-store/fee-revenue";
+import type { FiledFeeIncome } from "@/lib/data-store/fee-revenue";
 import { feeIncomeAgainstPeers } from "./fee-income-peers";
 import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 
 // Invented rows for tests only; no figure here is live data.
-function row(id: number, ratio: number | null, extra: Partial<FeeRevenueCorrelation> = {}): FeeRevenueCorrelation {
+function row(id: number, ratio: number | null, extra: Partial<FiledFeeIncome> = {}): FiledFeeIncome {
   return {
     institution_id: id,
     institution_name: `Synthetic ${id}`,
@@ -17,9 +17,6 @@ function row(id: number, ratio: number | null, extra: Partial<FeeRevenueCorrelat
     total_assets: 1_000_000 * id,
     service_charge_income: 100 * id,
     fee_income_ratio: ratio,
-    avg_fee: 20,
-    fee_count: 5,
-    median_overdraft: null,
     ...extra,
   };
 }
@@ -31,6 +28,12 @@ describe("feeIncomeAgainstPeers", () => {
     const result = feeIncomeAgainstPeers(rows, 1, {});
     expect(result).toMatchObject({ view: "peers", quarter: "2026-06-30", peer_count: 6, peer_median_income_per_10k_assets: 4.5, peers_below_subject: 2 });
     expect("peers" in result && result.peers.map((p) => p.institution_id)).not.toContain(1);
+    expect(result).toMatchObject({ comparison: {
+      population_basis: "filed_financials", fee_schedule_coverage_required: false,
+      minimum_median_count: 5, subject_included: false,
+    } });
+    expect(result).not.toHaveProperty("subject.avg_fee");
+    expect(result).not.toHaveProperty("subject.fee_count");
   });
 
   it("uses only the hand-picked peers of a saved set, with its other filters too", () => {
@@ -71,7 +74,21 @@ describe("feeIncomeAgainstPeers", () => {
   });
 
   it("says so when the institution has no fee income on file", () => {
-    expect(feeIncomeAgainstPeers(rows, 99, {})).toMatchObject({ view: "peers", error: expect.stringContaining("cannot be compared") });
+    const result = feeIncomeAgainstPeers(rows, 99, {});
+    expect(result).toMatchObject({ view: "peers", error: expect.stringContaining("canonical financial filing") });
+    expect(result).toMatchObject({ error: expect.stringContaining("Published fee-schedule coverage is not required") });
+    expect(JSON.stringify(result)).not.toContain("three published fees");
+  });
+
+  it("suppresses four comparable filers, publishes five, and preserves a genuine zero", () => {
+    const financials = [row(1, 0, { service_charge_income: 0 }), ...rows.slice(1, 6)];
+    expect(feeIncomeAgainstPeers(financials.slice(0, 5), 1, {})).toMatchObject({
+      peer_count: 4, peer_median_income_per_10k_assets: null, peer_median_service_charge_income: null,
+      subject: { service_charge_income: 0, income_per_10k_assets: 0 },
+    });
+    expect(feeIncomeAgainstPeers(financials, 1, {})).toMatchObject({
+      peer_count: 5, peer_median_income_per_10k_assets: 4, peer_median_service_charge_income: 400,
+    });
   });
 
   it("passes the full answer gate for dollar totals without treating asset intensity as a dollar total or revenue share (#2358)", () => {
