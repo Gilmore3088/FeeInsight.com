@@ -278,4 +278,28 @@ describe.skipIf(!connection)("Cap-first source eligibility in actual PostgreSQL 
         .toEqual([expect.objectContaining({ amount: 5 })]);
     });
   }, 60_000);
+
+  it.each([false, true])("binds a real feedback source to its request institution (same owner=%s)", async sameOwner => {
+    await rolledBack(async tx => {
+      const text = "Official Checks\nTeller Check Payable to Someone Other than Member $10.00";
+      const owner = await seed(tx, text), other = await seed(tx, text);
+      const documentId = sameOwner ? owner.documentId : other.documentId;
+      await tx`INSERT INTO pipeline_feedback(institution_id,source_document_id,kind,signal,about_stage,about_strategy,about_version,
+        reported_by,evidence,canonical_fee_key,amount,agent_run_id,dedupe_key)
+        VALUES (${owner.institutionId},${documentId},'knox_reread_requested','wrong','extract','extract.rules',87,'darwin',
+        '{"request":"reread_source_line","fee_name":"Teller Check Payable to Someone Other than"}'::jsonb,
+        'cashiers_check',10,${owner.runId},${`cap-feedback-owner:${owner.runId}:${sameOwner}`})`;
+      const { consumeRereadRequests } = await import("./reread-feedback");
+      const result = await consumeRereadRequests(tx, { runId: owner.runId, dryRun: false, live: true,
+        institutionId: owner.institutionId, limit: 5 });
+      expect(result.failed).toBe(false);
+      expect(result.read).toBe(1);
+      expect(result.outcomes).toEqual(sameOwner ? { sent_to_darwin: 1 } : { no_text: 1 });
+      expect(result.resolved).toBe(1);
+      const rows = await tx`SELECT source_document_id,institution_id FROM raw_fee_observations
+        WHERE institution_id=${owner.institutionId}`;
+      expect(rows).toEqual(sameOwner ? [expect.objectContaining({ source_document_id: owner.documentId,
+        institution_id: owner.institutionId })] : []);
+    });
+  });
 });

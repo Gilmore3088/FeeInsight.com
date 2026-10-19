@@ -426,6 +426,7 @@ async function selectPending(db: SqlTag, limit: number, claim: boolean, institut
       LEFT JOIN LATERAL (
         SELECT t.id, t.text_hash, t.source_url FROM agent_source_texts t
          WHERE t.source_document_id = req.source_document_id
+           AND t.institution_id = req.institution_id
            AND t.status = 'completed'
            AND t.normalized_text IS NOT NULL
          ORDER BY t.id DESC

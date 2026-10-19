@@ -17,6 +17,10 @@ ordinary NSF/OD minimal callers, require valid source/SHA or an exact completed 
 The prior reread temporary fixture's fake hashes were replaced with actual source/SHA; its
 takeover, judgment and sibling decision assertions remain intact. Source-unavailable behavior
 is an explicit fail-closed change, not covered by a claim of zero current cap matches.
+The feedback source lookup also enforces its request institution, closing an existing owner
+assumption. An actual-PostgreSQL foreign-document request previously sent a priced row to Darwin;
+it now settles as `no_text`. The same-owner control still inserts normally. This is source
+metadata binding, without a new fee-price refusal or selector epoch.
 
 Only an exact unverified pending row may become this hold. The shared transaction locks the
 raw identity, then checks all verified history in a new statement. Already judged rows and
@@ -39,3 +43,4 @@ paid grounding, both common writers, exact source fallback, pending takeover, co
 history equality, normal promoters and full publication owners twice with a publishing ordinary
 control. `cap-first-eligibility-concurrency.db.test.ts` observes real two-session PostgreSQL
 blocking in both orders, stale category/legacy product cases and ordinary flagless rejudges.
+The actual feedback producer test includes both foreign-document and matching-owner requests.

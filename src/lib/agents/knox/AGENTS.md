@@ -18,6 +18,10 @@ ordinary NSF/OD candidate. A minimal legacy caller may load only its exact compl
 ID/document/institution/hash, then check the content digest. Missing or mismatched source
 declines; it does not establish an unrestricted fee. This fail-closed caller change extends
 beyond the restricted cap class, and is tested separately from ordinary source-bound controls.
+Supplied full text trusts the internal source-row query's identity relations, then checks its
+actual digest. Free/paid rows select those fields together. Feedback's exact document lookup
+also requires the source institution to equal the stored request institution; a malformed
+foreign-document request settles without text rather than supplying another bank's row.
 
 Only the exact unverified pending raw identity carrying `needs_darwin_verification` can be
 taken over by this hold. Insert, raw lock and a fresh judgment check share a transaction.
