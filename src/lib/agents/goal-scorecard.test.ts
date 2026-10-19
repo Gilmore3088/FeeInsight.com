@@ -78,19 +78,19 @@ describe("accuracy target (James, Oct 15)", () => {
   const goalWith = (right: number, scorable: number) => ({
     readAt: "2026-10-15T00:00:00Z", windowDays: 7, coverageCells: null, liveInstitutions: null,
     wrongAfterPublish: null, spend: null, knoxPasses: null, unstatedAudience: null,
-    accuracy: {
-      query: "goal.deming_accuracy_7d", accuracy: right / scorable, right, scorable, audits: 7,
-      latestAt: null, latestAccuracy: null, range: null, daily: [],
-      misses: { amount: 0, category: 0, evidence: 0 },
-    },
+    accuracy: { query: "goal.deming_accuracy_7d", ...poolFreshAudits([{ at: "2026-10-15T00:00:00Z", detail: {
+      reporting_version: 1, version: 5, category_guard_version: 75, source_check_version: 18, name_check_version: 23,
+      seed: "2026-10-15", right, scorable, sampled: scorable, no_text: 0,
+      observations: Array.from({ length: scorable }, (_, i) => [i + 1, i < right ? "right" : "amount"]),
+    } }]) },
   }) as unknown as Parameters<typeof goalBriefLines>[0];
 
-  it("states the 99.5% target and whether the week met it", () => {
-    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("target 99.5%, met.");
-    expect(goalBriefLines(goalWith(1385, 1400)).join("\n")).toContain("target 99.5%, not met.");
-    // Two decimals, rounded down, so a week just under the target never reads as 99.50% and "not met".
-    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Accuracy: 99.49% over the last 7 days");
-    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Accuracy: 99.50% over the last 7 days");
+  it("requires a sufficient sample and the 95% lower bound, rather than the point estimate", () => {
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("insufficient sample");
+    expect(goalBriefLines(goalWith(3383, 3400)).join("\n")).toContain("not met on the 95% lower bound");
+    expect(goalBriefLines(goalWith(3400, 3400)).join("\n")).toContain("met on the 95% lower bound");
+    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Automated stored-copy audit: 99.49% over the last 7 days");
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Automated stored-copy audit: 99.50% over the last 7 days");
   });
 });
 
@@ -137,7 +137,7 @@ describe("wrong after publish", () => {
 });
 
 describe("Deming accuracy over the week", () => {
-  it("pools right and scorable fees across audits and dates the newest", () => {
+  it("keeps historical aggregate counts dated without inferring checker versions or confidence", () => {
     const pooled = poolFreshAudits([
       { at: "2026-10-11T06:00:00.000Z", detail: { right: 90, scorable: 100, accuracy: 0.9 } },
       { at: "2026-10-12T06:00:00.000Z", detail: { right: 47, scorable: 50, accuracy: 0.94, amount_miss: 1, evidence_miss: 2 } },
@@ -148,8 +148,8 @@ describe("Deming accuracy over the week", () => {
     expect(pooled.daily.map((day) => day.at)).toEqual(["2026-10-12T06:00:00.000Z", "2026-10-11T06:00:00.000Z"]);
     expect(pooled.daily[0]).toMatchObject({ right: 47, scorable: 50, accuracy: 0.94, amount: 1, evidence: 2, name: 0 });
     expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0 });
-    expect(pooled.range!.low).toBeLessThan(pooled.accuracy!);
-    expect(pooled.range!.high).toBeGreaterThan(pooled.accuracy!);
+    expect(pooled.range).toBeNull();
+    expect(pooled.status).toBe("legacy");
   });
 
   it("puts a 95% range of about ±3–4 points around a 200-fee audit", () => {
@@ -289,7 +289,7 @@ describe("readGoalScorecard", () => {
     expect(weekAgo).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
     expect(weekAgo).toContain("quarantined_at IS NULL OR fp.quarantined_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
-    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, accuracy 95.0% (7 days), wrong after publish 1.0%");
+    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, stored-copy support 95.0% (7 days), wrong after publish 1.0%");
   });
 
   it("leaves a failed read null and keeps the rest", async () => {
@@ -299,7 +299,7 @@ describe("readGoalScorecard", () => {
     errors.mockRestore();
     expect(goal.accuracy).toBeNull();
     expect(goal.liveInstitutions?.live).toBe(3900);
-    expect(goalBriefLines(goal)).toContain("Accuracy: could not be read today.");
+    expect(goalBriefLines(goal)).toContain("Automated stored-copy audit: could not be read today.");
   });
 });
 
