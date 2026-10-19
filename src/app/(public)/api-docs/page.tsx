@@ -241,6 +241,33 @@ function TierCard({
 
 const BASE = `${SITE_URL}/api/v1`;
 
+/** Pinned bridge release with credential-file support; no key is passed in process arguments. */
+const DESKTOP_SERVER_NAME = "bank-fee-index";
+const DESKTOP_BRIDGE = "mcp-remote@0.15.1";
+const MAC_HEADERS_PATH = "/Users/YOUR_USERNAME/.feeinsight/headers.txt";
+const WINDOWS_HEADERS_PATH = "C:\\Users\\YOUR_USERNAME\\.feeinsight\\headers.txt";
+function desktopConfig(command: string, args: string[], env?: Record<string, string>): string {
+  return JSON.stringify(
+    { mcpServers: { [DESKTOP_SERVER_NAME]: { command, args, ...(env ? { env } : {}) } } },
+    null,
+    2,
+  );
+}
+const DESKTOP_CONFIG_MAC = desktopConfig("npx", ["-y", DESKTOP_BRIDGE, `${BASE}/mcp`, "--header-file", MAC_HEADERS_PATH]);
+// The bridge expands this reference after launch; no spaces or credential value enter cmd/npx arguments.
+const DESKTOP_CONFIG_WINDOWS = desktopConfig("cmd", ["/c", "npx", "-y", DESKTOP_BRIDGE, `${BASE}/mcp`, "--header", "Authorization:${FEEINSIGHT_AUTH_HEADER}"], {
+  FEEINSIGHT_AUTH_HEADER: "Bearer YOUR_API_KEY",
+});
+const CLAUDE_CODE_CONFIG = JSON.stringify({
+  mcpServers: {
+    [DESKTOP_SERVER_NAME]: {
+      type: "http",
+      url: `${BASE}/mcp`,
+      headers: { Authorization: "Bearer ${FEEINSIGHT_API_KEY}" },
+    },
+  },
+}, null, 2);
+
 export default async function ApiDocsPage() {
   const summary = await getPublicStatsSummary();
   const categoriesLabel = summary.categoriesLabel;
@@ -387,15 +414,31 @@ export default async function ApiDocsPage() {
           query parameter.
         </p>
 
-        <CodeBlock title="Header authentication">{`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+        <p className="mt-3 text-[13px] text-ink-muted">
+          The Bash header example reads your key from the private credential file described in the{" "}
+          <a href="#claude" className="font-medium text-brick underline underline-offset-2">local connection steps below</a>.
+          Replace the example path with its absolute path. <code>--include</code> shows the HTTP status
+          and response headers alongside the JSON body.
+        </p>
+        <CodeBlock title="Header authentication">{`curl --include --header "@/absolute/path/headers.txt" \\
   ${BASE}/fees`}</CodeBlock>
 
         <CodeBlock title="Query parameter authentication">{`curl "${BASE}/fees?api_key=YOUR_API_KEY"`}</CodeBlock>
 
+        <p className="mt-3 text-[13px] text-ink-muted">
+          In Windows PowerShell 5.1, <code>curl</code> is an alias for a different command;
+          PowerShell 7 has no built-in curl alias. This single-line example uses native <code>curl.exe</code>{" "}
+          and works in either version. Create the credential file described below, then replace the
+          example path with its absolute path. The key stays in that file.
+        </p>
+
+        <CodeBlock title="PowerShell authentication" copyLabel="PowerShell API test">{`curl.exe --include --header "@${WINDOWS_HEADERS_PATH}" "${BASE}/fees"`}</CodeBlock>
+
         <p className="mt-4 text-[13px] text-ink-muted">
           A key keeps working while your subscription is active, and for {PAST_DUE_GRACE_DAYS} days after a failed payment
           while the card is retried. It stops when the subscription ends. Keep it private.
-          Anyone who has it can use your monthly calls.
+          Anyone who has it can use your monthly calls and read the saved Hamilton institution and peer
+          groups available to that key. Use your own personal key for saved context; keep it out of shared files and logs.
         </p>
       </div>
 
@@ -405,12 +448,81 @@ export default async function ApiDocsPage() {
         <p className="text-[13px] text-ink-muted">
           Add the connector once and ask Claude in plain English, for example which banks in Ohio have
           the highest overdraft fee, or how banks and credit unions in Texas compare. To add it, open
-          Settings in Claude, then Connectors, add a custom connector and paste this link with your key.
+          Settings in Claude, then Connectors, add a custom connector and use this link with your key
+          only for a private, per-user connection. Treat the full link as a credential; keep it out of
+          terminals, shared configuration and logs. For a company connection, ask your administrator how
+          each user supplies their own key. A shared URL key gives everyone that key&apos;s Hamilton context.
         </p>
         <CodeBlock title="Connector link">{`${BASE}/mcp?api_key=YOUR_API_KEY`}</CodeBlock>
         <p className="mt-3 text-[13px] text-ink-muted">
           Each question Claude answers uses a few calls from your team&apos;s {API_MONTHLY_CALLS_LABEL}-a-month allowance.
         </p>
+
+        <p className="mt-4 text-[13px] font-semibold text-ink">Claude Desktop local connection</p>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          If your organization permits local MCP servers, Claude Desktop can connect through
+          mcp-remote, an open-source bridge. Managed accounts may disable both custom connectors and
+          local MCP; ask your owner or administrator for an approved connection method. This setup needs
+          Node.js 22.12 or newer (check <code>node -v</code> and <code>npx -v</code> in a terminal).
+          For Mac/Linux Desktop and the curl tests, create a plain-text <code>headers.txt</code> in a private folder on your computer, outside
+          any repository or shared/synced folder. Put the following line in it, replacing the placeholder
+          in your text editor. On Mac or Linux restrict access with <code>chmod 600 /absolute/path/headers.txt</code>;
+          on Windows restrict the file to your user in Properties, then Security.
+        </p>
+        <CodeBlock title="Credential file contents" copyLabel="FeeInsight credential file">{"Authorization: Bearer YOUR_API_KEY"}</CodeBlock>
+        <p className="mt-2 text-[13px] text-ink-muted">
+          Replace the example username and path below with the absolute path to your credential file.
+          On Linux use your home path, such as <code>/home/YOUR_USERNAME/.feeinsight/headers.txt</code>.
+          In Claude Desktop, open Settings, then Developer, then Edit Config, and add this entry to{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">claude_desktop_config.json</code>. If the file
+          already has <code className="rounded bg-border/40 px-1 text-[12px]">mcpServers</code>, add only the{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">{DESKTOP_SERVER_NAME}</code> entry inside it.
+          Save, quit Claude Desktop fully and reopen it.
+        </p>
+        <CodeBlock title="Claude Desktop on Mac or Linux" copyLabel="Claude Desktop config for Mac or Linux">{DESKTOP_CONFIG_MAC}</CodeBlock>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          Windows Desktop uses the bridge&apos;s environment-reference form to avoid cmd/npx quoting
+          problems with paths or header values containing spaces. In the private config below, replace{" "}
+          <code>YOUR_API_KEY</code> only inside <code>env</code>; leave the argument reference unchanged.
+          Restrict this config to your user, keep it out of shared files and repositories, and never post
+          its contents. After saving, quit Claude Desktop from the system tray and reopen it.
+        </p>
+        <CodeBlock title="Claude Desktop on Windows" copyLabel="Claude Desktop config for Windows">{DESKTOP_CONFIG_WINDOWS}</CodeBlock>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          For Claude Code, make <code>FEEINSIGHT_API_KEY</code> available through your environment or
+          secret manager before starting Claude Code. Keep the variable reference below as written;
+          do not replace it with the key. Add the entry to your project&apos;s <code>.mcp.json</code>
+          (or merge it into an existing <code>mcpServers</code> object), approve the project connection,
+          then use <code>/mcp</code> in a session to check it. This config contains no key value.
+        </p>
+        <CodeBlock title="Claude Code project configuration" copyLabel="Claude Code project config">{CLAUDE_CODE_CONFIG}</CodeBlock>
+
+        <p className="mt-4 text-[13px] font-semibold text-ink">If the connector stops working</p>
+        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] text-ink-muted">
+          <li>
+            Replacing or turning off a key stops the old one at once. Update the local credential file,
+            Claude Code environment, or remote connector connection you configured, then restart the connection.
+          </li>
+          <li>
+            Claude Desktop ignores a config file that is not valid JSON. Check that every brace and comma is in
+            place, especially between two entries in{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">mcpServers</code>.
+          </li>
+          <li>
+            &ldquo;Unexpected token &lsquo;&lt;&rsquo;&rdquo; means the client received non-JSON content.
+            Check the endpoint URL, HTTP status and Content-Type for an HTML error, redirect or deployment
+            protection page. API key refusals return JSON; this parse error alone does not identify a bad key.
+          </li>
+          <li>
+            To test the key on its own, use the Bash header example or the single-line PowerShell example
+            above. Read the HTTP status and JSON <code>code</code> and <code>error</code> message.{" "}
+            <code>api_key_required</code> means no accepted key was supplied; <code>invalid_api_key</code>
+            can mean an unknown key or an unavailable account. For <code>key_revoked</code>, replace the key;
+            for <code>subscription_inactive</code> or <code>seat_removed</code>, restore the plan or seat access.
+            The error table below lists the recovery steps.
+          </li>
+        </ul>
+
         <p className="mt-3 text-[13px] text-ink-muted">
           Your own subscriber key can use the institution and peer sets you saved in Hamilton.
           Ask Claude to call <code>get_hamilton_context</code> first, or call{" "}

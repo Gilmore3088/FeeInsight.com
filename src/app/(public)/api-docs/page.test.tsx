@@ -19,8 +19,16 @@ vi.mock("@/lib/api-hardening/audit", async (importOriginal) => ({
 import ApiDocsPage from "./page";
 import { GET as getOpenApi } from "@/app/api/v1/openapi.json/route";
 import { API_ERROR_CODES } from "@/lib/api-v1";
+import { SITE_URL } from "@/lib/constants";
 
 afterEach(cleanup);
+
+function copiedCode(label: string): string {
+  const button = screen.getByRole("button", { name: `Copy ${label}` });
+  const target = document.getElementById(button.getAttribute("aria-controls")!);
+  expect(target).toBeInTheDocument();
+  return target!.textContent!;
+}
 
 describe("API documentation", () => {
   it("provides complete JSON fixtures that match their published response contracts", async () => {
@@ -149,5 +157,94 @@ describe("API documentation", () => {
     }
     expect(peers.getByText(/explicit peer_ids or peer-group parameters bypass saved peer defaults/i)).toBeInTheDocument();
     expect(container).toHaveTextContent("get_hamilton_context");
+  });
+
+  it("keeps Desktop credentials outside pinned bridge arguments on both platforms", async () => {
+    render(await ApiDocsPage());
+    for (const label of ["Claude Desktop config for Mac or Linux", "Claude Desktop config for Windows"]) {
+      const config = JSON.parse(copiedCode(label));
+      const server = config.mcpServers["bank-fee-index"];
+      const args: string[] = server.args;
+      expect(args).toContain("mcp-remote@0.15.1");
+      expect(args).toContain(`${SITE_URL}/api/v1/mcp`);
+      if (label.endsWith("Windows")) {
+        expect(server.command).toBe("cmd");
+        expect(args.slice(0, 2)).toEqual(["/c", "npx"]);
+        expect(args).toContain("--header");
+        expect(args[args.indexOf("--header") + 1]).toBe("Authorization:${FEEINSIGHT_AUTH_HEADER}");
+        expect(server.env).toEqual({ FEEINSIGHT_AUTH_HEADER: "Bearer YOUR_API_KEY" });
+        expect(args.some((argument) => /\s/.test(argument))).toBe(false);
+      } else {
+        expect(server.command).toBe("npx");
+        expect(args).toContain("--header-file");
+        const headerFile = args[args.indexOf("--header-file") + 1];
+        expect(headerFile).toMatch(/^\/.+headers\.txt$/);
+        expect(server).not.toHaveProperty("env");
+      }
+      expect(args.join(" ")).not.toMatch(/api_key=|YOUR_API_KEY|Bearer/i);
+    }
+    // The Mac/Linux placeholder belongs in file data; Windows uses private config env.
+    expect(copiedCode("FeeInsight credential file").trim()).toBe("Authorization: Bearer YOUR_API_KEY");
+  });
+
+  it("uses Claude Code environment expansion in project JSON without a secret-bearing CLI", async () => {
+    render(await ApiDocsPage());
+    const configText = copiedCode("Claude Code project config");
+    const config = JSON.parse(configText);
+    const server = config.mcpServers["bank-fee-index"];
+    expect(server).toMatchObject({
+      type: "http",
+      url: `${SITE_URL}/api/v1/mcp`,
+      headers: { Authorization: "Bearer ${FEEINSIGHT_API_KEY}" },
+    });
+    expect(server).not.toHaveProperty("command");
+    expect(server).not.toHaveProperty("args");
+    expect(configText).not.toMatch(/api_key=|YOUR_API_KEY/);
+    expect(screen.queryByRole("button", { name: "Copy Claude Code command" })).not.toBeInTheDocument();
+  });
+
+  it("shows HTTP diagnostics without key arguments in Bash and native PowerShell requests", async () => {
+    render(await ApiDocsPage());
+    const bash = copiedCode("Header authentication").trim();
+    expect(bash).toMatch(/^curl\s/);
+    expect(bash).toMatch(/(?:^|\s)--include(?:\s|$)/);
+    expect(bash).toMatch(/--header\s+(['"])@\/absolute\/path\/headers\.txt\1/);
+    expect(bash).toContain(`${SITE_URL}/api/v1/fees`);
+    expect(bash).not.toMatch(/api_key=|YOUR_API_KEY|Bearer|Authorization:/i);
+    const command = copiedCode("PowerShell API test").trim();
+    expect(command.split(/\r?\n/)).toHaveLength(1);
+    expect(command).toMatch(/^curl\.exe\s/);
+    expect(command).toMatch(/(?:^|\s)--include(?:\s|$)/);
+    const header = command.match(/--header\s+(['"])@([A-Za-z]:\\[^'"]+headers\.txt)\1/);
+    expect(header).not.toBeNull();
+    expect(header![2]).toBe("C:\\Users\\YOUR_USERNAME\\.feeinsight\\headers.txt");
+    expect(command).toContain(`${SITE_URL}/api/v1/fees`);
+    expect(command).not.toMatch(/api_key=|YOUR_API_KEY|Bearer|Authorization:/i);
+  });
+
+  it("keeps managed access conditional and distinguishes HTML failures from structured API refusals", async () => {
+    const { container } = render(await ApiDocsPage());
+    const connector = screen.getByRole("heading", { name: "Claude connector", level: 2 }).nextElementSibling!;
+    const permission = Array.from(connector.querySelectorAll("p")).find((paragraph) => /If your organization (?:permits|allows) local MCP servers/i.test(paragraph.textContent!));
+    expect(permission).toBeDefined();
+    expect(permission).toHaveTextContent(/Managed accounts may disable both custom connectors and local MCP/i);
+    expect(permission).toHaveTextContent(/owner or administrator.*approved connection method/i);
+
+    const troubleshooting = Array.from(connector.querySelectorAll("li"));
+    const htmlFailure = troubleshooting.find((item) => /non-JSON content/i.test(item.textContent!));
+    expect(htmlFailure).toBeDefined();
+    expect(htmlFailure).toHaveTextContent(/HTTP status and Content-Type/);
+    expect(htmlFailure).toHaveTextContent(/HTML error, redirect or deployment protection page/);
+    expect(htmlFailure).toHaveTextContent(/API key refusals return JSON/);
+    expect(htmlFailure).toHaveTextContent(/alone does not identify a bad key/);
+    const apiFailure = troubleshooting.find((item) => item.querySelector("code")?.textContent === "code");
+    expect(apiFailure).toBeDefined();
+    for (const code of ["api_key_required", "invalid_api_key", "key_revoked", "subscription_inactive", "seat_removed"]) {
+      expect(Array.from(apiFailure!.querySelectorAll("code")).map((item) => item.textContent)).toContain(code);
+    }
+    expect(apiFailure).toHaveTextContent(/unknown key or an unavailable account/);
+    expect(connector.querySelector('a[href="#hamilton-context"]')).toBeInTheDocument();
+    expect(connector).toHaveTextContent("get_hamilton_context");
+    expect(container).toHaveTextContent(/\/hamilton-context and personalized \/peers responses are private, use no-store/);
   });
 });
