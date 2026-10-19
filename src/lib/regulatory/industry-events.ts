@@ -648,7 +648,8 @@ export async function fetchFdicFailures(options: RegistryFetchOptions = {}): Pro
  * before 2026-10-19 return 404 (registry run 8051, 2026-10-17). The run reports each page tried.
  */
 export const NCUA_MERGER_PAGES = ["https://ncua.gov/analysis/chartering-mergers/merger-activity-insurance-report"] as const;
-const NCUA_MERGER_LINKS = /merg|p\s*&\s*a|purchase|insurance-report-activity/i;
+/** Only the quarterly report files, so another merger link (a form, a guide) can't take the one slot. */
+const NCUA_MERGER_LINKS = /insurance-report-activity/i;
 
 /**
  * NCUA's list of proposed credit union mergers put to a member vote, one HTML table (2024 to
@@ -736,7 +737,8 @@ export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages
  * Proposed mergers from NCUA's member-vote list. The merging credit union is the row's
  * institution and the continuing one its acquirer; effective_date is the member vote date. The
  * key is the docket id when present, else the two names, so a rescheduled vote updates the same
- * row either way.
+ * row either way (a docketless second proposal between the same two credit unions replaces the
+ * first).
  */
 export async function fetchNcuaProposedMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_PROPOSED_MERGER_PAGES): Promise<FetchedEvents> {
   // No data file is accepted: the list is the page's own table.
