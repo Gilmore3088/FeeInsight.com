@@ -262,6 +262,7 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
           </span>
         ) : null}
       </div>
+      {x.method ? <p className="mt-2 text-xs text-warm-600">{x.method}</p> : null}
     </div>
   );
 }

@@ -9,6 +9,7 @@
  * are never ranked or picked; nothing here says to raise, lower or drop a fee.
  */
 
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -17,7 +18,7 @@ import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
-import { MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
+import { countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
@@ -158,7 +159,7 @@ function middleHalfCharges(who: string, band: { p25: number; p75: number }): str
 function positionPiece(research: FeeResearch, name: string): Piece | null {
   const band = research.band;
   if (!band || band.n < MIN_PEERS_FOR_POSITION) return null;
-  const position = research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
+  const position = research.current !== null ? pricePosition(research.current, countedPeerAmounts(research)) : null;
   const actionTitle =
     research.current !== null && position !== null
       ? `${middleHalfCharges("Peers' middle half", band)}; ${subjectPossessive(research, false)} ${money(research.current)} sits ${placeAmong(position, band.n, true)}.`
@@ -171,6 +172,7 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
     own: research.current,
     ownLabel: research.institutionName,
     band: { label: research.peerLabel, p25: band.p25, median: band.median, p75: band.p75, n: band.n },
+    ...(research.current !== null && band.n >= MIN_PEERS_FOR_POSITION ? { method: PERCENTILE_METHOD } : {}),
     markers: [
       { label: "Peer median", scope: "peer", value: band.median, n: band.n },
       ...research.layers
@@ -178,6 +180,7 @@ function positionPiece(research: FeeResearch, name: string): Piece | null {
         .map((l) => ({ label: l.scope === "national" ? "National median" : `${l.label} median`, scope: l.scope, value: l.median as number, n: l.n })),
     ],
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
+    note: peerGroupNote(research, { publishing: true }),
   };
   return {
     key: "position",
@@ -634,12 +637,22 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
-/** Which peers these are: the saved group, or the one Hamilton picked, with its filters. */
-function peerGroupNote(research: FeeResearch): string {
+/**
+ * Which peers these are: the saved group, or the one Hamilton picked, with its filters and size
+ * (#2046). With `publishing`, the size says how many of the group publish the fee, so the band's
+ * count and the group's never stand side by side unexplained.
+ */
+export function peerGroupNote(research: FeeResearch, { publishing = false }: { publishing?: boolean } = {}): string {
   const who = research.peerGroupSaved ? "Saved peer group" : "Peer group picked by Hamilton";
-  // The label's widening clause ("; only 3 of ... publish this fee") is left to the source note.
-  const note = `${who}: ${research.peerLabel.split(";")[0].trim()}.`;
-  return words(note) <= MAX_NOTE_WORDS ? note : `${who}.`;
+  const total = research.peerGroupSize;
+  const n = research.band?.n;
+  const share = publishing && total && n !== undefined && n < total ? `${count(n)} of its ${count(total)} institutions publish this fee` : null;
+  // The label's thin-fee clause ("; only 3 of them publish this fee") is left to the title.
+  const group = research.peerLabel.split(";")[0].trim();
+  const note = share ? `${who}: ${group}; ${share}.` : `${who}: ${group}${total ? ` (${count(total)} institutions)` : ""}.`;
+  if (words(note) <= MAX_NOTE_WORDS) return note;
+  if (share) return `${who}: ${share}.`;
+  return total ? `${who} (${count(total)} institutions).` : `${who}.`;
 }
 
 /** Every local competitor by name with its fee and source: a list question about the market. */
@@ -773,7 +786,7 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
     out.push({ value: money(research.band.median), label: "Peer median", source: feeSource(research), n: research.band.n });
   }
   const position =
-    seg && seg.problem === null ? seg.ownPosition : research.current !== null ? pricePosition(research.current, research.peers.map((p) => p.amount)) : null;
+    seg && seg.problem === null ? seg.ownPosition : research.current !== null ? pricePosition(research.current, countedPeerAmounts(research)) : null;
   if (position !== null && research.current !== null) {
     const inSegment = seg && seg.problem === null;
     const n = inSegment ? seg.band?.n ?? seg.members.length : research.band?.n;
@@ -1011,7 +1024,7 @@ function sampleOf(exhibit: Exhibit): number | undefined {
 /** Where a price would sit, and what the filed income line implies at the same item count. */
 function priceConsequences(research: FeeResearch, name: string, price: number): Fact[] {
   const out: Fact[] = [];
-  const amounts = research.peers.map((p) => p.amount);
+  const amounts = countedPeerAmounts(research);
   const position = pricePosition(price, amounts);
   if (position !== null && research.band) {
     out.push({

@@ -18,7 +18,7 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
 import { feeItem, proseFeeName } from "./names";
-import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
+import { annualItemsQuestion, buildScenario, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
 import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
@@ -299,7 +299,7 @@ function money(n: number): string {
 }
 
 export function scenariosFor(research: FeeResearch, current: number, tested: number[], facts: InstitutionFeeFacts | null): Scenario[] {
-  const peers = research.peers.map((p) => p.amount);
+  const peers = countedPeerAmounts(research);
   return tested.map((price) =>
     buildScenario({
       feeCategory: research.feeCategory,
