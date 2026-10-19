@@ -18,7 +18,7 @@ import { institutionCardFees } from "./landing-index-actions";
 import { IndexCard } from "./landing-index-card";
 import { cardHref, cellBars, hasMedian, measurePhrase, noFeeSentence, positionSentence, US, type IndexCardData } from "./landing-index-view";
 import { LandingPricing, pricingLine } from "./landing-pricing";
-import { EVIDENCE, OUTPUTS } from "./landing-research";
+import { EVIDENCE, OUTPUTS, feeWords } from "./landing-research";
 import { pickQuestionLine, questionFor } from "./landing-one-question";
 import { LandingDeliverable, deliverableCover, deliverableOutline } from "./landing-deliverable";
 import type { RevenueContext } from "@/lib/custom-report/revenue-context";
@@ -617,7 +617,8 @@ describe("one question section", () => {
     expect(html).toContain('data-bar-kind="subject"');
     expect(words).toContain("median across 412 banks its size");
     expect(words).toContain("$1.8 million in deposit service charges, Q2 2026");
-    expect(words).toContain("14 branches, 21.0% of local deposits");
+    expect(words).toContain("14 branches, 21.0% of bank deposits in its counties");
+    expect(words).not.toContain("of local deposits");
     expect(words).toContain("FDIC Summary of Deposits, 2025");
     expect(words).toContain("Deposit service charges up 2.8% from Q1 2026 to Q2 2026");
     // The mockup's made-up projections never appear.
@@ -666,6 +667,24 @@ describe("one question section", () => {
     expect(questionFor({ key: "stop_payment", label: "Stop payment" })).toBe("Should we change our stop payment fee?");
     const lines = report.analysis.lines.filter((l) => l.key !== "wire_domestic_outgoing");
     expect(pickQuestionLine(lines)?.key).toBe("wire_intl_outgoing");
+    // With no wire at all, every output names the fee asked about instead of wires.
+    const noWire = sampleWorkflowReport();
+    noWire.analysis.lines = noWire.analysis.lines.filter((l) => !l.key.startsWith("wire_"));
+    const html = renderToStaticMarkup(<LandingResearch report={noWire} revenue={revenue} />);
+    expect(text(html)).toContain("“Should we change our overdraft (per item) fee?”");
+    expect(text(html)).not.toMatch(/wire/i);
+    expect(feeWords({ key: "wire_domestic_outgoing", label: "Outgoing domestic wire" }).fees).toBe("wire fees");
+  });
+
+  it("draws no bar at a nonsense width when every figure is zero", () => {
+    const zero = sampleWorkflowReport();
+    const line = zero.analysis.lines.find((l) => l.key === "wire_domestic_outgoing")!;
+    line.own!.amount = 0;
+    line.peers = { ...line.peers!, median: 0, p25: 0, p75: 0 };
+    for (const c of zero.analysis.named) c.fees.wire_domestic_outgoing = 0;
+    const flat = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 0 }], null);
+    const html = renderToStaticMarkup(<LandingResearch report={zero} revenue={flat} />);
+    expect(html).not.toMatch(/NaN|Infinity/);
   });
 
   it("server-renders Benchmark selected with its evidence lit, every panel the same height", () => {

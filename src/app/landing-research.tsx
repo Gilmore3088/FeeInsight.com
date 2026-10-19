@@ -60,7 +60,7 @@ export function IllustrativeTag() {
 function IncomeSpark({ view }: { view: OneQuestionView }) {
   const income = view.income;
   if (!income) return null;
-  const top = Math.max(...income.quarters.map((q) => q.thousands));
+  const top = Math.max(...income.quarters.map((q) => q.thousands), 0) || 1;
   return (
     <>
       <div
@@ -87,7 +87,7 @@ function IncomeSpark({ view }: { view: OneQuestionView }) {
 }
 
 function FeeSpark({ fee, institution }: { fee: OneQuestionFee; institution: string }) {
-  const top = Math.max(...fee.bars.map((b) => b.amount));
+  const top = Math.max(...fee.bars.map((b) => b.amount), 0) || 1;
   return (
     <>
       <div className="flex h-11 items-end gap-[2px]" role="img" aria-label={`${fee.label}: ${fee.bars.map((b) => `${b.label} ${b.amountLabel}`).join(", ")}`} data-evidence-chart="fee">
@@ -120,7 +120,7 @@ function MarketSpark({ view }: { view: OneQuestionView }) {
   return (
     <>
       {share !== null ? (
-        <div className="flex h-11 items-end" role="img" aria-label={`${view.institution} holds ${market.shareLabel} of the deposits in bank branches in its market`} data-evidence-chart="market">
+        <div className="flex h-11 items-end" role="img" aria-label={`${view.institution} holds ${market.shareLabel} of bank deposits in its counties`} data-evidence-chart="market">
           <div className="flex h-2.5 w-full gap-[2px]">
             <span className="rounded-l-[4px] bg-ink" style={{ width: `${Math.max(2, share)}%` }} />
             <span className="flex-1 rounded-r-[4px] bg-ink/20" />
@@ -131,7 +131,7 @@ function MarketSpark({ view }: { view: OneQuestionView }) {
         <b className="font-semibold [font-variant-numeric:tabular-nums]">{market.branches}</b> {market.branches === 1 ? "branch" : "branches"}
         {market.shareLabel ? (
           <>
-            , <b className="font-semibold [font-variant-numeric:tabular-nums]">{market.shareLabel}</b> of local deposits
+            , <b className="font-semibold [font-variant-numeric:tabular-nums]">{market.shareLabel}</b> of bank deposits in its counties
           </>
         ) : null}
       </p>
@@ -214,7 +214,7 @@ function NoSample() {
 }
 
 function FeeChart({ fee }: { fee: OneQuestionFee }) {
-  const top = Math.max(...fee.bars.map((b) => b.amount));
+  const top = Math.max(...fee.bars.map((b) => b.amount), 0) || 1;
   return (
     <table className="w-full border-collapse text-[12px]" data-benchmark-chart="">
       <caption className="sr-only">{fee.label}, in dollars</caption>
@@ -352,6 +352,30 @@ function interpretation(fee: OneQuestionFee): string {
   return "With too few local figures, the comparison leans on institutions its size.";
 }
 
+/**
+ * The words the Investigate, Monitor and Report outputs use for the question's fee: wires when the
+ * question is about a wire (or no fee is known), the fee's own name when the bank publishes no wire.
+ */
+export function feeWords(fee: Pick<OneQuestionFee, "key" | "label"> | null) {
+  if (!fee || fee.key.startsWith("wire_")) {
+    return {
+      fees: "wire fees",
+      volume: "Wire volume",
+      use: "send wires",
+      counts: "wire counts",
+      compare: "Compare how the named competitors bundle wires into business accounts.",
+    };
+  }
+  const name = fee.label.toLowerCase();
+  return {
+    fees: `${name} fees`,
+    volume: `How often the ${name} fee is charged`,
+    use: "pay it",
+    counts: `${name} counts`,
+    compare: `Compare how the named competitors price and waive the ${name} fee.`,
+  };
+}
+
 function InvestigatePanel({ view }: { view: OneQuestionView | null }) {
   const fee = view?.fee ?? null;
   if (!view || !fee) {
@@ -363,6 +387,7 @@ function InvestigatePanel({ view }: { view: OneQuestionView | null }) {
     );
   }
   const local = fee.local;
+  const words = feeWords(fee);
   return (
     <div className="grid gap-6 lg:grid-cols-2">
       <div>
@@ -400,7 +425,7 @@ function InvestigatePanel({ view }: { view: OneQuestionView | null }) {
               ) : null}
               {view.market?.shareLabel ? (
                 <li>
-                  {view.market.shareLabel} of local deposits across {view.market.counties} {view.market.counties === 1 ? "county" : "counties"} (FDIC Summary of Deposits, {view.market.sodYear})
+                  {view.market.shareLabel} of bank deposits across its {view.market.counties} {view.market.counties === 1 ? "county" : "counties"} (FDIC Summary of Deposits, {view.market.sodYear})
                 </li>
               ) : null}
             </ul>
@@ -411,16 +436,16 @@ function InvestigatePanel({ view }: { view: OneQuestionView | null }) {
         <div className="rounded-[6px] border border-border bg-surface-0 p-4">
           <p className="text-[13px] font-semibold text-ink">Missing for a decision</p>
           <ul className="mt-2 space-y-1.5 text-[12px] leading-snug text-ink-soft">
-            <li>Wire volume and the income it earns. Public filings do not break it out.</li>
-            <li>Which customers send wires: business or consumer.</li>
+            <li>{words.volume} and the income it earns. Public filings do not break it out.</li>
+            <li>Which customers {words.use}: business or consumer.</li>
             <li>Waivers and relationship pricing in practice.</li>
           </ul>
         </div>
         <div className="rounded-[6px] border border-border bg-surface-0 p-4">
           <p className="text-[13px] font-semibold text-ink">Next steps</p>
           <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-[12px] leading-snug text-ink-soft">
-            <li>Pull wire counts and waivers from your core system.</li>
-            <li>Compare how the named competitors bundle wires into business accounts.</li>
+            <li>Pull {words.counts} and waivers from your core system.</li>
+            <li>{words.compare}</li>
             <li>Take the finding and its sources to the pricing committee.</li>
           </ol>
         </div>
@@ -448,7 +473,7 @@ function MonitorPanel({ view }: { view: OneQuestionView | null }) {
       real: change && view?.income ? `${view.income.filing}, ${change.to}` : null,
     },
     { icon: MapPin, title: "Economic developments", line: "New branch, deposit or income data for your counties", real: null },
-    { icon: Scale, title: "Regulatory changes", line: "A rule or enforcement action that touches wire fees", real: null },
+    { icon: Scale, title: "Regulatory changes", line: `A rule or enforcement action that touches ${feeWords(view?.fee ?? null).fees}`, real: null },
   ];
   return (
     <>
@@ -510,7 +535,7 @@ function ReportPanel({ view, sampleHref }: { view: OneQuestionView | null; sampl
         },
         {
           title: "Decision considerations",
-          body: "What a change is worth depends on wire volume, customer mix and waivers, which come from your own systems.",
+          body: `What a change is worth depends on ${feeWords(fee).volume.toLowerCase()}, customer mix and waivers, which come from your own systems.`,
         },
         {
           title: "Evidence and sources",

@@ -114,13 +114,22 @@ function readRange(dates: (string | null)[]): string | null {
   return `${sameYear ? MONTH_DAY.format(from) : DATE.format(from)} to ${dateLabel(last)}`;
 }
 
-/** The line the question asks about: the first of QUESTION_LINES the bank publishes. */
+/**
+ * The line the question asks about: the first of QUESTION_LINES the bank publishes; with no wire,
+ * the nearest real fee it does publish, a comparable one above the local middle half first.
+ */
 export function pickQuestionLine(lines: ReportLine[]): ReportLine | null {
   for (const key of QUESTION_LINES) {
     const line = lines.find((l) => l.key === key && l.own);
     if (line) return line;
   }
-  return null;
+  const priced = lines.filter((l) => l.own);
+  return (
+    priced.find((l) => l.comparable && l.position === "above_market") ??
+    priced.find((l) => l.comparable) ??
+    priced[0] ??
+    null
+  );
 }
 
 /** The question card: the brief's wording for a wire line; another fee only if no wire is published. */

@@ -21,8 +21,9 @@ import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
-import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
-import { getReportPeerContextCached, getReportPeerFinancialCached, peerLinesFor, type ReportPeerContext, type ReportPeerFinancial } from "@/lib/custom-report/peer-context";
+import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { getReportPeerContextCached, getReportPeerFinancialCached, peerLinesFor } from "@/lib/custom-report/peer-context";
+import { createReadBudget } from "@/lib/read-deadline";
 import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
@@ -37,7 +38,7 @@ import { LandingResearch } from "./landing-research-section";
 import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
 import { buildIndexCard } from "./landing-index";
-import { homeReadsCacheable } from "./landing-shared";
+import { HOME_READ_BUDGET_MS, homeReadsCacheable } from "./landing-shared";
 import { homeSerif } from "./landing-serif";
 import "./landing-motion.css";
 
@@ -100,69 +101,40 @@ export default async function LandingPage() {
   const listed = publicFeeTypes(categories);
   const publicKeys = new Set(categories.filter((c) => listed.has(c.fee_category) && Number(c.institution_count ?? 0) > 0).map((c) => c.fee_category));
   const cardFees = getSpotlightCategories().filter((fee) => publicKeys.has(fee));
+  // One deadline for every read below (#1988): a slow read during an ISR prerender or a
+  // saturated pool leaves its part of the page out instead of holding the render or failing
+  // the build. Every read is optional; a fallback counts as a failed read, so the render is
+  // cached for a minute (shortenPageLife), not fifteen.
+  const budget = createReadBudget(HOME_READ_BUDGET_MS, "Home");
+  const optional = <T,>(read: Promise<T>, label: string) =>
+    budget.optional(read.then((value) => ({ value, failed: false })), label, { value: null as T | null, failed: true });
   const [sampleRead, indexReads] = await Promise.all([
-    loadSampleReport().then(
-      async (report) => {
-        if (!report) return { report, revenue: null, financial: null, peers: null, branches: null, failed: false };
-        const id = report.data.subject.institution_id;
-        const market = report.data.market;
-        const [revenue, financial, peers, branches] = await Promise.all([
-          getRevenueContextCached(id).then(
-            (value) => ({ value, failed: false }),
-            (error: unknown) => {
-              console.error("[home] sample bank revenue read failed; Prioritize shown without income figures", error);
-              return { value: null as RevenueContext | null, failed: true };
-            },
-          ),
-          getReportPeerFinancialCached(id).then(
-            (value) => ({ value, failed: false }),
-            (error: unknown) => {
-              console.error("[home] sample bank peer financial read failed; share of revenue left out", error);
-              return { value: null as ReportPeerFinancial | null, failed: true };
-            },
-          ),
-          // The One question section's size-peer fee median and market footprint: the sample
-          // report page's own reads, with the same arguments, so they share its cache entries.
-          getReportPeerContextCached(id, peerLinesFor(report.analysis.lines)).then(
-            (value) => ({ value, failed: false }),
-            (error: unknown) => {
-              console.error("[home] sample bank peer context read failed; size-peer fee median left out", error);
-              return { value: null as ReportPeerContext | null, failed: true };
-            },
-          ),
-          market
-            ? getMarketBranchFootprintCached(market.county_fips, market.sod_year).then(
-                (value) => ({ value, failed: false }),
-                (error: unknown) => {
-                  console.error("[home] sample market footprint read failed; market figures left out", error);
-                  return { value: null as MarketBranchFootprint | null, failed: true };
-                },
-              )
-            : Promise.resolve({ value: null as MarketBranchFootprint | null, failed: false }),
-        ]);
-        return {
-          report,
-          revenue: revenue.value,
-          financial: financial.value,
-          peers: peers.value,
-          branches: branches.value,
-          failed: revenue.failed || financial.failed || peers.failed || branches.failed,
-        };
-      },
-      (error: unknown) => {
-        console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
-        return { report: null, revenue: null, financial: null, peers: null, branches: null, failed: true };
-      },
-    ),
+    optional(loadSampleReport(), "sample report").then(async ({ value: report, failed }) => {
+      if (!report) return { report: null, revenue: null, financial: null, peers: null, branches: null, failed };
+      const id = report.data.subject.institution_id;
+      const market = report.data.market;
+      const [revenue, financial, peers, branches] = await Promise.all([
+        optional(getRevenueContextCached(id), "sample bank revenue"),
+        optional(getReportPeerFinancialCached(id), "sample bank peer financial"),
+        // The One question section's size-peer fee median and market footprint: the sample
+        // report page's own reads, with the same arguments, so they share its cache entries.
+        optional(getReportPeerContextCached(id, peerLinesFor(report.analysis.lines)), "sample bank peer context"),
+        market
+          ? optional(getMarketBranchFootprintCached(market.county_fips, market.sod_year), "sample market footprint")
+          : Promise.resolve({ value: null as MarketBranchFootprint | null, failed: false }),
+      ]);
+      return {
+        report,
+        revenue: revenue.value,
+        financial: financial.value,
+        peers: peers.value,
+        branches: branches.value,
+        failed: revenue.failed || financial.failed || peers.failed || branches.failed,
+      };
+    }),
     Promise.all(
       cardFees.map((fee) =>
-        getIndexRowsCached(fee).then(
-          (rows) => ({ fee, rows, failed: false }),
-          (error: unknown) => {
-            console.error(`[home] index rows for ${fee} failed; left out of the hero card`, error);
-            return { fee, rows: [] as IndexRow[], failed: true };
-          },
-        ),
+        optional(getIndexRowsCached(fee), `index rows for ${fee}`).then(({ value, failed }) => ({ fee, rows: value ?? ([] as IndexRow[]), failed })),
       ),
     ),
   ]);

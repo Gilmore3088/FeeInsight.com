@@ -14,6 +14,9 @@ export const SERIF = { fontFamily: "var(--fi-home-serif, Georgia), Georgia, seri
 /** The homepage's content width (James's example: 1280px, with a 16px gutter on a phone). */
 export const HOME_WRAP = "mx-auto w-full max-w-[1312px] px-4 sm:px-6 lg:px-8";
 
+/** The homepage's reads share one deadline (createReadBudget); past it each part drops out (#1988). */
+export const HOME_READ_BUDGET_MS = 15_000;
+
 export const money = (v: number) => `$${v.toFixed(2)}`;
 
 /** True when a count label holds a real figure (a failed read shows "—"). */
