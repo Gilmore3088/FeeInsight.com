@@ -297,8 +297,8 @@ export function ExplorerMap() {
         onSelect={(key) => {
           select(key);
           // The chosen city's panel sits in the hero above the map: bring it into view.
-          const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-          document.getElementById("selected-city")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+          const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+          document.getElementById("selected-city")?.scrollIntoView?.({ behavior: reduce ? "auto" : "smooth", block: "center" });
         }}
         dimmed={dimmed}
         label={`${stateName} cities with published fees, sized by institutions with a branch`}
