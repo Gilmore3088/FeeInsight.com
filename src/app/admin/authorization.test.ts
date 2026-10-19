@@ -155,13 +155,12 @@ function pageFiles(directory: string): string[] {
   });
 }
 
-// Redirects disclose no data; their destination's page still must own its guard. The
-// marketing alias is separately required to re-export the protected Growth page.
+// Redirects disclose no data; their destination's page still must own its guard.
 const redirectOnly = new Set([
   "login/page.tsx", "hamilton/page.tsx", "hamilton/scout/page.tsx", "scout/page.tsx",
   "research/page.tsx", "research/articles/page.tsx", "research/usage/page.tsx", "research/[agentId]/page.tsx",
-  // Duplicates of the fee catalog, retired in #1122.
-  "index/page.tsx", "peers/page.tsx",
+  // Duplicate screens retired in #1122: two of the fee catalog, one of the Growth page.
+  "index/page.tsx", "peers/page.tsx", "agents/marketing/page.tsx",
 ]);
 
 describe("admin page authorization inventory", () => {
@@ -173,10 +172,6 @@ describe("admin page authorization inventory", () => {
       const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       if (redirectOnly.has(relative)) {
         expect(source.text, relative).toMatch(/\b(?:permanentRedirect|redirect)\(/);
-        continue;
-      }
-      if (relative === "agents/marketing/page.tsx") {
-        expect(source.text).toContain('export { default } from "../../growth/page"');
         continue;
       }
       const page = source.statements.find((node): node is ts.FunctionDeclaration =>
