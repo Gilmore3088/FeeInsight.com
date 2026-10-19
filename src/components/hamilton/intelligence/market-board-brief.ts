@@ -7,6 +7,7 @@ import type { AssetSize } from "@/lib/hamilton/asset-size";
 import type { MarketBriefInput } from "@/lib/hamilton/board-brief";
 import type { ReportExhibit } from "@/lib/hamilton/types";
 import { readFindings, type Loaded } from "./IntelligenceWorkspace";
+import { feeScheduleUrls, statedFeeText } from "@/lib/own-fee";
 
 const CHARTER_LABEL: Record<LandingResearchHandoff["charter"], string> = { all: "Banks & credit unions", bank: "Banks", credit_union: "Credit unions" };
 const dollars = (v: number | null | undefined) => v == null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
@@ -44,8 +45,8 @@ export function marketBoardBriefInput(selection: LandingResearchHandoff, data: L
     exhibits.push({
       id: "local_market", title: `Largest institutions in ${place}: ${getDisplayName(primary)}`, subtitle: `${Math.min(10, data.peers.rows.length)} of ${data.peers.institutionsInScope.toLocaleString()} in scope, largest by assets`,
       columns: ["Institution", "Assets", getDisplayName(primary), "Fee schedule"],
-      rows: data.peers.rows.slice(0, 10).map(r => [r.name, formatAssets(r.totalAssets), dollars(r.amount), r.documentUrl ?? "No link"]),
-      note: "Assets from FDIC and NCUA filings. Each amount links to the schedule it was read from.",
+      rows: data.peers.rows.slice(0, 10).map(r => [r.name, formatAssets(r.totalAssets), statedFeeText(r.amount, r.several, dollars), feeScheduleUrls(r.documentUrls, r.documentUrl).join("; ") || "No link"]),
+      note: "Assets from FDIC and NCUA filings. Named rows show stated prices or their range and fee names, with the stored schedule links behind them.",
     });
   }
   if (lenses.includes("financials") && data.revenue?.quarters.length) {

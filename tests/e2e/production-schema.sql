@@ -3205,3 +3205,6 @@ ALTER TABLE public.fee_change_records
 
 -- #2123: line_share joins the Knox raw dedupe key, so a combined line's twin is stored.
 \ir ../../supabase/migrations/20270110000065_raw_line_share.sql
+
+-- #2127 / #978: current admin correction conditions and evidence on public dollar fees.
+\ir ../../supabase/migrations/20270110000066_published_fee_correction_catalog_overlay.sql

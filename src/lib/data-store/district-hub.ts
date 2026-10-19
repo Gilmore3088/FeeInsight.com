@@ -222,7 +222,8 @@ async function loadStateFees(scope: HubScope): Promise<HubStateFees[]> {
       WHERE ${scopeSql(scope)}
         AND ef.fee_category = ANY($2::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [scope.value, [...HUB_FEES]],
   )) as unknown as FeeRow[];
   return buildStateFeeMedians(rows);

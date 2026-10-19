@@ -360,6 +360,7 @@ export const ACTIONS: ActionEntry[] = [
   sent("analyze/actions.ts", "loadAnalysisRecord", `["${ACTION_TOKENS.ownAnalysis}"]`),
   sent("analyze/actions.ts", "loadAnalysis", `["${ACTION_TOKENS.ownAnalysis}"]`),
   notSent("analyze/actions.ts", "saveAnalysis", "writes; checks canAccessPremium"),
+  notSent("analyze/answer-actions.ts", "addAnswerToDecision", "writes; checks canAccessPremium"),
   sent("analyze/conversation-actions.ts", "startAnalyzeConversationAction"),
   notSent("analyze/conversation-actions.ts", "recordAnalyzeConversationAction", "writes; checks canAccessPremium"),
   sent("reports/actions.ts", "loadActiveScenarios"),

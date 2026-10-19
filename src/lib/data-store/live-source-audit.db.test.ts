@@ -36,7 +36,7 @@ if (connection && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connecti
 const schema = `live_source_${randomBytes(8).toString("hex")}`;
 const tables = { agent_runs: "id", agent_run_steps: "id", agent_run_events: "id", institution_sources: "id", source_documents: "id",
   raw_fee_observations: "fee_raw_id", verified_fee_observations: "fee_verified_id", published_fee_records: "fee_published_id",
-  pipeline_feedback: "id", pipeline_scoreboard_snapshots: "id" };
+  pipeline_feedback: "id", pipeline_scoreboard_snapshots: "id",published_fee_corrections:"id" };
 let admin: postgres.Sql, db: postgres.Sql;
 const seed = "a".repeat(64);
 const appDb = () => db as unknown as Parameters<typeof createLiveAuditDraw>[0]["db"];

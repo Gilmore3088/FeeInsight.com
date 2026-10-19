@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { COVERAGE_LABELS, UNAVAILABLE_LABEL } from "@/lib/public-stats";
-import { ABOUT_BLOCKS, FOUNDER, REPORT_REQUEST_HREF, SAMPLE_REPORT_HREF, aboutNextAction, aboutProof } from "./about-view";
+import {
+  ABOUT_HERO,
+  ABOUT_PRODUCTS,
+  COVERAGE_NOTES,
+  EVIDENCE_STEPS,
+  FOUNDER,
+  METHODOLOGY_LINK,
+  NEUTRALITY,
+  REPORT_REQUEST_HREF,
+  SAMPLE_REPORT_HREF,
+  aboutNextAction,
+  aboutProof,
+} from "./about-view";
 
 const LIVE = {
   monitored: 8000,
@@ -54,28 +66,53 @@ describe("aboutProof", () => {
   });
 });
 
-describe("ABOUT_BLOCKS", () => {
-  it("has three blocks, and the honesty block links to the methodology", () => {
-    expect(ABOUT_BLOCKS.map((b) => b.id)).toEqual(["publish", "audience", "honest"]);
-    expect(ABOUT_BLOCKS[2].link).toEqual({ href: "/methodology", label: "Read the methodology" });
-  });
+describe("about copy", () => {
+  const visible = [
+    ...Object.values(ABOUT_HERO),
+    ...ABOUT_PRODUCTS.flatMap((p) => [p.name, p.kind, p.role, p.link.label]),
+    ...NEUTRALITY,
+    ...EVIDENCE_STEPS.flatMap((s) => [s.title, s.line]),
+    ...COVERAGE_NOTES.flatMap((n) => [n.term, n.line]),
+  ].join(" ");
 
-  it("keeps the copy free of em-dashes, digits and people", () => {
-    const text = ABOUT_BLOCKS.flatMap((b) => [b.eyebrow, b.title, ...b.lines]).join(" ");
-    expect(text).not.toMatch(/—/);
-    expect(text).not.toMatch(/\d/);
-    expect(text).not.toMatch(/James|Frost|Velocity|CSI|Atlas|Magellan|Rosetta|Knox|Darwin/);
-  });
-
-  it("names Hamilton as the Fee Insight workspace and links the reader to its plans", () => {
-    expect(ABOUT_BLOCKS[1].lines[0]).toContain("Hamilton, the Fee Insight workspace");
-    expect(ABOUT_BLOCKS[1].link).toEqual({ href: "/subscribe", label: "See Hamilton plans" });
-  });
-
-  it("does not claim every fee links to its source", () => {
-    expect(ABOUT_BLOCKS[0].lines.join(" ")).toBe(
-      "Every fee is read from the institution's own fee schedule. Medians use only fees traced to a saved copy of that schedule.",
+  it("leads with James's purpose headline and supporting line, without the em-dash", () => {
+    expect(ABOUT_HERO.title).toBe("Better banking decisions start with a clearer picture.");
+    expect(ABOUT_HERO.lede).toBe(
+      "Fee Insight connects published bank fees, financial performance and market context to help banks and credit unions understand where they stand and what deserves a closer look.",
     );
+  });
+
+  it("shows the Bank Fee Index and Hamilton together, with their role lines and links", () => {
+    expect(ABOUT_PRODUCTS.map((p) => p.name)).toEqual(["The Bank Fee Index", "Hamilton"]);
+    expect(ABOUT_PRODUCTS[1].kind).toBe("The Fee Insight workspace");
+    expect(ABOUT_PRODUCTS[0].role).toContain("with links to their source schedules");
+    expect(ABOUT_PRODUCTS[1].link).toEqual({ href: "/subscribe", label: "See Hamilton plans" });
+  });
+
+  it("limits the no-recommendation line to the public index", () => {
+    expect(NEUTRALITY.join(" ")).toBe(
+      "The Bank Fee Index reports published fees without recommending a price. Hamilton helps banking teams evaluate their options, with sources and limitations made clear.",
+    );
+    expect(visible).not.toMatch(/never advises/i);
+  });
+
+  it("keeps the evidence claims as the page made them", () => {
+    expect(EVIDENCE_STEPS.map((s) => s.line).join(" ")).toBe(
+      "Every fee is read from the institution's own fee schedule. Medians use only fees traced to a saved copy of that schedule. Fee Insight is independent of the institutions it covers.",
+    );
+    expect(METHODOLOGY_LINK).toEqual({ href: "/methodology", label: "Read the methodology" });
+  });
+
+  it("says what monitored and data refreshed mean", () => {
+    expect(COVERAGE_NOTES.map((n) => n.term)).toEqual(["Monitored", "With published fees", "Data refreshed"]);
+    expect(COVERAGE_NOTES[0].line).toContain("FDIC and NCUA records");
+    expect(COVERAGE_NOTES[2].line).toContain("not the date every schedule was last checked");
+  });
+
+  it("keeps the copy free of em-dashes, digits, employers and pipeline agents", () => {
+    expect(visible).not.toMatch(/\u2014/);
+    expect(visible).not.toMatch(/\d/);
+    expect(visible).not.toMatch(/James|Frost|Velocity|CSI|Atlas|Magellan|Rosetta|Knox|Darwin|Deming/);
   });
 });
 

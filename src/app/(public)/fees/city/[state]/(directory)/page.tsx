@@ -1,8 +1,8 @@
 /**
  * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
  * the public read cache its read carries (#1811). The page reads no session, cookies or search
- * params. A render whose city list came back empty is cached for a minute instead
- * (`shortenPageLife`, as the homepage), so a failed read is retried.
+ * params; the explorer reads `?city=` in the browser. A render whose city list came back empty
+ * is cached for a minute instead (`shortenPageLife`, as the homepage), so a failed read is retried.
  */
 export const revalidate = 3600;
 
@@ -11,12 +11,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
+import { PAGE_HERO_WRAP, PageHero } from "@/components/public/page-hero";
 import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-import { CityList, type CityLink } from "./city-list";
-import { titleCase } from "../[city]/city-lookup";
+import { correctSpelling } from "@/lib/geo/city-names";
+import { displayCity } from "@/lib/format";
+import { stateMarketMap } from "@/lib/geo/state-market-map";
+import { CitySearch, ExplorerMap, SelectedCity, StateExplorer, type ExplorerCity } from "./state-explorer";
+import { CityList } from "./city-list";
 
 interface PageProps {
   params: Promise<{ state: string }>;
@@ -27,9 +30,6 @@ export function generateStaticParams() {
   return [];
 }
 
-/** Markets offered as one-tap links under the search. */
-const SHORTCUTS = 6;
-
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -38,7 +38,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!stateName) notFound();
 
   return {
-    title: `Bank Fees by City in ${stateName}`,
+    title: `Compare Bank and Credit Union Fees in ${stateName}`,
+    // ?city= only changes which city the explorer opens on; one URL per state.
+    alternates: { canonical: `/fees/city/${state.toLowerCase()}` },
     description: `Compare the published fees of the banks and credit unions with branches in each ${stateName} city: overdraft, monthly maintenance, ATM and more, each with its source.`,
   };
 }
@@ -52,13 +54,31 @@ export default async function StateCityDirectory({ params }: PageProps) {
 
   const cities = await getStateMarketCitiesCached(stateCode);
   if (cities.length === 0) await shortenPageLife();
-  // getStateMarketCities ranks by institutions with a branch in the city, most first.
-  const links: CityLink[] = cities.map((c) => ({
-    name: titleCase(c.city),
+  // getStateMarketCities folds each city's spellings into one and ranks by institutions with a branch there, most first.
+  const links: ExplorerCity[] = cities.map((c) => ({
+    key: c.city.toLowerCase(),
+    // Hyphens kept: WINSTON-SALEM reads "Winston-Salem".
+    name: correctSpelling(displayCity(c.city)),
     href: `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(c.city.toLowerCase())}`,
     institutions: c.institutions,
     withFees: c.with_fees,
   }));
+  // Each city sits at the middle of its branches' recorded coordinates; a city without any is listed but not drawn.
+  const map = links.length
+    ? stateMarketMap(
+        stateCode,
+        cities.flatMap((c) => (c.lat != null && c.lon != null ? [{ key: c.city.toLowerCase(), lat: c.lat, lon: c.lon }] : [])),
+      )
+    : null;
+
+  const crumbs = (
+    <>
+      <Link href="/fees">Fees</Link>
+      <span aria-hidden="true">/</span>
+      <span>{stateName}</span>
+    </>
+  );
+  const title = `Compare bank and credit union fees in ${stateName}`;
 
   return (
     <>
@@ -70,34 +90,37 @@ export default async function StateCityDirectory({ params }: PageProps) {
         ]}
       />
 
-      <section className="border-b border-border bg-paper">
-        <div className="mx-auto max-w-page px-4 pb-10 pt-6 sm:px-6 sm:pt-10">
-          <div className={PAGE_HEADER}>
-            <nav aria-label="Breadcrumb" className={PAGE_CRUMBS}>
-              <Link href="/fees" className="hover:text-ink">Fees</Link>
-              <span aria-hidden="true">/</span>
-              <span className="text-ink-soft">{stateName}</span>
-            </nav>
-            <h1 className={`mt-4 ${PAGE_H1}`}>
-              {stateName} bank fees by city
-            </h1>
-            <p className={`mt-2 ${PAGE_LEDE}`}>
-              {links.length > 0
-                ? "Each city page compares the banks and credit unions with a branch there, using the fees they publish."
-                : `No ${stateName} city has an institution with published fees yet.`}
+      {links.length > 0 ? (
+        <StateExplorer map={map} cities={links} stateName={stateName}>
+          <PageHero
+            crumbs={crumbs}
+            title={title}
+            lede="Choose a city to explore published fees at institutions with local branches."
+            aside={map ? <ExplorerMap /> : undefined}
+          >
+            <div className="space-y-6">
+              <CitySearch />
+              <SelectedCity />
+            </div>
+          </PageHero>
+          <div className={`${PAGE_HERO_WRAP} pb-10 pt-10 text-left sm:pt-14`}>
+            <CityList cities={links} stateName={stateName} />
+            <p className="mt-6 max-w-[46rem] text-[12px] text-ink-muted">
+              Sources: FDIC Summary of Deposits, NCUA branch records, U.S. Census Bureau outlines. A city is listed once at least
+              one bank or credit union with a branch there has published fees. Spellings of one city in the branch records
+              (Saint, St and St., for example) are counted as one city, and each institution once.
             </p>
           </div>
-          <div className="mt-6">
-            <CityList cities={links} stateName={stateName} stateCode={stateCode} shortcuts={links.slice(0, SHORTCUTS)} />
-          </div>
-          <p className="mt-4 text-[12px] text-ink-muted">
-            A city is listed once at least one bank or credit union with a branch there has published fees. Counts are
-            institutions with a branch in the city, from the FDIC Summary of Deposits and NCUA branch records.
-          </p>
-        </div>
-      </section>
+        </StateExplorer>
+      ) : (
+        <PageHero
+          crumbs={crumbs}
+          title={title}
+          lede={`No ${stateName} city has an institution with published fees yet.`}
+        />
+      )}
 
-      <nav aria-label="More fee pages" className="mx-auto flex max-w-page flex-wrap gap-x-6 gap-y-2 px-4 pb-16 pt-10 text-[14px] sm:px-6">
+      <nav aria-label="More fee pages" className={`${PAGE_HERO_WRAP} flex flex-wrap gap-x-6 gap-y-2 border-t border-border pb-16 pt-8 text-[14px]`}>
         <Link href={`/research/state/${stateCode}`} className={LINK}>
           {stateName} fee report
         </Link>

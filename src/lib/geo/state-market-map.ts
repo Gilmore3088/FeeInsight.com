@@ -49,9 +49,11 @@ export function stateMarketMap(stateCode: string, markets: { key: string; lat: n
     const d = seen ? path(f) : null;
     return d ? [d] : [];
   });
+  // A point the projection places outside the state's frame is a bad coordinate, not a place to draw.
+  const inFrame = (x: number, y: number) => x >= box.x && x <= box.x + box.w && y >= box.y && y <= box.y + box.h;
   const points = markets.flatMap((m) => {
     const p = projection([m.lon, m.lat]);
-    return p ? [{ key: m.key, x: Math.round(p[0] * 10) / 10, y: Math.round(p[1] * 10) / 10 }] : [];
+    return p && inFrame(p[0], p[1]) ? [{ key: m.key, x: Math.round(p[0] * 10) / 10, y: Math.round(p[1] * 10) / 10 }] : [];
   });
   return {
     viewBox: `${box.x.toFixed(1)} ${box.y.toFixed(1)} ${box.w.toFixed(1)} ${box.h.toFixed(1)}`,

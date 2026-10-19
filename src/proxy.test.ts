@@ -30,11 +30,16 @@ describe("proxy", () => {
   });
 
   it("serves a filtered directory per request and the plain directory from cache (#1811)", () => {
-    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf"]) {
+    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf", "fees=1"]) {
       const response = proxy(request(`https://feeinsight.com/institutions?${query}`));
       expect(response.headers.get("x-middleware-rewrite")).toBe(`https://feeinsight.com/institutions/results?${query}`);
     }
-    for (const url of ["https://feeinsight.com/institutions", "https://feeinsight.com/institutions?utm_source=x&q="]) {
+    for (const url of [
+      "https://feeinsight.com/institutions",
+      "https://feeinsight.com/institutions?utm_source=x&q=",
+      "https://feeinsight.com/institutions?fees=0",
+      "https://feeinsight.com/institutions?fees=yes",
+    ]) {
       expect(proxy(request(url)).headers.get("x-middleware-rewrite")).toBeNull();
     }
   });

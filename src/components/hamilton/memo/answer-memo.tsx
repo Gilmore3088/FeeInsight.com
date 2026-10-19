@@ -33,13 +33,14 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
     const amounts = exhibit.items.map((i) => i.amount);
     const lo = Math.min(...amounts);
     const hi = Math.max(...amounts);
+    const several = exhibit.items.some(i => i.several);
     const out: KeyFigure[] = [];
     if (exhibit.own != null) out.push({ value: fmtMoney(exhibit.own), label: exhibit.ownLabel });
-    out.push({ value: `${fmtMoney(lo)} to ${fmtMoney(hi)}`, label: `Range across ${exhibit.items.length} named institutions` });
+    out.push({ value: `${fmtMoney(lo)} to ${fmtMoney(hi)}`, label: several ? `Range of institution values in group statistics (${exhibit.items.length} ${exhibit.items.length === 1 ? "institution" : "institutions"})` : `Range across ${exhibit.items.length} named institutions` });
     if (exhibit.own != null) {
       const own = exhibit.own;
       const less = amounts.filter((a) => a < own - 0.005).length;
-      out.push({ value: `${less} of ${amounts.length}`, label: `Charge less than ${exhibit.ownLabel}` });
+      out.push({ value: `${less} of ${amounts.length}`, label: several ? `Values below ${exhibit.ownLabel} in group statistics` : `Charge less than ${exhibit.ownLabel}` });
     }
     return out;
   }
