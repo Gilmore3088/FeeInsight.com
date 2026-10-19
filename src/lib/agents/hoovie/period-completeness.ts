@@ -164,11 +164,16 @@ export function periodCompleteness(
     case "unchecked":
       return { ...base, state: "unchecked", reason: `${newest.period.key} not checked yet; ${newestComplete}` };
     case "empty": {
-      const previous = states[1];
+      // A publisher that has skipped a period before (an empty period older than a loaded one,
+      // e.g. the Beige Book's eight releases a year) can skip the one before this too, so its
+      // settled-empty periods are passed over when judging lateness.
+      const skipsPeriods = states.some((state, i) => state === "empty" && states.slice(0, i).some((s) => s === "complete" || s === "partial"));
+      const previousIndex = skipsPeriods ? states.findIndex((state, i) => i > 0 && state !== "empty") : 1;
+      const previous = previousIndex > 0 ? states[previousIndex] : undefined;
       if (previous === undefined || previous === "complete") {
         return { ...base, state: "awaiting_release", reason: `no release yet for ${newest.period.key}; ${newestComplete}` };
       }
-      return { ...base, state: "late", reason: `${newest.period.key} not released and ${ordered[1].period.key} not loaded in full; ${newestComplete} (${plural(base.periodsBehind, "period")} behind)` };
+      return { ...base, state: "late", reason: `${newest.period.key} not released and ${ordered[previousIndex].period.key} not loaded in full; ${newestComplete} (${plural(base.periodsBehind, "period")} behind)` };
     }
   }
 }

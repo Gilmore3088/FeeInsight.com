@@ -48,6 +48,22 @@ describe("periodCompleteness (#2228)", () => {
     expect(c.reason).toContain("2 periods behind");
   });
 
+  it("is awaiting release, not late, for a publisher that skips months (Beige Book in early July)", () => {
+    // Eight books a year: June 2026 and February 2026 had none and stay empty for good.
+    const months = ["202607", "202606", "202605", "202604", "202603", "202602", "202601"];
+    const rows = [part("202607", "empty"), part("202606", "empty"), part("202605", "succeeded"), part("202604", "succeeded"), part("202603", "succeeded"), part("202602", "empty"), part("202601", "succeeded")];
+    const c = periodCompleteness(months, rows, new Date("2026-07-03T12:00:00Z"));
+    expect(c).toMatchObject({ state: "awaiting_release", completedPeriod: "2026-05" });
+  });
+
+  it("is still late for a skipping publisher when the last non-empty period before the newest failed", () => {
+    const months = ["202607", "202606", "202605", "202604", "202603"];
+    const rows = [part("202607", "empty"), part("202606", "empty"), part("202605", "failed"), part("202604", "succeeded"), part("202603", "empty")];
+    const c = periodCompleteness(months, rows, new Date("2026-07-03T12:00:00Z"));
+    expect(c.state).toBe("late");
+    expect(c.reason).toContain("2026-05 not loaded in full");
+  });
+
   it("is partial when only some of the newest period's partitions loaded (partial coverage)", () => {
     const planned = ["2025-OH", "2025-TX", "2025-CA", "2024-OH", "2024-TX", "2024-CA"];
     const rows = [part("2025-OH", "succeeded"), part("2025-TX", "succeeded", { partial: true }), ...["2024-OH", "2024-TX", "2024-CA"].map((k) => part(k, "succeeded"))];
