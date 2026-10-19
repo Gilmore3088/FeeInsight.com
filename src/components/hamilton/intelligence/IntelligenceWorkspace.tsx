@@ -82,10 +82,16 @@ export async function MarketContext({ stateCode }: { stateCode: string | null })
       <Link href="/pro/intelligence" className="text-sm font-medium text-[var(--fi-ink)] underline">Open the U.S. fee landscape</Link>
     </header>
     {panels.fees}
-    {panels.financials}
-    {panels.economy}
-    {panels.complaints}
-    {panels.regulation}
+    {/* The rest of the market stays one click away, so the briefing leads the page. */}
+    <details className="group flex flex-col gap-7">
+      <summary className="cursor-pointer text-sm font-medium text-[var(--fi-ink)] underline">More on {state ? place : "the market"}: finances, economy, complaints and regulation</summary>
+      <div className="mt-7 flex flex-col gap-7">
+        {panels.financials}
+        {panels.economy}
+        {panels.complaints}
+        {panels.regulation}
+      </div>
+    </details>
   </section>;
 }
 
