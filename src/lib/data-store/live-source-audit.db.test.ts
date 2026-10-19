@@ -608,6 +608,8 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     }finally{await db`DROP TRIGGER reject_degradation ON agent_run_events`;await db.unsafe(`DROP FUNCTION ${schema}.reject_degradation()`);}
   });
 
+  // The >64-history control constructs 70 real claim/settle pairs (140 owned sessions).
+  // This aggregate allowance leaves every operation's receipt deadline unchanged.
   it("reads a legitimate 70-chunk partial-group continuation without dropping the remaining cohort",async()=>{
     await db`INSERT INTO institution_sources(id,institution_name,state_code,website_url,fee_schedule_url,charter_type,source)
       SELECT i,'Synthetic institution '||i,'VT','https://fixture.invalid/','https://fixture.invalid/fees.pdf','bank','fixture' FROM generate_series(2,70)i`;
@@ -634,7 +636,7 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     const progress=await readLiveAuditProgress(appDb()!,origin);expect(progress).toMatchObject({valid:true,cursor:70});
     expect(progress.chunks).toHaveLength(70);expect(progress.observations).toHaveLength(210);
     expect((await readLiveSourceAudit(appDb()!))?.summary).toMatchObject({state:"complete",unknown:210,unattempted:0,support:null});
-  },30000);
+  },60000);
 
   it("executes the real scheduler-created Magellan capture then its Atlas archive step with exact owner/source provenance",async()=>{
     const {origin,ctx}=await observed();const [requestId]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);

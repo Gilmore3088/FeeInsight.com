@@ -24,6 +24,11 @@ the server-write/no-duplicate assertions. Rollback, cumulative-work and proxy-sh
 also require actual work witnesses instead of treating a startup rejection as their result.
 Independent cold-admission exhaustion controls remain;
 production helper bytes, total deadlines and original endpoint/auth/schema options are unchanged.
+The next CI run passed those controls but exceeded the aggregate 30-second cap in its 70-pair
+history control. A copied, instrumented control with 200ms per-bootstrap admission delay
+completed all 70 pairs and final history assertions in 39.2 seconds; no operation approached its
+existing receipt deadline. Only that aggregate integration-case cap is now 60 seconds; the full
+history and every assertion remain. This controlled evidence does not establish the CI timing cause.
 The archive's ordered immutable origin IDs/manifest digest does not reconstruct full origin bytes
 after retention. Missing/over-cap/expired evidence stays unknown or explicitly unavailable.
 
