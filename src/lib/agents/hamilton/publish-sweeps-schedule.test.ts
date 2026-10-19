@@ -61,5 +61,9 @@ describe("publish-sweeps scheduling", () => {
     expect(text).toContain("r.run_kind IN ('workflow_lane', 'state_agent')");
     expect(text).toContain("r.params_json->>'institution_id' IS NULL");
     expect(text).toContain("s.step_key = 'publish'");
+    // agent_runs has no created_at column; prod refused every tick's query until this read started_at
+    // (2026-10-19 00:10-00:30 UTC: "column \"created_at\" does not exist").
+    expect(text).toContain("MAX(started_at) FROM agent_runs");
+    expect(text).not.toContain("MAX(created_at)");
   });
 });
