@@ -4,44 +4,16 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
-import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
-import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
-import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
-import { fillSourceLinks, repairLinkDrift, repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
-import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
-import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
-import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
-import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
-import { retireSameLineDuplicates } from "@/lib/agents/hamilton/same-line-duplicates";
-import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
-import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
-import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
-import { applyCutNameDuplicates } from "@/lib/agents/hamilton/cut-name-duplicates";
-import { applyAccountTypeHold } from "@/lib/agents/hamilton/account-type-hold";
-import { applyHandAudienceFixes, applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
+import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
-import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
-import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
-import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
-import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
-import { restoreLostRecheckTakedowns } from "@/lib/agents/hamilton/lost-recheck-restore";
-import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
-import { restorePageCopiesOfDownedKeepers } from "@/lib/agents/hamilton/page-copy-restore";
-import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
-import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
-import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
-import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
-import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
-import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
-import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
-import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
-import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
+import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
-import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
+import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
   currentMonth,
@@ -55,6 +27,21 @@ import {
 } from "@/lib/agents/marketing/monthly";
 import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing/state-edition";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
+import {
+  movedSweepCounts,
+  PUBLISH_SWEEPS_SPLIT_LIVE,
+  PUBLISH_SWEEPS_STEP_KEY,
+  publishSweepMode,
+  runPublishSweepsStep,
+  runsMovedSweep,
+  sweepsAfterRows,
+  sweepsBeforeGuardRequeue,
+  sweepsBeforeNewerCopy,
+  sweepsBeforeRefreshCopy,
+  sweepsBeforeRows,
+  timedSweep,
+  type MovedSweepContext,
+} from "@/lib/agents/hamilton/publish-sweeps";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { consumeRereadRequests, rereadFeedbackDetail } from "@/lib/agents/knox/reread-feedback";
@@ -65,7 +52,6 @@ import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
-import { retireProductPageConflicts } from "@/lib/agents/hamilton/product-page-conflict";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
 import { runChangeOutcomes, summarizeChangeOutcomes } from "@/lib/agents/deming/change-outcomes";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
@@ -1110,6 +1096,19 @@ async function executeAgenticStep(
         detail,
       };
     }
+    case PUBLISH_SWEEPS_STEP_KEY: {
+      // The 40 sweeps a lane publish no longer runs once PUBLISH_SWEEPS_SPLIT_LIVE is on, over
+      // every state's live fees (hamilton/publish-sweeps.ts). Live, it holds the publish lock as
+      // a publish step does; off, it is a rolled-back dry run and takes no lock.
+      const live = PUBLISH_SWEEPS_SPLIT_LIVE && run.runKind !== "dry_run";
+      if (live) await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
+      return runPublishSweepsStep(tx, {
+        runId: run.id,
+        stepId: step.id,
+        live,
+        categoryGuardLimit: CATEGORY_GUARD_STEP_LIMIT,
+      });
+    }
     case "publish":
     case "publish-index":
     case "publish-context": {
@@ -1123,148 +1122,26 @@ async function executeAgenticStep(
       // measurement only, to show which sweeps hold the step (2026-10-17 finding).
       const sweepMs: Record<string, number> = {};
       const institutionId = numericRunParam(params, ["institution_id"]);
-      // A takedown is never final: fees an earlier sweep took down come back once a range
-      // widens or the taxonomy gains their category.
-      const outlierRestores = await timedSweep(sweepMs, "outlierRestores", () => restoreOutliersNowInRange(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      const offTaxonomyRestores = await timedSweep(sweepMs, "offTaxonomyRestores", () => restoreFeesNowInTaxonomy(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // The top-50 fold: fees under the fifteen retired categories move to the one their
-      // wording places them in, before any sweep judges them by category (fee-fold.ts).
-      const taxonomyFold = await timedSweep(sweepMs, "taxonomyFold", () => foldRetiredCategories(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-        // The research split's exact dry-run count over every row, on request (#1398).
-        researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
-      }));
-      const outlierRollbacks = await timedSweep(sweepMs, "outlierRollbacks", () => rollBackPublishedOutliers(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      const offTaxonomyRollbacks = await timedSweep(sweepMs, "offTaxonomyRollbacks", () => rollBackOffTaxonomyFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A transfer or deposit limit read as a price ("Zelle® transfer limit | $1,000").
-      const limitRollbacks = await timedSweep(sweepMs, "limitRollbacks", () => rollBackLimitsPublishedAsFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A business schedule's fee beside the bank's consumer fee in the same category.
-      const businessSchedule = await timedSweep(sweepMs, "businessSchedule", () => retireBusinessScheduleFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A fee the same-line re-decide (9 Oct) published beside an older live line of itself.
-      const sameLineDuplicates = await timedSweep(sweepMs, "sameLineDuplicates", () => retireSameLineDuplicates(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // Another bank's fee: read from a document on another institution's own website.
-      const otherBank = await timedSweep(sweepMs, "otherBank", () => retireOtherBankDocumentFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // The complete-record eval's critical rows (down now, James Oct 8) and the two name
-      // shapes they taught: a rebate published as an ATM fee, a "no fee for" sentence as a fee.
-      const evalVerdicts = await timedSweep(sweepMs, "evalVerdicts", () => retireEvalVerdictFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1334: eight live fees read with their cents cut off are corrected in place, and the
-      // unpublished copies of those reads rejected, before this step publishes anything.
-      const handAmounts = await timedSweep(sweepMs, "handAmounts", () => applyHandAmountCorrections(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
-      // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
-      const cutNameDuplicates = await timedSweep(sweepMs, "cutNameDuplicates", () => applyCutNameDuplicates(tx, {
-        runId: run.id,
-        stepId: step.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-      }));
-      // #1100 gap 1 (James, Oct 16): a non-checking account's monthly fee is held as verified with
-      // its account type and never published as consumer checking monthly maintenance.
-      const accountTypeHold = await timedSweep(sweepMs, "accountTypeHold", () => applyAccountTypeHold(tx, {
-        runId: run.id,
-        stepId: step.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-      }));
-      // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
-      const handTakedowns = await timedSweep(sweepMs, "handTakedowns", () => applyHandTakedowns(tx, {
-        runId: run.id,
-        stepId: step.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-      }));
-      // Listed live fees whose audience is wrong against their bank's own text (#1302 first).
-      const handAudience = await timedSweep(sweepMs, "handAudience", () => applyHandAudienceFixes(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" }));
-      // An institution that no longer operates keeps no live fee (#1200).
-      const closedInstitution = await timedSweep(sweepMs, "closedInstitution", () => retireClosedInstitutionFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A fee read from an article (a blog post quoting a national average), not a schedule.
-      const articlePage = await timedSweep(sweepMs, "articlePage", () => retireArticlePageFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
-      const productPage = await timedSweep(sweepMs, "productPage", () => retireProductPageFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A product-page fee the bank's own schedule prices differently: the schedule wins
-      // (James, 2026-10-13). Off until a hand check of 10 conflicts finds 9 right; logs first looks.
-      const productPageConflict = await timedSweep(sweepMs, "productPageConflict", () => retireProductPageConflicts(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // One product priced differently on two current pages: the older page's price comes down.
-      const crossPage = await timedSweep(sweepMs, "crossPage", () => retireCrossPageConflicts(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A live fee whose own name contradicts its category (an ATM fee filed as a card's
-      // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
-      // a guard change takes effect without anyone starting the repair run by hand.
-      const categoryGuard = await timedSweep(sweepMs, "categoryGuard", () => runHamiltonCategoryGuard({
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        limit: CATEGORY_GUARD_STEP_LIMIT,
-        institutionId,
+      // Moved sweeps (hamilton/publish-sweeps.ts), in today's order: restores, the fold, rollbacks,
+      // the hand lists, the page sweeps and the category guard. A state lane skips them once
+      // PUBLISH_SWEEPS_SPLIT_LIVE is on (the `publish-sweeps` step runs them); off, every step runs them.
+      const sweepMode = publishSweepMode({ stepKey: step.stepKey, stateCode, institutionId });
+      const sweepCtx: MovedSweepContext = {
         db: tx,
-      }));
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
+        categoryGuardLimit: CATEGORY_GUARD_STEP_LIMIT,
+        sweepMs,
+        mode: sweepMode,
+      };
+      const {
+        outlierRestores, offTaxonomyRestores, taxonomyFold, outlierRollbacks, offTaxonomyRollbacks, limitRollbacks,
+        businessSchedule, sameLineDuplicates, otherBank, evalVerdicts, handAmounts, cutNameDuplicates, accountTypeHold,
+        handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
+      } = await sweepsBeforeGuardRequeue(sweepCtx);
       const categoryGuardRollbacks = categoryGuard.dryRun
         ? Math.min(categoryGuard.failingFees, categoryGuard.limit)
         : categoryGuard.rolledBackFees;
@@ -1286,46 +1163,8 @@ async function executeAgenticStep(
         stateCode,
       }));
       const companionRollbacks = companionRetire.rollbacks;
-      const earlyDuplicateCollapses = await timedSweep(sweepMs, "earlyDuplicateCollapses", () => collapsePublishedDuplicates(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1302: a live row that repeats another live line of its page under a near name ("Research
-      // fee" / "Account Research fee"), when the page prints one line. Live while
-      // NEAR_NAME_COLLAPSE_LIVE is on; a dry run reports and changes nothing.
-      const nearNameCollapse = await timedSweep(sweepMs, "nearNameCollapse", () => collapseNearNameDuplicates(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1439 item 3: a copy the page-copy collapse closed comes back when the copy it was kept
-      // for came down for its own reasons (not the fee's), so the fee does not vanish. Runs
-      // before the collapse; it never makes a second live copy of a price.
-      const pageCopyRestore = await timedSweep(sweepMs, "pageCopyRestore", () => restorePageCopiesOfDownedKeepers(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1439: a live row that repeats a line of a newer copy of its page stored under another
-      // address ("?print=1", "www.", a mirror). Closes them while PAGE_COPY_COLLAPSE_LIVE is on (James, Oct 17).
-      const pageCopyCollapse = await timedSweep(sweepMs, "pageCopyCollapse", () => collapsePageCopies(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // A live fee's frequency follows its own schedule row: a blank gets the one the row states
-      // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
-      // A failed fill write is a warning here, never a failed publish (#1349 review).
-      const frequencyFill = await timedSweep(sweepMs, "frequencyFill", () => fillFrequenciesInPublish(tx, {
-        runId: run.id,
-        stepId: step.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
+      const { earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill } =
+        await sweepsBeforeNewerCopy(sweepCtx);
       // A fee line the bank removed from a newer copy of its page comes down (shadow
       // mode until NEWER_COPY_RETIRE_LIVE is turned on: it reports and changes nothing).
       const newerCopy = await timedSweep(sweepMs, "newerCopy", () => retireFeesDroppedFromNewerCopy(tx, {
@@ -1337,13 +1176,7 @@ async function executeAgenticStep(
       }));
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
       const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
-      // A current copy whose text is identical to the superseded one has no rows of its
-      // own (Knox skips text it has read), so the superseded copy's rows move to it.
-      const identicalCopy = await timedSweep(sweepMs, "identicalCopy", () => moveRowsToIdenticalCopy(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
+      const { identicalCopy } = await sweepsBeforeRefreshCopy(sweepCtx);
       // A live fee the current copy of its page still states at the same amount moves to
       // that copy, so it no longer points at a superseded copy and its date is current.
       const refreshCopy = await timedSweep(sweepMs, "refreshCopy", () => refreshFeesFromCurrentCopy(tx, {
@@ -1373,59 +1206,11 @@ async function executeAgenticStep(
             stateCode,
           }))
         : null;
-      // Live names stored before Knox tidied its reads ("Stop Payment | Item", "A dormant fee
-      // of") take their tidy name, a batch of banks per step; the old name stays in
-      // pipeline_feedback and a rename never makes a fee fail the source check.
-      const nameRetidy = await timedSweep(sweepMs, "nameRetidy", () => retidyLiveFeeNames(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1234 step 2: Knox's note leaves `conditions` for `extraction_note`, a batch per step.
-      const extractionNotes = await timedSweep(sweepMs, "extractionNotes", () => moveExtractionNotes(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
-      // A live fee named only "Monthly Service Fee" takes the account heading above it in its
-      // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
-      const accountNames = await timedSweep(sweepMs, "accountNames", () => nameLiveFeesByAccount(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
-      // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
-      const lineupCorrect = await timedSweep(sweepMs, "lineupCorrect", () => correctStoredLineups(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
+      // Moved sweeps (hamilton/publish-sweeps.ts): name and lineup tidies, restore second looks,
+      // change pairing and the cross-page restore, before the rows publish.
+      const { nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore } =
+        await sweepsBeforeRows(sweepCtx);
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
-      // Fees an older re-check restored with no check at all get the restore bar on a second look.
-      const restoreRecheck = await timedSweep(sweepMs, "restoreRecheck", () => recheckUncheckedRestores(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1071: fees the re-check took down on Oct 5-11 (before #1022) that are not live again are
-      // judged once by the restore bar against their document's newest text; those that pass return.
-      const lostRestore = await timedSweep(sweepMs, "lostRestore", () => restoreLostRecheckTakedowns(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // Recorded fee changes name their two rows and whether they compare one page with
-      // itself, before the restore below reopens any superseded row.
-      const changePairing = await timedSweep(sweepMs, "changePairing", () => pairFeeChangeRecords(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // Live fees another page's price superseded come back through the restore bar.
-      const crossPageRestore = await timedSweep(sweepMs, "crossPageRestore", () => restoreCrossPageSupersedes(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
       // #1342: imported fees with no traceable document take a stored document of their own
       // institution that prints them (shared source check); those the source-link repair took
       // down for want of one come back. Off with SOURCE_LINK_RESOURCE_ON.
@@ -1487,35 +1272,8 @@ async function executeAgenticStep(
         stateCode,
       }));
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
-      // Imported fees with no document take their schedule through an identical imported
-      // row the source check could not relink them past.
-      const importedTwins = await timedSweep(sweepMs, "importedTwins", () => linkImportedFeesToTwins(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1342: a live fee with no link (one the source check restored after the hand repair,
-      // say) takes its own document's URL. Never a takedown. Off with SOURCE_LINK_FILL_ON.
-      const sourceLinkFill = await timedSweep(sweepMs, "sourceLinkFill", () => fillSourceLinks(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // #1347: a live fee whose link opens neither its document's URL nor the page its text was
-      // read from takes its document's link when it traces there; one that does not goes through
-      // the second look and is archived. Off with SOURCE_LINK_DRIFT_LIVE (then it only reports).
-      const linkDrift = await timedSweep(sweepMs, "linkDrift", () => repairLinkDrift(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      }));
-      // Every agent learns from what happened to its output: this step's takedowns and
-      // restores (and a batch of older outcomes) go into the shared learning store.
-      const feedbackSync = await timedSweep(sweepMs, "feedbackSync", () => syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
-      // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
-      const holdFeedback = await timedSweep(sweepMs, "holdFeedback", () => repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" }));
+      // The five moved sweeps after the rows (hamilton/publish-sweeps.ts): links and learning feedback.
+      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback } = await sweepsAfterRows(sweepCtx);
       const indexRefresh = published.dryRun
         ? null
         : await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(tx, {
@@ -2204,6 +1962,20 @@ async function executeAgenticStep(
             top_up_skipped: published.timeBox.topUpSkipped,
           },
           sweep_ms: sweepMs,
+          // Which moved sweeps this step ran (hamilton/publish-sweeps.ts) and what each changed, or
+          // in a dry run would change: set beside the `publish-sweeps` dry run's own `sweep_counts`.
+          sweep_mode: sweepMode,
+          sweep_counts: movedSweepCounts(
+            {
+              outlierRestores, offTaxonomyRestores, taxonomyFold, outlierRollbacks, offTaxonomyRollbacks, limitRollbacks,
+              businessSchedule, sameLineDuplicates, otherBank, evalVerdicts, handAmounts, cutNameDuplicates, accountTypeHold,
+              handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
+              earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill, identicalCopy,
+              nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore,
+              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback,
+            },
+            (key) => runsMovedSweep(sweepMode, key),
+          ),
           phase_ms: {
             sweeps_before: publishRowsStartedAt - publishStartedAt,
             publish_rows: publishRowsEndedAt - publishRowsStartedAt,
@@ -3631,6 +3403,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // 2026-10-17: p50 38 s, p90 133 s, p99 221 s, max 278 s (TX). The row loop now stops at
   // PUBLISH_ROW_DEADLINE_MS; re-measure from `phase_ms` before lowering this.
   publish: 225_000,
+  // The 40 sweeps a lane publish hands off (hamilton/publish-sweeps.ts), unscoped: their sum per
+  // lane publish step over 2026-10-17/18 was p50 about 100 s, p99 201 s. Re-measure from the
+  // dry run's `step_ms` before changing it.
+  "publish-sweeps": 205_000,
   classify: 160_000,
   // p50 238 s, p90 367 s, max 1,101 s: it never fits a tick, so the tick does not start it
   // (`TICK_EXCLUDED_STEP_KEYS`); its own route runs it.
@@ -3788,15 +3564,8 @@ async function laneFirstWorkMs(runId: number): Promise<number> {
   }
 }
 
-/** Runs one publish sweep and adds its milliseconds to `times` under `key`; the result is unchanged. */
-export async function timedSweep<T>(times: Record<string, number>, key: string, run: () => Promise<T>): Promise<T> {
-  const started = Date.now();
-  try {
-    return await run();
-  } finally {
-    times[key] = (times[key] ?? 0) + (Date.now() - started);
-  }
-}
+/** Publish sweep timing lives with the sweeps (hamilton/publish-sweeps.ts); re-exported for callers here. */
+export { timedSweep };
 
 /**
  * A step left queued because it could not finish by the tick's deadline: one `step.deferred`
@@ -4164,7 +3933,9 @@ export async function executeQueuedAgentRuns({
               -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
               -- Growth's stale-outreach withdrawal (growth/withdraw.ts) is one short step, at most
               -- once a day, and ranks with it so the tick that queues it also runs it.
-              COALESCE(r.params_json->>'source' IN ('hamilton.guard_catch_up', 'growth.outreach_withdraw'), false) DESC,
+              -- The publish-sweeps run (hamilton/publish-sweeps.ts) is one step at most once a tick; it ranks
+              -- first so it starts while the tick still has room for its 205 s.
+              COALESCE(r.params_json->>'source' IN ('hamilton.guard_catch_up', 'growth.outreach_withdraw', 'hamilton.publish_sweeps'), false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
