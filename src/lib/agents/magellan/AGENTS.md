@@ -654,3 +654,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v3 (top-10 first) | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v2 | `magellan/second-document.ts` |
 | `WEBSITE_FIND_STRATEGY` | `discover.website_search` | v1 | `magellan/website-find.ts` |
+
+OEWS downloads are bounded to 64 MiB and the selected XLSX to 128 MiB. Corrupt or missing
+archives/workbooks fail with year, level, phase, byte/header and SHA-256 evidence; they are not
+successful empty checks. Missing HTTP 404 remains a not-yet-published file. These transport-only
+checks retain parser v1 so the failed 2022 partition retries under normal pacing without
+invalidating the six already-loaded years. No immediate corrupt-payload retry loop.
