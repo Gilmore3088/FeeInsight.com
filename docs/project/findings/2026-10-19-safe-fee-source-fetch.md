@@ -119,6 +119,11 @@ untrusted TLS, redirect loops, compressed/chunked/declared limits, header overfl
 body/chain deadlines and caller cancellation. Existing Magellan/Rosetta suites exercise their
 injected transports unchanged. Repository type/lint/agentic/full-suite gates accompany the PR.
 
+The schema-backed lane E2E suite formerly stubbed only global fetch. Its source-client seam
+now delegates to those same in-memory bank fixtures through a test-only module mock that
+preserves the client's other exports. This keeps synthetic bank names off the network while
+the transport policy itself is tested separately, without a production fallback or bypass.
+
 **Lesson:** Source suitability is not socket safety. Keep the public-destination check at the
 connection boundary and route every new default fee-source path through it. Do not weaken it
 when a bank blocks the crawler; retain a visible refusal and use the existing approved source
