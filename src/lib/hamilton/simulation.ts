@@ -28,6 +28,8 @@ export interface DistributionData {
   stamp?: DatasetStamp;
   /** One amount per peer institution, so the percentile is the shared mid-rank one (#2048). */
   peer_amounts?: number[];
+  /** The peers' amounts could not be read, so the percentile is estimated for that reason (#2103). */
+  peer_amounts_unread?: boolean;
 }
 
 export interface FeePosition {
@@ -35,6 +37,8 @@ export interface FeePosition {
   percentile: number;
   /** Which way the percentile was figured, so the screen can say so (#2048). */
   method: "mid_rank" | "estimated";
+  /** Why an estimate: the amounts could not be read, rather than too few are on file (#2103). */
+  amountsUnread?: boolean;
   /** proposed - median (negative = below median = cost advantage) */
   medianGap: number;
   riskProfile: "low" | "medium" | "high";
@@ -104,7 +108,7 @@ export function computeFeePosition(fee: number, dist: DistributionData): FeePosi
   const percentile = midRank ?? Math.round(estimatePercentile(fee, dist));
   const medianGap = parseFloat((fee - dist.median_amount).toFixed(2));
   const riskProfile = classifyRisk(percentile);
-  return { percentile, method, medianGap, riskProfile };
+  return { percentile, method, ...(method === "estimated" && dist.peer_amounts_unread ? { amountsUnread: true } : {}), medianGap, riskProfile };
 }
 
 /**

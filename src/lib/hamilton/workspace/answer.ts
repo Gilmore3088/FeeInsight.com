@@ -274,7 +274,8 @@ function positionExhibit(research: FeeResearch, name: string): Exhibit | null {
     ...(research.current !== null && band.n >= MIN_PEERS_FOR_POSITION ? { method: PERCENTILE_METHOD } : {}),
     markers,
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
-    note: `Shaded: the middle half of peers. Each marker is a market's median and its institution count. ${peerGroupNote(research, { publishing: true })}`,
+    // Kept short (#2102): what the shading and markers are, then which peers.
+    note: [`Shaded: peers' middle half.`, markers.length > 1 ? "Markers: each market's median." : "", peerGroupNote(research, { publishing: true })].filter(Boolean).join(" "),
   };
 }
 

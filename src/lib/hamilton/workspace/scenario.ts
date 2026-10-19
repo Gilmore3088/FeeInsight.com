@@ -14,7 +14,7 @@
 
 import { proseFeeName } from "./names";
 import { countedAmounts } from "@/lib/data-store/counted-amounts";
-import { midRankPercentile } from "@/lib/percentile";
+import { midRankPercentile, SAME_PRICE_TOLERANCE } from "@/lib/percentile";
 import {
   WORKSPACE_ENGINE_VERSION,
   type ClarifyingQuestion,
@@ -28,7 +28,6 @@ import {
 
 /** Fewer peers than this and a percentile says more than the data does. */
 export const MIN_PEERS_FOR_POSITION = 5;
-const SAME_PRICE_TOLERANCE = 0.005;
 
 function fmtMoney(n: number): string {
   const cents = Math.abs(n % 1) > SAME_PRICE_TOLERANCE;

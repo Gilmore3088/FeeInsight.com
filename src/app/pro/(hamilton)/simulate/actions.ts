@@ -112,9 +112,10 @@ export async function getDistributionForCategory(
 
     // The peers' own amounts, from the same group as the distribution, for the shared mid-rank percentile (#2048).
     const excluded = peerContext?.institutionId ? Number(peerContext.institutionId) : undefined;
-    const [values] = await getPeerFeeValues([peerSource === "national" ? {} : peerIndex.filters ?? {}], [feeCategory], Number.isInteger(excluded) ? excluded : undefined).catch(() => [new Map()]);
+    const [values] = await getPeerFeeValues([peerSource === "national" ? {} : peerIndex.filters ?? {}], [feeCategory], Number.isInteger(excluded) ? excluded : undefined).catch(() => [null]);
     const amounts = peerAmounts(values?.get(feeCategory) ?? []);
     if (amounts.length > 0) distribution.peer_amounts = amounts;
+    if (!values) distribution.peer_amounts_unread = true;
 
     const confidenceTier = computeConfidenceTier(entry.institution_count);
     return { distribution, confidenceTier };
