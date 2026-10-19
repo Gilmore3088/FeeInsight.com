@@ -99,7 +99,7 @@ export function buildLaunchChecklist({ env, spend, readyMarkets, libraryReports 
     key: "accuracy",
     label: `Accuracy at ${ACCURACY_TARGET_LABEL} of live fees`,
     state: "unknown",
-    detail: "Not stored as a live number yet; the last hand-checked sample is on the Scoreboard.",
+    detail: "Measured by the weekly live batch of 50 whole institutions, including missing categories. The automated stored-copy scorecard cannot satisfy this launch gate.",
     href: "/admin/scoreboard",
   });
 
