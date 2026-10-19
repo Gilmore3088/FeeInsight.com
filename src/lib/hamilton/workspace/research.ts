@@ -414,20 +414,33 @@ function numOrNull(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
-/** The schedule most of the bank's live fees were read from, and when; null when none is on file, undefined when the read fails. */
-async function loadOwnSchedule(institutionId: number): Promise<FeeResearch["ownSchedule"]> {
+/**
+ * The schedule most of the bank's live fees were read from, and when it was last read (#2035).
+ * Undefined, so the answer keeps its neutral wording, whenever "lists no such fee" or "no
+ * schedule on file" could be false: a row for the fee exists in any state (held, filtered out of
+ * the peer figures, not yet published), a collected schedule has no live fees yet, or the read fails.
+ * Null only when no schedule was ever collected.
+ */
+async function loadOwnSchedule(institutionId: number, feeCategory: string): Promise<FeeResearch["ownSchedule"]> {
   try {
     const [row] = await sql`
-      SELECT sd.document_url, sd.crawled_at
-        FROM published_fee_catalog ef
-        JOIN source_documents sd ON sd.id = ef.source_document_id
-       WHERE ef.institution_id = ${institutionId}
-         AND ef.review_status = 'approved'
-       GROUP BY sd.id, sd.document_url, sd.crawled_at
-       ORDER BY COUNT(*) DESC, sd.crawled_at DESC NULLS LAST
-       LIMIT 1`;
-    if (!row) return null;
-    return { documentUrl: row.document_url ? String(row.document_url) : null, readAt: row.crawled_at ? new Date(row.crawled_at as string).toISOString().slice(0, 10) : null };
+      SELECT
+        EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = ${institutionId} AND p.fee_category = ${feeCategory})
+          OR EXISTS (SELECT 1 FROM verified_fee_observations v WHERE v.institution_id = ${institutionId} AND v.fee_category = ${feeCategory} AND v.review_status <> 'rejected')
+          AS fee_on_file,
+        EXISTS (SELECT 1 FROM source_documents d WHERE d.institution_id = ${institutionId} AND d.status IN ('success', 'unchanged')) AS collected,
+        (SELECT json_build_object('url', sd.document_url, 'read', GREATEST(sd.last_checked_at, sd.crawled_at))
+           FROM published_fee_catalog ef
+           JOIN source_documents sd ON sd.id = ef.source_document_id AND sd.institution_id = ef.institution_id
+          WHERE ef.institution_id = ${institutionId}
+            AND ef.review_status = 'approved'
+          GROUP BY sd.id, sd.document_url, sd.last_checked_at, sd.crawled_at
+          ORDER BY COUNT(*) DESC, GREATEST(sd.last_checked_at, sd.crawled_at) DESC
+          LIMIT 1) AS schedule`;
+    if (!row || row.fee_on_file) return undefined;
+    const schedule = row.schedule as { url: string | null; read: string | null } | null;
+    if (!schedule) return row.collected ? undefined : null;
+    return { documentUrl: schedule.url ?? null, readAt: schedule.read ? String(schedule.read).slice(0, 10) : null };
   } catch {
     return undefined;
   }
@@ -1056,6 +1069,8 @@ export async function getFeeResearch(
   if (!base) return null;
   // The Wire's enforcement read needs the bank's federal regulator, so it waits on this one read.
   const regulatorRead = getInstitutionRegulators(institutionId).catch(() => null);
+  // Read beside the rest; used only when the bank has no row for the fee (#2035).
+  const ownScheduleRead = loadOwnSchedule(institutionId, feeCategory);
   const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
@@ -1073,7 +1088,7 @@ export async function getFeeResearch(
   ]);
   const ownRows: OwnFeeRow[] = ownFeeRows;
   // A fee with no row of its own is told apart: not listed on the schedule, or no schedule (#2035).
-  const ownSchedule = ownRows.length === 0 ? await loadOwnSchedule(institutionId) : undefined;
+  const ownSchedule = ownRows.length === 0 ? await ownScheduleRead : undefined;
   const wireScope = { feeCategory, stateCode: base.stateCode, primaryRegulator: regulators?.primaryRegulator ?? null, today: now };
   const wire = wireFacts(wireRows, wireScope);
   const statePosts = statePostFacts(wireRows.posts, wireScope);

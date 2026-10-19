@@ -246,7 +246,7 @@ async function withResearchIdentity(
   let accountComparison: AskResponse["accountComparison"];
   if (asksAccountComparison(question)) {
     if (!account.institution) {
-      comparison = ` This answer is research on ${subject}; no institution is linked to this account, so none is compared.`;
+      comparison = ` This answer covers ${subject}. No institution is linked to this account, so there is no comparison.`;
     } else if (account.institution.id === identity.researchInstitutionId) {
       comparison = ` ${subject} is also the linked account institution; the figures above refer to ${subject}.`;
     } else if (!feeCategory) {

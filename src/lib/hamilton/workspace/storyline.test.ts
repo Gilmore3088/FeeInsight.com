@@ -128,6 +128,22 @@ describe("storyline", () => {
       expect(matrix.exhibit.rows.find((r) => r.name === "Peer 5")?.cells[1]).toBeNull();
     });
 
+    it("keeps a $0 daily cap as $0, and counts a row whose several fees include a charge", () => {
+      const rows = structure!.rows.map((r) =>
+        r.institutionId === 1 && !r.own
+          ? { ...r, values: { ...r.values, od_daily_cap: 0 } }
+          : r.institutionId === 5 && !r.own
+            ? { ...r, values: { ...r.values, nsf: 0 }, several: { nsf: { low: 0, high: 32, fees: [{ name: "NSF, first", amount: 0 }, { name: "NSF, later", amount: 32 }] } } }
+            : r,
+      );
+      const story = buildFeeAnswer(research({ structure: { ...structure!, rows } }), { story: { structure: true } }).storyline!;
+      const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
+      expect(matrix.actionTitle).toBe("Of 6 peers: 5 charge an NSF fee, 2 a transfer fee, 0 a daily cap.");
+      if (matrix.exhibit.kind !== "structure_matrix") throw new Error("expected a matrix");
+      const cap = matrix.exhibit.columns.indexOf("Daily cap");
+      expect(matrix.exhibit.rows.find((r) => r.name === "Peer 1")?.cells[cap]).toBe("$0");
+    });
+
     it("says the bank's schedule lists no such fee, with the schedule and its date, never a $0", () => {
       const r = research({ current: null, ownRows: [], subjectName: "Space Coast Federal Credit Union", ownSchedule: { documentUrl: "https://example.org/fees.pdf", readAt: "2026-10-09" } });
       const answer = buildFeeAnswer(r);

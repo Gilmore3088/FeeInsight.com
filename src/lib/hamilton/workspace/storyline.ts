@@ -334,7 +334,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const group = set.rows.filter((r) => !r.own);
   if (group.length < MIN_PEERS_FOR_POSITION) return null;
   // A $0 on the schedule is no fee: only a charge above $0 counts as charging one (#2035).
-  const has = (category: string) => group.filter((r) => (r.values[category] ?? 0) > 0).length;
+  const has = (category: string) => group.filter((r) => (r.values[category] ?? 0) > 0 || (r.several?.[category]?.high ?? 0) > 0).length;
   const nsf = has("nsf");
   const transfer = has("od_protection_transfer");
   const cap = has("od_daily_cap");
@@ -352,7 +352,8 @@ function structurePiece(research: FeeResearch): Piece | null {
         cells: set.columns.map((c) => {
           const value = r.values[c.category];
           if (value === undefined) return null;
-          return value === 0 && !r.several?.[c.category] ? "No fee ($0)" : statedFeeText(value, r.several?.[c.category], money);
+          // A $0 cap is a cap of $0, not an absent fee.
+          return value === 0 && !r.several?.[c.category] && c.category !== "od_daily_cap" ? "No fee ($0)" : statedFeeText(value, r.several?.[c.category], money);
         }),
         own: r.own || undefined,
       })),
@@ -940,7 +941,8 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
   if (set) {
     const others = set.rows.filter((r) => !r.own);
     const ownRow = set.rows.find((r) => r.own);
-    const withTransfer = others.filter((r) => r.values.od_protection_transfer !== undefined);
+    // A $0 transfer is no fee, so it is not counted as pricing one (#2035), as in the structure matrix.
+    const withTransfer = others.filter((r) => (r.values.od_protection_transfer ?? 0) > 0);
     if (others.length >= MIN_PEERS_FOR_POSITION && withTransfer.length > 0) {
       const ownTransfer = ownRow?.values.od_protection_transfer;
       const transfers = withTransfer.map((r) => r.values.od_protection_transfer).sort((a, b) => a - b);

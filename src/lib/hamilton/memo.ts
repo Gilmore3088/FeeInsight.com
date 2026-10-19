@@ -59,8 +59,9 @@ Hard rules:
   Account identity alone provides no evidence about its fees or financials. Compare it only when the storyline states sourced account-institution figures.
 - Never recommend raising, lowering, cutting, dropping or removing a fee, and never say what the bank should do. Lay out what each path means.
 - Where DATA says a figure is missing, say it is missing; never fill it in.
-- An exhibit with "own": null means the bank's schedule, as read, lists no such fee (or no schedule is on file); say that,
-  as DATA words it. It never means the bank charges no fee: never call it a no-fee position, a $0 fee, or a claim the bank can make.
+- An exhibit with "own": null means no price for the bank's own fee is in the index. Say it as DATA's claims word it
+  (for example "its schedule lists no such fee", or "not in the index yet"). It never means the bank charges no fee:
+  never call it a no-fee position, a $0 fee, or a claim the bank can make.
 - A fee changed only where DATA lists the change (a change_timeline exhibit or a dated change line). Never infer a
   price change from anything else. When DATA lists none, say the change history is still building.
 - Plain language, short sentences, no jargon, no internal system names. DATA is this prompt's name for the payload:
@@ -204,7 +205,7 @@ export function memoProblems(draft: MemoDraft, payload: unknown, question?: stri
   }
   for (const line of binding?.limitations ?? []) if (line.startsWith("Sources disagree")) problems.push(`State this instead of either figure: ${line}`);
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
-  if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. Its schedule, as read, lists no such fee; say that instead.`);
+  if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. No price for its fee is in the index; say it as DATA's claims word it.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;

@@ -134,10 +134,10 @@ describe("H01 Structured Ask identity acceptance", () => {
       identityStore.memberships.mockResolvedValue(records);
       identityStore.research.mockClear();
       const result = await answerAsk(user, { institutionId: "2", question: "Compare their overdraft fee with us" });
-      expect(result.body).toMatchObject({ shortAnswer: expect.stringContaining("no institution is linked to this account, so none is compared") });
+      expect(result.body).toMatchObject({ shortAnswer: expect.stringContaining("No institution is linked to this account, so there is no comparison") });
       expect(identityStore.research.mock.calls.map((call) => call[0])).toEqual([2]);
       expect(result.body).not.toHaveProperty("accountComparison");
-      expect(JSON.stringify((result.body as { answer?: unknown }).answer)).toContain("no institution is linked to this account, so none is compared");
+      expect(JSON.stringify((result.body as { answer?: unknown }).answer)).toContain("No institution is linked to this account, so there is no comparison");
     }
     identityStore.memberships.mockRejectedValue(new Error("membership unavailable"));
     const result = await answerAsk(user, { institutionId: "2", question: "Compare their overdraft fee with us" });
@@ -155,7 +155,7 @@ describe("H01 Structured Ask identity acceptance", () => {
     }
     identityStore.memberships.mockResolvedValue([]);
     const unlinked = await answerAsk(user, { institutionId: "2", question: "How do our overdraft fees compare with peers?" });
-    expect(JSON.stringify((unlinked.body as { answer?: unknown }).answer)).toContain("no institution is linked to this account, so none is compared");
+    expect(JSON.stringify((unlinked.body as { answer?: unknown }).answer)).toContain("No institution is linked to this account, so there is no comparison");
   });
 
   it("reads memberships afresh after revocation and never uses profile text as home identity", async () => {

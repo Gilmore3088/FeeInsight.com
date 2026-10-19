@@ -78,7 +78,7 @@ function feeSource(research: FeeResearch, label = FEE_SOURCE_LABEL): SourceRef {
  * lists none, or no schedule is on file. Neither is a $0 fee. Null when that was not read.
  */
 function missingOwnFee(research: FeeResearch, name: string): { lead: string; fact: Fact } | null {
-  if (research.current !== null || research.ownRows.length > 0 || research.ownSchedule === undefined) return null;
+  if (research.current !== null || research.ownRows.length > 0 || research.ownSchedule === undefined || ownRate(research) !== null) return null;
   const schedule = research.ownSchedule;
   const who = subjectPossessive(research);
   if (schedule === null) {
