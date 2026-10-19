@@ -31,8 +31,8 @@ const GUIDES = [
   { slug: "safe-deposit-fees", title: "Safe deposit boxes", description: "Consider what you need to store, access and protect before renting a box." },
 ] as const;
 
-// Describe the live guide collection from the same entries rendered below. Upcoming tools
-// are deliberately absent: Fee Check is still labeled "Coming soon" on this page.
+// Describe the guide collection from the same entries rendered below, and connect the
+// toolkit to Fee Check without mixing a tool into the list of educational guides.
 const JSON_LD = {
   "@context": "https://schema.org",
   "@type": "CollectionPage",
@@ -43,6 +43,7 @@ const JSON_LD = {
   inLanguage: "en",
   isAccessibleForFree: true,
   audience: { "@type": "Audience", audienceType: "Consumers" },
+  relatedLink: `${SITE_URL}/check`,
   mainEntity: {
     "@type": "ItemList",
     "@id": `${PAGE_URL}#consumer-guides`,
@@ -114,10 +115,7 @@ export default function ForConsumersPage() {
               <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Understand a charge, avoid unnecessary fees, and weigh the cost of a service.</p>
             </li>
             <li className="border-t border-control-border pt-4">
-              <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1">
-                <h3 className="text-[18px] font-semibold">Fee Check</h3>
-                <span className="text-[12px] font-medium text-ink-muted">Coming soon</span>
-              </div>
+              <Link href="/check" className={`${TEXT_LINK} group text-[18px]`}>Fee Check <Arrow /></Link>
               <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">See how your institution’s fees compare with state and national medians.</p>
             </li>
             <li className="border-t border-control-border pt-4">

@@ -8,17 +8,27 @@ import { formatAmount } from "@/lib/format";
  * A reader enters their own account's terms and sees the cost. The starting values are
  * illustrative and say so; nothing here is any institution's price.
  */
-export function GuideCalculator({ kind, defaults }: { kind: "overdraft" | "atm"; defaults: Record<string, number> }) {
-  return kind === "atm" ? <AtmCalculator defaults={defaults} /> : <OverdraftCalculator defaults={defaults} />;
+export function GuideCalculator({
+  kind,
+  defaults,
+  note,
+}: {
+  kind: "overdraft" | "atm";
+  defaults: Record<string, number>;
+  /** Replaces the "illustrative" line when the starting values are real published fees. */
+  note?: string;
+}) {
+  return kind === "atm" ? <AtmCalculator defaults={defaults} note={note} /> : <OverdraftCalculator defaults={defaults} note={note} />;
 }
 
-function OverdraftCalculator({ defaults }: { defaults: Record<string, number> }) {
+function OverdraftCalculator({ defaults, note }: { defaults: Record<string, number>; note?: string }) {
   const [perItem, setPerItem] = useState(String(defaults.perItem ?? ""));
   const [items, setItems] = useState(String(defaults.items ?? 1));
   const [limit, setLimit] = useState(defaults.maxPerDay != null ? String(defaults.maxPerDay) : "");
   const cost = overdraftDayCost(num(perItem), num(items), limit.trim() === "" ? null : num(limit));
   return (
     <Frame
+      note={note}
       inputs={
         <>
           <Field label="Fee per item, from your schedule" prefix="$" value={perItem} onChange={setPerItem} />
@@ -40,7 +50,7 @@ function OverdraftCalculator({ defaults }: { defaults: Record<string, number> })
   );
 }
 
-function AtmCalculator({ defaults }: { defaults: Record<string, number> }) {
+function AtmCalculator({ defaults, note }: { defaults: Record<string, number>; note?: string }) {
   const [withdrawals, setWithdrawals] = useState(String(defaults.withdrawals ?? 4));
   const [operatorFee, setOperatorFee] = useState(String(defaults.operatorFee ?? ""));
   const [bankFee, setBankFee] = useState(String(defaults.bankFee ?? ""));
@@ -48,6 +58,7 @@ function AtmCalculator({ defaults }: { defaults: Record<string, number> }) {
   const cost = atmCost(num(withdrawals), num(operatorFee), num(bankFee), num(rebate));
   return (
     <Frame
+      note={note}
       inputs={
         <>
           <Field label="Out-of-network withdrawals a month" value={withdrawals} onChange={setWithdrawals} />
@@ -68,13 +79,13 @@ function AtmCalculator({ defaults }: { defaults: Record<string, number> }) {
   );
 }
 
-function Frame({ inputs, result }: { inputs: React.ReactNode; result: React.ReactNode }) {
+function Frame({ inputs, result, note }: { inputs: React.ReactNode; result: React.ReactNode; note?: string }) {
   return (
     <div className="mt-5 grid gap-4 rounded-xl border border-border bg-surface-0 p-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:p-5">
       <div className="grid gap-3">{inputs}</div>
       <div className="rounded-lg bg-paper p-4" aria-live="polite">
         {result}
-        <p className="mt-2 text-[11.5px] text-ink-muted">Starting values are illustrative. Enter your own account&rsquo;s terms.</p>
+        <p className="mt-2 text-[11.5px] text-ink-muted">{note ?? "Starting values are illustrative. Enter your own account\u2019s terms."}</p>
       </div>
     </div>
   );
