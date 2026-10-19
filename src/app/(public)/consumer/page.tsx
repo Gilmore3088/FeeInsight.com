@@ -12,13 +12,13 @@ import { formatFeeAmount } from "@/lib/format";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { PAGE_HEADER } from "@/components/public/page-header";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark, medianHasUnstatedAudience } from "@/components/unstated-audience";
 import { InstitutionSearchBar } from "../institutions/search-bar";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { StatePicker, type StateOption } from "./state-picker";
-import { CheckExample } from "./check-example";
+import { CheckExample, loadCheckExample } from "./check-example";
+import { PAGE_HERO_WRAP, PageHero } from "@/components/public/page-hero";
 import { HamiltonEmployeeBand } from "../check/check-result";
 import { homeSerif } from "@/app/landing-serif";
 import { SERIF } from "@/app/landing-shared";
@@ -54,7 +54,9 @@ const TASKS = [
 /** The rest of the demo cast, one tap each; Capital City Bank is the example shown. */
 const EXAMPLES = [
   { id: 5, name: "U.S. Bank" },
+  { id: 21, name: "M&T Bank" },
   { id: 4956, name: "Navy Federal Credit Union" },
+  { id: 6741, name: "SchoolsFirst FCU" },
 ] as const;
 
 const money = (n: number) => formatFeeAmount(n) ?? `$${n.toFixed(2)}`;
@@ -66,6 +68,8 @@ const CHECK_EXAMPLE_ID = 323;
 const BAND_H2 = "text-[28px] font-medium leading-[1.08] tracking-[-0.02em] text-ink sm:text-left sm:text-[36px]";
 const BAND_LINE = "mx-0 mt-1.5 text-left text-[15px] leading-relaxed text-ink-soft";
 const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
+const CHIP =
+  "inline-flex min-h-11 items-center whitespace-nowrap rounded-full border border-white/30 px-4 text-[14px] font-medium text-white hover:border-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white";
 const ICON_BADGE = "flex size-10 shrink-0 items-center justify-center rounded-full bg-brick-tint text-brick";
 
 /** "/guides/atm-fees#find-cash" when that guide and section exist; the guide alone without the section. */
@@ -73,6 +77,32 @@ function guideHref(guides: Guide[], slug: string, section: string): string | nul
   const guide = guides.find((g) => g.slug === slug);
   if (!guide) return null;
   return `/guides/${slug}${guide.sections.some((s) => s.id === section) ? `#${section}` : ""}`;
+}
+
+/** The three tasks, as entrances in the band's right column; a row under the copy on a phone. */
+function TaskList() {
+  return (
+    <nav aria-label="What you can do here">
+      <ul className="grid gap-3">
+        {TASKS.map(({ href, title, line, Icon }) => (
+          <li key={href} className="min-w-0">
+            <a
+              href={href}
+              className="flex min-h-11 items-center gap-3 rounded-xl bg-white/10 p-3 text-white hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white sm:p-4"
+            >
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15" aria-hidden="true">
+                <Icon className="size-5" strokeWidth={1.75} />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[15px] font-semibold">{title}</span>
+                <span className="block text-[13px] text-[#e0e9ee]">{line}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
 }
 
 export default async function ConsumerPage() {
@@ -113,57 +143,53 @@ export default async function ConsumerPage() {
 
   const unstatedShown = charges.some((c) => medianHasUnstatedAudience(c.stat));
 
+  const example = await loadCheckExample(CHECK_EXAMPLE_ID, guides);
+
   return (
-    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper text-ink`}>
+    <div className="min-h-screen overflow-x-clip bg-paper text-ink">
       <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "For consumers", href: "/consumer" }]} />
-      <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-10">
-        {/* `relative z-20` keeps the search suggestions above the tiles below. */}
-        <section className={`relative z-20 max-w-3xl ${PAGE_HEADER}`}>
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick sm:mx-0">For consumers</p>
-          <h1 className="mt-2 text-[38px] font-medium leading-[1.04] tracking-[-0.025em] text-ink sm:text-[56px]" style={SERIF}>
-            Understand your bank fees. Find ways to pay less.
-          </h1>
-          <div id="find-bank" className="mt-5 max-w-xl scroll-mt-24 text-left">
+      {/* `relative z-20` keeps the search suggestions above the content below the band. */}
+      <div className="relative z-20">
+        <PageHero
+          eyebrow="For consumers"
+          title="Understand your bank fees. Find ways to pay less."
+          aside={<TaskList />}
+        >
+          <div id="find-bank" className="max-w-xl scroll-mt-24">
             <InstitutionSearchBar resultPath="/check" ariaLabel="Your bank or credit union" placeholder="Your bank or credit union" />
           </div>
-          <p className="mt-1 flex flex-wrap items-center justify-center gap-x-4 text-[14px] text-ink-muted sm:mx-0 sm:justify-start">
-            <span>Or try</span>
-            {EXAMPLES.map((example) => (
-              <Link key={example.id} href={`/check?id=${example.id}`} className={`inline-flex min-h-11 items-center ${LINK}`}>
-                {example.name}
-              </Link>
-            ))}
-          </p>
-        </section>
+          <div className="mt-4">
+            <p className="text-[13px] font-semibold text-[#c9d6de]">Or try</p>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {EXAMPLES.map((ex) => (
+                <li key={ex.id}>
+                  <Link href={`/check?id=${ex.id}`} className={CHIP}>
+                    {ex.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </PageHero>
+      </div>
 
-        <nav aria-label="What you can do here" className="mt-6">
-          <ul className="grid gap-3 sm:grid-cols-3">
-            {TASKS.map(({ href, title, line, Icon }) => (
-              <li key={href} className="min-w-0">
-                <a
-                  href={href}
-                  className="flex min-h-11 items-center gap-3 rounded-xl border border-border bg-surface-0 p-3 hover:border-ink hover:bg-paper focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink sm:p-4"
-                >
-                  <span className={ICON_BADGE} aria-hidden="true">
-                    <Icon className="size-5" strokeWidth={1.75} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block text-[15px] font-semibold text-ink">{title}</span>
-                    <span className="block text-[13px] text-ink-muted">{line}</span>
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <div className="mt-10 space-y-10 sm:space-y-12">
-          <section id="check" aria-labelledby="check-heading" className={BAND}>
+      <div className={`${homeSerif.variable} ${PAGE_HERO_WRAP} pb-12 pt-8 sm:pb-16 sm:pt-10`}>
+        <div className="space-y-10 sm:space-y-12">
+          <section id="check" aria-labelledby="check-heading" className="min-w-0 scroll-mt-24">
             <h2 id="check-heading" className={BAND_H2} style={SERIF}>
               What a fee check shows
             </h2>
             <div className="mt-4">
-              <CheckExample id={CHECK_EXAMPLE_ID} guides={guides} />
+              {example ? (
+                <CheckExample example={example} />
+              ) : (
+                <p className={BAND_LINE}>
+                  The example is not available right now.{" "}
+                  <Link href={`/check?id=${CHECK_EXAMPLE_ID}`} className={LINK}>
+                    Open the fee check
+                  </Link>
+                </p>
+              )}
             </div>
           </section>
 
