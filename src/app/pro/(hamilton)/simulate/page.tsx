@@ -2,9 +2,10 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { resolveArtifactContextInstitutionId } from "@/lib/hamilton/artifact-context";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
@@ -60,16 +61,29 @@ export default async function ModelPage({ searchParams }: PageProps) {
   if (!user) redirect("/");
 
   // Saved scenarios from the old Scenario screen open here with their fee and price.
-  const scenarioId = params.scenario_id || params.scenario;
-  const saved = scenarioId ? await getHamiltonScenarioById(scenarioId, user.id).catch(() => null) : null;
+  const scenarioId = params.scenario_id?.trim() || params.scenario?.trim();
+  const saved = scenarioId ? await getHamiltonScenarioById(scenarioId, user.id) : null;
+  // A missing/private scenario is never a request to model today's selection instead.
+  if (scenarioId && !saved) notFound();
+  const contextInstitutionId = resolveArtifactContextInstitutionId({
+    urlInstitutionId: params.instId,
+    artifactInstitutionId: saved?.institution_id,
+    preferArtifact: Boolean(saved),
+  });
+  if (saved && !contextInstitutionId) {
+    return <p role="alert">No institution was recorded with this saved scenario. <a href="/pro/simulate" className="underline">Start a new simulation</a>.</p>;
+  }
 
   const ws = await loadFeeWorkspace({
     userId: user.id,
-    instId: params.instId ?? saved?.institution_id ?? null,
-    fee: params.fee ?? params.category ?? saved?.fee_category ?? null,
+    instId: contextInstitutionId ?? null,
+    fee: saved?.fee_category ?? params.fee ?? params.category ?? null,
     intent: "simulate",
   });
   const inst = ws.institution;
+  if (saved && String(inst?.id) !== contextInstitutionId) {
+    return <p role="alert">The institution recorded with this saved scenario could not be loaded. <a href="/pro/simulate" className="underline">Start a new simulation</a>.</p>;
+  }
   const instId = inst ? String(inst.id) : null;
   const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];

@@ -79,6 +79,13 @@ describe("Hamilton artifact context resolution", () => {
     ).toEqual({ kind: "report", artifactId: "report-2" });
   });
 
+  it.each(["scenario", "scenario_id"])("resolves a saved simulation before a conflicting URL subject (%s)", (key) => {
+    expect(getHamiltonArtifactContextLookup({
+      pathname: "/pro/simulate",
+      searchParams: new URLSearchParams({ [key]: "saved-a", instId: "303" }),
+    })).toEqual({ kind: "scenario", artifactId: "saved-a" });
+  });
+
   it("always queries a saved analysis even with conflicting URL institution context", () => {
     expect(
       getHamiltonArtifactContextLookup({
