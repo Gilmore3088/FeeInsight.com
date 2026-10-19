@@ -62,9 +62,9 @@ export function CityList({ cities, stateName }: { cities: CityLink[]; stateName:
           <li key={c.href} className="border-b border-border" hidden={collapsed && !largest.has(c.href)}>
             <Link href={c.href} className="flex min-h-11 flex-col justify-center py-2 text-ink hover:text-brick">
               <span className="truncate text-[15px] font-medium">{c.name}</span>
-              <span className="text-[12px] tabular-nums text-ink-muted">
-                Fee data available for {COUNT.format(c.withFees)} of {COUNT.format(c.institutions)}{" "}
-                {c.institutions === 1 ? "institution" : "institutions"}
+              <span className="text-[12px] text-ink-muted">
+                Fee data available for <span className="tabular-nums">{COUNT.format(c.withFees)}</span> of{" "}
+                <span className="tabular-nums">{COUNT.format(c.institutions)}</span> {c.institutions === 1 ? "institution" : "institutions"}
               </span>
             </Link>
           </li>

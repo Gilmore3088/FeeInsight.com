@@ -171,7 +171,9 @@ export function CitySearch() {
             className={`flex min-h-11 cursor-pointer items-center justify-between gap-3 px-4 text-[15px] ${i === active ? "bg-surface-200" : ""}`}
           >
             <span className="font-medium">{c.name}</span>
-            <span className="text-[12px] tabular-nums text-ink-muted">{COUNT.format(c.institutions)} institutions</span>
+            <span className="text-[12px] text-ink-muted">
+              <span className="tabular-nums">{COUNT.format(c.institutions)}</span> {c.institutions === 1 ? "institution" : "institutions"}
+            </span>
           </li>
         ))}
       </ul>

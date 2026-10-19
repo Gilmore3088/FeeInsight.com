@@ -11,7 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { STATE_NAMES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { PageHero } from "@/components/public/page-hero";
+import { PAGE_HERO_WRAP, PageHero } from "@/components/public/page-hero";
 import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
@@ -102,9 +102,9 @@ export default async function StateCityDirectory({ params }: PageProps) {
               <SelectedCity />
             </div>
           </PageHero>
-          <div className="mx-auto max-w-page px-4 pb-10 pt-10 text-left sm:px-6 sm:pt-14">
+          <div className={`${PAGE_HERO_WRAP} pb-10 pt-10 text-left sm:pt-14`}>
             <CityList cities={links} stateName={stateName} />
-            <p className="mt-6 text-[12px] text-ink-muted">
+            <p className="mt-6 max-w-[46rem] text-[12px] text-ink-muted">
               Sources: FDIC Summary of Deposits, NCUA branch records, U.S. Census Bureau outlines. A city is listed once at least
               one bank or credit union with a branch there has published fees. Spellings of one city in the branch records
               (Saint, St and St., for example) are counted as one city, and each institution once.
@@ -119,7 +119,7 @@ export default async function StateCityDirectory({ params }: PageProps) {
         />
       )}
 
-      <nav aria-label="More fee pages" className="mx-auto flex max-w-page flex-wrap gap-x-6 gap-y-2 border-t border-border px-4 pb-16 pt-8 text-[14px] sm:px-6">
+      <nav aria-label="More fee pages" className={`${PAGE_HERO_WRAP} flex flex-wrap gap-x-6 gap-y-2 border-t border-border pb-16 pt-8 text-[14px]`}>
         <Link href={`/research/state/${stateCode}`} className={LINK}>
           {stateName} fee report
         </Link>
