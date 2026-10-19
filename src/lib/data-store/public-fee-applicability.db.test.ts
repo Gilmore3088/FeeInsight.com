@@ -18,7 +18,9 @@ import { getFeeRowDetails, getIndexRows } from "./fees";
 import { getFeeEvidence } from "./fee-evidence";
 import { listedPriceLines } from "@/app/(public)/fees/(index)/listed-prices";
 import { InstitutionRow } from "@/app/(public)/fees/(index)/institution-row";
-import { companion, countedAs, findings, histogram, institutionsFor, statsFor } from "@/app/(public)/fees/(index)/index-view";
+import { chargedWhen, companion, countedAs, findings, histogram, institutionsFor, statsFor } from "@/app/(public)/fees/(index)/index-view";
+
+import { SPECIAL_UNIT_FREQUENCIES, UNIT_LABELS } from "@/lib/fee-unit";
 
 const connection = process.env.E2E_DATABASE_URL;
 const tables = ["institution_sources", "source_documents", "agent_source_texts", "published_fee_records", "verified_fee_observations", "raw_fee_observations", "published_fee_corrections", "pipeline_feedback"];
@@ -85,6 +87,20 @@ describe.skipIf(!connection)("canonical public fee applicability in PostgreSQL (
     await getFeeRowDetails(rows.map(r => r.id));
     await getFeeEvidence(rows.map(r => r.id));
     expect((await getIndexRows("money_order")).sort((a,b) => a.id-b.id)).toEqual(rows);
+  });
+
+  it.each(SPECIAL_UNIT_FREQUENCIES)("preserves main's %s unit exclusion while retaining canonical recorded context", async (frequency) => {
+    const before = (await getIndexRows("money_order")).sort((a,b) => a.id-b.id);
+    const old = (await getFeeRowDetails([11])).get(11)!;
+    await db`UPDATE published_fee_records SET frequency=${frequency} WHERE fee_published_id=11`;
+    const compared = (await getIndexRows("money_order")).sort((a,b) => a.id-b.id);
+    expect(compared).toEqual(before.filter(row => row.id !== 11));
+    const detail = (await getFeeRowDetails([11])).get(11)!;
+    expect(detail).toMatchObject({ amount:5, frequency, account:"Alpha", conditions:"Available only to existing account holders." });
+    expect(detail.context?.stamp).not.toBe(old.context?.stamp);
+    expect(chargedWhen(detail.frequency)).toBe(UNIT_LABELS[frequency]);
+    await getFeeEvidence([11]);
+    expect((await getIndexRows("money_order")).sort((a,b) => a.id-b.id)).toEqual(compared);
   });
 
   it("uses the canonical correction's condition and document while retaining represented ownership", async () => {

@@ -1,3 +1,4 @@
+import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { sql } from "@/lib/data-store/connection";
 import { getRegistryFeedFreshness, type RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
 import type { HoovieCadence, HoovieSourceContract } from "./contract";
@@ -55,6 +56,8 @@ export interface SourceHealth {
   cadence: HoovieCadence;
   /** The registry's last success (rows loaded, or a check that found nothing new). */
   lastSuccessAt: string | null;
+  lastAttemptAt?: string | null;
+  lastLoadedAt?: string | null;
   /** Newest partition that loaded rows. */
   latestPeriod: string | null;
 }
@@ -72,7 +75,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : null);
 
 function clip(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = redactRegistrySecrets(text).replace(/\s+/g, " ").trim();
   return flat.length > REASON_ERROR_CHARS ? `${flat.slice(0, REASON_ERROR_CHARS - 1)}…` : flat;
 }
 
@@ -105,7 +108,10 @@ export function sourceHealth(
   now: Date,
 ): SourceHealth {
   const lastSuccessAt = feed?.lastSuccessAt ?? null;
-  const base = { source: contract.source, cadence: contract.cadence, lastSuccessAt, latestPeriod: feed?.latestPeriod ?? null };
+  const base = { source: contract.source, cadence: contract.cadence, lastSuccessAt, latestPeriod: feed?.latestPeriod ?? null,
+    lastAttemptAt: feed?.lastAttemptAt ?? null,
+    // Older snapshots did not separate check/load dates. Do not infer a load from an empty check.
+    lastLoadedAt: feed?.lastLoadedAt === undefined ? (feed?.succeeded ? lastSuccessAt : null) : feed.lastLoadedAt };
   const result = (status: SourceHealthStatus, reason: string): SourceHealth => ({ ...base, status, reason });
 
   if (skip) return result("skipped", skip);
@@ -122,7 +128,11 @@ export function sourceHealth(
     const issue = contract.missingSource ? ` (#${contract.missingSource.issue})` : "";
     return result("empty", `${host} refused production's request${issue}`);
   }
-  if (feed.succeeded === 0) return result("empty", "every load so far came back empty");
+  if (feed.partial) return result("failed", `${feed.partial} partition${feed.partial === 1 ? "" : "s"} partially loaded${feed.partialReason ? `: ${clip(feed.partialReason)}` : "; unavailable upstream requests recorded"}`);
+  if (feed.succeeded === 0) {
+    const evidence = feed.emptyReason ? `; latest empty check${feed.emptyPartition ? ` ${clip(feed.emptyPartition)}` : ""}: ${clip(feed.emptyReason)}` : "";
+    return result("empty", `every load so far came back empty${evidence}`);
+  }
   const limit = STALE_AFTER_DAYS[contract.cadence];
   if (limit != null && lastSuccessAt) {
     const age = Math.floor((now.getTime() - new Date(lastSuccessAt).getTime()) / DAY_MS);
@@ -198,7 +208,8 @@ function line(entry: SourceHealth): string {
   const text = `${entry.source}: ${entry.status}, ${entry.reason}`;
   // A stale or fresh reason already dates the last success.
   if (entry.status === "stale" || entry.status === "fresh") return text;
-  return `${text}; ${entry.lastSuccessAt ? `last success ${day(entry.lastSuccessAt)}` : "never succeeded"}`;
+  const loaded = entry.lastLoadedAt === undefined ? (entry.latestPeriod ? entry.lastSuccessAt : null) : entry.lastLoadedAt;
+  return `${text}; ${entry.lastAttemptAt ? `last attempt ${day(entry.lastAttemptAt)}; ` : ""}${loaded ? `last nonempty load ${day(loaded)}` : "no nonempty load recorded"}${entry.lastSuccessAt ? `; last successful check ${day(entry.lastSuccessAt)}` : ""}`;
 }
 
 /**
@@ -254,6 +265,8 @@ export function sourceHealthDetail(report: SourceHealthReport): Record<string, u
       reason: entry.reason,
       cadence: entry.cadence,
       last_success_at: entry.lastSuccessAt,
+      last_attempt_at: entry.lastAttemptAt ?? null,
+      last_loaded_at: entry.lastLoadedAt ?? null,
       latest_period: entry.latestPeriod,
     })),
   };

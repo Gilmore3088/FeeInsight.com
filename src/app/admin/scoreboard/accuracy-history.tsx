@@ -6,7 +6,7 @@ const pct = (value: number | null) => value == null ? "—" : `${(value * 100).t
 export function AccuracyHistoryPanel({ history }: { history: AccuracyHistory | null }) {
   return (
     <section className="admin-card space-y-2 p-4" aria-labelledby="accuracy-history-heading">
-      <h2 id="accuracy-history-heading" className="text-sm font-semibold text-gray-900 dark:text-gray-100">Automated source audit, week by week</h2>
+      <h2 id="accuracy-history-heading" className="text-sm font-semibold text-gray-900 dark:text-gray-100">Stored-copy diagnostic, week by week</h2>
       <p className="text-xs text-gray-500 dark:text-gray-400">
         Checks published dollar fees against our stored documents. This does not measure missing fees or independently verify the bank&apos;s current page.
         Weeks start Monday (UTC). Each scoring series stays separate; repeated fees count once, using their newest result.

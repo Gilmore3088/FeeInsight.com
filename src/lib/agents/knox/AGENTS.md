@@ -2,6 +2,34 @@
 
 Knox owns conservative raw fee extraction.
 
+## Literal own charging units (#2248, prospective raw lineage)
+
+The same unreleased v87 outcome also closes #2283: after admission, one exact bounded own
+label/price can retain a complete additive parenthetical such as a separately incurred
+locksmith fee. Source text supplies it, including a single lowercase wrapped continuation;
+model claims, extra prices, columns, incomplete or repeated conflicting occurrences do not.
+Unknown units such as per-key stay literal conditions, without a new supported unit code.
+This condition-only annotation has the same historical conflict/promoter protections as units.
+
+After the existing name, price and category admission checks, an exact own label/price pair
+can carry its literal hourly, page, document, image, statement, half-hour, quarter-hour or
+minute unit. The numeric amount is unchanged. The full own price clause and existing linked
+conditions survive in readable `conditions`; model-provided unit or condition claims are not
+evidence. Equal-price neighbors, incompatible repeated labels, conflicting units, minima and
+turnaround times cannot supply a unit. An exact one-word label may own its immediate explicit
+price bullet for annotation, without widening the shared price-admission/refusal grammar.
+
+Existing period/per-event/hour-exempt category guards still run. Literal `per_statement` is
+allowed for `paper_statement`; it never means monthly. Newly inserted zero-price rows follow
+the same evidence contract. Same-key historical raw conflicts keep their complete old rows;
+held/name-file/untraced/superseded direct promoters do not use new unit facts to rewrite old
+frequency, conditions, identity or hold status. Historical recovery remains separate work.
+
+Known special units stay visible but do not enter mixed-unit category comparisons. SQL and
+client comparison readers share one finite predicate, statistics method 17/18, and versioned
+summary caches. Blank, `other` and legacy `per_item` are not reinterpreted. This code does not
+activate historical hourly rereads, change provider/pause controls or rescale any amount.
+
 ## Ancillary product ownership (#1911 code phase, 2026-10-19)
 
 A bounded single-primary-deposit-product document can assign its own ancillary priced fee
@@ -149,6 +177,121 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 677 of 736 (92.0%), 677 found (55.7%).
 
 ## Rules versions (`extract.rules`)
+
+v87 (Oct 19, #2248) annotates newly admitted raw lineage with literal own hourly, page,
+document, image, statement, half-hour, quarter-hour or minute frequency and complete source
+conditions. Physical ownership, exact repeated-name consistency and unchanged category guards
+bound the annotation. Whole and partial hours are never numerically converted; an explicit
+statement is never inferred to be monthly. Hash-checked Milaca and Morton sources plus the
+corrected Oakwood source pass actual free/accepted-paid raw, Darwin, Hamilton and fill stages.
+
+Historical insert conflicts and direct held/superseded promoters keep their old identities,
+frequency, conditions and holds; this version does not recover old unit metadata. Existing
+re-read floors (78/73/82), selector predicates, pause controls and historical hourly switch
+remain unchanged. Ordinary version-driven due reads are counted separately from recovery.
+The shared finite normalized SQL/client comparison predicate removes explicitly known special
+units from legacy mixed-unit populations, with method 17/18 and cache/stamp parity. The exact
+15:18:07 UTC read-only population was 915 rows at 735 distinct institutions, all hourly; this
+is neither a source-certified recovery list nor 735 deduplicated statistic values.
+
+v86 (Oct 19, #2259) keeps a generic monthly fee in eligibility review when its own
+physical price/phrase is repeated under distinct explicit account owners. The bounded
+reader retains two complete literal owner/price blocks, including their balance context;
+it never selects the first account or infers a personal owner. Distinct prices, condition
+tiers, one repeated owner and a source-grounded assigned/named owner remain controls.
+Honest paid quotes can include the heading and balance figures: their own physical fee
+clause, rather than every figure in the quote, establishes the price. Whole-token phrase
+matching prevents a 50 threshold from matching 500. Unknown layouts remain unsupported.
+
+Free extraction and the common writer share this gate. Paid and free-price callers keep
+the same eligibility shape, full source evidence and provider provenance, without a
+verification flag. Missing writer content requires an exact artifact/document/institution/
+text-hash lookup and actual SHA256 match; unavailable or changed witnesses decline the
+write. Only an exact unverified raw key can be taken over as held. Every judged raw row
+and existing safe eligibility hold remains unchanged, including rejected/operator-held
+and published histories. Ordinary automatic promoters cannot release this shape.
+The insert remains `ON CONFLICT DO NOTHING`; a proven monthly conflict locks its exact
+raw identity in a real transaction and checks judged history in a fresh statement.
+Darwin's post-lock current monthly eligibility check (#2277) uses the current raw
+canonical hint and eligibility flags, independently of a stale chosen category. Every
+caller locks, including NULL/unrepresented products; old rejudges need no needs flag.
+
+The 2026-10-19 review explicitly approves a prospective eligibility phase, following
+#1911's phase boundary, as an exception to the general live-rule-join requirement in
+Darwin's guide. This is not an unsupported-price refusal: no source amount is declared
+false, and no shared false-price/two-look rule is broadened. Existing exposure is measured
+separately and requires its own reviewed recovery. Live Oakwood monthly 10 and old held
+business 5/7 are not claimed repaired; the legacy Savings→Money Market correction bug is
+separately tracked by #2269 and remains unpublished with its savings hold.
+
+The ordinary owner selector and stale78/lineup73/twin82 floors remain unchanged. The
+same-statement 15:23:47 UTC counter is 12,478 at both v85 and v86 (+0); later source state
+may change due counts. No paid, verification or general source replay epoch is raised.
+Impact uses 10,004 frozen current texts at 4,561 institutions (164,076,221 characters,
+101 hash-verified GET batches), actual rules85 candidates and actual grounded lineup
+products, plus existing published-row exposure; the packet records exact helper hashes
+and source freshness. Final helper a628fa92 holds 13 ordinary inputs before lineup
+(12 after grounded assignment) and four of 1,386 monthly zero inputs, at ten institutions.
+Four of 3,794 current live identities match; all four original hashes match current text.
+The other current-source relationships include 150 changed and 32 absent original
+witnesses, which remain uncertain. No historical row is taken down by this phase.
+Source replay, original-witness retention (#2220), historical fee
+cleanup and Rosetta #2219 release remain separately controlled.
+
+v85 (Oct 19, #2240/#2241/#2246) binds an explicit single-column service label to its
+immediate price-bullet run. A following explicitly priced service ends the older heading,
+including a label longer than four words. Unknown continuations, repeated incompletely bound
+names, another same-name table price and exceeded budgets make no exhaustive refusal.
+Bare-price layouts are unchanged. Several literal prices under one heading remain several
+own prices. An annual overdraft-program price is retained with its full annual clause as
+`knox_review:periodic_program`, without `needs_darwin_verification`; ordinary promoters and
+raw-reader previews cannot release it. Admin inspection and the held queue preserve it.
+
+A separate literal `maximum. item price per item` row under a bounded standard NSF/OD label
+owns the second figure as the item price and preserves the whole maximum/unit clause. The
+maximum is never an item price or an inferred daily limit. This positive witness binds its
+literal NSF/OD identity, not merely a caller's broad category pattern. Eligibility tails do
+not establish a new standard price; nearby explicit eligibility headings use the existing
+eligibility hold with their source context retained. No product ownership is invented.
+
+The shared physical-ownership refusal also joins the existing rules re-check before its
+category/amount reproduction shortcut, so another service at the same category and price
+cannot conceal a wrong own name. The free-team v85 fingerprint reselects already-passed
+documents; a refusal still needs its original own source and the existing 12-hour second
+look. No general source-check/verify epoch, provider control or direct fee-data update changes.
+Read-only cap-inclusive full-source impact at 14:38:38 UTC: 82,743 sourced live flat rows,
+8,162 latest own documents, 105 possible fees / 61 documents, all 61 hashes checked,
+zero exact new refusals and zero old/new changed verdicts. The same-snapshot ordinary due
+counter at 14:29:48 UTC was 12,483 at v84 and 12,485 at v85 (+2); stale78/lineup73/twin82
+floors and the selection predicate stay unchanged. These are different cohorts. Correct
+hour/page amount pairing does not repair the missing represented charging-unit contract
+(#2248); the hourly-line switch remains off. Rosetta #2219 is a separate release dependency.
+
+v84 (Oct 19, #2209) reads bounded, single-column NSF policy paragraphs only when their own
+price explicitly covers returned items and paid overdrafts and retains a complete exception
+list. Both event categories use the existing twin key; an age/product price keeps its own
+eligibility, balance exception and count cap. A general paragraph also carries the explicitly
+stated alternate tier as separately labeled context, plus a nearby explicit NSF exemption.
+Neither tier is assigned ancillary product ownership from a multiproduct document. Incomplete,
+equal-price ambiguous, interleaved-table or over-budget policies stay outside this exact path;
+evidence is never truncated to make a flat fee eligible. Fee-count dollar totals fail the shared
+source check, including Darwin and the live rules re-check's independent source second look.
+
+Explicit age/product-restricted prices are retained as `knox_review:eligibility`, without
+`needs_darwin_verification`, rather than published into unscoped comparisons. Full literal
+conditions and the twin's `line_share` survive in raw storage. Ordinary extract/held/verify
+passes cannot promote this shape. Customer/research raw previews exclude it; admin inspection
+and the held queue retain it with the product-tier contract (#1060/#1911) as its unresolved
+exit. Standard prices retain the separately stated alternate-tier context and their own
+exceptions. Numeric benchmark/headline policy is unchanged.
+
+The stale-read floor remains v78, lineup floor v73 and twin floor v82. The ordinary due-text
+selection/Bayes `knox.rules` counter determines the v84 replay cohort. The changed free-team
+signature makes existing state-lane and institution rules re-checks revisit their live documents,
+with the existing first flag and 12-hour second look; confirmed changes use their normal cache
+invalidation. Source-check v2, verify.rules v3 and Hamilton source-check v18 stay unchanged:
+old rejected decisions are not globally reopened. Read-only impact and release evidence belong
+to #2209; no provider/control switch, hand fee update or broad metadata backfill is part of it.
 
 v83 (Oct 19, #2151) preserves an explicitly labeled single-column fee bullet across at most six
 physical lines and 2,000 characters, before blank separators disappear. Its primary title and
@@ -1445,7 +1588,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v83 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v87 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

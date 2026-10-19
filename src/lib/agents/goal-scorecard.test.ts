@@ -89,8 +89,8 @@ describe("accuracy target (James, Oct 15)", () => {
     expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("insufficient sample");
     expect(goalBriefLines(goalWith(3383, 3400)).join("\n")).toContain("not met on the 95% lower bound");
     expect(goalBriefLines(goalWith(3400, 3400)).join("\n")).toContain("met on the 95% lower bound");
-    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Automated stored-copy audit: 99.49% over the last 7 days");
-    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Automated stored-copy audit: 99.50% over the last 7 days");
+    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Stored-copy support (secondary): 99.49% over the last 7 days");
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Stored-copy support (secondary): 99.50% over the last 7 days");
   });
 });
 
@@ -289,7 +289,7 @@ describe("readGoalScorecard", () => {
     expect(weekAgo).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
     expect(weekAgo).toContain("quarantined_at IS NULL OR fp.quarantined_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
-    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, stored-copy support 95.0% (7 days), wrong after publish 1.0%");
+    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, live-source support unavailable, wrong after publish 1.0%");
   });
 
   it("leaves a failed read null and keeps the rest", async () => {
@@ -299,7 +299,7 @@ describe("readGoalScorecard", () => {
     errors.mockRestore();
     expect(goal.accuracy).toBeNull();
     expect(goal.liveInstitutions?.live).toBe(3900);
-    expect(goalBriefLines(goal)).toContain("Automated stored-copy audit: could not be read today.");
+    expect(goalBriefLines(goal)).toContain("Stored-copy support (secondary): could not be read today.");
   });
 });
 
@@ -379,7 +379,7 @@ describe("Hamilton answer quality (#1079)", () => {
     const goal = await readGoalScorecard(db);
     expect(queries.find((text) => text.includes("hamilton-paid-answer-eval"))).toContain("@.answers > 0");
     expect(goalBriefLines(goal).at(-1)).toBe(
-      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report.",
+      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report. Paid paths with fewer than 10 answers are small samples, not reliability estimates.",
     );
   });
 
@@ -422,4 +422,21 @@ describe("Deming's daily data checks on the scorecard (#1065)", () => {
     expect(goal.dataQuality?.lines[0]).toEqual({ catalog: "dollar", check: "duplicates", query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" });
     expect(goalBriefLines(goal).at(-1)).toBe("Data checks (2026-10-16): ALARM, 1 failed their threshold (dollar.duplicates).");
   });
+});
+
+describe("answer evaluation completeness", () => {
+  it("preserves completed/planned counts on a time-limited run and unknown counts on legacy runs", () => {
+    const measured = answerQualityFrom("2026-10-19T06:50:00Z",{institutions:17,planned:90,answers:51,passed:51,timedOut:true,
+      pro:{questions:24,planned:40,passed:21}});
+    expect(measured).toMatchObject({institutionsAsked:17,institutionsPlanned:90,proQuestionsAsked:24,proQuestionsPlanned:40,timedOut:true});
+    expect(answerQualityFrom("2026-10-19T06:50:00Z",{answers:51})).toMatchObject({institutionsAsked:null,institutionsPlanned:null});
+  });
+});
+
+it("prints the completed and planned samples without filling missing legacy counts", async () => {
+  const {db}=fakeDb([[/hamilton-answer-eval/,[{created_at:new Date("2026-10-19T06:50:00Z"),
+    detail:{institutions:17,planned:90,answers:51,passed:51,timedOut:true,pro:{questions:24,planned:40,passed:21}}}]]]);
+  const line=goalBriefLines(await readGoalScorecard(db)).find(line=>line.startsWith("Hamilton answers"));
+  expect(line).toContain("17 of 90 planned institutions asked, 24 of 40 Pro questions replayed");
+  expect(line).toContain("stopped at its time budget");
 });

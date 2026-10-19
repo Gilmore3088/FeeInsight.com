@@ -252,3 +252,40 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
     district_research: districtResearch,
   };
 }
+
+/** One national series' latest month and the month a year before it, without the chart history. */
+export interface NationalIndicator {
+  series_id: string;
+  latest: IndicatorPoint;
+  year_ago: IndicatorPoint | null;
+}
+
+/** The national figures the research hub shows: BLS unemployment and CPI, the Fed Board's funds rate. */
+export interface NationalIndicators {
+  unemployment: NationalIndicator | null;
+  fed_funds: NationalIndicator | null;
+  cpi_all_items: NationalIndicator | null;
+  cpi_bank_services: NationalIndicator | null;
+}
+
+function latestOnly(series: IndicatorSeries | undefined): NationalIndicator | null {
+  return series ? { series_id: series.series_id, latest: series.latest, year_ago: series.year_ago } : null;
+}
+
+/**
+ * The latest national indicators, read with the same series query as the state reports
+ * (served rows only). Pages read it through getNationalIndicatorsCached.
+ */
+export async function getNationalIndicators(): Promise<NationalIndicators> {
+  const series = await loadSeries(["UNRATE", "FEDFUNDS", "CUUR0000SA0", CPI_BANK_SERVICES_SERIES]);
+  return {
+    unemployment: latestOnly(series.get("UNRATE")),
+    fed_funds: latestOnly(series.get("FEDFUNDS")),
+    cpi_all_items: latestOnly(series.get("CUUR0000SA0")),
+    cpi_bank_services: latestOnly(series.get(CPI_BANK_SERVICES_SERIES)),
+  };
+}
+
+export function isEmptyNationalIndicators(ind: NationalIndicators): boolean {
+  return !ind.unemployment && !ind.fed_funds && !ind.cpi_all_items && !ind.cpi_bank_services;
+}

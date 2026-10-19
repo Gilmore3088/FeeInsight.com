@@ -97,7 +97,8 @@ export const PRODUCT_NAV_GROUPS: readonly NavGroup[] = [
   },
 ];
 
-export const GUIDES_NAV = { label: "Guides", href: "/guides" } as const;
+export const CONSUMERS_NAV = { label: "For consumers", href: "/for-consumers" } as const;
+export const GUIDES_NAV = { label: "Consumer guides", href: "/guides" } as const;
 export const METHODOLOGY_NAV = { label: "Methodology", href: "/methodology" } as const;
 export const API_NAV = { label: "API", href: "/api-docs" } as const;
 
@@ -129,11 +130,12 @@ export const RESOURCES_NAV_GROUPS: readonly NavGroup[] = [
 
 export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
 
-/** The signed-out and free top level: Product, Reports, Resources, Pricing. */
+/** The signed-out and free top level, with a direct home for consumers alongside the business product. */
 export const PUBLIC_NAV_ITEMS: readonly NavItem[] = [
   { label: "Product", href: "/for-institutions", groups: PRODUCT_NAV_GROUPS },
   REPORTS_NAV,
   { label: "Resources", href: "/guides", groups: RESOURCES_NAV_GROUPS },
+  CONSUMERS_NAV,
   PRICING_NAV,
 ];
 
@@ -141,7 +143,15 @@ export const PUBLIC_NAV_ITEMS: readonly NavItem[] = [
 export const MOBILE_NAV_SECTIONS: readonly NavGroup[] = [
   { heading: "Product", items: [FIND_INSTITUTION_NAV, INDEX_NAV, MARKET_DATA_NAV, HAMILTON_PAGE_NAV] },
   { items: [REPORTS_NAV, PRICING_NAV] },
-  { heading: "Resources", items: [GUIDES_NAV, METHODOLOGY_NAV, API_NAV] },
+  {
+    heading: CONSUMERS_NAV.label,
+    items: [
+      { label: "Consumer home", href: CONSUMERS_NAV.href },
+      GUIDES_NAV,
+      { label: "Find your bank or credit union", href: FIND_INSTITUTION_NAV.href },
+    ],
+  },
+  { heading: "Resources", items: [METHODOLOGY_NAV, API_NAV] },
 ];
 
 export const PRO_NAV_ITEMS = [...HAMILTON_NAV.filter((item) => item.label !== "Admin"), HAMILTON_WIRE_NAV];

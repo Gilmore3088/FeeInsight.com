@@ -3,12 +3,15 @@
  * Calls the centralized provider with strict data grounding and voice enforcement.
  */
 
+import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
+
 import {
   extractAnthropicText,
   getAnthropicMessagesClient,
   getHamiltonModel,
+  type Anthropic,
 } from "@/lib/ai-provider";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
 import {
   evaluateCitationDensity,
@@ -70,13 +73,14 @@ export interface SectionTracking {
   operation?: string;
   subjectKey?: string;
   agentRunId?: number;
+  /** One observation per returned raw response, including figure regeneration/incomplete replies. */
+  onProviderResponse?: (usage: ProviderUsage | undefined, model: string) => void;
 }
 
 export async function generateSection(input: SectionInput, tracking: SectionTracking = {}): Promise<SectionOutput> {
-  const client = getAnthropicMessagesClient("Hamilton section generation", "hamilton");
   const userMessage = buildUserMessage(input);
 
-  let response: Awaited<ReturnType<typeof client.messages.create>>;
+  let response: Anthropic.Message;
   try {
     response = await trackAnthropicRequest(
       {
@@ -87,15 +91,23 @@ export async function generateSection(input: SectionInput, tracking: SectionTrac
         ...(tracking.subjectKey ? { subjectKey: tracking.subjectKey } : {}),
         ...(tracking.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
       },
-      () => client.messages.create(
+      () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {
+        const client = getAnthropicMessagesClient("Hamilton section generation", "hamilton", scope);
+        return (attempt) => client.messages.create(
         {
           model: MODEL,
           max_tokens: MAX_TOKENS,
           system: HAMILTON_VOICE.systemPrompt,
           messages: [{ role: "user", content: userMessage }],
         },
-        { timeout: REQUEST_TIMEOUT_MS },
-      ),
+        { ...attempt, timeout: REQUEST_TIMEOUT_MS },
+        );
+      }).then((response) => {
+        // Bookkeeping must never turn an otherwise completed request into a paid retry.
+        try { tracking.onProviderResponse?.(observedProviderUsage(response.usage), MODEL); }
+        catch (error) { console.error("Hamilton report usage observer failed", error); }
+        return assertCompletedAnthropicTextResponse(response);
+      }),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -202,10 +214,9 @@ ${extraFields}  "narrative_summary": "<exactly 150 words, flowing prose, injecte
  * Per D-08: scope parameter adapts prompt depth (quarterly = full, others = lighter).
  */
 export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOutput> {
-  const client = getAnthropicMessagesClient("Hamilton thesis generation", "hamilton");
   const userMessage = buildThesisPrompt(input);
 
-  let response: Awaited<ReturnType<typeof client.messages.create>>;
+  let response: Anthropic.Message;
   try {
     response = await trackAnthropicRequest(
       {
@@ -214,19 +225,22 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
         operation: "generate_report_thesis",
         routeId: "api.reports.generate",
       },
-      () => client.messages.create(
+      () => withRawProviderResponseOperation(THESIS_TIMEOUT_MS, (scope) => {
+        const client = getAnthropicMessagesClient("Hamilton thesis generation", "hamilton", scope);
+        return (attempt) => client.messages.create(
         {
           model: MODEL,
           max_tokens: MAX_TOKENS,
           system: HAMILTON_VOICE.systemPrompt,
           messages: [{ role: 'user', content: userMessage }],
         },
-        { timeout: THESIS_TIMEOUT_MS },
-      ),
+        { ...attempt, timeout: THESIS_TIMEOUT_MS },
+        );
+      }).then((response) => assertCompletedAnthropicTextResponse(response)),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Hamilton thesis generation failed [scope=${input.scope}]: ${message}`);
+    throw new Error(`Hamilton thesis generation failed [scope=${input.scope}]: ${message}`, { cause: err });
   }
 
   const raw = extractAnthropicText(response);

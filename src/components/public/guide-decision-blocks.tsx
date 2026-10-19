@@ -9,6 +9,10 @@ import { formatAmount } from "@/lib/format";
 import { PRODUCT_NAME } from "@/lib/constants";
 import { DistributionChart } from "@/components/public/distribution-chart";
 import { AccountCompare, type CompareFeature } from "@/components/public/guide-account-compare";
+import { AtmReceipt } from "@/components/public/atm-receipt";
+import type { AtmTwoFeeExample } from "@/lib/guides/atm-example";
+import type { NetworkMentions } from "@/lib/guides/atm-networks";
+import { AtmNetworkExhibit } from "@/components/public/atm-network-exhibit";
 
 /**
  * The decision blocks of a consumer guide: where the reader starts, what happens to one
@@ -21,6 +25,10 @@ export interface GuideExtras {
   distribution?: { category: string; values: number[]; median: number | null };
   capScope?: DailyCapScope | null;
   complaints?: NationalComplaintThemes | null;
+  /** Two institutions' live published ATM fees, for a breakdown marked `live: "atm_two_fee"`. */
+  atmExample?: AtmTwoFeeExample | null;
+  /** Institutions whose own ATM lines name Allpoint, MoneyPass or CO-OP, for `network_mentions`. */
+  atmNetworks?: NetworkMentions[] | null;
 }
 
 function Prose({ text, summaries, className }: { text: string; summaries: FeeCategorySummary[]; className?: string }) {
@@ -127,7 +135,14 @@ export function ScenariosBlock({ block, summaries }: { block: Extract<GuideBlock
   );
 }
 
-export function BreakdownBlock({ block }: { block: Extract<GuideBlock, { type: "breakdown" }> }) {
+export function BreakdownBlock({ block, extras = {} }: { block: Extract<GuideBlock, { type: "breakdown" }>; extras?: GuideExtras }) {
+  if (block.live === "atm_two_fee" && extras.atmExample) {
+    return (
+      <div className="mt-5">
+        <AtmReceipt example={extras.atmExample} />
+      </div>
+    );
+  }
   const total = block.items.reduce((sum, i) => sum + (i.sign === "minus" ? -i.amount : i.amount), 0);
   return (
     <figure className="mt-5 max-w-md rounded-xl border border-border bg-surface-0 p-4 sm:p-5">
@@ -195,6 +210,19 @@ export function CapScopeBlock({ extras }: { extras: GuideExtras }) {
   );
 }
 
+/** Live: each network's institutions and their own published lines. Nothing renders without data. */
+export function NetworkMentionsBlock({
+  block,
+  extras,
+}: {
+  block: Extract<GuideBlock, { type: "network_mentions" }>;
+  extras: GuideExtras;
+}) {
+  const networks = extras.atmNetworks?.filter((n) => n.institutions.length > 0) ?? [];
+  if (networks.length === 0) return null;
+  return <AtmNetworkExhibit title={block.title} caption={block.caption} networks={networks} />;
+}
+
 export function PolicyTableBlock({
   block,
   summaries,
@@ -220,6 +248,10 @@ export function PolicyTableBlock({
                   <Link href={`/fees?fee=${row.category}#explorer`} className="text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
                     Median {formatAmount(s.median_amount)}, {s.institution_count.toLocaleString()} institutions
                   </Link>
+                ) : row.link ? (
+                  <a href={row.link.href} className="text-ink underline decoration-border underline-offset-4 hover:decoration-ink">
+                    {row.link.label}
+                  </a>
                 ) : (
                   "Not verified. Ask the institution."
                 )}
@@ -323,5 +355,57 @@ export function UpdatesBlock({ block, summaries }: { block: Extract<GuideBlock, 
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * A section's few next steps as large choices, each with its own links, then the minor tips
+ * in a quieter list. External links open in a new tab.
+ */
+export function ActionsBlock({ block, summaries }: { block: Extract<GuideBlock, { type: "actions" }>; summaries: FeeCategorySummary[] }) {
+  return (
+    <div className="mt-5">
+      <ul className="grid gap-3 md:grid-cols-3">
+        {block.actions.map((action) => (
+          <li key={action.title} className="flex min-w-0 flex-col rounded-xl border border-border bg-surface-0 px-5 py-4 shadow-fi-1">
+            <h3 className="text-[16px] font-semibold leading-snug text-ink">{action.title}</h3>
+            <p className="mt-1.5 flex-1 text-[13.5px] leading-relaxed text-ink-soft">
+              <Prose text={action.text} summaries={summaries} />
+            </p>
+            <ul className="mt-2 flex flex-col">
+              {action.links.map((link) => {
+                const external = link.href.startsWith("http");
+                return (
+                  <li key={link.href + link.label}>
+                    <a
+                      href={link.href}
+                      {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                      className="inline-flex min-h-11 items-center gap-1 text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                    >
+                      {link.label}
+                      {external && <span className="sr-only"> (opens in a new tab)</span>}
+                      <span aria-hidden="true" className="text-ink-muted">{external ? "\u2197" : "\u203A"}</span>
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      {block.tips && (
+        <div className="mt-4 rounded-lg border border-border bg-paper px-5 py-4">
+          <p className="text-[13px] font-semibold text-ink">{block.tips.title}</p>
+          <ul className="mt-2 space-y-1.5 text-[13.5px] leading-relaxed text-ink-soft">
+            {block.tips.items.map((item) => (
+              <li key={item} className="flex gap-2.5">
+                <span className="mt-[9px] h-1 w-1 shrink-0 rounded-full bg-ink-muted" aria-hidden="true" />
+                <Prose text={item} summaries={summaries} className="flex-1" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }

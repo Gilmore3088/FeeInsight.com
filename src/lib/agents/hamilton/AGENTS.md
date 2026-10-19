@@ -1,5 +1,20 @@
 # Hamilton Agent Guide
 
+## Literal charging units and comparisons (#2248)
+
+Prospective source-owned hourly, page, document, image, statement, half-hour, quarter-hour
+and minute rows retain their literal numeric price, frequency and full readable conditions
+through publication and frequency fill. No amount is converted or unit inferred from a blank
+or legacy `per_item` value. Existing category-period/per-event checks still apply; an explicit
+paper-statement `per_statement` unit is preserved without inferring a calendar month.
+
+Those finite known special units stay visible on evidence surfaces but are excluded from
+legacy category medians, ranges, counts and numeric subject comparisons until same-unit
+cohorts exist. `fee-unit.ts` defines the exact SQL/client normalized predicate; report deltas,
+local-competitor own prices and profile comparison eligibility use it. Statistics method
+17/18, population stamp descriptions and national summary cache keys change together.
+Historical metadata recovery and the live hourly recheck switch remain separate.
+
 Hamilton is the last agent in the pipeline and the one people meet. It has four faces,
 all built on the same live published fees, and one rule across them: every output can be
 retraced without asking Hamilton (see Audit trail).
@@ -581,6 +596,16 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 23. Rules re-check (`rules-recheck.ts`, state-lane or single-institution steps only): a Knox
     fee today's rules no longer read from its text, on its second look,
     `rules_recheck_unreproduced`; it also restores its own past takedowns.
+    #2209's explicit fee-count-total refusal participates through the Knox v84 signature:
+    already-passed documents are selected again at that signature, and their own source trace
+    must independently fail before the shared 12-hour second look can confirm a takedown.
+    General source-check v18 and its historical decisions are not reopened for this change.
+    #2240/#2241/#2246 use the v85 signature for their bounded physical-price refusal. This
+    exact refusal is checked before accepting a category/amount reproduction, because another
+    service may own the same figure. It then follows the unchanged original-source independent
+    check and 12-hour second look. No broader recheck epoch or selector changes. A full own-source
+    read-only impact scan at 14:38:38 UTC found zero current live matches; the ordinary v85
+    reread cohort still grows by two on the separately recorded same-snapshot due counter.
 24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.
@@ -1241,3 +1266,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
+
+The shared figure gate and paid eval use the same explicit monetary-unit normalization
+(`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,
+including financial container captions and compacted JSON evidence. Explicit rates/counts and
+unsupported currencies do not become dollar candidates; fee-catalog exclusions in the eval stay.
+Named financial ratios retain their ratio interpretation. This remains numerical consistency,
+not institution/category/period/direction claim verification. FDIC/NCUA readers preserve stored
+thousands as documented in `data-store/financial-sources.ts`; no stored values are rewritten.

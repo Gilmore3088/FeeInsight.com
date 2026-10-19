@@ -358,8 +358,7 @@ export default async function MarketConcentrationPage() {
             No market concentration data available yet.
           </p>
           <p className="mt-1 text-[13px] text-ink-muted">
-            Start the Atlas data refresh from the admin console to populate branch deposit
-            data and compute market HHI.
+            This study is being prepared.
           </p>
         </div>
       )}

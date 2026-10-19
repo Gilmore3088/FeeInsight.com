@@ -41,6 +41,7 @@ vi.mock("@/lib/agents/atlas/priority-state-research", () => ({ schedulePriorityS
 vi.mock("@/lib/agents/hamilton/guard-catch-up", () => ({ scheduleGuardCatchUpRun: state.schedule }));
 vi.mock("@/lib/agents/hamilton/publish-sweeps-schedule", () => ({ schedulePublishSweepsRun: state.schedule }));
 vi.mock("@/lib/agents/darwin/audience-relabel-schedule", () => ({ scheduleAudienceRelabelRun: state.schedule }));
+vi.mock("@/lib/agents/deming/live-source-schedule",()=>({scheduleLiveSourceAudit:state.schedule}));
 vi.mock("@/lib/agents/growth/withdraw", () => ({ scheduleStaleOutreachWithdrawal: state.schedule }));
 
 async function effect(key: string, result: Record<string, unknown> = {}) { state.effects.push(key); return result; }
@@ -52,6 +53,7 @@ vi.mock("@/lib/agents/deming/regression", () => ({ DEMING_REGRESSION_VERSION: 1,
   runDemingRegression: () => effect("deming-regression", { regressions: [] }), summarizeDemingRegression: () => "Synthetic regression" }));
 vi.mock("@/lib/agents/deming/fresh-audit", () => ({ FRESH_AUDIT_VERSION: 5,
   runFreshAudit: () => effect("deming-fresh-audit", { readable: false, misses: [] }), summarizeFreshAudit: () => "Synthetic stored audit", freshAuditDetail: () => ({ readable: false }) }));
+vi.mock("@/lib/data-store/live-source-audit",async(original)=>({...await original<typeof import("@/lib/data-store/live-source-audit")>(),createLiveAuditDraw:async()=>{state.effects.push("deming-live-source-draw");return {id:1,valid:true,detail:{state:"ready",rows:[]}};}}));
 vi.mock("@/lib/agents/deming/benchmark-health", () => ({ runBenchmarkHealth: () => effect("deming-benchmark-health"),
   summarizeBenchmarkHealth: () => "Synthetic benchmark health", benchmarkHealthDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/deming/playbook-contradictions", () => ({ runPlaybookContradictions: () => effect("deming-playbook-check"),
@@ -132,7 +134,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(new Set(results.map(body => body.runId)).size).toBe(1);
     expect(results.filter(body => !body.reused)).toHaveLength(1);
     expect((await db`SELECT count(*)::int AS n FROM agent_runs`)[0].n).toBe(1);
-    expect(await steps(results[0].runId)).toHaveLength(12);
+    expect(await steps(results[0].runId)).toHaveLength(13);
     expect(state.effects).toEqual([]);
   });
 
@@ -168,24 +170,24 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect((await startAgentRun(input)).run.id).not.toBe(first.run.id);
   });
 
-  it("advances all12 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
+  it("advances all13 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = state.marketing = false;
     const firstTick = await (await tick(request("agents/tick"))).json();
     expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 10, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "atlas-city-repair" });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-live-source-draw" });
     expect((await db`SELECT agent_run_id FROM fixture_snapshots`)[0].agent_run_id).toBe(body.runId);
     expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
     const secondTick = await (await tick(request("agents/tick"))).json();
     expect(secondTick.selected).toBe(0);
-    expect((await steps(body.runId)).slice(-2).map(s => s.status)).toEqual(["queued", "queued"]);
+    expect((await steps(body.runId)).slice(-3).map(s => s.status)).toEqual(["queued", "queued", "queued"]);
     expect(state.schedule).not.toHaveBeenCalled();
     expect(state.provider).not.toHaveBeenCalled();
     state.pipeline = true;
     const resumed = await (await tick(request("agents/tick"))).json();
-    expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 2 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 12, progress_total: 12 });
-    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(12);
+    expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 3 }]);
+    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 13, progress_total: 13 });
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(13);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='run.completed'`)[0].n).toBe(1);
   });
 
@@ -196,7 +198,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 10 }]);
     expect((await db`SELECT count(*)::int AS n FROM fixture_snapshots`)[0].n).toBe(1);
     const tail = await (await tick(request("agents/tick"))).json();
-    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 12 : 10 });
+    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 13 : 10 });
     expect(tail.selected).toBe(pipeline ? 1 : 0);
     expect(state.provider).not.toHaveBeenCalled();
   });
@@ -327,4 +329,16 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(state.schedule).not.toHaveBeenCalled();
     expect(state.provider).not.toHaveBeenCalled();
   });
+  it.each(["deming-live-source-audit","magellan-live-audit-capture"])("requires the actual %s step to fit 150 seconds even with first-run override",async(key)=>{
+    const capture=key==="magellan-live-audit-capture";
+    const run=await startAgentRun({agent:capture?"magellan":"atlas",kind:"workflow",title:"Synthetic live diagnostic deadline",triggeredBy:"fixture",
+      params:{source:"deming.live_source_audit",drawId:999,requestId:999},steps:[{key,agent:capture?"magellan":"atlas",title:"Bounded diagnostic work"}]});
+    const held=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+149000,allowProviderSteps:false});
+    expect(held).toMatchObject({heldForDeadline:true,executedSteps:0});
+    expect((await steps(run.run.id))[0].status).toBe("queued");
+    const allowed=await executeAgentRun(run.run.id,{maxSteps:1,alwaysRunFirstStep:true,deadlineAt:Date.now()+180000,allowProviderSteps:false});
+    expect(allowed).toMatchObject({terminal:true,executedSteps:1});
+    expect((await steps(run.run.id))[0].status).toBe("completed");expect(state.provider).not.toHaveBeenCalled();
+  });
+
 });

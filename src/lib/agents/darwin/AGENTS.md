@@ -1,6 +1,29 @@
 # Darwin Agent Guide
 
+## Literal charging units (#2248)
+
+Fresh raw rows with a bounded own name/price/unit witness retain their hourly, page, document,
+image, statement, half-hour, quarter-hour or minute frequency and full readable conditions.
+This metadata does not override existing price, canonical period or per-event checks. A
+quarter-hour remains a quarter-hour, never quarterly; `per_statement` never implies monthly.
+The literal paper-statement basis is retained while hourly/per-event category guards remain.
+Existing raw identities and metadata are not silently enriched by held or superseded rechecks.
+Known special-unit prices remain visible evidence but leave mixed-unit comparisons under the
+shared SQL/client predicate. The historical hourly switch and provider controls are unchanged.
+
 Darwin owns verification and classification.
+
+Monthly eligibility admission (#2277/#2259, Oct 19): `insertVerifiedFee` locks the current
+raw identity for every caller. Current `knox_review:eligibility` together with
+`canonical_hint:monthly_maintenance` blocks verification regardless of the stale chosen
+category, including NULL or legacy unrepresented products. A stale selected row cannot verify after that hold wins
+the lock. Conversely, the monthly writer locks an exact conflict in a real transaction,
+then checks all verified history in a fresh statement before changing it. Ordinary
+historical rejudge callers need not carry `needs_darwin_verification`; no global needs
+flag requirement or replay version is added. Two-connection loopback PostgreSQL tests
+prove both actual blocking orders, a stale `minimum_balance` choice with both product
+representations, and ordinary/flagless rejudge controls. The existing caller
+transaction precondition on `insertVerifiedFee` still applies.
 
 ## Ancillary product ownership (#1911 code phase, 2026-10-19)
 
@@ -59,6 +82,27 @@ always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILIT
   Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
   fees it would take down. Takedowns go through the shared second look and the run ledger
   (`docs/project/DECISIONS.md`, 2026-10-15).
+  #2259 has an explicit prospective-phase exception approved in the 2026-10-19 review,
+  following #1911's boundary: unresolved monthly-account ownership is an eligibility hold,
+  not a claim the bank's stated price is false. Its free and common paid/raw writer gates
+  retain full bounded evidence and decline unavailable source witnesses. Existing judged
+  rows are untouched; the current-source candidate and published-exposure packet is a
+  read-only measurement, not an automatic historical takedown. No shared unsupported-price
+  refusal, broad second-look rule or old-decision replay is added for this phase. Historical
+  recovery remains separately reviewed, including #2269's legacy owner correction.
+  #2209's fee-count dollar-total refusal uses the shared source check. Its live twin is the
+  existing Hamilton rules re-check: the Knox v84 free-team fingerprint reselects documents,
+  checks the missing read against its own original source, and uses the normal first flag and
+  12-hour second look before rejection/archive and cache invalidation. It does not raise the
+  general source-check, verify or older-live recheck versions or reopen old rejected rows.
+  #2240/#2241/#2246 add bounded physical own-price refusals through the v85 free-team
+  signature and that same live twin. A matching category/amount read from another service
+  cannot bypass the exact physical refusal. The original source check and 12-hour second
+  look remain mandatory; the cap-inclusive read-only scan found zero current live matches.
+  Annual-program raw holds retain the annual clause and have no verification flag, including
+  after ordinary held-recheck/upsert passes. The literal cap-first item witness preserves the
+  full cap/unit text and binds NSF versus overdraft identity; it does not infer a daily cap or
+  make restricted eligibility a standard price. No epoch or provider/control change is included.
   The account type hold (#1100 gap 1, James Oct 16: a savings, money market, club, business or
   IRA/HSA/CD account's monthly fee is not consumer checking monthly maintenance) has its live
   re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every
@@ -764,6 +808,11 @@ always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILIT
   whose name or line mentions the hour. Prod read Oct 18: 1,894 live fees at 1,433 institutions
   print "$X per/an hour" on their line with a silent name and a non-hourly frequency (a regex
   estimate; the step's count is the exact one). `hourlyCountSql()` still mirrors the name rule only.
+  The own-line attribution repair (#1456, Oct 19) passes the actual fee name to the priced
+  region, including a single-price line; an unrelated label or a previous/next fee's hourly
+  wording never supplies the unit. Bounds and partial-hour prices stay separate. Unnamed
+  callers require compatible readings of every matching fee price. The line switch remains
+  off, the check stays v2, and no replay epoch or activation is included in this repair.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from

@@ -11,6 +11,8 @@ import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDrop
 export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
+import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
+import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -61,14 +63,28 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   lineShare?: string;
   /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */
   ownedBullet?: true;
+  /** Complete single-column price paragraph with a bounded, explicit exception policy. */
+  ownedPolicy?: true;
+  /** Bounded literal own-unit evidence; metadata never supplies price/category admission. */
+  ownUnit?: OwnFeeUnit;
+  /** Complete exact own additive charge clause; source metadata, never admission authority. */
+  ownCondition?: string;
+  /** Literal product/age eligibility not yet represented safely by benchmark selection. */
+  eligibilityReview?: true;
   /** Bounded, explicitly referenced context; never read as the price's charging unit. */
   linkedConditions?: string;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies";
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility" | "periodic_program";
 
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
+  /** Eligibility holds retain their complete own-price policy and independent event key. */
+  ownedPolicy?: true;
+  ownUnit?: OwnFeeUnit;
+  ownCondition?: string;
+  linkedConditions?: string;
+  lineShare?: string;
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */
@@ -939,7 +955,10 @@ function candidateSegments(text: string): HeadedSegment[] {
       asHeading === null && heading && index - heading.at <= HEADING_REACH_LINES && FEE_FAMILY_HEADING.test(heading.name) ? line.match(WIRE_SUBHEADING)?.[1] : undefined;
     if (wireSub && heading) heading = { name: `${wireSub} ${heading.name.replace(WIRE_SUBHEADING_WORD, "")}`, at: index };
     else if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
-    if (asHeading !== undefined) section += 1;
+    // #2241: a longer explicit service label is not a section heading, but it still owns
+    // the price immediately below it and ends the previous heading's reach.
+    else if (isStackedFeeLabel(line, lines[index + 1])) heading = null;
+    if (asHeading !== undefined || isStackedFeeLabel(line, lines[index + 1])) section += 1;
     const isPriced = line.includes("$") || PERCENT_PATTERN.test(line) || hasZeroCell(line);
     if (!isPriced && !hasUnpricedFeeRow(line)) continue;
     const inReach = heading && index - heading.at <= HEADING_REACH_LINES ? heading : null;

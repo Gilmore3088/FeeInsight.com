@@ -12,6 +12,7 @@ import type { ExtractedFee } from "./types";
 import { COMPARABILITY_SCREEN, SAFE_DEPOSIT_SERVICE_REASON, notComparableReason } from "@/lib/fee-comparability";
 import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison, marketIneligibleReason } from "@/lib/market-eligibility";
 import { marketEligibilityOf, pickHeadlineValues } from "@/app/(public)/institution/[id]/profile-data";
+import { SPECIAL_UNIT_FREQUENCIES } from "@/lib/fee-unit";
 
 type Mock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 const db = sql as unknown as Mock;
@@ -106,6 +107,11 @@ function catalogFee(overrides: Partial<CatalogFee>): CatalogFee {
 
 /** Every eligibility rule, with a row it keeps and a row it drops. */
 const CASES: Array<{ label: string; fee: CatalogFee; counts: boolean }> = [
+  ...SPECIAL_UNIT_FREQUENCIES.map(frequency => ({
+    label: `a literal ${frequency} research price`,
+    fee: catalogFee({ fee_category: "account_research", fee_name: "Research Fee", frequency: `\u00a0${frequency.toUpperCase()}\v` }),
+    counts: false,
+  })),
   { label: "a plain personal fee", fee: catalogFee({}), counts: true },
   { label: "a consumer fee", fee: catalogFee({ fee_audience: "consumer" }), counts: true },
   { label: "a fee for both audiences", fee: catalogFee({ fee_audience: "both" }), counts: true },
