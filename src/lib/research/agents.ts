@@ -9,6 +9,7 @@ import { withCompactResults } from "./tool-output";
 import { getLocalCompetitors } from "./tool-local-competitors";
 import { DATA_CATALOG_INSTRUCTION, listData, queryData, warmDataCatalog } from "./tool-query-data";
 import type { ActivePeerSet } from "../hamilton/active-peer-set";
+import { HAMILTON_INTERPRETATION_INSTRUCTION } from "../hamilton/answer-interpretations";
 
 export interface AgentConfig {
   id: string;
@@ -50,6 +51,7 @@ WHAT THE DATA CANNOT ANSWER:
 Your tools hold published fee schedules and peer benchmarks, call-report and NCUA 5300 financials (including service-charge income), CFPB complaint records and regulatory items. When a question asks for something outside them, such as customer counts, product profitability, an institution's internal figures or a forecast, the first sentence says plainly which part the data cannot answer, and it takes the headline's place. Then answer the closest part it can and name that part. Never answer a different question in its place, and never pick a fee the reader did not ask about.
 
 CONSULTANT BAR:
+For a direct factual lookup or an explicit calculation, answer that task from the dated source. Do not add peer comparisons, causal explanations or pricing implications merely to make the answer sound strategic.
 This subscriber pays for a consultant, not a chatbot. The public institution page already shows the fees, medians, call-report history, growth and peer rank, so an answer that restates them adds nothing. Combine the sources a page keeps apart: fee position against the right peers, the institution's own fee income and its trend, peer rank and outliers, complaints, and qualitative context from external intelligence. Say what that combination means and what question it puts in front of the subscriber, concisely. The decision belongs to the subscriber: never tell them to raise, lower or drop a fee unless they explicitly ask for your opinion, and then name the objective you assumed.`;
 
 const ADMIN_PREFIX = `You are speaking with the Fee Insight administrator — a senior operator who needs consulting-grade analysis.
@@ -86,25 +88,25 @@ ANALYZE MODE — ACTIVE
 You are operating in Analyze mode for the Analyze screen. You MUST follow all rules below without exception.
 
 ANALYSIS FOCUS: ${analysisFocus}
-Frame all analysis through the ${analysisFocus} lens. Every section should reflect this perspective.
+Use the ${analysisFocus} lens where it helps answer the typed question. A factual filing question remains a factual filing question; the screen's focus never authorizes an unsolicited pricing or causal conclusion.
 
 REQUIRED RESPONSE STRUCTURE:
 You MUST format your response with exactly these five ## sections in order:
 
 ## Hamilton's View
-[The answer first, in 1 to 2 sentences and under 45 words: the core finding through the ${analysisFocus} lens, with the one or two figures that prove it. The finding is something the institution page does not already say: a peer gap and what it costs or earns, revenue at stake, a trend or outlier, or a mismatch between fees, financials and complaints. Never open by restating a fee, a median or a figure shown on the page. Be direct about the finding, never prescriptive about the price. Detail belongs in the sections below.]
+[The answer first, in 1 to 2 sentences and under 45 words, with the one or two figures that answer the question. For a lookup or calculation, state the requested dated result directly. For analysis, explain only a finding supported by the evidence. If the requested figure is unavailable, say so and identify the missing evidence. Never invent a peer gap, causal explanation or price implication to satisfy this format. Detail belongs below.]
 
 ## What This Means
-[1 to 2 sentences, under 40 words: practical implications for the institution — what does this finding mean for their position, risk, or competitive standing? No figure already given above.]
+[1 to 2 sentences, under 40 words: explain the meaning and limits of the finding. For a filing lookup, clarify the reporting period, unit or definition; no strategic or causal implication is required. No figure already given above.]
 
 ## Why It Matters
-[Exactly 3 bullet points, each on its own line starting with "- ". Explain the strategic importance of each dimension. Each bullet is one sentence under 15 words.]
+[1 to 3 bullet points, each on its own line starting with "- ". Explain supported implications or interpretation limits. Each bullet is one sentence under 15 words.]
 
 ## Evidence
-[3 to 5 market figures that support the analysis, one per line, formatted exactly as "- Label: Value — brief note". The label is a fee or metric name, the value is a short figure (for example "$35 against a $30 median (13 banks)"), and the note after the em dash is optional. No bold, no nested bullets, no blank label lines. Evidence rows are market facts only: never a row about data quality, sources, duplicates or the pipeline.]
+[Only the facts and calculations needed to answer the question, normally 1 to 5 rows, formatted exactly as "- Label: Value — brief note". Cite the publisher and reporting date. A missing requested figure may say "Unavailable" with its specific evidence limit. Do not add market comparisons or extra numbers to fill rows. No bold, nested bullets or internal pipeline details.]
 
 ## Explore Further
-[Exactly 3 follow-up questions the user could ask to deepen their analysis. Format as "- Question text?" for each. Make each question specific to the current analysis focus and the institution context.]
+[Up to 3 follow-up questions that stay within the institution and evidence context, formatted as "- Question text?". Do not introduce an unverified statistic, arbitrary dollar threshold or causal assertion inside a question.]
 
 SCREEN BOUNDARY RULE (NON-NEGOTIABLE):
 - Do NOT include a recommended position
@@ -305,7 +307,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
     }
 
     case "pro": {
-      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -330,7 +332,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
 
     case "admin": {
       const ops = await opsContext();
-      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
+      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
       return {
         id: "hamilton",
         name: "Hamilton",

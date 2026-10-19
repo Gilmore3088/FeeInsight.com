@@ -473,6 +473,19 @@ describe("queryData: call-report lines", () => {
     expect(result).toMatchObject({ ok: true, rows: [expect.objectContaining({ value: 123, unit: "USD", source: "ncua", period_basis: "ytd" })], measure_metadata: { period_basis: "ytd" }, citation: { publisher: "NCUA (5300 call report)", source_url: "https://ncua.gov/old" } });
   });
 
+  it("exposes the institution and each historical filing's own citation for Hamilton's bounded derivations", async () => {
+    nextRows = [
+      { period: "2026-06-30", item_code: "ACCT_131", item_description: "FEE INCOME", schedule: "FS220", value: 57_261_959, unit: "USD", period_basis: "ytd", source: "ncua", source_url: "https://ncua.gov/q2.zip", fetched_at: "2026-08-01T00:00:00Z" },
+      { period: "2026-03-31", item_code: "ACCT_131", item_description: "FEE INCOME", schedule: "FS220", value: 27_229_618, unit: "USD", period_basis: "ytd", source: "ncua", source_url: "https://ncua.gov/q1.zip", fetched_at: "2026-05-01T00:00:00Z" },
+    ];
+    const result = await queryData({ measure: "call:acct_131", scope: { kind: "institution", id: "12" } });
+    expect(result).toMatchObject({ ok: true, rows: [
+      expect.objectContaining({ institution_id: 12, source_url: "https://ncua.gov/q2.zip", fetched_at: "2026-08-01T00:00:00.000Z" }),
+      expect.objectContaining({ institution_id: 12, source_url: "https://ncua.gov/q1.zip", fetched_at: "2026-05-01T00:00:00.000Z" }),
+    ] });
+    expect(result).not.toHaveProperty("derived_facts");
+  });
+
   it.each(["institution", "national"] as const)("explains missing comparable NCUA figures for %s without inventing values", async (scope) => {
     const result = await queryData({ measure: "call:acct_131", scope: scope === "institution" ? { kind: "institution", id: "12" } : { kind: "national" } });
     expect(result).toMatchObject({ ok: true, rows: [], unit: null, measure_metadata: { unit: "USD", period_basis: "ytd" }, citation: { publisher: "NCUA (5300 call report)" }, note: expect.stringMatching(/no comparable loaded figures.*unit USD and period basis ytd/i) });

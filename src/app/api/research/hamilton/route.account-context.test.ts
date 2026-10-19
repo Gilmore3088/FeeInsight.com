@@ -9,7 +9,7 @@ vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synth
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({ getUserInstitutionMemberships: mocks.members }));
-vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefing: mocks.briefing }));
+vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefingSnapshot: mocks.briefing }));
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: async (id: number) => ({ id, institution_name: `Synthetic Subject ${id}` }) }));
 vi.mock("@/lib/hamilton/quota", () => ({ checkProAiQuota: async () => ({ allowed: true }), quotaExceededMessage: () => "quota" }));
 vi.mock("@/lib/research/history", () => ({ logUsage: async () => {} }));
@@ -64,7 +64,7 @@ beforeEach(() => {
   mocks.user.mockReset().mockResolvedValue({ id: 7, role: "premium", institution_name: "Profile Label", display_name: "Private Person" });
   mocks.members.mockReset().mockResolvedValue([home]);
   mocks.generate.mockReset().mockResolvedValue({ finishReason: "stop", text: "Test written answer", totalUsage: { inputTokens: 1, outputTokens: 1 } });
-  mocks.briefing.mockReset().mockImplementation(async (contract: { institutionId: number }) => `Research evidence for ${contract.institutionId}.`);
+  mocks.briefing.mockReset().mockImplementation(async (contract: { institutionId: number }) => ({ prompt: `Research evidence for ${contract.institutionId}.`, evidence: [] }));
   mocks.guard.mockReset().mockResolvedValue(Date.now());
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.metadata.mockReset();
@@ -97,14 +97,14 @@ describe("live written-answer account/subject boundary", () => {
   it("withholds only the home comparison when home evidence fails", async () => {
     mocks.briefing.mockImplementation(async (contract: { institutionId: number }) => {
       if (contract.institutionId === 101) throw new Error("synthetic home evidence outage");
-      return "Research evidence for 202.";
+      return { prompt: "Research evidence for 202.", evidence: [] };
     });
     const response = await POST(request());
     expect(response.status).toBe(200);
     const system = mocks.generate.mock.calls[0][0].system;
     expect(system).toContain("Research evidence for 202.");
     expect(system).toContain("Account institution evidence could not be loaded.");
-    expect(mocks.briefing).toHaveBeenLastCalledWith(expect.objectContaining({ institutionId: 101 }), { contextRole: "account_evidence" });
+    expect(mocks.briefing).toHaveBeenLastCalledWith(expect.objectContaining({ institutionId: 101 }), { contextRole: "account_evidence", writtenAnswer: true });
   });
   it("retains the self-reported profile as a label, not an institution ID", async () => {
     mocks.members.mockResolvedValue([]);
