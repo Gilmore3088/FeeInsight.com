@@ -1,5 +1,5 @@
 import { STUDY_FEES, assetBand, type Charter, type InstitutionPrice, type StudyFee } from "./common";
-import { mean, median, midRankPercentile, ols, quartileOf, round, spearman } from "./stats";
+import { mean, median, midRankPercentile, ols, pricePercentile, quartileOf, round, spearman } from "./stats";
 import type { Placement } from "./store";
 
 /**
@@ -145,7 +145,7 @@ export function runPriceStudy(prices: InstitutionPrice[], driver: Driver): Price
     const byFee: Record<string, unknown> = {};
     for (const [fee, amount] of v.prices) {
       const peers = fifthPeers.get(`${fee}|${fifth}`) ?? [];
-      byFee[fee] = { price: amount, fifth_median: round(median(peers)), fifth_n: peers.length, price_percentile_in_fifth: midRankPercentile(amount, peers) };
+      byFee[fee] = { price: amount, fifth_median: round(median(peers)), fifth_n: peers.length, price_percentile_in_fifth: pricePercentile(amount, peers) };
     }
     placements.push({
       institutionId,

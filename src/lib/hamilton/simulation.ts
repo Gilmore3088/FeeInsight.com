@@ -5,6 +5,10 @@
  */
 
 import type { DatasetStamp } from "@/lib/dataset-stamp";
+import { midRankPercentile } from "@/lib/percentile";
+
+/** Peers needed before a percentile is read from their own amounts, as in every Hamilton answer. */
+const MIN_AMOUNTS_FOR_MID_RANK = 5;
 
 export interface DistributionData {
   fee_category: string;
@@ -22,11 +26,15 @@ export interface DistributionData {
   peer_fallback_reason?: string | null;
   /** The data behind the distribution (#1924). */
   stamp?: DatasetStamp;
+  /** One amount per peer institution, so the percentile is the shared mid-rank one (#2048). */
+  peer_amounts?: number[];
 }
 
 export interface FeePosition {
-  /** 0-100, estimated from p25/median/p75 breakpoints via linear interpolation */
+  /** 0-100: mid-rank over the peers' own amounts when enough are on file, else estimated from the quartiles. */
   percentile: number;
+  /** Which way the percentile was figured, so the screen can say so (#2048). */
+  method: "mid_rank" | "estimated";
   /** proposed - median (negative = below median = cost advantage) */
   medianGap: number;
   riskProfile: "low" | "medium" | "high";
@@ -89,10 +97,14 @@ export function classifyRisk(percentile: number): "low" | "medium" | "high" {
  * Compute fee position (percentile, medianGap, riskProfile) for a given fee amount.
  */
 export function computeFeePosition(fee: number, dist: DistributionData): FeePosition {
-  const percentile = Math.round(estimatePercentile(fee, dist));
+  // The same mid-rank method every Hamilton answer uses (#2048); the quartile estimate only when the amounts are not on file.
+  const amounts = dist.peer_amounts ?? [];
+  const midRank = amounts.length >= MIN_AMOUNTS_FOR_MID_RANK ? midRankPercentile(fee, amounts) : null;
+  const method: FeePosition["method"] = midRank !== null ? "mid_rank" : "estimated";
+  const percentile = midRank ?? Math.round(estimatePercentile(fee, dist));
   const medianGap = parseFloat((fee - dist.median_amount).toFixed(2));
   const riskProfile = classifyRisk(percentile);
-  return { percentile, medianGap, riskProfile };
+  return { percentile, method, medianGap, riskProfile };
 }
 
 /**

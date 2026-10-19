@@ -4,8 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { runKnoxExtract } from "../knox/extract";
 import {
+  DOCUMENT_ACCESS_STRATEGY,
   FLAT_TEXT_MIN_CHARS,
   REREAD_MAX_KNOX_FEES,
+  ROSETTA_DOCUMENT_ACCESS_VERSION,
   ROSETTA_READ_MAX_LIMIT,
   ROSETTA_READ_VERSION,
   STUCK_LINK_MAX_FAILURES,
@@ -336,6 +338,78 @@ describe("Rosetta agentic read", () => {
         .map((call) => call.slice(1));
     }
 
+    it.each([
+      { url: htmlCandidate.document_url, contentType: "text/html", status: 404, documentType: "html", outcome: "http_404" },
+      { url: "https://testbank.example/fees.pdf", contentType: "application/pdf", status: 503, documentType: "pdf", outcome: "http_5xx" },
+      { url: "https://testbank.example/fees.docx", contentType: "application/msword", status: 403, documentType: "docx", outcome: "http_403" },
+    ])("records $documentType access failure separately from a reader attempt", async ({ url, contentType, status, documentType, outcome }) => {
+      const db = learningDb([{ ...htmlCandidate, document_url: url }]);
+      const pdfTextExtractor = vi.fn();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response("unavailable", contentType, status));
+
+      const result = await runRosettaRead({ runId: 310, stepId: 12, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(result.results[0]).toMatchObject({
+        status: "failed",
+        documentType,
+        strategy: DOCUMENT_ACCESS_STRATEGY,
+        reader: null,
+        attemptOutcome: outcome,
+      });
+      const [attempt] = attemptValues(db);
+      expect(attempt.slice(2, 7)).toEqual(["read", DOCUMENT_ACCESS_STRATEGY, ROSETTA_DOCUMENT_ACCESS_VERSION, "source-hash", outcome]);
+      expect(JSON.parse(String(attempt[12]))).toMatchObject({ document_type: documentType, reader: null, reader_version: ROSETTA_READ_VERSION });
+      expect(pdfTextExtractor).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { url: "invalid document URL", error: null, outcome: "invalid_url", status: "skipped" },
+      { url: htmlCandidate.document_url, error: new Error("Connection refused"), outcome: "network_error", status: "failed" },
+      { url: htmlCandidate.document_url, error: Object.assign(new Error("aborted"), { name: "AbortError" }), outcome: "timeout", status: "failed" },
+    ])("records $outcome before any reader can run", async ({ url, error, outcome, status }) => {
+      const db = learningDb([{ ...htmlCandidate, document_url: url }]);
+      const fetchImpl = vi.fn().mockRejectedValue(error);
+
+      const result = await runRosettaRead({ runId: 311, db: asReadDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ status, strategy: DOCUMENT_ACCESS_STRATEGY, reader: null, attemptOutcome: outcome });
+      expect(attemptValues(db)[0].slice(2, 7)).toEqual(["read", DOCUMENT_ACCESS_STRATEGY, ROSETTA_DOCUMENT_ACCESS_VERSION, "source-hash", outcome]);
+      if (outcome === "invalid_url") expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
+    it("keeps an oversized access failure tied to the reader version for retry suppression", async () => {
+      const db = learningDb([htmlCandidate]);
+      const tooLarge = new Response("too large", { headers: { "content-type": "text/html", "content-length": String(9 * 1024 * 1024) } });
+      const fetchImpl = vi.fn().mockResolvedValueOnce(tooLarge);
+
+      const result = await runRosettaRead({ runId: 312, db: asReadDb(db), fetchImpl });
+
+      expect(result.results[0]).toMatchObject({ strategy: DOCUMENT_ACCESS_STRATEGY, attemptOutcome: "too_large", reader: null });
+      const [attempt] = attemptValues(db);
+      expect(attempt[4]).toBe(ROSETTA_DOCUMENT_ACCESS_VERSION);
+      expect(JSON.parse(String(attempt[12])).reader_version).toBe(ROSETTA_READ_VERSION);
+      const [query, params] = db.unsafe.mock.calls.find((call) => String(call[0]).includes("FROM source_documents")) as [string, unknown[]];
+      const accessMatch = query.match(/WHEN pa\.strategy = \$(\d+)\s+THEN COALESCE\(\(pa\.detail->>'reader_version'\)::int, 0\)/);
+      expect(accessMatch).not.toBeNull();
+      expect(params[Number(accessMatch![1]) - 1]).toBe(DOCUMENT_ACCESS_STRATEGY);
+      // Old format-specific failures retain their strategy_version, including the Word exception.
+      expect(query).toContain("ELSE pa.strategy_version");
+      expect(query).toContain("pa.strategy = 'read.docx' AND pa.outcome = 'unsupported_format'");
+      expect(query).toMatch(/AND \(pa\.strategy <> \$\d+ OR pa\.strategy_version = \$\d+\)/);
+      expect(query).toMatch(/AND \(current_read\.strategy <> \$\d+ OR current_read\.strategy_version = \$\d+\)/);
+    });
+
+    it("keeps a PDF parser failure attributed to the reader that actually ran", async () => {
+      const db = learningDb([htmlCandidate]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4"), "application/pdf"));
+      const pdfTextExtractor = vi.fn().mockRejectedValueOnce(new Error("invalid xref"));
+
+      const result = await runRosettaRead({ runId: 313, db: asReadDb(db), fetchImpl, pdfTextExtractor });
+
+      expect(result.results[0]).toMatchObject({ strategy: "read.pdf_layout", reader: "read.pdf_layout", attemptOutcome: "parse_error" });
+      expect(attemptValues(db)[0].slice(2, 7)).toEqual(["read", "read.pdf_layout", ROSETTA_READ_VERSION, "source-hash", "parse_error"]);
+    });
+
     it("reads a PDF served as octet-stream from an extensionless URL as a PDF", async () => {
       const db = learningDb([{ ...htmlCandidate, document_url: "https://testbank.example/download?id=7" }]);
       const bytes = new TextEncoder().encode("%PDF-1.4 binary");
@@ -478,7 +552,9 @@ describe("Rosetta agentic read", () => {
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("AS is_reread");
       expect(query).toContain("FROM pipeline_attempts current_read");
-      expect(query).toContain("current_read.strategy_version >= $");
+      expect(query).toContain("ELSE current_read.strategy_version");
+      expect(query).toContain("current_read.detail->>'reader_version'");
+      expect(query).toMatch(/ELSE current_read\.strategy_version\s+END\) >= \$\d+/);
       expect(query).toContain("current_read.outcome = ANY(");
       expect(query).toContain("fr.source_document_id = adt.source_document_id");
       expect(query).toContain("ORDER BY is_reread ASC");
