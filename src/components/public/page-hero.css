@@ -1,0 +1,21 @@
+/*
+ * The public page hero's band (James, Oct 19): the homepage's textured navy (landing-motion.css)
+ * clipped to a shallow ellipse so its bottom edge curves. Fixed navy in both themes.
+ */
+.fi-page-hero::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: #102d43 url("/brand/hero-texture.webp") 38% center / cover no-repeat;
+  clip-path: ellipse(250% 100% at 35% 0%);
+}
+@media (min-width: 1024px) {
+  .fi-page-hero::before {
+    background-position: center;
+    clip-path: ellipse(160% 100% at 28% 0%);
+  }
+}
+@media print {
+  .fi-page-hero::before { clip-path: none; }
+}
