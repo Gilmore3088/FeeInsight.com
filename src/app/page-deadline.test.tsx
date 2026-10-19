@@ -49,7 +49,7 @@ vi.mock("@/components/public/search-modal", () => ({ SearchModal: () => null }))
 
 import LandingPage from "./page";
 import { LandingResearch } from "./landing-research-section";
-import { LandingHamilton } from "./landing-hamilton";
+import { LandingDeliverable } from "./landing-deliverable";
 import { HOME_READ_BUDGET_MS } from "./landing-shared";
 
 /** A query queued behind a saturated pooler: it never answers. */
@@ -94,7 +94,7 @@ describe("homepage read deadline", () => {
     reads.indexRows.mockImplementation(hanging);
     const tree = await renderPastDeadline();
     expect(propsOf<{ report: unknown }>(tree, LandingResearch)?.report).toBeNull();
-    expect(propsOf<{ report: unknown }>(tree, LandingHamilton)?.report).toBeNull();
+    expect(propsOf<{ report: unknown }>(tree, LandingDeliverable)?.report).toBeNull();
     expect(reads.shortenPageLife).toHaveBeenCalledTimes(1);
   });
 

@@ -20,6 +20,8 @@ import { cardMoney } from "./landing-index-view";
 
 export type EvidenceKey = "financial" | "competitive" | "market" | "regulatory";
 
+export type OutputKey = "benchmark" | "investigate" | "monitor" | "report";
+
 /** The fee lines the question can ask about, best first: the outgoing wire, then its nearest kin. */
 export const QUESTION_LINES = ["wire_domestic_outgoing", "wire_intl_outgoing"] as const;
 
@@ -41,6 +43,10 @@ export interface OneQuestionFee {
   key: string;
   /** "Outgoing domestic wire". */
   label: string;
+  /** The fee as a question names it: "wire", "overdraft", "monthly maintenance". */
+  short: string;
+  /** The fee as a sentence names it: "outgoing domestic wire", "overdraft", "monthly maintenance". */
+  name: string;
   amountLabel: string;
   /** The bank's own schedule: when it was read, and where it is. */
   readOn: string | null;
@@ -65,11 +71,13 @@ export interface OneQuestionIncome {
   quarters: { label: string; thousands: number; valueLabel: string }[];
   latestQuarter: string;
   latestLabel: string;
+  /** The same figure, short enough for a card: "$5.7M". */
+  latestCompact: string;
   sizeMedian: { tierLabel: string; valueLabel: string } | null;
   /** Deposit service charges as a share of revenue, its own and the median for its size. */
   share: { own: string; median: string; quarter: string } | null;
   /** The newest two quarters, when both are reported. */
-  change: { from: string; to: string; pctLabel: string; direction: "up" | "down" | "flat" } | null;
+  change: { from: string; to: string; fromLabel: string; toLabel: string; pctLabel: string; direction: "up" | "down" | "flat" } | null;
 }
 
 export interface OneQuestionMarket {
@@ -83,12 +91,29 @@ export interface OneQuestionMarket {
   shareLabel: string | null;
 }
 
+/**
+ * One question the section asks, with the output it opens and the evidence it lights, in the order
+ * it lights them. Every question is backed by figures from the reads; a question whose figures are
+ * missing is left out, so the set rotates only over questions with real answers.
+ */
+export interface OneQuestionAsk {
+  key: string;
+  question: string;
+  output: OutputKey;
+  evidence: EvidenceKey[];
+  /** The fee it asks about; null for a question about fee income. */
+  fee: OneQuestionFee | null;
+}
+
 export interface OneQuestionView {
   institution: string;
   place: string | null;
   peerNoun: string;
+  /** The first question's text. */
   question: string;
+  /** The first question's fee. */
   fee: OneQuestionFee | null;
+  asks: OneQuestionAsk[];
   income: OneQuestionIncome | null;
   market: OneQuestionMarket | null;
 }
@@ -135,7 +160,92 @@ export function pickQuestionLine(lines: ReportLine[]): ReportLine | null {
 /** The question card: the brief's wording for a wire line; another fee only if no wire is published. */
 export function questionFor(line: Pick<ReportLine, "key" | "label"> | null): string {
   if (!line || line.key.startsWith("wire_")) return "Should we change our outgoing wire fees?";
-  return `Should we change our ${lineName(line.label).toLowerCase()} fee?`;
+  return `Should we change our ${shortFeeName(line)} fee?`;
+}
+
+/** "Overdraft (per item)" -> "overdraft"; every wire line -> "wire". */
+export function shortFeeName(line: Pick<ReportLine, "key" | "label">): string {
+  if (line.key.startsWith("wire_")) return "wire";
+  return lineName(line.label)
+    .replace(/\s*\(.*\)\s*$/, "")
+    .split(" ")
+    .map((w) => (/^[A-Z]{2,}/.test(w) ? w : w.toLowerCase()))
+    .join(" ");
+}
+
+/** Thousands of dollars -> "$5.7M" / "$840K", for a card's headline figure. */
+export function compactIncome(thousands: number): string {
+  if (Math.abs(thousands) >= 1000) return `$${(thousands / 1000).toFixed(1)}M`;
+  return `$${Math.round(thousands).toLocaleString("en-US")}K`;
+}
+
+/** Thousands of dollars -> "$1,840,000": exact, so a small quarter-to-quarter move still shows. */
+export function exactIncome(thousands: number): string {
+  return `$${Math.round(thousands * 1000).toLocaleString("en-US")}`;
+}
+
+/** Second and fourth questions: these fees first, when the bank publishes them and they compare. */
+const FOLLOW_UP_LINES = ["overdraft", "monthly_maintenance", "nsf", "atm_non_network", "stop_payment", "cashiers_check"];
+
+function followUpLines(lines: ReportLine[], first: ReportLine | null): ReportLine[] {
+  const usable = lines.filter((l) => l.own && l.comparable && l.peers && l.key !== first?.key && !l.key.startsWith("wire_"));
+  const ranked = [
+    ...FOLLOW_UP_LINES.map((k) => usable.find((l) => l.key === k)).filter((l): l is ReportLine => !!l),
+    ...usable.filter((l) => !FOLLOW_UP_LINES.includes(l.key) && l.position === "above_market"),
+    ...usable.filter((l) => !FOLLOW_UP_LINES.includes(l.key) && l.position !== "above_market"),
+  ];
+  return ranked;
+}
+
+/** Fees where rules and consumer complaints weigh most, so their questions light the regulatory card. */
+const REGULATED = new Set(["overdraft", "nsf", "od_protection_transfer", "deposited_item_return"]);
+
+/**
+ * Up to four questions, one per output: the fee question that leads (Benchmark), a second fee's local
+ * standing (Investigate), the latest Call Report move (Monitor) and a committee brief (Report). Each
+ * is kept only when the reads hold its figures.
+ */
+export function buildAsks(report: MarketReport, first: ReportLine | null, fee: OneQuestionFee | null, income: OneQuestionIncome | null, peers: ReportPeerContext | null): OneQuestionAsk[] {
+  const asks: OneQuestionAsk[] = [];
+  if (first && fee && (fee.local || fee.sizePeers)) {
+    asks.push({ key: `benchmark:${fee.key}`, question: questionFor(first), output: "benchmark", evidence: ["competitive", "financial", "market", "regulatory"], fee });
+  }
+  const [second, third] = followUpLines(report.analysis.lines, first);
+  if (second) {
+    const f = feeView(report, second, peers);
+    asks.push({
+      key: `investigate:${f.key}`,
+      question: `Where does our ${f.short} fee stand locally?`,
+      output: "investigate",
+      evidence: REGULATED.has(second.key) ? ["competitive", "market", "regulatory"] : ["competitive", "market"],
+      fee: f,
+    });
+  }
+  if (income?.change) {
+    asks.push({
+      key: "monitor:income",
+      question: `What changed in our deposit service charges in ${income.change.to}?`,
+      output: "monitor",
+      evidence: ["financial"],
+      fee: null,
+    });
+  }
+  // With no third fee, the brief covers the leading fee, but only beside other questions: a lone
+  // fee question asked twice is not a rotation.
+  const briefLine = third ?? (asks.length > 1 ? first : null);
+  if (briefLine) {
+    const f = briefLine === first ? fee : feeView(report, briefLine, peers);
+    if (f && (f.local || f.sizePeers)) {
+      asks.push({
+        key: `report:${f.key}`,
+        question: `What should our pricing committee see on ${f.short} fees?`,
+        output: "report",
+        evidence: ["financial", "competitive", "market", "regulatory"],
+        fee: f,
+      });
+    }
+  }
+  return asks;
 }
 
 function feeView(report: MarketReport, line: ReportLine, peers: ReportPeerContext | null): OneQuestionFee {
@@ -164,6 +274,8 @@ function feeView(report: MarketReport, line: ReportLine, peers: ReportPeerContex
   return {
     key: line.key,
     label: lineName(line.label),
+    short: shortFeeName(line),
+    name: line.key.startsWith("wire_") ? lineName(line.label).toLowerCase() : shortFeeName(line),
     amountLabel: cardMoney(own.amount),
     readOn: dateLabel(own.schedule_read_on ?? own.updated_at),
     local,
@@ -184,6 +296,8 @@ function incomeView(revenue: RevenueContext, financial: ReportPeerFinancial | nu
     change = {
       from: quarterLabel(prior.quarter),
       to: quarterLabel(newest.quarter),
+      fromLabel: exactIncome(prior.thousands),
+      toLabel: exactIncome(newest.thousands),
       pctLabel: `${Math.abs(rounded).toFixed(1)}%`,
       direction: rounded > 0 ? "up" : rounded < 0 ? "down" : "flat",
     };
@@ -193,6 +307,7 @@ function incomeView(revenue: RevenueContext, financial: ReportPeerFinancial | nu
     quarters: [...revenue.quarters].reverse().map((q) => ({ label: quarterLabel(q.quarter), thousands: q.thousands, valueLabel: incomeLabel(q.thousands) })),
     latestQuarter: quarterLabel(newest.quarter),
     latestLabel: incomeLabel(newest.thousands),
+    latestCompact: compactIncome(newest.thousands),
     sizeMedian: revenue.peer ? { tierLabel: revenue.peer.tierLabel, valueLabel: incomeLabel(revenue.peer.medianThousands) } : null,
     share:
       shareRow && financial
@@ -236,13 +351,16 @@ export function buildOneQuestionView({
   const filing = cu ? "NCUA 5300 Call Report" : "FDIC Call Report";
   const place = report.data.market?.places[0] ? placeLabel(report.data.market.places[0]) : null;
   const line = pickQuestionLine(report.analysis.lines);
+  const fee = line ? feeView(report, line, peers) : null;
+  const income = revenue ? incomeView(revenue, financial ?? peers?.financial ?? null, filing) : null;
   return {
     institution: subject.institution_name,
     place,
     peerNoun: cu ? "credit unions" : "banks",
     question: questionFor(line),
-    fee: line ? feeView(report, line, peers) : null,
-    income: revenue ? incomeView(revenue, financial ?? peers?.financial ?? null, filing) : null,
+    fee,
+    asks: buildAsks(report, line, fee, income, peers),
+    income,
     market: branches ? marketView(report, branches, place) : null,
   };
 }

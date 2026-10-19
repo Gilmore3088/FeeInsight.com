@@ -25,9 +25,10 @@ export function sourcesShown(view: OneQuestionView | null): string[] {
 }
 
 /**
- * "One question. Every angle considered." (James's brief and mockup, Oct 19): one question about
- * the demo bank's outgoing wire fee, the four kinds of evidence Hamilton reads, and four outputs
- * drawn from the live sample report. The page passes the reads it already makes; this section
+ * "One question. Every angle considered." (James's brief and mockup, Oct 19, and his review the same
+ * day): the homepage's one interactive Hamilton demonstration. Real questions about the demo bank
+ * rotate, each lighting the evidence it reads and opening one of four outputs, all drawn from the
+ * live sample report. The page passes the reads it already makes; this section
  * adds none of its own.
  */
 export function LandingResearch({
@@ -55,8 +56,7 @@ export function LandingResearch({
             <span className="block">One question.</span> <span className="block">Every angle considered.</span>
           </h2>
           <p className="mx-auto mt-4 max-w-[46rem] text-[16px] leading-relaxed text-ink-soft sm:text-[18px]">
-            Hamilton brings together your institution&rsquo;s financial performance, competitors, market conditions, and regulatory
-            context to help you make decisions grounded in evidence.
+            Financial performance. Competitors. Market conditions. Regulation. Connected in one analysis.
           </p>
         </header>
 
@@ -91,7 +91,7 @@ export function LandingResearch({
         </div>
 
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-5 text-[12px] text-ink-muted sm:flex-row sm:items-center sm:justify-between" data-source-strip="">
-          <p>
+          <p className="max-w-none">
             <span className="mr-2 font-semibold uppercase tracking-[0.1em]">Sources</span>
             {sources.join(" · ")}
           </p>

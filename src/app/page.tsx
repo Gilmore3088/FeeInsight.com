@@ -90,12 +90,12 @@ export default async function LandingPage() {
   // Counts come from the one shared snapshot, so they match the fee index, research hub and
   // directory to the number. The hero card reads each free fee's published rows, the same cached
   // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
-  // report (the one /for-institutions and the sample page show) gives the Hamilton examples
-  // their figures; a failed read shows the examples without figures. It is null both when none
-  // passes the bar today and on error. The sample bank's reported service-charge income (the
-  // read the sample report page shows) gives Prioritize its context; without it, no figures.
-  // The same report and income draw the deliverable before the plans. The One question section
-  // adds the sample report page's peer-context and branch-footprint reads, from the same cache.
+  // report (the one /for-institutions and the sample page show) gives the One question demo
+  // its figures; a failed read shows the demo without figures. It is null both when none
+  // passes the bar today and on error. The One question section draws on it, the sample bank's
+  // reported service-charge income and Call Report peers (the reads the sample report page shows),
+  // and that page's peer-context and branch-footprint reads, from the same cache. The same report
+  // draws the first page of the sample before the plans.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
@@ -162,10 +162,11 @@ export default async function LandingPage() {
       <ConsumerNav />
       <main id="main-content">
         {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
-            and the proof strip), the Hamilton investigation, the evidence, the deliverable, the plans. */}
+            and the proof strip), the Hamilton introduction, the One question demo (James's review, Oct 19:
+            the one interactive demonstration), the sample report's first page, the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
-        <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} financial={sampleRead.financial} />
+        <LandingHamilton />
         <LandingResearch
           report={sampleRead.report}
           revenue={sampleRead.revenue}
@@ -173,7 +174,7 @@ export default async function LandingPage() {
           peers={sampleRead.peers}
           branches={sampleRead.branches}
         />
-        <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} sizePeers={sampleRead.financial !== null} preparedOn={new Date()} />
+        <LandingDeliverable report={sampleRead.report} preparedOn={new Date()} />
         <LandingPricing />
       </main>
       <CustomerFooter />

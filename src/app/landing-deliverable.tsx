@@ -1,188 +1,56 @@
 import { ArrowUpRight } from "lucide-react";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
-import { SITE_NAME } from "@/lib/constants";
-import type { LinePosition } from "@/lib/custom-report/analysis";
+import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import type { MarketReport } from "@/lib/custom-report/report-data";
-import { incomeLabel, quarterLabel, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import { AtAGlance } from "./market-report/[token]/at-a-glance";
 import { placeLabel } from "./market-report/report-body";
-import { cardMoney } from "./landing-index-view";
-import { HOME_WRAP, SAMPLE_REPORT_HREF, SERIF, buildSampleView, type SampleRow } from "./landing-shared";
+import { HOME_WRAP, SAMPLE_REPORT_HREF, SERIF } from "./landing-shared";
 
-/** Fee lines the cover shows. */
-const COVER_ROWS = 3;
+/** Fees the first page shows before it fades; the full sample has the rest. */
+const PAGE_ROWS = 4;
 
 /** The prepared date, in the full sample's form, dated in U.S. Eastern so a U.S. evening render is never dated tomorrow. */
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "America/New_York" });
 
-const POSITION: Record<LinePosition, { label: string; className: string }> = {
-  above_market: { label: "Above", className: "bg-[#FBE9E4] text-brick" },
-  in_market: { label: "Inside", className: "bg-surface-200 text-ink" },
-  below_market: { label: "Below", className: "bg-[#EAF0EC] text-below-market" },
-  free: { label: "Free", className: "bg-[#EAF0EC] text-below-market" },
-};
-
-export interface OutlineItem {
-  key: "findings" | "pricing" | "financial" | "size" | "peers" | "method";
-  name: string;
-  detail: string;
-}
-
-/**
- * What the sample report holds, in the order its page shows it (MarketReportBody): only the
- * sections it renders today. The fee lines, findings and method are always there for a ready
- * report; fee income needs the Call Report read and named competitors need at least one. With no
- * report (a failed read, or no sample today) the outline keeps the parts every report has.
- * The report carries no risk or regulatory section, so the outline names none.
- */
-export function deliverableOutline(report: MarketReport | null, revenue: RevenueContext | null, sizePeers = false): OutlineItem[] {
-  const items: OutlineItem[] = [];
-  if (!report || report.analysis.findings.length > 0)
-    items.push({ key: "findings", name: "Research conclusions", detail: "The fees that stand out from the local market." });
-  items.push({ key: "pricing", name: "Pricing evidence", detail: "Every fee against local competitors, each linked to its schedule." });
-  if (report && revenue)
-    items.push({ key: "financial", name: "Current financial state", detail: "Fee income from the latest Call Report, beside institutions of its size." });
-  if (report && sizePeers)
-    items.push({ key: "size", name: "Institutions its size", detail: "Its fees and Call Report figures beside peers of its size nationwide." });
-  if (report && report.analysis.named.length > 0)
-    items.push({ key: "peers", name: "Named competitors", detail: "The banks and credit unions in its market, fee by fee." });
-  items.push({ key: "method", name: "Sources and method", detail: "How the market, the competitors and each figure were chosen." });
-  return items;
-}
-
-export interface DeliverableCover {
+export interface DeliverablePage {
   institutionName: string;
   market: string;
   competitors: { withData: number; inMarket: number };
-  rows: SampleRow[];
-  income: { quarter: string; amount: string } | null;
 }
 
-/** The cover's real figures, from the live sample report and its Call Report read; null without a report. */
-export function deliverableCover(report: MarketReport | null, revenue: RevenueContext | null): DeliverableCover | null {
-  const view = buildSampleView(report);
-  if (!report || !view || !report.data.market) return null;
+/** The first page's header, from the live sample report; null without a ready report. */
+export function deliverablePage(report: MarketReport | null): DeliverablePage | null {
+  if (!report || !report.data.market || !report.analysis.lines.some((l) => l.comparable && l.own && l.peers)) return null;
   const market = report.data.market;
-  const latest = revenue?.quarters[0];
   return {
-    institutionName: view.institutionName,
-    market: `${placeLabel(market.places[0])} area`,
+    institutionName: report.data.subject.institution_name,
+    market: `${placeLabel(market.places[0])} area${market.county_fips.length > 1 ? ` (${market.county_fips.length} counties)` : ""}`,
     competitors: { withData: report.analysis.readiness.competitorsWithData, inMarket: report.analysis.readiness.competitorsInMarket },
-    rows: view.rows.slice(0, COVER_ROWS),
-    income: latest ? { quarter: quarterLabel(latest.quarter), amount: incomeLabel(latest.thousands) } : null,
   };
 }
 
-/** A page of the report, drawn from its real data: the title, the date, the fee lines and fee income. */
-function CoverPage({ cover, preparedOn }: { cover: DeliverableCover; preparedOn: Date }) {
-  return (
-    <div className="relative mx-auto w-full max-w-[30rem] py-3 lg:mx-0" data-deliverable-cover="">
-      <span aria-hidden="true" className="absolute inset-x-8 inset-y-0 -rotate-[2.5deg] rounded-[8px] bg-brick-tint" />
-      <span aria-hidden="true" className="absolute inset-x-5 inset-y-1 rotate-[1.5deg] rounded-[8px] border border-border bg-surface-200" />
-      <figure className="relative rounded-[8px] border border-border bg-surface-0 p-5 shadow-[0_22px_44px_-28px_rgb(9_39_71/0.55)] sm:p-6">
-        <figcaption>
-          <p className="text-[11px] text-ink-muted">
-            {SITE_NAME} · {DATE.format(preparedOn)}
-          </p>
-          <p className="mt-2 text-[21px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[24px]">
-            {cover.institutionName} against its local market
-          </p>
-          <p className="mt-1.5 text-[12px] text-ink-soft">
-            {cover.market} · verified fees for {cover.competitors.withData} of {cover.competitors.inMarket} local competitors
-          </p>
-        </figcaption>
-        {cover.rows.length > 0 && (
-          <table className="mt-4 w-full text-left text-[12px]">
-            <thead className="border-b border-border text-ink-muted">
-              <tr>
-                <th className="py-1.5 pr-2 font-medium">Fee</th>
-                <th className="py-1.5 pr-2 text-right font-medium">Theirs</th>
-                <th className="py-1.5 pr-2 text-right font-medium">Local median</th>
-                <th className="py-1.5 text-right font-medium">
-                  <span className="sr-only">Position</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {cover.rows.map((row) => (
-                <tr key={row.key} className="border-b border-surface-200 last:border-0" data-deliverable-row={row.key}>
-                  <td className="py-2 pr-2 text-ink">{row.label}</td>
-                  <td className="py-2 pr-2 text-right text-[14px] font-semibold tabular-nums text-ink">{cardMoney(row.amount)}</td>
-                  <td className="py-2 pr-2 text-right tabular-nums text-ink-soft">{cardMoney(row.median)}</td>
-                  <td className="py-2 text-right">
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${POSITION[row.position].className}`}>
-                      {POSITION[row.position].label}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {cover.income && (
-          <p className="mt-4 flex items-baseline justify-between gap-3 rounded-[5px] bg-paper px-3 py-2.5 text-[12px] text-ink-soft" data-deliverable-income="">
-            <span>Deposit service charges, {cover.income.quarter}</span>
-            <strong className="shrink-0 whitespace-nowrap text-[15px] font-semibold tabular-nums text-ink">{cover.income.amount}</strong>
-          </p>
-        )}
-      </figure>
-    </div>
-  );
-}
-
 /**
- * The deliverable before the plans (James's critique §6 and §8, step 05): today's live sample
- * report for the demo bank (loadSampleReport), its cover drawn from its own figures, and what
- * it holds. No price and no buy button: the sample shows what Hamilton produces. A failed read
- * hides the cover and keeps the outline.
+ * The report before the plans (James's review, Oct 19: "one authentic report image and a link"):
+ * the first page of today's live sample report for the demo bank (loadSampleReport), drawn by the
+ * report's own at-a-glance component with the report's own header, cut off where the page fades.
+ * It repeats none of the One question section's financial or fee findings in its own words. No
+ * price and no buy button. A failed read hides the page and keeps the subscription.
  */
-export function LandingDeliverable({
-  report,
-  revenue,
-  preparedOn,
-  sizePeers = false,
-}: {
-  report: MarketReport | null;
-  revenue: RevenueContext | null;
-  preparedOn: Date;
-  /** The sample report carries its peers-of-its-size section (a Call Report peer read came back). */
-  sizePeers?: boolean;
-}) {
-  const cover = deliverableCover(report, revenue);
-  const outline = deliverableOutline(cover ? report : null, cover ? revenue : null, sizePeers);
+export function LandingDeliverable({ report, preparedOn }: { report: MarketReport | null; preparedOn: Date }) {
+  const page = deliverablePage(report);
   return (
     <section id="sample" aria-labelledby="deliverable-title" className="bg-paper py-10 sm:py-14" data-deliverable="">
-      <div className={`${HOME_WRAP} grid items-center gap-6 sm:gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-x-14 lg:gap-y-6`}>
-        {/* A phone reads the heading, then the page itself, then what it holds; from lg up the page sits beside both. */}
-        <div className="min-w-0 lg:col-start-1 lg:row-start-1 lg:self-end">
-          <h2 id="deliverable-title" className="text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[48px]" style={SERIF}>
+      <div className={`${HOME_WRAP} grid items-center gap-8 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] lg:gap-14`}>
+        <div className="min-w-0">
+          <h2 id="deliverable-title" className="text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[46px]" style={SERIF}>
             See what your next pricing committee could walk in with.
           </h2>
           <p className="mt-3 text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
-            {cover
-              ? `Today’s sample for ${cover.institutionName}, built live, every amount linked to its fee schedule.`
+            {page
+              ? `Today’s sample report for ${page.institutionName}, built live, every amount linked to its fee schedule.`
               : "Each report is built live, every amount linked to its fee schedule."}
           </p>
-        </div>
-        {cover && (
-          <div className="min-w-0 lg:col-start-2 lg:row-span-2 lg:row-start-1">
-            <CoverPage cover={cover} preparedOn={preparedOn} />
-          </div>
-        )}
-        <div className="min-w-0 lg:col-start-1 lg:row-start-2 lg:self-start">
-          <ol className="border-t border-border" aria-label="What the report contains">
-            {outline.map((item, i) => (
-              <li key={item.key} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-2 border-b border-border py-3" data-outline={item.key}>
-                <span aria-hidden="true" className="pt-0.5 text-[12px] font-semibold tabular-nums text-brick">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[15px] font-semibold leading-tight text-ink">{item.name}</span>
-                  <span className="mt-0.5 block text-[13px] leading-snug text-ink-soft">{item.detail}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
           <div className="mt-6 flex flex-col items-center gap-3.5 sm:flex-row sm:gap-6">
             <TrackLink
               event="upgrade_click"
@@ -193,12 +61,12 @@ export function LandingDeliverable({
               Get Hamilton for your institution
             </TrackLink>
             {/* The full sample only when it exists today, so the link never lands on its "on its way" note. */}
-            {cover && (
+            {page && (
               <TrackLink
                 event="sample_report_click"
                 eventProps={{ placement: "home_deliverable" }}
                 href={SAMPLE_REPORT_HREF}
-                className="inline-flex items-center gap-1.5 text-[14px] font-medium text-brick underline decoration-brick/40 underline-offset-4 hover:decoration-brick"
+                className="inline-flex min-h-11 items-center gap-1.5 text-[14px] font-medium text-brick underline decoration-brick/40 underline-offset-4 hover:decoration-brick"
               >
                 Open the full sample
                 <ArrowUpRight aria-hidden="true" className="size-3.5" />
@@ -206,6 +74,27 @@ export function LandingDeliverable({
             )}
           </div>
         </div>
+        {page && report ? (
+          <figure className="min-w-0" data-deliverable-page="">
+            <div className="relative max-h-[30rem] overflow-hidden rounded-[10px] border border-border bg-surface-200/60 p-3 shadow-[0_22px_44px_-28px_rgb(9_39_71/0.55)] sm:p-4">
+              <div className="rounded-xl border border-border bg-surface-0 p-5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">{REPORT_OFFER.name}</p>
+                <p className="mt-2 text-[1.35rem] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[1.6rem]" style={SERIF}>
+                  {page.institutionName} against its local market
+                </p>
+                <p className="mt-2 text-[13px] text-ink-soft">
+                  {page.market} · verified fees for {page.competitors.withData} of {page.competitors.inMarket} local competitors · prepared{" "}
+                  {DATE.format(preparedOn)} by {SITE_NAME}
+                </p>
+              </div>
+              <div className="[&>section]:mt-3 [&>section]:p-5">
+                <AtAGlance lines={report.analysis.lines} narrow limit={PAGE_ROWS} />
+              </div>
+              <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-paper to-transparent" />
+            </div>
+            <figcaption className="mt-3 text-[12px] text-ink-muted">The first page of today&rsquo;s live sample report</figcaption>
+          </figure>
+        ) : null}
       </div>
     </section>
   );
