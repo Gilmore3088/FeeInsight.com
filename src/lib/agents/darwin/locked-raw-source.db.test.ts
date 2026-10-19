@@ -1,9 +1,11 @@
 // @vitest-environment node
 import postgres from "postgres";
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { matchOriginalRawSource, withLockedRawSource, withLockedSourcePrefix, type SourceReference } from "./locked-raw-source";
+import { matchOriginalRawSource, withLockedCurrentRawSource, withLockedRawSource, withLockedSourcePrefix, type SourceReference } from "./locked-raw-source";
 import { darwinAudience } from "./audience";
+import { ownPriceAudience } from "./own-price-audience";
 
 type Db = typeof import("@/lib/data-store/connection").sql;
 type Tx = Db & { savepoint<T>(work: (scope: Tx) => Promise<T>): Promise<T> };
@@ -62,6 +64,15 @@ describe.skipIf(!connection)("current raw-owned source transaction context (#234
   const app = (tx: Tx) => tx as unknown as Db;
   const rawState = async (f: Fixture) => (await db`SELECT to_jsonb(fr)::text AS state
     FROM raw_fee_observations fr WHERE fee_raw_id=${f.rawId}`)[0]?.state;
+  async function ordinarySource(f: Fixture) {
+    const text = "Check Images | $10 per statement";
+    const note = `Knox deterministic extraction from Rosetta artifact #${f.artifactId}. canonical_hint=check_image; text_hash=${hash(text)}; excerpt="${text}"`;
+    await transaction(async tx => {
+      await tx`UPDATE agent_source_texts SET normalized_text=${text},text_hash=${hash(text)},char_count=${text.length} WHERE id=${f.artifactId}`;
+      await tx`UPDATE raw_fee_observations SET extraction_note=${note},conditions=${text} WHERE fee_raw_id=${f.rawId}`;
+    });
+    return text;
+  }
   async function exclusiveLocks(f: Fixture) {
     await transaction(async tx => {
       await tx`SELECT id FROM source_documents WHERE id=${f.documentId} FOR UPDATE NOWAIT`;
@@ -336,5 +347,76 @@ describe.skipIf(!connection)("current raw-owned source transaction context (#234
       expect((await tx`SELECT 1 AS usable`)[0].usable).toBe(1);
       await exclusiveLocks(f);
     });
+  });
+
+  it("binds ordinary current facts without requiring an original hash or inventing new authority", async () => {
+    const f = await seed();
+    await ordinarySource(f);
+    await db`UPDATE raw_fee_observations SET extraction_note='legacy unbound note' WHERE fee_raw_id=${f.rawId}`;
+    const before = await rawState(f);
+    await transaction(async tx => {
+      const facts = await withLockedCurrentRawSource(app(tx), f.rawId);
+      expect(facts.kind).toBe("bound");
+      if (facts.kind !== "bound") throw new Error("expected ordinary factual source");
+      expect(ownPriceAudience(facts.source.normalizedText, facts.currentRaw.fee_name, 10)).toEqual({ kind: "none" });
+      expect(matchOriginalRawSource(facts.currentRaw, facts.source)).toEqual({ kind: "unavailable", reason: "no_original_hash" });
+    });
+    await transaction(async tx => {
+      expect(await withLockedRawSource(app(tx), f.rawId)).toEqual({ kind: "unavailable", reason: "no_original_hash" });
+    });
+    expect(await rawState(f)).toBe(before);
+  });
+
+  it("recomputes an old negative cue after a real source replacement before prefix acquisition", async () => {
+    const f = await seed();
+    const ordinary = await ordinarySource(f);
+    expect(ownPriceAudience(ordinary, "Check Images", 10)).toEqual({ kind: "none" });
+    await transaction(async tx => {
+      const scoped = beforeQuery(tx, /FROM source_documents[\s\S]*FOR SHARE NOWAIT/, async () => {
+        await db`UPDATE agent_source_texts SET normalized_text=${body},text_hash=${hash(body)},char_count=${body.length} WHERE id=${f.artifactId}`;
+      });
+      const facts = await withLockedCurrentRawSource(scoped, f.rawId);
+      expect(facts.kind).toBe("bound");
+      if (facts.kind !== "bound") throw new Error("expected current replacement source");
+      expect(ownPriceAudience(facts.source.normalizedText, facts.currentRaw.fee_name, 10))
+        .toMatchObject({ kind: "qualified", audience: "consumer" });
+      // A stale negative does not authorize a legacy fallback. The original mismatch defers
+      // prospective authority; the consumer must roll back its encompassing savepoint.
+      expect(matchOriginalRawSource(facts.currentRaw, facts.source))
+        .toEqual({ kind: "unavailable", reason: "original_binding_mismatch" });
+    });
+  });
+
+  it("holds a negative cue stable while an actual source writer waits through caller settlement", async () => {
+    const f = await seed();
+    const ordinary = await ordinarySource(f);
+    const reserved = await db.reserve();
+    const writer = reserved as unknown as Db;
+    const [{ pid }] = await writer`SELECT pg_backend_pid() AS pid`;
+    let replacement: Promise<unknown> | undefined;
+    try {
+      await transaction(async tx => {
+        const facts = await withLockedCurrentRawSource(app(tx), f.rawId);
+        expect(facts.kind).toBe("bound");
+        if (facts.kind !== "bound") throw new Error("expected stable ordinary source");
+        expect(ownPriceAudience(facts.source.normalizedText, facts.currentRaw.fee_name, 10)).toEqual({ kind: "none" });
+        replacement = writer`UPDATE agent_source_texts SET normalized_text=${body},text_hash=${hash(body)},char_count=${body.length}
+          WHERE id=${f.artifactId}`.then(rows => rows);
+        let blocked = false;
+        for (let attempt = 0; attempt < 30; attempt++) {
+          const [state] = await db`SELECT wait_event_type FROM pg_stat_activity WHERE pid=${pid}`;
+          if (state?.wait_event_type === "Lock") { blocked = true; break; }
+          await delay(10);
+        }
+        expect(blocked).toBe(true);
+        expect((await tx`SELECT normalized_text FROM agent_source_texts WHERE id=${f.artifactId}`)[0].normalized_text).toBe(ordinary);
+        await tx`SELECT 1 AS later_caller_work`;
+      });
+      await replacement;
+      expect((await db`SELECT normalized_text FROM agent_source_texts WHERE id=${f.artifactId}`)[0].normalized_text).toBe(body);
+    } finally {
+      await replacement;
+      reserved.release();
+    }
   });
 });

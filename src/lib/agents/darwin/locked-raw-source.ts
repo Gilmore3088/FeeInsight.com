@@ -48,6 +48,7 @@ export type LockedRawSourceResult = {
   currentRaw: LockedRawFee;
   source: LockedSourceSnapshot;
 } | UnboundSource;
+export type LockedCurrentRawSourceResult = LockedRawSourceResult;
 
 class UnavailableSource extends Error {
   constructor(readonly result: UnboundSource) { super("Raw-owned source is not bound"); }
@@ -174,33 +175,50 @@ export async function withLockedSourcePrefix(tx: SqlTag, refs: readonly SourceRe
 interface Snapshot extends LockedRawFee { binding_state: string }
 
 /**
- * Bind current raw/document/artifact facts inside the caller's ACTUAL transaction.
- * Busy/changed/unavailable rolls back this savepoint and writes nothing. Only bound keeps
- * doc→artifact→raw locks through caller settlement. No caller row/text/cache is authority;
- * no historical witness is consulted. Consumers decide every nonbound disposition explicitly.
+ * Factual current-raw suffix, shared by both public wrappers. Original matching is a
+ * separate authority requirement; ordinary source facts do not require an old raw digest.
+ */
+async function lockCurrentRawSource(scope: SqlTag, feeRawId: number): Promise<Extract<LockedRawSourceResult, { kind: "bound" }>> {
+  if (positiveId(feeRawId) == null) return stop({ kind: "unavailable", reason: "missing_raw" });
+  const [before] = await scope<Snapshot[]>`
+    SELECT fr.*, to_jsonb(fr)::text AS binding_state
+    FROM raw_fee_observations fr WHERE fr.fee_raw_id=${feeRawId}`;
+  if (!before) return stop({ kind: "unavailable", reason: "missing_raw" });
+  const documentId = positiveId(before.source_document_id);
+  const institutionId = positiveId(before.institution_id);
+  if (documentId == null) return stop({ kind: "unavailable", reason: "no_document" });
+  if (institutionId == null) return stop({ kind: "unavailable", reason: "owner_mismatch" });
+  const source = (await lockSourcePrefix(scope, [{ documentId, institutionId }])).get(documentId)!;
+  const [after] = await scope<Snapshot[]>`
+    SELECT fr.*, to_jsonb(fr)::text AS binding_state
+    FROM raw_fee_observations fr WHERE fr.fee_raw_id=${feeRawId} FOR UPDATE NOWAIT`;
+  if (!after || before.binding_state !== after.binding_state) return stop({ kind: "changed" });
+  const currentRaw: LockedRawFee & { binding_state?: string } = { ...after };
+  delete currentRaw.binding_state;
+  return { kind: "bound" as const, currentRaw, source };
+}
+
+/**
+ * Hold an available factual source through raw CAS and subsequent consumer work, even
+ * when the own-clause cue is absent. This closes a negative-cue/source-replacement race.
+ * A bound result DOES NOT prove the raw's original digest; a consumer granting new own
+ * clause authority must separately require matchOriginalRawSource(...). No date policy.
+ */
+export async function withLockedCurrentRawSource(tx: SqlTag, feeRawId: number): Promise<LockedCurrentRawSourceResult> {
+  return sourceSavepoint(tx, scope => lockCurrentRawSource(scope, feeRawId));
+}
+
+/**
+ * Require both current facts and the raw's exact original artifact/digest. Busy/changed/
+ * unavailable rolls back the savepoint and writes nothing. Only bound keeps doc→artifact
+ * →raw locks through caller settlement. No caller row/text/cache or historical witness
+ * supplies authority. Consumers decide every nonbound disposition explicitly.
  */
 export async function withLockedRawSource(tx: SqlTag, feeRawId: number): Promise<LockedRawSourceResult> {
   return sourceSavepoint(tx, async scope => {
-    if (positiveId(feeRawId) == null) return stop({ kind: "unavailable", reason: "missing_raw" });
-    const [before] = await scope<Snapshot[]>`
-      SELECT fr.*, to_jsonb(fr)::text AS binding_state
-      FROM raw_fee_observations fr WHERE fr.fee_raw_id=${feeRawId}`;
-    if (!before) return stop({ kind: "unavailable", reason: "missing_raw" });
-    const documentId = positiveId(before.source_document_id);
-    const institutionId = positiveId(before.institution_id);
-    if (documentId == null) return stop({ kind: "unavailable", reason: "no_document" });
-    if (institutionId == null) return stop({ kind: "unavailable", reason: "owner_mismatch" });
-    const original = originalBinding(before.extraction_note ?? before.conditions);
-    if (!original) return stop({ kind: "unavailable", reason: "no_original_hash" });
-    const source = (await lockSourcePrefix(scope, [{ documentId, institutionId }])).get(documentId)!;
-    const [after] = await scope<Snapshot[]>`
-      SELECT fr.*, to_jsonb(fr)::text AS binding_state
-      FROM raw_fee_observations fr WHERE fr.fee_raw_id=${feeRawId} FOR UPDATE NOWAIT`;
-    if (!after || before.binding_state !== after.binding_state) return stop({ kind: "changed" });
-    const binding = matchOriginalRawSource(after, source);
+    const current = await lockCurrentRawSource(scope, feeRawId);
+    const binding = matchOriginalRawSource(current.currentRaw, current.source);
     if (binding.kind !== "matched") return stop(binding);
-    const currentRaw: LockedRawFee & { binding_state?: string } = { ...after };
-    delete currentRaw.binding_state;
-    return { kind: "bound" as const, currentRaw, source };
+    return current;
   });
 }
