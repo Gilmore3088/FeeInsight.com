@@ -18,6 +18,8 @@ import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eligibility";
+import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
@@ -698,7 +700,7 @@ async function writeCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==TAKEN_DOWN_REVIEW_FLAG
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
     && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
@@ -870,6 +872,8 @@ async function writeCandidate(
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
 export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
+  const capHeld = await holdCapFirstCandidate(db, options);
+  if (capHeld !== null) return capHeld;
   const held = await holdAmbiguousMonthlyCandidate(db, options);
   if (held !== null) return held;
   return (await writeCandidate(db,{...options,takenDownBy:null})).inserted;
@@ -878,6 +882,8 @@ export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string
 
 /** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
 export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const capHeld = await holdCapFirstCandidate(db, options);
+  if (capHeld !== null) return {inserted:capHeld,takenDownBy:null,declinedReason:capHeld?null:"cap_scope_declined"};
   const held = await holdAmbiguousMonthlyCandidate(db, options);
   if (held !== null) return {inserted:held,takenDownBy:null,declinedReason:null};
   const matches=takedownLessonsFor(options.candidate,lessons,options.row);
@@ -928,6 +934,36 @@ async function monthlySourceRow(db: SqlTag, row: KnoxTextRow, canonicalHint: str
   return { ...row, normalized_text: source.normalized_text, institution_name: source.institution_name };
 }
 
+/** Missing legacy content cannot hide a cap section; resolve only the supplied exact artifact. */
+async function capFirstSourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxTextRow | null> {
+  if (![row.document_text_id, row.source_document_id, row.institution_id]
+    .every(id => Number.isSafeInteger(Number(id)) && Number(id) > 0)) return null;
+  if (!row.text_hash) return null;
+  if (row.normalized_text?.trim()) return createHash("sha256").update(row.normalized_text).digest("hex") === row.text_hash ? row : null;
+  const [source] = await db<Array<{ normalized_text: string }>>`
+    SELECT st.normalized_text FROM agent_source_texts st
+    WHERE st.id=${Number(row.document_text_id)} AND st.source_document_id=${Number(row.source_document_id)}
+      AND st.institution_id=${Number(row.institution_id)} AND st.text_hash=${row.text_hash}
+      AND st.status='completed' AND st.normalized_text IS NOT NULL`;
+  if (!source?.normalized_text.trim() || createHash("sha256").update(source.normalized_text).digest("hex") !== row.text_hash) return null;
+  return { ...row, normalized_text: source.normalized_text };
+}
+
+/** The price was admitted elsewhere; its applicability must be source-owned at every writer. */
+async function holdCapFirstCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (!mayHaveCapFirstItemPrice(candidate.feeName)) return null;
+  const source = await capFirstSourceRow(db, options.row);
+  if (!source) return false;
+  const review = capFirstEligibility(source.normalized_text!, candidate.feeName, candidate.amount, candidate.canonicalHint);
+  if (!review) return null;
+  if (review.kind === "decline") return false;
+  return insertHeldCandidate(db, { runId: options.runId, row: source, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: review.ownText, ownedPolicy: true, lineShare: candidate.lineShare, linkedConditions: review.context } });
+}
+
 /** The same bounded source guard applies to free, paid and reread-feedback callers. */
 async function holdAmbiguousMonthlyCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
   const sourceRow = await monthlySourceRow(db, options.row, options.candidate.canonicalHint);
@@ -968,8 +1004,16 @@ export async function insertHeldCandidate(
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   let { held } = options;
+  const possibleCap = held.shape === "eligibility" && held.amount !== null && mayHaveCapFirstItemPrice(held.feeName);
+  const capSource = possibleCap ? await capFirstSourceRow(db, options.row) : options.row;
+  if (!capSource) return false;
+  const capReview = possibleCap ? capFirstEligibility(capSource.normalized_text!, held.feeName, held.amount!, held.canonicalHint ?? "") : null;
+  if (capReview?.kind === "decline") return false;
+  const capOwner = capReview?.kind === "hold" ? capReview : null;
+  if (capOwner) held = { ...held, ownedPolicy: true, excerpt: capOwner.ownText,
+    linkedConditions: [...new Set([capOwner.context, held.linkedConditions].filter(Boolean))].join("\n") };
   const sourceRow = (held.shape === "zero" || held.shape === "eligibility") && held.canonicalHint
-    ? await monthlySourceRow(db, options.row, held.canonicalHint) : options.row;
+    ? await monthlySourceRow(db, capSource, held.canonicalHint) : capSource;
   if (!sourceRow) return false;
   const monthlyOwners = (held.shape === "zero" || held.shape === "eligibility") && held.canonicalHint && held.amount !== null
     ? monthlyOwnerEvidence(sourceRow, { feeName: held.feeName, amount: held.amount,
@@ -984,11 +1028,13 @@ export async function insertHeldCandidate(
   );
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
+  if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (toDarwin) flags.push("needs_darwin_verification");
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
-  flags.push(...(options.extraFlags ?? []));
+  flags.push(...(options.extraFlags ?? []).filter(flag => flag !== CAP_FIRST_ELIGIBILITY_FLAG));
+  const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner);
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -1029,7 +1075,7 @@ export async function insertHeldCandidate(
     RETURNING fee_raw_id
     `;
     if (inserted.length > 0) return true;
-    if (!monthlyOwners || held.shape !== "eligibility") return false;
+    if (!protectedEligibility) return false;
     // Insert first: a concurrent ordinary insert can win an initially absent key.
     // Lock its exact identity, then use a NEW statement snapshot to see any judgment
     // committed while this lock waited. Never rewrite a judged raw history.
@@ -1054,12 +1100,13 @@ export async function insertHeldCandidate(
         ), '[]'::jsonb)
        WHERE fr.fee_raw_id=${Number(existing.fee_raw_id)}
          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id=fr.fee_raw_id)
+         AND (${!capOwner} OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
          AND (NOT COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
            OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
       RETURNING fr.fee_raw_id`;
     return updated.length > 0;
   };
-  if (!monthlyOwners || held.shape !== "eligibility") return write(db);
+  if (!protectedEligibility) return write(db);
   // Agent steps already hold a transaction. Direct callers need one too, so the
   // raw lock remains held across the fresh judgment query and update.
   if (typeof (db as unknown as { savepoint?: unknown }).savepoint === "function") return write(db);
