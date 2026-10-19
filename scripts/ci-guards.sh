@@ -28,7 +28,8 @@
 #   sql-placeholder-kill
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
 #   findings-file-kill
-#                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09 or a findings/ file is misnamed.
+#                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09, a findings/ file is misnamed,
+#                 or a finding this PR adds has no **Guard:** line.
 #   heading-wrap-kill
 #                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
 #   plausible-kill
@@ -690,7 +691,31 @@ findings_file_kill() {
     [[ -n "$bad" ]] && echo "misnamed: $bad" >&2
     exit 1
   fi
-  echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/)"
+  # A lesson nothing enforces happens again (#1108): a finding this PR adds names its guard, the
+  # test, CI guard, scorecard alarm or checklist line that catches a repeat. Compares the PR with
+  # its base, like api-docs-kill; findings already on main are only counted.
+  local base_ref="" added unguarded old
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    git fetch --no-tags --quiet --depth=1 origin "$GITHUB_BASE_REF" 2>/dev/null && base_ref="FETCH_HEAD"
+  elif git rev-parse --quiet --verify origin/main >/dev/null; then
+    base_ref=$(git merge-base origin/main HEAD 2>/dev/null) || base_ref="origin/main"
+  fi
+  if [[ -n "$base_ref" ]]; then
+    added=$(git diff --name-only --diff-filter=A "$base_ref" -- 'docs/project/findings/*.md' 2>/dev/null \
+      | grep -v '/README\.md$' || true)
+    unguarded=""
+    for f in $added; do
+      [[ -f "$f" ]] && ! grep -qE '^\*\*Guard:\*\*[[:space:]]*[^[:space:]]' "$f" && unguarded+="$f"$'\n'
+    done
+    if [[ -n "$unguarded" ]]; then
+      echo "findings-file-kill: each new finding needs a '**Guard:**' line naming the test, CI guard, scorecard alarm or checklist line that catches a repeat (see docs/project/findings/README.md):" >&2
+      printf '%s' "$unguarded" >&2
+      exit 1
+    fi
+  fi
+  old=$(find docs/project/findings -maxdepth 1 -type f -name '*.md' ! -name README.md \
+    -exec grep -LE '^\*\*Guard:\*\*' {} + 2>/dev/null | wc -l | tr -d ' ' || true)
+  echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/ and name their guard; ${old} older findings name none)"
 }
 
 bayes_manifest_kill() {
