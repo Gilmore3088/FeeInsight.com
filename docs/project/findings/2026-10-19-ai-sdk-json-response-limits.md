@@ -76,3 +76,8 @@ smaller application response-budget gap are not resolved by this patch.
 Exact-head receipts record repository gates and an isolated production build.
 No production data, schema, permission setting, provider activation or browser
 session is changed or exercised.
+
+**Guard:** `src/lib/ai-sdk-json-response-limits.test.ts` exercises the installed
+success/error/status handlers and reader cancellation; `src/lib/ai-sdk-compatibility.test.ts`
+checks injected provider, streaming, tool, structured-output, chat and accounting
+compatibility. Both run in the repository's ordinary Vitest suite.
