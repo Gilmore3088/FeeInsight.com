@@ -1,7 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { knoxStrategyFromFlags, lastPerDedupeKey, recordFeedback, takedownCheck, takedownKind } from "./feedback";
 import { relabelPerFeeTakedowns, syncPipelineFeedback, takedownFeedback } from "./feedback-sync";
+
+import * as referenceStore from "@/lib/data-store/answer-key-reference-store";
+import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
+import { fixtureEligibility, fixtureReference } from "@/lib/data-store/__fixtures__/answer-key-reference";
+afterEach(() => vi.restoreAllMocks());
 
 type Db = Parameters<typeof syncPipelineFeedback>[0];
 
@@ -132,7 +137,15 @@ describe("shared learning store", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("fills the store from takedowns, restores, Darwin category rejects and answer keys", async () => {
+  it("fills the store from takedowns, restores, Darwin category rejects and eligible bound answer keys", async () => {
+    const fixture=fixtureReference("Consumer Fee Schedule\nStop payment $30\nNSF $25\nWire transfer fee $15");
+    fixture.input.key.confirmedBy="knox-hand-key";
+    fixture.input.key.fees=[
+      {...fixture.input.key.fees[0],id:3,canonicalKey:"stop_payment",amount:30,sourceLine:"Stop payment $30",confirmedBy:"jdoe"},
+      {...fixture.input.key.fees[0],id:4,canonicalKey:"nsf",amount:25,sourceLine:"NSF $25",uncertain:true,confirmedBy:"knox-hand-key"}];
+    const eligibility=fixtureEligibility(fixture), fingerprint=referenceKeyFingerprint(fixture.input.key);
+    expect(eligibility.cohort.eligibleBanks).toBe(1);
+    vi.spyOn(referenceStore,"readReferenceEligibility").mockResolvedValue(eligibility);
     const { db, calls } = mockDb([
       ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
       ["FROM published_fee_records fp", [takedown]],
@@ -144,7 +157,7 @@ describe("shared learning store", () => {
 
     const result = await syncPipelineFeedback(db, { runId: 7 });
 
-    expect(result).toEqual({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 2, written: 6, relabeled: 0 });
+    expect(result).toMatchObject({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 2, written: 6, relabeled: 0, referenceExcludedBanks:0 });
     const insert = calls.find((call) => call.query.includes("INSERT INTO pipeline_feedback"));
     const rows = JSON.parse(String(insert?.values[0]));
     expect(rows.map((row: { dedupe_key: string }) => row.dedupe_key)).toEqual([
@@ -152,12 +165,13 @@ describe("shared learning store", () => {
       "hamilton.takedown:pub:77:verify",
       "hamilton.restore:pub:70",
       "darwin.verify:raw:51",
-      "answer_key:fee:3",
-      "answer_key:fee:4",
+      `answer_key:fee:3:reference:${fingerprint}`,
+      `answer_key:fee:4:reference:${fingerprint}`,
     ]);
     expect(rows[2].evidence).toEqual({ fee_name: "NSF fee", taken_down_for: "rules_recheck_unreproduced", restored_by: "rules_recheck_restored:restore_bar" });
     expect(rows[3]).toMatchObject({ signal: "wrong", kind: "wrong_category", reported_by: "darwin", check_name: "darwin.category_guard" });
     expect(rows[3].evidence).toMatchObject({ verify_attempt_id: 900, fee_name: "Returned mail" });
+    expect(rows[4].evidence).toMatchObject({ reference_protocol:1,reference_event_id:1,reference_key_fingerprint:fingerprint,answer_key_fee_id:3 });
     expect(rows[4]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "human" });
     // Keys the Knox thread keyed by hand are labelled as Knox's, not a person's.
     expect(rows[5]).toMatchObject({ signal: "right", kind: "answer_key", reported_by: "knox", weight: 0.5 });

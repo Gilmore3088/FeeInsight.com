@@ -4,6 +4,22 @@ Deming is the quality and evaluation tooling of the Agentic OS PRD (section 7). 
 pipeline's confirmed mistakes as test cases and checks that the deployed rules still catch them.
 It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model calls.
 
+## Answer-key reference boundary (2026-10-19, #1862)
+
+`score-answer-key` observes at most six official-path documents per due key through the pinned
+fee-source transport (8 seconds/request, 120 seconds total, three workers), then records dedicated
+`answer_key.eligibility` events under the real score run/step. Every score/training/replay/cache
+consumer uses one shared durable snapshot, never request-time bank fetches. Exact document,
+confirmed-fee and source inventory identities are checked again atomically before persistence.
+Unknown/missing/stale/malformed/persist-failed references are excluded; no older eligible fallback.
+
+Scorer v3 matching is unchanged. Protocol/cohort identities separate measurement history from
+reference edits, and all-excluded runs explicitly record no measurement. Historical unbound cases
+are retained, excluded and counted; they are not relabelled `key_fee_removed`. Only actually removed
+confirmed key fees retire cases. Frozen tuning/holdout provenance is a separate dataset, with no
+runtime judgment when its original document identity cannot be established. See
+[reference eligibility](REFERENCE-ELIGIBILITY.md); no additional James checks or confirmations.
+
 ## What it owns
 
 - `eval_cases` (migration `20270110000036`): one labeled example per row, in five datasets

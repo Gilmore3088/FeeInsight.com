@@ -1,0 +1,173 @@
+{
+  "name": "baseline-browser-mapping",
+  "version": "2.9.19",
+  "originalRegistry": {
+    "version": "2.9.19",
+    "dist.integrity": "sha512-ipDqC8FrAl/76p2SSWKSI+H9tFwm7vYqXQrItCuiVPt26Km0jS+NzSsBWAaBusvSbQcfJG+JitdMm+wZAgTYqg==",
+    "dist.tarball": "https://registry.npmjs.org/baseline-browser-mapping/-/baseline-browser-mapping-2.9.19.tgz"
+  },
+  "upstreamSecurityChange": "https://github.com/web-platform-dx/baseline-browser-mapping/pull/137",
+  "localReason": "Avoid the independently reproduced 2.11 timeline downstream-selection regression while backporting only process-termination safety.",
+  "changes": [
+    {
+      "file": "dist/index.cjs",
+      "originalSha256": "c15155aee5e42a34b83f19c641ffc1d435314fc4458e362c5ec053b7ccc778be",
+      "patchedSha256": "60405cf3d20bb8fa3635b31c356d79ed206dcb05069594a185935a8de6a0e9bd",
+      "notice": "/* Fee Insight modification, 2026-10-19: backport CVE-2026-45819 option errors as throws; original 2.9.19 browser data and API preserved. See backport provenance. */\n",
+      "replacements": [
+        {
+          "before": "if(console.log(new Error(\"KaiOS is a downstream browser and can only be included if you include other downstream browsers. Please ensure you use `includeDownstreamBrowsers: true`.\")),\"undefined\"==typeof process||!process.exit)throw new Error(\"KaiOS configuration error: process.exit is not available\");process.exit(1)",
+          "after": "throw new Error(\"KaiOS is a downstream browser and can only be included if you include other downstream browsers. Please ensure you use `includeDownstreamBrowsers: true`.\")"
+        },
+        {
+          "before": "if(console.log(new Error(\"You cannot use targetYear and widelyAvailableOnDate at the same time.  Please remove one of these options and try again.\")),\"undefined\"==typeof process||!process.exit)throw new Error(\"Configuration error: targetYear and widelyAvailableOnDate cannot be used together\");process.exit(1)",
+          "after": "throw new Error(\"You cannot use targetYear and widelyAvailableOnDate at the same time.  Please remove one of these options and try again.\")"
+        }
+      ]
+    },
+    {
+      "file": "dist/index.js",
+      "originalSha256": "43c5ea733bc16d6da21600fd6e349c5b65148082c563951c576b3c240a6f69ed",
+      "patchedSha256": "d1be1c08062b8ce7e1c06d6f3cfa390f8b4e964d6583492e4c9b9408db8c5c69",
+      "notice": "/* Fee Insight modification, 2026-10-19: backport CVE-2026-45819 option errors as throws; original 2.9.19 browser data and API preserved. See backport provenance. */\n",
+      "replacements": [
+        {
+          "before": "if(console.log(new Error(\"KaiOS is a downstream browser and can only be included if you include other downstream browsers. Please ensure you use `includeDownstreamBrowsers: true`.\")),\"undefined\"==typeof process||!process.exit)throw new Error(\"KaiOS configuration error: process.exit is not available\");process.exit(1)",
+          "after": "throw new Error(\"KaiOS is a downstream browser and can only be included if you include other downstream browsers. Please ensure you use `includeDownstreamBrowsers: true`.\")"
+        },
+        {
+          "before": "if(console.log(new Error(\"You cannot use targetYear and widelyAvailableOnDate at the same time.  Please remove one of these options and try again.\")),\"undefined\"==typeof process||!process.exit)throw new Error(\"Configuration error: targetYear and widelyAvailableOnDate cannot be used together\");process.exit(1)",
+          "after": "throw new Error(\"You cannot use targetYear and widelyAvailableOnDate at the same time.  Please remove one of these options and try again.\")"
+        }
+      ]
+    }
+  ],
+  "unchangedPackageFiles": [
+    {
+      "file": "README.md",
+      "sha256": "fb7fe7039034821670df3d905569b721a8bb967dbdea874b0cde5bb5fe0bc826"
+    },
+    {
+      "file": "package.json",
+      "sha256": "dd65484585c4fc0d6629e36137699e4d983dc56e1a75feb6d5f17022d7412d04"
+    },
+    {
+      "file": "LICENSE.txt",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "file": "dist/cli.js",
+      "sha256": "49175ee1aee742fc8fc9128becb3d1c30f2f08fe4b4e66b7fd17c4f01b53383c"
+    },
+    {
+      "file": "dist/index.d.ts",
+      "sha256": "2d943c7e02e1e7b713ebdfb29bac97c3a9b0852d42cc70befac945c121fb159c"
+    }
+  ],
+  "archive": {
+    "filename": "baseline-browser-mapping-2.9.19-process-error-backport.tgz",
+    "integrity": "sha512-2P4STbT++cVVwUWQNjv9ZqbbvhAqQXhKYFDJIcrasGunhEDv7RROH/72dq4W7BR5pWJqU/ezE2SNW1/2Aij+ZA==",
+    "sha256": "b09d3f74192140f2de174eb5148d1ac372529565e184f5fafffb7ae898b74fd8",
+    "size": 51840
+  },
+  "packing": {
+    "node": "22.20.0",
+    "npm": "10.9.3",
+    "command": "npm pack --ignore-scripts",
+    "lifecycleHookAdded": false
+  },
+  "auditCaveat": "Original version 2.9.19 remains truthful. Version-based advisory remains; actual throw behavior is independently guarded, no audit suppression.",
+  "clock": "2026-10-19T00:00:00.000Z",
+  "timezone": "UTC",
+  "compatibility": {
+    "scenarios": [
+      {
+        "name": "2020-core",
+        "method": "getCompatibleVersions",
+        "options": {
+          "targetYear": 2020,
+          "suppressWarnings": true
+        },
+        "sha256": "210b21bba06b23a4f4b3b551d16a92cb3a1ec35d47696a033606646ca940736b",
+        "bytes": 469
+      },
+      {
+        "name": "2024-core",
+        "method": "getCompatibleVersions",
+        "options": {
+          "targetYear": 2024,
+          "suppressWarnings": true
+        },
+        "sha256": "ac12510f29e3c6f26511d396f2880256ba3bfce83e2719e3dab1d4709c67aa60",
+        "bytes": 478
+      },
+      {
+        "name": "2024-wide",
+        "method": "getCompatibleVersions",
+        "options": {
+          "widelyAvailableOnDate": "2024-01-01",
+          "suppressWarnings": true
+        },
+        "sha256": "6f092ab93b94875cd091cc99e177b1679de712d2a4be2c7d02cb6a6d8fc06919",
+        "bytes": 473
+      },
+      {
+        "name": "2024-downstream",
+        "method": "getCompatibleVersions",
+        "options": {
+          "targetYear": 2024,
+          "includeDownstreamBrowsers": true,
+          "includeKaiOS": true,
+          "suppressWarnings": true
+        },
+        "sha256": "f77cebb43fd8cbbf7ef733043665be2b6c6520d635a4dd60fadb1e5beab06631",
+        "bytes": 1272
+      },
+      {
+        "name": "all-array",
+        "method": "getAllVersions",
+        "options": {
+          "outputFormat": "array",
+          "includeDownstreamBrowsers": true,
+          "includeKaiOS": true,
+          "useSupports": true,
+          "suppressWarnings": true
+        },
+        "sha256": "b997df106d4f1167b086b90e7046df7df3218f76cb7fe695729addc54349ddf1",
+        "bytes": 187491
+      },
+      {
+        "name": "all-object",
+        "method": "getAllVersions",
+        "options": {
+          "outputFormat": "object",
+          "includeDownstreamBrowsers": true,
+          "includeKaiOS": true,
+          "useSupports": true,
+          "suppressWarnings": true
+        },
+        "sha256": "dcb4e0aef7ef3357b9061e5e126f6bade02c9bff7d3b76f314fbf58c6b1eed18",
+        "bytes": 128194
+      },
+      {
+        "name": "all-csv",
+        "method": "getAllVersions",
+        "options": {
+          "outputFormat": "csv",
+          "includeDownstreamBrowsers": false,
+          "suppressWarnings": true
+        },
+        "sha256": "3b3c4531101192ef7de97791318e115cd75123ff0c70d4fd42f98e9a03be64b6",
+        "bytes": 56883
+      }
+    ],
+    "cli": {
+      "options": [
+        "--target-year",
+        "2020",
+        "--suppress-warnings"
+      ],
+      "stdoutSha256": "6f532d7f6d14e5aa895260546418e9437102b7fb81f7cf636806ad0f13047fa9"
+    }
+  }
+}

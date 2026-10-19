@@ -3203,5 +3203,8 @@ ALTER TABLE public.fee_change_records
 -- Usage per API key: which issued key made each /api/v1 call.
 \ir ../../supabase/migrations/20270110000057_usage_events_api_key_id.sql
 
+-- #2123: line_share joins the Knox raw dedupe key, so a combined line's twin is stored.
+\ir ../../supabase/migrations/20270110000065_raw_line_share.sql
+
 -- #2127 / #978: current admin correction conditions and evidence on public dollar fees.
-\ir ../../supabase/migrations/20270110000065_published_fee_correction_catalog_overlay.sql
+\ir ../../supabase/migrations/20270110000066_published_fee_correction_catalog_overlay.sql

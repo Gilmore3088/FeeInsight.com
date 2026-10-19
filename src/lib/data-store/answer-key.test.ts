@@ -109,9 +109,10 @@ describe("scoreboard snapshots and the answer-key scorer version (#1354)", () =>
       { snapshot_day: "2026-10-15", accuracy_recall: null, accuracy_score_run_id: null, run_scorer_version: null, detail: {} },
     ]);
     const rows = await listScoreboardSnapshots(30, db as never);
+    expect(rows.map((row) => row.legacy_accuracy_recall)).toEqual([0.575, 0.53, null]);
     expect(rows.map((row) => [row.snapshot_date, row.accuracy_recall, row.accuracy_scorer_version])).toEqual([
-      ["2026-10-13", 0.575, 1],
-      ["2026-10-14", 0.53, 3],
+      ["2026-10-13", null, 1],
+      ["2026-10-14", null, 3],
       ["2026-10-15", null, null],
     ]);
   });

@@ -64,7 +64,7 @@ export function feeHeadlineCounts(
 }
 
 export interface StateCoverageCounts {
-  /** Institutions headquartered in the state (every institution_sources row there). */
+  /** Institutions headquartered in the state that the regulator has not marked inactive (fee-stats.ts activeInstitutionFilter). */
   monitored: number;
   /** Of those, institutions with at least one approved published fee. */
   withFees: number;

@@ -15,6 +15,7 @@ import {
   PRIORITY_INSTITUTION_REQUESTS,
   requestWindows,
   PRIORITY_FIXED_BREAK_RUNS,
+  PRIORITY_REAPER_RETRY_HOURS,
   PRIORITY_INSTITUTION_SOURCE,
   PRIORITY_MAX_ACTIVE,
   PRIORITY_RULES_REREAD_HOURS,
@@ -292,6 +293,21 @@ describe("priority institutions", () => {
     const off = createDb(() => []);
     await selectPriorityInstitutions(off.db, { limit: 2, leaderIds: [], deploy: null });
     expect(off.calls[0].values).toContain(null);
+  });
+
+  it("lets a run the reaper failed rerun once, and a reaper failure counts against its own deploy (#2014)", async () => {
+    const { db, calls } = createDb(() => []);
+    await selectPriorityInstitutions(db, { limit: 2, leaderIds: [], deploy: "abc123" });
+    const { text, values } = calls[0];
+    // A reaper death (step.dead) holds nothing unless an earlier priority run of the same
+    // institution also died by the reaper inside the window.
+    expect(text).toContain("dead.event_type = 'step.dead'");
+    expect(text).toContain("prev_dead.event_type = 'step.dead'");
+    expect(text).toContain("prev.params_json->>'institution_id' = c.id::text");
+    expect(values).toContain(PRIORITY_REAPER_RETRY_HOURS);
+    // The fixed-break check reads the deploy from reaper deaths too, so a reaper death under
+    // the current deploy is not mistaken for a since-fixed break.
+    expect(text).toContain("event.event_type IN ('step.failed', 'step.dead')");
   });
 });
 

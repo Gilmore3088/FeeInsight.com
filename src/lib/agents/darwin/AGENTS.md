@@ -2,6 +2,53 @@
 
 Darwin owns verification and classification.
 
+## Ancillary product ownership (#1911 code phase, 2026-10-19)
+
+A bounded single-primary-deposit-product document can assign its own ancillary priced fee
+rows to the literal product. `ANCILLARY_PRODUCT_VERSION` is v1 (Knox's evidence format,
+`ancillary_product:v1`); this is not a re-read selector or permission to repair old metadata.
+The title and printed applicability clause stay with the bank's own fee conditions; frequency
+comes only from the fee's own price line. Mixed sections/columns, generic guides, unsupported
+headings and exceeded budgets remain unassigned. The general U.S. Bank $3 ATM/$5 money-order
+rows keep their existing unassigned scope; the Safe Debit exceptions belong to Safe Debit.
+
+Only newly inserted ancillary raw rows receive v1 ownership. A same-document raw insert
+conflict, including an ordinary due read or held takeover, keeps the existing row unchanged.
+Monthly-maintenance/minimum-balance lineup behavior is unchanged. Therefore simply re-running
+existing rows cannot recover missing ownership. Existing NULL metadata, numeric pooling policy
+and any exact metadata/rejudge recovery remain separate unchecked work in #1911.
+
+Shared `fee-product.ts` identity folds ASCII case and explicit transport whitespace (including
+NBSP). Unsupported Unicode case/separators stay distinct. Null/blank is one unassigned identity,
+never every product. Represented distinct products and represented/unassigned pairs cannot
+supply one another's duplicate, refresh or source-applicability witness. Holds and admin
+correction blockers keep their conservative broader overlap rules.
+
+Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
+refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
+policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
+records the exception; old settled decisions need a separately designed and authorized path.
+
+Darwin's v4 batch key and second-source comparison include the represented normalized product.
+New v1-owned rows must still have the matching primary-product title and their own price inside
+its bounded fee block; generic neighbouring prices are insufficient. The verifier locks and
+rechecks the selected raw product before writing its new verified lineage inside the run-ledger
+transaction. That transaction is a precondition of exported insertVerifiedFee; inSavepoint
+alone does not start one, and standalone autocommit is not supported. Existing peer/category/source/zero policies and settled decisions remain intact.
+## Reference eligibility (2026-10-19, #1862)
+
+Current answer-key feedback is admitted only through the shared durable eligibility snapshot
+and its original real-run receipt. Matching IDs/fingerprints alone do not authorize old labels.
+The category-model cache rechecks the snapshot revision before reuse; all historical unbound
+answer-key rows remain stored and excluded. Missing/unknown is never a right/wrong lesson.
+
+Frozen `answer-key-fees.json` is a separate dataset. Its provenance manifest hashes the original
+fixture text and compact fees but records the absent original document mapping for all 81 texts.
+Runtime verdict scoring v2 therefore reports no measurement, and unbound old chunks/lessons
+cannot teach or authorize promotion. Offline fixture history remains intact. Holdout weight is
+always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILITY.md`.
+
 ## Authority
 
 - Darwin reads `raw_fee_observations`.
@@ -103,6 +150,12 @@ Darwin owns verification and classification.
   is stated on a price line right under such a note (read-only count), so a bump would re-read 1,259
   rows for nothing this fix changes. Gate City's own row (raw 767395) is undecided and gets the new
   check on its first read.
+  The wrapped-bullet fix (#2151, Oct 19) also leaves source-check v2: it adds an own-row witness
+  for newly faithful Knox candidates and restricts neighboring-price fallback. A read-only
+  current-copy screen of latest-v3 `not_in_source` rejections found 149 rows whose texts contain
+  the bullet-label grammar; none matches an owned primary label, and stored-source replay changed
+  zero verdicts. SchoolsFirst's old misnamed row was rejected for category, not source. New
+  undecided candidates receive the check normally; old decisions are not reopened as a side effect.
 - `retired_category`, `conditional_zero` and `name_rule` (2026-10-09, `postSourceCheck` in
   `verify.ts`) run after the source check on the line it matched. UAT's hand check of the first
   36 rows the `not_in_source` re-select verified found 16 of a random 20 right: three were $0
@@ -1450,7 +1503,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
-| `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
+| `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |

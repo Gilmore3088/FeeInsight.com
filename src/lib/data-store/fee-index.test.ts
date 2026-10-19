@@ -7,7 +7,7 @@ vi.mock("./connection", () => {
 });
 
 import { buildIndexEntries, getDistrictFeeMedians, getInstitutionOwnFees, getPeerIndexes, getNationalIndexCached, getNationalUnstatedAudienceCountsCached, refreshFeeIndexCache } from "./fee-index";
-import { STATS_METHOD_VERSION } from "./fee-stats";
+import { STATS_METHOD_VERSION, activeInstitutionFilter } from "./fee-stats";
 import { sql } from "./connection";
 
 type Mock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn>; savepoint?: ReturnType<typeof vi.fn> };
@@ -231,11 +231,13 @@ describe("getDistrictFeeMedians audience boundary", () => {
     const query = text(db.mock.calls[0]);
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
-    // Two fragments: the schedule keys (statistics rule 7) and the row filter.
-    expect(db.unsafe).toHaveBeenCalledTimes(2);
+    // Three fragments: the schedule keys (statistics rule 7), the row filter and the
+    // active-institution rule every public median uses (#1980).
+    expect(db.unsafe).toHaveBeenCalledTimes(3);
     expect(String(db.unsafe.mock.calls[0][0])).toContain("AS schedule_keys");
     const predicate = String(db.unsafe.mock.calls[1][0]);
     expect(predicate).toContain("ef.source_document_id IS NOT NULL");
     expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
+    expect(String(db.unsafe.mock.calls[2][0])).toBe(activeInstitutionFilter("ct"));
   });
 });

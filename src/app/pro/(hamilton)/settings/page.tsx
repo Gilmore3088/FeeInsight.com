@@ -221,7 +221,7 @@ export default async function SettingsPage({
         }
         actions={
           <>
-            <LinkButton href={`/pro/monitor${selectedInstParam}`}>All changes</LinkButton>
+            <LinkButton href={`/pro/monitor${selectedInstParam}`}>Alerts and watches</LinkButton>
             <LinkButton href={`/pro/analyze${selectedInstParam}`}>Ask Hamilton</LinkButton>
             <LinkButton href={`/pro/reports${selectedInstAndIntentParam}`} primary>
               Build a report

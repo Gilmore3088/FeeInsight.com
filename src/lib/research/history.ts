@@ -9,16 +9,6 @@ export interface Conversation {
   updated_at: string;
 }
 
-export interface Message {
-  id: number;
-  conversation_id: number;
-  role: "user" | "assistant" | "tool";
-  content: string;
-  tool_calls: string | null;
-  token_count: number | null;
-  created_at: string;
-}
-
 /** Ensure research tables exist */
 export async function ensureResearchTables(): Promise<void> {
   await sql`
@@ -86,49 +76,6 @@ export async function ensureResearchTables(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_research_articles_slug ON research_articles(slug)`;
 }
 
-export async function saveConversation(
-  userId: number,
-  agentId: string,
-  title: string | null
-): Promise<number> {
-  const [row] = await sql`
-    INSERT INTO research_conversations (user_id, agent_id, title)
-    VALUES (${userId}, ${agentId}, ${title})
-    RETURNING id
-  `;
-  return row.id as number;
-}
-
-export async function saveMessage(
-  conversationId: number,
-  role: "user" | "assistant" | "tool",
-  content: string,
-  toolCalls?: string,
-  tokenCount?: number
-): Promise<void> {
-  await sql`
-    INSERT INTO research_messages (conversation_id, role, content, tool_calls, token_count)
-    VALUES (${conversationId}, ${role}, ${content}, ${toolCalls ?? null}, ${tokenCount ?? null})
-  `;
-
-  await sql`
-    UPDATE research_conversations SET updated_at = NOW() WHERE id = ${conversationId}
-  `;
-}
-
-export async function getConversation(conversationId: number): Promise<Conversation | null> {
-  const [row] = await sql`
-    SELECT * FROM research_conversations WHERE id = ${conversationId}
-  `;
-  return (row as Conversation | undefined) ?? null;
-}
-
-export async function getMessages(conversationId: number): Promise<Message[]> {
-  return await sql`
-    SELECT * FROM research_messages WHERE conversation_id = ${conversationId} ORDER BY created_at ASC
-  ` as Message[];
-}
-
 export async function listConversations(
   userId: number,
   agentId?: string,
@@ -146,16 +93,6 @@ export async function listConversations(
     WHERE user_id = ${userId}
     ORDER BY updated_at DESC LIMIT ${limit}
   ` as Conversation[];
-}
-
-export async function deleteConversation(
-  conversationId: number,
-  userId: number
-): Promise<boolean> {
-  const result = await sql`
-    DELETE FROM research_conversations WHERE id = ${conversationId} AND user_id = ${userId}
-  `;
-  return result.count > 0;
 }
 
 export async function logUsage(
@@ -254,18 +191,4 @@ export async function getDailyCostCents(): Promise<number> {
     WHERE created_at >= CURRENT_DATE
   `;
   return (row as { cost: number }).cost;
-}
-
-/** Search conversations for Cmd+K */
-export async function searchConversations(
-  query: string,
-  limit = 5
-): Promise<{ id: number; agent_id: string; title: string; updated_at: string }[]> {
-  return await sql`
-    SELECT id, agent_id, title, updated_at
-    FROM research_conversations
-    WHERE title LIKE ${"%" + query + "%"}
-    ORDER BY updated_at DESC
-    LIMIT ${limit}
-  ` as { id: number; agent_id: string; title: string; updated_at: string }[];
 }

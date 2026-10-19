@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { eligibleReferences, readReferenceEligibility, type ReferenceEligibilitySnapshot } from "@/lib/data-store/answer-key-reference-store";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -185,7 +186,12 @@ export function scoreKnoxBatch(rows: KnoxBatchRow[]): { score: KnoxBatchScore; m
 }
 
 /** The settled Knox reads after `afterId`, with what Darwin and Hamilton did to each. Read-only. */
-export async function loadKnoxBatch(db: SqlTag, afterId: number, size = KNOX_BATCH_REVIEW_SIZE): Promise<KnoxBatchRow[]> {
+export async function loadKnoxBatch(db: SqlTag, afterId: number, size = KNOX_BATCH_REVIEW_SIZE, eligibility?: ReferenceEligibilitySnapshot): Promise<KnoxBatchRow[]> {
+  const reference = eligibility ?? await readReferenceEligibility(db);
+  const bindings = eligibleReferences(reference).map(({ input: { key } }) => ({
+    id: key.answerKeyId, institution_id: key.institutionId, document_url: key.documentUrl, content_hash: key.contentHash,
+    fees: key.fees.map((fee) => ({ canonical_key: fee.canonicalKey, amount: fee.amount, amount_kind: fee.amountKind })),
+  }));
   return db<KnoxBatchRow[]>`
     WITH batch AS MATERIALIZED (
       SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.source_url, fr.fee_name, fr.amount, fr.outlier_flags
@@ -201,8 +207,8 @@ export async function loadKnoxBatch(db: SqlTag, afterId: number, size = KNOX_BAT
            fp.rolled_back_reason,
            (ak.id IS NOT NULL) AS answer_key_bank,
            EXISTS (
-             SELECT 1 FROM answer_key_fees akf
-              WHERE akf.answer_key_institution_id = ak.id AND akf.status = 'confirmed'
+             SELECT 1 FROM jsonb_to_recordset(ak.fees) AS akf(canonical_key text,amount numeric,amount_kind text)
+              WHERE ak.id IS NOT NULL
                 AND akf.canonical_key = fv.canonical_fee_key
                 AND (akf.amount_kind = 'varies'
                   OR (akf.amount_kind = 'free' AND COALESCE(fv.amount, 0) = 0)
@@ -219,7 +225,12 @@ export async function loadKnoxBatch(db: SqlTag, afterId: number, size = KNOX_BAT
           FROM published_fee_records p WHERE p.lineage_ref = fv.fee_verified_id
          ORDER BY p.fee_published_id DESC LIMIT 1
       ) fp ON true
-      LEFT JOIN answer_key_institutions ak ON ak.institution_id = b.institution_id AND ak.status = 'confirmed'
+      LEFT JOIN source_documents reference_document ON reference_document.id=b.source_document_id
+      LEFT JOIN jsonb_to_recordset(${JSON.stringify(bindings)}::jsonb)
+        AS ak(id bigint,institution_id bigint,document_url text,content_hash text,fees jsonb)
+        ON ak.institution_id=b.institution_id
+       AND reference_document.institution_id=b.institution_id
+       AND reference_document.content_hash=ak.content_hash
      ORDER BY b.fee_raw_id
   `;
 }
@@ -246,6 +257,7 @@ export async function reviewKnoxBatches(
     `);
     if (schema[0]?.ready !== true) return result;
     result.ready = true;
+    const reference = await readReferenceEligibility(db);
     const [cursor] = await inSavepoint(db, (scope) => scope<Array<{ last_id: string | number | null; start_id: string | number | null }>>`
       SELECT
         (SELECT MAX((evidence->>'last_fee_raw_id')::bigint) FROM pipeline_feedback
@@ -256,7 +268,7 @@ export async function reviewKnoxBatches(
     let afterId = Number(cursor?.last_id ?? cursor?.start_id ?? 0) || 0;
     const maxBatches = options.dryRun ? 1 : options.maxBatches ?? KNOX_BATCH_REVIEW_MAX_BATCHES;
     for (let batch = 0; batch < maxBatches; batch += 1) {
-      const rows = await inSavepoint(db, (scope) => loadKnoxBatch(scope, afterId));
+      const rows = await inSavepoint(db, (scope) => loadKnoxBatch(scope, afterId, KNOX_BATCH_REVIEW_SIZE, reference));
       // Only a full, settled batch is reviewed; the rest waits for a later step.
       if (rows.length < KNOX_BATCH_REVIEW_SIZE) break;
       const { score, misses } = scoreKnoxBatch(rows);
@@ -283,6 +295,8 @@ export async function reviewKnoxBatches(
             reason: judgement.reason,
             batch: batchRange,
             version: KNOX_BATCH_REVIEW_VERSION,
+            reference_protocol: reference.protocol,
+            reference_cohort: reference.cohort.cohortFingerprint,
           },
           runId: options.runId,
           dedupeKey: `${KNOX_BATCH_REVIEW_CHECK}:raw:${row.fee_raw_id}`,
@@ -306,6 +320,9 @@ export async function reviewKnoxBatches(
             error_rate: score.errorRate,
             answer_key_checked: score.answerKeyChecked,
             answer_key_mismatched: score.answerKeyMismatched,
+            reference_protocol: reference.protocol,
+            reference_cohort: reference.cohort.cohortFingerprint,
+            reference_excluded_banks: reference.cohort.excludedBanks,
             patterns: score.patterns,
             version: KNOX_BATCH_REVIEW_VERSION,
           },

@@ -7,6 +7,10 @@ vi.mock("@/lib/data-store", () => ({
   fullCityForCut: (...args: unknown[]) => fullCityForCut(...args),
   cityHasBranches: async () => false,
 }));
+const getStateMarketCitiesCached = vi.fn<(state: string) => Promise<{ city: string; spellings: string[] }[]>>(async () => []);
+vi.mock("@/lib/data-store/public-cached-reads", () => ({
+  getStateMarketCitiesCached: (state: string) => getStateMarketCitiesCached(state),
+}));
 vi.mock("next/navigation", () => ({
   notFound: () => {
     throw new Error("NOT_FOUND");
@@ -51,6 +55,30 @@ describe("city layout (#1165, #1213, #1267)", () => {
     getCityInstitutions.mockImplementation(async (city: string) => (city === "St. Louis" ? [{ id: 1 }] : []));
     await expect(render("mo", "st-louis")).rejects.toThrow("REDIRECT /fees/city/mo/st.%20louis");
     expect(fullCityForCut).not.toHaveBeenCalled();
+  });
+
+  it("redirects a second spelling of a folded city to the spelling the directory links to", async () => {
+    getCityInstitutions.mockResolvedValue([{ id: 1 }]);
+    getStateMarketCitiesCached.mockResolvedValueOnce([
+      { city: "ST. PETERSBURG", spellings: ["ST. PETERSBURG", "SAINT PETERSBURG", "ST. PETERSBERG"] },
+    ]);
+    await expect(render("fl", "saint%20petersburg")).rejects.toThrow("REDIRECT /fees/city/fl/st.%20petersburg");
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "ST. PETERSBURG", spellings: ["ST. PETERSBURG", "SAINT PETERSBURG"] }]);
+    await expect(render("fl", "st.%20petersburg")).resolves.toBeNull();
+  });
+
+  it("never redirects a hyphenated city to its own address", async () => {
+    getCityInstitutions.mockResolvedValue([{ id: 1 }]);
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "WILKES-BARRE", spellings: ["WILKES-BARRE", "WILKES BARRE"] }]);
+    await expect(render("pa", "wilkes-barre")).resolves.toBeNull();
+    getStateMarketCitiesCached.mockResolvedValueOnce([{ city: "WILKES-BARRE", spellings: ["WILKES-BARRE", "WILKES BARRE"] }]);
+    await expect(render("pa", "wilkes%20barre")).resolves.toBeNull();
+  });
+
+  it("answers 404 for an unknown state without reading the city directory", async () => {
+    getStateMarketCitiesCached.mockClear();
+    await expect(render("zz", "tampa")).rejects.toThrow("NOT_FOUND");
+    expect(getStateMarketCitiesCached).not.toHaveBeenCalled();
   });
 
   it("answers 404, not 500, for a malformed escape", async () => {

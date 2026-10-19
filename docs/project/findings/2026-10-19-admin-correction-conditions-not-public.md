@@ -11,7 +11,7 @@ though the recorded evidence document returned to the prior source.
 
 ## Change
 
-Migration `20270110000065_published_fee_correction_catalog_overlay.sql` replaces the dollar
+Migration `20270110000066_published_fee_correction_catalog_overlay.sql` replaces the dollar
 view in place. It joins only the exact current correction for that published ID and institution,
 uses its condition (including explicit NULL), suppresses the old extraction note, and resolves
 source ID/URL/R2 from the correction's evidence document. Ordinary rows follow their prior
@@ -24,7 +24,7 @@ gates are preserved. The percentage catalog is unchanged; the correction service
 percentage records. No permissions, controls, provider settings or fee rows are changed.
 
 The Supabase CLI created the new migration stub. Its timestamp was advanced to the next
-repository migration sequence after 20270110000064 so it is applied after the existing future
+repository migration sequence after 20270110000065 so it is applied after the existing future
 dated migration series. No previously committed migration is edited.
 
 ## Input and impact receipts

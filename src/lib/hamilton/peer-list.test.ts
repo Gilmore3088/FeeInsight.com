@@ -273,3 +273,20 @@ describe("peer list pages (#977, H02-T08)", () => {
     expect(makePeerListContinuation({ ...response, peerList: { ...response.peerList, offset: undefined } }, "List all credit unions in Florida", "101")!.originOffset).toBeUndefined();
   });
 });
+
+describe("a bare peer list names the answers' group (#2097)", () => {
+  const picked = { label: "FL · credit union · community_large peers", filters: { state_code: "FL", charter_type: "credit_union", asset_tiers: ["community_large"] } };
+
+  it("lists the group Hamilton's answers compare with when no group is saved", () => {
+    const result = planPeerList(intent("List ten peers"), subject, null, picked);
+    expect(result.problem).toBeNull();
+    expect(result.criteria).toMatchObject({ basis: "hamilton_group", charterType: "credit_union", states: ["FL"], assetTiers: ["community_large"], peerSetId: null, referenceAssetsUsd: null });
+    expect(result.criteria?.descriptions[0]).toBe("Peer group picked by Hamilton: FL · credit union · community_large peers, the group its answers compare with.");
+  });
+
+  it("keeps the saved group first, and half to twice the assets for a size request (#1716)", () => {
+    expect(planPeerList(intent("List ten peers"), subject, saved, picked).criteria?.basis).toBe("saved_peer_set");
+    expect(planPeerList(intent("Show 10 similarly sized credit unions in Florida"), subject, null, picked).criteria?.basis).toBe("similar_assets");
+    expect(planPeerList(intent("List ten peers"), subject, null, null).criteria?.basis).toBe("similar_assets");
+  });
+});

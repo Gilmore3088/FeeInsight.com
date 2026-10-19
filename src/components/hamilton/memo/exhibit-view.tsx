@@ -8,7 +8,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { ANSWER_TYPE, Callout, ExhibitShell, More, QuestionCard, SectionHeading, SERIF, fmtMoney } from "./memo";
 import type { Exhibit, ExhibitMarker, Fact, HamiltonAnswer, SourceRef } from "@/lib/hamilton/workspace/types";
 import { staleSourceLabel } from "@/lib/hamilton/source-age";
-import { ownFeeList, statedFeeLabel } from "@/lib/own-fee";
+import { feeScheduleUrls, ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 
 export type ExhibitSpec = Exhibit;
 export type AnswerSpec = Pick<HamiltonAnswer, "feeCategory" | "headline" | "claims" | "drivers" | "exhibit" | "question" | "evidenceLevel">;
@@ -287,12 +287,14 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
   const axis = axisFor([...all.flatMap((i) => (i.several ? [i.several.low, i.several.high] : [i.amount])), ...(x.own != null ? [x.own] : [])]);
   // Local deposits (FDIC Summary of Deposits) size each competitor in the market, when the engine carries them.
   const maxDeposits = Math.max(0, ...all.map((i) => i.deposits ?? 0));
-  const row = (item: RangeItem) => (
+  const row = (item: RangeItem) => {
+    const urls = feeScheduleUrls(item.documentUrls, item.url);
+    return (
     <div key={item.name} className={`grid ${RANGE_COLS} items-center gap-3 text-sm`}>
       <span className="min-w-0">
         <span className="block truncate text-warm-800" title={item.name}>
-          {item.url ? (
-            <a href={item.url} target="_blank" rel="noreferrer" className="hover:text-terra-text hover:underline">
+          {urls.length === 1 ? (
+            <a href={urls[0]} target="_blank" rel="noreferrer" className="hover:text-terra-text hover:underline">
               {item.name}
             </a>
           ) : (
@@ -310,6 +312,9 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
         {item.several ? (
           <span className="mt-0.5 block text-[11px] text-warm-600">{ownFeeList(item.several, fmtMoney)}</span>
         ) : null}
+        {urls.length > 1 ? <span className="mt-0.5 flex flex-wrap gap-2 text-[11px]">
+          {urls.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-terra-text underline">Schedule {i + 1}</a>)}
+        </span> : null}
       </span>
       <span className="relative h-7">
         <span className="absolute inset-x-0 top-1/2 h-px bg-warm-200" />
@@ -334,7 +339,8 @@ function CompetitorRange({ x }: { x: Extract<ExhibitSpec, { kind: "competitor_ra
         {statedFeeLabel(item.amount, item.several, fmtMoney)}
       </span>
     </div>
-  );
+    );
+  };
   return (
     <div className="flex flex-col gap-1.5">
       {maxDeposits > 0 ? (

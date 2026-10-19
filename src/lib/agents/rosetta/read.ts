@@ -1,3 +1,4 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { createHash } from "crypto";
 import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES, thinRereadKindSql } from "@/lib/agents/thin-document";
 
@@ -68,7 +69,8 @@ import {
   ROSETTA_OCR_VERSION,
   type ScannedPdfReader,
 } from "@/lib/agents/rosetta/ocr";
-import { layoutPageText, PDF_LAYOUT_VERSION, type PdfTextItem } from "@/lib/agents/rosetta/pdf-layout";
+import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
+import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import {
   documentKindColumnsReady,
   ROSETTA_TABLE_ROWS_VERSION,
@@ -88,8 +90,6 @@ export const ROSETTA_READ_MAX_LIMIT = 100;
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_TEXT_DOCUMENT_BYTES = 8 * 1024 * 1024;
-const MAX_PDF_PAGES = 150;
-const PDF_EXTRACTION_TIMEOUT_MS = 20_000;
 
 interface ReadCandidateRow {
   source_document_id: number | string;
@@ -137,13 +137,6 @@ type ReadStatus =
   | "known_failure"
   | "wrong_document"
   | "deferred";
-
-interface PdfTextExtraction {
-  text: string;
-  totalPages: number;
-  /** Text of each page, when the extractor provides it (gives table rows page numbers). */
-  pages?: string[];
-}
 
 type PdfTextExtractor = (bytes: Uint8Array) => Promise<PdfTextExtraction>;
 
@@ -311,62 +304,6 @@ function extractHtmlText(html: string): { text: string; tableRows: number; rows:
 
 export function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  label: string,
-): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeout = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
-
-  try {
-    return await Promise.race([promise, timeoutPromise]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-async function extractPdfText(bytes: Uint8Array): Promise<PdfTextExtraction> {
-  const { getDocumentProxy } = await import("unpdf");
-  return withTimeout(
-    (async () => {
-      // pdf.js detaches the buffer it is given; pass a copy so OCR can still read the bytes.
-      const pdf = await getDocumentProxy(new Uint8Array(bytes), {
-        maxImageSize: 16_777_216,
-      });
-
-      try {
-        const totalPages = Number(pdf.numPages ?? 0);
-        if (totalPages > MAX_PDF_PAGES) {
-          throw new Error(`PDF has too many pages for Rosetta text read: ${totalPages}`);
-        }
-
-        // Lines rebuilt from item positions keep a fee name and its amount together.
-        const pages: PdfTextItem[][] = [];
-        for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
-          const page = await pdf.getPage(pageNumber);
-          const content = await page.getTextContent();
-          const items: PdfTextItem[] = [];
-          for (const item of content.items) {
-            if ("str" in item) items.push(item);
-          }
-          pages.push(items);
-        }
-        const pageTexts = pages.map(layoutPageText);
-        return { text: pageTexts.join("\n\n"), totalPages, pages: pageTexts };
-      } finally {
-        await pdf.destroy?.();
-      }
-    })(),
-    PDF_EXTRACTION_TIMEOUT_MS,
-    "PDF text extraction",
-  );
 }
 
 export async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise<Response> {
@@ -2236,7 +2173,7 @@ export async function runRosettaRead(
   options: RunRosettaReadOptions,
 ): Promise<RunRosettaReadResult> {
   const db = options.db ?? sql;
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const pdfTextExtractor = options.pdfTextExtractor ?? extractPdfText;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);

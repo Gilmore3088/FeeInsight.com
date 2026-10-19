@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady, recordFeedback } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { lessonName } from "@/lib/agents/knox/lessons";
+import { eligibleReferenceFeedbackSql, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 type SqlTag = typeof sql;
 
@@ -66,6 +67,7 @@ export function labelDedupeKey(name: string): string {
 /** The names most worth a person's label this week; empty when the store is missing. */
 export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Promise<ContestedName[]> {
   try {
+    const reference = await readReferenceEligibility(db);
     return await inSavepoint(db, async (scope) => {
       if (!(await feedbackSchemaReady(scope))) return [];
       const rows = await scope<Array<{ name: string; example: string; banks: number | string; verdicts: ContestedNameVerdict[]; reason: ContestedName["reason"] }>>`
@@ -89,6 +91,7 @@ export async function loadLabelQueue(db: SqlTag, limit = LABEL_QUEUE_SIZE): Prom
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
+             AND ${eligibleReferenceFeedbackSql(scope, "f", reference)}
              AND rs.fee_raw_id IS NULL
           UNION ALL
           -- A restored fee is verified under the category it came back with (as in lessons.ts).

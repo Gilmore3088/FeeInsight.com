@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser, hasPermission } from "@/lib/auth";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
 import { startAgentRun } from "@/lib/agents/run-store";
-import { executeAgentRunToEnd } from "@/lib/agents/run-to-end";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -17,7 +16,8 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 }
 
 /**
- * Atlas's daily measurement, as a visible run (cron, once a day): score the
+ * Queue Atlas's daily measurement as a visible run (cron, once a day). The
+ * 300-second agent tick advances it; this 60-second route performs no step work. Score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
  * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065) and the public-data source health report (#1866), then snapshot the six scoreboard numbers (which include
  * that score), then restore cut credit union cities (#1213), then measure the database and count
@@ -36,6 +36,7 @@ async function handleGET(request: NextRequest) {
     triggeredBy: "atlas.scoreboard",
     triggerSource: "schedule",
     idempotencyKey: `atlas:scoreboard:${day}`,
+    reuseTerminal: true,
     steps: [
       // First, James's answer-key decisions reach the key (`atlas/answer-key-relabels.ts`), then the
       // score reads it, in one pause-exempt step: both write only the answer key and score rows.
@@ -55,16 +56,14 @@ async function handleGET(request: NextRequest) {
       { key: "atlas-storage-retention", agent: "atlas", title: "Atlas: measure the database and trim old log history" },
     ],
   });
-  if (started.reused) {
-    const result = { runId: started.run.id, status: started.run.status, message: "Today's scoreboard already ran." };
-    return NextResponse.json({ ok: true, runId: started.run.id, reused: true, result });
-  }
-  // The run is longer than one call's ten-step ceiling, so it runs in passes; anything still
-  // queued (a pause holding the city repair) is said out loud rather than left silently (#1579).
-  // No deadline: these steps' expected times are defaults above the function's 60 seconds.
-  const { result, leftQueued } = await executeAgentRunToEnd(started.run.id);
-  if (leftQueued) console.error(`Atlas scoreboard run ${started.run.id} left steps queued: ${result.message}`);
-  return NextResponse.json({ ok: true, runId: started.run.id, reused: false, leftQueued, result });
+  const status = started.run.status;
+  const pending = ["queued", "running", "cancel_requested"].includes(status);
+  const message = status === "queued" ? "Today's scoreboard is queued for the agent tick."
+    : status === "running" ? "Today's scoreboard run is running."
+    : status === "cancel_requested" ? "Today's scoreboard cancellation is requested."
+    : `Today's scoreboard run is ${status === "complete" ? "completed" : status}. Review its run receipt.`;
+  const result = { runId: started.run.id, status, terminal: !pending, executedSteps: 0, message };
+  return NextResponse.json({ ok: true, runId: started.run.id, reused: started.reused, pending, leftQueued: pending, result });
 }
 
 export const GET = withApiRoutePolicy("api.admin.crew.scoreboard", "GET", handleGET);
