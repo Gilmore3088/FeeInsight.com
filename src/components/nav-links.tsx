@@ -97,14 +97,20 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string | null })
         id={menuId}
         hidden={!open}
         className={`absolute top-full z-50 mt-3 rounded-lg border border-border bg-surface-0 shadow-lg shadow-[#132338]/10 ${
-          cards ? "-left-36 w-[min(960px,calc(100vw-2rem))] p-4" : columns > 1 ? "left-0 w-[640px] p-4" : "left-0 w-60 p-1.5"
+          cards
+            ? `-left-36 p-4 ${columns > 2 ? "w-[min(960px,calc(100vw-2rem))]" : "w-[min(720px,calc(100vw-2rem))]"}`
+            : columns > 1 ? "left-0 w-[640px] p-4" : "left-0 w-60 p-1.5"
         }`}
       >
         {cards ? (
-          <div className="grid grid-cols-3 gap-3">
-            {groups.map((group) => (
-              <MenuCard key={group.title?.href} group={group} pathname={pathname} onNavigate={() => setOpen(false)} />
-            ))}
+          <div className={`grid gap-3 ${columns > 2 ? "grid-cols-3" : "grid-cols-[1.25fr_1fr]"}`}>
+            {groups.map((group, index) =>
+              group.title ? (
+                <MenuCard key={group.title.href} group={group} pathname={pathname} onNavigate={() => setOpen(false)} />
+              ) : (
+                <MenuList key={group.heading ?? index} group={group} pathname={pathname} onNavigate={() => setOpen(false)} />
+              ),
+            )}
           </div>
         ) : (
           <div className={columns > 1 ? "grid grid-cols-3 gap-4" : ""}>
@@ -221,14 +227,54 @@ function MenuCard({ group, pathname, onNavigate }: { group: NavGroup; pathname: 
   );
 }
 
+/** A plain column beside a card (the Resources menu's "More" list). */
+function MenuList({ group, pathname, onNavigate }: { group: NavGroup; pathname: string | null; onNavigate: () => void }) {
+  return (
+    <div className="pt-1">
+      {group.heading ? (
+        <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">{group.heading}</p>
+      ) : null}
+      <ul>
+        {group.items.map((link) => (
+          <li key={link.href}>
+            <Link
+              href={link.href}
+              aria-current={isCurrentPage(pathname, link.href) ? "page" : undefined}
+              onClick={onNavigate}
+              className="block rounded-md px-3 py-2 hover:bg-paper aria-[current=page]:bg-paper"
+            >
+              <span className="block text-[13px] font-semibold text-ink">{link.label}</span>
+              {link.description ? (
+                <span className="mt-0.5 block text-[12px] leading-snug text-ink-muted">{link.description}</span>
+              ) : null}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const RANGE_ROWS = [
   { label: "Overdraft", band: [22, 70], mark: 48 },
   { label: "Wire, out", band: [30, 82], mark: 55 },
   { label: "Maintenance", band: [12, 58], mark: 32 },
 ] as const;
 
-/** Decorative drawings (no data): fee ranges, the three market layers, a question to Hamilton. */
+/** Decorative drawings (no data): fee ranges, the three market layers, a question to Hamilton, the build steps. */
 function MenuExhibit({ kind }: { kind: NonNullable<NavGroup["exhibit"]> }) {
+  if (kind === "flow") {
+    return (
+      <div aria-hidden="true" className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">
+        {["Schedule", "Read", "Checked", "Index"].map((step, index) => (
+          <span key={step} className="flex items-center gap-1.5">
+            {index > 0 ? <span className="text-brick">→</span> : null}
+            <span className="rounded-md border border-border bg-surface-0 px-2 py-1">{step}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
   if (kind === "ranges") {
     return (
       <div aria-hidden="true" className="space-y-2 rounded-md border border-border bg-surface-0 p-3">

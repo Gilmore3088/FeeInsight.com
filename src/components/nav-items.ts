@@ -17,7 +17,7 @@ export interface NavGroup {
   /** A Product menu card's title link, with its one line; the card's links sit under it. */
   title?: NavItem;
   /** The small drawing on a Product menu card. */
-  exhibit?: "ranges" | "layers" | "ask";
+  exhibit?: "ranges" | "layers" | "ask" | "flow";
   /** The navy card: Hamilton, the paid workspace, whose first link is the plans button. */
   feature?: boolean;
   items: readonly NavItem[];
@@ -101,12 +101,30 @@ export const GUIDES_NAV = { label: "Guides", href: "/guides" } as const;
 export const METHODOLOGY_NAV = { label: "Methodology", href: "/methodology" } as const;
 export const API_NAV = { label: "API", href: "/api-docs" } as const;
 
-export const RESOURCES_NAV: readonly NavItem[] = [
-  GUIDES_NAV,
-  METHODOLOGY_NAV,
-  { label: "Data sources", href: "/research/data-sources" },
-  API_NAV,
-  { label: "Submit a fee source", href: "/submit-fees" },
+export const DATA_SOURCES_NAV = { label: "Data sources", href: "/research/data-sources" } as const;
+export const SUBMIT_SOURCE_NAV = { label: "Submit a fee source", href: "/submit-fees" } as const;
+
+export const RESOURCES_NAV: readonly NavItem[] = [GUIDES_NAV, METHODOLOGY_NAV, DATA_SOURCES_NAV, API_NAV, SUBMIT_SOURCE_NAV];
+
+/** Resources menu: how the index is built first, the rest as a short list (James, 2026-10-19). */
+export const RESOURCES_NAV_GROUPS: readonly NavGroup[] = [
+  {
+    title: {
+      label: "How the index is built",
+      href: METHODOLOGY_NAV.href,
+      description: "Every fee starts as a bank's or credit union's own schedule.",
+    },
+    exhibit: "flow",
+    items: [METHODOLOGY_NAV, DATA_SOURCES_NAV],
+  },
+  {
+    heading: "More",
+    items: [
+      { ...GUIDES_NAV, description: "Plain-language guides to bank fees" },
+      { ...API_NAV, description: "The index in your own tools" },
+      { ...SUBMIT_SOURCE_NAV, description: "Send us a schedule we're missing" },
+    ],
+  },
 ];
 
 export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
@@ -115,7 +133,7 @@ export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
 export const PUBLIC_NAV_ITEMS: readonly NavItem[] = [
   { label: "Product", href: "/for-institutions", groups: PRODUCT_NAV_GROUPS },
   REPORTS_NAV,
-  { label: "Resources", href: "/guides", groups: [{ items: RESOURCES_NAV }] },
+  { label: "Resources", href: "/guides", groups: RESOURCES_NAV_GROUPS },
   PRICING_NAV,
 ];
 
