@@ -24,9 +24,9 @@ function detailFor(price: ListedPrice, expected: ExpectedRecord): FeeRowDetail |
   if (!d || !currentContext(c) || c.publishedId !== price.id || c.institutionId !== expected.institutionId
     || c.category !== expected.category || c.amount !== price.amount || d.amount !== price.amount
     || (c.documentUrl ?? c.sourceUrl) !== d.document_url || c.sourceUrl !== d.source_url || d.amount_kind !== "flat") return null;
-  const words = ["fee_name", "frequency", "account", "conditions", "fee_audience", "fee_treatment", "variant_type", "rate_basis", "read_on"] as const;
+  const words = ["fee_name", "frequency", "account", "conditions", "fee_audience", "fee_treatment", "variant_type", "rate_basis", "read_on", "waiver_text"] as const;
   if (!words.every(key => Object.hasOwn(d, key) && nullableText(d[key]))) return null;
-  if (![d.rate_percent, d.rate_min_amount, d.rate_max_amount].every(nullableNumber)) return null;
+  if (![d.rate_percent, d.rate_min_amount, d.rate_max_amount, d.min_balance_to_avoid, d.min_opening_deposit].every(nullableNumber)) return null;
   return d;
 }
 
@@ -51,10 +51,11 @@ export function listedPriceLines(prices: readonly ListedPrice[], expected: Expec
   const groups = new Map<string, DisplayPriceLine>();
   for (const p of [...prices].sort((a, b) => a.amount - b.amount || a.id - b.id)) {
     const d = detailFor(p, expected);
-    // A missing lineage/name cannot establish equivalence. Keep its row independently visible.
-    const known = d?.context?.verifiedId && d.context.rawId && d.fee_name?.trim();
+    // Unknown product ownership, lineage or name cannot establish positive equivalence.
+    const known = d?.account?.trim() && productKey(d.account) && d.context?.verifiedId && d.context.rawId && d.fee_name?.trim();
     const key = known ? JSON.stringify([p.amount, d.fee_name, productKey(d.account), d.fee_audience, d.fee_treatment,
-      d.frequency, d.variant_type, d.amount_kind, d.rate_percent, d.rate_min_amount, d.rate_max_amount, d.rate_basis, d.conditions]) : `row:${p.id}`;
+      d.frequency, d.variant_type, d.amount_kind, d.rate_percent, d.rate_min_amount, d.rate_max_amount, d.rate_basis, d.conditions,
+      d.waiver_text, d.min_balance_to_avoid, d.min_opening_deposit]) : `row:${p.id}`;
     const observation: ListedPrice = { ...p, detail: d, evidence: evidenceFor(p.evidence, d) };
     const group = groups.get(key);
     if (group) group.observations.push(observation);

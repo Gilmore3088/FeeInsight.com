@@ -15,6 +15,7 @@ function detail(id: number, account: string | null) {
     conditions: "Available only to existing account holders.", document_url: url, source_url: url, read_on: "2026-10-01",
     fee_audience: "consumer", fee_treatment: "standard", variant_type: null, amount_kind: "flat",
     rate_percent: null, rate_min_amount: null, rate_max_amount: null, rate_basis: null,
+    waiver_text: null, min_balance_to_avoid: null, min_opening_deposit: null,
     context: { version: 1 as const, stamp: String(id).padStart(64, "0"), publishedId: id, institutionId: 1, category, amount: 5, verifiedId: id + 100, rawId: id + 200, sourceDocumentId: id + 300, documentUrl: url, sourceUrl: url },
   };
 }
@@ -95,6 +96,14 @@ describe("public fee-index applicability (#2207)", () => {
     expect(html).toContain("Account/product not recorded");
   });
 
+  it.each([null, "", "\t\u00a0", "\u2003"])("does not use two unknown products %j as positive product equivalence", (unknown) => {
+    const [, , a, b] = fixture(); a.detail!.account = unknown; b.detail!.account = unknown;
+    expect(listedPriceLines([a,b], { institutionId:1, category }).map(l => l.observations.map(p => p.id))).toEqual([[13],[14]]);
+    const html = render([a,b]);
+    expect(html.match(/Account\/product not recorded/g)).toHaveLength(2);
+    expect(html).toContain("https://example.test/13.pdf"); expect(html).toContain("https://example.test/14.pdf");
+  });
+
   it("keeps unknown frequency unknown rather than borrowing a matched price-context period", () => {
     const p = fixture()[0]; p.detail!.frequency = "unknown"; p.evidence = matched(p);
     p.evidence.line = "Money order | $5 per day";
@@ -106,6 +115,7 @@ describe("public fee-index applicability (#2207)", () => {
     ["conditions", "Different own condition"], ["fee_audience", "business"], ["fee_treatment", "conditional"],
     ["frequency", "monthly"], ["variant_type", "tiered"], ["rate_percent", 1], ["rate_min_amount", 1],
     ["rate_max_amount", 10], ["rate_basis", "transaction_amount"], ["fee_name", "Postal money order"],
+    ["waiver_text", "Uncorroborated neighboring returned-mail waiver"], ["min_balance_to_avoid", 100], ["min_opening_deposit", 0],
   ] as const)("preserves same-price observations with different %s", (field, value) => {
     const [a,,,b] = fixture();
     b.detail = { ...b.detail!, [field]: value };

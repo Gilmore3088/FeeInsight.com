@@ -18,7 +18,7 @@ const CONTEXT_COLUMNS = [
   "id", "fee_published_id", "institution_id", "fee_verified_id", "fee_raw_id", "fee_name", "fee_category", "amount",
   "frequency", "account_product_type", "conditions", "extraction_note", "fee_audience", "fee_treatment", "variant_type",
   "amount_kind", "rate_percent", "rate_min_amount", "rate_max_amount", "rate_basis", "source_document_id", "source_url",
-  "document_url", "created_at",
+  "document_url", "created_at", "waiver_text", "min_balance_to_avoid", "min_opening_deposit",
 ] as const;
 
 /** Static internal aliases only. Core PostgreSQL SHA-256; no extension, DDL or numeric JS round trip. */

@@ -112,6 +112,34 @@ describe.skipIf(!connection)("canonical public fee applicability in PostgreSQL (
     expect(html).toContain("Available only to existing account holders.");
   });
 
+  it("does not use two unknown products as positive product equivalence", async () => {
+    await db`UPDATE raw_fee_observations SET product_name=NULL WHERE fee_raw_id=214`;
+    const { prices, html } = await publicView();
+    expect(listedPriceLines(prices, { institutionId:1, category:"money_order" }).map(l => l.observations.map(p => p.id))).toEqual([[11],[12],[13],[14]]);
+    expect(html.match(/Account\/product not recorded/g)).toHaveLength(2);
+    for (const id of [11,12,13,14]) expect(html).toContain(`https://example.test/${id}.pdf`);
+  });
+
+  it.each([
+    ["waiver_text", "Uncorroborated neighboring returned-mail waiver"], ["waiver_text", ""],
+    ["min_balance_to_avoid", 4321.12], ["min_balance_to_avoid", 0],
+    ["min_opening_deposit", 9876.54], ["min_opening_deposit", 0],
+  ])("keeps differing non-displayed %s=%j as conservative record identity", async (field, value) => {
+    const original = (await getFeeEvidence([14])).get(14)!;
+    await db.unsafe(`UPDATE raw_fee_observations SET ${field}=$1 WHERE fee_raw_id=214`, [value] as never[]);
+    const { prices, html } = await publicView();
+    expect(listedPriceLines(prices, { institutionId:1, category:"money_order" }).map(l => l.observations.map(p => p.id))).toEqual([[11],[12],[13],[14]]);
+    const current = (await getFeeRowDetails([14])).get(14)!;
+    expect(current).toMatchObject({ [field]:value });
+    expect(current.context?.stamp).not.toBe(original.context?.stamp);
+    expect(html).not.toContain("Uncorroborated neighboring returned-mail waiver");
+    expect(html).not.toMatch(/4,?321\.12|9,?876\.54/);
+    expect(html).toContain("Condition: Available only to existing account holders.");
+    await db.unsafe(`UPDATE raw_fee_observations SET ${field}=NULL WHERE fee_raw_id=214`);
+    const restored = await publicView();
+    expect(listedPriceLines(restored.prices, { institutionId:1, category:"money_order" }).map(l => l.observations.map(p => p.id))).toEqual([[11,14],[12],[13]]);
+  });
+
   it("keeps a correction between the evidence reader's two queries bound to the ORIGINAL selected tuple", async () => {
     const original = (await getFeeRowDetails([11])).get(11)!;
     let changed = false;

@@ -621,6 +621,10 @@ export interface FeeRowDetail {
   rate_max_amount: number | null;
   rate_basis: string | null;
   context?: FeeRecordContext;
+  /** Conservative display-identity inputs only; not independently corroborated customer terms. */
+  waiver_text: string | null;
+  min_balance_to_avoid: number | null;
+  min_opening_deposit: number | null;
 }
 
 export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRowDetail>> {
@@ -631,6 +635,7 @@ export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRo
            ef.fee_name, ef.amount, ef.frequency, ef.account_product_type, ef.conditions, ef.document_url, ef.source_url,
            ef.fee_audience, ef.fee_treatment, ef.variant_type, ef.amount_kind,
            ef.rate_percent, ef.rate_min_amount, ef.rate_max_amount, ef.rate_basis,
+           ef.waiver_text, ef.min_balance_to_avoid, ef.min_opening_deposit,
            ef.created_at::date::text AS read_on, ${sql.unsafe(catalogContextStampSql("ef"))} AS context_stamp
       FROM published_fee_catalog ef
      WHERE ef.id = ANY(${clean}::bigint[])
@@ -656,6 +661,9 @@ export async function getFeeRowDetails(ids: number[]): Promise<Map<number, FeeRo
         rate_max_amount: r.rate_max_amount == null ? null : Number(r.rate_max_amount),
         rate_basis: r.rate_basis == null ? null : String(r.rate_basis),
         context: catalogRecordContext(r),
+        waiver_text: r.waiver_text == null ? null : String(r.waiver_text),
+        min_balance_to_avoid: r.min_balance_to_avoid == null ? null : Number(r.min_balance_to_avoid),
+        min_opening_deposit: r.min_opening_deposit == null ? null : Number(r.min_opening_deposit),
       },
     ]),
   );
