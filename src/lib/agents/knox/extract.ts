@@ -19,6 +19,7 @@ import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, take
 import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eligibility";
+import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "./symbolic-lesser-of";
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
@@ -700,7 +701,7 @@ async function writeCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
     && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
@@ -872,6 +873,8 @@ async function writeCandidate(
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
 export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
+  const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
+  if (symbolicHeld !== null) return symbolicHeld;
   const capHeld = await holdCapFirstCandidate(db, options);
   if (capHeld !== null) return capHeld;
   const held = await holdAmbiguousMonthlyCandidate(db, options);
@@ -882,6 +885,8 @@ export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string
 
 /** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
 export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
+  if (symbolicHeld !== null) return {inserted:symbolicHeld,takenDownBy:null,declinedReason:symbolicHeld?null:"symbolic_formula_declined"};
   const capHeld = await holdCapFirstCandidate(db, options);
   if (capHeld !== null) return {inserted:capHeld,takenDownBy:null,declinedReason:capHeld?null:"cap_scope_declined"};
   const held = await holdAmbiguousMonthlyCandidate(db, options);
@@ -934,8 +939,8 @@ async function monthlySourceRow(db: SqlTag, row: KnoxTextRow, canonicalHint: str
   return { ...row, normalized_text: source.normalized_text, institution_name: source.institution_name };
 }
 
-/** Missing legacy content cannot hide a cap section; resolve only the supplied exact artifact. */
-async function capFirstSourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxTextRow | null> {
+/** Missing legacy content cannot hide applicability; resolve only the supplied exact artifact. */
+async function eligibilitySourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxTextRow | null> {
   if (![row.document_text_id, row.source_document_id, row.institution_id]
     .every(id => Number.isSafeInteger(Number(id)) && Number(id) > 0)) return null;
   if (!row.text_hash) return null;
@@ -949,11 +954,27 @@ async function capFirstSourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxText
   return { ...row, normalized_text: source.normalized_text };
 }
 
+/** A complete symbolic formula is applicability evidence, never a model-supplied price. */
+async function holdSymbolicLesserCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (!(candidate.amount > 0)) return null;
+  if (!mayHaveSymbolicLesserFee(candidate.feeName, candidate.canonicalHint)) return null;
+  const source = await eligibilitySourceRow(db, options.row);
+  if (!source) return false;
+  const review = symbolicLesserOfReview(source.normalized_text!, candidate.feeName, candidate.amount);
+  if (!review) return null;
+  if (review.kind === "decline") return false;
+  return insertHeldCandidate(db, { runId: options.runId, row: source, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: review.ownText, ownedPolicy: true, lineShare: candidate.lineShare } });
+}
+
 /** The price was admitted elsewhere; its applicability must be source-owned at every writer. */
 async function holdCapFirstCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
   const candidate = options.candidate;
   if (!mayHaveCapFirstItemPrice(candidate.feeName)) return null;
-  const source = await capFirstSourceRow(db, options.row);
+  const source = await eligibilitySourceRow(db, options.row);
   if (!source) return false;
   const review = capFirstEligibility(source.normalized_text!, candidate.feeName, candidate.amount, candidate.canonicalHint);
   if (!review) return null;
@@ -1005,8 +1026,15 @@ export async function insertHeldCandidate(
   const sourceDocumentId = Number(options.row.source_document_id);
   let { held } = options;
   const possibleCap = held.shape === "eligibility" && held.amount !== null && mayHaveCapFirstItemPrice(held.feeName);
-  const capSource = possibleCap ? await capFirstSourceRow(db, options.row) : options.row;
+  const possibleSymbolic = held.shape === "eligibility" && held.amount !== null && held.amount > 0
+    && mayHaveSymbolicLesserFee(held.feeName, held.canonicalHint ?? "");
+  const capSource = possibleCap || possibleSymbolic ? await eligibilitySourceRow(db, options.row) : options.row;
   if (!capSource) return false;
+  const symbolicReview = possibleSymbolic ? symbolicLesserOfReview(capSource.normalized_text!, held.feeName, held.amount!) : null;
+  if (symbolicReview?.kind === "decline") return false;
+  const symbolicOwner = symbolicReview?.kind === "hold" ? symbolicReview : null;
+  if (symbolicOwner) held = { ...held, ownedPolicy: true, excerpt: symbolicOwner.ownText,
+    linkedConditions: undefined };
   const capReview = possibleCap ? capFirstEligibility(capSource.normalized_text!, held.feeName, held.amount!, held.canonicalHint ?? "") : null;
   if (capReview?.kind === "decline") return false;
   const capOwner = capReview?.kind === "hold" ? capReview : null;
@@ -1029,12 +1057,14 @@ export async function insertHeldCandidate(
   const toDarwin = heldGoesToDarwin(held);
   const flags = [`knox_review:${held.shape}`];
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
+  if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
   if (toDarwin) flags.push("needs_darwin_verification");
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
-  flags.push(...(options.extraFlags ?? []).filter(flag => flag !== CAP_FIRST_ELIGIBILITY_FLAG));
-  const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner);
+  flags.push(...(options.extraFlags ?? []).filter(flag => flag !== CAP_FIRST_ELIGIBILITY_FLAG
+    && flag !== SYMBOLIC_LESSER_ELIGIBILITY_FLAG && (!symbolicOwner || flag !== "needs_darwin_verification")));
+  const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner || symbolicOwner);
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -1100,7 +1130,7 @@ export async function insertHeldCandidate(
         ), '[]'::jsonb)
        WHERE fr.fee_raw_id=${Number(existing.fee_raw_id)}
          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id=fr.fee_raw_id)
-         AND (${!capOwner} OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
+         AND (${!capOwner && !symbolicOwner} OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
          AND (NOT COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
            OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
       RETURNING fr.fee_raw_id`;

@@ -27,6 +27,7 @@ import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -482,6 +483,17 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
+  // #2335: the printed dollar remains supported, but a symbolic charge is not flat.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!mayHaveSymbolicLesserFee(read.feeName, read.canonicalHint)) continue;
+    const formula = symbolicLesserOfReview(sourceText, read.feeName, read.amount);
+    if (!formula) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
+      excerpt: formula.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
   const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
   for (const candidate of candidates) {
     const owners = monthlyOwnerReview(candidate);
