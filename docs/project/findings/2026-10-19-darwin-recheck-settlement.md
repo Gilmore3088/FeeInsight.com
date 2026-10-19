@@ -26,6 +26,10 @@ the same recheck transaction. Row failures remain unresolved without terminal su
 a failed batch witness rolls back recheck effects while ordinary verification remains.
 A later saved step receipt references the actual producer event. It does not certify a new
 measurement, whole-backlog completion, old review, source freshness or policy activation.
+Pending, waiting and other-code counts remain visible as assessments without a final fee
+decision. The event carries only bounded fixed-shape witnesses and safe samples. The current
+shape's conservative byte bound is below its defensive payload cap; no native cap-branch
+coverage is claimed from an artificially inflated fixture.
 
 **Guard:** `src/lib/agents/darwin/verified-recheck.db.test.ts`,
 `src/lib/agents/darwin/verified-recheck.test.ts`,

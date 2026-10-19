@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { narrateStepFinished } from "../narrate";
 import { recheckReceiptNote, verifiedRecheckReceipt } from "./verified-recheck-receipt";
 
 const context = { learning: true, dryRun: false };
@@ -162,8 +163,23 @@ describe("attested selected-batch receipt v2",()=>{
   });
   it("retains bounded fixed unresolved codes without error/source text or arbitrary objects",()=>{
     const samples=Array.from({length:40},(_,i)=>({feeVerifiedId:i+1,code:"settlement_failed",error:"SECRET",stack:"SECRET",source:"SECRET"}));
-    const receipt=verifiedRecheckReceipt(input({restored:[],execution:execution({state:"partial",settled:0,unresolved:1,samples,error:"SECRET"})}),ctx);
-    expect(receipt).toMatchObject({state:"referenced",assessmentCompleteness:"partial",unresolved:1,unresolvedSamples:expect.any(Array)});
+    const receipt=verifiedRecheckReceipt(input({checked:0,restored:[],execution:execution({state:"partial",selected:40,assessed:0,settled:0,unresolved:40,samples,error:"SECRET"})}),ctx);
+    expect(receipt).toMatchObject({state:"referenced",assessmentCompleteness:"partial",unresolved:40,unresolvedSamples:expect.any(Array)});
     expect("unresolvedSamples" in receipt && receipt.unresolvedSamples).toHaveLength(20);expect(JSON.stringify(receipt)).not.toContain("SECRET");
   });
+  it("narrates pending/waiting/other-code assessments without implying final fee decisions",()=>{
+    const receipt=verifiedRecheckReceipt(input({checked:2,restored:[],flagged:1,waiting:1,secondLookOtherCode:1,execution:execution({selected:3,assessed:3,settled:2})}),ctx);
+    expect(recheckReceiptNote(receipt)).toContain("1 flagged/pending, 1 waiting, 1 other-code pending");
+    expect(recheckReceiptNote(receipt)).toContain("do not finalize a fee decision");
+    expect(recheckReceiptNote(receipt)).toContain("not a new measurement or policy decision");
+  });
+
+  it.each(["classify","verify"])("retains actual %s narration of v2 pending states with no new raw",alias=>{
+    const receipt=verifiedRecheckReceipt(input({checked:2,restored:[],flagged:1,waiting:1,secondLookOtherCode:1,execution:execution({selected:3,assessed:3,settled:2})}),ctx);
+    const note=narrateStepFinished(alias,{processed_raw_fees:0,recheck:receipt});
+    expect(note).toContain("witness #77");expect(note).toContain("1 flagged/pending, 1 waiting, 1 other-code pending");
+    expect(note).toContain("do not finalize a fee decision");
+    expect(note).toContain("whole backlog unknown");expect(note).toContain("not a new measurement or policy decision");
+  });
+
 });

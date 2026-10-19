@@ -139,8 +139,9 @@ Successful empty selection, unavailable required phase, partial assessment, sour
 unavailability and actual cadence skips stay distinct. Unavailable counts are not invented
 zeros. Scope is only this selected authorized batch; whole backlog is unknown. Legacy
 shadow reports retain unknown completeness even when a v2 parent references their report.
-Old v1 receipts retain their original producer-reported/unknown meaning. Pending/waiting
-is a persisted assessment, not an archive or a final #2072 policy decision.
+Old v1 receipts retain their original producer-reported/unknown meaning. Pending, waiting
+and other-code outcomes are persisted assessments, not archives or final fee/policy decisions;
+the saved summary and activity narration disclose these counts separately.
 
 This changes execution attestation, not the guard epoch: recheck v5, verify v3, source v2,
 all old attempt exclusions, default-off switches, narrow `tier_perk_zero` due authority and
