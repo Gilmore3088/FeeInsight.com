@@ -691,6 +691,31 @@ function postBack(state: ReturnType<typeof readFormState>, target: string, extra
   };
 }
 
+interface TsvFormatControl {
+  name: string;
+  value: string;
+  target: string | null;
+  argument: string;
+}
+
+/** Follow the published radio's browser behavior; never invent an ASP.NET event target. */
+function tsvFormatControl(html: string): TsvFormatControl {
+  const attribute = (tag: string, name: string): string | null => {
+    const found = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+    return found ? (found[1] ?? found[2] ?? found[3] ?? "").replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&amp;", "&") : null;
+  };
+  for (const input of html.matchAll(/<input\b[^>]*>/gi)) {
+    if (attribute(input[0], "type")?.toLowerCase() !== "radio") continue;
+    const name = attribute(input[0], "name"), value = attribute(input[0], "value");
+    if (name !== `${FIELD}FormatType` || value?.toLowerCase() !== FORMAT.toLowerCase()) continue;
+    const onclick = (attribute(input[0], "onclick") ?? "").replace(/\\(['"])/g,"$1").trim();
+    const event = /__doPostBack\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]\s*\)/.exec(onclick);
+    if (onclick && !event) throw new RegistryHttpError(`FFIEC TSV radio has an unsupported handler; no guessed format postback sent. Page: ${formatFfiecPage(describeFfiecPage(html))}`, UBPR_BULK_URL, null);
+    return {name, value, target:event?.[1] ?? null, argument:event?.[2] ?? ""};
+  }
+  throw new RegistryHttpError(`FFIEC page has no tab-delimited format radio; no guessed format postback sent. Page: ${formatFfiecPage(describeFfiecPage(html))}`, UBPR_BULK_URL, null);
+}
+
 export interface UbprBulkDownload {
   zip: ProjectedZip | null;
   fileName: string | null;
@@ -724,15 +749,21 @@ export async function fetchUbprBulk(
 
   const base = { [`${FIELD}ListBox1`]: value, [`${FIELD}DatesDropDownList`]: period };
   const periodPage = await request(options, cookies, postBack(state, `${FIELD}DatesDropDownList`, base));
-  state = readFormState(await periodPage.text(), cookies);
-  const formatPage = await request(options, cookies, postBack(state, `${FIELD}${FORMAT}`, { ...base, [`${FIELD}FormatType`]: FORMAT }));
-  const formatHtml = await formatPage.text();
+  let formatHtml = await periodPage.text();
   state = readFormState(formatHtml, cookies);
+  const format = tsvFormatControl(formatHtml);
+  if (format.target) {
+    const formatPage = await request(options, cookies, postBack(state, format.target,
+      { ...base, [format.name]: format.value, __EVENTARGUMENT: format.argument }));
+    formatHtml = await formatPage.text();
+    state = readFormState(formatHtml, cookies);
+  }
+  const selectedFormat = tsvFormatControl(formatHtml);
 
   // The Download control's name is read from the page; the call-report page's name is the fallback.
   const button = downloadButtonName(formatHtml) ?? DOWNLOAD_BUTTON;
   const download = await request(options, cookies, {
-    ...postBack(state, "", { ...base, [`${FIELD}FormatType`]: FORMAT }),
+    ...postBack(state, "", { ...base, [selectedFormat.name]: selectedFormat.value }),
     [button]: "Download",
   });
   const type = download.headers.get("content-type") ?? "";
@@ -743,7 +774,7 @@ export async function fetchUbprBulk(
     const formatOffered = /value="TSVRadioButton"/.test(formatHtml) ? "offered" : "not offered on the format page";
     throw new RegistryHttpError(
       `FFIEC returned ${type || "no content type"} instead of the UBPR bulk zip for "${label ?? "?"}" ${quarterEndDate(q)} ` +
-        `(posted ${button}; tab-delimited format ${formatOffered}). Page: ${answer}`,
+        `(posted ${button}; format field ${selectedFormat.name}; format target ${format.target ?? "none (submit only)"}; tab-delimited format ${formatOffered}). Page: ${answer}`,
       UBPR_BULK_URL,
       download.status,
     );
