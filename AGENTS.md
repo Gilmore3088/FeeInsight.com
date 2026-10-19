@@ -20,10 +20,11 @@ or release dependency is not merge-ready. Record the merge receipt and continue;
 again merely because a routine code PR reached a clean merge-ready state.
 
 Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
-first fix the pipeline step that caused it (Magellan discovery, Rosetta document capture, Knox
-extraction or categorisation, Darwin verification) so the whole class of error is fixed, then
-re-run the affected institutions and validate the output. A one-off data fix comes only as the
-last step after that process fix, never instead of it.
+first fix the pipeline step that caused it (Magellan discovery and document capture, Rosetta text
+conversion, Knox extraction or categorisation, Darwin verification or classification) so the
+whole class of error is fixed, then re-run the affected institutions and validate the output. A
+one-off data fix (an admin correction, hold or re-file) comes only as the last step after that
+process fix, never instead of it.
 
 ## Current Runtime
 
