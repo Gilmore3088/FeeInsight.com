@@ -9,14 +9,14 @@ import { ArrowLeftRight, ExternalLink, FileText, Search } from "lucide-react";
 import {
   getBranchCityForZipCached,
   getCityMarketCached,
-  getStateFeeIndexesCached,
+  getComparableMarketIndexCached,
   searchInstitutionsCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { UNAVAILABLE_LABEL, formatAbsoluteDate, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
+import { buildInstitutionProfileLinks } from "@/lib/institution-profile-links";
+import { UNAVAILABLE_LABEL, formatAbsoluteDate, getPublicStatsSummary } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
-import { SITE_URL } from "@/lib/constants";
 import { homeSerif } from "@/app/landing-serif";
 import { SAMPLE_REPORT_HREF, SERIF } from "@/app/landing-shared";
 import "@/app/landing-motion.css";
@@ -50,10 +50,7 @@ import { CheckTable } from "./check-table";
 import { LocalOptions, type LocalStatus } from "./alternatives";
 import { CheckAnswerFocus } from "./answer-focus";
 import { AvoidChips, HamiltonEmployeeBand, ResultStat } from "./check-result";
-
-const TITLE = "Check a Bank's Fees Against the Market";
-const DESCRIPTION =
-  "Name a bank or credit union to see its published fees beside the U.S. and state medians, each linked to its own fee schedule.";
+import { CHECK_DESCRIPTION, CHECK_TITLE, CHECK_URL, CheckJsonLd } from "./check-jsonld";
 
 interface PageProps {
   searchParams: Promise<{ id?: string; q?: string; near?: string }>;
@@ -64,11 +61,11 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
   // One indexable page; an answer for one institution lives canonically on its profile.
   const hasInput = Boolean(params.id || params.q);
   return {
-    title: TITLE,
-    description: DESCRIPTION,
-    alternates: { canonical: `${SITE_URL}/check` },
+    title: CHECK_TITLE,
+    description: CHECK_DESCRIPTION,
+    alternates: { canonical: CHECK_URL },
     robots: hasInput ? { index: false, follow: true } : undefined,
-    openGraph: { type: "website", title: TITLE, description: DESCRIPTION, url: `${SITE_URL}/check`, siteName: "Fee Insight" },
+    openGraph: { type: "website", title: CHECK_TITLE, description: CHECK_DESCRIPTION, url: CHECK_URL, siteName: "Fee Insight" },
   };
 }
 
@@ -108,11 +105,13 @@ export default async function CheckPage({ searchParams }: PageProps) {
 
   return (
     <div className="min-h-screen overflow-x-clip bg-paper text-ink">
-      <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "Fee check", href: "/check" }]} />
+      <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "For consumers", href: "/for-consumers" }, { name: "Fee check", href: "/check" }]} />
+      <CheckJsonLd />
       {/* `relative z-20` keeps the search suggestions above the content below the band. */}
       <div className="relative z-20">
         <PageHero
           eyebrow="Fee check"
+          crumbs={<><Link href="/for-consumers">For consumers</Link><span aria-hidden="true">/</span><span aria-current="page">Fee Check</span></>}
           title={<>How do your bank&apos;s fees compare?</>}
           lede={
             stats.institutionsLabel === UNAVAILABLE_LABEL
@@ -338,11 +337,11 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
   const stateCode = inst.state_code && STATE_NAMES[inst.state_code] ? inst.state_code : null;
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
   const cityName = inst.city ? titleCase(inst.city) : null;
-  // The state page's index (every bank and credit union headquartered in the state), the same
-  // population the institution profile compares against, so the two pages quote one median.
-  const [nationalIndex, stateIndexes, guides, local, user] = await Promise.all([
-    hasFees ? getPublicNationalIndex().catch(fallbackTo("national index", [])) : Promise.resolve([]),
-    hasFees && stateCode ? getStateFeeIndexesCached(stateCode).catch(fallbackTo("state index", null)) : Promise.resolve(null),
+  // Match the institution profile's consumer fee eligibility on both sides of a comparison.
+  // The state population includes banks and credit unions headquartered in that state.
+  const [nationalIndex, stateIndex, guides, local, user] = await Promise.all([
+    hasFees ? getComparableMarketIndexCached({ kind: "us" }).catch(fallbackTo("national index", [])) : Promise.resolve([]),
+    hasFees && stateCode ? getComparableMarketIndexCached({ kind: "state", code: stateCode }).catch(fallbackTo("state index", [])) : Promise.resolve([]),
     hasFees ? loadConsumerGuides().catch(fallbackTo("guides", [])) : Promise.resolve([]),
     hasFees ? resolveLocal(near) : Promise.resolve<LocalStatus>({ kind: "none" }),
     getCurrentUser().catch(() => null),
@@ -354,7 +353,7 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
   const rows = buildCheckRows({
     verifiedFees,
     nationalIndex,
-    stateIndex: stateIndexes?.all ?? [],
+    stateIndex,
     fallbackSourceUrl: inst.fee_schedule_url ?? null,
   });
   const stateLabel = stateGroupLabel(rows, stateName);
@@ -368,7 +367,7 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
   const alternatives = local.kind === "found" ? buildAlternatives(local.market, id, rows, verifiedFees) : [];
 
   const sparseLine = !hasFees
-    ? `Fee Insight has not published fees for ${inst.institution_name} yet.`
+    ? `No verified consumer fees are available to compare for ${inst.institution_name} yet.`
     : rows.length === 0
       ? `${publishedCount.toLocaleString("en-US")} published ${publishedCount === 1 ? "fee" : "fees"}, none yet with a market median to compare against.`
       : thin
@@ -419,6 +418,14 @@ async function CheckAnswer({ id, near, refreshedOn }: { id: number; near: string
             <Link href={`/institution/${id}`} className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}>
               {publishedCount > 0 ? `All ${publishedCount.toLocaleString("en-US")} fees` : "Its profile"}
             </Link>
+            {thin && (
+              <Link
+                href={buildInstitutionProfileLinks({ institutionId: id, institutionName: inst.institution_name }).submitSourceHref}
+                className={`inline-flex min-h-11 items-center text-[14px] ${LINK}`}
+              >
+                Send a fee schedule
+              </Link>
+            )}
           </div>
           <HamiltonEmployeeBand name={inst.institution_name} placement="check_employee_band" />
         </div>

@@ -1,4 +1,6 @@
 import type { ExtractedFee } from "@/lib/data-store/types";
+import { frequencyFamily } from "@/lib/fee-frequency";
+import { countsInMarketComparison } from "@/lib/market-eligibility";
 
 /**
  * One real out-of-network withdrawal, built from two institutions' own published fees: the
@@ -30,16 +32,42 @@ export interface AtmTwoFeeExample {
   total: number;
 }
 
-const NON_CUSTOMER = /\bnon[-\s]?customers?\b/i;
+const NON_CUSTOMER = /\bnon[-\s]?(?:customers?|members?)\b/i;
+// A rate or amount-based price cannot be added once to a withdrawal as a flat charge.
+const AMOUNT_BASIS = /%|\bper\s*(?:\$|\d|dollars?\b|hundred\b|thousand\b)/i;
+
+function hasSourceUrl(value: string | null | undefined): boolean {
+  try {
+    return ["https:", "http:"].includes(new URL(value ?? "").protocol);
+  } catch {
+    return false;
+  }
+}
 
 function live(fees: ExtractedFee[]): ExtractedFee[] {
-  return fees.filter(
-    (fee) =>
+  return fees.filter((fee) => {
+    const frequency = frequencyFamily(fee.frequency?.trim().toLowerCase());
+    return (
       fee.review_status === "approved" &&
       fee.fee_category === "atm_non_network" &&
       fee.amount != null &&
-      fee.amount > 0,
-  );
+      fee.amount > 0 &&
+      frequency === "per_item" &&
+      !AMOUNT_BASIS.test(`${fee.fee_name} ${fee.source_line ?? ""}`) &&
+      hasSourceUrl(fee.source_url) &&
+      countsInMarketComparison({
+        category: fee.fee_category,
+        amount: fee.amount,
+        audience: fee.fee_audience,
+        sourced: fee.source_document_id != null,
+        sourceUrl: fee.source_url,
+        feeName: fee.fee_name,
+        accountProduct: fee.account_product_type,
+        sourceLine: fee.source_line,
+        frequency: fee.frequency,
+      })
+    );
+  });
 }
 
 function line(fee: ExtractedFee): AtmFeeLine {
@@ -52,17 +80,17 @@ function line(fee: ExtractedFee): AtmFeeLine {
   };
 }
 
-/** The holder bank's own fee for another bank's machine: a withdrawal line first, never a non-customer surcharge. */
+/** The holder's fee must name a withdrawal; an inquiry or generic ATM service is not enough. */
 export function pickHolderFee(fees: ExtractedFee[]): AtmFeeLine | null {
-  const rows = live(fees).filter((fee) => !NON_CUSTOMER.test(fee.fee_name));
-  const withdrawal = rows.find((fee) => /withdraw/i.test(fee.fee_name));
-  const fee = withdrawal ?? rows[0];
+  const fee = live(fees).find(
+    (row) => !NON_CUSTOMER.test(row.fee_name) && /\bwithdrawals?\b/i.test(row.fee_name),
+  );
   return fee ? line(fee) : null;
 }
 
 /** The machine owner's published surcharge for people who are not its customers. */
 export function pickOwnerSurcharge(fees: ExtractedFee[]): AtmFeeLine | null {
-  const fee = live(fees).find((row) => NON_CUSTOMER.test(row.fee_name));
+  const fee = live(fees).find((row) => NON_CUSTOMER.test(row.fee_name) && /\bsurcharge\b/i.test(row.fee_name));
   return fee ? line(fee) : null;
 }
 

@@ -63,7 +63,8 @@ describe("marketBand", () => {
     expect(marketBand(entry("nsf", 30, { maturity_tier: "insufficient" }))).toBeNull();
     expect(marketBand(entry("nsf", 30, { p25_amount: null }))).toBeNull();
     expect(marketBand(undefined)).toBeNull();
-    expect(marketBand(entry("nsf", 30))).toEqual({ min: 0, p25: 24, median: 30, p75: 36, max: 60, institutions: 40 });
+    expect(marketBand(entry("nsf", 30))).toEqual({ min: 0, p25: 24, median: 30, p75: 36, max: 60, institutions: 40, unstated_audience_institution_count: 0 });
+    expect(marketBand(entry("nsf", 30, { unstated_audience_institution_count: 12 }))?.unstated_audience_institution_count).toBe(12);
   });
 });
 
@@ -153,6 +154,34 @@ describe("several prices for one fee (the shared rule)", () => {
 });
 
 describe("checkFinding without a fee above the median", () => {
+  it("does not describe a positive fee above a zero median as below it", () => {
+    const rows = buildCheckRows({
+      verifiedFees: [fee({ fee_category: "atm_non_network", fee_name: "Non-Network ATM", amount: 2 })],
+      nationalIndex: [entry("atm_non_network", 0)],
+      stateIndex: [],
+      fallbackSourceUrl: null,
+    });
+    expect(checkCounts(rows)).toMatchObject({ above: 1, below: 0 });
+    expect(checkFinding(rows, "Test Bank", null)).toMatchObject({
+      price: "Test Bank's non-network ATM fee is $2.",
+      benchmark: "It sits $2 above the $0 U.S. median (40 institutions).",
+    });
+    expect(leadChip(rows, null)?.gap).toBe("$2 above the U.S. median");
+  });
+
+  it("names both baselines when one fee falls back to the U.S. median", () => {
+    const rows = buildCheckRows({
+      verifiedFees: [
+        fee({ fee_category: "overdraft", fee_name: "Overdraft Item Paid", amount: 25 }),
+        fee({ fee_category: "nsf", fee_name: "NSF Item Returned", amount: 20 }),
+      ],
+      nationalIndex: [entry("overdraft", 30), entry("nsf", 28)],
+      stateIndex: [entry("overdraft", 30)],
+      fallbackSourceUrl: null,
+    });
+    expect(checkFinding(rows, "Test Bank", "Florida")?.benchmark).toBe("Below the Florida and U.S. medians on all 2 compared fees.");
+  });
+
   it("counts below and about the same", () => {
     const rows = buildCheckRows({
       verifiedFees: [

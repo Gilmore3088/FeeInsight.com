@@ -65,6 +65,7 @@ function InstitutionSearchBarInner({
   const [navigating, startNavigation] = useTransition();
   const router = useRouter();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const requestIdRef = useRef(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isDark = variant === "dark";
 
@@ -75,16 +76,24 @@ function InstitutionSearchBarInner({
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, []);
 
   function handleChange(value: string) {
+    const requestId = ++requestIdRef.current;
     setQuery(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    // Editing invalidates every old suggestion, including a highlighted or single result.
+    // Enter can still search the new text while its lookup is waiting on the debounce.
+    setResults([]);
+    setActiveIndex(-1);
+    setShowResults(false);
 
     if (value.trim().length < 2) {
-      setResults([]);
-      setShowResults(false);
+      setLoading(false);
       return;
     }
 
@@ -93,13 +102,14 @@ function InstitutionSearchBarInner({
       try {
         const resp = await fetch(`/api/institutions?q=${encodeURIComponent(value.trim())}`);
         const data = await resp.json();
+        if (requestId !== requestIdRef.current) return;
         setResults(data);
         setActiveIndex(-1);
         setShowResults(true);
       } catch {
-        setResults([]);
+        if (requestId === requestIdRef.current) setResults([]);
       } finally {
-        setLoading(false);
+        if (requestId === requestIdRef.current) setLoading(false);
       }
     }, 250);
   }

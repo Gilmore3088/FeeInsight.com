@@ -103,6 +103,59 @@ describe("InstitutionSearchBar", () => {
     expect(push).toHaveBeenCalledWith("/check?id=11");
   });
 
+  it("searches the new text when Enter is pressed before its lookup starts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => [BANKS[0]] })));
+    render(<InstitutionSearchBar resultPath="/check" />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "Aspen Bank");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+
+    fireEvent.change(input, { target: { value: "Capital City Bank" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(push).toHaveBeenCalledExactlyOnceWith("/check?q=Capital+City+Bank");
+    expect(screen.queryByRole("option")).toBeNull();
+  });
+
+  it("ignores an older lookup that finishes after the current query", async () => {
+    let finishOldLookup!: (value: { json: () => Promise<typeof BANKS> }) => void;
+    const oldLookup = new Promise<{ json: () => Promise<typeof BANKS> }>((resolve) => {
+      finishOldLookup = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockReturnValueOnce(oldLookup)
+      .mockResolvedValueOnce({ json: async () => [BANKS[1]] }));
+    render(<InstitutionSearchBar resultPath="/check" />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "Aspen Bank");
+    await typeAndWait(input, "Aspen Valley CU");
+
+    await act(async () => {
+      finishOldLookup({ json: async () => [BANKS[0]] });
+    });
+
+    expect(screen.getByRole("option").textContent).toContain("Aspen Valley CU");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).toHaveBeenCalledExactlyOnceWith("/check?id=12");
+  });
+
+  it("keeps a cleared query empty when its old lookup finishes", async () => {
+    let finishLookup!: (value: { json: () => Promise<typeof BANKS> }) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise((resolve) => { finishLookup = resolve; })));
+    render(<InstitutionSearchBar />);
+    const input = screen.getByRole("combobox");
+    await typeAndWait(input, "Aspen Bank");
+    fireEvent.change(input, { target: { value: "" } });
+    await act(async () => {
+      finishLookup({ json: async () => [BANKS[0]] });
+    });
+
+    expect(screen.queryByRole("option")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("");
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("offers to send a fee schedule, with the searched name, when nothing matches", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => [] })));
     render(<InstitutionSearchBar />);

@@ -56,7 +56,7 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
   const titleId = useId();
 
   useEffect(() => {
-    if (mode !== "playing") return;
+    if (mode !== "playing" || reduced) return;
     const id = window.setInterval(() => {
       const next = Math.min(msRef.current + TICK_MS, length);
       msRef.current = next;
@@ -67,10 +67,23 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
       }
     }, TICK_MS);
     return () => window.clearInterval(id);
-  }, [mode, length]);
+  }, [mode, length, reduced]);
 
   useEffect(() => {
-    if (mode === "ended" && refocus.current) {
+    const media = window.matchMedia?.(REDUCED_QUERY);
+    if (!media) return;
+    const stopForReducedMotion = () => {
+      if (!media.matches) return;
+      refocus.current = replayRef.current !== null && document.activeElement === replayRef.current;
+      setStepIdx(stepIndexAt(scene, msRef.current));
+      setMode((current) => current === "poster" ? current : "stepping");
+    };
+    media.addEventListener("change", stopForReducedMotion);
+    return () => media.removeEventListener("change", stopForReducedMotion);
+  }, [scene]);
+
+  useEffect(() => {
+    if ((mode === "ended" || mode === "stepping") && refocus.current) {
       refocus.current = false;
       primaryRef.current?.focus({ preventScroll: true });
     }
@@ -80,7 +93,8 @@ export function FeeAnimation({ scene, actions }: { scene: FeeScene; actions: Fee
     msRef.current = 0;
     setMs(0);
     setRun((r) => r + 1);
-    setMode("playing");
+    setStepIdx(0);
+    setMode(reduced ? "stepping" : "playing");
   }
 
   function primary() {

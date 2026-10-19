@@ -86,6 +86,7 @@ describe("proxy", () => {
       ["https://feeinsight.com/pricing", "https://feeinsight.com/subscribe"],
       ["https://feeinsight.com/districts", "https://feeinsight.com/research#districts"],
       ["https://feeinsight.com/waitlist", "https://feeinsight.com/for-institutions#report"],
+      ["https://feeinsight.com/consumer", "https://feeinsight.com/for-consumers"],
     ];
     for (const [from, to] of cases) {
       const response = proxy(request(from));
@@ -95,7 +96,7 @@ describe("proxy", () => {
   });
 
   it("does not redirect nested or similarly named routes as legacy paths", () => {
-    for (const path of ["/pro/districts", "/research/district/2", "/check", "/checkout", "/consumer", "/consumers"]) {
+    for (const path of ["/pro/districts", "/research/district/2", "/check", "/checkout", "/consumers"]) {
       const response = proxy(
         request(`https://feeinsight.com${path}`, undefined, { cookie: "fsh_session=present" }),
       );

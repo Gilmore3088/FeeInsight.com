@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { accountPricesText } from "@/lib/fee-representative";
+import { hasUnstatedAudience, UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
 import { money, positionOf, referenceOf, rowPriceText, type CheckBand, type CheckRow, type Position } from "./check-data";
 
 const DOT: Record<Position, string> = {
@@ -71,7 +72,7 @@ function PopulationLine({ name, band }: { name: string; band: CheckBand }) {
   return (
     <p className="text-[12px] leading-snug text-ink-muted @[40rem]:mx-0 @[40rem]:text-left">
       {name}, {band.institutions.toLocaleString("en-US")} institutions: median{" "}
-      <span className="font-mono tabular-nums">{money(band.median)}</span>, middle 50%{" "}
+      <span className="font-mono tabular-nums">{money(band.median)}<UnstatedAudienceMark show={hasUnstatedAudience(band)} /></span>, middle 50%{" "}
       <span className="font-mono tabular-nums">
         {money(band.p25)} to {money(band.p75)}
       </span>
@@ -94,7 +95,7 @@ function MedianCell({ band, place, srLabel }: { band: CheckBand | null; place: s
       {band ? (
         <>
           <span className="@[40rem]:sr-only">{srLabel} </span>
-          <span className="font-mono tabular-nums text-ink">{money(band.median)}</span>
+          <span className="font-mono tabular-nums text-ink">{money(band.median)}<UnstatedAudienceMark show={hasUnstatedAudience(band)} /></span>
           <span className="block text-[11px]">
             {band.institutions.toLocaleString("en-US")} in {place}
           </span>
@@ -209,12 +210,15 @@ export function CheckTable({
   stateCode,
   stateLabel,
   guideHrefs,
+  audienceFootnote = true,
 }: {
   rows: CheckRow[];
   stateCode: string | null;
   /** "Florida banks and credit unions"; null when every comparison is national. */
   stateLabel: string | null;
   guideHrefs: Record<string, string | null>;
+  /** A surrounding example may place one disclosure after its source note instead. */
+  audienceFootnote?: boolean;
 }) {
   if (rows.length === 0) return null;
   const medianHead = stateCode ? `${stateCode} median` : "U.S. median";
@@ -245,6 +249,10 @@ export function CheckTable({
           />
         ))}
       </ul>
+      <UnstatedAudienceFootnote
+        show={audienceFootnote && rows.some((row) => hasUnstatedAudience(row.state) || hasUnstatedAudience(row.nation))}
+        className="border-t border-border px-4 py-3 @[40rem]:px-5"
+      />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { Guide } from "@/lib/guides/types";
 import { PRODUCT_NAME } from "@/lib/constants";
-import { getCheckExampleInputsCached, getStateFeeIndexesCached } from "@/lib/data-store/public-cached-reads";
-import { formatAbsoluteDate, getPublicNationalIndex, getPublicStatsSummary } from "@/lib/public-stats";
+import { getCheckExampleInputsCached, getComparableMarketIndexCached } from "@/lib/data-store/public-cached-reads";
+import { formatAbsoluteDate, getPublicStatsSummary } from "@/lib/public-stats";
+import { hasUnstatedAudience, UnstatedAudienceFootnote } from "@/components/unstated-audience";
 import { STATE_NAMES } from "@/lib/us-states";
 import { SourceNote } from "../research/district/[id]/district-hub";
 import { isVerifiedFee } from "../institution/[id]/profile-data";
@@ -61,15 +62,15 @@ export async function loadCheckExample(id: number, guides: Guide[]): Promise<Che
   if (verifiedFees.length === 0) return null;
   const stateCode = inst.state_code && STATE_NAMES[inst.state_code] ? inst.state_code : null;
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
-  const [nationalIndex, stateIndexes, stats] = await Promise.all([
-    getPublicNationalIndex().catch(() => []),
-    stateCode ? getStateFeeIndexesCached(stateCode).catch(() => null) : Promise.resolve(null),
+  const [nationalIndex, stateIndex, stats] = await Promise.all([
+    getComparableMarketIndexCached({ kind: "us" }).catch(() => []),
+    stateCode ? getComparableMarketIndexCached({ kind: "state", code: stateCode }).catch(() => []) : Promise.resolve([]),
     getPublicStatsSummary().catch(() => null),
   ]);
   const allRows = buildCheckRows({
     verifiedFees,
     nationalIndex,
-    stateIndex: stateIndexes?.all ?? [],
+    stateIndex,
     fallbackSourceUrl: inst.fee_schedule_url ?? null,
   });
   const rows = allRows.slice(0, EXAMPLE_ROWS);
@@ -96,15 +97,19 @@ export async function loadCheckExample(id: number, guides: Guide[]): Promise<Che
 
 function ExampleSource({ example }: { example: CheckExampleData }) {
   const medianScope = example.stateLabel && example.stateName ? `${example.stateName} and U.S. medians` : "U.S. medians";
+  const unstated = example.compared.some((row) => hasUnstatedAudience(row.state) || hasUnstatedAudience(row.nation));
   return (
-    <SourceNote>
-      {example.name}&apos;s own published fee schedule
-      {example.collectedOn ? `, collected ${example.collectedOn}` : ""}. {medianScope} from the {PRODUCT_NAME}
-      {example.mediansOn ? `, as of ${example.mediansOn}` : ""}.{" "}
-      <Link href="/methodology" className="underline decoration-border underline-offset-2 hover:decoration-ink">
-        Methodology
-      </Link>
-    </SourceNote>
+    <>
+      <SourceNote>
+        {example.name}&apos;s own published fee schedule
+        {example.collectedOn ? `, collected ${example.collectedOn}` : ""}. {medianScope} from the {PRODUCT_NAME}
+        {example.mediansOn ? `, as of ${example.mediansOn}` : ""}.{" "}
+        <Link href="/methodology" className="underline decoration-border underline-offset-2 hover:decoration-ink">
+          Methodology
+        </Link>
+      </SourceNote>
+      <UnstatedAudienceFootnote show={unstated} />
+    </>
   );
 }
 
@@ -158,7 +163,7 @@ function CompactRows({ rows, placeShort }: { rows: CheckRow[]; placeShort: strin
 export function CheckExample({ example, layout = "wide" }: { example: CheckExampleData; layout?: "wide" | "card" }) {
   const { id, name, place, rows, compared, counts, chip, stateCode, stateName, stateLabel, guideHrefs } = example;
   const table = (
-    <CheckTable rows={rows} stateCode={stateLabel ? stateCode : null} stateLabel={stateLabel} guideHrefs={guideHrefs} />
+    <CheckTable rows={rows} stateCode={stateLabel ? stateCode : null} stateLabel={stateLabel} guideHrefs={guideHrefs} audienceFootnote={false} />
   );
   const fullLink = (
     <Link

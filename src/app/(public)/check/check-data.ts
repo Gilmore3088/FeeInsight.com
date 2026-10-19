@@ -22,6 +22,8 @@ export interface CheckBand {
   p75: number;
   max: number;
   institutions: number;
+  /** Counted institutions whose schedule does not state whether the fee is personal. */
+  unstated_audience_institution_count?: number;
 }
 
 export interface CheckRow {
@@ -90,6 +92,7 @@ export function marketBand(entry: IndexEntry | undefined): CheckBand | null {
     p75: entry.p75_amount,
     max: entry.max_amount,
     institutions: entry.institution_count,
+    unstated_audience_institution_count: entry.unstated_audience_institution_count ?? 0,
   };
 }
 
@@ -171,9 +174,10 @@ export function leadRow(rows: CheckRow[]): CheckRow | null {
   let best: { row: CheckRow; gap: number } | null = null;
   for (const row of rows) {
     const ref = referenceOf(row);
-    if (!ref || ref.band.median <= 0 || positionOf(row.value, ref.band.median) !== "above") continue;
-    const gap = (row.value - ref.band.median) / ref.band.median;
-    if (!best || gap > best.gap) best = { row, gap };
+    if (!ref || positionOf(row.value, ref.band.median) !== "above") continue;
+    // A positive charge against a zero median is above it, even though no percentage exists.
+    const gap = ref.band.median === 0 ? Infinity : (row.value - ref.band.median) / ref.band.median;
+    if (!best || gap > best.gap || (gap === best.gap && row.value > best.row.value)) best = { row, gap };
   }
   return best?.row ?? null;
 }
@@ -245,16 +249,19 @@ export function checkFinding(rows: CheckRow[], name: string, stateName: string |
     return ref ? [{ position: positionOf(row.value, ref.band.median), level: ref.level }] : [];
   });
   if (pairs.length === 0) return null;
-  const place = placeOf(pairs.some((p) => p.level === "state") ? "state" : "us");
+  const levels = new Set(pairs.map((p) => p.level));
+  const baseline = levels.size > 1
+    ? `${stateName ?? "state"} and U.S. medians`
+    : `${placeOf(pairs[0].level)} median`;
   const same = pairs.filter((p) => p.position === "same").length;
   const of = `${pairs.length} compared ${pairs.length === 1 ? "fee" : "fees"}`;
   const below = pairs.length - same;
   const benchmark =
     same === pairs.length
-      ? `About the same as the ${place} median on all ${of}.`
+      ? `About the same as the ${baseline} on all ${of}.`
       : same > 0
-        ? `Below the ${place} median on ${below} of ${of} and about the same on ${same}.`
-        : `Below the ${place} median on all ${of}.`;
+        ? `Below the ${baseline} on ${below} of ${of} and about the same on ${same}.`
+        : `Below the ${baseline} on all ${of}.`;
   return { price: null, accounts: null, benchmark };
 }
 

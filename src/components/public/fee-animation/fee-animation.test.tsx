@@ -173,6 +173,42 @@ describe("FeeAnimation: ATM pilot", () => {
     expect(caption()).toBe("Your bank may charge you, too.");
     expect(screen.queryByTestId("fee-animation-end")).toBeNull();
   });
+
+  it.each(["playing", "paused", "ended"])("keeps manual steps when reduced motion is enabled from %s", (mode) => {
+    const media = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal("matchMedia", vi.fn(() => media));
+    render(<FeeAnimation scene={ATM_FEES_SCENE} actions={ACTIONS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Watch: 25 seconds" }));
+    advance(mode === "ended" ? 25000 : 6000);
+    if (mode === "paused") fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+    screen.getByRole("button", { name: "Replay" }).focus();
+
+    act(() => {
+      media.matches = true;
+      for (const [, onChange] of media.addEventListener.mock.calls) onChange();
+    });
+
+    const stillCaption = caption();
+    const primary = screen.getByRole("button", { name: mode === "ended" ? "Replay" : "Next" });
+    expect(document.activeElement).toBe(primary);
+    expect(screen.getByRole("button", { name: "Previous" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+    advance(30000);
+    expect(caption()).toBe(stillCaption);
+
+    fireEvent.click(primary);
+    const nextCaption = caption();
+    expect(nextCaption).not.toBe(stillCaption);
+    advance(30000);
+    expect(caption()).toBe(nextCaption);
+    act(() => {
+      media.matches = false;
+      for (const [, onChange] of media.addEventListener.mock.calls) onChange();
+    });
+    advance(30000);
+    expect(caption()).toBe(nextCaption);
+  });
 });
 
 describe("FeeAnimation: every scene", () => {
