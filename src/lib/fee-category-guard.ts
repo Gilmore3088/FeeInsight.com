@@ -128,9 +128,10 @@ const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holder
  * the surcharge non-members pay there) is not a member's fee at another network's ATM. Only an
  * all-capitals abbreviation reads as the institution ("at JSFCU ATM", "at NCB ATM"); it is matched
  * case by case (`excludeExact`), so a word ("at Partner ATMs", "at Visa ATMs") and a network
- * acronym ("at NYCE ATMs", "at CU ATMs") never count (#2024 review).
+ * acronym ("at NYCE ATMs", "at CU ATMs") never count, nor does a name written all in capitals
+ * ("WITHDRAWAL AT FOREIGN ATM"), where every word looks like an abbreviation (#2024 review).
  */
-const NAMED_OWN_ATM = /\b[Aa][Tt]\s+(?!(?:ATM|ATMS|CO|CU|CUS|US|USA|PLUS|STAR|NYCE|MAC|SUM|ACCEL|AFFN|TYME|SHAZAM|PULSE|CIRRUS|PRESTO|ALLPOINT|MONEYPASS|VISA|MC|ATH|POS)\b)[A-Z][A-Z0-9&]{1,7}\s+(?:ATM|Atm|atm)s?\b/;
+const NAMED_OWN_ATM = /\b[Aa][Tt]\s+(?!(?:ATMS?|ANY|AN|ALL|THE|OUR|OTHER|ANOTHER|FOREIGN|NON\w*|NETWORK|CO|COOP|CU|CUS|CUSO|CU24|FCU|US|USA|PLUS|STAR|NYCE|MAC|SUM|ACCEL|AFFN|TYME|SHAZAM|PULSE|CIRRUS|MAESTRO|INTERLINK|PRESTO|ALLPOINT|MONEYPASS|VISA|MC|ATH|POS)\b)[A-Z][A-Z0-9&]{1,7}\s+(?:ATM|Atm|atm)[sS]?\b/;
 /**
  * v74: a savings club's withdrawal ("Holiday Account Early Withdrawal" $10, 154134, 152985) is not
  * closing the account. None of the 50 types holds it, and 315 live fees read so (prod, read-only,
@@ -1078,7 +1079,7 @@ export function checkFeeCategory(
   // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
   // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
   const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
-  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact ? name.match(rule.excludeExact) : null);
+  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact && /[a-z]/.test(name) ? name.match(rule.excludeExact) : null);
   const excluded = matched && rule.onlyIfRefiles && !refileTargetAccepts(canonicalFeeKey, name) ? null : matched;
   if (excluded) {
     return {

@@ -1977,7 +1977,10 @@ describe("guard v74 (#2018): James's 20-defect register", () => {
       // #2024 review: words and network acronyms are not an institution's own name.
       ...["Partner", "Third-Party", "Visa", "Mastercard", "NYCE", "Accel", "Exchange", "Shazam", "Cardtronics", "Walgreens", "7-Eleven",
         "Unaffiliated", "Independent", "Remote", "Off-Site", "Retail", "Affiliate", "Correspondent", "U.S.", "CU", "Local",
-        "CO-OP", "MoneyPass", "Allpoint", "PLUS", "STAR", "Any", "Partner Credit Union"].map((word) => `Withdrawal at ${word} ATMs`),
+        "CO-OP", "MoneyPass", "Allpoint", "PLUS", "STAR", "Any", "Partner Credit Union", "FCU", "CU24", "MAESTRO", "COOP", "CUSO",
+        "OTHER", "FOREIGN", "SHAZAM", "MAC", "TYME", "ATH"].map((word) => `Withdrawal at ${word} ATMs`),
+      "ATM FEE AT FOREIGN ATM", "WITHDRAWAL AT ANY ATM", "WITHDRAWAL AT AN ATM", "FEE AT ANOTHER ATM", "Transaction at OTHER ATM",
+      "WITHDRAWAL AT NONBANK ATM", "Withdrawal at NONBANK ATM", "Fee at OTHER ATMS",
     ]) {
       expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(true);
     }

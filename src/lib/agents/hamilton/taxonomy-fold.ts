@@ -767,7 +767,7 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 154181, from: "paper_statement", amount: 3, to: "paper_statement", name: "Paper statements",
     oldName: "Optional: Yes Paper Statements available",
     why: "#2018, inst 2954 (Lyon County State Bank), doc 37121: \"eStatements² | Optional | Yes Paper Statements available for $3 per month\"" },
-  { feePublishedId: 154214, from: "paper_statement", amount: 3, to: "paper_statement", name: "Paper Statements",
+  { feePublishedId: 154214, from: "paper_statement", amount: 3, to: "paper_statement", name: "Maintenance Fee: Paper Statements",
     oldName: "with eStatements¹ Paper Statements available for an additional",
     why: "#2018, inst 2954 (Lyon County State Bank), doc 37116: \"Maintenance Fee | $10 per month with eStatements¹ Paper Statements available for an additional $3 per month\"" },
   { feePublishedId: 123514, from: "wire_domestic_outgoing", amount: 15, to: "wire_domestic_outgoing", name: "Wire Out",
