@@ -62,7 +62,14 @@ function fixture() {
     latest_document: null,
     latest_text: null,
     pipeline_counts: {},
-    raw_fee_preview: [raw(5, true), raw(6, false)],
+    raw_fee_preview: [raw(5, true), {
+      ...raw(7, true),
+      fee_name: "Ready Reserve Overdraft Protection Fee",
+      amount: 25,
+      frequency: "annual",
+      conditions: 'Knox held for review (periodic_program) from Rosetta artifact #1. canonical_hint=overdraft; text_hash=x; excerpt="Ready Reserve Overdraft Protection Fee | $25 (annually)"',
+      outlier_flags: ["knox_review:periodic_program", "canonical_hint:overdraft"],
+    }, raw(6, false)],
     verified_fee_preview: [],
   }];
 }
@@ -80,13 +87,14 @@ describe("#2209 eligibility holds stay out of customer provisional raw previews"
     expect(evidence.raw_fee_preview[0].conditions).toBe("$2 per copy");
     const [strings, ...params] = state.sql.mock.calls.at(-1)!;
     expect(strings.join(" ")).toContain("knox_review:eligibility");
+    expect(strings.join(" ")).toContain("knox_review:periodic_program");
     expect(params).toContain(false);
   });
 
   it("preserves admin inspection of both raw rows with pipeline notes", async () => {
     const evidence = await getInstitutionFeeScheduleEvidence(9003, { pipelineNotes: true });
 
-    expect(evidence.raw_fee_preview.map(row => row.fee_raw_id)).toEqual([5, 6]);
+    expect(evidence.raw_fee_preview.map(row => row.fee_raw_id)).toEqual([5, 7, 6]);
     expect(evidence.raw_fee_preview[0].conditions).toContain("eligibility");
   });
 
@@ -119,7 +127,7 @@ describe("#2209 eligibility holds stay out of customer provisional raw previews"
       const admin = order === "admin-first" ? first : second;
       const reader = order === "admin-first" ? second : first;
 
-      expect(admin.raw_fee_preview.map(row => row.fee_raw_id)).toEqual([5, 6]);
+      expect(admin.raw_fee_preview.map(row => row.fee_raw_id)).toEqual([5, 7, 6]);
       expect(admin.raw_fee_preview[0].conditions).toContain("Knox held for review");
       expect(reader.raw_fee_preview.map(row => row.fee_raw_id)).toEqual([6]);
       expect(reader.raw_fee_preview[0].conditions).toBe("$2 per copy");

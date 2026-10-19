@@ -9,6 +9,7 @@ import {
 } from "@/lib/agents/knox/rules";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
 import { nsfPolicyPrices } from "@/lib/custom-report/nsf-policy-prices";
+import { capFirstItemPrices } from "@/lib/custom-report/stacked-fee-prices";
 
 /**
  * v33: fees an overdraft page names by its context, not on the price's own line (Largest banks
@@ -175,6 +176,13 @@ export function contextFees(text: string): ExtractedFeeCandidate[] {
     return read ? [{ ...read, frequency: "per_item", ownedPolicy: true as const, linkedConditions: row.linkedConditions,
       ...(row.eligibilityRestricted ? { eligibilityReview: true as const } : {}) }] : [];
   });
+  for (const row of capFirstItemPrices(text)) {
+    const hint = classifyPatternKey(row.label);
+    if (hint !== "nsf" && hint !== "overdraft") continue;
+    const read = candidate(row.label, row.amount, hint, row.ownText);
+    if (read) found.push({ ...read, frequency: "per_item", ownedPolicy: true,
+      ...(row.eligibilityContext ? { eligibilityReview: true, linkedConditions: row.eligibilityContext } : {}) });
+  }
   all.forEach((line, index) => {
     if (!line.includes("$") || NO_LONGER_CHARGED.test(line)) return;
     const fee = perItemUnderHeading(all, index) ?? thisFeeAfterTerm(all, index) ?? audienceRowUnderHeading(all, index);

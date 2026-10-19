@@ -64,6 +64,14 @@ always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILIT
   checks the missing read against its own original source, and uses the normal first flag and
   12-hour second look before rejection/archive and cache invalidation. It does not raise the
   general source-check, verify or older-live recheck versions or reopen old rejected rows.
+  #2240/#2241/#2246 add bounded physical own-price refusals through the v85 free-team
+  signature and that same live twin. A matching category/amount read from another service
+  cannot bypass the exact physical refusal. The original source check and 12-hour second
+  look remain mandatory; the cap-inclusive read-only scan found zero current live matches.
+  Annual-program raw holds retain the annual clause and have no verification flag, including
+  after ordinary held-recheck/upsert passes. The literal cap-first item witness preserves the
+  full cap/unit text and binds NSF versus overdraft identity; it does not infer a daily cap or
+  make restricted eligibility a standard price. No epoch or provider/control change is included.
   The account type hold (#1100 gap 1, James Oct 16: a savings, money market, club, business or
   IRA/HSA/CD account's monthly fee is not consumer checking monthly maintenance) has its live
   re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every
