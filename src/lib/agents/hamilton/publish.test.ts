@@ -610,6 +610,28 @@ describe("Hamilton agentic publish", () => {
     expect(result.supersededFees).toBe(0);
   });
 
+  it.each([null, "", " \t", "not a URL", "https://testbank.example/%E0%A4%A"])("leaves publication pending for required unknown own page URL %j", async (document_url) => {
+    const db = createDbMock([verifiedFee]);
+    const base = db.getMockImplementation()!;
+    db.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("fr.source_document_id <>")) return Promise.resolve([{
+        fee_published_id: 601, institution_id: 42, source_document_id: 12,
+        document_url: "https://testbank.example/fees?print=1", crawled_at: "2026-10-02",
+        canonical_fee_key: "overdraft", amount: 35, fee_name: "Overdraft fee", frequency: "per_item", fee_audience: "consumer",
+      }]);
+      if (text.includes("FROM source_documents") && text.includes("GREATEST(last_checked_at")) {
+        return Promise.resolve([{ document_url, crawled_at: "2026-10-01", superseded: false, superseded_by_id: null }]);
+      }
+      return base(strings, ...params);
+    });
+    const result = await runHamiltonPublish({ runId: 151, db: asPublishDb(db) });
+    expect(result).toMatchObject({ publishedFees: 0, supersededFees: 0, evidenceDeferredFees: 1 });
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["page_copy_document"] });
+    expect(writes(db).join("\n")).not.toMatch(/INSERT INTO published_fee_records|UPDATE published_fee_records|UPDATE verified_fee_observations|INSERT INTO pipeline_attempts/);
+    expect(db.mock.calls.some(([query]) => templateText(query).includes("SELECT DISTINCT ON (source_document_id)"))).toBe(false);
+  });
+
   it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {
     const db = createDbMock([{ ...verifiedFee, same_line_reselect: true }]);
     const base = db.getMockImplementation()!;

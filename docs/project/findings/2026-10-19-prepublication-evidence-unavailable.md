@@ -14,7 +14,8 @@ The publisher now retains typed read availability across these decision inputs. 
 unavailable evidence leaves an input pending without publication, supersession, fee judgment,
 negative teaching or a settled v3 fingerprint. A separate real-SQL red caught deferred rows
 miscounted as rejected in aggregate outcomes; pending inputs now have no decision outcome.
-Missing own document or candidate-required text is unavailable, while a genuine empty
+Missing own document, own URL rejected by the existing page-key parser, or candidate-required
+text is unavailable, while a genuine empty
 live-copy set and unrelated non-pairs need no such data. Successful empty reads, already-proved outcomes,
 positive independent refusals and diagnostic/off controls retain their meanings. Saved receipts
 use finite check codes and bounded ID samples rather than arbitrary exception/source content.
@@ -31,4 +32,5 @@ reopen settled history, repair fees, add removal/clearing authority or satisfy t
 weekly below-1% takedown measurement. Existing #1069 and the broader #2072 decision process
 remain open; no production recovery or new James checking is included. This receipt covers
 the required publication reads reached by the selected inputs, rather than whole-pipeline
-validation, source fidelity or the completeness of other maintenance producers.
+validation, source fidelity, every successfully returned field or the completeness of other
+maintenance producers. No new timestamp requirement or historical collapse rule is introduced.

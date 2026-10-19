@@ -410,8 +410,12 @@ check codes, affected/deferred counts and at most 20 sampled verified IDs. Raw e
 SQL, source text and stacks are not copied into that receipt. An unavailable read is not a
 zero-match complete validation; summary/narration distinguish pending evidence deferrals from
 known refusals. A completed run step can report incomplete evidence.
+With live copy candidates, the own document row and a URL accepted by the existing page-key
+parser are required; missing, blank or unparseable own URLs stay unavailable. This does not
+require timestamps or text for unrelated copies and does not change the historical collapse.
 This is a bounded publication-read receipt; it does not certify whole-pipeline validation,
-source fidelity or the completeness of the primary selector or other maintenance producers.
+source fidelity, successfully returned fields outside required prospective branch inputs,
+or the completeness of the primary selector or other maintenance producers.
 The original #1069 weekly below-1% takedown target remains a separate measured acceptance.
 
 ## Publish step order

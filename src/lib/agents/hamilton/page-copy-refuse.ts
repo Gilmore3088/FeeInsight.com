@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { collapseCategories } from "@/lib/agents/hamilton/exact-duplicate";
 import { pageCopyRepeats, type PageCopyRow } from "@/lib/agents/hamilton/page-copy-collapse";
+import { feePageKey } from "./page-key";
 import { splitLiveCategory } from "@/lib/fee-fold";
 import { readPublicationEvidence, type PublicationEvidence } from "./publication-evidence";
 
@@ -89,7 +90,7 @@ export async function selectPageCopyKeeper(db: SqlTag, row: PageCopyCandidate): 
   `));
   if (ownRead.state === "unavailable") return ownRead;
   const [own] = ownRead.value;
-  if (!own) return { state: "unavailable", check: "page_copy_document" };
+  if (!own || feePageKey(own.document_url) == null) return { state: "unavailable", check: "page_copy_document" };
   const category = categories.at(-1) ?? row.canonicalFeeKey;
   const candidate: PageCopyRow = {
     fee_published_id: CANDIDATE_ID,
