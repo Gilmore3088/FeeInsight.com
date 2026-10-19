@@ -88,10 +88,19 @@ describe("did the change move its number (#1106)", () => {
     const rescored = fakeDb([pending(4)], after, { accuracy_scorer_version: 1 });
     const result = await runChangeOutcomes({ db: rescored.db, runId: 9, now: new Date("2026-10-13T13:00:00Z"), entries: [entries[0]] });
     expect(result.judged).toEqual([{ pr: 4, metric: "accuracy_recall", verdict: "unreadable", before: 0.575, after: null, scorerChanged: true }]);
-    expect(summarizeChangeOutcomes(result)).toContain("1 because the answer-key scorer changed in between");
+    expect(summarizeChangeOutcomes(result)).toContain("1 because the scoring series changed or was unknown");
     const same = fakeDb([pending(5)], after, { accuracy_scorer_version: 3 });
     const kept = await runChangeOutcomes({ db: same.db, runId: 9, now: new Date("2026-10-13T13:00:00Z"), entries: [entries[1]] });
     expect(kept.judged).toEqual([{ pr: 5, metric: "accuracy_recall", verdict: "wrong_way", before: 0.575, after: 0.53 }]);
+  });
+
+  it("does not credit a checker change as an accuracy improvement (#2071)", async () => {
+    const pending = { pr_number: 10, metric: "detail.goal.accuracy.accuracy", first_seen_date: "2026-10-05", before_snapshot_date: "2026-10-05", before_value: "0.90", verdict: "pending" };
+    const after = { snapshot_date: "2026-10-12", detail: { goal: { accuracy: { accuracy: 1, series: "1.5.76.18.23" } } } };
+    const before = { detail: { goal: { accuracy: { series: "1.5.75.18.23" } } } };
+    const { db } = fakeDb([pending], after, before);
+    const result = await runChangeOutcomes({ db, runId: 9, now: new Date("2026-10-13T13:00:00Z"), entries: [{ pr: 10, metric: pending.metric, direction: "up" }] });
+    expect(result.judged).toEqual([{ pr: 10, metric: pending.metric, verdict: "unreadable", before: 0.9, after: null, scorerChanged: true }]);
   });
 
   it("does nothing before the migration", async () => {

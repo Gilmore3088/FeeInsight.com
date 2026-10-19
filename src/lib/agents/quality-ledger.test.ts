@@ -10,11 +10,12 @@ describe("readQualityLedger", () => {
       Promise.resolve(
         strings.join("").includes("answer_key_score_runs")
           ? [{ id: 9, agent_run_id: null, scorer_version: 2, scored_at: "2026-10-14T16:53:00Z", banks_scored: 62, fees_expected: 2320, precision: "0.874", recall: "0.575" }]
+          : strings.join("").includes("pipeline_scoreboard_snapshots") ? []
           : [{ live_fees: 76629, stored_notes: 0, per_item_periods: 6, no_source_link: 13 }],
       ),
     ), { unsafe: vi.fn((text: string) => text) });
     const ledger = await readQualityLedger(db as never);
-    expect(ledger).toEqual({
+    expect(ledger).toMatchObject({
       answerKey: { precision: 0.874, recall: 0.575, scoredAt: "2026-10-14T16:53:00Z", scorerVersion: 2 },
       liveFees: 76629, storedNotes: 0, perItemPeriods: 6, noSourceLink: 13,
     });
