@@ -10,66 +10,6 @@ export interface MarketIndexEntry extends IndexEntry {
   delta_pct: number | null;
 }
 
-export function buildMarketIndex(
-  national: IndexEntry[],
-  segment: IndexEntry[] | null
-): MarketIndexEntry[] {
-  const nationalMap = new Map(national.map((e) => [e.fee_category, e]));
-
-  if (!segment) {
-    return national.map((n) => ({
-      ...n,
-      national_median: n.median_amount,
-      national_p25: n.p25_amount,
-      national_p75: n.p75_amount,
-      national_institution_count: n.institution_count,
-      delta_pct: null,
-    }));
-  }
-
-  const segmentMap = new Map(segment.map((e) => [e.fee_category, e]));
-  const result: MarketIndexEntry[] = [];
-
-  for (const [cat, nat] of nationalMap) {
-    const seg = segmentMap.get(cat);
-    const segMedian = seg?.median_amount ?? null;
-    const natMedian = nat.median_amount;
-    const delta =
-      segMedian !== null && natMedian !== null && natMedian !== 0
-        ? Math.round(((segMedian - natMedian) / natMedian) * 1000) / 10
-        : null;
-
-    if (seg) {
-      result.push({
-        ...seg,
-        national_median: natMedian,
-        national_p25: nat.p25_amount,
-        national_p75: nat.p75_amount,
-        national_institution_count: nat.institution_count,
-        delta_pct: delta,
-      });
-    } else {
-      result.push({
-        ...nat,
-        institution_count: 0,
-        observation_count: 0,
-        approved_count: 0,
-        bank_count: 0,
-        cu_count: 0,
-        maturity_tier: "insufficient",
-        national_median: natMedian,
-        national_p25: nat.p25_amount,
-        national_p75: nat.p75_amount,
-        national_institution_count: nat.institution_count,
-        delta_pct: null,
-      });
-    }
-  }
-
-  result.sort((a, b) => b.institution_count - a.institution_count);
-  return result;
-}
-
 export async function getFilteredTierCounts(filters: {
   charter_type?: string;
   asset_tiers?: string[];

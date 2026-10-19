@@ -15,8 +15,6 @@ export const POLICY_SETS = {
   atm: ["atm_non_network", "card_foreign_txn", "monthly_maintenance"],
 } as const;
 export type PolicySet = keyof typeof POLICY_SETS;
-/** The overdraft guide's categories (kept for callers that predate the ATM set). */
-export const POLICY_CATEGORIES = POLICY_SETS.overdraft;
 export type PolicyCategory = (typeof POLICY_SETS)[PolicySet][number];
 
 export function policySetOf(value: string | null | undefined): PolicySet {
