@@ -97,6 +97,9 @@ function partitionState(row: RegistryPeriodPartition | undefined): PartitionStat
   return "unchecked";
 }
 
+/** How many of the newest periods are read to decide whether a publisher skips periods. */
+export const SKIP_HISTORY_PERIODS = 12;
+
 type PeriodState = "complete" | "partial" | "failed" | "empty" | "unchecked";
 
 function periodState(states: readonly PartitionState[]): PeriodState {
@@ -166,8 +169,10 @@ export function periodCompleteness(
     case "empty": {
       // A publisher that has skipped a period before (an empty period older than a loaded one,
       // e.g. the Beige Book's eight releases a year) can skip the one before this too, so its
-      // settled-empty periods are passed over when judging lateness.
-      const skipsPeriods = states.some((state, i) => state === "empty" && states.slice(0, i).some((s) => s === "complete" || s === "partial"));
+      // settled-empty periods are passed over when judging lateness. Only recent history counts,
+      // so one empty backfill period years ago does not excuse a regular publisher's late release.
+      const recent = states.slice(0, SKIP_HISTORY_PERIODS);
+      const skipsPeriods = recent.some((state, i) => state === "empty" && recent.slice(0, i).some((s) => s === "complete" || s === "partial"));
       const previousIndex = skipsPeriods ? states.findIndex((state, i) => i > 0 && state !== "empty") : 1;
       const previous = previousIndex > 0 ? states[previousIndex] : undefined;
       if (previous === undefined || previous === "complete") {

@@ -64,6 +64,14 @@ describe("periodCompleteness (#2228)", () => {
     expect(c.reason).toContain("2026-05 not loaded in full");
   });
 
+  it("is still late for a regular publisher whose only empty period is an old backfill hole", () => {
+    // Quarterly source: 2021Q1 came back empty long ago; the two newest quarters are both unloaded now.
+    const keys = ["2026Q2", "2026Q1", "2025Q4", "2025Q3", "2025Q2", "2025Q1", "2024Q4", "2024Q3", "2024Q2", "2024Q1", "2023Q4", "2023Q3", "2023Q2", "2023Q1", "2022Q4", "2021Q1"];
+    const rows = keys.map((k, i) => part(k, i < 2 || k === "2021Q1" ? "empty" : "succeeded"));
+    const c = periodCompleteness(keys, rows, NOW);
+    expect(c).toMatchObject({ state: "late", completedPeriod: "2025Q4", periodsBehind: 2 });
+  });
+
   it("is partial when only some of the newest period's partitions loaded (partial coverage)", () => {
     const planned = ["2025-OH", "2025-TX", "2025-CA", "2024-OH", "2024-TX", "2024-CA"];
     const rows = [part("2025-OH", "succeeded"), part("2025-TX", "succeeded", { partial: true }), ...["2024-OH", "2024-TX", "2024-CA"].map((k) => part(k, "succeeded"))];
