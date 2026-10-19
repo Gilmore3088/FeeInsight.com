@@ -1,6 +1,7 @@
+import { createHash, randomUUID } from "node:crypto";
 import type { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
-import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { recordAttestedAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook, secondLookDedupeKey } from "@/lib/agents/hamilton/second-look";
@@ -93,9 +94,14 @@ interface RecheckRow extends RawFeeRow {
   canonical_fee_key: string;
   verified_amount: number | string | null;
   fee_published_id: number | string | null;
+  selected_verified: string;
+  selected_raw: string;
+  selected_published: string | null;
+  selected_feedback: string | null;
 }
 
 export interface VerifiedRecheckResult {
+  execution?: RecheckExecution;
   checked: number;
   passed: number;
   rejected: Array<{ feeVerifiedId: number; code: string }>;
@@ -149,14 +155,18 @@ function selectOlderLiveRows(db: SqlTag, limit: number, from: "random" | "start"
   const sample = from != null;
   const randomStart = from === "random";
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
-      SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
              r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
-             r.amount_kind, r.rate_percent, live.fee_published_id
+             r.amount_kind, r.rate_percent, live.fee_published_id, live.selected_published, live.selected_feedback
         FROM verified_fee_observations v
         JOIN raw_fee_observations r ON r.fee_raw_id = v.fee_raw_id
         JOIN LATERAL (
-          SELECT p.fee_published_id FROM published_fee_records p
+          SELECT p.fee_published_id, md5(to_jsonb(p)::text) AS selected_published,
+                 (SELECT md5(to_jsonb(f)::text) FROM pipeline_feedback f
+                   WHERE f.dedupe_key = ${secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "")} || p.fee_published_id::text) AS selected_feedback
+            FROM published_fee_records p
            WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL AND p.quarantined_at IS NULL
            ORDER BY p.fee_published_id DESC LIMIT 1
         ) live ON true
@@ -196,10 +206,12 @@ function selectDueSecondLookRows(db: SqlTag, limit: number, codes: DueCodeFilter
   const only = codes.only ? [...codes.only] : null;
   const except = codes.except && codes.except.length > 0 ? [...codes.except] : null;
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
-      SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
              r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
-             r.amount_kind, r.rate_percent, p.fee_published_id
+             r.amount_kind, r.rate_percent, p.fee_published_id,
+             md5(to_jsonb(p)::text) AS selected_published, md5(to_jsonb(f)::text) AS selected_feedback
         FROM pipeline_feedback f
         JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id AND f.dedupe_key = ${prefix} || p.fee_published_id::text
         JOIN verified_fee_observations v ON v.fee_verified_id = p.lineage_ref
@@ -244,10 +256,18 @@ export async function dueSecondLookShadow(db: SqlTag, options: { limit?: number;
 
 function selectRows(db: SqlTag, limit: number, reselectCohort: boolean): Promise<RecheckRow[]> {
   return inSavepoint(db, (scope) => scope<RecheckRow[]>`
-      SELECT v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
+      SELECT md5(to_jsonb(v)::text) AS selected_verified, md5(to_jsonb(r)::text) AS selected_raw,
+             v.fee_verified_id, v.review_status, v.canonical_fee_key, v.amount AS verified_amount,
              r.fee_raw_id, r.institution_id, r.source_url, r.document_r2_key, r.extraction_confidence,
              r.fee_name, r.amount, r.frequency, r.outlier_flags, COALESCE(r.extraction_note, r.conditions) AS conditions, r.source_document_id,
              r.amount_kind, r.rate_percent,
+             (SELECT md5(to_jsonb(p)::text) FROM published_fee_records p
+               WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
+               ORDER BY p.fee_published_id DESC LIMIT 1) AS selected_published,
+             (SELECT md5(to_jsonb(f)::text) FROM published_fee_records p
+                LEFT JOIN pipeline_feedback f ON f.dedupe_key = ${secondLookDedupeKey(DARWIN_RECHECK_CHECK, 0).replace(/0$/, "")} || p.fee_published_id::text
+               WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
+               ORDER BY p.fee_published_id DESC LIMIT 1) AS selected_feedback,
              (SELECT p.fee_published_id FROM published_fee_records p
                WHERE p.lineage_ref = v.fee_verified_id AND p.rolled_back_at IS NULL
                ORDER BY p.fee_published_id DESC LIMIT 1) AS fee_published_id
@@ -336,210 +356,277 @@ export async function olderLiveShadow(db: SqlTag, options: { runId: number; limi
   return shadow;
 }
 
-export async function recheckVerifiedFees(
-  db: SqlTag,
-  options: {
-    runId: number;
-    stepId?: number | null;
-    limit?: number;
-    now?: Date;
-    sameStepTakedown?: boolean;
-    olderLive?: boolean;
-    secondLooks?: boolean;
-    /** Reason codes whose due first looks get their second look while `secondLooks` is off. */
-    secondLookCodes?: readonly string[];
-  },
-): Promise<VerifiedRecheckResult> {
-  const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
-  const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
-  const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
-  // The narrow switch-on: only these codes' due first looks get their second read.
-  const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
-  options = { ...options, sameStepTakedown: options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN };
-  const result: VerifiedRecheckResult = { ...EMPTY, rejected: [], restored: [], takenDown: [] };
-  // Off: every fourth run reports what reading older live rows would do, and changes nothing for
-  // them (#1568). It is a per-step sample; the whole backlog's count is a separate read-only query.
-  if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) result.olderLive = await olderLiveShadow(db, { runId: options.runId });
-  // Off: report what the due second looks would do for the codes not switched on, and change
-  // nothing for them (#1397).
-  if (!secondLooks) result.dueSecondLooks = await dueSecondLookShadow(db, { codes: { except: secondLookCodes } });
-  let rows: RecheckRow[];
-  try {
-    // The rows the not_in_source re-select verified (#883, the cohort UAT checked) are read first;
-    // once they are done each step reads the newest verified rows.
-    rows = await selectRows(db, limit, true);
-    if (rows.length === 0) rows = await selectRows(db, limit, false);
-    // On: older live rows get their own share of each step, so new rows never starve them (#1568).
-    if (olderLive) rows = [...rows, ...(await selectOlderLiveRows(db, Math.ceil(limit / 2), null))];
-  } catch (error) {
-    console.warn("[darwin] verified recheck read failed", error instanceof Error ? error.message : error);
-    return result;
-  }
-  // On: first looks that are due get their second read; the shared second look confirms or clears
-  // them. Read on its own, so a bad flag never stops the rest of the recheck.
-  // With only some codes switched on, a due row read for them is confirmed only under one of them.
-  const narrowDue = new Set<string>();
-  if (secondLooks || secondLookCodes.length > 0) {
-    try {
-      const seen = new Set(rows.map((row) => String(row.fee_verified_id)));
-      const due = (await selectDueSecondLookRows(db, SECOND_LOOK_DUE_LIMIT, secondLooks ? {} : { only: secondLookCodes }))
-        .filter((row) => !seen.has(String(row.fee_verified_id)));
-      if (!secondLooks) for (const row of due) narrowDue.add(String(row.fee_verified_id));
-      rows = [...rows, ...due];
-    } catch (error) {
-      console.warn("[darwin] due second-look read failed", error instanceof Error ? error.message : error);
-    }
-  }
-  if (rows.length === 0) return result;
+export const RECHECK_EXECUTION_PROTOCOL = "darwin.recheck.execution.v1";
+type PhaseState = "complete" | "partial" | "unavailable" | "not_run" | "cadence_skip" | "reported_unknown";
+export type RecheckUnresolvedCode = "invalid_run_context" | "transaction_unavailable" | "selection_failed" | "source_unavailable" | "identity_changed" | "settlement_failed" | "producer_witness_failed";
+export interface RecheckExecution {
+  protocol: typeof RECHECK_EXECUTION_PROTOCOL;
+  scope: "selected_batch";
+  state: "complete" | "partial" | "unavailable";
+  runId: number | null;
+  stepId: number | null;
+  batchKey: string;
+  eventId: number | null;
+  selected: number | null;
+  assessed: number;
+  settled: number;
+  unresolved: number;
+  phases: { primary: PhaseState; due: PhaseState; source: PhaseState; olderShadow: PhaseState; dueShadow: PhaseState };
+  reasonCode: RecheckUnresolvedCode | null;
+  samples: Array<{ feeVerifiedId: number; code: RecheckUnresolvedCode }>;
+}
+interface RecheckOptions {
+  runId: number;
+  stepId?: number | null;
+  limit?: number;
+  now?: Date;
+  sameStepTakedown?: boolean;
+  olderLive?: boolean;
+  secondLooks?: boolean;
+  secondLookCodes?: readonly string[];
+}
+interface SelectedText {
+  id: number | string;
+  source_document_id: number | string;
+  institution_id: number | string;
+  document_institution_id: number | string;
+  normalized_text: string;
+  selected_source: string;
+  selected_document: string;
+}
+class RecheckDeferred extends Error {
+  constructor(readonly code: RecheckUnresolvedCode) { super(code); }
+}
+function positiveId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+function executionFor(options: RecheckOptions): RecheckExecution {
+  return { protocol: RECHECK_EXECUTION_PROTOCOL, scope: "selected_batch", state: "unavailable", runId: positiveId(options.runId) ? options.runId : null,
+    stepId: positiveId(options.stepId) ? options.stepId : null, batchKey: randomUUID(), eventId: null, selected: null, assessed: 0, settled: 0, unresolved: 0,
+    phases: { primary: "not_run", due: "not_run", source: "not_run", olderShadow: "not_run", dueShadow: "not_run" }, reasonCode: null, samples: [] };
+}
+function freshResult(execution: RecheckExecution): VerifiedRecheckResult {
+  return { ...EMPTY, rejected: [], restored: [], takenDown: [], secondLookOtherCode: 0, execution };
+}
+function defer(execution: RecheckExecution, id: number, code: RecheckUnresolvedCode) {
+  execution.unresolved += 1;
+  if (execution.samples.length < 20) execution.samples.push({ feeVerifiedId: id, code });
+}
+/** Pure check remains shared with shadow assessment; no new rule/replay version. */
+export const recheckAssessment = recheckOf;
 
-  const texts = await textsFor(db, rows);
-  const failing: Array<{
-    feePublishedId: number;
-    feeVerifiedId: number;
-    institutionId: number;
-    canonicalFeeKey: string;
-    amount: number | null;
-    sourceDocumentId: number | null;
-    reason: string;
-  }> = [];
-  const passingLive: number[] = [];
-  for (const row of rows) {
-    const feeVerifiedId = Number(row.fee_verified_id);
-    const { canonicalFeeKey, amount, line, check } = recheckOf(row, texts);
-    if (check && narrowDue.has(String(row.fee_verified_id)) && !secondLookCodes.includes(check.code)) {
-      // Read for a switched-on code but failing under another one now: that code is not switched
-      // on, so the row stays flagged and nothing is written for it.
-      result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1;
-      continue;
-    }
-    const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
-    const wasRejected = row.review_status === "rejected";
-    result.checked += 1;
-    const reason = check ? `${RECHECK_REJECTED_FLAG_PREFIX}:${check.code}${check.rule ? `:${check.rule}` : ""}` : "";
-    if (wasRejected) {
-      // An earlier recheck version rejected this row; a pass under this version restores it.
-      if (!check) {
-        await db`
-          UPDATE verified_fee_observations
-             SET review_status = 'verified',
-                 outlier_flags = COALESCE((
-                   SELECT jsonb_agg(flag) FROM jsonb_array_elements(COALESCE(outlier_flags, '[]'::jsonb)) flag
-                    WHERE flag #>> '{}' NOT LIKE ${`${RECHECK_REJECTED_FLAG_PREFIX}:%`}
-                 ), '[]'::jsonb)
-           WHERE fee_verified_id = ${feeVerifiedId}
-             AND review_status = 'rejected'
-        `;
-        result.restored.push(feeVerifiedId);
-      }
-    } else if (!check) {
-      result.passed += 1;
-      if (publishedId != null) passingLive.push(publishedId);
-    } else if (publishedId == null) {
-      await db`
-        UPDATE verified_fee_observations
-           SET review_status = 'rejected',
-               outlier_flags = CASE
-                 WHEN outlier_flags @> ${JSON.stringify([reason])}::jsonb THEN outlier_flags
-                 ELSE COALESCE(outlier_flags, '[]'::jsonb) || ${JSON.stringify([reason])}::jsonb
-               END
-         WHERE fee_verified_id = ${feeVerifiedId}
-           AND review_status IN ('verified', 'approved')
-      `;
-      result.rejected.push({ feeVerifiedId, code: check.code });
-    } else {
-      failing.push({
-        feePublishedId: publishedId,
-        feeVerifiedId,
-        institutionId: Number(row.institution_id),
-        canonicalFeeKey,
-        amount,
-        sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
-        reason,
-      });
-    }
-    await recordAttempt(db, {
-      institutionId: Number(row.institution_id),
-      sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
-      stage: "verify",
-      strategy: DARWIN_RECHECK_STRATEGY.strategy,
-      version: DARWIN_RECHECK_STRATEGY.version,
-      fingerprint: `verified:${feeVerifiedId}`,
-      outcome: check ? "evidence_mismatch" : "ok",
-      yieldCount: check ? 0 : 1,
-      costMicrousd: 0,
-      durationMs: 0,
-      runId: options.runId,
-      stepId: options.stepId ?? null,
-      foldIntoPlaybook: false,
-      detail: {
-        fee_verified_id: feeVerifiedId,
-        fee_raw_id: Number(row.fee_raw_id),
-        fee_published_id: publishedId,
-        canonical_fee_key: canonicalFeeKey,
-        amount,
-        code: check?.code ?? null,
-        rule: check?.rule ?? null,
-        line: line ? line.slice(0, 300) : null,
-        action: wasRejected
-          ? (check ? "still_rejected" : "restored")
-          : !check ? "passed" : publishedId == null ? "rejected" : options.sameStepTakedown ? "taken_down" : "second_look",
-      },
-    });
+/** Existing members only, NOWAIT: no serializability or unselected-new-row phantom claim. */
+async function lockSelected(db: SqlTag, row: RecheckRow, text: SelectedText, dueOrigin: boolean) {
+  const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
+  if (publishedId != null) {
+    const [published] = await db<{ stamp: string; lineage_ref: number | string; institution_id: number | string; rolled_back_at: unknown; quarantined_at: unknown }[]>`
+      SELECT md5(to_jsonb(p)::text) AS stamp, lineage_ref, institution_id, rolled_back_at, quarantined_at
+        FROM published_fee_records p WHERE fee_published_id = ${publishedId} FOR UPDATE NOWAIT
+    `;
+    if (!published || published.stamp !== row.selected_published || Number(published.lineage_ref) !== Number(row.fee_verified_id)
+      || Number(published.institution_id) !== Number(row.institution_id) || published.rolled_back_at != null || published.quarantined_at != null) throw new RecheckDeferred("identity_changed");
   }
+  const [verified] = await db<{ stamp: string; fee_raw_id: number | string; institution_id: number | string }[]>`SELECT md5(to_jsonb(v)::text) AS stamp,fee_raw_id,institution_id FROM verified_fee_observations v WHERE fee_verified_id=${Number(row.fee_verified_id)} FOR UPDATE NOWAIT`;
+  const [raw] = await db<{ stamp: string }[]>`SELECT md5(to_jsonb(r)::text) AS stamp FROM raw_fee_observations r WHERE fee_raw_id=${Number(row.fee_raw_id)} FOR UPDATE NOWAIT`;
+  if (!verified || !raw || verified.stamp !== row.selected_verified || raw.stamp !== row.selected_raw
+    || Number(verified.fee_raw_id) !== Number(row.fee_raw_id) || Number(verified.institution_id) !== Number(row.institution_id)) throw new RecheckDeferred("identity_changed");
+  const live = await db<{ fee_published_id: number | string }[]>`
+    SELECT fee_published_id FROM published_fee_records WHERE lineage_ref=${Number(row.fee_verified_id)} AND rolled_back_at IS NULL ORDER BY fee_published_id LIMIT 2
+  `;
+  if (live.length !== (publishedId == null ? 0 : 1) || (publishedId != null && Number(live[0]?.fee_published_id) !== publishedId)) throw new RecheckDeferred("identity_changed");
+  if (publishedId != null) {
+    const [feedback] = await db<{ stamp: string }[]>`SELECT md5(to_jsonb(f)::text) AS stamp FROM pipeline_feedback f WHERE dedupe_key=${secondLookDedupeKey(DARWIN_RECHECK_CHECK, publishedId)} FOR UPDATE NOWAIT`;
+    if ((feedback?.stamp ?? null) !== row.selected_feedback) throw new RecheckDeferred("identity_changed");
+    const [correction] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM published_fee_corrections WHERE fee_published_id=${publishedId} AND status='current') AS present`;
+    if (correction?.present) throw new RecheckDeferred("identity_changed");
+  }
+  const [document] = await db<{ stamp: string }[]>`SELECT md5(to_jsonb(d)::text) AS stamp FROM source_documents d WHERE id=${Number(text.source_document_id)} FOR SHARE NOWAIT`;
+  const [source] = await db<{ stamp: string }[]>`SELECT md5(to_jsonb(t)::text) AS stamp FROM agent_source_texts t WHERE id=${Number(text.id)} FOR SHARE NOWAIT`;
+  if (!document || !source || document.stamp !== text.selected_document || source.stamp !== text.selected_source) throw new RecheckDeferred("identity_changed");
+  if (!dueOrigin) {
+    const [already] = await db<{ present: boolean }[]>`SELECT EXISTS (SELECT 1 FROM pipeline_attempts WHERE input_fingerprint=${`verified:${row.fee_verified_id}`} AND strategy=${DARWIN_RECHECK_STRATEGY.strategy} AND strategy_version=${DARWIN_RECHECK_STRATEGY.version}) AS present`;
+    if (already?.present) throw new RecheckDeferred("identity_changed");
+  }
+}
 
-  if (failing.length === 0 && passingLive.length === 0) return result;
-  if (!options.sameStepTakedown) {
-    // The 12-hour path: flag now, roll back only when a run 12 hours on fails the row again; a
-    // live row that passes now has any pending flag from an earlier version cleared.
-    const look = await secondLook(db, { check: DARWIN_RECHECK_CHECK, runId: options.runId, failing, passing: passingLive, dryRun: false, now: options.now });
-    result.flagged = look.flagged;
-    result.waiting = look.waiting;
-    result.cleared = look.cleared;
-    if (look.confirmed.length === 0) return result;
-    failing.splice(0, failing.length, ...look.confirmed.map((fee) => failing.find((row) => row.feePublishedId === fee.feePublishedId)!));
-  } else if (passingLive.length > 0) {
-    const look = await secondLook(db, { check: DARWIN_RECHECK_CHECK, runId: options.runId, failing: [], passing: passingLive, dryRun: false, now: options.now });
-    result.cleared = look.cleared;
+/**
+ * Requires a real ledger transaction. Its producer event commits with effects; the later
+ * finishAgenticStep receipt is a reference, not the transaction boundary or a new measurement.
+ */
+export function unavailableRecheckResult(options: RecheckOptions): VerifiedRecheckResult {
+  const execution = executionFor(options); execution.reasonCode = "producer_witness_failed";
+  return freshResult(execution);
+}
+export async function recheckVerifiedFees(db: SqlTag, options: RecheckOptions): Promise<VerifiedRecheckResult> {
+  let execution = executionFor(options);
+  if (!positiveId(options.runId) || !positiveId(options.stepId)) {
+    execution.reasonCode = "invalid_run_context"; return freshResult(execution);
   }
-  if (failing.length === 0) return result;
-  // James, 11:55 UTC 2026-10-09 ("stop waiting 12 hours. go"): with the switch on, a live fee the
-  // recheck fails comes down in the same step. It is archived (rolled back with the reason), never
-  // deleted; the verified row is rejected with the same flag, and every row keeps its attempt.
+  if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") {
+    execution.reasonCode = "transaction_unavailable"; return freshResult(execution);
+  }
   try {
-    const closed = await inSavepoint(db, async (scope) => {
-      const updated = await scope<{ fee_published_id: number | string }[]>`
-        UPDATE published_fee_records fp
-           SET rolled_back_at = NOW(),
-               rolled_back_by_batch_id = ${`darwin-recheck-${options.runId}`},
-               rolled_back_reason = v.reason
-          FROM unnest(${failing.map((fee) => fee.feePublishedId)}::bigint[], ${failing.map((fee) => fee.reason)}::text[])
-               AS v(fee_published_id, reason)
-         WHERE fp.fee_published_id = v.fee_published_id
-           AND fp.rolled_back_at IS NULL
-        RETURNING fp.fee_published_id
+    return await inSavepoint(db, async scope => {
+      const [context] = await scope<{ id: number | string }[]>`
+        SELECT s.id FROM agent_run_steps s JOIN agent_runs r ON r.id=s.agent_run_id
+         WHERE r.id=${options.runId} AND s.id=${options.stepId} AND s.step_key IN ('classify','verify')
       `;
-      const ids = new Set(updated.map((row) => Number(row.fee_published_id)));
-      const done = failing.filter((fee) => ids.has(fee.feePublishedId));
-      if (done.length > 0) {
-        await scope`
-          UPDATE verified_fee_observations fv
-             SET review_status = 'rejected',
-                 outlier_flags = CASE
-                   WHEN fv.outlier_flags ? v.flag THEN fv.outlier_flags
-                   ELSE COALESCE(fv.outlier_flags, '[]'::jsonb) || jsonb_build_array(v.flag)
-                 END
-            FROM unnest(${done.map((fee) => fee.feeVerifiedId)}::bigint[], ${done.map((fee) => fee.reason)}::text[])
-                 AS v(fee_verified_id, flag)
-           WHERE fv.fee_verified_id = v.fee_verified_id
-             AND fv.review_status IN ('verified', 'approved')
-        `;
+      if (!context) throw new RecheckDeferred("invalid_run_context");
+      const result = freshResult(execution);
+      const limit = Math.max(1, Math.min(options.limit ?? RECHECK_LIMIT, 1_000));
+      const olderLive = options.olderLive ?? DARWIN_RECHECK_OLDER_LIVE;
+      const secondLooks = options.secondLooks ?? DARWIN_RECHECK_SECOND_LOOK_LIVE;
+      const secondLookCodes = secondLooks ? [] : [...(options.secondLookCodes ?? DARWIN_RECHECK_SECOND_LOOK_LIVE_CODES)];
+      const sameStep = options.sameStepTakedown ?? DARWIN_RECHECK_SAME_STEP_TAKEDOWN;
+      if (!olderLive && options.runId % OLDER_LIVE_SHADOW_EVERY === 0) {
+        result.olderLive = await olderLiveShadow(scope, { runId: options.runId });
+        execution.phases.olderShadow = result.olderLive.error ? "partial" : "reported_unknown";
+      } else execution.phases.olderShadow = olderLive ? "not_run" : "cadence_skip";
+      if (!secondLooks) {
+        result.dueSecondLooks = await dueSecondLookShadow(scope, { codes: { except: secondLookCodes } });
+        execution.phases.dueShadow = result.dueSecondLooks.error ? "partial" : "reported_unknown";
       }
-      return done.map((fee) => fee.feePublishedId);
+      let rows: RecheckRow[] = [];
+      const dueIds = new Set<string>();
+      try {
+        rows = await selectRows(scope, limit, true);
+        if (rows.length === 0) rows = await selectRows(scope, limit, false);
+        if (olderLive) rows = [...rows, ...await selectOlderLiveRows(scope, Math.ceil(limit / 2), null)];
+        execution.phases.primary = "complete";
+      } catch {
+        // A later primary selector may fail after an earlier one returned rows. The
+        // original failed-primary path acts on none; do not retain a hidden partial batch.
+        rows = []; execution.phases.primary = "unavailable"; execution.reasonCode = "selection_failed";
+      }
+      // Preserve original short circuit: a failed primary selection does not expand due work.
+      if (execution.phases.primary === "complete" && (secondLooks || secondLookCodes.length > 0)) {
+        try {
+          const seen = new Set(rows.map(row => String(row.fee_verified_id)));
+          const due = (await selectDueSecondLookRows(scope, SECOND_LOOK_DUE_LIMIT, secondLooks ? {} : { only: secondLookCodes })).filter(row => !seen.has(String(row.fee_verified_id)));
+          for (const row of due) dueIds.add(String(row.fee_verified_id));
+          rows = [...rows, ...due]; execution.phases.due = "complete";
+        } catch { execution.phases.due = "unavailable"; execution.reasonCode = "selection_failed"; }
+      }
+      if (rows.length > 1_600) throw new RecheckDeferred("producer_witness_failed");
+      execution.selected = execution.phases.primary === "complete" ? rows.length : null;
+      let sources: SelectedText[] = [];
+      if (rows.length > 0) {
+        try {
+          sources = await inSavepoint(scope, tx => tx<SelectedText[]>`
+            SELECT DISTINCT ON (t.source_document_id) t.id, t.source_document_id, t.institution_id, d.institution_id AS document_institution_id,
+                   t.normalized_text, md5(to_jsonb(t)::text) AS selected_source, md5(to_jsonb(d)::text) AS selected_document
+              FROM agent_source_texts t JOIN source_documents d ON d.id=t.source_document_id
+             WHERE t.source_document_id=ANY(${rows.flatMap(row => row.source_document_id == null ? [] : [Number(row.source_document_id)])}::bigint[])
+               AND t.status='completed' AND t.normalized_text IS NOT NULL
+             ORDER BY t.source_document_id,t.id DESC
+          `); execution.phases.source = "complete";
+        } catch { execution.phases.source = "unavailable"; }
+      } else execution.phases.source = execution.phases.primary === "complete" ? "complete" : "not_run";
+      const texts = new Map(sources.map(text => [Number(text.source_document_id), text.normalized_text]));
+      const witnesses: Array<{ feeVerifiedId: number; attemptId: number; feedbackIds: number[]; action: string }> = [];
+      for (const row of rows) {
+        const id = Number(row.fee_verified_id);
+        const text = sources.find(text => Number(text.source_document_id) === Number(row.source_document_id));
+        if (!text || !text.normalized_text.trim() || Number(text.institution_id) !== Number(row.institution_id) || Number(text.document_institution_id) !== Number(row.institution_id)) {
+          execution.phases.source = execution.phases.source === "unavailable" ? "unavailable" : "partial";
+          defer(execution, id, "source_unavailable"); continue;
+        }
+        let assessed = false;
+        try {
+          const settled = await inSavepoint(scope, async tx => {
+            await lockSelected(tx, row, text, dueIds.has(String(id)));
+            const { canonicalFeeKey, amount, check } = recheckOf(row, texts);
+            assessed = true;
+            if (check && dueIds.has(String(id)) && !secondLooks && !secondLookCodes.includes(check.code)) return { otherCode: true as const };
+            const publishedId = row.fee_published_id == null ? null : Number(row.fee_published_id);
+            const wasRejected = row.review_status === "rejected";
+            const reason = check ? `${RECHECK_REJECTED_FLAG_PREFIX}:${check.code}${check.rule ? `:${check.rule}` : ""}` : "";
+            let action = wasRejected ? "still_rejected" : "passed";
+            let feedbackIds: number[] = [], flagged = 0, waiting = 0, cleared = 0;
+            if (wasRejected && !check) {
+              const updated = await tx<{ fee_verified_id: number | string; fee_raw_id: number | string; review_status: string }[]>`
+                UPDATE verified_fee_observations v SET review_status='verified',
+                  outlier_flags=COALESCE((SELECT jsonb_agg(flag) FROM jsonb_array_elements(COALESCE(v.outlier_flags,'[]'::jsonb)) flag WHERE flag #>> '{}' NOT LIKE ${`${RECHECK_REJECTED_FLAG_PREFIX}:%`}), '[]'::jsonb)
+                 WHERE fee_verified_id=${id} AND review_status='rejected' AND md5(to_jsonb(v)::text)=${row.selected_verified} RETURNING fee_verified_id,fee_raw_id,review_status
+              `;
+              if (updated.length !== 1 || Number(updated[0].fee_verified_id) !== id || Number(updated[0].fee_raw_id) !== Number(row.fee_raw_id) || updated[0].review_status !== "verified") throw new RecheckDeferred("identity_changed");
+              action = "restored";
+            } else if (!wasRejected && check && publishedId == null) {
+              const updated = await tx<{ fee_verified_id: number | string; fee_raw_id: number | string; review_status: string }[]>`
+                UPDATE verified_fee_observations v SET review_status='rejected',
+                  outlier_flags=CASE WHEN COALESCE(v.outlier_flags,'[]'::jsonb) ? ${reason} THEN v.outlier_flags ELSE COALESCE(v.outlier_flags,'[]'::jsonb)||jsonb_build_array(${reason}::text) END
+                 WHERE fee_verified_id=${id} AND review_status IN ('verified','approved') AND md5(to_jsonb(v)::text)=${row.selected_verified} RETURNING fee_verified_id,fee_raw_id,review_status
+              `;
+              if (updated.length !== 1 || Number(updated[0].fee_verified_id) !== id || Number(updated[0].fee_raw_id) !== Number(row.fee_raw_id) || updated[0].review_status !== "rejected") throw new RecheckDeferred("identity_changed");
+              action = "rejected";
+            } else if (publishedId != null && !wasRejected) {
+              const candidate = { feePublishedId: publishedId, institutionId: Number(row.institution_id), canonicalFeeKey, amount,
+                sourceDocumentId: Number(row.source_document_id), reason };
+              let archive = Boolean(check && sameStep);
+              if (!sameStep || !check) {
+                const look = await secondLook(tx, { check: DARWIN_RECHECK_CHECK, runId: options.runId,
+                  failing: check ? [candidate] : [], passing: check ? [] : [publishedId], dryRun: false, now: options.now, strictPersistence: true });
+                feedbackIds = look.feedbackIds ?? []; flagged = look.flagged; waiting = look.waiting; cleared = look.cleared;
+                archive = look.confirmed.length === 1;
+              }
+              action = check ? (archive ? "taken_down" : flagged ? "flagged" : "waiting") : "passed";
+              if (archive) {
+                const archived = await tx<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
+                  UPDATE published_fee_records p SET rolled_back_at=NOW(), rolled_back_by_batch_id=${`darwin-recheck-${options.runId}`},rolled_back_reason=${reason}
+                   WHERE fee_published_id=${publishedId} AND lineage_ref=${id} AND rolled_back_at IS NULL AND quarantined_at IS NULL
+                     AND md5(to_jsonb(p)::text)=${row.selected_published} RETURNING fee_published_id,lineage_ref
+                `;
+                if (archived.length !== 1 || Number(archived[0].lineage_ref) !== id || Number(archived[0].fee_published_id) !== publishedId) throw new RecheckDeferred("identity_changed");
+                const rejected = await tx<{ fee_verified_id: number | string; fee_raw_id: number | string; review_status: string }[]>`
+                  UPDATE verified_fee_observations v SET review_status='rejected', outlier_flags=CASE WHEN COALESCE(outlier_flags,'[]'::jsonb) ? ${reason} THEN outlier_flags ELSE COALESCE(outlier_flags,'[]'::jsonb)||jsonb_build_array(${reason}::text) END
+                   WHERE fee_verified_id=${id} AND review_status IN ('verified','approved') AND md5(to_jsonb(v)::text)=${row.selected_verified} RETURNING fee_verified_id,fee_raw_id,review_status
+                `;
+                if (rejected.length !== 1 || Number(rejected[0].fee_verified_id) !== id || Number(rejected[0].fee_raw_id) !== Number(row.fee_raw_id) || rejected[0].review_status !== "rejected") throw new RecheckDeferred("identity_changed");
+              }
+            }
+            const attemptId = await recordAttestedAttempt(tx, { institutionId: Number(row.institution_id), sourceDocumentId: Number(row.source_document_id),
+              stage: "verify", strategy: DARWIN_RECHECK_STRATEGY.strategy, version: DARWIN_RECHECK_STRATEGY.version, fingerprint: `verified:${id}`,
+              outcome: check ? "evidence_mismatch" : "ok", yieldCount: check ? 0 : 1, costMicrousd: 0, durationMs: 0, runId: options.runId, stepId: options.stepId, foldIntoPlaybook: false,
+              detail: { protocol: RECHECK_EXECUTION_PROTOCOL, batch_key: execution.batchKey, fee_verified_id: id, fee_raw_id: Number(row.fee_raw_id), fee_published_id: publishedId,
+                canonical_fee_key: canonicalFeeKey, amount, code: check?.code ?? null, rule: check?.rule ?? null, action, feedback_ids: feedbackIds,
+                selected_raw: row.selected_raw, selected_verified: row.selected_verified, selected_published: row.selected_published,
+                source_text_id: Number(text.id), normalized_text_sha256: createHash("sha256").update(text.normalized_text).digest("hex") } });
+            return { otherCode: false as const, action, code: check?.code, publishedId, attemptId, feedbackIds, flagged, waiting, cleared, passed: !wasRejected && !check };
+          });
+          execution.assessed += 1;
+          if (settled.otherCode) { result.secondLookOtherCode = (result.secondLookOtherCode ?? 0) + 1; continue; }
+          execution.settled += 1; result.checked += 1;
+          if (settled.passed) result.passed += 1;
+          if (settled.action === "restored") result.restored.push(id);
+          if (settled.action === "rejected") result.rejected.push({ feeVerifiedId: id, code: settled.code! });
+          if (settled.action === "taken_down") result.takenDown.push(settled.publishedId!);
+          result.flagged += settled.flagged; result.waiting += settled.waiting; result.cleared += settled.cleared;
+          witnesses.push({ feeVerifiedId: id, attemptId: settled.attemptId, feedbackIds: settled.feedbackIds, action: settled.action });
+        } catch (error) {
+          if (assessed) execution.assessed += 1;
+          defer(execution, id, error instanceof RecheckDeferred ? error.code : "settlement_failed");
+        }
+      }
+      // Legacy shadow helpers still report unknown assessment completeness; they do not
+      // become attested source/fee decisions merely because this producer has a v2 receipt.
+      execution.state = execution.phases.primary === "unavailable" ? "unavailable"
+        : execution.reasonCode || execution.unresolved || Object.values(execution.phases).some(state => state === "unavailable" || state === "partial") ? "partial" : "complete";
+      const proof = { execution, witnesses, selectedManifest: createHash("sha256").update(JSON.stringify(rows.map(row => [row.fee_verified_id,row.selected_verified,row.selected_raw,row.selected_published,row.selected_feedback]))).digest("hex") };
+      const payload = JSON.stringify(proof);
+      if (Buffer.byteLength(payload, "utf8") > 262_144) throw new RecheckDeferred("producer_witness_failed");
+      const events = await scope<{ id: number | string; matches: boolean }[]>`
+        INSERT INTO agent_run_events (agent_run_id,step_id,event_type,status,message,detail)
+        VALUES (${options.runId},${options.stepId},'darwin.recheck.assessed',${execution.state === "complete" ? "completed" : "blocked"},'Darwin selected-batch recheck execution witness.',${payload}::jsonb) RETURNING id,(agent_run_id=${options.runId} AND step_id=${options.stepId} AND event_type='darwin.recheck.assessed' AND detail=${payload}::jsonb) AS matches
+      `;
+      const eventId = Number(events[0]?.id);
+      if (events.length !== 1 || events[0].matches !== true || !positiveId(eventId)) throw new RecheckDeferred("producer_witness_failed");
+      execution.eventId = eventId;
+      if (result.takenDown.length > 0) invalidatePublicReadCache();
+      return result;
     });
-    result.takenDown = closed;
-    if (closed.length > 0) invalidatePublicReadCache();
   } catch (error) {
-    console.error("[darwin] verified recheck takedown failed", error instanceof Error ? error.message : error);
+    execution = executionFor(options);
+    execution.reasonCode = error instanceof RecheckDeferred ? error.code : "producer_witness_failed";
+    return freshResult(execution);
   }
-  return result;
 }

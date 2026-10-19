@@ -100,7 +100,7 @@ function emptyReceipt(state: State, reasonCode: VerifiedRecheckReceipt["reasonCo
 }
 
 /** A bounded projection, not an attestation that the producer selected or updated every row. */
-export function verifiedRecheckReceipt(
+function legacyVerifiedRecheckReceipt(
   input: unknown,
   context: { dryRun: unknown; learning: unknown },
 ): VerifiedRecheckReceipt {
@@ -207,11 +207,86 @@ export function verifiedRecheckReceipt(
   }
 }
 
+export const ATTESTED_RECHECK_RECEIPT_PROTOCOL = "darwin.recheck.receipt.v2";
+interface RecheckContext { dryRun: unknown; learning: unknown; runId?: number; stepId?: number; }
+export interface AttestedRecheckReceipt extends Omit<VerifiedRecheckReceipt, "protocol" | "state" | "outcomeBasis" | "reasonCode" | "assessmentCompleteness"> {
+  protocol: typeof ATTESTED_RECHECK_RECEIPT_PROTOCOL;
+  state: "referenced" | "unavailable" | "invalid";
+  scope: "selected_batch";
+  outcomeBasis: "producer_transaction_event_reference";
+  producerEventId: number | null;
+  runId: number | null;
+  stepId: number | null;
+  assessmentCompleteness: "complete" | "partial" | "unavailable";
+  selected: number | null;
+  assessed: number | null;
+  settled: number | null;
+  unresolved: number | null;
+  reasonCode: string | null;
+  phases: Record<string, string | null>;
+  effects: { restored: number | null; rejected: number | null; takenDown: number | null; flagged: number | null; cleared: number | null; waiting: number | null };
+  unresolvedSamples: Array<{ feeVerifiedId: number; code: string }>;
+  report: VerifiedRecheckReceipt;
+}
+const EXECUTION_REASONS = new Set(["invalid_run_context","transaction_unavailable","selection_failed","source_unavailable","identity_changed","settlement_failed","producer_witness_failed"]);
+const PHASE_STATES = new Set(["complete","partial","unavailable","not_run","cadence_skip","reported_unknown"]);
+/** v2 references a producer's real event. It never upgrades legacy v1 reports or remeasures fees. */
+export function verifiedRecheckReceipt(input: unknown, context: RecheckContext): VerifiedRecheckReceipt | AttestedRecheckReceipt {
+  const legacy = legacyVerifiedRecheckReceipt(input, context);
+  try {
+    const inputRecord = record(input);
+    const execution = record(inputRecord && field(inputRecord, "execution"));
+    if (!execution || field(execution,"protocol") !== "darwin.recheck.execution.v1") return legacy;
+    const runId = id(field(execution,"runId")), stepId = id(field(execution,"stepId"));
+    const eventId = id(field(execution,"eventId"));
+    const state = field(execution,"state");
+    const validContext = runId !== null && stepId !== null && runId === context.runId && stepId === context.stepId;
+    const phases = record(field(execution,"phases"));
+    const selected=count(field(execution,"selected")),assessed=count(field(execution,"assessed")),settled=count(field(execution,"settled")),unresolved=count(field(execution,"unresolved"));
+    const phaseKeys=["primary","due","source","olderShadow","dueShadow"];
+    const phaseShape=phases!==null && phaseKeys.every(key=>typeof field(phases,key)==="string" && PHASE_STATES.has(field(phases,key) as string));
+    const countsShape=assessed!==null && settled!==null && unresolved!==null && assessed<=1600 && settled<=assessed && unresolved<=1600
+      && (selected===null ? state==="unavailable" && assessed===0 && settled===0 && unresolved===0
+        : selected<=1600 && assessed<=selected && legacy.secondLookOtherCode!==null && settled+unresolved+legacy.secondLookOtherCode===selected);
+    const completeShape=state!=="complete" || (phases!==null && field(phases,"primary")==="complete" && (field(phases,"due")==="complete" || field(phases,"due")==="not_run") && field(phases,"source")==="complete" && unresolved===0);
+    const referenced = validContext && eventId !== null && phaseShape && countsShape && completeShape && (state === "complete" || state === "partial" || state === "unavailable");
+    const code = field(execution,"reasonCode");
+    const returnedSamples = field(execution,"samples");
+    const samples: Array<{ feeVerifiedId: number; code: string }> = [];
+    if (Array.isArray(returnedSamples)) for (let i=0;i<Math.min(returnedSamples.length,20);i++) {
+      const sample = record(field(returnedSamples,String(i))), sampleId = sample && id(field(sample,"feeVerifiedId")), sampleCode = sample && field(sample,"code");
+      if (sampleId && typeof sampleCode === "string" && EXECUTION_REASONS.has(sampleCode)) samples.push({feeVerifiedId:sampleId,code:sampleCode});
+    }
+    return {
+      ...legacy,
+      protocol: ATTESTED_RECHECK_RECEIPT_PROTOCOL, state: referenced ? "referenced" : validContext && eventId===null ? "unavailable" : "invalid",
+      scope: "selected_batch", outcomeBasis: "producer_transaction_event_reference", producerEventId: referenced ? eventId : null,
+      runId, stepId, assessmentCompleteness: referenced ? state === "complete" ? "complete" : state === "partial" ? "partial" : "unavailable" : "unavailable",
+      selected, assessed, settled, unresolved,
+      reasonCode: typeof code === "string" && EXECUTION_REASONS.has(code) ? code : null,
+      phases: Object.fromEntries(["primary","due","source","olderShadow","dueShadow"].map(key => {
+        const value = phases && field(phases,key); return [key,typeof value === "string" && PHASE_STATES.has(value) ? value : null];
+      })),
+      effects: { restored: referenced ? legacy.restored.reportedCount : null, rejected: referenced ? legacy.rejected.reportedCount : null,
+        takenDown: referenced ? legacy.takenDown.reportedCount : null, flagged: referenced ? legacy.flagged : null, cleared: referenced ? legacy.cleared : null, waiting: referenced ? legacy.waiting : null },
+      unresolvedSamples: samples, report: legacy,
+    };
+  } catch { return legacy; }
+}
+
 /** Render only this protocol's safe fields; legacy/malformed stored values never supply prose. */
 export function recheckReceiptNote(input: unknown): string {
   try {
     const receipt = record(input);
-    if (!receipt || field(receipt, "protocol") !== RECHECK_RECEIPT_PROTOCOL) return "";
+    if (!receipt) return "";
+    if (field(receipt,"protocol") === ATTESTED_RECHECK_RECEIPT_PROTOCOL) {
+      const shown = (value: unknown) => count(value)?.toLocaleString("en-US") ?? "unavailable";
+      const eventId = id(field(receipt,"producerEventId"));
+      if (field(receipt,"state") !== "referenced" || eventId === null) return " Recheck execution unavailable; no committed producer witness referenced. Unresolved inputs remain eligible for ordinary retry.";
+      const effects = record(field(receipt,"effects"));
+      return ` Recheck selected-batch witness #${eventId}: ${shown(field(receipt,"assessed"))} assessed, ${shown(field(receipt,"settled"))} settled assessments, ${shown(field(receipt,"unresolved"))} unresolved; ${shown(effects && field(effects,"restored"))} restored, ${shown(effects && field(effects,"rejected"))} rejected, ${shown(effects && field(effects,"takenDown"))} archived. Selected-batch assessment ${field(receipt,"assessmentCompleteness") === "complete" ? "complete" : field(receipt,"assessmentCompleteness") === "partial" ? "partial" : "unavailable"}; whole backlog unknown. This receipt references the producer transaction event, not a new measurement or policy decision.`;
+    }
+    if (field(receipt, "protocol") !== RECHECK_RECEIPT_PROTOCOL) return "";
     const state = field(receipt, "state");
     if (state === "not_run") {
       const reason = field(receipt, "reasonCode");

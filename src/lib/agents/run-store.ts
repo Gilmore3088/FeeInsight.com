@@ -921,7 +921,7 @@ async function executeAgenticStep(
         db: tx,
       });
       const recheck = verifiedRecheckReceipt(verification.recheck, {
-        dryRun: run.runKind === "dry_run", learning: verification.learning,
+        dryRun: run.runKind === "dry_run", learning: verification.learning, runId: run.id, stepId: step.id,
       });
       // Held fees get a way out: each is judged against the bank's schedule.
       const release = await runDarwinReleaseHeld({
