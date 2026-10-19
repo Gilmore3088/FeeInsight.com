@@ -317,10 +317,12 @@ function stackedFeeListColumns(all: PositionedItem[]): Band[] | null {
  * Text of one page with one line per baseline. A page in prose columns reads each column
  * top to bottom; a line that crosses the gutters (a title) closes the columns above it.
  */
-export function layoutPageText(items: PdfTextItem[]): string {
+export function layoutPageResult(items: PdfTextItem[]): { text: string; stackedColumns: boolean } {
   const all = positioned(items);
-  const bands = proseColumns(all) ?? leaderListColumns(all) ?? stackedFeeListColumns(all);
-  if (!bands) return linesText(all).join("\n");
+  const earlierBands = proseColumns(all) ?? leaderListColumns(all);
+  const stackedBands = earlierBands ? null : stackedFeeListColumns(all);
+  const bands = earlierBands ?? stackedBands;
+  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false };
   const out: string[] = [];
   let block: PositionedItem[] = [];
   const flush = () => {
@@ -336,7 +338,11 @@ export function layoutPageText(items: PdfTextItem[]): string {
     out.push(...linesText(line));
   }
   flush();
-  return out.join("\n");
+  return { text: out.join("\n"), stackedColumns: stackedBands != null };
+}
+
+export function layoutPageText(items: PdfTextItem[]): string {
+  return layoutPageResult(items).text;
 }
 
 export function layoutDocumentText(pages: PdfTextItem[][]): string {
