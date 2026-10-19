@@ -260,4 +260,22 @@ describe("H01 retained Hamilton shell navigation", () => {
       expect(screen.queryByRole("link", { name: "U.S. market" })).toBeNull();
     });
   });
+
+  describe("Overview opens on the institution (#2042)", () => {
+    it("names the research institution on Overview, not the U.S. market", () => {
+      route.pathname = "/pro/hamilton"; route.search = "";
+      render(<HamiltonShell {...seed} initialRequestPath="/pro/hamilton">Overview</HamiltonShell>);
+      const bar = screen.getByLabelText("Institution context").textContent;
+      expect(bar).toContain(`Researching: ${homeName}`);
+      expect(bar).not.toContain("Market view");
+    });
+
+    it("is the U.S. market when no institution is on file", async () => {
+      route.pathname = "/pro/hamilton"; route.search = "";
+      route.resolve.mockResolvedValue(null);
+      render(<HamiltonShell {...seed} selectedInstitutionId={null} initialRequestPath="/pro/hamilton"
+        institutionContext={{ ...seed.institutionContext, name: null }} accountContext={{ status: "unlinked", institution: null }}>Overview</HamiltonShell>);
+      await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Market view: U.S. market"));
+    });
+  });
 });

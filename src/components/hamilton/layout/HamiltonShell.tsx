@@ -122,7 +122,10 @@ export function HamiltonShell({
   const researchLabel = selection.invalid ? null
     : currentInstitution?.name
     ?? (selection.artifact ? (canUseSeed && institutionContext.name ? institutionContext.name : null) : null);
-  const marketScope = marketScopeLabel(pathname, selection, searchParams.get("view"));
+  // Overview opens on the research institution's briefing (#2042); with none on file it is the U.S. market.
+  const settledWithNone = !seededInstitution && resolved?.requestKey === requestKey && resolved.institution === null;
+  const marketScope = marketScopeLabel(pathname, selection, searchParams.get("view"))
+    ?? (pathname === "/pro/hamilton" && !selection.research && !selection.institutionId && settledWithNone ? "U.S. market" : null);
   // The peer set was read for the server's subject; a different client subject shows none.
   const peerContext = marketScope || !researchLabel || currentInstitution?.id !== selectedInstitutionId ? undefined : peerLabel;
   return (
@@ -207,6 +210,6 @@ function marketScopeLabel(pathname: string, selection: ReturnType<typeof hamilto
   if (scope?.kind === "state") return `${STATE_NAMES[scope.stateCode] ?? scope.stateCode} market`;
   if (scope?.kind === "national") return "U.S. market";
   // The monthly briefing (view=institution) reads one institution, named like any other subject.
-  if (!selection.research && view !== "institution" && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "U.S. market";
+  if (!selection.research && view !== "institution" && pathname === "/pro/intelligence") return "U.S. market";
   return null;
 }

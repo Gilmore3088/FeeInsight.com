@@ -3322,7 +3322,7 @@ export async function reapStaleAgentSteps({
             (agent_run_id, step_id, event_type, status, message, detail)
           VALUES
             (${runId}, ${stepId}, 'step.dead', 'failed', ${message},
-             ${JSON.stringify({ step_key: stepKey, attempts: attempt, reaper: true })}::jsonb)
+             ${JSON.stringify({ step_key: stepKey, attempts: attempt, reaper: true, deploy: currentDeploy() })}::jsonb)
         `;
         await cancelStepsAfterRunFailure(tx, runId, stepKey);
         await updateStateLaneTerminalStatus(tx, runId, "failed");
