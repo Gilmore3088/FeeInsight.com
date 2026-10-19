@@ -18,6 +18,7 @@ import {
   statsPopulationFilters,
   summarizeFeesBy,
   valuePerInstitution,
+  activeInstitutionFilter,
 } from "./fee-stats";
 import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
 import { peerFilterParts } from "@/lib/peer-filter-words";
@@ -197,7 +198,8 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}])
        AND ${statusFilter}
-       AND ${STATS_ROW_FILTER}`
+       AND ${STATS_ROW_FILTER}
+       AND ${activeInstitutionFilter("ct")}`
   ) as IndexRow[];
 }
 
@@ -1127,7 +1129,8 @@ export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeInd
       WHERE ct.state_code = $1
         AND ef.fee_category IS NOT NULL
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [stateCode],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
@@ -1146,7 +1149,8 @@ export async function getDistrictFeeIndexes(district: number): Promise<StateFeeI
       WHERE ct.fed_district = $1
         AND ef.fee_category IS NOT NULL
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [district],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);

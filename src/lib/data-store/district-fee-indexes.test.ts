@@ -6,7 +6,8 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { getDistrictFeeIndexes } from "./fee-index";
+import { getDistrictFeeIndexes, getNationalIndex, getStateFeeIndexes } from "./fee-index";
+import { activeInstitutionFilter } from "./fee-stats";
 import { sql } from "./connection";
 
 type Mock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -51,5 +52,18 @@ describe("getDistrictFeeIndexes", () => {
     expect(result.bank.find((e) => e.fee_category === "overdraft")?.institution_count).toBe(3);
     expect(result.credit_union.find((e) => e.fee_category === "overdraft")?.institution_count).toBe(2);
     expect(result.institution_values?.overdraft).toHaveLength(5);
+  });
+});
+
+describe("one institution rule for public medians (#1980)", () => {
+  beforeEach(() => db.unsafe.mockReset());
+
+  it("leaves institutions the regulator marks inactive out of state, district and national medians", async () => {
+    db.unsafe.mockResolvedValue([]);
+    await getStateFeeIndexes("FL");
+    await getDistrictFeeIndexes(6);
+    await getNationalIndex();
+    expect(db.unsafe).toHaveBeenCalledTimes(3);
+    for (const [text] of db.unsafe.mock.calls) expect(String(text)).toContain(activeInstitutionFilter("ct"));
   });
 });
