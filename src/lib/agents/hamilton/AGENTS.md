@@ -602,6 +602,36 @@ belongs to the publish step once Knox reads the newer copy. Each pair is checked
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
+The Knox-row witness preserves the fee's normalized name, institution, audience (missing
+legacy values mean `unknown`), frequency, amount kind/rate basis, and available raw product
+scope (#2117). Price alone never identifies a fee; absent or incompatible witnesses follow
+the existing stored-source verdict and recognition gates. Quarantined rows are excluded from
+selection and planning, and retirement/restoration writes re-check the hold (#2118). A retirement
+or restore also requires the selected lineage to remain unchanged. Only the publication rows returned by
+the guarded update can reject verified lineage; returned results, attempt counts and events
+describe actual changes, with planned counts retained separately in attempts. A hold or closure
+committed after selection cannot reject unchanged lineage.
+
+A restore must still refer to the exact selected closure (reason and rollback timestamp),
+so an intervening newer-copy closure with the same lineage is never cleared. The selector
+reads and binds that timestamp as text; only the server casts it to `timestamptz`, preserving
+PostgreSQL microseconds that the driver's timestamp-array serializer would truncate through Date.
+
+The restore duplicate check compares the same audience, frequency, variant, amount kind,
+rate basis and rate values as well as the institution/category/name/amount (#2121). A live
+consumer sibling cannot block a distinct business fee; unstated applicability is equal only
+to the same normalized unstated value, never a wildcard. An equivalent live twin still blocks
+restoration. Percentage fees have no dollar amount, so the existing planner does not select
+them for retirement or restoration; rate comparisons are defensive identity boundaries.
+
+These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
+without reopening settled decisions; unlike the earlier text guards, tightening the witness
+can retire more. Bayes records the explicit no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
+list of wrong fees or approved takedowns. Any historical replay needs its own impact review and
+applicable official-source evidence. Different-URL editions (#1945/#1911) remain a separate
+source/product provenance problem.
+
 ## Current-copy check
 
 `current-copy.ts` (`secondLookFeesNotOnCurrentCopy`, after `refresh-copy.ts` in each publish
