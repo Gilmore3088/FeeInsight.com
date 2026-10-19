@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { extractText } from "unpdf";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
+import type { SectionTracking } from "@/lib/hamilton/generate";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -92,8 +93,9 @@ vi.mock("@/lib/hamilton/generate", async () => {
   // Real figure check over the mocked section text, as generateVerifiedSection does.
   const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
   return {
-    generateVerifiedSection: async (input: SectionInput) => {
+    generateVerifiedSection: async (input: SectionInput, tracking: SectionTracking = {}) => {
       const section = await mocks.generateSection(input);
+      tracking.onProviderResponse?.(section.usage, section.model);
       const check = checkNarrativeFigures(section.narrative, input.data);
       return check.unmatched.length > 0
         ? { status: "needs_review", section, unmatched: check.unmatched, citation: {} }

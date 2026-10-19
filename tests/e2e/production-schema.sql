@@ -3161,6 +3161,12 @@ CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
   ON public.source_documents (companion_source_id, id DESC)
   WHERE companion_source_id IS NOT NULL;
 
+-- #2219: exercise the production companion-read capability, including account_name.
+-- A source_documents column alone silently leaves Rosetta's companion schema gate off.
+-- The enabled companion finder also reads the existing report-request institution link.
+\ir ../../supabase/migrations/20270110000003_lead_report_payment.sql
+\ir ../../supabase/migrations/20270109000000_companion_fee_pages.sql
+
 
 -- 2026-10-10 audience repair: roles are metadata-only in the throwaway CI database.
 DO $$ BEGIN

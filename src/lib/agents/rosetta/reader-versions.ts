@@ -9,7 +9,10 @@
  *   ROSETTA_TABLE_ROWS_VERSION   table-rows.ts
  */
 export const ROSETTA_READ_VERSION = 3;
-export const PDF_LAYOUT_VERSION = 4;
+export const PDF_LAYOUT_VERSION = 5;
+/** Existing prose rereads stay settled; the new detector has its own due witness. */
+export const PDF_PROSE_REREAD_VERSION = 4;
+export const PDF_STACKED_REPAIR_VERSION = 1;
 export const ROSETTA_OCR_VERSION = 2;
 export const ROSETTA_JS_FALLBACK_VERSION = 3;
 export const ROSETTA_TABLE_ROWS_VERSION = 1;
