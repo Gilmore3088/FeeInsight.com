@@ -288,8 +288,9 @@ describe.skipIf(!connection)("private exact normalized witnesses", () => {
       repairPid = Number(backend.pid);
       return runRepair(scope, fixture);
     });
+    let observedSourceWait = false;
+    let outcomes!: Awaited<ReturnType<typeof Promise.allSettled<[typeof writer, typeof repair]>>>;
     try {
-      let observedSourceWait = false;
       const deadline = Date.now() + 5_000;
       while (Date.now() < deadline) {
         const [activity] = await db`
@@ -301,11 +302,16 @@ describe.skipIf(!connection)("private exact normalized witnesses", () => {
         }
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      expect(observedSourceWait).toBe(true);
     } finally {
       releaseWriter();
+      outcomes = await Promise.allSettled([writer, repair]);
+      // Older PDF suites inspect all repair attempts. Remove only this committed
+      // fixture's mutable ledger records; keep its immutable witness evidence.
+      await db`DELETE FROM pipeline_attempts WHERE source_document_id=${fixture.documentId}`;
+      await db`DELETE FROM pipeline_feedback WHERE source_document_id=${fixture.documentId}`;
     }
-    const [writerOutcome, repairOutcome] = await Promise.allSettled([writer, repair]);
+    expect(observedSourceWait).toBe(true);
+    const [writerOutcome, repairOutcome] = outcomes;
     if (writerOutcome.status === "rejected") throw writerOutcome.reason;
     if (repairOutcome.status === "rejected") throw repairOutcome.reason;
     const outcome = repairOutcome.value;
