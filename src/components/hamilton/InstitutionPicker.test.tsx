@@ -20,4 +20,16 @@ describe("InstitutionPicker from the keyboard (#2043 review)", () => {
     fireEvent.keyDown(screen.getByLabelText("Institution"), { key: "Escape" });
     expect(onEscape).toHaveBeenCalled();
   });
+
+  it("does not pick a match for older text when Enter comes before the new search returns", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([match]))));
+    const onSelect = vi.fn();
+    render(<InstitutionPicker inputId="p" label="Institution" onSelect={onSelect} />);
+    const box = screen.getByLabelText("Institution");
+    fireEvent.change(box, { target: { value: "Capital" } });
+    await screen.findByText("Capital City Bank", {}, { timeout: 2000 });
+    fireEvent.change(box, { target: { value: "Capital One" } });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalledWith(match);
+  });
 });
