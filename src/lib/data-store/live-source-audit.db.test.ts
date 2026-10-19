@@ -16,7 +16,21 @@ import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedul
 
 import { runStorageRetention } from "@/lib/agents/atlas/storage-retention";
 
-const runtime=vi.hoisted(()=>({db:null as postgres.Sql|null,provider:vi.fn(),observer:null as typeof import("@/lib/agents/deming/live-source-observer").observeLiveAuditGroup|null}));
+type AdmittedReceipt={client:postgres.Sql;commands:string[];used:boolean};
+const runtime=vi.hoisted(()=>({receipt:null as AdmittedReceipt|null,db:null as postgres.Sql|null,provider:vi.fn(),observer:null as typeof import("@/lib/agents/deming/live-source-observer").observeLiveAuditGroup|null}));
+// Only the real-caller COMMIT control injects an already-admitted owned client.
+// Ordinary/cold-start controls still use the unchanged native receipt constructor.
+vi.mock("./live-source-sql",async(original)=>{
+  const actual=await original<typeof import("./live-source-sql")>();
+  return {...actual,inLiveAuditTransaction:((...args:Parameters<typeof actual.inLiveAuditTransaction>)=>{
+    const [supplied,work,deadline]=args,fixture=runtime.receipt;
+    if(!fixture||deadline===undefined||deadline-Date.now()>450)return actual.inLiveAuditTransaction(supplied,work,deadline);
+    runtime.receipt=null;
+    return actual.withLiveAuditReceiptPhase(supplied,deadline,scope=>actual.inLiveAuditTransaction(scope,work,deadline),{
+      clientFactory:()=>{fixture.used=true;return fixture.client as unknown as typeof supplied;},
+    });
+  }) as typeof actual.inLiveAuditTransaction};
+});
 vi.mock("@/lib/data-store/connection",async(original)=>({...await original<typeof import("./connection")>(),
   sql:new Proxy(()=>{}, {apply:(_target,_this,args)=>Reflect.apply(runtime.db!,runtime.db,args),get:(_target,key)=>{const value=Reflect.get(runtime.db!,key);return typeof value==="function"?value.bind(runtime.db):value;}}),
   withTransaction:async(callback:(tx:postgres.TransactionSql)=>Promise<unknown>)=>runtime.db!.begin(callback),
@@ -40,6 +54,23 @@ const tables = { agent_runs: "id", agent_run_steps: "id", agent_run_events: "id"
 let admin: postgres.Sql, db: postgres.Sql;
 const seed = "a".repeat(64);
 const appDb = () => db as unknown as Parameters<typeof createLiveAuditDraw>[0]["db"];
+
+/** Admission is a fixture precondition for tests of behavior after admission.
+ * Preserve the supplied host/auth/TLS/schema/type options; own and close this client.
+ * Cold/startup-exhaustion controls below keep the production constructor/deadline.
+ */
+async function admittedReceipt(supplied:postgres.Sql=db):Promise<AdmittedReceipt>{
+  const commands:string[]=[];
+  const client=postgres({...supplied.options,max:1,connect_timeout:1,debug:(_connection:number,query:string)=>{commands.push(query);}} as unknown as postgres.Options<Record<string,postgres.PostgresType>>);
+  try{
+    for(const key of ['host','port','database','user','ssl','connection','types','transform'] as const)expect(client.options[key]).toEqual(supplied.options[key]);
+    expect(client.options.pass===supplied.options.pass).toBe(true); // Compare auth without printing it.
+    const [ready]=await client`SELECT current_schema() AS schema,1.25::numeric AS amount,'{"bound":true}'::jsonb AS metadata,
+      (SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()) AS ssl`;
+    expect(ready).toEqual({schema,amount:1.25,metadata:{bound:true},ssl:supplied.options.ssl!==false});
+    return {client,commands,used:false};
+  }catch(error){await client.end({timeout:0});throw error;}
+}
 
 describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL", () => {
   beforeAll(async () => {
@@ -79,53 +110,76 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
   afterAll(async () => { if(db)await db.end(); if(admin){ await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await admin.end(); } });
 
   it("cancels an actual slow SQL statement, rolls back earlier writes and closes only its owned client",async()=>{
-    let owned:postgres.Sql|undefined;
-    const at=Date.now();
-    await expect(withLiveAuditReceiptPhase(appDb()!,at+450,scope=>inLiveAuditTransaction(scope,async tx=>{
-      await tx`UPDATE published_fee_records SET amount=99 WHERE fee_published_id=1`;
-      await tx`SELECT pg_sleep(5) /* live_source_owned_deadline */`;
-    }),{clientFactory:options=>{owned=postgres(options);return owned as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow();
-    expect(Date.now()-at).toBeLessThan(1500);
-    expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
-    const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database()
-      AND state='active' AND query LIKE '%pg_sleep(5)%live_source_owned_deadline%' AND pid<>pg_backend_pid()`;
-    expect(active.n).toBe(0);await expect(owned!`SELECT 1`).rejects.toThrow();
+    const fixture=await admittedReceipt(),at=Date.now();
+    try{
+      await expect(withLiveAuditReceiptPhase(appDb()!,at+450,scope=>inLiveAuditTransaction(scope,async tx=>{
+        const [changed]=await tx`UPDATE published_fee_records SET amount=99 WHERE fee_published_id=1 RETURNING amount`;
+        expect(changed.amount).toBe(99);
+        await tx`SELECT pg_sleep(5) /* live_source_owned_deadline */`;
+      }),{clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow();
+      expect(fixture.used).toBe(true);expect(fixture.commands).toContain('BEGIN');
+      expect(fixture.commands.some(query=>query.includes('live_source_owned_deadline'))).toBe(true);
+      expect(Date.now()-at).toBeLessThan(1500);
+      expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
+      const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database()
+        AND state='active' AND query LIKE '%pg_sleep(5)%live_source_owned_deadline%' AND pid<>pg_backend_pid()`;
+      expect(active.n).toBe(0);await expect(fixture.client`SELECT 1`).rejects.toThrow();
+    }finally{await fixture.client.end({timeout:0});}
   });
 
   it("rejects an ordinary receipt-phase statement outside its explicit transaction before any backend work",async()=>{
-    await expect(withLiveAuditReceiptPhase(appDb()!,Date.now()+300,scope=>scope`SELECT pg_sleep(5) /* outside_receipt_transaction */`)).rejects.toThrow('live_audit_receipt_transaction_required');
-    const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND state='active'
-      AND query LIKE '%pg_sleep(5)%outside_receipt_transaction%' AND pid<>pg_backend_pid()`;expect(active.n).toBe(0);
+    const fixture=await admittedReceipt();let entered=false;
+    try{
+      await expect(withLiveAuditReceiptPhase(appDb()!,Date.now()+300,scope=>{entered=true;return scope`SELECT pg_sleep(5) /* outside_receipt_transaction */`;},
+        {clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow('live_audit_receipt_transaction_required');
+      expect(fixture.used).toBe(true);expect(entered).toBe(true);expect(fixture.commands.some(query=>query.includes('pg_sleep'))).toBe(false);
+      const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND state='active'
+        AND query LIKE '%pg_sleep(5)%outside_receipt_transaction%' AND pid<>pg_backend_pid()`;expect(active.n).toBe(0);
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
+    }finally{await fixture.client.end({timeout:0});}
   });
 
   it("enforces a cumulative SQL budget and preserves the supplied schema, serializers and TLS",async()=>{
-    await withLiveAuditReceiptPhase(appDb()!,Date.now()+1000,scope=>inLiveAuditTransaction(scope,async tx=>{
+    const positive=await admittedReceipt();
+    try{await withLiveAuditReceiptPhase(appDb()!,Date.now()+1000,scope=>inLiveAuditTransaction(scope,async tx=>{
       const [value]=await tx`SELECT current_schema() AS schema,1.25::numeric AS amount,'{"bound":true}'::jsonb AS metadata`;
       expect(value).toEqual({schema,amount:1.25,metadata:{bound:true}});
-    }));
-    const at=Date.now();
-    await expect(inLiveAuditTransaction(appDb()!,async tx=>{
-      await tx`UPDATE published_fee_records SET amount=98 WHERE fee_published_id=1`;
-      for(let i=0;i<5;i++)await tx`SELECT pg_sleep(0.12) /* live_source_cumulative_deadline */`;
-    },at+430)).rejects.toThrow();
-    expect(Date.now()-at).toBeLessThan(1500);expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
+    }),{clientFactory:()=>{positive.used=true;return positive.client as unknown as NonNullable<ReturnType<typeof appDb>>;}});
+      expect(positive.used).toBe(true);
+    }finally{await positive.client.end({timeout:0});}
+    const fixture=await admittedReceipt(),at=Date.now();let completedStatements=0;
+    try{
+      await expect(withLiveAuditReceiptPhase(appDb()!,at+430,scope=>inLiveAuditTransaction(scope,async tx=>{
+        const [changed]=await tx`UPDATE published_fee_records SET amount=98 WHERE fee_published_id=1 RETURNING amount`;
+        expect(changed.amount).toBe(98);
+        for(let i=0;i<5;i++){await tx`SELECT pg_sleep(0.12) /* live_source_cumulative_deadline */`;completedStatements++;}
+      }),{clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow();
+      expect(fixture.used).toBe(true);expect(fixture.commands).toContain('BEGIN');expect(completedStatements).toBeGreaterThanOrEqual(2);
+      expect(fixture.commands.filter(query=>query.includes('live_source_cumulative_deadline')).length).toBeGreaterThanOrEqual(3);
+      expect(Date.now()-at).toBeLessThan(1500);expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
+    }finally{await fixture.client.end({timeout:0});}
   });
 
   it("reports an actual slow deferred COMMIT as unknown, then observes its controlled completion",async()=>{
-    await db.unsafe(`CREATE FUNCTION ${schema}.slow_live_audit_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.8); RETURN NEW; END $$`);
-    await db.unsafe(`CREATE CONSTRAINT TRIGGER slow_live_audit_commit AFTER UPDATE ON published_fee_records DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_live_audit_commit()`);
-    const at=Date.now();let pid:number|null=null;
+    const fixture=await admittedReceipt();let pid:number|null=null;
     try{
-      await expect(inLiveAuditTransaction(appDb()!,async tx=>{pid=Number((await tx`SELECT pg_backend_pid() AS pid`)[0].pid);await tx`UPDATE published_fee_records SET amount=97 WHERE fee_published_id=1`;},at+450)).rejects.toMatchObject({name:"LiveAuditSqlBudgetError",commitOutcome:"unknown"});
+      await db.unsafe(`CREATE FUNCTION ${schema}.slow_live_audit_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.8); RETURN NEW; END $$`);
+      await db.unsafe(`CREATE CONSTRAINT TRIGGER slow_live_audit_commit AFTER UPDATE ON published_fee_records DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_live_audit_commit()`);
+      const at=Date.now();
+      await expect(withLiveAuditReceiptPhase(appDb()!,at+450,scope=>inLiveAuditTransaction(scope,async tx=>{pid=Number((await tx`SELECT pg_backend_pid() AS pid`)[0].pid);await tx`UPDATE published_fee_records SET amount=97 WHERE fee_published_id=1`;}),
+        {clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toMatchObject({name:"LiveAuditSqlBudgetError",commitOutcome:"unknown"});
+      expect(fixture.used).toBe(true);expect(pid).not.toBeNull();expect(fixture.commands).toContain('COMMIT');
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
       expect(Date.now()-at).toBeLessThan(1500);
       await vi.waitFor(async()=>{const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE pid=${pid!} AND xact_start IS NOT NULL`;expect(active.n).toBe(0);},{timeout:2500,interval:10});
       // Already-sent COMMIT may finish after client termination. Never claim rollback.
       expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(97);
-    }finally{await db.unsafe(`DROP TRIGGER slow_live_audit_commit ON published_fee_records`);await db.unsafe(`DROP FUNCTION ${schema}.slow_live_audit_commit()`);}
+    }finally{await fixture.client.end({timeout:0});await db.unsafe(`DROP TRIGGER IF EXISTS slow_live_audit_commit ON published_fee_records`);await db.unsafe(`DROP FUNCTION IF EXISTS ${schema}.slow_live_audit_commit()`);}
   });
 
   it("terminates only its native data client without opening an auxiliary cancellation channel",async()=>{
-    const sockets=new Set<Socket>();const cancelSockets:Socket[]=[];let cancellationChannels=0,completed=false;
+    const sockets=new Set<Socket>();const cancelSockets:Socket[]=[];let cancellationChannels=0,completed=false,entered=false;
     const track=(socket:Socket)=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));socket.on('error',()=>undefined);return socket;};
     const server=createServer(socket=>{track(socket);socket.once('data',first=>{
       if(first.length>=8&&first.readInt32BE(4)===80877102){cancellationChannels++;cancelSockets.push(socket);socket.write(Buffer.from([90,0,0,0,5,73]));return;}
@@ -133,11 +187,19 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     });});
     await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const address=server.address();if(!address||typeof address==='string')throw new Error('fixture_port');
     const supplied=postgres({...db.options,host:['127.0.0.1'],port:[address.port],ssl:false} as unknown as postgres.Options<Record<string,postgres.PostgresType>>);
-    const result=inLiveAuditTransaction(supplied as unknown as NonNullable<ReturnType<typeof appDb>>,async tx=>{await tx`SELECT pg_sleep(5)`;},Date.now()+450);
-    void result.then(()=>{completed=true;},()=>{completed=true;});
-    try{await expect(result).rejects.toThrow();expect(completed).toBe(true);expect(cancellationChannels).toBe(0);
-      expect(cancelSockets).toEqual([]);await vi.waitFor(()=>expect([...sockets].every(socket=>socket.closed)).toBe(true),{timeout:700,interval:10});
-    }finally{for(const socket of sockets)socket.destroy();await supplied.end({timeout:0});await result.catch(()=>undefined);await new Promise<void>(done=>server.close(()=>done()));}
+    let fixture:AdmittedReceipt|undefined,result:Promise<unknown>|undefined;
+    try{
+      const admitted=fixture=await admittedReceipt(supplied);
+      result=withLiveAuditReceiptPhase(supplied as unknown as NonNullable<ReturnType<typeof appDb>>,Date.now()+450,scope=>inLiveAuditTransaction(scope,async tx=>{
+        entered=true;await tx`SELECT pg_sleep(5) /* live_source_proxy_work */`;
+      }),{clientFactory:()=>{admitted.used=true;return admitted.client as unknown as NonNullable<ReturnType<typeof appDb>>;}});
+      void result.then(()=>{completed=true;},()=>{completed=true;});
+      await expect(result).rejects.toThrow();expect(admitted.used).toBe(true);expect(entered).toBe(true);expect(admitted.commands).toContain('BEGIN');
+      expect(admitted.commands.some(query=>query.includes('live_source_proxy_work'))).toBe(true);
+      expect(completed).toBe(true);expect(cancellationChannels).toBe(0);expect(cancelSockets).toEqual([]);
+      await expect(admitted.client`SELECT 1`).rejects.toThrow();
+      await vi.waitFor(()=>expect([...sockets].every(socket=>socket.closed)).toBe(true),{timeout:700,interval:10});
+    }finally{await fixture?.client.end({timeout:0});for(const socket of sockets)socket.destroy();await supplied.end({timeout:0});await result?.catch(()=>undefined);await new Promise<void>(done=>server.close(()=>done()));}
   });
 
   it("preserves a supplied Unix path, TLS and startup role through an isolated local PostgreSQL proxy",async()=>{
@@ -608,15 +670,18 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
   });
 
   it("records the real observer caller's unknown commit failure and does not duplicate a later committed chunk on retry",async()=>{
-    const origin=await draw();vi.stubEnv('EXECUTION_BACKEND','agentic_v1');
-    runtime.observer=async group=>({entryUrl:group.policy.websiteUrl,pages:[],candidateUrls:[],complete:false,reason:'owned_fixture_unreadable'});
-    await db.unsafe(`CREATE FUNCTION ${schema}.slow_live_chunk_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='live_fee_audit.chunk' THEN PERFORM pg_sleep(0.8); END IF; RETURN NEW; END $$`);
-    await db.unsafe(`CREATE CONSTRAINT TRIGGER slow_live_chunk_commit AFTER INSERT ON agent_run_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_live_chunk_commit()`);
-    const originalBudget=LIVE_SOURCE_AUDIT.settleMs;
-    Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:450,configurable:true});
+    const fixture=await admittedReceipt(),originalBudget=LIVE_SOURCE_AUDIT.settleMs;
     try{
+      const origin=await draw();vi.stubEnv('EXECUTION_BACKEND','agentic_v1');
+      runtime.observer=async group=>({entryUrl:group.policy.websiteUrl,pages:[],candidateUrls:[],complete:false,reason:'owned_fixture_unreadable'});
+      await db.unsafe(`CREATE FUNCTION ${schema}.slow_live_chunk_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='live_fee_audit.chunk' THEN PERFORM pg_sleep(0.8); END IF; RETURN NEW; END $$`);
+      await db.unsafe(`CREATE CONSTRAINT TRIGGER slow_live_chunk_commit AFTER INSERT ON agent_run_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_live_chunk_commit()`);
+      Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:450,configurable:true});
       const scheduled=await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true});
+      runtime.receipt=fixture;
       const result=await executeAgentRun(scheduled.runId!,{allowProviderSteps:false,maxSteps:1});
+      expect(fixture.used).toBe(true);expect(fixture.commands).toContain('COMMIT');
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
       expect(result.status).toBe('failed');
       const [failure]=await db`SELECT message FROM agent_run_events WHERE agent_run_id=${scheduled.runId!} AND event_type='step.failed' ORDER BY id DESC LIMIT 1`;
       expect(failure.message).toContain('commit_outcome_unknown');
@@ -628,8 +693,8 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
       expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.chunk}`)[0].n).toBe(1);
       expect((await readLiveSourceAudit(appDb()!))?.summary).toMatchObject({selected:3,attempted:3,unknown:3,supported:0,support:null});
       expect(runtime.provider).not.toHaveBeenCalled();
-    }finally{Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:originalBudget,configurable:true});runtime.observer=null;vi.unstubAllEnvs();
-      await db.unsafe(`DROP TRIGGER slow_live_chunk_commit ON agent_run_events`);await db.unsafe(`DROP FUNCTION ${schema}.slow_live_chunk_commit()`);}
+    }finally{runtime.receipt=null;await fixture.client.end({timeout:0});Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:originalBudget,configurable:true});runtime.observer=null;vi.unstubAllEnvs();
+      await db.unsafe(`DROP TRIGGER IF EXISTS slow_live_chunk_commit ON agent_run_events`);await db.unsafe(`DROP FUNCTION IF EXISTS ${schema}.slow_live_chunk_commit()`);}
   });
 
   it("rechecks catalog state after a real snapshot row-lock wait and never archives prewait support",async()=>{

@@ -17,6 +17,13 @@ self-checksummed archive arithmetic, post-snapshot-lock state drift and malforme
 A capture review also exposed same-hash reuse across URLs and key repair; exact successful existing
 URL/key reuse or a separate side copy now preserves old rows unchanged, with blocked disposition
 when insertion is unsafe.
+The first CI run also exposed three post-admission controls whose tiny phase budgets expired
+at cold TLS startup before their intended assertions. Those controls now pre-admit separately
+owned native clients through the existing test factory, witness actual COMMIT/closure and retain
+the server-write/no-duplicate assertions. Rollback, cumulative-work and proxy-shutdown controls
+also require actual work witnesses instead of treating a startup rejection as their result.
+Independent cold-admission exhaustion controls remain;
+production helper bytes, total deadlines and original endpoint/auth/schema options are unchanged.
 The archive's ordered immutable origin IDs/manifest digest does not reconstruct full origin bytes
 after retention. Missing/over-cap/expired evidence stays unknown or explicitly unavailable.
 
