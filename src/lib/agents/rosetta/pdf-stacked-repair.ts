@@ -29,6 +29,23 @@ export async function pdfStackedRepairSchemaReady(db: typeof sql): Promise<boole
 /** A bounded free read; it does not raise the general reader or prose replay floors. */
 export const PDF_STACKED_REPAIR_MAX_PER_RUN = 4;
 
+/** A successful check names the artifact it actually committed, not just a reader output. */
+export function pdfStackedPersistedSql(text: string, attempt: string): string {
+  for (const alias of [text, attempt]) if (!/^[a-z_][a-z0-9_]*$/i.test(alias)) throw new Error("Invalid repair alias");
+  return `(${attempt}.outcome = 'ok'
+    AND COALESCE((${attempt}.detail->>'pdf_stacked')::int, 0) >= ${PDF_STACKED_REPAIR_VERSION}
+    AND ${attempt}.detail->>'persisted_text_id' = ${text}.id::text
+    AND ${attempt}.detail->>'persisted_text_hash' = ${text}.text_hash)`;
+}
+
+/** Unavailable/mismatched vault bytes keep the existing explicit operator-review exclusion. */
+export function pdfStackedFailedReviewSql(attempt: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/i.test(attempt)) throw new Error("Invalid repair alias");
+  return `(${attempt}.strategy = '${PDF_STACKED_REPAIR_STRATEGY}' AND ${attempt}.outcome <> 'ok'
+    AND COALESCE((${attempt}.detail->>'pdf_stacked_requested')::int, 0) >= ${PDF_STACKED_REPAIR_VERSION}
+    AND COALESCE(${attempt}.detail->>'pdf_stacked_rejected', 'false') <> 'true')`;
+}
+
 /**
  * Stored-text evidence of columns whose next-line bullet prices were interleaved.
  * Geometry in pdf-layout.ts still has to prove the independent columns. This cheap
@@ -53,8 +70,8 @@ export function pdfStackedRepairDueSql(alias: string): string {
          AND stacked_read.institution_id = ${alias}.institution_id
          AND stacked_read.source_document_id = ${alias}.source_document_id
          AND stacked_read.input_fingerprint = ${alias}.source_hash
-         AND COALESCE((stacked_read.detail->>'pdf_stacked_requested')::int,
-           (stacked_read.detail->>'pdf_stacked')::int, 0) >= ${PDF_STACKED_REPAIR_VERSION}
+         AND (${pdfStackedPersistedSql(alias, "stacked_read")}
+           OR ${pdfStackedFailedReviewSql("stacked_read")})
     )
   )`;
 }

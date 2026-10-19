@@ -71,6 +71,7 @@ import {
 } from "@/lib/agents/rosetta/ocr";
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
+import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
 import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
 import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import {
@@ -111,6 +112,7 @@ interface ReadCandidateRow {
   is_reread?: boolean | null;
   /** A one-time, free current-copy check for interleaved stacked price columns. */
   pdf_stacked_repair_due?: boolean | null;
+  pdf_repair_incumbent?: { id: number; text_hash: string; source_hash: string; normalized_text: string } | null;
   /**
    * True when these bytes were reopened (see `reopenScriptLoadedFeePages`) and not read
    * since: the failure recorded in the playbook before the reopen no longer stands.
@@ -191,6 +193,9 @@ export interface ReadResult {
    * the alternate tried, and whether its text replaced the primary reader's.
    */
   escalation?: { to: string; used: boolean } | null;
+  /** Intrinsic geometry proof, bound to the actual vault bytes and normalized output. */
+  stackedGeometry?: StackedGeometryReceipt;
+  repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };
   durationMs: number;
 }
 
@@ -827,6 +832,11 @@ async function readCandidate(
     const normalizedText = normalizeWhitespace(extracted.text);
     if (normalizedText.length > 0 && !isLikelyScannedPdf(normalizedText, extracted.totalPages)) {
       const pageTexts = (extracted.pages ?? [extracted.text]).map(normalizeWhitespace);
+      // A custom/alternate reader cannot assert geometry for another output or source.
+      if (extracted.stackedGeometry?.textHash === textSha256(extracted.text)
+        && extracted.stackedGeometry.sourceHash === base.sourceHash) {
+        base.stackedGeometry = { ...extracted.stackedGeometry, textHash: textSha256(normalizedText) };
+      }
       return finishRead(normalizedText, "pdf_text", tableRowsFromText(pageTexts, "pdf_layout"));
     }
 
@@ -1327,6 +1337,11 @@ export function rosettaReadCandidatesQuery(
               AND NOT (pa.strategy = 'read.docx' AND pa.outcome = 'unsupported_format')
          ))`);
   }
+  const repairIncumbent = learning && vaultSchema && currentCopy && companionStreams ? `,
+             (SELECT jsonb_build_object('id', incumbent.id, 'text_hash', incumbent.text_hash,
+                 'source_hash', incumbent.source_hash, 'normalized_text', incumbent.normalized_text)
+                FROM agent_source_texts incumbent WHERE incumbent.source_document_id = cr.id
+                LIMIT 1) AS pdf_repair_incumbent` : "";
   const vaultColumns = vaultSchema
     ? `,
              cr.document_r2_key,
@@ -1347,7 +1362,7 @@ export function rosettaReadCandidatesQuery(
              ct.institution_name,
              cr.document_url,
              cr.content_hash,
-             ${stackedRepairDue} AS pdf_stacked_repair_due${playbookColumns}${survivalColumns}${vaultColumns}${companionColumns}
+             ${stackedRepairDue} AS pdf_stacked_repair_due${playbookColumns}${survivalColumns}${vaultColumns}${companionColumns}${repairIncumbent}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -2013,12 +2028,13 @@ interface SettleReadEnv {
  * back to Magellan: what every Rosetta read does after the reader returns. Shared by the read
  * step and a hand-supplied document's read (`readHandSuppliedDocument`).
  */
-async function settleRead(
+async function settleReadInScope(
   db: SqlTag,
   row: ReadCandidateRow,
   result: ReadResult,
   normalizedText: string | null,
   env: SettleReadEnv,
+  repairProof?: { artifactId: number; lossless: boolean },
 ): Promise<"sent_back" | "handed_to_magellan" | null> {
   const { learning, vaultSchema, textColumns } = env;
   // A companion page's reads stay out of the bank's playbook (its main fee link's).
@@ -2030,7 +2046,8 @@ async function settleRead(
   // and never sends the bank back to Magellan.
   const keepLostText =
     row.last_lost_text != null &&
-    !(result.status === "completed" && normalizedText != null && rungTextNotWorse(normalizedText, row.last_lost_text));
+    !(result.status === "completed" && normalizedText != null
+      && (rungTextNotWorse(normalizedText, row.last_lost_text) || repairProof?.lossless === true));
   const keepEarlierText =
     keepLostText || (row.pdf_stacked_repair_due && result.status !== "completed")
     || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
@@ -2091,7 +2108,10 @@ async function settleRead(
         reader_version: ROSETTA_READ_VERSION,
         pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
         pdf_stacked_requested: row.pdf_stacked_repair_due ? PDF_STACKED_REPAIR_VERSION : undefined,
-        pdf_stacked: row.pdf_stacked_repair_due && result.reader === PRIMARY_READERS.pdf && result.status === "completed" ? PDF_STACKED_REPAIR_VERSION : undefined,
+        pdf_stacked: repairProof && !keepEarlierText ? PDF_STACKED_REPAIR_VERSION : undefined,
+        persisted_text_id: repairProof && !keepEarlierText ? repairProof.artifactId : undefined,
+        persisted_text_hash: repairProof && !keepEarlierText ? result.textHash : undefined,
+        pdf_stacked_acceptance: repairProof && !keepEarlierText ? (repairProof.lossless ? "lossless_geometry" : "ordinary_survival") : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
         page_check: result.pageCheck,
@@ -2137,7 +2157,7 @@ async function settleRead(
         },
       });
     }
-    if (vaultSchema && result.textHash) {
+    if (vaultSchema && result.textHash && !keepEarlierText) {
       // Mark this text as page-checked so the triage pass never re-checks it.
       await recordAttempt(db, {
         institutionId: result.institutionId,
@@ -2157,6 +2177,67 @@ async function settleRead(
     }
   }
   return settled;
+}
+
+/** Artifact replacement and its successful marker must commit together. */
+async function atomicRepair<T>(db: SqlTag, work: (scope: SqlTag) => Promise<T>): Promise<T> {
+  const savepoint = (db as unknown as { savepoint?: (work: (scope: SqlTag) => Promise<T>) => Promise<T> }).savepoint;
+  if (savepoint) return savepoint.call(db, work);
+  return db.begin((scope) => work(scope as unknown as SqlTag)) as Promise<T>;
+}
+
+async function settleRead(
+  db: SqlTag, row: ReadCandidateRow, result: ReadResult, normalizedText: string | null, env: SettleReadEnv,
+): Promise<"sent_back" | "handed_to_magellan" | null> {
+  if (!row.pdf_stacked_repair_due) return settleReadInScope(db, row, result, normalizedText, env);
+  return atomicRepair(db, async (scope) => {
+    const [current] = await scope`
+      SELECT adt.id, adt.institution_id, adt.status AS text_status, adt.reader, adt.text_hash, adt.source_hash, adt.normalized_text,
+             doc.document_url, doc.content_hash, doc.document_r2_key, doc.status AS source_status,
+             doc.superseded_by_id, doc.duplicate_of_id
+        FROM agent_source_texts adt JOIN source_documents doc ON doc.id = adt.source_document_id
+       WHERE doc.id = ${result.sourceDocumentId} AND doc.institution_id = ${result.institutionId}
+       FOR UPDATE OF doc, adt
+    `;
+    const incumbent = row.pdf_repair_incumbent;
+    const sameIncumbent = current && incumbent && Number(current.id) === Number(incumbent.id)
+      && current.text_hash === incumbent.text_hash && current.source_hash === incumbent.source_hash
+      && current.normalized_text === incumbent.normalized_text && textSha256(current.normalized_text) === current.text_hash
+      && Number(current.institution_id) === result.institutionId && current.text_status === "completed" && current.reader === PRIMARY_READERS.pdf
+      && current.document_url === row.document_url
+      && current.content_hash === row.content_hash && current.source_hash === row.content_hash
+      && current.source_status === "success" && current.superseded_by_id == null && current.duplicate_of_id == null
+      && current.document_r2_key === `${row.content_hash?.slice(0, 2)}/${row.content_hash}`;
+    const reject = async (reason: string) => {
+      result.repairSettlement = { accepted: false, reason };
+      if (env.learning) await recordAttempt(scope, {
+        institutionId: result.institutionId, sourceDocumentId: result.sourceDocumentId,
+        stage: "read", strategy: PDF_STACKED_REPAIR_STRATEGY, version: PDF_STACKED_REPAIR_VERSION,
+        fingerprint: result.sourceHash, outcome: "evidence_mismatch", yieldCount: 0, costMicrousd: 0,
+        runId: env.runId, stepId: env.stepId, foldIntoPlaybook: false,
+        detail: { pdf_stacked_requested: PDF_STACKED_REPAIR_VERSION, pdf_stacked_rejected: true,
+          reason, selected_text_id: incumbent?.id, selected_text_hash: incumbent?.text_hash,
+          candidate_text_hash: result.textHash },
+      });
+      return null;
+    };
+    if (!sameIncumbent) return reject("selected_incumbent_changed");
+    if (result.status !== "completed") return settleReadInScope(scope, row, result, normalizedText, env);
+    if (!normalizedText || result.textHash !== textSha256(normalizedText)
+      || !result.fromVault || result.reader !== PRIMARY_READERS.pdf || result.sourceHash !== current.content_hash) {
+      return reject("unbound_pdf_result");
+    }
+    const lossless = acceptableFeeText(normalizedText)
+      && losslessStackedRecovery(current.normalized_text, normalizedText, current.source_hash, result.stackedGeometry);
+    // Only the actual geometry detector with exact token conservation may replace
+    // a lost text that fails the ordinary physical-line score. The general rule stays unchanged.
+    if (row.last_lost_text != null && !rungTextNotWorse(normalizedText, row.last_lost_text) && !lossless) {
+      return reject("text_survival_retained_incumbent");
+    }
+    result.repairSettlement = { accepted: true, reason: lossless ? "lossless_geometry" : "ordinary_survival",
+      artifactId: Number(current.id), textHash: result.textHash };
+    return settleReadInScope(scope, row, result, normalizedText, env, { artifactId: Number(current.id), lossless });
+  });
 }
 
 /**
