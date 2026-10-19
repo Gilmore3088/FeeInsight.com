@@ -259,6 +259,14 @@ describe("source-owned international wire scope, independent of price admission 
     expect(sourceOwnedWireScope(`${header}\n| | Incoming | $15 |`, `${header}: Incoming`, 15).kind).toBe("unresolved");
   });
 
+  it("counts each literal plain label/price continuation once and still refuses distinct repeated owners", () => {
+    const row = "International Wire Outgoing\n$45";
+    expect(sourceOwnedWireScope(row, "International Wire Outgoing", 45)).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });
+    expect(sourceOwnedWireScope(`${row}\n${row}`, "International Wire Outgoing", 45)).toMatchObject({ kind: "unresolved", reason: "ambiguous_owner" });
+    expect(reviewInternationalDirection(sourceOwnedWireScope("Wire Fee Foreign\n$60", "Wire Fee Foreign", 60), "wire_intl_outgoing"))
+      .toMatchObject({ kind: "hold", reason: "direction_missing" });
+  });
+
   it.each([
     "Wire Transfers | Other Fees\nInternational | Other\nIncoming | $15 | Outgoing | $50",
     "International Wire Transfers | Other Fees\nIncoming | $15 | | Outgoing | $50",

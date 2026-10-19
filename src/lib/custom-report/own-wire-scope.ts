@@ -30,7 +30,7 @@ const LEADING_PRICE = /^\$\s*(?:\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/;
 const SIMPLE_PRICE = /^\$\s*[\d,.]+\s*(?:(?:per\s+|\/)wire|each|per item)?\s*$/i;
 const TRAILING_LEADER = /(?:(?:\.\s*){3,}|…)\s*$/;
 
-type PhysicalRow = { cells: string[]; sourceLine: string; lineIndex: number };
+type PhysicalRow = { cells: string[]; sourceLine: string; lineIndex: number; priceLineIndex?: number };
 
 function physicalCells(line: string): string[] {
   const cells = line.split("|").map(clean);
@@ -70,7 +70,7 @@ function physicalRows(lines: string[]): PhysicalRow[] {
     if (!price || (!leaderName && !SIMPLE_PRICE.test(next))) continue;
     const label = name.replace(/(?:\.\s*){3,}|…/g, " ").trim();
     if (!label || /[$|]/.test(label)) continue;
-    result.push({ cells: [label, leaderName ? price : next], sourceLine: lines.slice(lineIndex, nextIndex + 1).join("\n").trim(), lineIndex });
+    result.push({ cells: [label, leaderName ? price : next], sourceLine: lines.slice(lineIndex, nextIndex + 1).join("\n").trim(), lineIndex, priceLineIndex: nextIndex });
   }
   return result;
 }
@@ -142,6 +142,7 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
   const key = labelKey(feeName), lines = text.split(/\r?\n/), rows = physicalRows(lines);
   const rowsByLine = new Map<number, PhysicalRow[]>();
   for (const row of rows) rowsByLine.set(row.lineIndex, [...(rowsByLine.get(row.lineIndex) ?? []), row]);
+  const pairedPriceLines = new Set(rows.flatMap(row => row.priceLineIndex == null ? [] : [row.priceLineIndex]));
   if (!key) return { kind: "unresolved", reason: "missing_owner" };
   const found: Extract<OwnWireScope, { kind: "owned" }>[] = [];
   let unsupported = false;
@@ -172,6 +173,8 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
   }
   for (const { lineIndex, cells, sourceLine } of rows) {
     if (literalClauses.some(row => row.lineIndex === lineIndex)) continue;
+    // A bare price that already belongs to one physical continuation is not a second owner.
+    if (cells.length === 1 && SIMPLE_PRICE.test(cells[0]) && pairedPriceLines.has(lineIndex)) continue;
     for (const [cellIndex, cell] of cells.entries()) {
       const dollars = [...cell.matchAll(MONEY)];
       // Factual ownership for an ALREADY admitted zero; no numeric admission is added.
