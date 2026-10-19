@@ -689,6 +689,7 @@ function StructuredAskConversation({
           institutionId={institutionId}
           institutionName={response.identityContext?.researchInstitutionName ?? null}
           feeCategory={response.answer.feeCategory}
+          inDecision={Boolean(response.decisionId)}
           report={
             <AddToReportButton
               variant="link"

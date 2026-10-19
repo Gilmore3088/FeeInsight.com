@@ -5,6 +5,7 @@ import { useState, useTransition, type ReactNode } from "react";
 import { addAnswerToDecision } from "@/app/pro/(hamilton)/analyze/answer-actions";
 import { addToWatchlist } from "@/app/pro/(hamilton)/monitor/actions";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { proseFeeName } from "@/lib/hamilton/workspace/names";
 
 type Outcome = { ok: true; text: string; href: string; link: string } | { ok: false; text: string } | null;
 
@@ -15,13 +16,15 @@ const actionClass = "min-h-11 rounded-md border border-warm-300 bg-warm-50 px-3.
  * the decision on its fee, its institution can be watched, and it can go into a report. Each
  * step points at the saved answer, so its sources and peer group go with it.
  */
-export function AnswerFollowThrough({ analysisId, institutionId, institutionName, feeCategory, report }: {
+export function AnswerFollowThrough({ analysisId, institutionId, institutionName, feeCategory, inDecision = false, report }: {
   /** The saved answer; nothing here works until the answer is saved. */
   analysisId: string | null;
   institutionId: string | null;
   institutionName: string | null;
   /** The fee the answer is about; a decision is kept per fee. */
   feeCategory: string | null;
+  /** The Ask engine already filed this answer in the decision on its fee. */
+  inDecision?: boolean;
   /** The report actions: Add to report, and Build board brief where the answer view has none. */
   report: ReactNode;
 }) {
@@ -43,13 +46,13 @@ export function AnswerFollowThrough({ analysisId, institutionId, institutionName
     if (!institutionId) return;
     const result = await addToWatchlist(institutionId).catch(() => null);
     setWatch(result?.ok
-      ? { ok: true, text: `Watching ${watchName}. Its fee changes show in Alerts and watches and come to you by email.`, href: monitorHref, link: "Open Alerts and watches" }
+      ? { ok: true, text: `Watching ${watchName}. Its fee changes show in Alerts and watches.`, href: monitorHref, link: "Open Alerts and watches" }
       : { ok: false, text: result?.error ?? "The institution could not be watched. Try again." });
   });
 
   return (
-    <section aria-label="Use this answer" className="flex flex-col gap-3 rounded-lg border border-warm-300 bg-white p-4">
-      <h2 className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Use this answer</h2>
+    <section aria-labelledby={`use-answer-${analysisId}`} className="flex flex-col gap-3 rounded-lg border border-warm-300 bg-white p-4">
+      <h2 id={`use-answer-${analysisId}`} className="text-xs font-medium uppercase tracking-[0.08em] text-warm-600">Use this answer</h2>
       <ul className="flex flex-col gap-3 text-sm text-warm-800">
         <li className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <span><span aria-hidden="true">✓ </span>Saved</span>
@@ -57,7 +60,8 @@ export function AnswerFollowThrough({ analysisId, institutionId, institutionName
         </li>
         {feeCategory && institutionId ? (
           <li className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {decision?.ok ? null : <button type="button" className={actionClass} disabled={pending} onClick={addDecision}>Add to a decision</button>}
+            {inDecision ? <span><span aria-hidden="true">✓ </span>In your decision on the {proseFeeName(feeCategory)} fee</span>
+              : decision?.ok ? null : <button type="button" className={actionClass} disabled={pending} onClick={addDecision}>Add to a decision</button>}
             <OutcomeLine outcome={decision} />
           </li>
         ) : null}
@@ -69,7 +73,7 @@ export function AnswerFollowThrough({ analysisId, institutionId, institutionName
         ) : null}
         <li className="flex flex-wrap items-center gap-x-3 gap-y-1">{report}</li>
       </ul>
-      <p className="text-xs text-warm-600">The decision and the report link to this saved answer, with its sources and peer group. If a fee it used changes, the saved answer says so.</p>
+      <p className="text-xs text-warm-600">A report built from this answer keeps its sources and peer group. If a fee it used changes, the saved answer says so.</p>
     </section>
   );
 }
