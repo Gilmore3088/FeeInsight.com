@@ -382,7 +382,7 @@ export async function resolveHamiltonPeerIndex(
   return resolveNationalIndex(
     activeFallbackReason ??
       (params.selectedInstitution
-        ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
+        ? "No default peer group has 5 institutions publishing most of this institution's fees, so Hamilton used the verified national index."
         : null),
     approvedOnly,
   );
