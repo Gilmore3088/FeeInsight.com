@@ -3202,3 +3202,6 @@ ALTER TABLE public.fee_change_records
 
 -- Usage per API key: which issued key made each /api/v1 call.
 \ir ../../supabase/migrations/20270110000057_usage_events_api_key_id.sql
+
+-- #2127 / #978: current admin correction conditions and evidence on public dollar fees.
+\ir ../../supabase/migrations/20270110000065_published_fee_correction_catalog_overlay.sql
