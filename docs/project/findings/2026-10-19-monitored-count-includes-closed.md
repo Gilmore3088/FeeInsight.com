@@ -8,8 +8,10 @@ denominator that includes closed institutions. How many rows that is was not rea
 access from this session).
 **Cause:** the count predates the lesson in `../FINDINGS.md` (large-bank overdraft count, Oct 9):
 "any coverage count over `institution_sources` excludes `regulatory_status = 'inactive'`".
-**Fix:** tracked in #2091. Filtering the count changes a shared figure on several pages and the
-/methodology "with a schedule link on file" share (its numerator, `with_fee_url`, has the same
-gap), so it belongs in its own PR that filters both. Until then /about says the list still
-includes some institutions that have since closed.
+**Fix:** #2144 (#1980, tracked here as #2091) counts only institutions the regulator has not
+marked inactive, through `activeInstitutionFilter`. /about now says inactive institutions are left
+out.
 **Lesson:** read the query behind a public count before writing what the count means.
+**Guard:** `src/lib/public-stats.test.ts` ("counts monitored and fee-publishing institutions only
+where the regulator has not marked them inactive", added by #2144) fails if the count drops
+`activeInstitutionFilter`.
