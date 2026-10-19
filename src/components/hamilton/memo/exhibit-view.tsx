@@ -156,10 +156,14 @@ export function middleHalfText(p25: number, p75: number, fmt: (v: number) => str
 // 56rem wide (the @4xl container below), so this is sized for that width, not the page.
 const labelWidth = (text: string) => text.length * 0.68 + 1;
 
-function ownLabelStyle(at: number, left: number): CSSProperties {
-  if (at >= 70) return { right: `${Math.max(0, 100 - at - 1)}%` };
-  if (at <= 30) return { left: `${Math.max(0, at - 1)}%` };
-  return { left: `${left}%` };
+/**
+ * The own label's place: its anchor point slides along the label as the mark slides along the
+ * track (starting at the mark at 0%, ending at it at 100%), so at any track width, a phone's
+ * included, the label stays inside the track (#2080).
+ */
+export function ownLabelStyle(at: number): CSSProperties {
+  const pct = Math.min(Math.max(at, 0), 100);
+  return { left: `${pct}%`, transform: `translateX(-${pct}%)` };
 }
 
 /** "Credit unions, $1B to $10B in assets median" -> "Credit unions, $1B to $10B in assets"; "Fed district 6 (Atlanta)" -> "Fed district 6". */
@@ -187,17 +191,16 @@ function FeePosition({ x }: { x: Extract<ExhibitSpec, { kind: "fee_position" }> 
   const placed = placeLabels(markers.map((m) => ({ x: axis.at(m.value), width: labelWidth(markerText(m)) })));
   const rowCount = Math.max(1, ...placed.map((p) => p.row + 1));
   const ownText = x.own != null ? `${x.ownLabel} ${fmtMoney(x.own)}` : "";
-  const ownPlaced = x.own != null ? placeLabels([{ x: axis.at(x.own), width: labelWidth(ownText) + 1 }])[0] : null;
   return (
     <div className="@container">
       {/* In a narrow exhibit (a phone, or a column beside another) the market names do not fit on the
           track: it carries ticks, and the names sit in a list below. */}
       <div className="relative h-[3.6rem] @4xl:h-[var(--track-h)]" style={{ "--track-h": `${3.6 + rowCount * 1.5}rem` } as CSSProperties}>
-        {ownPlaced ? (
+        {x.own != null ? (
           <span
-            className="absolute top-0 whitespace-nowrap text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
-            // Ends at the mark near the right edge and starts at it near the left, so it never runs off the track.
-            style={ownLabelStyle(axis.at(x.own!), ownPlaced.left)}
+            className="absolute top-0 max-w-full truncate text-xs font-semibold text-terra-text [font-variant-numeric:tabular-nums]"
+            style={ownLabelStyle(axis.at(x.own))}
+            title={ownText}
           >
             {ownText}
           </span>

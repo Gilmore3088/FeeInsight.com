@@ -130,7 +130,7 @@ export async function getPeerListRows(
   const mapped = rows.filter((row) => row.institution_id !== null).map((row) => ({
     ...peerSubjectFromRow(row),
     feeCoverage: row.has_published_fees === true ? "available" as const : "not_found" as const,
-    inclusionReason: c.basis === "saved_peer_set" ? "Matches the saved group's filters and the stated criteria." : c.basis === "similar_assets" ? "Within the stated asset-size band and institution/state filters." : "Matches the stated institution, state and asset filters.",
+    inclusionReason: c.basis === "saved_peer_set" ? "Matches the saved group's filters and the stated criteria." : c.basis === "hamilton_group" ? "In the peer group Hamilton's answers compare with." : c.basis === "similar_assets" ? "Within the stated asset-size band and institution/state filters." : "Matches the stated institution, state and asset filters.",
   }));
   const totalMatches = rows[0] ? Number(rows[0].total_matches) : 0;
   if (!Number.isSafeInteger(totalMatches) || totalMatches < page.offset + mapped.length && mapped.length > 0) throw new Error("Invalid peer result count");

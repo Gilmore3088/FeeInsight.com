@@ -21,7 +21,7 @@ const API_ACCESS_LABEL = `${PRO_LABEL} · ${API_PLANS_LABEL}`;
 
 const ERROR_GUIDANCE: Record<ApiErrorCode, { status: number; action: string }> = {
   api_key_required: { status: 401, action: "Send your API key in the Authorization header, or make a key on your account page." },
-  invalid_api_key: { status: 401, action: "Check that you copied the whole key. Replace it on your account page if needed." },
+  invalid_api_key: { status: 401, action: "Check that you copied the whole key. A subscriber key also requires active payer and holder accounts; contact us if account access is unavailable." },
   key_revoked: { status: 401, action: "Make a replacement key on your account page, or contact us about a partner key." },
   subscription_inactive: { status: 401, action: "Restart the Hamilton subscription that covers this key from your account page." },
   seat_removed: { status: 401, action: "Ask the plan owner to add you back to their workspace." },

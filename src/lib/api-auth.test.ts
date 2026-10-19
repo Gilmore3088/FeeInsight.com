@@ -27,7 +27,7 @@ function queue(keyRow: Record<string, unknown>, payer?: Record<string, unknown>)
 }
 
 const KEY = { id: 1, organization_id: 9, tier: "pro", revoked_at: null };
-const ACTIVE = { subscription_status: "active", past_due_since: null };
+const ACTIVE = { subscription_status: "active", past_due_since: null, payer_active: true, holder_active: true };
 
 describe("validateApiKey on subscriber keys", () => {
   beforeEach(() => {
@@ -61,7 +61,7 @@ describe("validateApiKey on subscriber keys", () => {
   });
 
   it("stops every key on the plan once the payer cancels", async () => {
-    queue({ ...KEY, slug: "pro-user-7", name: "Pro user 12" }, { subscription_status: "canceled", past_due_since: null });
+    queue({ ...KEY, slug: "pro-user-7", name: "Pro user 12" }, { ...ACTIVE, subscription_status: "canceled" });
     const result = await validateApiKey(request());
     expect(result.valid).toBe(false);
     expect(result.code).toBe("subscription_inactive");
@@ -85,6 +85,43 @@ describe("validateApiKey on subscriber keys", () => {
     queue({ ...KEY, tier: "enterprise", slug: "api-betteranalyst", name: "Default" });
     const result = await validateApiKey(request());
     expect(result).toMatchObject({ valid: true, tier: "enterprise" });
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["disabled payer", { ...ACTIVE, payer_active: false }],
+    ["missing payer", null],
+    ["disabled holder", { ...ACTIVE, holder_active: false }],
+    ["missing holder", { ...ACTIVE, holder_active: null }],
+  ])("stops a %s without updating last-used or retaining a background task", async (_label, state) => {
+    queue({ ...KEY, slug: "pro-user-7", name: "Pro user 12" }, state ?? undefined);
+    const result = await validateApiKey(request());
+    expect(result).toMatchObject({ valid: false, code: "invalid_api_key", error: expect.stringContaining("account is unavailable") });
+    expect(result.keyId).toBeUndefined();
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+    expect(seatStillCovered).not.toHaveBeenCalled();
+    expect(afterMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["Pro subscription", "Pro user 7"])("checks payer/holder activity for the payer-owned %s key", async (name) => {
+    queue({ ...KEY, slug: "pro-user-7", name }, ACTIVE);
+    expect(await validateApiKey(request())).toMatchObject({ valid: true });
+    expect(sqlMock.mock.calls[1].slice(1)).toEqual([7, 7]);
+    expect(seatStillCovered).not.toHaveBeenCalled();
+    queue({ ...KEY, slug: "pro-user-7", name }, { ...ACTIVE, payer_active: false, holder_active: false });
+    expect(await validateApiKey(request())).toMatchObject({ valid: false, code: "invalid_api_key" });
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+    queue({ ...KEY, slug: "pro-user-7", name });
+    expect(await validateApiKey(request())).toMatchObject({ valid: false, code: "invalid_api_key" });
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves payment grace for active identities and refuses expired grace", async () => {
+    queue({ ...KEY, slug: "pro-user-7", name: "Pro user 7" }, { ...ACTIVE, subscription_status: "past_due", past_due_since: new Date().toISOString() });
+    expect(await validateApiKey(request())).toMatchObject({ valid: true });
+    queue({ ...KEY, slug: "pro-user-7", name: "Pro user 7" }, { ...ACTIVE, subscription_status: "past_due", past_due_since: "2000-01-01T00:00:00Z" });
+    expect(await validateApiKey(request())).toMatchObject({ valid: false, code: "subscription_inactive" });
+    expect(sqlMock).toHaveBeenCalledTimes(2);
   });
 
   it("returns the authorized caller while its single last-used write remains pending", async () => {

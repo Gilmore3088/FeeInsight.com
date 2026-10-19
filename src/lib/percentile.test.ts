@@ -13,5 +13,7 @@ describe("midRankPercentile (#2048)", () => {
   it("rounds to the places asked for, and gives none without peers", () => {
     expect(midRankPercentile(30, [10, 20, 40], { decimals: 1 })).toBe(66.7);
     expect(midRankPercentile(30, [])).toBeNull();
+    // An exact half rounds up: 11 cheaper and 1 the same of 20 is 57.5, shown as 58.
+    expect(midRankPercentile(30, [...Array(11).fill(20), 30, ...Array(8).fill(40)])).toBe(58);
   });
 });
