@@ -82,6 +82,11 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
 - Struck sources and parts, and the rows they loaded before they were struck, are listed in
   `src/lib/data-store/struck-sources.ts`; every reader excludes them.
 - Every run writes a visible run, step and event, and honours the pipeline pause.
+- The shared registry dispatcher records unhandled loader errors against the owning partition
+  claim. Failures retain their attempt count and parser version; a late or repeated writer
+  cannot replace a newer or finished claim. HTTP 401/403 records an unavailable publisher and
+  waits a week, other permanent 4xx waits a day, transient/parser errors at least six hours.
+  A deployed parser change can retry a failed partition immediately. Dry runs write no receipt.
 
 ## Order of work
 

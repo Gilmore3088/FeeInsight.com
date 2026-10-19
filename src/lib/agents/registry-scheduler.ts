@@ -212,6 +212,7 @@ export function isParserStale(
   if (current === undefined) return false;
   if (status === "succeeded" || status === "empty") return (parserVersion ?? 1) < current;
   if (status === "scheduled") return (claimedParserVersion ?? 1) < current;
+  if (status === "failed") return (parserVersion ?? claimedParserVersion ?? 1) < current;
   return false;
 }
 
@@ -453,6 +454,9 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
            AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
        OR (registry_ingest_partitions.status = 'scheduled'
            AND COALESCE((registry_ingest_partitions.detail->>'claimed_parser_version')::int, 1) < ${parserVersion})
+       OR (registry_ingest_partitions.status = 'failed'
+           AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int,
+                        (registry_ingest_partitions.detail->>'claimed_parser_version')::int,1) < ${parserVersion})
        OR ${keylessSkipSql("registry_ingest_partitions", keysSet)}
     RETURNING id
   `;
