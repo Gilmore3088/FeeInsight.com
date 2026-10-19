@@ -47,6 +47,23 @@ export interface FeeRevenueCorrelation {
 
 export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRevenueCorrelation[]> {
   const rows = await sql`
+    -- Scope the semantic catalog through canonical institution IDs before category
+    -- aggregation, retaining every catalog and fee eligibility predicate.
+    WITH eligible_fee_rows AS MATERIALIZED (
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
+        AND ef.institution_id = ANY (ARRAY (
+          SELECT fee_identity.id
+          FROM institution_sources fee_identity
+          WHERE fee_identity.charter_type IN ('bank', 'credit_union')
+            AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+              OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+        ))
+    )
     SELECT
       ct.id as institution_id,
       ct.institution_name,
@@ -73,15 +90,11 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
         SELECT ef.institution_id, ef.canonical_fee_key,
                CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
                     ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
-        FROM published_fee_catalog ef
+        FROM eligible_fee_rows ef
         JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
           AND fee_identity.charter_type IN ('bank', 'credit_union')
           AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
             OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
-        WHERE ef.review_status = 'approved'
-          AND ef.amount IS NOT NULL
-          AND ef.amount >= 0
-          AND ${sql.unsafe(STATS_ROW_FILTER)}
         GROUP BY ef.institution_id, ef.canonical_fee_key
       ) category_values
       GROUP BY institution_id
@@ -122,6 +135,23 @@ export interface TierFeeRevenueSummary {
 
 export async function getTierFeeRevenueSummary(source?: FinancialSource): Promise<TierFeeRevenueSummary[]> {
   const rows = await sql`
+    -- Scope the semantic catalog through canonical institution IDs before category
+    -- aggregation, retaining every catalog and fee eligibility predicate.
+    WITH eligible_fee_rows AS MATERIALIZED (
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
+        AND ef.institution_id = ANY (ARRAY (
+          SELECT fee_identity.id
+          FROM institution_sources fee_identity
+          WHERE fee_identity.charter_type IN ('bank', 'credit_union')
+            AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+              OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+        ))
+    )
     SELECT
       ct.asset_size_tier, ifin.source AS financial_source, ifin.report_date,
       COUNT(DISTINCT ct.id) as institution_count,
@@ -139,15 +169,11 @@ export async function getTierFeeRevenueSummary(source?: FinancialSource): Promis
         SELECT ef.institution_id, ef.canonical_fee_key,
                CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
                     ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
-        FROM published_fee_catalog ef
+        FROM eligible_fee_rows ef
         JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
           AND fee_identity.charter_type IN ('bank', 'credit_union')
           AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
             OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
-        WHERE ef.review_status = 'approved'
-          AND ef.amount IS NOT NULL
-          AND ef.amount >= 0
-          AND ${sql.unsafe(STATS_ROW_FILTER)}
         GROUP BY ef.institution_id, ef.canonical_fee_key
       ) category_values
       GROUP BY institution_id
@@ -184,6 +210,23 @@ export interface CharterFeeRevenueSummary {
 
 export async function getCharterFeeRevenueSummary(source?: FinancialSource): Promise<CharterFeeRevenueSummary[]> {
   const rows = await sql`
+    -- Scope the semantic catalog through canonical institution IDs before category
+    -- aggregation, retaining every catalog and fee eligibility predicate.
+    WITH eligible_fee_rows AS MATERIALIZED (
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
+        AND ef.institution_id = ANY (ARRAY (
+          SELECT fee_identity.id
+          FROM institution_sources fee_identity
+          WHERE fee_identity.charter_type IN ('bank', 'credit_union')
+            AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+              OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+        ))
+    )
     SELECT
       ct.charter_type, ifin.source AS financial_source, ifin.report_date,
       COUNT(DISTINCT ct.id) as institution_count,
@@ -201,15 +244,11 @@ export async function getCharterFeeRevenueSummary(source?: FinancialSource): Pro
         SELECT ef.institution_id, ef.canonical_fee_key,
                CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
                     ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
-        FROM published_fee_catalog ef
+        FROM eligible_fee_rows ef
         JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
           AND fee_identity.charter_type IN ('bank', 'credit_union')
           AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
             OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
-        WHERE ef.review_status = 'approved'
-          AND ef.amount IS NOT NULL
-          AND ef.amount >= 0
-          AND ${sql.unsafe(STATS_ROW_FILTER)}
         GROUP BY ef.institution_id, ef.canonical_fee_key
       ) category_values
       GROUP BY institution_id
