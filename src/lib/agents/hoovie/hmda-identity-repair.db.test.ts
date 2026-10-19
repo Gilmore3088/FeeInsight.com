@@ -37,7 +37,7 @@ function migrationFragment(file: string, from: string, until?: string): string {
 }
 
 describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQL", () => {
-  let db: postgres.Sql;
+  let db: postgres.Sql<{ json: unknown }>;
   let manifest: typeof reviewedManifest;
   let digest: string;
   let source: { url: string; sha256: string; identities: Array<{ certificate: string; lei: string; rssdId: string | null }>; index: unknown };

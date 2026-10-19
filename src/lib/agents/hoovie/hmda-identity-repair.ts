@@ -60,8 +60,8 @@ async function snapshot(tx: RegistryDb): Promise<HmdaRepairSnapshot> {
   const institutions = await tx`SELECT to_jsonb(s) AS row FROM institution_sources s WHERE s.id IN ${tx(ids)} ORDER BY s.id`;
   const lenders = await tx`SELECT to_jsonb(l) AS row FROM hmda_lenders l WHERE l.activity_year=${year} AND l.lei IN ${tx(leis)} ORDER BY l.lei`;
   // Select the complete annual LEI scope, not just reviewed IDs: extra/new states must abort.
-  const originations = await tx`SELECT to_jsonb(c) AS row FROM hmda_lender_originations c WHERE c.activity_year=${year} AND c.lei IN ${tx(leis)} ORDER BY c.id`;
-  const costs = await tx`SELECT to_jsonb(c) AS row FROM hmda_lender_loan_costs c WHERE c.activity_year=${year} AND c.lei IN ${tx(leis)} ORDER BY c.id`;
+  const originations = await tx`SELECT to_jsonb(c) AS row FROM hmda_lender_originations c WHERE c.activity_year=${year} AND c.lei IN ${tx(leis)} ORDER BY c.id LIMIT ${HMDA_REPAIR_MANIFEST.guards.originations.rows + 1}`;
+  const costs = await tx`SELECT to_jsonb(c) AS row FROM hmda_lender_loan_costs c WHERE c.activity_year=${year} AND c.lei IN ${tx(leis)} ORDER BY c.id LIMIT ${HMDA_REPAIR_MANIFEST.guards.costs.rows + 1}`;
   const rows = (result: unknown) => [...result as Array<{ row: JsonRow }>].map(({ row }) => row);
   return { institutions: rows(institutions), lenders: rows(lenders), originations: rows(originations), costs: rows(costs) };
 }

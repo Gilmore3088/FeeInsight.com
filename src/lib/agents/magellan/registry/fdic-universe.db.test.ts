@@ -17,7 +17,7 @@ const knownLei = "5493003GQDUH26DNNH17";
 const thirdLei = "549300T94GSH3C4U5M59";
 
 describe.skipIf(!connection)("FDIC own-LEI collection in isolated PostgreSQL", () => {
-  let db: postgres.Sql;
+  let db: postgres.Sql<{ json: unknown }>;
   let registryDb: RegistryDb;
   const receipts: Array<Record<string, unknown>> = [];
 

@@ -39,7 +39,7 @@ interface Loan {
 }
 
 describe.skipIf(!connection)("HMDA canonical identity in isolated PostgreSQL", () => {
-  let db: postgres.Sql;
+  let db: postgres.Sql<{ json: unknown }>;
 
   beforeAll(async () => {
     if (!connection || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connection).hostname)) {
