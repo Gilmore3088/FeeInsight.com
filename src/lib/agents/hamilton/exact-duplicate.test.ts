@@ -3,11 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 import {
   collapseCategories,
   collapseKeepOrder,
+  collapseLineKey,
   exactDuplicateDecision,
   frequencyClass,
   PUBLISH_REFUSE_DUPLICATES_LIVE,
 } from "./exact-duplicate";
-import { runHamiltonPublish } from "./publish";
+import { runHamiltonPublish, type VerifiedFeeRow } from "./publish";
 
 const copy = (id: number, frequency: string | null, fee_audience: string | null, published_at = "2026-10-01T00:00:00.000Z") => ({
   fee_published_id: id,
@@ -17,8 +18,41 @@ const copy = (id: number, frequency: string | null, fee_audience: string | null,
 });
 
 describe("exact duplicate check at publish (#1069 step 1)", () => {
+  const audiences = ["consumer", "business", "both", "unknown"] as const;
   it("is on: publish refuses a row the collapse would close", () => {
     expect(PUBLISH_REFUSE_DUPLICATES_LIVE).toBe(true);
+  });
+
+  it.each(audiences.flatMap((a) => audiences.filter((b) => a !== b).map((b) => [a, b] as const)))(
+    "never refuses or replaces %s using a %s copy", (audience, other) => {
+      expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: audience }, [copy(9, "monthly", other)]))
+        .toEqual({ kind: "none" });
+      expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: audience }, [{ ...copy(9, "monthly", other), in_step: true }]))
+        .toEqual({ kind: "none" });
+    },
+  );
+
+  it("normalizes null only to unknown, and excludes held or unrelated copies before frequency decisions", () => {
+    expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: null }, [{ ...copy(9, "monthly", "unknown"), in_step: true }]))
+      .toEqual({ kind: "refuse", keptFeePublishedId: 9 });
+    expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "consumer" }, [
+      copy(8, "annual", "business"), { ...copy(9, "monthly", "consumer"), in_step: true },
+      { ...copy(10, "monthly", "consumer"), quarantined_at: new Date() },
+    ])).toEqual({ kind: "refuse", keptFeePublishedId: 9 });
+    expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "consumer" }, [
+      { ...copy(10, "monthly", "consumer"), quarantined_at: new Date() },
+    ])).toEqual({ kind: "none" });
+  });
+
+  it("keys step copies by audience and represented variant/rate applicability", () => {
+    const base = { institutionId: 42, canonicalFeeKey: "coin_counting", feeName: "Coin Counting", variantType: null,
+      amountKind: "percent" as const, amount: null, ratePercent: 5, rateMinAmount: null, rateMaxAmount: null,
+      rateBasis: "transaction", feeAudience: "consumer" };
+    expect(new Set(audiences.map((audience) => collapseLineKey({ ...base, feeAudience: audience })))).toHaveProperty("size", 4);
+    expect(collapseLineKey({ ...base, feeAudience: null })).toBe(collapseLineKey({ ...base, feeAudience: "unknown" }));
+    const keys = [base, { ...base, variantType: "premium" }, { ...base, rateBasis: "balance" },
+      { ...base, rateMinAmount: 1 }, { ...base, rateMaxAmount: 20 }, { ...base, ratePercent: 6 }].map(collapseLineKey);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("decides as the exact duplicate collapse would", () => {
@@ -28,29 +62,27 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
       kind: "refuse",
       keptFeePublishedId: 10,
     });
-    // The live copy names its audience; an "unknown" re-read is the one closed.
+    // Unknown applicability is separate from a stated audience, never its duplicate.
     expect(exactDuplicateDecision({ frequency: "per_item", fee_audience: "unknown" }, [copy(11, "per_item", "business")])).toEqual({
-      kind: "refuse",
-      keptFeePublishedId: 11,
+      kind: "none",
     });
     // Per item and per occurrence are one frequency; both stated, so the newest (the new row) stays.
     expect(exactDuplicateDecision({ frequency: "per_occurrence", fee_audience: "consumer" }, [copy(12, "per_item", "consumer")])).toEqual({
       kind: "replace",
       closedFeePublishedIds: [12],
     });
-    // The new row names its audience where the live copy did not: the live copy is the one closed.
+    // A stated audience cannot replace an ambiguously scoped live copy.
     expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "consumer" }, [copy(13, "monthly", "unknown")])).toEqual({
-      kind: "replace",
-      closedFeePublishedIds: [13],
+      kind: "none",
     });
     // Stated frequencies that disagree are two fee lines; the collapse closes neither.
     expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "consumer" }, [copy(14, "per_item", "consumer")])).toEqual({ kind: "none" });
     expect(exactDuplicateDecision({ frequency: null, fee_audience: "consumer" }, [copy(15, "monthly", "consumer"), copy(16, "per_item", "consumer")])).toEqual({ kind: "none" });
-    // Of several live copies the collapse keeps the best: audience, then frequency, then newest.
+    // Within unknown applicability the collapse keeps the stated frequency, then newest.
     expect(
       exactDuplicateDecision({ frequency: null, fee_audience: "unknown" }, [
-        copy(17, null, "consumer", "2026-10-03T00:00:00.000Z"),
-        copy(18, "monthly", "consumer", "2026-10-02T00:00:00.000Z"),
+        copy(17, null, "unknown", "2026-10-03T00:00:00.000Z"),
+        copy(18, "monthly", "unknown", "2026-10-02T00:00:00.000Z"),
       ]),
     ).toEqual({ kind: "refuse", keptFeePublishedId: 18 });
     expect(frequencyClass("one_time")).toBe("each");
@@ -59,29 +91,25 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
 
   it("keeps a copy published earlier in the same step when it ranks as well (Oct 17, step 42289)", () => {
     const inStep = (id: number, frequency: string | null, fee_audience: string | null) => ({ ...copy(id, frequency, fee_audience), in_step: true });
-    // 152052 (business) and 152056 (consumer): both state an audience, so the later one would have
-    // closed the earlier one; the step keeps the first and refuses the twin.
+    // Stated audiences are different fees, even when another audience published first.
     expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "business" }, [inStep(152056, "monthly", "consumer")])).toEqual({
-      kind: "refuse",
-      keptFeePublishedId: 152056,
+      kind: "none",
     });
-    // A step copy that ranks worse is still the collapse's to close (the order prevents it).
+    // Unknown is not a wildcard for a consumer copy in this step.
     expect(exactDuplicateDecision({ frequency: "monthly", fee_audience: "consumer" }, [inStep(152032, "monthly", "unknown")])).toEqual({
-      kind: "replace",
-      closedFeePublishedIds: [152032],
+      kind: "none",
     });
-    // An earlier step's copy of equal rank: the collapse keeps the newer, as before (152164 / 152246).
+    // Both is explicit applicability of its own, not an exact business duplicate.
     expect(exactDuplicateDecision({ frequency: "per_item", fee_audience: "business" }, [copy(152164, "per_item", "both")])).toEqual({
-      kind: "replace",
-      closedFeePublishedIds: [152164],
+      kind: "none",
     });
   });
 
   it("orders each collapse line so the copy the collapse keeps is decided first", () => {
     const rows = [
-      { id: 1, line: "a", frequency: "monthly", fee_audience: "unknown" },
+      { id: 1, line: "a", frequency: "monthly", fee_audience: "consumer" },
       { id: 2, line: "b", frequency: null, fee_audience: "consumer" },
-      { id: 3, line: "a", frequency: "monthly", fee_audience: "business" },
+      { id: 3, line: "a", frequency: "monthly", fee_audience: "consumer" },
       { id: 4, line: "a", frequency: "monthly", fee_audience: "consumer" },
     ];
     // Line a: 3 and 4 tie, and 4 would be inserted last, so the collapse keeps 4; then 3; then 1.
@@ -157,11 +185,11 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
       expect(result.duplicateCheck).toMatchObject({ live: true, wouldRefuse: 1, refused: 1 });
     });
 
-    function dbWithTwinsInStep() {
+    function dbWithTwinsInStep(first: Partial<VerifiedFeeRow> = {}, second: Partial<VerifiedFeeRow> = {}) {
       let nextId = 2000;
       const twins = [
-        { ...verified, fee_verified_id: 911, fee_raw_id: 711, fee_audience: "unknown" as const },
-        { ...verified, fee_verified_id: 912, fee_raw_id: 712, fee_audience: "consumer" as const },
+        { ...verified, fee_verified_id: 911, fee_raw_id: 711, ...first },
+        { ...verified, fee_verified_id: 912, fee_raw_id: 712, ...second },
       ];
       const db = vi.fn((strings: TemplateStringsArray) => {
         const text = strings.join(" ");
@@ -184,7 +212,7 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
       expect(result.publishedFees).toBe(1);
       expect(inserts(db)).toBe(1);
       const byId = new Map(result.results.map((row) => [row.feeVerifiedId, row]));
-      // The consumer copy states its audience, so it goes first even though it was selected second.
+      // Equally scoped copies are decided newest first, even when selected second.
       expect(byId.get(912)).toMatchObject({ status: "published", feePublishedId: 2000 });
       expect(byId.get(911)).toMatchObject({ status: "skipped", reason: "Exact duplicate of live fee #2000" });
     });
@@ -196,5 +224,43 @@ describe("exact duplicate check at publish (#1069 step 1)", () => {
       expect(result.publishedFees).toBe(1);
       expect(result.results.find((row) => row.feeVerifiedId === 911)).toMatchObject({ status: "skipped" });
     });
+
+    it.each(audiences.flatMap((a) => audiences.filter((b) => a !== b).map((b) => [a, b] as const)))(
+      "publishes both %s and %s in one step and in a dry run", async (first, second) => {
+        for (const dryRun of [false, true]) {
+          const db = dbWithTwinsInStep({ fee_audience: first }, { fee_audience: second });
+          const result = await runHamiltonPublish({ runId: 2131, db: asDb(db), dryRun, refuseSweepRulesLive: false });
+          expect(result.publishedFees).toBe(2);
+          expect(result.results.map((row) => row.status)).toEqual(["published", "published"]);
+          expect(inserts(db)).toBe(dryRun ? 0 : 2);
+          expect(result.duplicateCheck.refused).toBe(0);
+        }
+      },
+    );
+
+    it("refuses a true unknown/null twin in the same step without relabeling it", async () => {
+      const db = dbWithTwinsInStep({ fee_audience: undefined }, { fee_audience: "unknown" });
+      const result = await runHamiltonPublish({ runId: 2131, db: asDb(db), refuseSweepRulesLive: false });
+      expect(result.publishedFees).toBe(1);
+      expect(inserts(db)).toBe(1);
+    });
+
+    it.each(["variant", "frequency", "rate_basis", "rate_floor", "rate_cap"])(
+      "keeps distinct %s applicability in the step-copy map", async (dimension) => {
+        const rate = { canonical_fee_key: "coin_counting", fee_name: "Coin Counting", amount: null,
+          amount_kind: "percent", rate_percent: 5, rate_basis: "transaction" };
+        const a: Partial<VerifiedFeeRow> = dimension.startsWith("rate") ? rate : {};
+        const b: Partial<VerifiedFeeRow> = { ...a };
+        if (dimension === "variant") b.variant_type = "premium";
+        if (dimension === "frequency") { a.frequency = "monthly"; b.frequency = "annual"; }
+        if (dimension === "rate_basis") b.rate_basis = "balance";
+        if (dimension === "rate_floor") b.rate_min_amount = 1;
+        if (dimension === "rate_cap") b.rate_max_amount = 20;
+        const db = dbWithTwinsInStep(a, b);
+        const result = await runHamiltonPublish({ runId: 2131, db: asDb(db), refuseSweepRulesLive: false });
+        expect(result.publishedFees).toBe(2);
+        expect(inserts(db)).toBe(2);
+      },
+    );
   });
 });

@@ -332,6 +332,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
   // Previously settled pairs require a separately reviewed impact/official-source decision.
   NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
+  // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
+  // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
+  HAMILTON_PUBLISH_STRATEGY: "Audience-safe exact duplicate checks retain publish v3 decisions. No historical publish replay or closed-duplicate recovery is queued; ordinary live sweeps use the restricted identity predicate.",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live
