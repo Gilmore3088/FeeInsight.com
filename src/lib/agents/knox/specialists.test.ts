@@ -339,6 +339,23 @@ describe("Knox v27 two-column headings and joined NSF/overdraft rows", () => {
     expect(read.some(([, amount, key]) => key === "overdraft" && amount === 10)).toBe(false);
   });
 
+  it.each([
+    // Round 2 live check (#2123): each kept only one of the two fees.
+    ["Non-sufficient funds (NSF) or Overdraft (OD) per item | $30.00", 30],
+    ["Checking Non-Sufficient Funds (NSF) & Overdraft (OD) | $29.00", 29],
+    ["Overdraft/Return Item Fee | $32.00", 32],
+    ["Returned Item/Overdraft fee | $27.00", 27],
+    ["Overdraft/NSF Fee | $30.00", 30],
+  ])("v82: stores both fees of %s, the twin with its own line share", (line, amount) => {
+    const read = runFreeSpecialists(`Fee Schedule\n${line}`).candidates.filter((fee) => fee.amount === amount);
+    expect(read.map((fee) => [fee.canonicalHint, fee.lineShare ?? ""]).sort()).toEqual([["nsf", "twin:nsf"], ["overdraft", ""]]);
+  });
+
+  it("v82: a returned deposited item or a savings transfer is not a combined line", () => {
+    expect(runFreeSpecialists("Fee Schedule\nReturned Deposited Item | $10.00").candidates.some((fee) => fee.lineShare)).toBe(false);
+    expect(runFreeSpecialists("Fee Schedule\nOverdraft Transfer from Savings | $5.00").candidates.some((fee) => fee.lineShare)).toBe(false);
+  });
+
   it("does not hold a balance an account requires as a fee", () => {
     const result = runFreeSpecialists("Checking\nMinimum Daily Balance Requirement1 | $1,500 | Monthly Service Fee | $7.00");
     expect(result.held.some((row) => row.amount === 1500)).toBe(false);

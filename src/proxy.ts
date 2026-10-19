@@ -21,7 +21,8 @@ export function cachedVariantPath(pathname: string, search: URLSearchParams): st
     const fee = search.get("fee");
     return fee && FEE_CATEGORIES.has(fee) ? `/institution/${profile[1]}/fee/${fee}` : null;
   }
-  if (pathname === "/institutions" && DIRECTORY_FILTER_KEYS.some((key) => search.get(key))) {
+  // `fees` counts only as "1", the one value the page reads, so `?fees=x` stays on the cached page.
+  if (pathname === "/institutions" && (DIRECTORY_FILTER_KEYS.some((key) => search.get(key)) || search.get("fees") === "1")) {
     return "/institutions/results";
   }
   return null;

@@ -83,7 +83,7 @@ describe("InstitutionSearchBar", () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ json: async () => BANKS })));
     render(<InstitutionSearchBar />);
     const input = screen.getByRole("combobox", { name: "Search institutions" });
-    expect(input.getAttribute("type")).toBe("search");
+    expect(input.getAttribute("inputmode")).toBe("search");
     await typeAndWait(input, "Aspen");
     expect(screen.getByRole("status").textContent).toBe("2 suggestions");
     fireEvent.keyDown(input, { key: "End" });

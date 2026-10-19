@@ -2,9 +2,9 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 
-const route = vi.hoisted(() => ({ pathname: "/pro/research", search: "instId=8109", resolve: vi.fn() }));
+const route = vi.hoisted(() => ({ pathname: "/pro/research", search: "instId=8109", resolve: vi.fn(), push: vi.fn() }));
 vi.mock("@/lib/hamilton/navigation-institution-action", () => ({ loadHamiltonNavigationInstitution: route.resolve }));
-vi.mock("next/navigation", () => ({ usePathname: () => route.pathname, useSearchParams: () => new URLSearchParams(route.search) }));
+vi.mock("next/navigation", () => ({ usePathname: () => route.pathname, useSearchParams: () => new URLSearchParams(route.search), useRouter: () => ({ push: route.push }) }));
 vi.mock("@/app/pro/(hamilton)/view-as-actions", () => ({ setViewAsCustomer: vi.fn() }));
 vi.mock("@/components/use-session-chrome", () => ({
   SessionChromeProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -35,11 +35,13 @@ describe("H01 retained Hamilton shell navigation", () => {
     render(<HamiltonShell {...seed}>Research body</HamiltonShell>);
     const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
     expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pro/reports?instId=8109");
-    // My fees (/pro/research) is the "Your institution" entry, not a Research lens.
-    expect(nav.getByRole("link", { name: "Your institution" })).toHaveAttribute("aria-current", "page");
-    expect(nav.getByRole("link", { name: "Your institution" })).toHaveAttribute("href", "/pro/research?instId=8109");
-    expect(nav.getByRole("link", { name: "Research" })).not.toHaveAttribute("aria-current");
-    expect(nav.getByRole("link", { name: "Saved analyses" })).toHaveAttribute("href", "/pro/saved?instId=8109");
+    // The institution's fees (/pro/research) are a Research sub-tab named for it (#2044).
+    expect(nav.getByRole("link", { name: "Research" })).toHaveAttribute("aria-current", "page");
+    const section = within(screen.getByRole("navigation", { name: "Research pages" }));
+    expect(section.getByRole("link", { name: `${homeName} fees` })).toHaveAttribute("aria-current", "page");
+    expect(section.getByRole("link", { name: `${homeName} fees` })).toHaveAttribute("href", "/pro/research?instId=8109");
+    expect(section.getByRole("link", { name: "Market" })).toHaveAttribute("href", "/pro/intelligence?instId=8109");
+    expect(screen.getByRole("link", { name: "Alerts and watches" })).toHaveAttribute("href", "/pro/monitor?instId=8109");
   });
 
   it("carries the same research subject through mobile tabs and account links", async () => {
@@ -89,7 +91,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     await act(async () => resolveA({ id: "2945", name: "Delayed old A" }));
     expect(screen.getByLabelText("Institution context").textContent).toContain("Researching: Addition Financial Credit Union");
     expect(screen.getByLabelText("Institution context").textContent).not.toContain("Delayed old A");
-    expect(screen.getByRole("link", { name: `Back to ${homeName}` })).toHaveAttribute("href", "/pro/research?instId=8109");
+    expect(screen.getByRole("link", { name: homeName })).toHaveAttribute("href", "/pro/research?instId=8109");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/pro/intelligence?instId=1535");
   });
 
@@ -179,14 +181,16 @@ describe("H01 retained Hamilton shell navigation", () => {
     expect(bar).toContain("Your institution: Not linked");
     expect(bar).toContain(`Researching: ${homeName}`);
     expect(bar).not.toContain("(your institution)");
-    expect(bar).toContain("Compared with: no peer group saved");
+    // An unlinked account says so once, beside the link to fix it.
+    expect(bar).not.toContain("Not linked to your account");
+    expect(bar).toContain("Compared with: peers Hamilton picks for this institution");
     expect(screen.getByRole("link", { name: "Link your institution" })).toHaveAttribute("href", "/pro/settings#account-institution");
-    expect(screen.getByRole("link", { name: "Choose peers" })).toHaveAttribute("href", "/pro/settings#peer-sets");
+    expect(screen.getByRole("link", { name: "Save your own" })).toHaveAttribute("href", "/pro/settings#peer-sets");
   });
 
   it("names the saved peer group for the subject", () => {
     render(<HamiltonShell {...seed} peerLabel="Florida credit unions">Research</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).toContain("Compared with: Florida credit unions");
+    expect(screen.getByLabelText("Institution context").textContent).toContain("Compared with: Florida credit unions, a saved peer group");
   });
 
   it("offers linking only when no membership exists, not for several memberships", () => {
@@ -215,7 +219,65 @@ describe("H01 retained Hamilton shell navigation", () => {
   it("a made link wins over any pending request", () => {
     render(<HamiltonShell {...seed} pendingInstitution={{ name: "Capital City Bank", needsInfo: false }}>Ask</HamiltonShell>);
     const bar = screen.getByLabelText("Institution context").textContent;
-    expect(bar).toContain(`Your institution: ${homeName}`);
+    expect(bar).toContain(`Researching: ${homeName} (your institution)`);
     expect(bar).not.toContain("pending verification");
+    expect(bar).not.toContain("Not linked");
+  });
+
+  describe("one research context on every screen (#2043)", () => {
+    const other = { ...seed, initialRequestPath: "/pro/simulate?instId=1535", selectedInstitutionId: "1535",
+      institutionContext: { name: "Addition Financial Credit Union", type: "credit_union", assetTier: "midsize", fedDistrict: 6, stateCode: "FL" } };
+
+    it("leads with the subject's state, charter and size and says it is not the reader's own", () => {
+      route.pathname = "/pro/simulate"; route.search = "instId=1535";
+      render(<HamiltonShell {...other}>Try a price</HamiltonShell>);
+      const bar = screen.getByLabelText("Institution context").textContent;
+      expect(bar).toContain("Researching: Addition Financial Credit Union");
+      expect(bar).toContain("Florida · Mid-size credit union, $1B to $10B");
+      expect(bar).toContain("Not linked to your account");
+      expect(screen.getByRole("link", { name: homeName })).toHaveAttribute("href", "/pro/research?instId=8109");
+    });
+
+    it("opens another institution on the same screen", async () => {
+      route.pathname = "/pro/simulate"; route.search = "instId=1535";
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify([{ id: 2945, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank", asset_size_tier: "midsize", published_fee_count: 30, provisional_fee_count: 0, fee_publication_label: "Published" }])));
+      vi.stubGlobal("fetch", fetchMock);
+      render(<HamiltonShell {...other}>Try a price</HamiltonShell>);
+      fireEvent.click(screen.getByRole("button", { name: "Research another institution" }));
+      fireEvent.change(screen.getByLabelText("Institution"), { target: { value: "Capital" } });
+      expect(screen.getByLabelText("Institution")).toHaveFocus();
+      await screen.findByText("Capital City Bank", {}, { timeout: 2000 });
+      // From the keyboard: Enter in the box picks the first match.
+      fireEvent.keyDown(screen.getByLabelText("Institution"), { key: "Enter" });
+      expect(route.push).toHaveBeenCalledWith("/pro/simulate?instId=2945");
+      vi.unstubAllGlobals();
+    });
+
+    it("names a market view as a market and offers no not-linked tag", () => {
+      route.pathname = "/pro/intelligence"; route.search = "";
+      render(<HamiltonShell {...seed} initialRequestPath="/pro/intelligence">Research</HamiltonShell>);
+      const bar = screen.getByLabelText("Institution context").textContent;
+      expect(bar).toContain("Market view: U.S. market");
+      expect(bar).not.toContain("Not linked to your account");
+      expect(screen.queryByRole("link", { name: "U.S. market" })).toBeNull();
+    });
+  });
+
+  describe("Overview opens on the institution (#2042)", () => {
+    it("names the research institution on Overview, not the U.S. market", () => {
+      route.pathname = "/pro/hamilton"; route.search = "";
+      render(<HamiltonShell {...seed} initialRequestPath="/pro/hamilton">Overview</HamiltonShell>);
+      const bar = screen.getByLabelText("Institution context").textContent;
+      expect(bar).toContain(`Researching: ${homeName}`);
+      expect(bar).not.toContain("Market view");
+    });
+
+    it("is the U.S. market when no institution is on file", async () => {
+      route.pathname = "/pro/hamilton"; route.search = "";
+      route.resolve.mockResolvedValue(null);
+      render(<HamiltonShell {...seed} selectedInstitutionId={null} initialRequestPath="/pro/hamilton"
+        institutionContext={{ ...seed.institutionContext, name: null }} accountContext={{ status: "unlinked", institution: null }}>Overview</HamiltonShell>);
+      await waitFor(() => expect(screen.getByLabelText("Institution context").textContent).toContain("Market view: U.S. market"));
+    });
   });
 });

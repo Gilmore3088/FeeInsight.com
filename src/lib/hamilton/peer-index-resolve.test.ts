@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getPeerIndex: vi.fn(),
   getNationalIndex: vi.fn(),
   getNationalIndexCached: vi.fn(),
+  getInstitutionOwnFees: vi.fn(),
 }));
 
 // The resolver reads the stamped readers; each wraps a plain mock so calls stay easy to assert.
@@ -30,6 +31,7 @@ const stamps = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/data-store/fee-index", () => ({
+  getInstitutionOwnFees: (id: number) => mocks.getInstitutionOwnFees(id),
   getPeerIndexStamped: async (filters: unknown, approvedOnly: boolean) => ({
     entries: await mocks.getPeerIndex(filters, approvedOnly),
     stamp: stamps.live(JSON.stringify(filters)),
@@ -90,6 +92,19 @@ describe("resolveHamiltonPeerIndex", () => {
 
     const result = await resolveHamiltonPeerIndex({ selectedInstitution: institution, minUsableCategories: 3 });
 
+    expect(result.entries[0].median_amount).toBe(2);
+  });
+
+  it("picks the narrowest group where 5 others publish 80% of the bank's own fees (#2098)", async () => {
+    // The bank publishes overdraft, c2 and c3. The first group has 9 overdraft publishers but only
+    // 3 for c2 and c3 (the bank counts itself, so 6 are needed): one of three fees, passed over.
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map([["overdraft", {}], ["c2", {}], ["c3", {}]]));
+    const thin = [{ fee_category: "overdraft", median_amount: 1, institution_count: 9 }, ...["c2", "c3"].map((c) => ({ fee_category: c, median_amount: 1, institution_count: 3 }))];
+    mocks.getPeerIndexes.mockImplementation(async (sets: unknown[]) => sets.map((_, i) => (i === 0 ? thin : usable(i + 1))));
+
+    const result = await resolveHamiltonPeerIndex({ selectedInstitution: { ...institution, id: 2945 }, minUsableCategories: 1 });
+
+    expect(mocks.getInstitutionOwnFees).toHaveBeenCalledWith(2945);
     expect(result.entries[0].median_amount).toBe(2);
   });
 

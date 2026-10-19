@@ -1,5 +1,6 @@
 import { cache } from "react";
 import {
+  getInstitutionOwnFees,
   getNationalIndexCachedStamped,
   getNationalIndexStamped,
   getPeerIndexStamped,
@@ -169,6 +170,24 @@ export function anchorsPeerGroup(entries: Pick<IndexEntry, "fee_category" | "ins
   return (entries.find((entry) => entry.fee_category === PEER_GROUP_ANCHOR)?.institution_count ?? 0) >= MIN_PEERS_FOR_POSITION;
 }
 
+/** Share of the bank's own published fees a default group must let it compare (#2098). */
+export const OWN_FEE_COVERAGE = 0.8;
+
+/**
+ * The one rule for a default peer group (#2046, #2096, #2098): the narrowest candidate where at
+ * least MIN_PEERS_FOR_POSITION other institutions publish 80% of the bank's own published fees.
+ * An overdraft-only test picked groups where SchoolsFirst could compare 2 of its 12 fees. A bank
+ * with no published fees falls back to the overdraft test. The index counts the bank itself in its
+ * own default groups, so a fee it publishes needs one more.
+ */
+export function coversOwnFees(entries: Pick<IndexEntry, "fee_category" | "institution_count">[], ownCategories: ReadonlySet<string>): boolean {
+  if (ownCategories.size === 0) return anchorsPeerGroup(entries);
+  const counts = new Map(entries.map((entry) => [entry.fee_category, entry.institution_count]));
+  let covered = 0;
+  for (const category of ownCategories) if ((counts.get(category) ?? 0) >= MIN_PEERS_FOR_POSITION + 1) covered++;
+  return covered >= Math.ceil(OWN_FEE_COVERAGE * ownCategories.size);
+}
+
 export function hasUsablePeerIndex(
   entries: Pick<IndexEntry, "median_amount" | "institution_count">[],
   minUsableCategories = 3,
@@ -269,6 +288,21 @@ const loadCandidateIndexes = cache(
     getPeerIndexesStamped(JSON.parse(candidatesKey) as HamiltonPeerFilters[], approvedOnly),
 );
 
+/** The fee categories the bank publishes, which its default group must let it compare (#2098). */
+const loadOwnCategories = cache(async (institutionId: number): Promise<Set<string>> => {
+  if (!Number.isInteger(institutionId) || institutionId <= 0) return new Set();
+  try {
+    return new Set((await getInstitutionOwnFees(institutionId)).keys());
+  } catch {
+    return new Set();
+  }
+});
+
+/** Per-fee counts for each default candidate, sharing one read per request with the resolver below. */
+export async function defaultCandidateEntries(candidates: HamiltonPeerFilters[]): Promise<IndexEntry[][]> {
+  return (await loadCandidateIndexes(JSON.stringify(candidates), true)).map((index) => index.entries);
+}
+
 export async function resolveHamiltonPeerIndex(
   params: ResolveHamiltonPeerIndexParams,
 ): Promise<HamiltonPeerIndexContext> {
@@ -323,13 +357,16 @@ export async function resolveHamiltonPeerIndex(
   }
 
   const candidates = buildInstitutionPeerFilterCandidates(params.selectedInstitution);
-  const candidateIndexes = await loadCandidateIndexes(JSON.stringify(candidates), approvedOnly);
+  const [candidateIndexes, ownCategories] = await Promise.all([
+    loadCandidateIndexes(JSON.stringify(candidates), approvedOnly),
+    candidates.length && institutionId !== null ? loadOwnCategories(Number(institutionId)) : Promise.resolve(new Set<string>()),
+  ]);
   for (const [index, filters] of candidates.entries()) {
     const candidate = candidateIndexes[index];
     const entries = candidate?.entries ?? [];
-    // The group rule every answer uses (#2096), plus the caller's usable-fee floor: a report still
-    // needs its three comparable fees.
-    if (candidate && anchorsPeerGroup(entries) && hasUsablePeerIndex(entries, minUsableCategories)) {
+    // The group rule every answer uses (#2096, #2098), plus the caller's usable-fee floor: a report
+    // still needs its three comparable fees.
+    if (candidate && coversOwnFees(entries, ownCategories) && hasUsablePeerIndex(entries, minUsableCategories)) {
       return {
         entries,
         label: describePeerFilters(filters),
@@ -345,7 +382,7 @@ export async function resolveHamiltonPeerIndex(
   return resolveNationalIndex(
     activeFallbackReason ??
       (params.selectedInstitution
-        ? "Selected-institution peer filters were too sparse, so Hamilton used the verified national index."
+        ? "No default peer group has 5 institutions publishing most of this institution's fees, so Hamilton used the verified national index."
         : null),
     approvedOnly,
   );

@@ -28,47 +28,37 @@ export interface StateMarketFees {
   /** Of those, the ones with published fees. */
   with_fees: number;
   branches: number;
-  /** The middle of the city's branches, for placing it on the state map; null without coordinates. */
+  /** The middle of the city's branches (from the city directory read), for the state map; null without coordinates. */
   lat: number | null;
   lon: number | null;
   /** One value per institution with a branch here that publishes the fee. */
   fees: Partial<Record<CityFeeKey, number[]>>;
 }
 
-function middle(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
 export async function getStateMarketFees(stateCode: string): Promise<StateMarketFees[]> {
   const state = stateCode.toUpperCase();
   const cities = (await getStateMarketCities(state)).slice(0, STATE_MARKETS_COMPARED);
   if (cities.length === 0) return [];
-  const names = cities.map((c) => c.city);
+  // Every spelling of each market, read back to the city it was folded into.
+  const names = cities.flatMap((c) => c.spellings);
+  const cityOf = new Map(cities.flatMap((c) => c.spellings.map((s) => [s, c.city] as const)));
 
   const branchRows = (await sql`
-    SELECT UPPER(city) AS city, institution_id, latitude, longitude
+    SELECT UPPER(city) AS city, institution_id
       FROM institution_branch_deposits
      WHERE year = (SELECT MAX(year) FROM institution_branch_deposits)
        AND state = ${state} AND UPPER(city) = ANY(${names}::text[])
     UNION ALL
-    SELECT UPPER(city), institution_id, latitude, longitude
+    SELECT UPPER(city), institution_id
       FROM credit_union_branches
      WHERE state = ${state} AND UPPER(city) = ANY(${names}::text[])
   `) as Record<string, unknown>[];
 
-  const byCity = new Map<string, { ids: Set<number>; lats: number[]; lons: number[] }>();
+  const byCity = new Map<string, { ids: Set<number> }>();
   for (const r of branchRows) {
-    const city = String(r.city);
-    const entry = byCity.get(city) ?? { ids: new Set<number>(), lats: [], lons: [] };
+    const city = cityOf.get(String(r.city)) ?? String(r.city);
+    const entry = byCity.get(city) ?? { ids: new Set<number>() };
     if (r.institution_id != null) entry.ids.add(num(r.institution_id));
-    const lat = Number(r.latitude);
-    const lon = Number(r.longitude);
-    if (r.latitude != null && r.longitude != null && Number.isFinite(lat) && Number.isFinite(lon) && lat !== 0) {
-      entry.lats.push(lat);
-      entry.lons.push(lon);
-    }
     byCity.set(city, entry);
   }
   const ids = [...new Set([...byCity.values()].flatMap((c) => [...c.ids]))];
@@ -107,8 +97,8 @@ export async function getStateMarketFees(stateCode: string): Promise<StateMarket
       institutions: c.institutions,
       with_fees: c.with_fees,
       branches: c.branches,
-      lat: local ? middle(local.lats) : null,
-      lon: local ? middle(local.lons) : null,
+      lat: c.lat,
+      lon: c.lon,
       fees,
     };
   });

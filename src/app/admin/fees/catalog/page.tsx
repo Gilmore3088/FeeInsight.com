@@ -22,13 +22,28 @@ import {
 import { CatalogFilterBar } from "./catalog-filter-bar";
 import { CatalogActions } from "@/components/catalog-actions";
 import { getMarketData, type MarketIndexRow } from "@/lib/admin-queries";
+import { maturityTier, type MaturityTier } from "@/lib/data-store/maturity";
 import {
   parseSegment,
   segmentLabel,
   segmentParams,
   SEGMENT_CHARTERS,
+  SEGMENT_DISTRICTS,
   SEGMENT_TIERS,
 } from "./segment";
+
+/** The statistics contract's maturity (the column the old National Index page showed). */
+function maturityChip(tier: MaturityTier): React.ReactNode {
+  const cls =
+    tier === "strong"
+      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+      : tier === "provisional"
+        ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+        : "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400";
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}>{tier}</span>
+  );
+}
 
 function deltaPill(delta: number | null): React.ReactNode {
   if (delta === null) return <span className="text-gray-300 dark:text-gray-600">-</span>;
@@ -62,6 +77,7 @@ export default async function FeeCatalogPage({
     charter?: string;
     tier?: string;
     state?: string;
+    district?: string;
   }>;
 }) {
   await requireAuth("operate");
@@ -86,6 +102,7 @@ export default async function FeeCatalogPage({
       charter_type: segment.charter || undefined,
       asset_tier: segment.tier || undefined,
       state_code: segment.state || undefined,
+      fed_district: segment.district ? Number(segment.district) : undefined,
     });
     for (const row of rows) segmentRows.set(row.fee_category, row);
   }
@@ -360,6 +377,15 @@ export default async function FeeCatalogPage({
           <span className="text-gray-300 dark:text-gray-600">-</span>
         ),
     },
+    {
+      key: "maturity",
+      label: "Maturity",
+      sortable: false,
+      align: "center",
+      className: "hidden sm:table-cell",
+      // The same rule the national index applies: institutions counted for the median.
+      render: (item) => maturityChip(maturityTier(item.institution_count)),
+    },
   ];
 
   if (segment) {
@@ -496,12 +522,12 @@ export default async function FeeCatalogPage({
         <CatalogFilterBar families={allFamilies} />
       </Suspense>
 
-      {/* Segment comparison (formerly the separate Market page) */}
+      {/* Segment comparison (formerly the separate Market and Peers pages) */}
       <details open={!!segment} className="admin-card mb-4 px-4 py-3">
         <summary className="cursor-pointer text-sm font-semibold text-gray-800 dark:text-gray-200">
           {segment ? `Compared with ${segmentLabel(segment)}` : "Compare a segment"}
           <span className="ml-2 font-normal text-gray-500 dark:text-gray-400">
-            Banks or credit unions, a size, or a state, against the national median
+            Banks or credit unions, a size, a state or a Fed district, against the national median
           </span>
         </summary>
         <form action="/admin/fees/catalog" className="mt-3 flex flex-wrap items-end gap-3">
@@ -548,6 +574,21 @@ export default async function FeeCatalogPage({
               className="mt-1 block min-h-11 w-20 rounded-md border border-gray-300 bg-white px-3 text-sm uppercase text-gray-700 sm:min-h-0 sm:py-1.5 dark:border-white/[0.12] dark:bg-[oklch(0.18_0_0)] dark:text-gray-100"
             />
           </label>
+          <label className="text-xs text-gray-500 dark:text-gray-400">
+            Fed district
+            <select
+              name="district"
+              defaultValue={segment?.district ?? ""}
+              className="mt-1 block min-h-11 rounded-md border border-gray-300 bg-white px-3 text-sm text-gray-700 sm:min-h-0 sm:py-1.5 dark:border-white/[0.12] dark:bg-[oklch(0.18_0_0)] dark:text-gray-100"
+            >
+              <option value="">All</option>
+              {SEGMENT_DISTRICTS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="submit"
             className="min-h-11 rounded-md bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 sm:min-h-0 sm:py-1.5 dark:bg-gray-100 dark:text-gray-900"
@@ -557,7 +598,7 @@ export default async function FeeCatalogPage({
           {segment ? (
             <Link
               href={`/admin/fees/catalog?${new URLSearchParams(
-                Object.fromEntries(Object.entries(filterParams).filter(([k]) => !["charter", "tier", "state"].includes(k))),
+                Object.fromEntries(Object.entries(filterParams).filter(([k]) => !["charter", "tier", "state", "district"].includes(k))),
               ).toString()}`}
               className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             >

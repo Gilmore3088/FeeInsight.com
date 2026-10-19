@@ -164,7 +164,8 @@ function narrateFinished(
         n(detail, "duplicate_collapses") > 0 && `${n(detail, "duplicate_collapses")} duplicate copies closed`,
         n(detail, "rules_recheck_rollbacks") > 0 &&
           `${n(detail, "rules_recheck_rollbacks")} older fees today's rules no longer read rolled back`,
-        n(detail, "skipped_verified_fees") > 0 && `${n(detail, "skipped_verified_fees")} already published or not eligible`,
+        n(detail, "identity_deferred_verified_fees") > 0 && `${n(detail, "identity_deferred_verified_fees")} deferred after selected verification or identity changed (still pending)`,
+        n(detail, "skipped_verified_fees") > n(detail, "identity_deferred_verified_fees") && `${n(detail, "skipped_verified_fees") - n(detail, "identity_deferred_verified_fees")} already published or not eligible`,
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }
@@ -232,6 +233,9 @@ function narrateFinished(
       const relabel = narrateAnswerKeyRelabel((detail.answer_key_relabel ?? null) as Detail | null);
       if (detail.schema_ready === false) return `${relabel}Skipped the answer-key score (migration not applied yet).`;
       const banks = n(detail, "banks_scored");
+      const reference = detail.reference_eligibility as Detail | undefined;
+      if (reference?.readError === true) return `${relabel}No answer-key measurement: reference eligibility and counts are unavailable.`;
+      if (reference?.state === "no_measurement") return `${relabel}No answer-key measurement: ${n(reference,"eligibleBanks")} eligible and ${n(reference,"excludedBanks")} excluded reference banks. Human confirmation is unchanged.`;
       if (banks === 0) return `${relabel}Had no confirmed answer-key banks to score yet.`;
       return `${relabel}Scored the pipeline against ${count(banks, "hand-checked bank")}: ${percentOf(detail.precision)} precision, ${percentOf(detail.recall)} recall.`;
     }
@@ -319,6 +323,7 @@ function narrateFinished(
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
       const regressions = Array.isArray(detail.regressions) ? detail.regressions.length : 0;
+      if (n(detail,"fees_scored") === 0 && n(detail,"reference_excluded_banks") > 0) return `No eligible reference fees to replay; ${n(detail,"reference_excluded_banks")} reference banks and ${n(detail,"reference_excluded_cases")} unbound or incompatible historical cases excluded.`;
       return `Deming replayed the answer key against today's Knox: ${n(detail, "fees_missed")} of ${n(detail, "fees_scored")} key fees missed, ${n(detail, "activated")} newly read, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
     }
     case "deming-playbook-check": {
@@ -489,10 +494,10 @@ function narrateFinished(
     }
     case "competitor-alerts": {
       const alerts = n(detail, "alerts");
-      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Monitor.`;
+      if (detail.dryRun === true) return `Dry run: ${count(alerts, "competitor change alert")} would show in Alerts and watches.`;
       return alerts === 0
         ? "Checked local competitors; no verified fee change to show."
-        : `Showed ${count(alerts, "competitor change alert")} in Monitor.`;
+        : `Showed ${count(alerts, "competitor change alert")} in Alerts and watches.`;
     }
     case "pro-digest": {
       const withNews = n(detail, "withNews");

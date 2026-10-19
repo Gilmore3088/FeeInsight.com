@@ -608,7 +608,7 @@ const spec = {
       },
       Unauthorized: {
         description:
-          "No API key was sent (code api_key_required), or the key was turned away: unknown (invalid_api_key), revoked (key_revoked), its Hamilton subscription is not active (subscription_inactive), or its holder no longer has a seat on the plan (seat_removed)",
+          "No API key was sent (code api_key_required), or the key was turned away: unknown key or unavailable subscriber payer/holder account (invalid_api_key), revoked (key_revoked), its Hamilton subscription is not active (subscription_inactive), or its holder no longer has a seat on the plan (seat_removed). Subscriber keys require both payer and holder accounts to exist and be active; partner keys without subscriber-user lineage retain their issued access.",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       PlanRequired: {

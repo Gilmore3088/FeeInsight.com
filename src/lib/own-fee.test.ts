@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ownFeeFrom, ownFeeFromRows, ownFeeLabel, ownFeeList, severalFeesOf, statedFeeLabel, statedFeeText } from "./own-fee";
+import { feeScheduleUrls, ownFeeFrom, ownFeeFromRows, ownFeeLabel, ownFeeList, severalFeesOf, statedFeeLabel, statedFeeText } from "./own-fee";
+
+it("preserves every distinct stored schedule and legacy links, excluding unsafe link values (#1993)", () => {
+  expect(feeScheduleUrls(["https://bank.test/a.pdf", "https://bank.test/b.pdf", "https://bank.test/a.pdf"], "https://bank.test/a.pdf"))
+    .toEqual(["https://bank.test/a.pdf", "https://bank.test/b.pdf"]);
+  expect(feeScheduleUrls(["javascript:alert(1)", "data:text/html,test", "https://user:pass@bank.test/fees", "not a URL"], "http://bank.test/fees"))
+    .toEqual(["http://bank.test/fees"]);
+  expect(feeScheduleUrls()).toEqual([]);
+});
 
 describe("ownFeeFrom", () => {
   it("gives one stated amount as the price", () => {

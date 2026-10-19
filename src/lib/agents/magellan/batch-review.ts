@@ -1,4 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
+import { eligibleReferences, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
+import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -125,6 +127,7 @@ export function batchFeedbackRows(
   scores: FinderBatchScore[],
   batch: { firstId: number; lastId: number; links: number; errors: number },
   runId: number | null,
+  reference?: ReferenceScoreCohort,
 ): FeedbackRow[] {
   return scores.map((score) => ({
     aboutStage: "discover",
@@ -147,6 +150,8 @@ export function batchFeedbackRows(
       by_kind: score.byKind,
       darwin_errors: score.darwinErrors,
       answer_key: score.answerKey,
+      ...(reference ? { reference_protocol: reference.protocol, reference_cohort: reference.cohortFingerprint,
+        reference_excluded_banks: reference.excludedBanks } : {}),
       samples: score.samples,
     },
     runId,
@@ -163,6 +168,8 @@ export async function reviewLinkBatches(
   try {
     if (!(await feedbackSchemaReady(db))) return result;
     result.ready = true;
+    const reference = await readReferenceEligibility(db);
+    const bindings = eligibleReferences(reference).map((row) => ({ institution_id: row.input.key.institutionId, document_url: row.input.key.documentUrl }));
     const [cursorRow] = await inSavepoint(db, (scope) => scope<Array<{ cursor: number | string | null }>>`
       SELECT max((evidence->>'last_link_feedback_id')::bigint) AS cursor
         FROM pipeline_feedback
@@ -184,10 +191,8 @@ export async function reviewLinkBatches(
              AND d.reported_by = 'darwin'
         ) darwin ON TRUE
         LEFT JOIN LATERAL (
-          SELECT a.document_url FROM answer_key_institutions a
+          SELECT a.document_url FROM jsonb_to_recordset(${JSON.stringify(bindings)}::jsonb) AS a(institution_id bigint, document_url text)
            WHERE a.institution_id = f.institution_id
-             AND a.status = 'confirmed'
-           ORDER BY a.confirmed_at DESC NULLS LAST
            LIMIT 1
         ) ak ON TRUE
        WHERE f.check_name = ${LINK_YIELD_CHECK}
@@ -213,7 +218,7 @@ export async function reviewLinkBatches(
         lastId: Number(chunk[chunk.length - 1].id),
         links: chunk.length,
         errors,
-      }, options.runId));
+      }, options.runId, reference.cohort));
     }
     if (!options.dryRun && writes.length > 0) {
       result.written = await inSavepoint(db, (scope) => recordFeedback(scope, writes));
@@ -232,6 +237,7 @@ export async function reviewLinkBatches(
 export async function loadDemotedFinders(db: SqlTag): Promise<Set<string>> {
   try {
     if (!(await feedbackSchemaReady(db))) return new Set();
+    const reference = await readReferenceEligibility(db);
     const rows = await inSavepoint(db, (scope) => scope<Array<{ strategy: string }>>`
       SELECT about_strategy AS strategy
         FROM (
@@ -241,6 +247,9 @@ export async function loadDemotedFinders(db: SqlTag): Promise<Set<string>> {
            WHERE check_name = ${BATCH_REVIEW_CHECK}
              AND about_strategy IS NOT NULL
              AND (evidence->>'counts_toward_demotion')::boolean IS TRUE
+             AND ((evidence #>> '{answer_key,matched}' = '0' AND evidence #>> '{answer_key,mismatched}' = '0')
+               OR (evidence->>'reference_protocol' = ${String(reference.protocol)}
+                 AND evidence->>'reference_cohort' = ${reference.cohort.cohortFingerprint}))
         ) reviews
        WHERE recent <= 2
        GROUP BY about_strategy

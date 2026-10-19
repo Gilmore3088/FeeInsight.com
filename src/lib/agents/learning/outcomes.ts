@@ -75,6 +75,9 @@ function errorText(error: unknown): string {
 /** A typed outcome for a failed HTTP request: an HTTP status, or the thrown error. */
 export function classifyFetchFailure(status: number | null, error?: unknown): AttemptOutcome {
   if (status == null || status === 0) {
+    // The bounded source transport can stop oversized bodies before the readers'
+    // own size check. Keep their existing typed outcome instead of a network miss.
+    if (error instanceof Error && error.name === "FeeSourceFetchError" && (error as { code?: unknown }).code === "too_large") return "too_large";
     return /abort|timed? ?out|timeout/i.test(errorText(error)) ? "timeout" : "network_error";
   }
   if (status === 401 || status === 403) return "http_403";

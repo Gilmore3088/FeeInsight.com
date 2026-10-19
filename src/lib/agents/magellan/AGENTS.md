@@ -11,6 +11,11 @@ Magellan owns institution source discovery and source fetching.
 
 ## Required Behavior
 
+- Default fee-source HTTP reads use `../fee-source-fetch.ts`: public destinations pinned at
+  connection time, every redirect revalidated, bounded time/bytes and standard TLS identity.
+  Pass that transport through helpers; never fall back to unrestricted fetch after a refusal.
+  Injected test/provider response transports remain separate. Scope and compatibility:
+  `docs/project/findings/2026-10-19-safe-fee-source-fetch.md` (#2136).
 - Prefer deterministic fetch and source classification before any provider-assisted work.
 - Preserve source URL, document path/key, content hash, status code, and institution ID lineage.
 - One stored document per (institution, content hash). Content matching the latest copy
