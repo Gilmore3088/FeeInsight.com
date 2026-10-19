@@ -3,7 +3,7 @@ import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { buildIndexEntries } from "./fee-index";
-import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER } from "./fee-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, activeInstitutionFilter } from "./fee-stats";
 import { financialSourceFilter } from "./financial-sources";
 import { feeComplaintFilterSql } from "./complaints";
 import { buildIndicatorSeries, type IndicatorSeries } from "./economic-context";
@@ -255,15 +255,8 @@ function sizeGroupSql(charter: keyof typeof REGULATOR_SIZE_GROUPS): string {
   return groups.map((g) => (g.below == null ? `ELSE '${g.key}'` : `WHEN ct.asset_size < ${g.below} THEN '${g.key}'`)).join(" ");
 }
 
-/**
- * The hub's rule for which headquartered institutions count: every institution_sources row the
- * regulator has not marked inactive. The state hub's institution counts and the shared coverage
- * read (geographic.ts getResearchCoverage) both use it, so a state page's "headquartered" total and
- * its hub figures count one population (#1955).
- */
-export function activeInstitutionFilter(alias = "ct"): string {
-  return `${alias}.regulatory_status IS DISTINCT FROM 'inactive'`;
-}
+/** Re-exported for the hub's readers; the rule lives with the statistics contract (fee-stats.ts). */
+export { activeInstitutionFilter };
 
 async function loadInstitutions(scope: HubScope): Promise<HubInstitutionGroup[]> {
   const rows = (await sql.unsafe(

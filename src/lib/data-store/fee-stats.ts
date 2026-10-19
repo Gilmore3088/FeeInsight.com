@@ -79,8 +79,10 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * 9/10 (#1816): safe deposit drilling, key, lock and late charges leave every median.
  * 11/12 (#1901): a fee whose stated frequency contradicts its category's basis leaves every median.
  * 13/14 (#1879): medians and quartiles round half a cent up on the decimal value (roundCents).
+ * 15/16 (#1980): national, state and district medians leave out institutions the regulator marks
+ * inactive (activeInstitutionFilter), the rule every public count already uses.
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 13 : 14;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 15 : 16;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -95,6 +97,19 @@ export function businessSourceSql(alias: string): string {
  */
 export function safeDepositServiceSql(alias: string): string {
   return `(${alias}.fee_category = '${SAFE_DEPOSIT_CATEGORY}' AND COALESCE(${alias}.fee_name, '') ~* '${SAFE_DEPOSIT_SERVICE_SQL}')`;
+}
+
+/**
+ * The one rule for which institutions public counts and medians take in: every institution_sources
+ * row the regulator has not marked inactive (the registry sync sets `regulatory_status` and
+ * `status` to 'inactive' together when a charter closes, and Hamilton's publish step takes such an
+ * institution's live fees down, closed-institution.ts). The state hub, the shared coverage read,
+ * the national "monitored" count and the national, state and district medians all use it (#1955,
+ * #1980), so a state's totals add up to the national ones. Alias is code, not input.
+ */
+export function activeInstitutionFilter(alias = "ct"): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid institution table alias");
+  return `${alias}.regulatory_status IS DISTINCT FROM 'inactive'`;
 }
 
 /** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */

@@ -25,6 +25,7 @@
 import type { sql as sqlTag } from "@/lib/data-store/connection";
 import {
   STATS_METHOD_VERSION,
+  activeInstitutionFilter,
   scheduleGroupSql,
   scheduleKeysSql,
   statsRowFilter,
@@ -424,6 +425,7 @@ export async function loadLiveFigures(db: SqlTag, printed: PrintedFigures): Prom
             WHERE ef.fee_category IS NOT NULL
               AND ef.review_status = 'approved'
               AND ${statsRowFilter("ef")}
+              AND ${activeInstitutionFilter("ct")}
               AND (ef.fee_category = ANY($1::text[]) OR ct.state_code = ANY($2::text[]))`,
           [[...categories], [...coverageStates]] as never[],
         )) as unknown as LiveFeeRow[])
