@@ -749,12 +749,14 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
     evidence: "Orion Federal Credit Union (doc 29978, text 27542): \"Monthly Fee | $01 | $0\": $0 with footnote 1 beside the other account's $0, not $1." },
   { feePublishedId: 59691, institutionId: 418, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Non-Penn Community Bank network ATM transactions",
     reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
-    evidence: "Penn Community Bank (doc 13627, text 1096): \"Non-Penn Community Bank network ATM transactions | $01\" among rows of \"$0\": $0 with footnote 1, not $1." },  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees the v74
+    evidence: "Penn Community Bank (doc 13627, text 1096): \"Non-Penn Community Bank network ATM transactions | $01\" among rows of \"$0\": $0 with footnote 1, not $1." },
+  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees the v74
   // guard cannot reach by name, each confirmed against its stored text. 8 entries, under the
   // fewer-than-20 rule; James is asked before the PR that lists them merges.
   { feePublishedId: 154182, institutionId: 2954, canonicalFeeKey: "paper_statement", amount: 3, feeName: "per month with eStatements4 Paper statements available for an additional",
     reason: "duplicate of #154181 (#2018)", issue: 2018, kind: "duplicate",
-    requiresLive: { feePublishedId: 154181, amount: 3, feeName: "Optional: Yes Paper Statements available" },
+    // The taxonomy fold (HAND_REFILES) renames 154181 earlier in the same publish, so this waits on its new name.
+    requiresLive: { feePublishedId: 154181, amount: 3, feeName: "Paper statements" },
     evidence: "Lyon County State Bank (doc 22417, text 19093, mylcsb.com/personal/personal-checking): \"Yes Paper Statements available for $3 per month\", the same page and line as live 154181 (doc 37121), which is renamed and kept." },
   { feePublishedId: 154134, institutionId: 7603, canonicalFeeKey: "early_closure", amount: 10, feeName: "Holiday Account Early Withdrawal",
     reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",

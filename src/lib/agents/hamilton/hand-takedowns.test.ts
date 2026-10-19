@@ -5,6 +5,7 @@ vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn(
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
+import { planHandRefiles } from "./taxonomy-fold";
 import {
   applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
   HAND_WAITING_REJECTIONS, handAudienceEvidence, handTakedownBatchSizes, JAMES_APPROVED_BATCHES, planHandAudienceFixes, planHandTakedowns,
@@ -224,9 +225,11 @@ const LIVE: LiveTakedownRow[] = [
   { fee_published_id: 61842, lineage_ref: 64934, institution_id: 3125, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Service Charge", amount: "5.00" },
   { fee_published_id: 97256, lineage_ref: 103695, institution_id: 162, canonical_fee_key: "monthly_maintenance", fee_name: "Safe Start Checking Account Monthly service charge", amount: "1.00" },
   { fee_published_id: 137275, lineage_ref: 159774, institution_id: 6942, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly Fee", amount: "1.00" },
-  { fee_published_id: 59691, lineage_ref: 51654, institution_id: 418, canonical_fee_key: "atm_non_network", fee_name: "Non-Penn Community Bank network ATM transactions", amount: "1.00" },  // #2018: James's 20-defect register, live on prod, read-only, Oct 19; 154181 and 144344 are the fees two of them repeat.
+  { fee_published_id: 59691, lineage_ref: 51654, institution_id: 418, canonical_fee_key: "atm_non_network", fee_name: "Non-Penn Community Bank network ATM transactions", amount: "1.00" },
+  // #2018: James's 20-defect register, live on prod, read-only, Oct 19; 154181 and 144344 are the fees two of them repeat.
   { fee_published_id: 154182, lineage_ref: 122264, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "per month with eStatements4 Paper statements available for an additional", amount: "3.00" },
-  { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "Optional: Yes Paper Statements available", amount: "3.00" },
+  // 154181 as the taxonomy fold leaves it: its hand re-file renames it earlier in the same publish.
+  { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: "Paper statements", amount: "3.00" },
   { fee_published_id: 154134, lineage_ref: 193235, institution_id: 7603, canonical_fee_key: "early_closure", fee_name: "Holiday Account Early Withdrawal", amount: "10.00" },
   { fee_published_id: 152985, lineage_ref: 189585, institution_id: 4522, canonical_fee_key: "early_closure", fee_name: "Savings Accounts: Holiday Savings Account early withdrawal", amount: "10.00" },
   { fee_published_id: 154075, lineage_ref: 193019, institution_id: 2675, canonical_fee_key: "monthly_maintenance", fee_name: "Monthly fee", amount: "7.00" },
@@ -410,6 +413,17 @@ describe("hand takedowns (James, Oct 16)", () => {
     const planned = planHandTakedowns(withoutKept, batch);
     expect(planned.takenDown.map((item) => item.feePublishedId)).toEqual([154134, 152985, 154075, 154076, 154101, 152612]);
     expect(planned.skipped.map((item) => item.feePublishedId)).toEqual([154182, 152916]);
+  });
+
+  it("#2018: 154182 comes down once the fold has renamed 154181, and not before", () => {
+    const batch = HAND_TAKEDOWNS.filter((entry) => entry.feePublishedId === 154182);
+    const before = { fee_published_id: 154181, fee_verified_id: 193642, institution_id: 2954, source_document_id: 37121, canonical_fee_key: "paper_statement", fee_name: "Optional: Yes Paper Statements available", amount: "3.00" };
+    const [move] = planHandRefiles([before]);
+    expect(move.refile.name).toBe("Paper statements");
+    const dup = LIVE.find((row) => Number(row.fee_published_id) === 154182)!;
+    const renamed = { fee_published_id: 154181, lineage_ref: 193642, institution_id: 2954, canonical_fee_key: "paper_statement", fee_name: move.refile.name, amount: "3.00" };
+    expect(planHandTakedowns([dup, renamed], batch).takenDown.map((item) => item.feePublishedId)).toEqual([154182]);
+    expect(planHandTakedowns([dup, { ...renamed, fee_name: before.fee_name }], batch).takenDown).toEqual([]);
   });
 
   it("takes a row down only while it still reads as listed", () => {

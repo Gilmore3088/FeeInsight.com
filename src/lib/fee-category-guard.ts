@@ -58,6 +58,8 @@ interface CategoryRule {
    * "Club Accounts - Excess Withdrawal Fee" has no other home and stays).
    */
   onlyIfRefiles?: boolean;
+  /** v74: like `exclude`, but matched with case (an all-capitals abbreviation, `NAMED_OWN_ATM`). */
+  excludeExact?: RegExp;
 }
 
 const RETURNED_ITEM = String.raw`(?:nsf\s+)?return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?`;
@@ -123,10 +125,12 @@ const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holder
 /**
  * v74 (James's 20 live defects, Oct 19): a withdrawal at an ATM the name gives as one named
  * institution's own ("ATM Withdrawal Fee at JSFCU ATM" $2.50, Jersey Shore FCU 152758: its line is
- * the surcharge non-members pay there) is not a member's fee at another network's ATM. Words that
- * name a network, a partner or "any/other/foreign" ATMs are not an institution's own.
+ * the surcharge non-members pay there) is not a member's fee at another network's ATM. Only an
+ * all-capitals abbreviation reads as the institution ("at JSFCU ATM", "at NCB ATM"); it is matched
+ * case by case (`excludeExact`), so a word ("at Partner ATMs", "at Visa ATMs") and a network
+ * acronym ("at NYCE ATMs", "at CU ATMs") never count (#2024 review).
  */
-const NAMED_OWN_ATM = String.raw`\bat\s+(?!(?:other|another|any|all|an?|the|our|this|its|your|non[\w-]*|foreign|out[\w-]*|participating|network|networks|surcharge[\w-]*|free|no|shared|co-?op|allpoint|moneypass|sum|star|pulse|cirrus|plus|presto|publix|international|domestic|banks?|bank's|credit|atms?)\b)[a-z0-9&.'-]{2,}\s+atms?\b`;
+const NAMED_OWN_ATM = /\b[Aa][Tt]\s+(?!(?:ATM|ATMS|CO|CU|CUS|US|USA|PLUS|STAR|NYCE|MAC|SUM|ACCEL|AFFN|TYME|SHAZAM|PULSE|CIRRUS|PRESTO|ALLPOINT|MONEYPASS|VISA|MC|ATH|POS)\b)[A-Z][A-Z0-9&]{1,7}\s+(?:ATM|Atm|atm)s?\b/;
 /**
  * v74: a savings club's withdrawal ("Holiday Account Early Withdrawal" $10, 154134, 152985) is not
  * closing the account. None of the 50 types holds it, and 315 live fees read so (prod, read-only,
@@ -405,6 +409,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // ATM heading passes; one by phone or with a person does not.
   atm_non_network: {
     include: /(atm|allpoint|network machine|machines?\b|shazam|cajero|balance inquir)/i,
+    excludeExact: NAMED_OWN_ATM,
     excludeUnless: {
       pattern: /deposit/i,
       unless:
@@ -421,7 +426,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // A monthly ATM add-on or plan (`ATM_PLAN`) is not a per-use fee either.
     // v72 (#1788): an ATM used outside the U.S. (`INTERNATIONAL_ATM`) is International ATM & Card.
     // v74: a withdrawal at one named institution's own ATM (`NAMED_OWN_ATM`) is out too.
-    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${NAMED_OWN_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|${CARD_SERVICE_ELSEWHERE}|${INTERNATIONAL_ATM.source}|` +
+    exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|${CARD_SERVICE_ELSEWHERE}|${INTERNATIONAL_ATM.source}|` +
       /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
   },
   // v72 (#1788): a wire the member receives (`INCOMING_WIRE`: "– In Coming", "(in-bound)", "Wire-In")
@@ -1073,7 +1078,7 @@ export function checkFeeCategory(
   // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
   // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
   const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
-  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded;
+  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact ? name.match(rule.excludeExact) : null);
   const excluded = matched && rule.onlyIfRefiles && !refileTargetAccepts(canonicalFeeKey, name) ? null : matched;
   if (excluded) {
     return {

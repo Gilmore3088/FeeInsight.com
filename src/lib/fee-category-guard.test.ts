@@ -1963,7 +1963,7 @@ describe("guard v74 (#2018): James's 20-defect register", () => {
   });
 
   it("fails a withdrawal at the institution's own named ATM, and keeps other banks' and networks' ATMs", () => {
-    for (const name of ["ATM Withdrawal Fee at JSFCU ATM", "ATM Cash Withdrawal at NCB ATM"]) {
+    for (const name of ["ATM Withdrawal Fee at JSFCU ATM", "ATM Cash Withdrawal at NCB ATM", "ATM Transactions at DFCU ATM (Local ATM)"]) {
       expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
     }
     for (const name of [
@@ -1974,6 +1974,10 @@ describe("guard v74 (#2018): James's 20-defect register", () => {
       "Free at our ATM's; $2 at others",
       "Withdrawal at Bank's ATM network excluded",
       "Cash withdrawal at foreign ATMs",
+      // #2024 review: words and network acronyms are not an institution's own name.
+      ...["Partner", "Third-Party", "Visa", "Mastercard", "NYCE", "Accel", "Exchange", "Shazam", "Cardtronics", "Walgreens", "7-Eleven",
+        "Unaffiliated", "Independent", "Remote", "Off-Site", "Retail", "Affiliate", "Correspondent", "U.S.", "CU", "Local",
+        "CO-OP", "MoneyPass", "Allpoint", "PLUS", "STAR", "Any", "Partner Credit Union"].map((word) => `Withdrawal at ${word} ATMs`),
     ]) {
       expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(true);
     }

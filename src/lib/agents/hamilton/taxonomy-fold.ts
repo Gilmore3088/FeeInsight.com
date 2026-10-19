@@ -596,6 +596,7 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 108912, from: "dormant_account", amount: 12, to: "dormant_account", name: "Dormant Account (after first 12 months)",
     oldName: "31 Days of Interest: Dormant Account (after first 12 months)",
     why: "inst 7697, doc 24596: \"or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year\"" },
+  // Guard v74 (#2018) refuses this name (a withdrawal at DFCU's own ATM), so the rename no longer applies; the row has been down since Oct 16.
   { feePublishedId: 131129, from: "atm_non_network", amount: 2, to: "atm_non_network", name: "ATM Transactions at DFCU ATM (Local ATM)",
     oldName: "15 free ATM transactions per month and 15 free balance inquiries per month; then",
     why: "inst 5100, doc 28876: \"ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month ... then $2.00/transaction\"; category kept as filed, its question is on #1196" },
@@ -757,7 +758,8 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // is still the joined one.
   { feePublishedId: 83792, from: "rush_card", amount: 30, to: "rush_card", name: "Expedited card delivery (domestic)",
     oldName: "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)",
-    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees whose
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },
+  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees whose
   // price is right and whose name or category is not, each traced to its stored text.
   { feePublishedId: 154438, from: "account_research", amount: 3, to: "excess_withdrawal", name: "Savings withdrawal in excess of six per quarter",
     oldName: "Service charge fee",
