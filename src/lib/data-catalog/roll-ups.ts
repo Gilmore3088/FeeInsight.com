@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import type { AreaGeoType } from "@/lib/data-store/economy-aggregates";
+import { ncuaCallMeasure } from "./ncua-call-measures";
 
 /**
  * Roll-ups computed when they are read, over the tables that already hold the figures. Nothing is
@@ -122,24 +123,29 @@ export async function callPeerRollup(
   tx: Tx,
   args: { itemKey: string; rowSources: string[]; memberIds: number[] | null; from: string | null; to: string | null; limit: number },
 ): Promise<CallRollupRow[]> {
+  const measure = ncuaCallMeasure(args.itemKey);
+  const rowSources = measure ? args.rowSources.filter((source) => source === "ncua") : args.rowSources;
   const rows = await tx<CallRollupRow[]>`
     SELECT to_char(c.report_date, 'YYYY-MM-DD') AS period, ${tx.unsafe(CALL_UNIT_SQL)} AS unit,
            percentile_cont(0.5) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS median,
            percentile_cont(0.25) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS p25,
            percentile_cont(0.75) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS p75,
            count(DISTINCT c.institution_id)::int AS institution_count,
-           max(c.period_basis) AS period_basis,
+           c.period_basis,
            array_agg(DISTINCT c.source) AS sources,
            max(c.fetched_at) AS fetched_at,
            (array_agg(c.source_url ORDER BY c.fetched_at DESC NULLS LAST))[1] AS source_url
       FROM institution_call_report_items c
      WHERE c.item_key = ${args.itemKey}
-       AND c.source = ANY(${args.rowSources}::text[])
+       AND c.source = ANY(${rowSources}::text[])
+       AND (${measure?.code ?? null}::text IS NULL OR c.item_code = ${measure?.code ?? null}::text)
+       AND (${measure?.storedUnit ?? null}::text IS NULL OR c.unit = ${measure?.storedUnit ?? null}::text)
+       AND (${measure?.periodBasis ?? null}::text IS NULL OR c.period_basis = ${measure?.periodBasis ?? null}::text)
        AND (${args.memberIds}::bigint[] IS NULL OR c.institution_id = ANY(${args.memberIds}::bigint[]))
        AND (${args.from}::text IS NULL OR to_char(c.report_date, 'YYYY-MM') >= ${args.from}::text)
        AND (${args.to}::text IS NULL OR to_char(c.report_date, 'YYYY-MM') <= ${args.to}::text)
-     GROUP BY c.report_date, 2
-     ORDER BY c.report_date DESC, 2
+     GROUP BY c.report_date, 2, c.period_basis
+     ORDER BY c.report_date DESC, 2, c.period_basis
      LIMIT ${args.limit}
   `;
   return [...rows];
@@ -163,6 +169,8 @@ export async function callInstitutionSeries(
   tx: Tx,
   args: { itemKey: string; rowSources: string[]; institutionId: number; from: string | null; to: string | null; limit: number },
 ): Promise<CallInstitutionRow[]> {
+  const measure = ncuaCallMeasure(args.itemKey);
+  const rowSources = measure ? args.rowSources.filter((source) => source === "ncua") : args.rowSources;
   const rows = await tx<CallInstitutionRow[]>`
     SELECT to_char(c.report_date, 'YYYY-MM-DD') AS period, c.item_code, c.item_description, c.schedule,
            ${tx.unsafe(CALL_VALUE_SQL)}::float8 AS value, ${tx.unsafe(CALL_UNIT_SQL)} AS unit,
@@ -170,7 +178,10 @@ export async function callInstitutionSeries(
       FROM institution_call_report_items c
      WHERE c.institution_id = ${args.institutionId}
        AND c.item_key = ${args.itemKey}
-       AND c.source = ANY(${args.rowSources}::text[])
+       AND c.source = ANY(${rowSources}::text[])
+       AND (${measure?.code ?? null}::text IS NULL OR c.item_code = ${measure?.code ?? null}::text)
+       AND (${measure?.storedUnit ?? null}::text IS NULL OR c.unit = ${measure?.storedUnit ?? null}::text)
+       AND (${measure?.periodBasis ?? null}::text IS NULL OR c.period_basis = ${measure?.periodBasis ?? null}::text)
        AND (${args.from}::text IS NULL OR to_char(c.report_date, 'YYYY-MM') >= ${args.from}::text)
        AND (${args.to}::text IS NULL OR to_char(c.report_date, 'YYYY-MM') <= ${args.to}::text)
      ORDER BY c.report_date DESC

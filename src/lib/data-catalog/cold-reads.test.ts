@@ -84,4 +84,38 @@ describe("cold reads", () => {
     expect(read.rows).toEqual([expect.objectContaining({ institution_id: 12, value: 900, report_date: "2019-06-30" })]);
     expect(read.failed).toEqual(["ffiec 2019-03-31"]);
   });
+
+  it("keeps cold roll-ups separate by period basis and unit", () => {
+    const rows = coldCallRollup([
+      row({ value: 10, unit: "dollars", period_basis: "ytd" }),
+      row({ institution_id: 2, value: 20, unit: "dollars", period_basis: "point_in_time" }),
+      row({ institution_id: 3, value: 3, unit: "count", period_basis: "point_in_time" }),
+    ]);
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ unit: "USD", period_basis: "ytd", median: 10, institution_count: 1 }),
+      expect.objectContaining({ unit: "USD", period_basis: "point_in_time", median: 20, institution_count: 1 }),
+      expect.objectContaining({ unit: "count", period_basis: "point_in_time", median: 3, institution_count: 1 }),
+    ]));
+  });
+
+  it("rejects contradictory curated units, bases and publisher rows even inside checksum-valid archives", async () => {
+    const writer = new ColdFileWriter(CALL_ITEM_COLUMNS);
+    const base = { ...row({ source: "ncua", item_key: "acct_131", item_code: "ACCT_131", unit: "dollars", value: 12 }), id: "1", institution_id: "12", agent_run_id: null };
+    writer.push([
+      base,
+      { ...base, id: "2", source: "ffiec", value: 999999 },
+      { ...base, id: "3", unit: "thousands", value: 999999 },
+      { ...base, id: "4", period_basis: "point_in_time", value: 999999 },
+      { ...base, id: "5", report_date: "2019-03-31", value: 999999 },
+      { ...base, id: "6", item_code: "ACCT_380", value: 999999 },
+      { ...base, id: "7", value: null },
+    ]);
+    const file = writer.finish();
+    const store: ColdStore = { configured: true, bucket: "b", put: async () => undefined, get: async () => file.bytes };
+    const ref = { source: "ncua", period: "2019-06-30", objectKey: "k", rowCount: 7, sha256: file.sha256 };
+    expect(await readColdCallRows([ref], { itemKey: "acct_131", institutionIds: [12] }, store)).toEqual({ rows: [expect.objectContaining({ value: 12, source: "ncua", period_basis: "ytd", unit: "dollars" })], failed: [] });
+    // A correctly indexed FFIEC file still cannot supply a curated NCUA measure.
+    expect((await readColdCallRows([{ ...ref, source: "ffiec" }], { itemKey: "acct_131", institutionIds: [12] }, store)).rows).toEqual([]);
+  });
 });
