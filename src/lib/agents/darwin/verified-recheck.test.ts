@@ -36,7 +36,7 @@ function dbWith(
   const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     // Live rows whose first look is due its second (#1397), and the second look's own read of the flags.
-    if (text.includes("FROM pipeline_feedback f")) return Promise.resolve(due);
+    if (text.includes("JOIN published_fee_records p ON p.fee_published_id = f.fee_published_id")) return Promise.resolve(due);
     if (text.includes("SELECT fee_published_id, kind, evidence")) return Promise.resolve(firstLooks);
     // Live rows verified under an older verify version (#1568).
     if (text.includes("JOIN LATERAL")) return Promise.resolve(older);
