@@ -30,7 +30,6 @@ interface Evidence {
   observations: Observation[];
   accountDates: Map<string, Set<string>>;
   dividendExpense: boolean;
-  peerPeriods: Set<string>;
   selectedIds: Set<string>;
   selectedId: string | null;
 }
@@ -41,7 +40,7 @@ const textValue = (v: unknown): string | null => typeof v === "string" && v.trim
 const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source ?? "")) || /\bNCUA\b/i.test(String(r.publisher ?? ""));
 
 function evidenceFrom(data: unknown): Evidence {
-  const result: Evidence = { ncua: false, incomplete: false, accountMeasure: false, observations: [], accountDates: new Map(), dividendExpense: false, peerPeriods: new Set(), selectedIds: new Set(), selectedId: null };
+  const result: Evidence = { ncua: false, incomplete: false, accountMeasure: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null };
   let visited = 0;
   const seen = new WeakSet<object>();
   function visit(value: unknown, depth: number, scopeId: string | null = null): void {
@@ -77,7 +76,6 @@ function evidenceFrom(data: unknown): Evidence {
         const row = record(value);
         const period = textValue(row?.period);
         if (!row || !period) continue;
-        if (r.scope === "peer_set" && finite(row.median) !== null) result.peerPeriods.add(period);
         const number = finite(row.value);
         if (r.scope !== "institution" || number === null) continue;
         const unit = String(row.unit ?? metadata.unit ?? r.unit ?? "");
@@ -108,20 +106,32 @@ function evidenceFrom(data: unknown): Evidence {
   return result;
 }
 
+const MONTH_NUMBERS: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+/** Month precision stays month precision; an explicitly stated day must also match. */
+function claimedPeriods(clause: string): string[] {
+  const periods = new Set([...clause.matchAll(/\b20\d{2}-\d{2}-\d{2}\b/g)].map((m) => m[0]));
+  const years = [...new Set(clause.match(/\b20\d{2}\b/g) ?? [])];
+  const months = /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\b(?:\s+(?:(\d{1,2}),?\s+)?(20\d{2}))?/gi;
+  for (const m of clause.matchAll(months)) {
+    const year = m[3] ?? (years.length === 1 ? years[0] : null);
+    periods.add(year ? `${year}-${MONTH_NUMBERS[m[1].slice(0, 3).toLowerCase()]}${m[2] ? `-${m[2].padStart(2, "0")}` : ""}` : "unresolved-month");
+  }
+  for (const m of clause.matchAll(/\bQ([1-4])\s*[,/-]?\s*(20\d{2})\b/gi)) periods.add(`${m[2]}-${["03", "06", "09", "12"][Number(m[1]) - 1]}`);
+  return [...periods];
+}
+
 /** A dedicated line may answer the question; a price or another subject's line cannot. */
 function reportedLineSupports(clause: string, evidence: Evidence, metrics: readonly string[], unit: string, zero: boolean): boolean {
-  const explicitDate = clause.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
-  const monthDate = clause.match(/\b(March|June|September|December)\s+(?:(\d{1,2}),?\s+)?(20\d{2})\b/i);
-  const months: Record<string, string> = { march: "03", june: "06", september: "09", december: "12" };
-  const claimedPeriod = explicitDate ? explicitDate[0]
-    : monthDate ? `${monthDate[3]}-${months[monthDate[1].toLowerCase()]}${monthDate[2] ? `-${monthDate[2].padStart(2, "0")}` : ""}` : null;
-  if (!claimedPeriod) return false;
+  const periods = claimedPeriods(clause);
+  if (periods.length !== 1 || periods[0] === "unresolved-month") return false;
+  const claimedPeriod = periods[0];
   const subjectIds = evidence.selectedId ? new Set([evidence.selectedId])
     : evidence.selectedIds.size ? evidence.selectedIds : new Set(evidence.accountDates.keys());
   if (subjectIds.size !== 1) return false;
   const payerMatch = clause.match(/\b(no|zero|\d[\d,]*)\s+(?:members?|customers?|payers?)\b/i)
     ?? clause.match(/\b(?:payers?|paying members?)\s*(?:count|number)?\s*(?:was|were|is|are|:)\s*(zero|none|\d[\d,]*)\b/i);
-  const payerValue = payerMatch ? /^(?:no|zero|none)$/i.test(payerMatch[1]) ? 0 : Number(payerMatch[1].replace(/,/g, "")) : null;
+  const nobody = /\b(?:nobody|no[ -]?one|not a single (?:member|customer|payer)|none of (?:the |its |their )?(?:members|customers|payers))\b/i.test(clause);
+  const payerValue = payerMatch ? /^(?:no|zero|none)$/i.test(payerMatch[1]) ? 0 : Number(payerMatch[1].replace(/,/g, "")) : nobody ? 0 : null;
   return evidence.observations.some((o) => metrics.includes(o.metric) && o.institutionId !== null && subjectIds.has(o.institutionId)
     && o.unit === unit && o.period.startsWith(claimedPeriod) && (zero ? o.value === 0 : payerValue !== null && o.value === payerValue));
 }
@@ -144,6 +154,7 @@ function memberGrowthSupported(clause: string, evidence: Evidence): boolean {
     if (!earlier || !latest) continue;
     const years = clause.match(/\b20\d{2}\b/g) ?? [];
     if (years.some((year) => ![first.slice(0, 4), last.slice(0, 4)].includes(year))) continue;
+    if (claimedPeriods(clause).some((period) => ![first, last].some((date) => date.startsWith(period)))) continue;
     const otherNames = evidence.observations.filter((o) => o.institutionId !== id && o.institutionName).map((o) => o.institutionName!);
     if (otherNames.some((name) => clause.toLowerCase().includes(name.toLowerCase()))) continue;
     if (/\b(?:fell|falling|declin\w*|decreas\w*|shrank|shrinking)\b/i.test(clause)) return latest.value < earlier.value;
@@ -155,7 +166,7 @@ function memberGrowthSupported(clause: string, evidence: Evidence): boolean {
 /** Negations apply to the claim's clause, never to an entire answer. */
 function refuses(clause: string, topic: RegExp): boolean {
   const refusal = /\b(?:cannot|can't|does not|do not|did not|doesn't|don't|didn't|is not|isn't|are not|aren't|not enough(?: (?:data|evidence|information))? to|insufficient(?: (?:data|evidence|information))? to|no basis to)\s+(?:\w+[ -]){0,5}(?:infer|establish|show|prove|determine|identify|conclude|mean|imply|tell|say|reveal|attribute|evidence|measure|known|available|reported|supported)|\b(?:unavailable|unknown|unreported|not (?:established|reported|available|shown|known|measured|supported))\b/i;
-  const absentLine = /\bno\s+(?:overdraft\s+)?(?:income|revenue|payer counts?)\s+(?:is|was|has been)\s+reported\b/i;
+  const absentLine = /\bno\s+(?:overdraft\s+)?(?:income|revenue|payer counts?)(?:\s+from\s+overdrafts?)?\s+(?:is|was|has been)\s+(?:reported\b|available\b.{0,35}\b(?:data|filings?|sources?))\b/i;
   return (refusal.test(clause) || absentLine.test(clause)) && topic.test(clause);
 }
 
@@ -175,23 +186,31 @@ export function checkAnswerInterpretations(text: string, data: unknown): string[
       problems.add("Checking-account counts do not establish member or customer growth. Use account growth, or supply a same-institution, same-period member-count series.");
     }
     const paidDividends = /\b(?:paid|pays?|paying|disbursed|cash payments?)\b.{0,80}\b(?:share\s+)?dividends?\b|\b(?:share\s+)?dividends?\b.{0,60}\b(?:paid|disbursed|cash payments?)\b/i;
-    const expenseCaveat = /\b(?:dividend|share)\s+expense\b.{0,45}\b(?:not|rather than)\b.{0,20}\b(?:cash paid|cash payments?|paid|disbursed)\b/i;
-    if (evidence.dividendExpense && paidDividends.test(clause) && !expenseCaveat.test(clause) && !refuses(clause, /\b(?:dividends?|cash paid|cash payments?)\b/i)) {
+    const expenseCaveat = /\b(?:dividends?(?:[ -]+on[ -]+shares)?|share)\s+(?:(?:were|was|are|is)\s+(?:an?\s+)?)?expense\b.{0,65}?\b(?:not|rather than)\s+(?:a\s+measure\s+of\s+)?(?:cash paid|cash payments?|paid|disbursed)\b/gi;
+    // Remove the scoped negative equivalence only, so a later positive "paid"
+    // assertion in the same clause must still pass the check itself.
+    const dividendClaim = clause.replace(expenseCaveat, "");
+    if (evidence.dividendExpense && paidDividends.test(dividendClaim) && !refuses(dividendClaim, /\b(?:dividends?|cash paid|cash payments?)\b/i)) {
       problems.add("NCUA dividends on shares establish YTD dividend expense, not cash paid. Keep the expense label and state that cash payments are not established.");
     }
-    const zeroOverdraftRevenue = /\boverdrafts?\b.{0,70}\b(?:income|revenue)\b.{0,25}(?:\b(?:zero|none|nothing|no)\b|\$0\b)|(?:\b(?:no|zero)\b|\$0\b)\s+(?:per[ -]item\s+)?overdraft\s+(?:income|revenue)\b|\b(?:earns?|earned|generates?|generated|receives?|received)\s+(?:no|zero|\$0)\b.{0,35}\boverdraft\b/i;
+    const zeroOverdraftRevenue = /\boverdrafts?\b.{0,70}\b(?:income|revenue)\b.{0,25}(?:\b(?:zero|none|nothing|no)\b|\$0\b)|(?:\b(?:no|zero)\b|\$0\b)\s+(?:per[ -]item\s+)?overdraft\s+(?:income|revenue)\b|\b(?:earns?|earned|generates?|generated|receives?|received)\s+(?:no|zero|\$0)\b.{0,35}\boverdrafts?\b/i;
+    // The zero can precede its revenue noun, or follow it; the overdraft subject
+    // can also follow "from". Neither ordering turns an absent breakdown into zero.
+    const zeroBeforeRevenue = /\boverdrafts?\b.{0,70}(?:\b(?:no|zero)\b|\$0\b)\s+(?:(?:realized|per[ -]item)\s+)?(?:income|revenue)\b|(?:\b(?:no|zero)\b|\$0\b)\s+(?:(?:realized|per[ -]item)\s+)?(?:income|revenue)\b.{0,50}\b(?:from|on)\s+overdrafts?\b/i;
     const otherFeesOnly = /\b(?:fee\s+(?:income|revenue)|income|revenue)\s+(?:comes?|came|is|was)\s+(?:entirely\s+|only\s+|all\s+)?from\s+other\s+(?:fees?|charges?)\b/i;
-    if ((zeroOverdraftRevenue.test(clause) || otherFeesOnly.test(clause)) && !refuses(clause, /\b(?:overdraft|revenue|income)\b/i)
+    if ((zeroOverdraftRevenue.test(clause) || zeroBeforeRevenue.test(clause) || otherFeesOnly.test(clause)) && !refuses(clause, /\b(?:overdrafts?|revenue|income)\b/i)
       && !reportedLineSupports(clause, evidence, ["overdraft_revenue", "overdraft_income", "overdraft_fee_income"], "USD", true)) {
       problems.add("A current overdraft price or broad fee-income total does not establish realized overdraft revenue, including zero. Leave the overdraft component unavailable without its own dated reported line.");
     }
-    const payers = /\b(?:no|zero|\d[\d,]*)\s+(?:members?|customers?|payers?)\b.{0,50}\b(?:paid|pay|charged)\b.{0,35}\b(?:overdraft|fees?)\b|\b(?:overdraft\s+)?(?:payers?|paying members?)\s*(?:count|number)?\s*(?:was|were|is|are|:)\s*(?:zero|none|\d[\d,]*)\b/i;
+    const payers = /\b(?:no|zero|\d[\d,]*)\s+(?:members?|customers?|payers?)\b.{0,50}\b(?:paid|pay|charged)\b.{0,35}\b(?:overdraft|fees?)\b|\b(?:overdraft\s+)?(?:payers?|paying members?)\s*(?:count|number)?\s*(?:was|were|is|are|:)\s*(?:zero|none|\d[\d,]*)\b|\b(?:nobody|no[ -]?one|not a single (?:member|customer|payer)|none of (?:the |its |their )?(?:members|customers|payers))\b.{0,40}\b(?:paid|pays?|charged)\b.{0,35}\boverdrafts?\b/i;
     if (payers.test(clause) && !refuses(clause, /\b(?:members?|customers?|payers?|paid)\b/i)
       && !reportedLineSupports(clause, evidence, ["overdraft_payer_count"], "count", false)) {
       problems.add("The supplied NCUA measures do not report overdraft payer counts. Do not infer members paying fees from account counts, schedule prices or aggregate income.");
     }
-    const peerTrend = /\bpeer(?:s|'s|s')?\b.{0,65}\b(?:grew|grow\w*|rose|increas\w*|decreas\w*|fell|declin\w*|pace|pulling\s+(?:further\s+)?ahead|falling behind)\b|\b(?:growth|grows?|grew|pulling\s+(?:further\s+)?ahead|falling behind)\b.{0,50}\b(?:peers?|group|median)\b|\b(?:keeping|keeps?|kept)\s+pace\b/i;
-    if (evidence.peerPeriods.size > 1 && peerTrend.test(clause) && !refuses(clause, /\b(?:peers?|group|median|trend|growth)\b/i)) {
+    const peerTrend = /(?:\bpeer(?:s|'s|s')?\b|\b(?:state|national|metro)\s+(?:peer\s+)?(?:median|group)\b).{0,65}\b(?:grew|grow\w*|rose|increas\w*|decreas\w*|fell|declin\w*|pace|pulling\s+(?:further\s+)?ahead|falling behind)\b|\b(?:growth|grows?|grew|pulling\s+(?:further\s+)?ahead|falling behind)\b.{0,50}\b(?:peers?|group|median)\b|\b(?:keeping|keeps?|kept)\s+pace\b/i;
+    // No current tool supplies a verified comparable-cohort contract. A single
+    // current cross-section is no more evidence of growth than two changing ones.
+    if (peerTrend.test(clause) && !refuses(clause, /\b(?:peers?|group|median|trend|growth)\b/i)) {
       problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.");
     }
     const pricingCause = /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/i;

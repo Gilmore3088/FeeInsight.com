@@ -56,6 +56,12 @@ export async function buildWrittenAnswerSystemPrompt(input: {
   const lastUserText = lastUserTextOf(messages);
 
   let systemPrompt = agent.systemPrompt;
+  systemPrompt += `\nWRITTEN FINANCIAL EVIDENCE RULES\n`
+    + "Answer the requested dated fact directly. Do not add unrequested quarter calculations, growth rates or ratios. "
+    + "For any NCUA calculation the reader does request, first call queryData for the same institution's curated call: measure and required reporting dates. "
+    + "Use only the resulting VALIDATED FINANCIAL CALCULATIONS ledger for derived figures. "
+    + "The briefing's financial values are rounded thousands: they support labeled direct facts, never calculation inputs. "
+    + "If a requested calculation is absent from the ledger, fetch the missing filing rows or state that it cannot be established. Do not calculate it from the briefing or silently approximate it.\n";
   const briefingEvidence: HamiltonBriefingEvidence[] = [];
   systemPrompt += buildHamiltonRequestContractPrompt(contract);
   systemPrompt += buildSavedPeerSetPrompt(peerSet);

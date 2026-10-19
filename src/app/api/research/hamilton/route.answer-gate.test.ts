@@ -152,6 +152,26 @@ describe("written answer evidence gate", () => {
     expect(mocks.save).not.toHaveBeenCalled();
   });
 
+  it.each(["Overdraft fees generated no revenue.", "Nobody paid overdraft fees.", "The customer base is growing."])("holds unsupported NCUA interpretation without showing or saving it: %s", async (claim) => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify([incomeFact]), evidence: [incomeFact] });
+    answers(`## Hamilton's View\n${claim}`);
+    await POST(request("What does the NCUA filing establish?"));
+    expect(mocks.merge).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(metadata()).toMatchObject({ answerEvidence: { passed: false, held: true } });
+  });
+
+  it("shows a sourced financial answer with a period caution", async () => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify([incomeFact]), evidence: [incomeFact] });
+    answers("## Hamilton's View\nFee income was $57.26 million year to date. This six-month figure should not be annualized.");
+    await POST(request("What was fee income through June?"));
+    expect(mocks.merge).toHaveBeenCalledTimes(1);
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect(metadata()).toMatchObject({ answerEvidence: { passed: true, held: false } });
+  });
+
   it.each(["error", "length", "content-filter", "tool-calls", "other"])("does not save a terminal %s stream as a completed answer", async (finishReason) => {
     mocks.stream.mockImplementation((options) => ({
       consumeStream: async () => {

@@ -91,6 +91,8 @@ describe("writeWrittenAnswer, the paid eval's written answer (#1414)", () => {
     expect(mocks.briefing).toHaveBeenCalledWith(expect.objectContaining({ institutionId: 7 }), { writtenAnswer: true });
     const system = mocks.generateText.mock.calls[0][0].system;
     expect(String(system.content ?? system)).toContain(JSON.stringify([fact]));
+    expect(String(system.content ?? system)).toContain("first call queryData");
+    expect(String(system.content ?? system)).toContain("never calculation inputs");
     expect(result.status === "written" && result.check.passed).toBe(true);
   });
 
