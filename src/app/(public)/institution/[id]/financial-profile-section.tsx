@@ -1,4 +1,5 @@
-import type { FinancialPoint, GrowthRow, OutlierFlag, PeerMedianPoints, PeerRankRow } from "./financial-history";
+import type { FinancialPoint, PeerMedianPoints } from "./financial-history";
+import type { FinancialInsightData } from "./financial-profile-data";
 import { FinancialInsights } from "./financial-insights";
 import { FinancialProfileCharts } from "./financial-profile";
 import { BranchFootprintCard, ComplaintsCard, EnforcementCard, HoldingCompanyCard } from "./registry-cards";
@@ -6,13 +7,7 @@ import { RegulatoryWatchSection } from "./regulatory-watch";
 import type { RegulatoryWatch } from "@/lib/data-store/regulatory-watch";
 import type { BranchFootprint, ComplaintTrend, EnforcementRecord, HoldingCompanyProfile } from "@/lib/data-store/registry-profile";
 
-export interface FinancialInsightData {
-  growth: GrowthRow[];
-  ranks: PeerRankRow[];
-  flags: OutlierFlag[];
-  peerCount: number | null;
-  peerQuarter: string | null;
-}
+export type { FinancialInsightData } from "./financial-profile-data";
 
 export function FinancialProfileSection({
   isPro,

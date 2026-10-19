@@ -990,6 +990,30 @@ function cachedSourceLines(text: string): string[] {
   return lastLines;
 }
 
+interface SourcePageRows {
+  fees: string[];
+  headings: boolean[];
+  columnHeadings: Array<string | null>;
+}
+
+// These facts depend only on this exact physical page, never the fee being checked.
+// Weak keys keep the existing current-text cache's lifetime: earlier documents are
+// collectable, and no source judgments or institution context are cached here.
+const pageRows = new WeakMap<string[], SourcePageRows>();
+
+function sourcePageRows(lines: string[]): SourcePageRows {
+  const prior = pageRows.get(lines);
+  if (prior) return prior;
+  const fees = lines.map((_, index) => feeRow(lines, index));
+  const read = {
+    fees,
+    headings: lines.map((line, index) => fees[index] === line && moneyTokens(line).length === 0 && !ZERO_WORDS.test(line)),
+    columnHeadings: lines.map(rightColumnHeading),
+  };
+  pageRows.set(lines, read);
+  return read;
+}
+
 /**
  * A two-column page flattened row by row ("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" /
  * "($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00") interleaves two fee lists,
@@ -1195,6 +1219,7 @@ function checkAgainstLines(
   dailyCap: boolean,
   perItem = false,
 ): SourceCheckResult {
+  const page = sourcePageRows(lines);
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
   const named = nameStems(feeName);
   const stems = dailyCap ? withNameWords(named.filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)), named.words) : named;
@@ -1222,9 +1247,9 @@ function checkAgainstLines(
     // is a fee's row, not a heading).
     const headings: string[] = [];
     for (let j = Math.max(0, i - NAME_HEADING_LINES); j < i; j += 1) {
-      if (feeRow(lines, j) === lines[j] && moneyTokens(lines[j]).length === 0 && !ZERO_WORDS.test(lines[j])) headings.push(lines[j]);
+      if (page.headings[j]) headings.push(lines[j]);
       else if (SUB_ROW.test(line)) {
-        const columnHeading = rightColumnHeading(lines[j]);
+        const columnHeading = page.columnHeadings[j];
         if (columnHeading) headings.push(columnHeading);
       }
     }
@@ -1233,7 +1258,7 @@ function checkAgainstLines(
       !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !hasStem(line, stem, stems) || hasStem(above, stem, stems))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
-    let row = feeRow(lines, i);
+    let row = page.fees[i];
     if (perItem && policyAmount(row, rounded)) {
       best = "amount_not_the_fee";
       continue;

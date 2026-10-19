@@ -26,6 +26,11 @@ export function stackedLabelKey(name: string): string {
   return name.replace(/\s+/g, " ").trim().replace(/:\s*$/, "").toLowerCase();
 }
 
+/** Possible caller name only; this does not loosen the physical source-price parser. */
+export function mayHaveCapFirstItemPrice(name: string): boolean {
+  return ITEM_FEE_NAME.test(stackedLabelKey(name));
+}
+
 function priceLine(line: string): { amount: number; after: string } | null {
   if (line.length > MAX_PRICE_CHARS || /[|\t%]/.test(line)) return null;
   const match = PRICE.exec(line);

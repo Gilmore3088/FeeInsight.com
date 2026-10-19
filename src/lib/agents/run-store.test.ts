@@ -92,7 +92,8 @@ vi.mock("@/lib/agents/fee-alerts", () => ({
   summarizeFeeAlertDispatch: vi.fn(() => "Atlas found 2 reader(s) with fee changes but did not email them."),
 }));
 
-vi.mock("@/lib/agents/darwin/verify", () => ({
+vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/agents/darwin/verify")>()),
   runDarwinVerify: runDarwinVerifyMock,
 }));
 
@@ -806,6 +807,85 @@ describe("agentic run store", () => {
     expect(txMock.unsafe).not.toHaveBeenCalledWith(
       expect.stringContaining("FROM raw_fee_observations"),
     );
+  });
+
+  async function savedRecheckRun(
+    alias: "classify" | "verify", recheck: unknown,
+    options: { dryRun?: boolean; learning?: boolean; processed?: number } = {},
+  ) {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: alias, agent_name: "darwin", title: "Verify fees" }];
+    const run = { ...runRow, agent_name: "darwin", run_kind: options.dryRun ? "dry_run" : "manual_repair", progress_total: 1, params_json: { verify_limit: 10 } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+    // No auxiliary held/source rows in this fixture; a count row is not a domain row.
+    txMock.unsafe.mockResolvedValue([]);
+    runDarwinVerifyMock.mockResolvedValue({
+      selectedRawFees: 7, processedRawFees: options.processed ?? 7, verifiedFees: 6, skippedFees: 1,
+      limit: 10, dryRun: options.dryRun === true, learning: options.learning ?? true, results: [], recheck,
+      outcomes: {}, reasonCounts: {}, zeroFeesVerified: 0, peerFallbackChecks: 0,
+      peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0,
+      feedbackWritten: 0, categoryChange: null, documentOwner: null,
+    });
+    const result = await executeAgentRun(101);
+    expect(runDarwinVerifyMock, "real runner reached verification").toHaveBeenCalledTimes(1);
+    expect(result, "runner completed before receipt assertions").toMatchObject({ status: "completed", executedSteps: 1 });
+    const finished = txMock.mock.calls.filter(call => templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    expect(finished, "real finishAgenticStep emitted exactly one saved JSON INSERT").toHaveLength(1);
+    expect(finished[0].at(-1)).toEqual(expect.any(String));
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ selected_raw_fees: 7, processed_raw_fees: options.processed ?? 7, verified_fee_observations: 6, skipped_raw_fees: 1 });
+    expect(combinedTransactionSql()).not.toContain("'step.failed'");
+    return { detail, message: String(finished[0].at(-2)) };
+  }
+
+  const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
+
+  it.each(["classify", "verify"] as const)("saves nonzero producer reports through %s → real finish INSERT", async alias => {
+    const { detail, message } = await savedRecheckRun(alias, {
+      ...recheckZero, checked: 2, passed: 1, restored: [9], flagged: 1, secondLookOtherCode: 1,
+      dueSecondLooks: { due: 3, wouldConfirm: { conditional_zero: 2 }, wouldClear: 1, samples: [] },
+    });
+    expect(detail.recheck).toMatchObject({ state: "reported", assessmentCompleteness: "unknown", checked: 2, passed: 1,
+      restored: { reportedCount: 1, samples: [{ feeVerifiedId: 9 }] }, secondLookOtherCode: 1,
+      dueSecondLooks: { due: 3, wouldConfirm: { conditional_zero: 2 }, wouldClear: 1 } });
+    expect(message).toContain("Recheck producer report: 2 checked");
+    expect(message).toContain("reported IDs do not verify affected rows");
+  });
+
+  it("saves visible partial errors and counters without raw text or invented complements", async () => {
+    const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 1, passed: 1,
+      olderLive: { read: 1, wouldFail: {}, samples: [], error: "SECRET source read stack" },
+      dueSecondLooks: { due: 2, wouldConfirm: {}, samples: [], error: "SECRET fee name" },
+    });
+    expect(detail.recheck.olderLive).toMatchObject({ read: 1, hasError: true, errorCode: "shadow_assessment_error" });
+    expect(detail.recheck.dueSecondLooks).toMatchObject({ due: 2, wouldClear: null, hasError: true, state: "invalid" });
+    expect(JSON.stringify(detail.recheck)).not.toContain("SECRET");
+    expect(message).toContain("assessment error reported");
+  });
+
+  it("saves reported zero distinctly with unknown completeness", async () => {
+    const { detail, message } = await savedRecheckRun("classify", recheckZero);
+    expect(detail.recheck).toMatchObject({ state: "reported", checked: 0, passed: 0, assessmentCompleteness: "unknown", olderLive: { state: "not_reported" } });
+    expect(message).toContain("0 checked");
+    expect(message).not.toContain("backlog");
+  });
+
+  it.each([
+    ["null", null, {}, "unavailable", "missing_report"],
+    ["missing", undefined, {}, "unavailable", "missing_report"],
+    ["dry run", null, { dryRun: true, learning: false }, "not_run", "dry_run"],
+    ["learning unavailable", null, { learning: false }, "not_run", "learning_unavailable"],
+    ["malformed", { checked: "7" }, {}, "invalid", "invalid_report"],
+  ])("keeps a completed verification step independent of its %s recheck disposition", async (_label, input, options, state, reasonCode) => {
+    const { detail } = await savedRecheckRun("verify", input, options);
+    expect(detail.recheck).toMatchObject({ state, reasonCode, checked: null, assessmentCompleteness: "unknown" });
+  });
+
+  it("keeps the recheck summary even when no new raw fees were processed", async () => {
+    const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 3 }, { processed: 0 });
+    expect(detail.processed_raw_fees).toBe(0);
+    expect(message).toContain("Recheck producer report: 3 checked");
   });
 
   it("runs Darwin verification through the agentic worker instead of measuring only", async () => {

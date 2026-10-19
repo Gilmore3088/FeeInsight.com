@@ -57,3 +57,5 @@ missing/mismatched geometry/source/output binding, a competing incumbent, atomic
 rollback, and two real concurrent readers. The existing owner/readiness/Bayes tests
 continue to cover vault failures, current-copy/companion scope and the four-check
 limit. No schema, provider control, fee data or production state is changed by this PR.
+
+**Guard:** `src/lib/agents/rosetta/pdf-repair-survival.test.ts` checks literal-token conservation and source/output geometry binding; `src/lib/agents/rosetta/pdf-stacked-repair.db.test.ts` proves normal lost-text retry, stale-incumbent refusal and atomic marker rollback; `src/lib/agents/rosetta/pdf-repair-settlement.db.test.ts` proves a concurrent winning repair retains its artifact and bound marker.

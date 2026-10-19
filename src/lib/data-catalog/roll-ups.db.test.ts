@@ -71,4 +71,34 @@ describe.skipIf(!connection)("roll-up SQL in isolated PostgreSQL", () => {
     const rows = await callInstitutionSeries(tx(), { itemKey: "svc", rowSources: ["ffiec", "ncua"], institutionId: 1, from: null, to: null, limit: 10 });
     expect(rows.map((r) => [r.period, r.value, r.unit])).toEqual([["2026-06-30", 100_000, "USD"], ["2026-03-31", 50_000, "USD"]]);
   });
+
+  it("does not pool stock, income and count figures for the same date", async () => {
+    await db`INSERT INTO institution_call_report_items (institution_id, source, report_date, item_key, value, unit, period_basis) VALUES
+      (1, 'ffiec', '2026-06-30', 'mixed_basis', 10, 'thousands', 'ytd'),
+      (2, 'ffiec', '2026-06-30', 'mixed_basis', 20, 'thousands', 'point_in_time'),
+      (3, 'ncua', '2026-06-30', 'mixed_basis', 3, 'count', 'point_in_time')`;
+    const rows = await callPeerRollup(tx(), { itemKey: "mixed_basis", rowSources: ["ffiec", "ncua"], memberIds: null, from: null, to: null, limit: 10 });
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ unit: "USD", period_basis: "ytd", median: 10_000, institution_count: 1 }),
+      expect.objectContaining({ unit: "USD", period_basis: "point_in_time", median: 20_000, institution_count: 1 }),
+      expect.objectContaining({ unit: "count", period_basis: "point_in_time", median: 3, institution_count: 1 }),
+    ]));
+  });
+
+  it("serves curated NCUA lines only from NCUA with the confirmed unit and period basis", async () => {
+    await db`INSERT INTO institution_call_report_items (institution_id, source, report_date, item_key, item_code, value, unit, period_basis) VALUES
+      (1, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 12, 'dollars', 'ytd'),
+      (2, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 18, 'dollars', 'ytd'),
+      (1, 'ffiec', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'dollars', 'ytd'),
+      (3, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'dollars', 'point_in_time'),
+      (4, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'count', 'ytd'),
+      (5, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'thousands', 'ytd'),
+      (6, 'ncua', '2026-06-30', 'acct_131', 'ACCT_380', 900000, 'dollars', 'ytd')`;
+    const args = { itemKey: "acct_131", rowSources: ["ffiec", "ncua"], from: null, to: null, limit: 10 };
+    const rows = await callPeerRollup(tx(), { ...args, memberIds: null });
+    expect(rows).toEqual([expect.objectContaining({ median: 15, institution_count: 2, unit: "USD", period_basis: "ytd", sources: ["ncua"] })]);
+    const own = await callInstitutionSeries(tx(), { ...args, institutionId: 1 });
+    expect(own).toEqual([expect.objectContaining({ value: 12, source: "ncua", unit: "USD", period_basis: "ytd" })]);
+  });
 });
