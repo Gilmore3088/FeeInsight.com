@@ -143,6 +143,7 @@ Growth owns marketing: the weekly LinkedIn drafts and the monthly marketing emai
 Use these current semantic tables and read models:
 
 - Institutions and sources: `institution_sources`, `source_documents`, `source_collection_runs`, `agent_source_texts`.
+- Private future normalized witnesses: `agent_source_text_witnesses` (diagnostic evidence, no automatic fee authority).
 - Fee tiers: `raw_fee_observations`, `verified_fee_observations`, `published_fee_records`, `published_fee_catalog`.
 - Public intake: `community_fee_submissions`.
 - Institution authority: `institution_claims`, `institution_claim_events`, `institution_workspace_memberships`, `institution_workspace_invitations`.

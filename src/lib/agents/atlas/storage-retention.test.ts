@@ -136,11 +136,19 @@ describe("storageAlerts and summary", () => {
       "demographics is 1,100 MB, above the 1,000 MB default; nothing is held until a PR gives it a budget",
     ]);
   });
+  it("warns on the private witness budget without purging evidence or holding a source", async () => {
+    const { db, calls } = mockDb({ budgetMb: { agent_source_text_witnesses: 257 } });
+    const result = await runStorageRetention({ db, live: OFF });
+    expect(result.alerts).toContain("Normalized witnesses are 257 MB, above the 256 MB review budget; evidence is retained, review storage headroom");
+    expect(result.heldSources).toEqual([]);
+    expect(calls.some((query) => query.includes("DELETE FROM"))).toBe(false);
+    expect(result.budgetTables).toEqual([{ table: "agent_source_text_witnesses", totalMb: 257, budgetMb: 256 }]);
+  });
   it("says what each trim would remove while it is off", async () => {
     const { db } = mockDb({ legacy: 1200, runEvents: 0, attemptRead: { read: "10", through_id: "10", repeats: "4" } });
     const result = await runStorageRetention({ db, live: OFF });
     expect(summarizeStorageRetention(result)).toBe(
-      "Database 6,340 MB. All 2 public-data tables are within budget. Trims: old rows of the retired event log: 1,200 (off); run events over 90 days old: 0 (off); exact repeats in the attempt log: 4 (off).",
+      "Database 6,340 MB. All 2 tracked tables are within budget. Trims: old rows of the retired event log: 1,200 (off); run events over 90 days old: 0 (off); exact repeats in the attempt log: 4 (off).",
     );
     expect(storageRetentionDetail(result)).toMatchObject({ database_mb: 6340, attempt_window: { next_after_id: 0 } });
   });

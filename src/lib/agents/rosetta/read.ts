@@ -69,6 +69,7 @@ import {
   ROSETTA_OCR_VERSION,
   type ScannedPdfReader,
 } from "@/lib/agents/rosetta/ocr";
+import { atomicTextWrite, captureNormalizedWitness, normalizedWitnessSchemaReady, preserveStatusChange, type WitnessRetention, type TextArtifactSnapshot } from "./normalized-witness";
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
 import { losslessStackedRecovery, textSha256, type StackedGeometryReceipt } from "./pdf-repair-survival";
@@ -195,6 +196,7 @@ export interface ReadResult {
   escalation?: { to: string; used: boolean } | null;
   /** Intrinsic geometry proof, bound to the actual vault bytes and normalized output. */
   stackedGeometry?: StackedGeometryReceipt;
+  witnessRetention?: WitnessRetention;
   repairSettlement?: { accepted: boolean; reason: string; artifactId?: number; textHash?: string };
   durationMs: number;
 }
@@ -1455,7 +1457,54 @@ export async function recordReadResult(
   normalizedText: string | null,
   textColumns = false,
 ): Promise<void> {
-  const [textArtifact] = await db`
+  if (!(await normalizedWitnessSchemaReady(db))) {
+    result.witnessRetention = { status: "unavailable_schema" };
+    return writeReadResult(db, runId, result, normalizedText, textColumns, false);
+  }
+  return atomicTextWrite(db, (scope) => writeReadResult(scope, runId, result, normalizedText, textColumns, true));
+}
+
+async function writeReadResult(
+  db: SqlTag, runId: number, result: ReadResult, normalizedText: string | null, textColumns: boolean, retain: boolean,
+): Promise<void> {
+  let textArtifact: { id: number | string } | undefined;
+  if (retain) {
+    if (result.status === "completed" && normalizedText && hashText(normalizedText) !== result.textHash) {
+      throw new Error("Completed incoming normalized text does not match its stated hash");
+    }
+    const [sourceOwner] = await db`SELECT institution_id FROM source_documents WHERE id=${result.sourceDocumentId} FOR SHARE`;
+    if (!sourceOwner || Number(sourceOwner.institution_id) !== result.institutionId) {
+      throw new Error("Incoming normalized text does not match its document owner");
+    }
+    // Insert first: a competing first write must finish before this source's row can
+    // be locked. Selecting before INSERT could miss the other writer's incumbent.
+    const inserted = await db`
+      INSERT INTO agent_source_texts
+        (agent_run_id, source_document_id, institution_id, source_url, document_type, content_type,
+         source_hash, status, normalized_text, text_hash, char_count, error_message, updated_at)
+      VALUES (${runId}, ${result.sourceDocumentId}, ${result.institutionId}, ${result.sourceUrl},
+        ${result.documentType}, ${result.contentType}, ${result.sourceHash}, ${result.status}, ${normalizedText},
+        ${result.textHash}, ${result.charCount}, ${result.error}, NOW())
+      ON CONFLICT (source_document_id) DO NOTHING RETURNING id
+    `;
+    const [incumbent] = await db<TextArtifactSnapshot[]>`
+      SELECT * FROM agent_source_texts WHERE source_document_id = ${result.sourceDocumentId} FOR UPDATE
+    `;
+    if (!incumbent || Number(incumbent.institution_id) !== result.institutionId) {
+      throw new Error("Current normalized artifact does not match its source owner");
+    }
+    result.witnessRetention = { status: "active", incumbent: inserted.length > 0 ? "no_text"
+      : await captureNormalizedWitness(db, incumbent, "incumbent") };
+    textArtifact = { id: incumbent.id };
+    await db`
+      UPDATE agent_source_texts SET agent_run_id=${runId}, source_url=${result.sourceUrl},
+        document_type=${result.documentType}, content_type=${result.contentType}, source_hash=${result.sourceHash},
+        status=${result.status}, normalized_text=${normalizedText}, text_hash=${result.textHash},
+        char_count=${result.charCount}, error_message=${result.error}, updated_at=NOW()
+      WHERE id=${Number(incumbent.id)}
+    `;
+  } else {
+    [textArtifact] = await db`
     INSERT INTO agent_source_texts
       (agent_run_id, source_document_id, institution_id, source_url,
        document_type, content_type, source_hash, status, normalized_text,
@@ -1480,6 +1529,7 @@ export async function recordReadResult(
       updated_at = NOW()
     RETURNING id
   `;
+  }
   const textArtifactId = textArtifact?.id == null ? null : Number(textArtifact.id);
   const companionSource = await companionSourceOf(db, result.sourceDocumentId);
   // What kind of document this is (#1094), decided once here from the stored text. A read that
@@ -1502,6 +1552,14 @@ export async function recordReadResult(
              reader = ${result.reader}
        WHERE id = ${textArtifactId}
     `;
+  }
+  if (retain && textArtifactId != null) {
+    const [incoming] = await db<TextArtifactSnapshot[]>`SELECT * FROM agent_source_texts WHERE id=${textArtifactId}`;
+    const capture = await captureNormalizedWitness(db, incoming, "incoming");
+    if (result.status === "completed" && normalizedText && capture === "unavailable_hash_mismatch") {
+      throw new Error("Completed normalized text could not be retained with its exact hash");
+    }
+    result.witnessRetention!.incoming = capture;
   }
   // A companion page's read says nothing about the bank's main fee link: the profile
   // (canonical link, read strategy) stays as the main link left it.
@@ -1756,13 +1814,15 @@ async function triageEarlierTexts(
   for (const row of rows) {
     const score = scoreFeePage(row.normalized_text, row.source_url, { feeSchedule: !row.companion });
     const isWrong = score.verdict === "wrong_document" && !row.has_knox_fees;
+    let witnessRetention: WitnessRetention | undefined;
     if (isWrong) {
       wrong += 1;
-      await db`
+      const statusWrite = await preserveStatusChange(db, Number(row.text_id), (scope) => scope`
         UPDATE agent_source_texts
            SET status = 'wrong_document', error_message = ${score.reason}, updated_at = NOW()
          WHERE id = ${Number(row.text_id)}
-      `;
+      `);
+      witnessRetention = statusWrite.retention;
       if (
         await sendBackToMagellan(db, {
           institutionId: Number(row.institution_id),
@@ -1786,7 +1846,7 @@ async function triageEarlierTexts(
       costMicrousd: 0,
       runId: options.runId,
       stepId: options.stepId,
-      detail: { text_id: Number(row.text_id), url: row.source_url, triage: true, ...score },
+      detail: { text_id: Number(row.text_id), url: row.source_url, triage: true, ...score, witness_retention: witnessRetention },
     });
   }
   return { checked: rows.length, wrong, sentBack };
@@ -2106,6 +2166,7 @@ async function settleReadInScope(
         table_rows: result.tableRows,
         reader: result.reader,
         reader_version: ROSETTA_READ_VERSION,
+        witness_retention: result.witnessRetention,
         pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
         pdf_stacked_requested: row.pdf_stacked_repair_due ? PDF_STACKED_REPAIR_VERSION : undefined,
         pdf_stacked: repairProof && !keepEarlierText ? PDF_STACKED_REPAIR_VERSION : undefined,
