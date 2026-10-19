@@ -1,3 +1,6 @@
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
+import { primaryAncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -37,7 +40,8 @@ export function newerCopyFingerprint(olderDocumentId: number, newerDocumentId: n
 
 export type RestoreBlockReason = "existing_twin" | "account_type_hold_twin";
 
-export interface NewerCopyFeeRow {
+export interface NewerCopyFeeRow extends Partial<Omit<PublishedIdentity, "fee_published_id">> {
+  product_name?: string | null;
   fee_published_id: number | string;
   lineage_ref: number | string;
   institution_id: number | string;
@@ -114,11 +118,17 @@ function wordsSurvive(newerText: string, feeName: string, olderLine: string): bo
  * reads the newer copy.
  */
 export function newerCopyVerdict(
-  fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">,
+  fee: Pick<NewerCopyFeeRow, "fee_name" | "amount" | "product_name">,
   newerText: string,
   olderText: string,
 ): NewerCopyVerdict {
   if (fee.amount == null) return "no_amount";
+  if (productKey(fee.product_name)) {
+    const owner = primaryAncillaryProduct(newerText);
+    if (!owner || !sameProduct(owner.productName, fee.product_name)) return "unproven";
+    // Use only the proven product block; another section's price cannot be a witness.
+    newerText = owner.block;
+  }
   const newer = states(newerText, fee);
   if (newer.ok || newer.reason === "tiered_fee") return "still_stated";
   const older = states(olderText, fee);
@@ -376,7 +386,7 @@ export async function retireFeesDroppedFromNewerCopy(
                COALESCE(nr.frequency, '') AS frequency,
                COALESCE(nr.amount_kind, 'flat') AS amount_kind,
                COALESCE(nr.rate_basis, '') AS rate_basis,
-               COALESCE(nr.product_name, '') AS product_name
+               ${scope.unsafe(productKeySql("nr.product_name"))} AS product_name
           FROM agent_source_texts newer_text
           JOIN agent_source_texts same ON same.text_hash = newer_text.text_hash AND same.status = 'completed'
           JOIN raw_fee_observations nr ON nr.source_document_id = same.source_document_id
@@ -385,7 +395,7 @@ export async function retireFeesDroppedFromNewerCopy(
            AND newer_text.text_hash IS NOT NULL
       )
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, pair.newer_id AS newer_document_id,
-             fp.canonical_fee_key, fp.fee_name, fp.amount, fp.quarantined_at,
+             fp.canonical_fee_key, fp.fee_name, fp.amount, fr.product_name, fp.quarantined_at, ${scope.unsafe(PUBLISHED_IDENTITY_COLUMNS)},
              fp.rolled_back_at::text AS rolled_back_at, fp.rolled_back_reason,
              fp.rolled_back_at IS NOT NULL AS retired,
              CASE WHEN fp.rolled_back_at IS NOT NULL THEN ${restoreBlockerSql(scope)} ELSE NULL END AS restore_block_reason,
@@ -399,7 +409,7 @@ export async function retireFeesDroppedFromNewerCopy(
                   AND newer_rows.frequency = COALESCE(fp.frequency, '')
                   AND newer_rows.amount_kind = COALESCE(fp.amount_kind, 'flat')
                   AND newer_rows.rate_basis = COALESCE(fp.rate_basis, '')
-                  AND newer_rows.product_name = COALESCE(fr.product_name, '')
+                  AND newer_rows.product_name = ${scope.unsafe(productKeySql("fr.product_name"))}
              ) AS newer_row_match
         FROM unnest(${olderIds}::bigint[], ${newerIds}::bigint[]) AS pair(older_id, newer_id)
         JOIN raw_fee_observations fr ON fr.source_document_id = pair.older_id
@@ -455,16 +465,20 @@ export async function retireFeesDroppedFromNewerCopy(
   const restoreFees = live ? documents.flatMap((doc) => doc.restore) : [];
   const restoreIds = restoreFees.map((fee) => Number(fee.fee_published_id));
   try {
-    await inSavepoint(db, async (scope) => {
+    await withPublishedIdentityWrite(db, async (scope) => {
+      const planned = [...(change ? result.retired : []), ...restoreFees];
+      const unchanged = await unchangedPublishedIdentities(scope, planned as PublishedIdentity[], [], true);
+      const eligibleRetire = result.retired.filter((fee) => unchanged.has(Number(fee.fee_published_id)));
+      const eligibleRestore = restoreFees.filter((fee) => unchanged.has(Number(fee.fee_published_id)));
       if (change && result.retired.length > 0) {
         const retired = await scope<{ fee_published_id: number | string; lineage_ref: number | string }[]>`
           UPDATE published_fee_records fp
              SET rolled_back_at = NOW(),
                  rolled_back_by_batch_id = ${options.batchId},
                  rolled_back_reason = ${NEWER_COPY_RETIRE_REASON} || ':#' || retire.newer_id::text
-            FROM unnest(${result.retired.map((fee) => Number(fee.fee_published_id))}::bigint[],
-                        ${result.retired.map((fee) => Number(fee.newer_document_id))}::bigint[],
-                        ${result.retired.map((fee) => Number(fee.lineage_ref))}::bigint[])
+            FROM unnest(${eligibleRetire.map((fee) => Number(fee.fee_published_id))}::bigint[],
+                        ${eligibleRetire.map((fee) => Number(fee.newer_document_id))}::bigint[],
+                        ${eligibleRetire.map((fee) => Number(fee.lineage_ref))}::bigint[])
                  AS retire(fee_published_id, newer_id, lineage_ref)
            WHERE fp.fee_published_id = retire.fee_published_id
              AND fp.lineage_ref = retire.lineage_ref
@@ -494,9 +508,9 @@ export async function retireFeesDroppedFromNewerCopy(
                  rolled_back_reason = NULL
             -- Bind closure timestamps as text: postgres.js timestamp-array serialization
             -- otherwise passes them through Date and loses PostgreSQL microseconds.
-            FROM unnest(${restoreIds}::bigint[], ${restoreFees.map((fee) => Number(fee.lineage_ref))}::bigint[],
-                        ${restoreFees.map((fee) => fee.rolled_back_at ?? null)}::text[],
-                        ${restoreFees.map((fee) => fee.rolled_back_reason ?? null)}::text[])
+            FROM unnest(${eligibleRestore.map((fee) => Number(fee.fee_published_id))}::bigint[], ${eligibleRestore.map((fee) => Number(fee.lineage_ref))}::bigint[],
+                        ${eligibleRestore.map((fee) => fee.rolled_back_at ?? null)}::text[],
+                        ${eligibleRestore.map((fee) => fee.rolled_back_reason ?? null)}::text[])
                  AS restore(fee_published_id, lineage_ref, rolled_back_at_text, rolled_back_reason)
            WHERE fp.fee_published_id = restore.fee_published_id
              AND fp.lineage_ref = restore.lineage_ref
