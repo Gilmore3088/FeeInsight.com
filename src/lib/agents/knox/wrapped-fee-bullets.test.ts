@@ -102,6 +102,11 @@ describe("Owned wrapped fee bullets (#2151)", () => {
     const text = "• NSF — a returned payment*........$22\n*No more than $66 in NSF fees are charged per day.";
     expect(feeBullets(text)[0].linkedConditions).toBeNull();
   });
+  it("keeps a separately priced dollar daily cap in its own category", () => {
+    const text = "• Maximum Daily Overdraft Fees — maximum total overdraft charges\ncharged each day............................$66";
+    expect(targets(text)).toEqual([]);
+    expect(runFreeSpecialists(text).candidates.map((r) => [r.canonicalHint, r.amount])).toContainEqual(["od_daily_cap", 66]);
+  });
   it("retains each owned row's explicit audience and price unit", () => {
     const text = [
       "• NSF — for consumer accounts only, a returned payment\nreturned............................$25 per item",
