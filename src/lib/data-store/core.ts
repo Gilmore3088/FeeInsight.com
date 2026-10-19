@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
-import { STATS_SCHEDULE_KEYS, summarizeFeesBy } from "./fee-stats";
+import { STATS_SCHEDULE_KEYS, activeInstitutionFilter, summarizeFeesBy } from "./fee-stats";
 import { VALID_US_CODES } from "../us-states";
 import {
   classifyInstitutionQuality,
@@ -38,7 +38,8 @@ export async function getPublicStats(): Promise<PublicStats> {
       FROM institution_sources ct
       JOIN published_fee_catalog ef ON ct.id = ef.institution_id
       WHERE ct.state_code IN ${sql(validCodes)}
-        AND ef.review_status = 'approved'`;
+        AND ef.review_status = 'approved'
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}`;
     return {
       total_observations: Number(row.total_observations),
       total_institutions: Number(row.total_institutions),
@@ -50,13 +51,23 @@ export async function getPublicStats(): Promise<PublicStats> {
   }
 }
 
+/**
+ * Registry and catalog counts for /methodology ("with a schedule link on file") and
+ * /research/data-sources. Institutions the regulator marks inactive are left out
+ * (activeInstitutionFilter, #2149), so each figure sits on the same base as "institutions monitored".
+ */
 export async function getStats(): Promise<CollectionStats> {
-  const [total] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources`;
-  const [banks] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE charter_type='bank'`;
-  const [cus] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE charter_type='credit_union'`;
-  const [withUrl] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE website_url IS NOT NULL`;
-  const [withFee] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE fee_schedule_url IS NOT NULL`;
-  const [fees] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM published_fee_catalog`;
+  // A fresh fragment per query: a postgres.js unsafe fragment is a query object, not reusable text.
+  const active = () => sql.unsafe(activeInstitutionFilter("ct"));
+  const [total] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ${active()}`;
+  const [banks] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.charter_type='bank' AND ${active()}`;
+  const [cus] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.charter_type='credit_union' AND ${active()}`;
+  const [withUrl] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.website_url IS NOT NULL AND ${active()}`;
+  const [withFee] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.fee_schedule_url IS NOT NULL AND ${active()}`;
+  const [fees] = await sql<{ cnt: number }[]>`
+    SELECT COUNT(*) as cnt FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+     WHERE ${active()}`;
   const [runs] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM source_collection_runs`;
 
   return {

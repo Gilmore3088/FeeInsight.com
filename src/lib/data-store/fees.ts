@@ -235,6 +235,7 @@ export async function getCheapestAndMostExpensive(
           AND ef.amount IS NOT NULL
           AND ef.amount >= 0
           AND ${sql.unsafe(STATS_ROW_FILTER)}
+          AND ${sql.unsafe(activeInstitutionFilter("ct"))}
         GROUP BY ef.institution_id, ct.institution_name
       )
       SELECT id, institution_id, institution_name, amount
@@ -254,6 +255,7 @@ export async function getCheapestAndMostExpensive(
           AND ef.amount IS NOT NULL
           AND ef.amount >= 0
           AND ${sql.unsafe(STATS_ROW_FILTER)}
+          AND ${sql.unsafe(activeInstitutionFilter("ct"))}
         GROUP BY ef.institution_id, ct.institution_name
       )
       SELECT id, institution_id, institution_name, amount

@@ -228,7 +228,9 @@ export async function getCategoryChargeBases(): Promise<CategoryChargeBasis[]> {
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.frequency, count(*)::int AS n
      FROM published_fee_catalog ef
+     JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category IS NOT NULL AND ef.frequency IS NOT NULL AND ${STATS_ROW_FILTER}
+       AND ${activeInstitutionFilter("ct")}
      GROUP BY 1, 2`
   ) as { fee_category: string; frequency: string; n: number }[];
   const value = chargeBasesFromCounts(rows);
@@ -270,7 +272,7 @@ export interface ContractFeeRow {
 
 /** Approved, sourced published rows (the statistics contract's input), optionally filtered. */
 export async function getContractFeeRows(filters: { categories?: string[]; charter?: string } = {}): Promise<ContractFeeRow[]> {
-  const conditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'approved'", STATS_ROW_FILTER];
+  const conditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'approved'", STATS_ROW_FILTER, activeInstitutionFilter("ct")];
   const params: (string | string[])[] = [];
   if (filters.categories && filters.categories.length > 0) {
     params.push(filters.categories);
@@ -307,7 +309,8 @@ export async function getSegmentFeeRows(categories: string[]): Promise<SegmentFe
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [categories] as never[],
   ) as (ContractFeeRow & { fed_district: number | string | null })[];
   return rows.map((r) => ({ ...r, fed_district: r.fed_district === null ? null : Number(r.fed_district) }));
@@ -834,8 +837,10 @@ async function loadNationalUnstatedAudienceCounts(): Promise<Map<string, number>
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, COUNT(DISTINCT ef.institution_id)::int AS n
        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.review_status = 'approved'
         AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}
         AND ef.fee_audience = 'unknown'
         AND ef.amount IS NOT NULL AND ef.amount >= 0
       GROUP BY 1`
@@ -1490,7 +1495,7 @@ export async function getSegmentFeeValues(
   const segmentSql = `
     SELECT ct.id
       FROM institution_sources ct
-     WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'
+     WHERE ${activeInstitutionFilter("ct")}
        AND ($1::bigint IS NULL OR ct.asset_size >= $1)
        AND ($2::bigint IS NULL OR ct.asset_size < $2)
        AND ($3::text IS NULL OR ct.charter_type = $3)
