@@ -390,12 +390,12 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
       await state.client.begin(async (tx) => {
         const scope = privateScope(tx as unknown as typeof state.client);
         expect(typeof (scope as unknown as { savepoint?: unknown }).savepoint).toBe("function");
-        await tx`UPDATE institution_sources SET institution_name = 'Unrelated caller work kept' WHERE id = ${selected.institution}`;
+        await scope`UPDATE institution_sources SET institution_name = 'Unrelated caller work kept' WHERE id = ${selected.institution}`;
         await expect(recordReadResult(scope, 900, ordinaryResult(selected, improved), improved, true))
           .rejects.toMatchObject({ code: "P0001", message: "owned ordinary profile failure" });
-        expect((await tx`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
-        expect((await tx`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
-        expect((await tx`SELECT institution_name FROM institution_sources WHERE id = ${selected.institution}`)[0].institution_name).toBe("Unrelated caller work kept");
+        expect((await scope`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
+        expect((await scope`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+        expect((await scope`SELECT institution_name FROM institution_sources WHERE id = ${selected.institution}`)[0].institution_name).toBe("Unrelated caller work kept");
       });
     } finally { await removeOrdinaryFailure(); }
     expect((await sql`SELECT institution_name FROM institution_sources WHERE id = ${selected.institution}`)[0].institution_name).toBe("Unrelated caller work kept");
@@ -411,8 +411,8 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     await expect(state.client.begin(async (tx) => {
       const scope = privateScope(tx as unknown as typeof state.client);
       await recordReadResult(scope, 900, ordinaryResult(selected, improved), improved, true);
-      expect((await tx`SELECT normalized_text FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].normalized_text).toBe(improved);
-      expect((await tx`SELECT table_rows FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].table_rows.rows).toHaveLength(4);
+      expect((await scope`SELECT normalized_text FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].normalized_text).toBe(improved);
+      expect((await scope`SELECT table_rows FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].table_rows.rows).toHaveLength(4);
       throw new Error("owned caller outer rollback");
     })).rejects.toThrow("owned caller outer rollback");
     expect((await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
