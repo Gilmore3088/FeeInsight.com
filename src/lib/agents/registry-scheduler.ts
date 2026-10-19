@@ -66,7 +66,7 @@ import {
   INDUSTRY_EVENTS_SOURCE,
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
-import { BRANCH_TRACT_PARSER_VERSION, ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES, REMITTANCE_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { BEA_PARSER_VERSION, BRANCH_TRACT_PARSER_VERSION, ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES, REMITTANCE_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
 import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
 import {
@@ -168,6 +168,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   ...Object.fromEntries(ECONOMY_DEFINITIONS.map((d) => [d.source, ECONOMY_PARSER_VERSION])),
   [ECONOMY_SOURCES.remittances]: REMITTANCE_PARSER_VERSION,
   [ECONOMY_SOURCES.branchTracts]: BRANCH_TRACT_PARSER_VERSION,
+  [ECONOMY_SOURCES.bea]: BEA_PARSER_VERSION,
   ...Object.fromEntries(MARKET_GROWTH_DEFINITIONS.map((d) => [d.source, MARKET_GROWTH_PARSER_VERSION])),
   ...Object.fromEntries(SMALLBIZ_PAYMENTS_DEFINITIONS.map((d) => [d.source, SMALLBIZ_PAYMENTS_PARSER_VERSION])),
   ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.map((d) => [d.source, NATIONAL_CREDIT_PARSER_VERSION])),
