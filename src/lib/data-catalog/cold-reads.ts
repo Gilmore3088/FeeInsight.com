@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { decodeColdFile, getColdStore, type ColdStore } from "@/lib/agents/hoovie/cold-files";
 import type { CallInstitutionRow, CallRollupRow } from "./roll-ups";
+import { ncuaCallMeasure } from "./ncua-call-measures";
 
 /**
  * Cold reads (#1870): a call-report quarter whose hot rows were pruned from Postgres is read from
@@ -88,6 +89,7 @@ export async function readColdCallRows(
   const rows: ColdCallRow[] = [];
   const failed: string[] = [];
   const members = filter.institutionIds ? new Set(filter.institutionIds.map(String)) : null;
+  const measure = ncuaCallMeasure(filter.itemKey);
   // Item keys are [a-z0-9_] (queryData's schema), so the quoted key is a safe substring test.
   const needle = JSON.stringify(filter.itemKey);
   for (const file of files) {
@@ -98,6 +100,12 @@ export async function readColdCallRows(
       });
       for (const row of decoded.rows) {
         if (row.item_key !== filter.itemKey) continue;
+        // Index provenance also constrains each decoded row; a checksum alone proves integrity,
+        // not that the file contains the indexed publisher and quarter.
+        if (row.source !== file.source || row.report_date !== file.period) continue;
+        if (measure && (row.source !== "ncua" || row.item_code !== measure.code || row.unit !== measure.storedUnit || row.period_basis !== measure.periodBasis)) continue;
+        // A missing curated figure is not a reported zero. Keep generic/manual decoding unchanged.
+        if (measure && (row.value == null || (typeof row.value === "string" && row.value.trim() === ""))) continue;
         if (members && !members.has(String(row.institution_id))) continue;
         const value = Number(row.value);
         if (!Number.isFinite(value)) continue;
@@ -156,18 +164,18 @@ export function percentileCont(sorted: readonly number[], fraction: number): num
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower);
 }
 
-/** Pure: the hot roll-up (callPeerRollup) computed over cold rows, one row per report date and unit. */
+/** Pure: the hot roll-up (callPeerRollup), keeping period bases and units separate. */
 export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
   const groups = new Map<string, ColdCallRow[]>();
   for (const row of rows) {
-    const key = `${row.report_date}|${comparable(row).unit}`;
+    const key = `${row.report_date}|${comparable(row).unit}|${row.period_basis}`;
     const list = groups.get(key) ?? [];
     list.push(row);
     groups.set(key, list);
   }
   const out: CallRollupRow[] = [];
   for (const [key, list] of groups) {
-    const [period, unit] = key.split("|");
+    const [period, unit, periodBasis] = key.split("|");
     const values = list.map((r) => comparable(r).value).sort((a, b) => a - b);
     const newest = [...list].sort((a, b) => (b.fetched_at ?? "").localeCompare(a.fetched_at ?? ""))[0];
     out.push({
@@ -177,11 +185,11 @@ export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
       p25: percentileCont(values, 0.25),
       p75: percentileCont(values, 0.75),
       institution_count: new Set(list.map((r) => r.institution_id)).size,
-      period_basis: list.map((r) => r.period_basis).sort().at(-1) ?? null,
+      period_basis: periodBasis,
       sources: [...new Set(list.map((r) => r.source))].sort(),
       fetched_at: newest?.fetched_at ?? null,
       source_url: newest?.source_url ?? null,
     });
   }
-  return out.sort((a, b) => (a.period === b.period ? a.unit.localeCompare(b.unit) : a.period < b.period ? 1 : -1));
+  return out.sort((a, b) => (a.period === b.period ? a.unit.localeCompare(b.unit) || (a.period_basis ?? "").localeCompare(b.period_basis ?? "") : a.period < b.period ? 1 : -1));
 }
