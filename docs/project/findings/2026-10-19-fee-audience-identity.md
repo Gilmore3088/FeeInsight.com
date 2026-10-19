@@ -8,7 +8,8 @@ fee. Those paths could alter account facts or benchmark eligibility without a pr
 Fixes #2108 (Knox, tracker #1092) and #2109 (Hamilton, tracker #975). Knox enrichment uses the
 same audience `feeApplicability` supplied to its insert. Hamilton's selector and pure plan require
 equal audiences, treating missing legacy values as unknown, and the final write rechecks both
-rows' audience so a concurrent correction wins.
+rows' audience so an audience change committed between selection and writing leaves the
+selected lineage unchanged.
 
 PostgreSQL tests use loopback-only temporary tables to exercise actual selection and mutation:
 same-name/price audience siblings retain their own lineup; matching refreshes still move; cross-
