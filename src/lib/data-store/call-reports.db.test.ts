@@ -32,7 +32,7 @@ describe.skipIf(!connection)("comparable financial readers in isolated PostgreSQ
     context.db = db;
     await db`CREATE TEMP TABLE institution_sources (
       id bigint PRIMARY KEY, institution_name text, cert_number text,
-      charter_type text, asset_size_tier text, fed_district integer, state_code text DEFAULT 'VA')`;
+      charter_type text, asset_size_tier text, fed_district integer, state_code text DEFAULT 'VA', regulatory_status text)`;
     await db`CREATE TEMP TABLE institution_financial_records (
       id bigint GENERATED ALWAYS AS IDENTITY, institution_id bigint, source text, report_date text,
       service_charge_income numeric, total_assets numeric, fee_income_ratio numeric,
