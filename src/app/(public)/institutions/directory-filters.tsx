@@ -3,79 +3,51 @@
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { STATE_NAMES } from "@/lib/us-states";
+import { directoryHref } from "./directory-view";
 
-interface DirectoryFiltersProps {
+const STATES = Object.keys(STATE_NAMES).sort((a, b) => STATE_NAMES[a].localeCompare(STATE_NAMES[b]));
+
+interface StatePickerProps {
   query: string;
   stateCode: string;
-  charterType: string;
-  /** Fee focus (`?fee=`) arriving from a consumer guide; changing a filter keeps it. */
-  feeCategory?: string;
+  charter: string;
+  /** Fee focus (`?fee=`) arriving from a consumer guide; changing the state keeps it. */
+  fee?: string;
+  /** The "Fees available" filter; changing the state keeps it. */
+  fees?: boolean;
+  className?: string;
 }
 
-const SELECT_CLASS =
-  "min-h-10 rounded-md border border-border bg-surface-0 px-3 py-2 text-sm text-ink outline-none focus:border-brick disabled:opacity-60";
-
-function buildHref(next: {
-  query: string;
-  stateCode: string;
-  charterType: string;
-  feeCategory?: string;
-}): string {
-  const params = new URLSearchParams();
-  if (next.query) params.set("q", next.query);
-  if (next.stateCode) params.set("state", next.stateCode);
-  if (next.charterType) params.set("charter", next.charterType);
-  if (next.feeCategory) params.set("fee", next.feeCategory);
-  const search = params.toString();
-  return search ? `/institutions?${search}` : "/institutions";
-}
-
-/** State and institution-type filters that apply as soon as they change. */
-export function DirectoryFilters({ query, stateCode, charterType, feeCategory = "" }: DirectoryFiltersProps) {
+/** The state filter: a native dropdown, applied as soon as it changes. Works on every screen. */
+export function StatePicker({ query, stateCode, charter, fee = "", fees = false, className = "" }: StatePickerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  function apply(next: Partial<DirectoryFiltersProps>) {
-    const href = buildHref({ query, stateCode, charterType, feeCategory, ...next });
-    startTransition(() => router.push(href));
-  }
-
   return (
-    <div className="fi-reveal fi-reveal-delay-2 flex flex-wrap items-center gap-3 border-b border-border py-4">
+    <div className={className}>
       <label className="sr-only" htmlFor="institution-state-filter">
-        Filter by state
+        State
       </label>
       <select
         id="institution-state-filter"
         name="state"
         value={stateCode}
-        disabled={isPending}
-        onChange={(event) => apply({ stateCode: event.target.value })}
-        className={SELECT_CLASS}
+        aria-busy={isPending}
+        onChange={(event) => {
+          const href = directoryHref({ q: query, state: event.target.value, charter, fee, fees });
+          startTransition(() => router.push(href));
+        }}
+        className={`min-h-11 w-full rounded-full border border-control-border bg-surface-0 px-4 text-[14px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-brick ${
+          isPending ? "opacity-60" : ""
+        }`}
       >
         <option value="">All states</option>
-        {Object.entries(STATE_NAMES).map(([code, name]) => (
+        {STATES.map((code) => (
           <option key={code} value={code}>
-            {name}
+            {STATE_NAMES[code]}
           </option>
         ))}
       </select>
-      <label className="sr-only" htmlFor="institution-charter-filter">
-        Filter by institution type
-      </label>
-      <select
-        id="institution-charter-filter"
-        name="charter"
-        value={charterType}
-        disabled={isPending}
-        onChange={(event) => apply({ charterType: event.target.value })}
-        className={SELECT_CLASS}
-      >
-        <option value="">Banks and credit unions</option>
-        <option value="bank">Banks only</option>
-        <option value="credit_union">Credit unions only</option>
-      </select>
-      {isPending && <span className="text-sm text-ink-muted">Updating…</span>}
     </div>
   );
 }

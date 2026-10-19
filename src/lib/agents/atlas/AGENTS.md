@@ -14,6 +14,9 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Every operator action needs a durable run/event receipt.
 - Every blocked state needs a concrete next safe action.
 - Scheduled advancement must remain deterministic and idempotent.
+- A capped state lane whose next step is an optional paid pass still enters the tick when
+  deterministic work follows: the executor records the paid skip and advances the free work.
+  Mandatory paid jobs and paid-only lanes stay queued; operator pauses and scope guards still apply.
 - If provider automation is unavailable, Atlas can queue, label, or route manual validation, but cannot silently resume provider work.
 
 ## Boundaries
@@ -22,12 +25,31 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Daily scoreboard execution (#2177)
+
+The 60-second daily route creates or reuses the UTC day's `atlas.scoreboard` workflow and
+reports its actual pending/running/terminal state. It runs no steps inline. Opt-in whole-key
+idempotency locks only lookup/create and its step inserts in a short ledger transaction; terminal
+failed/cancelled runs are returned as such, and the earliest pre-existing duplicate is canonical
+without deleting history. Other callers retain active-only idempotency.
+
+The existing 300-second tick consumes the workflow over bounded passes. Its first reference-score
+step is priced at 150 seconds and must fit an explicit tick deadline even when selected first;
+other runs retain their existing first-step progress behavior. Both controls paused permits only
+recovery and already pause-exempt execution in Atlas `workflow` runs with source `atlas.scoreboard`.
+That path schedules no runs, consults no provider budget, and leaves unrelated alerts/digests,
+marketing/data runs and other sources untouched. City repair/storage remain queued until the
+pipeline control permits them; backend disabled still does nothing. Run/step/events expose every
+completion, deferral and held tail. The narrow continuation's opt-in ceiling checks the existing
+exempt list in selection, before each step and on the actual step under the ledger claim lock,
+so a control change or concurrent progression cannot carry it into the held tail. No new
+exception is added to `PAUSE_EXEMPT_STEP_KEYS`; normal callers have no new ceiling.
+
 ## Answer-key relabels (`answer-key-relabels.ts`, #1099)
 
 The score step of Atlas's daily scoreboard run (`score-answer-key`) first applies James's category
 decisions to a fixed list of answer-key lines, then scores, so the day's score reads the corrected key.
-The relabel has no step of its own, so the score can never run before it (the scoreboard runs in
-passes since #1579).
+The relabel has no step of its own, so the score can never run before it (the scoreboard advances in tick passes; its daily route only queues work, #2177).
 `score-answer-key` is pause-exempt, since it writes only the answer key and score rows, never a fee
 row, so a pipeline pause does not hold the score. A failed relabel runs in its own savepoint, is
 reported in the step detail (`answer_key_relabel`), and never stops the score.

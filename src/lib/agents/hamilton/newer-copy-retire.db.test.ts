@@ -49,11 +49,13 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
       (900, 42, 'https://testbank.example/fees', '2026-10-02', 'success', 'new-bytes')`;
     await db`INSERT INTO agent_source_texts VALUES
       (1, 500, 'completed', ${olderText}, 'old-text'), (2, 900, 'completed', ${newerText}, 'new-text')`;
+    // These generic source fixtures have unassigned product scope. Explicit product controls below
+    // supply a complete primary-document witness rather than relying on metadata alone.
     await db`INSERT INTO raw_fee_observations VALUES
       (1, 42, 500, 'Overdraft Fee', 32, 'consumer', 'per_item', 'flat', NULL, NULL),
       (2, 42, 500, 'Stop Payment', 30, 'consumer', 'per_item', 'flat', NULL, NULL),
-      (4, 42, 500, 'Coin Counting', 5, 'consumer', 'per_item', 'flat', NULL, 'Basic Checking'),
-      (901, 42, 900, 'Paper Statement', 5, 'consumer', 'per_item', 'flat', NULL, 'Basic Checking')`;
+      (4, 42, 500, 'Coin Counting', 5, 'consumer', 'per_item', 'flat', NULL, NULL),
+      (901, 42, 900, 'Paper Statement', 5, 'consumer', 'per_item', 'flat', NULL, NULL)`;
     await db`INSERT INTO verified_fee_observations VALUES
       (1001, 1, 'verified', '[]'), (1002, 2, 'approved', '[]'), (1004, 4, 'verified', '[]')`;
     await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id,
@@ -73,11 +75,11 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
   }
   // Commit an interstatement change after candidates and texts were read, before the guarded write.
   function changeAfterSelection(change: () => Promise<unknown>): Db {
-    return (async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
+    return Object.assign(async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
       const result = await db(strings, ...values);
       if (strings.join(" ").includes("ORDER BY source_document_id, id DESC")) await change();
       return result;
-    }) as unknown as Db;
+    }, { unsafe: db.unsafe.bind(db) }) as unknown as Db;
   }
   const row = async (id = 4) => (await db`SELECT * FROM published_fee_records WHERE fee_published_id = ${id}`)[0];
   const verified = async (id = 1004) => (await db`SELECT review_status, outlier_flags FROM verified_fee_observations WHERE fee_verified_id = ${id}`)[0];
@@ -120,13 +122,13 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     await db`UPDATE raw_fee_observations SET fee_name = 'Coin Counting', amount = NULL,
       amount_kind = 'percent', rate_basis = 'transaction' WHERE fee_raw_id IN (4, 901)`;
     let witnessed: boolean | undefined;
-    const observingDb = (async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
+    const observingDb = Object.assign(async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
       const result = await db(strings, ...values);
       if (strings.join(" ").includes("WITH newer_rows AS MATERIALIZED")) {
         witnessed = result.find((fee) => Number(fee.fee_published_id) === 4)?.newer_row_match;
       }
       return result;
-    }) as unknown as Db;
+    }, { unsafe: db.unsafe.bind(db) }) as unknown as Db;
     expect(await run(true, observingDb)).toMatchObject({ retired: [], restored: 0 });
     expect(witnessed).toBe(false);
     await db`UPDATE raw_fee_observations SET rate_basis = 'balance' WHERE fee_raw_id = 901`;
@@ -171,13 +173,13 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
   });
 
   it("re-checks holds while loading fees after selecting a document pair", async () => {
-    const suppliedDb = (async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
+    const suppliedDb = Object.assign(async (strings: TemplateStringsArray, ...values: postgres.ParameterOrJSON<never>[]) => {
       const result = await db(strings, ...values);
       if (strings.join(" ").includes("WITH older AS")) {
         await db`UPDATE published_fee_records SET quarantined_at = NOW() WHERE fee_published_id = 4`;
       }
       return result;
-    }) as unknown as Db;
+    }, { unsafe: db.unsafe.bind(db) }) as unknown as Db;
     expect(await run(false, suppliedDb)).toMatchObject({ documentsChecked: 1, retired: [] });
     expect((await attempt()).detail).toMatchObject({ planned_retired: 0, retired: 0 });
     expect((await verified()).review_status).toBe("verified");
@@ -294,7 +296,7 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect(await run()).toMatchObject({ retired: [], restored: equivalent ? 0 : 1 });
     expect((await row()).rolled_back_at == null).toBe(!equivalent);
     expect((await row(14)).rolled_back_at).toBeNull();
-    expect((await attempt()).detail).toMatchObject({ planned_restored: 1, restored: equivalent ? 0 : 1 });
+    expect((await attempt()).detail).toMatchObject({ planned_restored: equivalent ? 0 : 1, restored: equivalent ? 0 : 1 });
   });
 
   it.each(["transaction", "balance"])("a live percent rate on %s does not block a flat-dollar restore", async (basis) => {
@@ -314,5 +316,159 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
       VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v1:500:900')`;
     expect(await run()).toMatchObject({ documentsChecked: 0, retired: [], restored: 0 });
     expect((await row()).rolled_back_at).toBeNull();
+  });
+
+  async function restorableMonthlyFee() {
+    const text = "Overdraft Fee | $32.00\nStop Payment | $30.00\nStatement Savings monthly fee | $10.00";
+    await db`UPDATE raw_fee_observations SET fee_name='Statement Savings monthly fee', amount=10,
+      frequency='monthly' WHERE fee_raw_id=4`;
+    await db`UPDATE published_fee_records SET fee_name='Statement Savings monthly fee', amount=10,
+      canonical_fee_key='monthly_maintenance', frequency='monthly', rolled_back_at='2026-10-01T00:00:00.123456Z',
+      rolled_back_reason='newer_copy_drops_fee:#800' WHERE fee_published_id=4`;
+    await db`UPDATE verified_fee_observations SET review_status='rejected', outlier_flags='["newer_copy_drops_fee"]' WHERE fee_verified_id=1004`;
+    await db`UPDATE agent_source_texts SET normalized_text=${text} WHERE id=1`;
+    await db`UPDATE agent_source_texts SET normalized_text=${'Current fees\n'+text} WHERE id=2`;
+  }
+  async function monthlyTwin(reason: string | null) {
+    await db`INSERT INTO raw_fee_observations SELECT 14,institution_id,900,fee_name,amount,fee_audience,
+      frequency,amount_kind,rate_basis,product_name FROM raw_fee_observations WHERE fee_raw_id=4`;
+    await db`INSERT INTO verified_fee_observations VALUES (1014,14,'verified','[]')`;
+    await db`INSERT INTO published_fee_records (fee_published_id,lineage_ref,institution_id,canonical_fee_key,
+      fee_name,amount,fee_audience,frequency,amount_kind,rate_basis,rate_percent,rate_min_amount,rate_max_amount,
+      variant_type,rolled_back_at,rolled_back_reason)
+      SELECT 14,1014,institution_id,canonical_fee_key,fee_name,amount,fee_audience,frequency,amount_kind,
+        rate_basis,rate_percent,rate_min_amount,rate_max_amount,variant_type,
+        CASE WHEN ${reason}::text IS NULL THEN NULL ELSE NOW() END,${reason}
+      FROM published_fee_records WHERE fee_published_id=4`;
+  }
+  it.each([false,true])("counts an exact account-type-held twin in the plan and final guard (dry run %s)", async (dryRun) => {
+    await restorableMonthlyFee();
+    await monthlyTwin("account_type_hold: savings (#1100)");
+    const before = await states();
+    expect(await run(dryRun)).toMatchObject({ restored:0, proposedRestores:0, blockedRestores:1,
+      restoreBlockReasons:{account_type_hold_twin:1} });
+    expect(await states()).toEqual(before);
+    if (!dryRun) expect((await attempt()).detail).toMatchObject({ planned_restored:0, restored:0,
+      blocked_restores:1, restore_block_reasons:{account_type_hold_twin:1} });
+  });
+  it("reports a live exact twin as blocked instead of a successful dry-run restoration", async () => {
+    await restorableMonthlyFee();
+    await monthlyTwin(null);
+    expect(await run(true)).toMatchObject({ restored:0, proposedRestores:0, blockedRestores:1,
+      restoreBlockReasons:{existing_twin:1} });
+  });
+  it("blocks a held twin committed after selection without counting or re-verifying an update", async () => {
+    await restorableMonthlyFee();
+    const supplied = changeAfterSelection(() => monthlyTwin("account_type_hold: savings (#1100)"));
+    expect(await run(false,supplied)).toMatchObject({ restored:0, proposedRestores:1, blockedRestores:0,
+      notUpdatedRestores:1 });
+    expect((await row()).rolled_back_reason).toBe("newer_copy_drops_fee:#800");
+    expect((await row(14)).rolled_back_reason).toBe("account_type_hold: savings (#1100)");
+    expect((await verified()).review_status).toBe("rejected");
+    expect((await attempt()).detail).toMatchObject({ planned_restored:1, restored:0, not_updated_restores:1 });
+    expect(await db`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='restored:4:9'`).toHaveLength(0);
+  });
+  it("reports eligible dry-run and shadow proposals separately from actual restorations", async () => {
+    await restorableMonthlyFee();
+    const before = await states();
+    expect(await run(true)).toMatchObject({ restored:0, proposedRestores:1, blockedRestores:0, notUpdatedRestores:0 });
+    expect(await states()).toEqual(before);
+    expect(await retireFeesDroppedFromNewerCopy(db as unknown as Db,{runId:9,batchId:'shadow',dryRun:false,live:false}))
+      .toMatchObject({ restored:0, proposedRestores:1, blockedRestores:0, notUpdatedRestores:0 });
+    expect(await states()).toEqual(before);
+    expect((await attempt()).detail).toMatchObject({ live:false, proposed_restores:1, restored:0 });
+    const [event] = await db`SELECT message,detail FROM agent_run_events`;
+    expect(event.message).toContain('1 would be restored');
+    expect(event.detail).toMatchObject({ proposed_restores:1, restored:0 });
+  });
+  it.each(['other_closure','audience','missing_audience','both_audience','amount','frequency','missing_frequency','variant','kind'])(
+    "does not let a %s sibling block a distinct valid restoration", async (difference) => {
+      await restorableMonthlyFee();
+      await monthlyTwin(difference==='other_closure'?'operator_closed':'account_type_hold: savings (#1100)');
+      if(difference==='audience') await db`UPDATE published_fee_records SET fee_audience='business' WHERE fee_published_id=14`;
+      if(difference==='missing_audience') await db`UPDATE published_fee_records SET fee_audience=NULL WHERE fee_published_id=14`;
+      if(difference==='both_audience') await db`UPDATE published_fee_records SET fee_audience='both' WHERE fee_published_id=14`;
+      if(difference==='amount') await db`UPDATE published_fee_records SET amount=15 WHERE fee_published_id=14`;
+      if(difference==='frequency') await db`UPDATE published_fee_records SET frequency='per_item' WHERE fee_published_id=14`;
+      if(difference==='missing_frequency') await db`UPDATE published_fee_records SET frequency=NULL WHERE fee_published_id=14`;
+      if(difference==='variant') await db`UPDATE published_fee_records SET variant_type='premium' WHERE fee_published_id=14`;
+      if(difference==='kind') await db`UPDATE published_fee_records SET amount_kind='percent',amount=NULL,rate_percent=5,rate_basis='transaction' WHERE fee_published_id=14`;
+      expect(await run()).toMatchObject({ restored:1, proposedRestores:1, blockedRestores:0, notUpdatedRestores:0 });
+      expect((await row()).rolled_back_at).toBeNull();
+      expect((await row(14)).rolled_back_at).not.toBeNull();
+      expect((await verified()).review_status).toBe('verified');
+      expect((await attempt()).detail).toMatchObject({ proposed_restores:1, restored:1, blocked_restores:0 });
+    },
+  );
+  it("normalizes missing applicability only to equivalent unstated values", async () => {
+    await restorableMonthlyFee();
+    await monthlyTwin('account_type_hold: savings (#1100)');
+    await db`UPDATE published_fee_records SET fee_audience=NULL,frequency=NULL,amount_kind=NULL WHERE fee_published_id=4`;
+    await db`UPDATE published_fee_records SET fee_audience='unknown',frequency=NULL,amount_kind='flat' WHERE fee_published_id=14`;
+    expect(await run()).toMatchObject({ restored:0, proposedRestores:0, blockedRestores:1,
+      restoreBlockReasons:{account_type_hold_twin:1} });
+  });
+  it.each(['basis','rate','minimum','maximum'])("keeps the represented %s in the shared blocker identity without restoring a rate", async (difference) => {
+    await restorableMonthlyFee();
+    await monthlyTwin('account_type_hold: savings (#1100)');
+    await db`UPDATE published_fee_records SET amount_kind='percent',amount=NULL,rate_percent=3,rate_basis='transaction',
+      rate_min_amount=1,rate_max_amount=99 WHERE fee_published_id IN (4,14)`;
+    if(difference==='basis') await db`UPDATE published_fee_records SET rate_basis='balance' WHERE fee_published_id=14`;
+    if(difference==='rate') await db`UPDATE published_fee_records SET rate_percent=5 WHERE fee_published_id=14`;
+    if(difference==='minimum') await db`UPDATE published_fee_records SET rate_min_amount=2 WHERE fee_published_id=14`;
+    if(difference==='maximum') await db`UPDATE published_fee_records SET rate_max_amount=100 WHERE fee_published_id=14`;
+    let blocker: unknown;
+    const observing = Object.assign(async(strings:TemplateStringsArray,...values:postgres.ParameterOrJSON<never>[])=>{
+      const result=await db(strings,...values);
+      if(strings.join(' ').includes('WITH newer_rows AS MATERIALIZED')) blocker=result.find(f=>Number(f.fee_published_id)===4)?.restore_block_reason;
+      return result;
+    },{unsafe:db.unsafe.bind(db)}) as unknown as Db;
+    expect(await run(true,observing)).toMatchObject({ restored:0, proposedRestores:0, blockedRestores:0 });
+    expect(blocker).toBeNull();
+    await db`UPDATE published_fee_records SET rate_percent=3,rate_basis='transaction',rate_min_amount=1,rate_max_amount=99 WHERE fee_published_id=14`;
+    expect(await run(true,observing)).toMatchObject({ restored:0, proposedRestores:0 });
+    expect(blocker).toBe('account_type_hold_twin');
+  });
+  it("restores and re-verifies only actual rows in a mixed held and eligible batch", async () => {
+    await restorableMonthlyFee();
+    await monthlyTwin('account_type_hold: savings (#1100)');
+    await db`INSERT INTO raw_fee_observations VALUES (5,42,500,'Coin Counting',5,'consumer','per_item','flat',NULL,NULL)`;
+    await db`INSERT INTO verified_fee_observations VALUES (1005,5,'rejected','["newer_copy_drops_fee"]')`;
+    await db`INSERT INTO published_fee_records(fee_published_id,lineage_ref,institution_id,canonical_fee_key,fee_name,amount,
+      fee_audience,frequency,amount_kind,rolled_back_at,rolled_back_reason)
+      VALUES (5,1005,42,'coin_counting','Coin Counting',5,'consumer','per_item','flat',NOW(),'newer_copy_drops_fee:#800')`;
+    await db`UPDATE agent_source_texts SET normalized_text=normalized_text||E'\nCoin Counting | $5.00' WHERE id IN(1,2)`;
+    expect(await run()).toMatchObject({ restored:1, proposedRestores:1, blockedRestores:1, notUpdatedRestores:0 });
+    expect((await verified()).review_status).toBe('rejected');
+    expect((await verified(1005)).review_status).toBe('verified');
+    expect((await row()).rolled_back_at).not.toBeNull();
+    expect((await row(5)).rolled_back_at).toBeNull();
+    expect((await attempt()).detail).toMatchObject({ restored:1, proposed_restores:1, blocked_restores:1 });
+    expect((await db`SELECT input_fingerprint FROM pipeline_attempts WHERE strategy='hamilton.source_check'`)).toHaveLength(1);
+  });
+  it("rolls back a failed restore write, reports failure, and leaves the pair pending for normal retry", async () => {
+    await restorableMonthlyFee();
+    type TransactionScope = typeof db & { savepoint: (work:(inner:TransactionScope)=>Promise<unknown>)=>Promise<unknown> };
+    await db.begin(async(transaction)=>{
+      const tx=transaction as unknown as TransactionScope;
+      function failReverification(scope: TransactionScope): Db {
+        const wrapped=async(strings:TemplateStringsArray,...values:postgres.ParameterOrJSON<never>[])=>{
+          if(strings.join(' ').includes("outlier_flags = outlier_flags -")) await scope`SELECT 1/0`;
+          return scope(strings,...values);
+        };
+        return Object.assign(wrapped,{unsafe:scope.unsafe.bind(scope),
+          savepoint:(work:(inner:Db)=>Promise<unknown>)=>scope.savepoint(inner=>work(failReverification(inner))),
+        }) as unknown as Db;
+      }
+      expect(await run(false,failReverification(tx))).toMatchObject({ restored:0, proposedRestores:1,
+        blockedRestores:0, notUpdatedRestores:0, writeFailed:true, failedRestores:1 });
+      const [target]=await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=4`;
+      expect(target.rolled_back_reason).toBe('newer_copy_drops_fee:#800');
+      expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=1004`)[0].review_status).toBe('rejected');
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint IN ('restored:4:9','v1:500:900')`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM agent_run_events`).toHaveLength(0);
+      expect(await run(false,tx as unknown as Db)).toMatchObject({ restored:1, writeFailed:false, failedRestores:0 });
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='v1:500:900'`).toHaveLength(1);
+    });
   });
 });

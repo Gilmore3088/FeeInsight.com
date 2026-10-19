@@ -4,6 +4,46 @@ Hamilton is the last agent in the pipeline and the one people meet. It has four 
 all built on the same live published fees, and one rule across them: every output can be
 retraced without asking Hamilton (see Audit trail).
 
+## Ancillary product ownership (#1911 code phase, 2026-10-19)
+
+A bounded single-primary-deposit-product document can assign its own ancillary priced fee
+rows to the literal product. `ANCILLARY_PRODUCT_VERSION` is v1 (Knox's evidence format,
+`ancillary_product:v1`); this is not a re-read selector or permission to repair old metadata.
+The title and printed applicability clause stay with the bank's own fee conditions; frequency
+comes only from the fee's own price line. Mixed sections/columns, generic guides, unsupported
+headings and exceeded budgets remain unassigned. The general U.S. Bank $3 ATM/$5 money-order
+rows keep their existing unassigned scope; the Safe Debit exceptions belong to Safe Debit.
+
+Only newly inserted ancillary raw rows receive v1 ownership. A same-document raw insert
+conflict, including an ordinary due read or held takeover, keeps the existing row unchanged.
+Monthly-maintenance/minimum-balance lineup behavior is unchanged. Therefore simply re-running
+existing rows cannot recover missing ownership. Existing NULL metadata, numeric pooling policy
+and any exact metadata/rejudge recovery remain separate unchecked work in #1911.
+
+Shared `fee-product.ts` identity folds ASCII case and explicit transport whitespace (including
+NBSP). Unsupported Unicode case/separators stay distinct. Null/blank is one unassigned identity,
+never every product. Represented distinct products and represented/unassigned pairs cannot
+supply one another's duplicate, refresh or source-applicability witness. Holds and admin
+correction blockers keep their conservative broader overlap rules.
+
+Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
+refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
+policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
+records the exception; old settled decisions need a separately designed and authorized path.
+
+Actual matching consumers retain raw product identity through prior/same-line/exact/in-step,
+near-name/page-copy, refresh and current/newer-copy checks. Selected mutation pairs lock only
+their published members, current verified lineage and raw rows in stable ID order, then compare
+the selected full published state, exact raw lineage and normalized product after waits. Changed
+pairs are skipped visibly; only UPDATE RETURNING rows count as changes. This is a selected-row
+Read Committed guard, not serializable phantom-insertion isolation. Refresh also rechecks the
+selected new raw/product, audience, verification and scalar/rate identity. Publication compares
+the complete selected verified PostgreSQL JSON after its lock. identityDeferred rows emit a
+visible guard event/count/reason, leave the v3 fingerprint undecided and teach no negative lesson;
+a stable ordinary retry remains eligible. Parent summaries distinguish them from ineligible fees. Existing closure,
+full-precision timestamp, target hold and conservative restore-twin guards remain in force.
+
 ## Hamilton's faces (James, 2026-10-06 00:08 UTC)
 
 1. **Fee verifier and publisher.** Publishes Darwin-verified fees and keeps the live
@@ -541,6 +581,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 23. Rules re-check (`rules-recheck.ts`, state-lane or single-institution steps only): a Knox
     fee today's rules no longer read from its text, on its second look,
     `rules_recheck_unreproduced`; it also restores its own past takedowns.
+    #2209's explicit fee-count-total refusal participates through the Knox v84 signature:
+    already-passed documents are selected again at that signature, and their own source trace
+    must independently fail before the shared 12-hour second look can confirm a takedown.
+    General source-check v18 and its historical decisions are not reopened for this change.
 24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.
@@ -623,6 +667,30 @@ consumer sibling cannot block a distinct business fee; unstated applicability is
 to the same normalized unstated value, never a wildcard. An equivalent live twin still blocks
 restoration. Percentage fees have no dollar amount, so the existing planner does not select
 them for retirement or restoration; rate comparisons are defensive identity boundaries.
+
+An otherwise equivalent twin held as `account_type_hold:%` also counts as present (#1674),
+as in the cross-page and business-schedule restores. One controlled SQL fragment supplies
+the complete identity and presence predicate to both selection and the final restoration
+UPDATE. Source-stated rows still count in schedule recognition; a known twin instead
+excludes them from the restoration proposal, with `existing_twin` or
+`account_type_hold_twin` recorded as the reason. Other closure reasons and distinct
+audience/frequency/variant/price/rate identities do not block a legitimate restore.
+
+`proposedRestores` counts eligible proposals; `blockedRestores` and `restoreBlockReasons`
+count source-stated retired rows excluded during planning. `restored` counts only actual
+UPDATE RETURNING rows and is zero in dry-run/shadow results; preview wording uses proposals.
+`notUpdatedRestores` counts eligible proposals skipped by the final selected-state/twin guard,
+including a held twin committed after selection. It does not claim which guard changed.
+Attempts and events retain these separate numbers, and only actually restored lineage is
+re-verified or queued for its source check. Dry runs write nothing. The read-only Oct 19
+08:47 UTC impact snapshot found zero retired rows with a same-identity account-type-held twin;
+it is a dated candidate count, not a source verdict or recovery receipt.
+
+A failed mutation savepoint returns `writeFailed` and `failedRestores` separately from
+guard no-ops, with actual restored count zero. The parent publish receipt carries the failure
+flag/count and says the restoration proposals remain pending. Neither a pair decision nor a
+restored lineage/source-check receipt survives rollback; the normal next check can retry the
+still-pending pair. This adds no retry subsystem or historical replay.
 
 These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness

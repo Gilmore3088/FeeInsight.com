@@ -20,6 +20,7 @@ const PRO_LABEL = "Hamilton";
 const API_ACCESS_LABEL = `${PRO_LABEL} · ${API_PLANS_LABEL}`;
 
 const ERROR_GUIDANCE: Record<ApiErrorCode, { status: number; action: string }> = {
+  account_context_required: { status: 403, action: "Use your own Hamilton subscriber key for saved account context. Generic partner keys have no personal mapping; pass explicit institution and peer parameters instead." },
   api_key_required: { status: 401, action: "Send your API key in the Authorization header, or make a key on your account page." },
   invalid_api_key: { status: 401, action: "Check that you copied the whole key. A subscriber key also requires active payer and holder accounts; contact us if account access is unavailable." },
   key_revoked: { status: 401, action: "Make a replacement key on your account page, or contact us about a partner key." },
@@ -32,6 +33,7 @@ const ERROR_GUIDANCE: Record<ApiErrorCode, { status: number; action: string }> =
   burst_limited: { status: 429, action: "Wait the number of seconds in Retry-After before retrying; spread requests out across the minute." },
   rate_limit_unavailable: { status: 503, action: "Usage tracking is temporarily unavailable. Wait the Retry-After seconds (60) and retry." },
   data_unavailable: { status: 503, action: "Revenue data is temporarily unavailable. Retry later; contact us if it persists." },
+  context_unavailable: { status: 503, action: "Saved Hamilton context could not be read. Retry later; no partial account context is returned." },
 };
 
 export const metadata: Metadata = {
@@ -167,6 +169,7 @@ function Endpoint({
           </div>
         </div>
       )}
+      {params.length === 0 && <p className="mt-4 text-[13px] text-ink-muted">No query parameters.</p>}
 
       {/* Try it */}
       <CodeBlock title="Try it" copyLabel={`${method} ${path} request`}>{curlExample}</CodeBlock>
@@ -238,8 +241,15 @@ function TierCard({
 
 const BASE = `${SITE_URL}/api/v1`;
 
-/** Claude Desktop runs the connector through the open-source mcp-remote bridge when custom connectors are off. */
+/**
+ * Claude Desktop runs the connector through the open-source mcp-remote bridge when custom connectors are off.
+ * The key goes in a header file, never in the args: other users can read a process's args, and mcp-remote
+ * logs its server URL. The version is pinned to one whose --header-file handling and logs we have read.
+ */
 const DESKTOP_SERVER_NAME = "bank-fee-index";
+const MCP_REMOTE = "mcp-remote@0.14.3";
+const KEY_FILE_NAME = "bank-fee-index-key.txt";
+const KEY_FILE_LINE = "Authorization: Bearer YOUR_API_KEY";
 function desktopConfig(command: string, args: string[]): string {
   return JSON.stringify(
     { mcpServers: { [DESKTOP_SERVER_NAME]: { command, args } } },
@@ -247,8 +257,13 @@ function desktopConfig(command: string, args: string[]): string {
     2,
   );
 }
-const DESKTOP_CONFIG_MAC = desktopConfig("npx", ["-y", "mcp-remote", `${BASE}/mcp?api_key=YOUR_API_KEY`]);
-const DESKTOP_CONFIG_WINDOWS = desktopConfig("cmd", ["/c", "npx", "-y", "mcp-remote", `${BASE}/mcp?api_key=YOUR_API_KEY`]);
+const DESKTOP_CONFIG_MAC = desktopConfig("npx", [
+  "-y", MCP_REMOTE, `${BASE}/mcp`, "--header-file", `/Users/YOUR_NAME/${KEY_FILE_NAME}`,
+]);
+const DESKTOP_CONFIG_WINDOWS = desktopConfig("cmd", [
+  "/c", "npx", "-y", MCP_REMOTE, `${BASE}/mcp`, "--header-file", `C:\\Users\\YOUR_NAME\\${KEY_FILE_NAME}`,
+]);
+const POWERSHELL_EXAMPLE = `curl.exe -i -H "Authorization: Bearer YOUR_API_KEY" ${BASE}/fees`;
 const CLAUDE_CODE_COMMAND = `claude mcp add --transport http ${DESKTOP_SERVER_NAME} ${BASE}/mcp --header "Authorization: Bearer YOUR_API_KEY"`;
 
 export default async function ApiDocsPage() {
@@ -353,6 +368,9 @@ export default async function ApiDocsPage() {
         <a href="#peers" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Peers
         </a>
+        <a href="#hamilton-context" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
+          Hamilton context
+        </a>
         <a href="#rate-fees" className="rounded-md border border-border px-3 py-1.5 text-ink-soft hover:bg-paper transition-colors">
           Rate fees
         </a>
@@ -400,10 +418,13 @@ export default async function ApiDocsPage() {
         <CodeBlock title="Query parameter authentication">{`curl "${BASE}/fees?api_key=YOUR_API_KEY"`}</CodeBlock>
 
         <p className="mt-3 text-[13px] text-ink-muted">
-          In Windows PowerShell, type <code className="rounded bg-border/40 px-1 text-[12px]">curl.exe</code>.
-          Plain <code className="rounded bg-border/40 px-1 text-[12px]">curl</code> there runs a different command
-          and fails with &ldquo;Cannot bind parameter &lsquo;Headers&rsquo;&rdquo;.
+          On Windows, use this one line. It works in PowerShell 5.1 and 7 and in Command Prompt. The examples
+          above split lines with a backslash, which PowerShell does not accept. In Windows PowerShell 5.1, plain{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">curl</code> runs a different command and fails
+          with &ldquo;Cannot bind parameter &lsquo;Headers&rsquo;&rdquo;, so type{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">curl.exe</code>.
         </p>
+        <CodeBlock title="Windows PowerShell or Command Prompt" copyLabel="Windows request">{POWERSHELL_EXAMPLE}</CodeBlock>
 
         <p className="mt-4 text-[13px] text-ink-muted">
           A key keeps working while your subscription is active, and for {PAST_DUE_GRACE_DAYS} days after a failed payment
@@ -424,16 +445,35 @@ export default async function ApiDocsPage() {
         <p className="mt-3 text-[13px] text-ink-muted">
           Each question Claude answers uses a few calls from your team&apos;s {API_MONTHLY_CALLS_LABEL}-a-month allowance.
         </p>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          Your own subscriber key can use the institution and peer sets you saved in Hamilton.
+          Ask Claude to call <code>get_hamilton_context</code> first, or call{" "}
+          <a href="#hamilton-context" className="font-medium text-brick underline underline-offset-2">/hamilton-context</a>{" "}
+          from your code. Peer comparison uses those defaults when you omit explicit values.
+          A generic partner key has no personal account mapping.
+        </p>
 
         <p className="mt-4 text-[13px] font-semibold text-ink">If Claude has no custom connector option</p>
         <p className="mt-1 text-[13px] text-ink-muted">
-          Some company Claude accounts turn custom connectors off. Claude Desktop can still reach the
-          connector through mcp-remote, an open-source bridge that needs Node.js (check that{" "}
-          <code className="rounded bg-border/40 px-1 text-[12px]">npx -v</code> works in a terminal). In Claude
-          Desktop, open Settings, then Developer, then Edit Config, and add this entry to{" "}
+          Some company Claude accounts turn custom connectors off. If your company also manages Claude Desktop,
+          it may block local connectors too; then ask your Claude admin for an approved way to connect. Otherwise
+          Claude Desktop can reach the connector through mcp-remote, an open-source bridge that needs Node.js
+          (check that <code className="rounded bg-border/40 px-1 text-[12px]">npx -v</code> works in a terminal).
+        </p>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          First save your key in a plain text file named{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">{KEY_FILE_NAME}</code> in your home folder,
+          with this one line. Keeping the key in its own file keeps it out of the bridge&apos;s logs and the list of
+          running programs. Keep the file private.
+        </p>
+        <CodeBlock title={KEY_FILE_NAME} copyLabel="key file line">{KEY_FILE_LINE}</CodeBlock>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          Then in Claude Desktop, open Settings, then Developer, then Edit Config, and add this entry to{" "}
           <code className="rounded bg-border/40 px-1 text-[12px]">claude_desktop_config.json</code>. If the file
           already has <code className="rounded bg-border/40 px-1 text-[12px]">mcpServers</code>, add only the{" "}
           <code className="rounded bg-border/40 px-1 text-[12px]">{DESKTOP_SERVER_NAME}</code> entry inside it.
+          Replace <code className="rounded bg-border/40 px-1 text-[12px]">YOUR_NAME</code> so the path points at
+          your key file (on Linux the folder is <code className="rounded bg-border/40 px-1 text-[12px]">/home/YOUR_NAME</code>).
           Save, quit Claude Desktop fully (on Windows, from the system tray as well) and reopen it.
         </p>
         <CodeBlock title="Claude Desktop on Mac or Linux" copyLabel="Claude Desktop config for Mac or Linux">{DESKTOP_CONFIG_MAC}</CodeBlock>
@@ -448,7 +488,7 @@ export default async function ApiDocsPage() {
         <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] text-ink-muted">
           <li>
             Replacing or turning off a key stops the old one at once. Put the new key in the connector link or
-            config, then quit and reopen Claude.
+            key file, then quit and reopen Claude.
           </li>
           <li>
             Claude Desktop ignores a config file that is not valid JSON. Check that every brace and comma is in
@@ -456,14 +496,20 @@ export default async function ApiDocsPage() {
             <code className="rounded bg-border/40 px-1 text-[12px]">mcpServers</code>.
           </li>
           <li>
-            &ldquo;Unexpected token &lsquo;&lt;&rsquo;&rdquo; in the Claude Desktop log usually means the server turned
-            the key away. Check that the link ends with your real key, with no spaces or quotes.
+            &ldquo;Unexpected token &lsquo;&lt;&rsquo;&rdquo; in the Claude Desktop log means a web page came back
+            instead of the connector&apos;s data, often from a mistyped link or a company network page. Check that
+            the link is exactly <code className="rounded bg-border/40 px-1 text-[12px]">{`${BASE}/mcp`}</code>.
+            A key problem looks different: the server answers 401 with an error code.
           </li>
           <li>
-            To test the key on its own, run the header example above. Fee data back means the key works;{" "}
-            <code className="rounded bg-border/40 px-1 text-[12px]">api_key_required</code> or{" "}
-            <code className="rounded bg-border/40 px-1 text-[12px]">invalid_api_key</code> means it is missing or
-            mistyped.
+            To test the key on its own, run the Windows line above, or the header example on Mac or Linux with{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">-i</code> added. Status 200 with fee data means
+            the key works.{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">api_key_required</code> means no key arrived:
+            check the key file path and its Authorization line.{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">invalid_api_key</code> means the key was not
+            accepted: it may be mistyped or replaced, or the subscription behind it may be inactive. See{" "}
+            <a href="#errors" className="font-medium text-brick underline underline-offset-2">Errors</a> for each code.
           </li>
         </ul>
 
@@ -485,7 +531,7 @@ export default async function ApiDocsPage() {
           Each plan gets one monthly allowance, shared by every key on it and across all endpoints. When it runs out, calls return 429 rate_limited until the allowance resets on the 1st of the next month (UTC). Each plan can also make up to {BURST_CALLS_PER_MINUTE} calls a minute, and calls past that return 429 burst_limited with a Retry-After header giving the seconds to wait. Unlimited keys get no X-RateLimit-Limit or X-RateLimit-Remaining headers.
         </p>
         <p className="mt-3 text-[13px] text-ink-muted">
-          Successful responses carry an ETag; send it back in If-None-Match to get 304 Not Modified when nothing changed (a 304 still counts as a call).
+          Data responses carry an ETag; send it back in If-None-Match to get 304 Not Modified when nothing changed (a 304 still counts as a call). /hamilton-context and personalized /peers responses are private, use no-store and do not return an ETag or 304.
         </p>
         <div className="mt-3 space-y-1.5 text-[13px]">
           <ResponseField name="X-RateLimit-Limit" type="header" note="Maximum requests in the current window" />
@@ -934,28 +980,84 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
         />
       </div>
 
+      {/* ---- HAMILTON CONTEXT ---- */}
+      <SectionHeading id="hamilton-context">Hamilton Context</SectionHeading>
+
+      <div className="space-y-6">
+        <Endpoint
+          method="GET"
+          path="/hamilton-context"
+          summary="Read your saved institution and peer sets"
+          description="Returns the subscriber key holder's saved Hamilton institution and authorized personal or workspace peer sets. If no saved institution is available, the current account institution may supply it. Requires your own subscriber key or a paid signed-in session; generic partner keys return 403 account_context_required. Responses are private and never cached. It returns institution and peer context without account identifiers, contact details or billing information."
+          tierNote={API_ACCESS_LABEL}
+          params={[]}
+          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/hamilton-context"`}
+          responseFields={[
+            { name: "institution", type: "object | null", note: "Selected institution's id and name, or null when none is available" },
+            { name: "institution_source", type: "string", note: "The saved source label, account for the current account fallback, or none" },
+            { name: "peer_sets[]", type: "array", note: "Only your authorized personal or workspace peer sets, with their saved filters" },
+            { name: "active_peer_set_id", type: "integer | null", note: "The saved active peer set; null when none is active" },
+          ]}
+          responseExample={`{
+  "institution": { "id": 2466, "name": "Gateway Bank" },
+  "institution_source": "manual",
+  "peer_sets": [
+    {
+      "id": 31,
+      "name": "Regional bank peers",
+      "scope": "personal",
+      "workspace_institution_id": null,
+      "is_default": true,
+      "filters": {
+        "charter_type": "bank",
+        "asset_tiers": ["community_mid", "community_large"],
+        "fed_districts": [9],
+        "states": ["MN", "WI"]
+      }
+    }
+  ],
+  "active_peer_set_id": 31,
+  "note": "Only saved context available to this key holder is returned.",
+  "attribution": ${JSON.stringify(API_ATTRIBUTION)}
+}`}
+        />
+      </div>
+
       {/* ---- PEERS ---- */}
       <SectionHeading id="peers">Peer Comparison</SectionHeading>
 
       <div className="space-y-6">
         <Endpoint
           method="GET"
-          path="/peers?institution_id={id}"
+          path="/peers"
           summary="Compare one institution's fees with its peers"
-          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. The percentile field is the share of peers with a lower amount, counting half of those with the same amount. By default, peers are banks or credit unions of the same charter type, asset size and Fed district. To choose them yourself, either set the peer-group parameters below or list institutions in peer_ids, not both. When you set any peer-group parameter, only the ones you set apply, and "same" means the institution's own value. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
+          description={`For each fee the institution publishes in dollars, shows its amount next to the peer median and the 25th and 75th percentiles. Your own subscriber key can supply omitted institution and peer defaults from Hamilton. Explicit peer_ids or peer-group parameters bypass saved peer defaults. Choose one authorized saved_peer_set_id, explicit peer_ids, or peer-group parameters; do not combine a saved set with explicit peers or filters. use_saved_context=false disables automatic defaults while still allowing an explicit authorized saved set. Without saved peers, the default group uses the institution's charter type, asset size and Fed district. Only the peer-group parameters you set apply, and "same" means the institution's own value. The percentile counts peers with lower amounts plus half of ties. When fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee, the median and percentiles are left out. Fees stated as a percentage are listed separately and not compared.`}
           tierNote={API_ACCESS_LABEL}
           params={[
-            { name: "institution_id", type: "integer", required: true, description: "Institution ID" },
+            { name: "institution_id", type: "integer", description: "Institution ID; optional when saved Hamilton or current account context supplies it. If neither is available, the request returns 400 invalid_parameter" },
+            { name: "saved_peer_set_id", type: "integer", description: "One authorized saved personal or workspace peer set. Cannot combine with peer_ids or peer-group parameters. Missing or unauthorized sets return 404 not_found; generic partner keys return 403 account_context_required" },
+            { name: "use_saved_context", type: "boolean", description: "Default true. false disables automatic institution and peer defaults; an explicitly requested authorized saved_peer_set_id still works. Saved-context comparisons are private and never cached" },
             { name: "peer_ids", type: "string", description: `Up to ${MAX_CHOSEN_PEERS} institution IDs, comma-separated, to use as the peer group. Not combined with the parameters below` },
             ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, type: "string", description: `${p.description}, e.g. ${p.example}` })),
           ]}
-          curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${BASE}/peers?institution_id=2466"
+          curlExample={`# Use your saved Hamilton institution and active peer set
+curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers"
+
+# Choose an authorized saved peer set for one institution
+curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers?institution_id=2466&saved_peer_set_id=31"
+
+# Use only the explicit institution and the default charter/size/district group
+curl -H "Authorization: Bearer YOUR_API_KEY" \\
+  "${BASE}/peers?institution_id=2466&use_saved_context=false"
 
 # Banks with branches in the same metro, $500M to $2B in assets
 curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/peers?institution_id=2466&charter=bank&market=same&asset_min=500000000&asset_max=2000000000"`}
           responseFields={[
+            { name: "context", type: "object", note: "institution_source, peer_source, saved_peer_set_id and saved_peer_set_name explain the applied defaults" },
             { name: "peer_group.label", type: "string", note: "Which institutions were compared" },
             { name: "categories[].amount", type: "number", note: "The institution's amount in USD; null when it charges several different fees in the category" },
             { name: "categories[].fees", type: "array", note: "Each of the institution's fees as name and amount, lowest first; amount_low and amount_high on the category give the range" },
@@ -992,6 +1094,13 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
     }
   ],
   "rate_fees": [],
+  "context": {
+    "institution_source": "explicit",
+    "peer_source": "default",
+    "saved_peer_set_id": null,
+    "saved_peer_set_name": null
+  },
+  "note": "Each row compares the institution's published dollar amount with the same fee at its peers.",
   "attribution": ${JSON.stringify(API_ATTRIBUTION)}
 }`}
         />

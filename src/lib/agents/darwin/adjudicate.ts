@@ -313,7 +313,7 @@ export async function runDarwinAdjudicate(
   const db = options.db ?? sql;
   if (!(await learningSchemaReady(db))) return result;
   const score = await runDarwinVerdictScore(db, { runId: options.runId, stepId: options.stepId ?? null });
-  if (score.chunks.length > 0) result.results.push({ pass: "verdict_score", chunks: score.chunks, lessons: score.lessons });
+  if (score.chunks.length > 0 || score.reference.unbound > 0) result.results.push({ pass: "verdict_score", chunks: score.chunks, lessons: score.lessons, reference: score.reference });
   return result;
 }
 

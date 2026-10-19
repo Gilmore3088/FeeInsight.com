@@ -1,3 +1,5 @@
+import { primaryAncillaryProduct } from "../knox/ancillary-product";
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
@@ -107,6 +109,7 @@ export function currentCopyFingerprint(olderDocumentId: number, currentDocumentI
 }
 
 export interface CurrentCopyFeeRow {
+  product_name?: string | null;
   fee_published_id: number | string;
   fee_verified_id: number | string;
   institution_id: number | string;
@@ -199,6 +202,16 @@ const GENERIC_FEE_WORDS = /\s*\b(?:monthly\s+)?(?:maintenance|service)\s+(?:fee|
 export function currentCopyVerdict(fee: CurrentCopyFeeRow, currentText: string, olderText: string): NewerCopyVerdict {
   const amount = fee.amount == null ? null : Number(fee.amount);
   if (amount != null && !(amount > 0)) return "unproven";
+  if (productKey(fee.product_name)) {
+    const owner = primaryAncillaryProduct(currentText);
+    if (!owner || !sameProduct(owner.productName, fee.product_name)) return "unproven";
+    // Keep fallback name/price checks within the same positive ownership witness.
+    const verdict = newerCopyVerdict(fee, currentText, olderText);
+    currentText = owner.block;
+    if (verdict === "still_stated" || verdict === "unproven" || verdict === "no_amount" || amount == null) return verdict;
+    const traced = checkFeeAgainstSource(currentText, fee.fee_name, amount, ".", fee.canonical_fee_key);
+    return priceFollowsName(fee.fee_name, amount, currentText) || traced.ok || traced.reason === "tiered_fee" ? "still_stated" : verdict;
+  }
   const verdict = newerCopyVerdict(fee, currentText, olderText);
   if (verdict === "still_stated" || verdict === "unproven" || verdict === "no_amount" || amount == null) return verdict;
   if (priceFollowsName(fee.fee_name, amount, currentText)) return "still_stated";
@@ -348,7 +361,7 @@ export async function countCurrentCopyPairs(db: SqlTag): Promise<{ pairs: number
     ), retired AS MATERIALIZED (
       ${retiredCopiesSql(db)}
     ), stale AS MATERIALIZED (
-      SELECT live.canonical_fee_key, live.amount, live.rate_percent, live.older_document_id,
+      SELECT live.canonical_fee_key, live.amount, live.rate_percent, live.product_name, live.older_document_id,
              COALESCE(NULLIF(live.superseded_by_id, live.older_document_id), retired.current_document_id) AS current_document_id
         FROM live
         LEFT JOIN retired ON retired.older_document_id = live.older_document_id
@@ -361,6 +374,7 @@ export async function countCurrentCopyPairs(db: SqlTag): Promise<{ pairs: number
          SELECT 1 FROM raw_fee_observations nr
            JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
           WHERE nr.source_document_id = s.current_document_id
+            AND ${db.unsafe(productKeySql("nr.product_name"))} = ${db.unsafe(productKeySql("s.product_name"))}
             AND nv.canonical_fee_key = s.canonical_fee_key
             AND nv.amount IS NOT DISTINCT FROM s.amount
             AND nv.rate_percent IS NOT DISTINCT FROM s.rate_percent
@@ -415,7 +429,7 @@ export async function secondLookFeesNotOnCurrentCopy(
     fees = await inSavepoint(db, (scope) => scope<CurrentCopyFeeRow[]>`
       WITH live AS MATERIALIZED (
         SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
-               fp.amount, fp.rate_percent, fr.source_document_id AS older_document_id,
+               fp.amount, fp.rate_percent, fr.product_name, fr.source_document_id AS older_document_id,
                sd.superseded_by_id, sd.companion_source_id, sd.document_url, inst.fee_schedule_url
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -429,7 +443,7 @@ export async function secondLookFeesNotOnCurrentCopy(
         ${retiredCopiesSql(scope)}
       ), stale AS MATERIALIZED (
         SELECT live.fee_published_id, live.fee_verified_id, live.institution_id, live.canonical_fee_key, live.fee_name,
-               live.amount, live.rate_percent, live.older_document_id,
+               live.amount, live.rate_percent, live.product_name, live.older_document_id,
                COALESCE(NULLIF(live.superseded_by_id, live.older_document_id), retired.current_document_id) AS current_document_id,
                retired.current_document_id IS NOT NULL AND live.superseded_by_id IS NULL AS retired
           FROM live
@@ -442,6 +456,7 @@ export async function secondLookFeesNotOnCurrentCopy(
                  SELECT 1 FROM raw_fee_observations nr
                    JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
                   WHERE nr.source_document_id = stale.current_document_id
+                    AND ${scope.unsafe(productKeySql("nr.product_name"))} = ${scope.unsafe(productKeySql("stale.product_name"))}
                     AND nv.canonical_fee_key = stale.canonical_fee_key
                     AND nv.amount IS NOT DISTINCT FROM stale.amount
                     AND nv.rate_percent IS NOT DISTINCT FROM stale.rate_percent
@@ -473,7 +488,7 @@ export async function secondLookFeesNotOnCurrentCopy(
          LIMIT ${limit}
       )
       SELECT m.fee_published_id, m.fee_verified_id, m.institution_id, m.older_document_id, m.current_document_id,
-             m.canonical_fee_key, m.fee_name, m.amount, m.restated_row, m.retired,
+             m.canonical_fee_key, m.fee_name, m.amount, m.product_name, m.restated_row, m.retired,
              older_doc.document_url AS older_url, current_doc.document_url AS current_url
         FROM marked m
         JOIN docs ON docs.older_document_id = m.older_document_id AND docs.current_document_id = m.current_document_id

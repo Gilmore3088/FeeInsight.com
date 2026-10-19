@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -98,7 +99,8 @@ export default async function AnswerKeyDetailPage({
   const answerKeyId = Number(id);
   if (!Number.isInteger(answerKeyId) || answerKeyId <= 0) notFound();
   if (!(await answerKeySchemaReady().catch(() => false))) notFound();
-  const [entry, all] = await Promise.all([getAnswerKeyInstitution(answerKeyId), listAnswerKeyInstitutions()]);
+  const reference = await readReferenceEligibility();
+  const [entry, all] = await Promise.all([getAnswerKeyInstitution(answerKeyId, undefined, reference), listAnswerKeyInstitutions(undefined, reference)]);
   if (!entry) notFound();
   const { institution, fees } = entry;
   // The next bank a person still has to check, in the shortest-first order the list page uses.
@@ -146,6 +148,12 @@ export default async function AnswerKeyDetailPage({
       {message ? (
         <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-200">{message}</p>
       ) : null}
+
+      <section className="admin-card space-y-1 p-4 text-sm" aria-label="Document eligibility">
+        <p>Document eligibility: <strong>{institution.eligibility?.status ?? "unknown"}</strong> · {(institution.eligibility?.reason ?? "eligibility_missing").replaceAll("_", " ")}</p>
+        <p className="text-xs text-gray-500">Automatic evidence is separate from human confirmation. An excluded document contributes no score or learning label; it needs no additional confirmation from James.</p>
+        {institution.eligibility?.eventId ? <p className="text-xs text-gray-500">Receipt #{institution.eligibility.eventId} · {institution.eligibility.checkedAt ? formatAdminDateTime(institution.eligibility.checkedAt) : "time unavailable"}</p> : null}
+      </section>
 
       <section className="admin-card space-y-2 p-4">
         <div className="flex items-baseline justify-between">

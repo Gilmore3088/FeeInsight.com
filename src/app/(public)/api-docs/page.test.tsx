@@ -53,7 +53,12 @@ describe("API documentation", () => {
       expect(endpoint).toHaveAttribute("aria-labelledby", heading.id);
       expect(within(heading).getByRole("link")).toHaveAttribute("href", `#${heading.id}`);
 
-      const table = within(endpoint).getByRole("table");
+      const table = within(endpoint).queryByRole("table");
+      if (!table) {
+        expect(endpoint.querySelector("code")!.textContent).toBe("/hamilton-context");
+        expect(within(endpoint).getByText("No query parameters.")).toBeInTheDocument();
+        return heading.id;
+      }
       expect(table).toHaveAccessibleName(/parameters$/);
       expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Name", "Type", "Description"]);
       for (const header of within(table).getAllByRole("columnheader")) expect(header).toHaveAttribute("scope", "col");
@@ -123,18 +128,50 @@ describe("API documentation", () => {
     }
     expect(within(table).getByText("burst_limited").closest("tr")).toHaveTextContent("Retry-After");
     expect(within(table).getByText("rate_limited").closest("tr")).toHaveTextContent("X-RateLimit-Reset");
+    expect(within(table).getByText("account_context_required").closest("tr")).toHaveTextContent("Generic partner keys");
+    expect(within(table).getByText("context_unavailable").closest("tr")).toHaveTextContent("no partial account context");
   });
 
-  it("gives Claude Desktop configs that are valid JSON and point at the connector", async () => {
+  it("documents holder context and saved-peer precedence without making institution_id mandatory", async () => {
+    const { container } = render(await ApiDocsPage());
+    const context = within(screen.getByRole("article", { name: "Read your saved institution and peer sets" }));
+    expect(context.getByText("No query parameters.")).toBeInTheDocument();
+    expect(context.getByText(/generic partner keys return 403 account_context_required/i)).toBeInTheDocument();
+    const example = JSON.parse(context.getByLabelText("Example response · illustrative values, not live data").textContent!);
+    expect(example.institution_source).toBe("manual");
+    expect(example.peer_sets[0]).toMatchObject({ scope: "personal", workspace_institution_id: null });
+    expect(example).not.toHaveProperty("user_id");
+    expect(example).not.toHaveProperty("email");
+
+    const peers = within(screen.getByRole("article", { name: "Compare one institution's fees with its peers" }));
+    for (const name of ["institution_id", "saved_peer_set_id", "use_saved_context"]) {
+      expect(peers.getByRole("rowheader", { name })).not.toHaveTextContent("required");
+    }
+    expect(peers.getByText(/explicit peer_ids or peer-group parameters bypass saved peer defaults/i)).toBeInTheDocument();
+    expect(container).toHaveTextContent("get_hamilton_context");
+  });
+
+  it("gives Claude Desktop configs that are valid JSON and keep the key out of the bridge arguments", async () => {
     render(await ApiDocsPage());
     for (const label of ["Claude Desktop config for Mac or Linux", "Claude Desktop config for Windows"]) {
       const button = screen.getByRole("button", { name: `Copy ${label}` });
       const code = document.getElementById(button.getAttribute("aria-controls")!)!;
       const config = JSON.parse(code.textContent!);
       const args: string[] = config.mcpServers["bank-fee-index"].args;
-      expect(args).toContain("mcp-remote");
-      expect(args.at(-1)).toMatch(/\/api\/v1\/mcp\?api_key=YOUR_API_KEY$/);
+      // A pinned bridge version, the bare connector URL and the key in a header file, never in the args.
+      expect(args).toContain("mcp-remote@0.14.3");
+      expect(args).toEqual(expect.arrayContaining([expect.stringMatching(/\/api\/v1\/mcp$/), "--header-file"]));
+      expect(args.at(-1)).toMatch(/bank-fee-index-key\.txt$/);
+      expect(args.join(" ")).not.toMatch(/api_key|YOUR_API_KEY|Bearer/);
     }
+    const keyLine = screen.getByRole("button", { name: "Copy key file line" });
+    expect(document.getElementById(keyLine.getAttribute("aria-controls")!)).toHaveTextContent(
+      /^Authorization: Bearer YOUR_API_KEY$/,
+    );
+    const windows = screen.getByRole("button", { name: "Copy Windows request" });
+    const windowsLine = document.getElementById(windows.getAttribute("aria-controls")!)!.textContent!;
+    expect(windowsLine).toMatch(/^curl\.exe -i -H "Authorization: Bearer YOUR_API_KEY" \S+\/api\/v1\/fees$/);
+    expect(windowsLine).not.toContain("\\");
     const command = screen.getByRole("button", { name: "Copy Claude Code command" });
     expect(document.getElementById(command.getAttribute("aria-controls")!)).toHaveTextContent(
       /\/api\/v1\/mcp --header "Authorization: Bearer YOUR_API_KEY"$/,

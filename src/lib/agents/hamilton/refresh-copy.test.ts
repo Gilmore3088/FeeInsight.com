@@ -37,22 +37,27 @@ function candidate(extra: Partial<RefreshCopyCandidate> = {}): RefreshCopyCandid
     prior_fee_name: "Overdraft fee",
     prior_amount: "35.00",
     prior_source_document_id: 500,
+    prior_lineage_ref:601,published_state:"snapshot501",identity_raw_id:501,identity_product:"",
     ...extra,
   };
 }
 
 function createDb(rows: RefreshCopyCandidate[]): DbMock {
   let nextId = 7001;
-  return vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("WITH stale AS MATERIALIZED")) return Promise.resolve(rows);
     if (text.includes("INSERT INTO published_fee_records")) return Promise.resolve([{ fee_published_id: nextId++ }]);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 501 }]);
     return Promise.resolve([]);
   });
+  Object.assign(db,{ unsafe:(text:string) => text.startsWith("SELECT fp.fee_published_id")
+    ? Promise.resolve(rows.map((r) => ({...r,fee_published_id:r.prior_fee_published_id}))) : text });
+  return db;
 }
 
 function asDb(db: DbMock): Parameters<typeof refreshFeesFromCurrentCopy>[0] {
+  if (!("unsafe" in db)) Object.assign(db,{unsafe:(text:string) => text});
   return db as unknown as Parameters<typeof refreshFeesFromCurrentCopy>[0];
 }
 

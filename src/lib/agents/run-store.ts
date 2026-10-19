@@ -13,7 +13,7 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
-import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
+import { newerCopyReceiptNote, retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
@@ -149,6 +149,7 @@ import {
   MAX_STEP_ATTEMPTS,
   PAUSE_EXEMPT_STEP_KEYS,
   pauseScopeForStep,
+  OPTIONAL_PAID_PASS_STEP_KEYS,
   PROVIDER_STEP_KEYS,
   STALE_RUNNING_STEP_MINUTES,
 } from "./types";
@@ -160,6 +161,11 @@ const RUN_KINDS_WITH_LEDGER = ["workflow", "workflow_lane", "state_agent", "repo
 const RUN_SUMMARY_MAX_LENGTH = 2_000;
 
 type SqlTag = typeof sql;
+export interface AgentRunSelectionScope {
+  agent: AdminAgent;
+  kind: AgentRunKind;
+  source: string;
+}
 
 /**
  * Every institution's totals for a fee step, so the live board's counts are the step's real
@@ -222,6 +228,8 @@ export interface StartAgentRunInput {
   triggeredBy: string;
   triggerSource?: AgentRunTriggerSource;
   idempotencyKey?: string;
+  /** Once-per-key scheduled work: serialize lookup/create and also reuse terminal history. */
+  reuseTerminal?: boolean;
   steps: AgentRunStepDefinition[];
   summary?: string;
 }
@@ -851,6 +859,8 @@ async function executeAgenticStep(
           lesson_refiles: extraction.lessonRefiles,
           takedown_lessons_loaded: extraction.takedownLessonsLoaded,
           takedown_holds: extraction.takedownHolds,
+          takedown_lessons_unknown: extraction.takedownLessonsUnknown ?? {},
+          takedown_guard_declines: extraction.takedownGuardDeclines ?? {},
           calibration_groups: extraction.calibrationGroups,
           calibrated_below_publish_floor: extraction.calibratedBelowPublishFloor,
           layouts: Object.fromEntries(Object.entries(extraction.layouts).slice(0, 12)),
@@ -1239,7 +1249,7 @@ async function executeAgenticStep(
         stateCode,
       }));
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
-      const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
+      const newerCopyRestored = newerCopy.live ? (run.runKind === "dry_run" ? newerCopy.proposedRestores : newerCopy.restored) : 0;
       const { identicalCopy } = await sweepsBeforeRefreshCopy(sweepCtx);
       // A live fee the current copy of its page still states at the same amount moves to
       // that copy, so it no longer points at a superseded copy and its date is current.
@@ -1511,10 +1521,7 @@ async function executeAgenticStep(
         sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
           ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
           : "";
-      const newerCopyNote =
-        newerCopyRetired > 0 || newerCopyRestored > 0
-          ? ` ${published.dryRun ? "Would retire" : "Retired"} ${newerCopyRetired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${newerCopyRestored > 0 ? ` and ${published.dryRun ? "would restore" : "restored"} ${newerCopyRestored.toLocaleString()} a later copy states again` : ""}.`
-          : "";
+      const newerCopyNote = newerCopyReceiptNote(newerCopy, published.dryRun);
       const refreshNote =
         refreshCopy.refreshed > 0
           ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
@@ -1539,12 +1546,13 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${(published.identityDeferredFees ?? 0) > 0 ? ` ${published.identityDeferredFees!.toLocaleString()} deferred because selected verification or identity changed; left pending for a stable read.` : ""}${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
           published_fees: published.publishedFees,
           skipped_verified_fees: published.skippedFees,
+          identity_deferred_verified_fees: published.identityDeferredFees ?? 0,
           superseded_fees: published.supersededFees,
           outlier_rollbacks: outlierRollbacks.length,
           outlier_restores: outlierRestores.length,
@@ -1837,6 +1845,12 @@ async function executeAgenticStep(
           newer_copy_still_named: newerCopy.stillNamed,
           newer_copy_retired: newerCopy.retired.length,
           newer_copy_restored: newerCopy.restored,
+          newer_copy_proposed_restores: newerCopy.proposedRestores,
+          newer_copy_blocked_restores: newerCopy.blockedRestores,
+          newer_copy_restore_block_reasons: newerCopy.restoreBlockReasons,
+          newer_copy_not_updated_restores: newerCopy.notUpdatedRestores,
+          newer_copy_write_failed: newerCopy.writeFailed,
+          newer_copy_failed_restores: newerCopy.failedRestores,
           newer_copy_samples: newerCopy.retired.slice(0, 10).map((fee) => ({
             fee_published_id: Number(fee.fee_published_id),
             institution_id: Number(fee.institution_id),
@@ -2066,6 +2080,7 @@ async function executeAgenticStep(
           ),
           sample_results: published.results.slice(0, 10).map((result) => ({
             fee_verified_id: result.feeVerifiedId,
+            identity_deferred: result.identityDeferred ?? false,
             institution_id: result.institutionId,
             fee_name: result.feeName,
             amount: result.amount,
@@ -2444,7 +2459,7 @@ async function executeAgenticStep(
       const relabel = await inSavepoint(tx, (scope) => runAnswerKeyRelabels({ db: scope, dryRun: run.runKind === "dry_run" }))
         .then((value) => ({ value, error: null as string | null }))
         .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
-      const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const result = await runAnswerKeyScore({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
       const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
@@ -2453,6 +2468,8 @@ async function executeAgenticStep(
         detail: {
           answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
+          reference_eligibility: result.reference ?? null,
+          reference_checks: result.referenceChecks ?? null,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,
           series: (result.series ?? []).map((entry) => ({
@@ -2869,11 +2886,15 @@ interface PreparedAgenticStep {
   step: AgentRunStepSnapshot;
 }
 
-async function prepareNextAgenticStep(runId: number): Promise<
+async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, expectedStepKey }: {
+  pauseExemptOnly?: boolean;
+  expectedStepKey?: string;
+} = {}): Promise<
   | { kind: "ready"; prepared: PreparedAgenticStep }
   | { kind: "missing" }
   | { kind: "terminal"; status: AgentRunStatus; message: string }
   | { kind: "busy"; status: AgentRunStatus; message: string }
+  | { kind: "held"; status: AgentRunStatus; message: string }
 > {
   return withTransaction(async (tx) => {
     const [runRow] = await tx`
@@ -2950,6 +2971,16 @@ async function prepareNextAgenticStep(runId: number): Promise<
       };
     }
 
+    // Recheck the actual earliest step while holding the run's claim lock: another
+    // tick may have completed the peeked measurement and exposed the paused tail.
+    if (pauseExemptOnly && !PAUSE_EXEMPT_STEP_KEYS.includes(step.stepKey)) {
+      return { kind: "held", status: run.status, message: "Next step is outside the pause-exempt continuation; run left queued." };
+    }
+    // A concurrent executor may have advanced past the paid step we intended to skip.
+    // Never mark its newly exposed free work (or another provider job) as skipped.
+    if (expectedStepKey != null && step.stepKey !== expectedStepKey) {
+      return { kind: "held", status: run.status, message: "Next step changed before the paid skip; run left queued." };
+    }
     const alreadyStarted = steps.some((candidate) => candidate.startedAt !== null);
 
     await tx`
@@ -3280,7 +3311,8 @@ export { MAX_STEP_ATTEMPTS, STALE_RUNNING_STEP_MINUTES };
 export async function reapStaleAgentSteps({
   staleAfterMinutes = STALE_RUNNING_STEP_MINUTES,
   maxAttempts = MAX_STEP_ATTEMPTS,
-}: { staleAfterMinutes?: number; maxAttempts?: number } = {}): Promise<ReapStaleAgentStepsResult> {
+  scope = null,
+}: { staleAfterMinutes?: number; maxAttempts?: number; scope?: AgentRunSelectionScope | null } = {}): Promise<ReapStaleAgentStepsResult> {
   const result: ReapStaleAgentStepsResult = { requeued: [], dead: [], orphanRunsRequeued: [] };
   const staleSteps = await sql`
     SELECT s.id, s.agent_run_id, s.step_key,
@@ -3293,6 +3325,10 @@ export async function reapStaleAgentSteps({
      WHERE s.status = 'running'
        AND s.updated_at < NOW() - make_interval(mins => ${staleAfterMinutes})
        AND r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
+       AND (${scope === null}::boolean OR (
+         r.agent_name = ${scope?.agent ?? null} AND r.run_kind = ${scope?.kind ?? null}
+         AND r.params_json->>'source' = ${scope?.source ?? null}
+       ))
      ORDER BY s.updated_at ASC
      LIMIT 50
   `;
@@ -3362,6 +3398,10 @@ export async function reapStaleAgentSteps({
      WHERE r.status = 'running'
        AND r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.updated_at < NOW() - make_interval(mins => ${staleAfterMinutes})
+       AND (${scope === null}::boolean OR (
+         r.agent_name = ${scope?.agent ?? null} AND r.run_kind = ${scope?.kind ?? null}
+         AND r.params_json->>'source' = ${scope?.source ?? null}
+       ))
        AND NOT EXISTS (
          SELECT 1 FROM agent_run_steps s
           WHERE s.agent_run_id = r.id AND s.status = 'running'
@@ -3459,6 +3499,8 @@ async function providerStepGate(
  * its p99, so a step starts only when it can finish inside the 270 s budget.
  */
 const STEP_EXPECTED_MS: Record<string, number> = {
+  // Reference observation stops at120s, leaving30s for scorer/ledger queries.
+  "score-answer-key": 150_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
@@ -3726,12 +3768,14 @@ export async function executeAgentRun(
     allowProviderSteps?: boolean;
     /** Epoch ms by which a started step should finish; see STEP_EXPECTED_MS. */
     deadlineAt?: number;
-    /** False for later runs in a tick: then even the first step waits for the deadline. */
+    /** False makes the first step wait for the deadline; daily scoreboard work always waits. */
     alwaysRunFirstStep?: boolean;
     /** Leave a paid step queued for a later tick instead of running or skipping it. */
     deferProviderSteps?: boolean;
     /** Shared by the lanes a tick runs side by side; see SERIAL_STEP_KEYS. */
     stepTurns?: StepTurns;
+    /** A caller's narrower continuation ceiling, including the actual locked step claim. */
+    pauseExemptOnly?: boolean;
   } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
@@ -3790,7 +3834,11 @@ export async function executeAgentRun(
   let executedSteps = 0;
   let lastResult: AgentRunExecutionResult | null = null;
 
-  if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
+  // The daily route only queues this workflow: even a tick's first run must leave
+  // its 150-second reference score queued when it cannot fit the explicit deadline.
+  const scoreboardDeadline = existing.agent === "atlas" && existing.runKind === "workflow"
+    && runSource === "atlas.scoreboard" && options.deadlineAt != null;
+  if ((options.alwaysRunFirstStep === false || scoreboardDeadline) && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
     if (Date.now() + expectedMsToFirstWork(keys, runSource) > options.deadlineAt) {
       await recordStepDeferral(runId, keys[0] ?? null, expectedMsToFirstWork(keys, runSource), options.deadlineAt - Date.now());
@@ -3807,11 +3855,16 @@ export async function executeAgentRun(
 
   for (let index = 0; index < maxSteps; index += 1) {
     // A step that could not finish by the caller's deadline waits for the next tick; the
-    // run stays queued. The tick's first step always runs so a late tick still progresses.
+    // run stays queued. Other workflows may use the tick's first-step progress override;
+    // the daily scoreboard always respects an explicit deadline.
     const nextStepKey = await peekNextQueuedStepKey(runId);
+    if (options.pauseExemptOnly && nextStepKey && !PAUSE_EXEMPT_STEP_KEYS.includes(nextStepKey)) {
+      return { runId, status: lastResult?.status ?? existing.status, terminal: false, executedSteps,
+        message: "Next step is outside the pause-exempt continuation; run left queued." };
+    }
     // A later step under a paused control waits, even when this run's first step did not.
     if (index > 0 && nextStepKey && heldByPause(nextStepKey, pipeline, marketing)) break;
-    const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
+    const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true) && !scoreboardDeadline;
     if (!firstOfTick && options.deadlineAt != null
       && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
       await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
@@ -3833,7 +3886,10 @@ export async function executeAgentRun(
       if (!gate.allowed) {
         // A paid pass is optional: when the budget or the stop blocks it, record it as
         // skipped and let the free steps behind it run. It never stalls the run.
-        const blocked = await prepareNextAgenticStep(runId);
+        const blocked = await prepareNextAgenticStep(runId, {
+          pauseExemptOnly: options.pauseExemptOnly,
+          expectedStepKey: nextStepKey,
+        });
         if (blocked.kind !== "ready") {
           return {
             runId,
@@ -3867,7 +3923,7 @@ export async function executeAgentRun(
       }
     }
     try {
-      const prepared = await prepareNextAgenticStep(runId);
+      const prepared = await prepareNextAgenticStep(runId, { pauseExemptOnly: options.pauseExemptOnly });
       if (prepared.kind === "missing") {
         return {
           runId,
@@ -3877,7 +3933,7 @@ export async function executeAgentRun(
           message: "Agent run not found.",
         };
       }
-      if (prepared.kind === "terminal" || prepared.kind === "busy") {
+      if (prepared.kind === "terminal" || prepared.kind === "busy" || prepared.kind === "held") {
         return {
           runId,
           status: prepared.status,
@@ -3937,6 +3993,8 @@ export async function executeQueuedAgentRuns({
   deadlineAt,
   paused = { pipeline: false, marketing: false },
   parallelLanes = PARALLEL_STATE_LANES,
+  scope = null,
+  pauseExemptOnly = false,
 }: {
   /** State lanes advanced side by side this tick; 1 runs them one after another. */
   parallelLanes?: number;
@@ -3957,12 +4015,17 @@ export async function executeQueuedAgentRuns({
    * their next paid step queued. Null means every run may.
    */
   providerRunLimit?: number | null;
-  /** Epoch ms by which started steps should finish (the first run still gets its first step). */
+  /** Step finish deadline; the first-run progress override excludes the daily scoreboard. */
   deadlineAt?: number;
+  /** Restrict a continuation drain without widening another workflow's pause exemption. */
+  scope?: AgentRunSelectionScope | null;
+  /** Keep a narrow pause continuation inside the existing exempt step list, even after control changes. */
+  pauseExemptOnly?: boolean;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
-  // When provider steps cannot run this tick, skip runs whose next queued step is a
-  // provider step so they do not crowd deterministic work out of the run limit.
+  // Keep mandatory paid jobs out of a capped tick's run limit. A state's optional
+  // paid pass must still reach executeAgentRun's skip receipt when free work follows;
+  // otherwise three lanes waiting at paid steps fill every active lane slot forever.
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
@@ -3974,8 +4037,35 @@ export async function executeQueuedAgentRuns({
         ON r.run_kind = 'workflow_lane' AND lane.state_code = upper(btrim(r.state_code))
      WHERE r.run_kind = ANY(${[...RUN_KINDS_WITH_LEDGER]})
        AND r.status = 'queued'
+       AND (${scope === null}::boolean OR (
+         r.agent_name = ${scope?.agent ?? null}
+         AND r.run_kind = ${scope?.kind ?? null}
+         AND r.params_json->>'source' = ${scope?.source ?? null}
+       ))
        AND (
          ${allowProviderSteps}
+         OR (r.run_kind = 'workflow_lane' AND EXISTS (
+           SELECT 1 FROM agent_run_steps optional
+            WHERE optional.agent_run_id = r.id
+              AND optional.status = 'queued'
+              AND optional.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
+              AND optional.sequence = (
+                SELECT MIN(first_step.sequence) FROM agent_run_steps first_step
+                 WHERE first_step.agent_run_id = r.id AND first_step.status = 'queued'
+              )
+              AND EXISTS (
+                SELECT 1 FROM agent_run_steps later
+                 WHERE later.agent_run_id = r.id AND later.status = 'queued'
+                   AND later.sequence > optional.sequence
+                   AND NOT later.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM agent_run_steps required
+                 WHERE required.agent_run_id = r.id AND required.status = 'queued'
+                   AND required.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+                   AND NOT required.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
+              )
+         ))
          OR NOT EXISTS (
            SELECT 1
              FROM agent_run_steps s
@@ -4006,6 +4096,7 @@ export async function executeQueuedAgentRuns({
               OR (${paused.pipeline}
                 AND NOT s.step_key = ANY(${[...MARKETING_STEP_KEYS]}::text[])
                 AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
+              OR (${pauseExemptOnly} AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
               -- A step that cannot finish inside a tick runs only from its own route.
               OR s.step_key = ANY(${[...TICK_EXCLUDED_STEP_KEYS]}::text[])
             )
@@ -4076,7 +4167,8 @@ export async function executeQueuedAgentRuns({
   const laneRoomMs = deadlineAt != null && firstLaneIndex >= 0 && rows.slice(0, firstLaneIndex).some((row) => isLaneRoomRun(row.source))
     ? await laneFirstWorkMs(Number(rows[firstLaneIndex].id))
     : 0;
-  // The tick's first run always gets a step; a direct run that left it to the lane passes it on.
+  // The first run may take a progress step, except the daily scoreboard's strict deadline;
+  // a direct run that left it to the lane passes the opportunity on.
   let firstRunPending = true;
   // Once a state lane is held because its first real step would not finish this tick,
   // no lane further down the order starts in its place: a lower lane that fits would
@@ -4109,18 +4201,20 @@ export async function executeQueuedAgentRuns({
       maxSteps: waitedOut ? waitedOutMaxSteps(row.source, maxStepsPerRun) : maxStepsPerRun,
       allowProviderSteps,
       deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
-      // The tick's first step always runs, unless it is a direct run that would take the lane's room.
+      // Offer the first-step progress override unless it takes the lane's room.
+      // executeAgentRun still enforces the daily scoreboard's explicit deadline.
       alwaysRunFirstStep: alwaysRunFirstStep && !leavesLaneRoom,
       deferProviderSteps: allowProviderSteps && !providerSlot,
       stepTurns: row.run_kind === "workflow_lane" ? stepTurns : undefined,
+      ...(pauseExemptOnly ? { pauseExemptOnly: true } : {}),
     });
     return { result, passesFirstStep: leavesLaneRoom && result.executedSteps === 0 };
   };
   for (const [index, row] of rows.entries()) {
     if (done.has(index)) continue;
     if (laneHeld && row.run_kind === "workflow_lane") continue;
-    // The first run always gets a step; a later run starts a step only when that step can
-    // finish by the deadline, so a larger run limit fills the tick without running past it.
+    // Other first runs may use the progress override; scoreboard and later work must
+    // fit the deadline, so a larger run limit fills the tick without overrunning it.
     if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
     if (row.run_kind !== "workflow_lane" || lanesSideBySide === 1) {
       const { result, passesFirstStep } = await runOne(index, row, firstRunPending);
@@ -4308,7 +4402,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   const progressTotal = input.steps.length;
   const firstStage = input.steps[0]?.key ?? null;
 
-  if (input.idempotencyKey) {
+  if (input.idempotencyKey && !input.reuseTerminal) {
     const [existing] = await sql`
       SELECT id, agent_name, run_kind, title, status, started_at, completed_at,
              updated_at, trigger_source, triggered_by, correlation_id, backend,
@@ -4327,6 +4421,31 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
   }
 
   const created = await withTransaction(async (tx) => {
+    if (input.idempotencyKey && input.reuseTerminal) {
+      // One short transaction, no step/HTTP work or nested connection: concurrent
+      // daily requests reuse the same original run, including failed/cancelled ones.
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${`agent_run.once:${input.idempotencyKey}`}, 0))`;
+      const [existing] = await tx`
+        SELECT id, agent_name, run_kind, title, status, started_at, completed_at,
+               updated_at, trigger_source, triggered_by, correlation_id, backend,
+               progress_current, progress_total, current_stage, error_summary,
+               summary, params_json
+          FROM agent_runs
+         WHERE idempotency_key = ${input.idempotencyKey}
+         ORDER BY started_at ASC, id ASC
+         LIMIT 1
+      `;
+      if (existing) {
+        // Existing duplicates remain history; the earliest run is the canonical one.
+        const rows = await tx`
+          SELECT id, agent_run_id, step_key, agent_name, title, input_payload, status, sequence,
+                 summary, error_summary, queued_at, started_at, completed_at, updated_at
+            FROM agent_run_steps WHERE agent_run_id = ${Number(existing.id)}
+           ORDER BY sequence ASC, id ASC
+        `;
+        return { run: mapRun(existing), steps: rows.map(mapStep), reused: true };
+      }
+    }
     const [runRow] = await tx`
       INSERT INTO agent_runs
         (agent_name, run_kind, state_code, title, summary, status, params_json,
@@ -4383,6 +4502,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
     };
   });
 
+  if (created.reused) return created;
   if (getExecutionBackend() !== "agentic_v1") {
     await blockRunForBackend(created.run.id);
     const [run, steps] = await Promise.all([

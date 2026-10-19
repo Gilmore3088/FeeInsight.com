@@ -12,9 +12,12 @@ import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { ownCells } from "@/lib/agents/knox/own-cells";
+import { ANCILLARY_PRODUCT_FLAG } from "./ancillary-product";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
-import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
+import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
+import { candidateWriteFacts } from "./candidate-facts";
+import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
@@ -229,6 +232,8 @@ export interface RunKnoxExtractResult {
   takedownLessonsLoaded: number;
   /** Fees written held because they repeat a confirmed takedown, by check. */
   takedownHolds: Record<string, number>;
+  takedownLessonsUnknown?: Record<string,number>;
+  takedownGuardDeclines?: Record<string,number>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -660,9 +665,7 @@ export async function retireRowsFromOlderCopies(
   return retired.length;
 }
 
-export async function insertCandidate(
-  db: SqlTag,
-  options: {
+export interface CandidateInsertOptions {
     runId: number;
     row: KnoxTextRow;
     candidate: ExtractedFeeCandidate;
@@ -672,10 +675,12 @@ export async function insertCandidate(
     method?: string;
     /** Shadow calibrated confidence (`calibration.ts`), recorded in the audit text only. */
     calibratedConfidence?: number;
-    /** The check whose confirmed takedown this fee repeats: written held, not sent to Darwin. */
-    takenDownBy?: string | null;
-  },
-): Promise<boolean> {
+}
+interface CandidateWriteResult { inserted:boolean; flags:string[] }
+async function writeCandidate(
+  db: SqlTag,
+  options: CandidateInsertOptions & { takenDownBy?:string|null },
+): Promise<CandidateWriteResult> {
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const institutionId = Number(options.row.institution_id);
@@ -692,22 +697,21 @@ export async function insertCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []));
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==TAKEN_DOWN_REVIEW_FLAG
+    && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
+  const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(options.candidate);
+  if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
     (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `) +
+    // Keep a referenced count cap in the lineage evidence, before excerptOf's
+    // final price-unit text so downstream frequency cannot borrow its day.
+    ((options.candidate.ownedBullet || options.candidate.ownedPolicy) && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
-    `excerpt="${ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
-  // A checking account's lineup facts, already grounded in the text (`lineup.ts`): a monthly
-  // maintenance fee carries them all, a minimum balance fee only its account (v73).
-  const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
-  const read = ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) ? (options.candidate.lineup ?? null) : null;
-  const lineup = read && options.candidate.canonicalHint !== LINEUP_CATEGORY
-    ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
-    : read;
+    `excerpt="${options.candidate.ownedBullet || options.candidate.ownedPolicy ? options.candidate.excerpt : ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
   // The dedupe index is (document, lowercased fee name, amount, audience, line share), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
@@ -740,7 +744,8 @@ export async function insertCandidate(
       min_opening_deposit,
       waiver_text,
       fee_audience, audience_evidence, fee_treatment,
-      line_share
+      line_share,
+      conditions
     )
     VALUES (
       ${institutionId},
@@ -760,7 +765,8 @@ export async function insertCandidate(
       ${lineup?.minOpeningDeposit ?? null},
       ${lineup?.waiverText ?? null},
       ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
-      ${options.candidate.lineShare ?? ""}
+      ${options.candidate.lineShare ?? ""},
+      ${sourceConditions}
     )
     ON CONFLICT (source_document_id, lower(fee_name), COALESCE(amount, '-1'::numeric), fee_audience, line_share)
       WHERE source = 'knox' AND source_document_id IS NOT NULL
@@ -769,13 +775,13 @@ export async function insertCandidate(
       agent_event_id = EXCLUDED.agent_event_id,
       frequency = COALESCE(fr.frequency, EXCLUDED.frequency),
       extraction_note = EXCLUDED.extraction_note,
-      conditions = NULL,
+      conditions = EXCLUDED.conditions,
       audience_evidence = EXCLUDED.audience_evidence,
       fee_treatment = EXCLUDED.fee_treatment,
       -- v73: a product an older Knox wrote, or one that names no account, gives way to this read's.
       product_name = CASE WHEN EXCLUDED.product_name IS NOT NULL AND (
                             fr.product_name IS NULL
-                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array[${ACCOUNT_PRODUCT_FLAG},${ANCILLARY_PRODUCT_FLAG}])
                             OR fr.product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
                           THEN EXCLUDED.product_name ELSE fr.product_name END,
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
@@ -810,6 +816,12 @@ export async function insertCandidate(
                               AND old_hint.hint IS DISTINCT FROM ${options.candidate.canonicalHint}::text
                          ), '[]'::jsonb)
      WHERE fr.source = 'knox'
+       -- Positive learned holds annotate newly inserted lineage only. Never overwrite
+       -- an existing observation's retained owner/frequency/hold on an insert conflict.
+       AND ${!options.takenDownBy}
+       -- v1 ancillary ownership is for new raw lineage only. A conflict keeps the
+       -- existing observation, including held/verified history, for explicit recovery.
+       AND ${!owner}
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND (
          -- A line held because the self-check could not trace it, now read and traced, is that fee.
@@ -818,9 +830,9 @@ export async function insertCandidate(
          OR (fr.outlier_flags ? 'superseded_by_reread'
              AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id))
        )
-    RETURNING fee_raw_id
+    RETURNING fee_raw_id,outlier_flags
   `;
-  if (inserted.length === 0 && lineup) {
+  if (inserted.length === 0 && lineup && !owner && !options.takenDownBy) {
     // The same fee read again from the same document: fill lineup fields an earlier read
     // left empty, within its audience. The raw identity includes audience: a business fee
     // with the same label and price must not take a consumer account's product or waiver.
@@ -845,7 +857,37 @@ export async function insertCandidate(
          AND line_share = ${options.candidate.lineShare ?? ""}
     `;
   }
-  return inserted.length > 0;
+  const rawFlags=inserted[0]?.outlier_flags;
+  return {inserted:inserted.length>0,flags:Array.isArray(rawFlags)?rawFlags.map(String):[]};
+}
+
+/** Ordinary callers cannot supply an unvalidated learned-hold flag. */
+export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
+  return (await writeCandidate(db,{...options,takenDownBy:null})).inserted;
+}
+export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string|null; declinedReason:string|null }
+
+/** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
+export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const matches=takedownLessonsFor(options.candidate,lessons,options.row);
+  if (matches.length===0) return {inserted:await insertCandidate(db,options),takenDownBy:null,declinedReason:null};
+  return withPublishedIdentityWrite(db,async transaction=>{
+    let declinedReason:string|null=null;
+    for (const lesson of matches) {
+      const guarded=await withCurrentTakedownLesson(transaction,lesson,options.row,(scope,check)=>writeCandidate(scope,{...options,takenDownBy:check}));
+      if ("value" in guarded) {
+        const held=guarded.value.inserted && guarded.value.flags.includes(TAKEN_DOWN_REVIEW_FLAG) && !guarded.value.flags.includes("needs_darwin_verification")
+          && guarded.value.flags.includes(takedownLessonFlag(lesson.witness.check));
+        if (held) return {inserted:true,takenDownBy:lesson.witness.check,declinedReason:null};
+        // A positive lesson is for new lineage only. An existing/concurrent row keeps
+        // every fact, including monthly ownership: do not retry through enrichment.
+        if (guarded.value.inserted) return {inserted:true,takenDownBy:null,declinedReason:"hold_flags_not_returned"};
+        return {inserted:false,takenDownBy:null,declinedReason:"existing_raw_kept"};
+      }
+      declinedReason=guarded.reason;
+    }
+    return {inserted:await insertCandidate(transaction,options),takenDownBy:null,declinedReason};
+  });
 }
 
 /**
@@ -886,7 +928,8 @@ export async function insertHeldCandidate(
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
-    `excerpt="${held.excerpt.slice(0, 180)}"`;
+    (held.ownedPolicy && held.linkedConditions ? `linked_conditions="${held.linkedConditions}"; ` : "") +
+    `excerpt="${held.ownedPolicy ? held.excerpt : held.excerpt.slice(0, 180)}"`;
   const inserted = await db`
     INSERT INTO raw_fee_observations (
       institution_id,
@@ -900,7 +943,7 @@ export async function insertHeldCandidate(
       frequency,
       extraction_note,
       outlier_flags,
-      source, fee_audience, audience_evidence, fee_treatment
+      source, fee_audience, audience_evidence, fee_treatment, line_share, conditions
     )
     VALUES (
       ${Number(options.row.institution_id)},
@@ -914,7 +957,8 @@ export async function insertHeldCandidate(
       ${held.frequency},
       ${conditions},
       ${JSON.stringify(flags)}::jsonb,
-      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment}
+      'knox', ${applicability.feeAudience}, ${applicability.audienceEvidence}, ${applicability.feeTreatment},
+      ${held.lineShare ?? ""}, ${held.ownedPolicy ? [held.excerpt, held.linkedConditions].filter(Boolean).join(" ") : null}
     )
     ON CONFLICT DO NOTHING
     RETURNING fee_raw_id
@@ -1154,8 +1198,9 @@ export async function runKnoxExtract(
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
-  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
+  const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
@@ -1185,8 +1230,8 @@ export async function runKnoxExtract(
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
     const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons, Number(row.institution_id)));
-    const candidates = lessoned.map((entry) => entry.candidate);
-    const lessonFlags = new Map(lessoned.filter((entry) => entry.lessonFlag).map((entry) => [entry.candidate, entry.lessonFlag!]));
+    const candidates = lessoned.map((entry) => withLineupFromText(entry.candidate, row.normalized_text, { institutionName: row.institution_name }));
+    const lessonFlags = new Map(lessoned.flatMap((entry, index) => entry.lessonFlag ? [[candidates[index], entry.lessonFlag] as const] : []));
     for (const flag of lessonFlags.values()) lessonRefiles[flag] = (lessonRefiles[flag] ?? 0) + 1;
     let inserted = 0;
     let heldInserted = 0;
@@ -1200,19 +1245,17 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
-        const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
-        if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
-        const named = withLineupFromText(candidate, row.normalized_text, { institutionName: row.institution_name });
-        if (
-          await insertCandidate(db, {
+        const named = candidate;
+        const receipt=await insertCandidateWithLearning(db, {
             runId: options.runId,
             row,
             candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
-            takenDownBy,
-          })
-        ) inserted += 1;
+          },takedownLessons);
+        if (receipt.inserted) inserted+=1;
+        if (receipt.takenDownBy) takedownHolds[receipt.takenDownBy]=(takedownHolds[receipt.takenDownBy]??0)+1;
+        if (receipt.declinedReason) takedownGuardDeclines[receipt.declinedReason]=(takedownGuardDeclines[receipt.declinedReason]??0)+1;
       }
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
@@ -1316,8 +1359,10 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
-    takedownLessonsLoaded: takedownLessons.size,
+    takedownLessonsLoaded: [...takedownLessons.values()].reduce((n,group)=>n+group.length,0),
     takedownHolds,
+    takedownLessonsUnknown: takedownLessons.unknownReasons,
+    takedownGuardDeclines,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

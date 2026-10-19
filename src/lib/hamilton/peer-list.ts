@@ -45,7 +45,7 @@ export interface PeerListRow extends PeerListSubject {
   inclusionReason: string;
 }
 export interface PeerListCriteria {
-  basis: "similar_assets" | "explicit_filters" | "saved_peer_set" | "hamilton_group";
+  basis: "similar_assets" | "explicit_filters" | "saved_peer_set";
   charterType: PeerCharter | null;
   states: string[];
   minAssets: AssetBound | null;
@@ -425,21 +425,14 @@ export function formatPeerAssets(value: number | null): string {
 
 /**
  * Uses explicit filters ahead of defaults. A requested saved group is never replaced. With no saved
- * group, a bare "list my peers" lists `picked`, the group Hamilton's answers compare with (#2097);
- * "similar size" and "like X" keep the half-to-twice assets rule (#1716).
+ * group, "list my peers" lists half to twice the subject's assets (#1716); James kept that on Oct 19
+ * (#2097), since a reader can save their own group.
  */
-export function planPeerList(
-  intent: PeerListIntent,
-  subject: PeerListSubject,
-  savedGroup: ActivePeerSet | null,
-  picked: Pick<ActivePeerSet, "filters" | "label"> | null = null,
-): { criteria: PeerListCriteria | null; problem: string | null } {
+export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, active: ActivePeerSet | null): { criteria: PeerListCriteria | null; problem: string | null } {
   if (intent.problems.length) return { criteria: null, problem: intent.problems.join(" ") };
   if (intent.similarTo && !sameInstitutionName(intent.similarTo, subject.name))
     return { criteria: null, problem: `This list measures size against the institution you are researching, ${subject.name.replace(/\.$/, "")}. To list peers sized like ${intent.similarTo}, open ${intent.similarTo} in the workspace first.` };
   const explicit = Boolean(intent.charterType || intent.bothTypes || intent.states.length || intent.sameState || intent.minAssets || intent.maxAssets || intent.similarSize || intent.largest);
-  const usePicked = !savedGroup && !intent.saved && !explicit && intent.peerBased && picked !== null;
-  const active = savedGroup ?? (usePicked ? { id: 0, name: picked.label, ...picked } : null);
   const useSaved = intent.saved || (!explicit && active !== null);
   if (intent.saved && !active) return { criteria: null, problem: "No authorized active saved peer group is available for this institution. Choose one in Settings or specify state, type and asset criteria." };
   const filters = useSaved ? active?.filters : undefined;
@@ -473,24 +466,23 @@ export function planPeerList(
   }
   if (minAssets && maxAssets && (minAssets.value > maxAssets.value || (minAssets.value === maxAssets.value && (!minAssets.inclusive || !maxAssets.inclusive)))) return { criteria: null, problem: "The requested asset range does not overlap the similar-size band. No wider band was used." };
   if (!useSaved && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: "Choose banks, credit unions, or both; the subject's institution type is unavailable." };
-  if (usePicked) descriptions.push(`Peer group picked by Hamilton: ${active!.label}, the group its answers compare with.`);
-  else if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
+  if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
   descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : "nationwide"}.`);
   if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatPeerAssets(minAssets.value)}.`);
   if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatPeerAssets(maxAssets.value)}.`);
-  if (filters?.asset_tiers?.length) descriptions.push(`${usePicked ? "Registry" : "Saved registry"} asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);
-  if (filters?.fed_districts?.length) descriptions.push(`${usePicked ? "Federal Reserve" : "Saved Federal Reserve"} districts: ${filters.fed_districts.join(", ")}.`);
+  if (filters?.asset_tiers?.length) descriptions.push(`Saved registry asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);
+  if (filters?.fed_districts?.length) descriptions.push(`Saved Federal Reserve districts: ${filters.fed_districts.join(", ")}.`);
   // A capped list keeps the institutions the question is about: closest in size for "similar",
   // otherwise the largest (#1540). Name order would drop the largest without saying so.
   const sort = needsSimilarity && !intent.largest ? "closest_assets" : "largest_assets";
   descriptions.push(sort === "closest_assets" ? "Ordered by closest proportional asset size, then institution name and ID." : sort === "largest_assets" ? "Ordered by total assets, largest first, then institution name and ID." : "Ordered by institution name and ID.");
   descriptions.push("The research subject is excluded. Published fee coverage does not determine eligibility.");
   return { problem: null, criteria: {
-    basis: usePicked ? "hamilton_group" : useSaved ? "saved_peer_set" : needsSimilarity ? "similar_assets" : "explicit_filters",
+    basis: useSaved ? "saved_peer_set" : needsSimilarity ? "similar_assets" : "explicit_filters",
     charterType, states, minAssets, maxAssets,
     institutionIds: filters?.institutionIds?.length ? [...new Set(filters.institutionIds)] : null,
     assetTiers: filters?.asset_tiers ?? [], fedDistricts: filters?.fed_districts ?? [],
-    peerSetId: useSaved && !usePicked ? active!.id : null, peerSetLabel: useSaved ? active!.label : null,
+    peerSetId: useSaved ? active!.id : null, peerSetLabel: useSaved ? active!.label : null,
     sort, referenceAssetsUsd: needsSimilarity ? subject.totalAssetsUsd : null,
     requiresAssets: Boolean(minAssets || maxAssets || intent.largest || needsSimilarity),
     limit: intent.limit, requestedCount: intent.requestedCount, descriptions,

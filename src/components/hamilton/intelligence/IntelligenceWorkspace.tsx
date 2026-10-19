@@ -10,6 +10,7 @@ import { proseFeeName } from "@/lib/hamilton/workspace/names";
 import { STATE_NAMES } from "@/lib/us-states";
 import { STATE_TO_DISTRICT, DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAssets } from "@/lib/format";
+import { feeScheduleUrls, ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 import {
   joinSeries, loadComplaintTrend, loadFeeMap, loadPeerTable, loadStatePosts, percentChange, yearOverYear,
   type ComplaintTrend, type FeeMap, type FeeSpread, type PeerTable, type StatePost,
@@ -335,19 +336,23 @@ function PeerTablePanel({ peers, place, primaryName, charter, compact, exploreHr
   return <Panel title={`Largest institutions in ${place}: ${midSentence(primaryName)}`} subtitle={`${peers.rows.length} shown of ${peers.institutionsInScope.toLocaleString()} ${CHARTER_LABEL[charter].toLowerCase()}${note ? ` ${note}` : ""} in scope, largest by assets first`} explore={exploreHref}>
     {peers.rows.length ? <div className="mt-4 overflow-x-auto" tabIndex={0} role="region" aria-label="Institutions and their published fee">
       <table className="w-full text-left text-sm"><caption className="sr-only">Published {primaryName} by institution with source documents</caption>
-        <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Institution", "Type", "Assets", primaryName, "Published", "Evidence"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
+        <thead><tr className="border-b border-[var(--fi-border)] text-xs uppercase tracking-wide text-[var(--fi-muted)]">{["Institution", "Type", "Assets", primaryName, "Latest published", "Evidence"].map(h => <th key={h} scope="col" className="p-2.5 font-semibold">{h}</th>)}</tr></thead>
         <tbody>{peers.rows.map(r => <tr key={r.institutionId} className="border-b border-[var(--fi-border)]">
           <th scope="row" className="p-2.5 font-medium"><Link href={`/pro/intelligence?view=institution&instId=${r.institutionId}`} className="text-[var(--fi-ink)] no-underline hover:underline">{r.name}</Link></th>
           <td className="p-2.5 text-[var(--fi-muted)]">{r.charter === "credit_union" ? "Credit union" : r.charter === "bank" ? "Bank" : "—"}</td>
           <td className="p-2.5 tabular-nums">{formatAssets(r.totalAssets)}</td>
-          <td className="p-2.5 font-semibold tabular-nums">{dollars(r.amount)}</td>
+          <td className="p-2.5 font-semibold tabular-nums">{statedFeeLabel(r.amount, r.several, dollars)}
+            {r.several ? <span className="block text-xs font-normal">{ownFeeList(r.several, dollars)}</span> : null}
+          </td>
           <td className="p-2.5 text-[var(--fi-muted)]">{r.publishedAt?.slice(0, 10) ?? "Not recorded"}</td>
-          <td className="p-2.5">{r.documentUrl ? <a href={r.documentUrl} target="_blank" rel="noreferrer" className="text-[var(--fi-brick)]">Fee schedule ↗</a> : <span className="text-[var(--fi-muted)]">No link</span>}</td>
+          <td className="p-2.5">{feeScheduleUrls(r.documentUrls, r.documentUrl).length
+            ? feeScheduleUrls(r.documentUrls, r.documentUrl).map((url, i, urls) => <a key={url} href={url} target="_blank" rel="noreferrer" className="block text-[var(--fi-brick)]">Fee schedule{urls.length > 1 ? ` ${i + 1}` : ""} ↗</a>)
+            : <span className="text-[var(--fi-muted)]">No link</span>}</td>
         </tr>)}</tbody>
       </table>
     </div> : <Unavailable>No institution in this scope publishes {midSentence(primaryName)} yet.</Unavailable>}
-    {!compact && amounts.length ? <p className="mt-3 text-sm text-[var(--fi-muted)]">Among these {amounts.length}: lowest {dollars(amounts[0])}, highest {dollars(amounts[amounts.length - 1])}.</p> : null}
-    <EvidenceDetails source="Bank Fee Index · published fee catalog; assets from FDIC and NCUA filings" period="Each row's published date" geography={place} coverage="Institutions in scope with a published value; others are not shown, not $0" method="One value per institution under the statistics contract; each links to the fee schedule it was read from." />
+    {!compact && amounts.length ? <p className="mt-3 text-sm text-[var(--fi-muted)]">These {amounts.length} institutions&apos; values in group statistics run from {dollars(amounts[0])} to {dollars(amounts[amounts.length - 1])}.</p> : null}
+    <EvidenceDetails source="Bank Fee Index · published fee catalog; assets from FDIC and NCUA filings" period="Latest publication among each institution's listed charges" geography={place} coverage="Institutions in scope with a published value; others are not shown, not $0" method="Named rows show stated prices or their range and fee names. Statistics count one value per institution. Schedule links cover the stored rows behind each price or range." />
   </Panel>;
 }
 

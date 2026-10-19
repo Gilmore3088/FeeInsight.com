@@ -300,7 +300,7 @@ describe("storyline", () => {
     const localCompetitors = base.localCompetitors!.map((c) => (c.institutionName === "Peer 101" ? { ...c, several } : c));
     const answer = buildFeeAnswer({ ...base, current: 20, localCompetitors });
     // Peer 101 is the highest by its one value, but it states no single price to name.
-    expect(answer.storyline!.lenses.market[0].text).toBe("None of the 3 local competitors charge less than your $20.");
+    expect(answer.storyline!.lenses.market[0].text).toBe("In group statistics, 0 of 3 local competitors have values below your $20; the named rows show their stated prices.");
     const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
     if (local.exhibit.kind === "competitor_range") {
       expect(local.exhibit.items.find((i) => i.name === "Peer 101")?.several).toEqual(several);

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { DIRECTORY_METADATA, InstitutionsDirectory } from "./directory-page";
+import { directoryMetadata, InstitutionsDirectory } from "./directory-page";
 
-export const metadata: Metadata = DIRECTORY_METADATA;
+export const metadata: Metadata = directoryMetadata({});
 
 /**
  * The plain directory, cached (ISR) and rendered at most once an hour (#1811). A request with

@@ -563,6 +563,60 @@ const spec = {
           attribution: { $ref: "#/components/schemas/Attribution" },
         },
       },
+      HamiltonPeerSet: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "name", "scope", "workspace_institution_id", "is_default", "filters"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          scope: { type: "string", enum: ["personal", "workspace"] },
+          workspace_institution_id: { type: "integer", nullable: true },
+          is_default: { type: "boolean" },
+          filters: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              charter_type: { type: "string" },
+              asset_tiers: { type: "array", items: { type: "string" } },
+              fed_districts: { type: "array", items: { type: "integer" } },
+              states: { type: "array", items: { type: "string" } },
+              institution_ids: { type: "array", items: { type: "integer" } },
+            },
+          },
+        },
+      },
+      HamiltonContext: {
+        type: "object",
+        additionalProperties: false,
+        required: ["institution", "institution_source", "peer_sets", "active_peer_set_id", "note", "attribution"],
+        description: "The authenticated key holder's saved Hamilton institution and authorized personal or workspace peer sets. No account identifiers, contact details or billing information are included.",
+        properties: {
+          institution: {
+            type: "object",
+            nullable: true,
+            additionalProperties: false,
+            required: ["id", "name"],
+            properties: { id: { type: "integer" }, name: { type: "string" } },
+          },
+          institution_source: { type: "string", description: "The persisted source label for a saved institution, account for the current account fallback, or none when no institution is available." },
+          peer_sets: { type: "array", items: { $ref: "#/components/schemas/HamiltonPeerSet" } },
+          active_peer_set_id: { type: "integer", nullable: true, description: "The saved active peer set, or null when none is active." },
+          note: { type: "string" },
+          attribution: { $ref: "#/components/schemas/Attribution" },
+        },
+      },
+      PeerComparisonContext: {
+        type: "object",
+        additionalProperties: false,
+        required: ["institution_source", "peer_source", "saved_peer_set_id", "saved_peer_set_name"],
+        properties: {
+          institution_source: { type: "string", enum: ["explicit", "saved", "account", "none"] },
+          peer_source: { type: "string", enum: ["explicit", "saved", "default"] },
+          saved_peer_set_id: { type: "integer", nullable: true },
+          saved_peer_set_name: { type: "string", nullable: true },
+        },
+      },
       UpdatedSinceInput: UPDATED_SINCE_INPUT,
       PeerCategory: {
         type: "object",
@@ -613,6 +667,14 @@ const spec = {
       },
       PlanRequired: {
         description: `The request needs ${PAID_ACCESS} (code plan_required)`,
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      AccountContextRequired: {
+        description: `The request needs ${PAID_ACCESS} (code plan_required). Saved account context also needs a subscriber-holder-linked key or a paid signed-in session; a generic partner key has no personal mapping (code account_context_required). A valid partner key never falls back to the browser's signed-in account.`,
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      ContextUnavailable: {
+        description: "Hamilton context could not be read (code context_unavailable), or usage tracking is temporarily down (code rate_limit_unavailable). Retry later; no partial account context is returned.",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       RateLimited: {
@@ -1240,15 +1302,39 @@ const spec = {
         },
       },
     },
+    "/hamilton-context": {
+      get: {
+        operationId: "getHamiltonContext",
+        summary: "Saved Hamilton institution and peer sets",
+        description: `Returns the subscriber key holder's saved institution, the current account institution when no saved institution is available, and authorized personal or workspace peer sets. Requires a subscriber-holder-linked key on the Hamilton ${API_PLANS_LABEL}, or a paid signed-in session. Generic partner keys return 403 account_context_required because they have no personal account mapping. No query parameters. Responses are private and never cached.`,
+        tags: ["Institutions"],
+        parameters: [],
+        responses: {
+          "200": {
+            description: "The authenticated holder's saved Hamilton defaults; institution and active_peer_set_id may be null.",
+            headers: {
+              "Cache-Control": { schema: { type: "string", enum: ["private, no-store"] }, description: "Personal account context must not be stored or reused from a cache." },
+            },
+            content: { "application/json": { schema: { $ref: "#/components/schemas/HamiltonContext" } } },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/AccountContextRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/ContextUnavailable" },
+        },
+      },
+    },
     "/peers": {
       get: {
         operationId: "getPeerComparison",
         summary: "Fees against peers",
         description:
-          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. Peers default to the institution's charter type, asset-size tier and Fed district. Any of the peer-group parameters define the group instead (only those given apply; same means the institution's own value), or peer_ids names the institutions. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. ${PAID_ACCESS}.`,
+          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. With a subscriber-holder-linked key or a paid signed-in session, omitted institution and peer defaults may come from saved Hamilton context. Explicit peer_ids or peer-group parameters bypass saved peer defaults. A selected saved_peer_set_id must be authorized for the holder and cannot be combined with explicit peers or peer-group parameters. Set use_saved_context=false to disable automatic institution and peer defaults; an explicit authorized saved_peer_set_id remains available. Without saved peers, peers default to the institution's charter type, asset-size tier and Fed district. Only given peer-group parameters apply, and same means the institution's own value. The response context records each selection's source; peer_group.basis remains chosen, defined or default, and its label names the saved group when one is used. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. ${PAID_ACCESS}.`,
         tags: ["Institutions"],
         parameters: [
-          { name: "institution_id", in: "query", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 }, description: "Institution ID. May be omitted when saved Hamilton or current account context supplies an institution; otherwise returns 400 invalid_parameter." },
+          { name: "saved_peer_set_id", in: "query", schema: { type: "integer", minimum: 1 }, description: "An authorized saved personal or workspace peer set. Cannot be combined with peer_ids or peer-group parameters. A missing or unauthorized saved set returns 404 not_found. Generic partner keys return 403 account_context_required." },
+          { name: "use_saved_context", in: "query", schema: { type: "boolean", default: true }, description: "Use saved institution and active peer defaults when no explicit value is provided. false disables automatic defaults; it does not block an explicitly requested authorized saved_peer_set_id." },
           {
             name: "peer_ids",
             in: "query",
@@ -1261,10 +1347,15 @@ const spec = {
         responses: {
           "200": {
             description: "The institution's fees against its peers",
+            headers: {
+              "Cache-Control": { schema: { type: "string", enum: ["private, max-age=300", "private, no-store"] }, description: "Saved-context comparisons use private, no-store. Fully explicit/default comparisons can use the normal private data cache." },
+              ETag: { schema: { type: "string" }, description: "Only on cacheable comparisons; omitted when saved context is enabled for a mapped holder or an explicit saved set is used." },
+            },
             content: {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["institution", "peer_group", "min_peers", "categories", "rate_fees", "context", "note", "attribution"],
                   properties: {
                     institution: {
                       type: "object",
@@ -1317,6 +1408,7 @@ const spec = {
                         },
                       },
                     },
+                    context: { $ref: "#/components/schemas/PeerComparisonContext" },
                     note: { type: "string" },
                     attribution: { $ref: "#/components/schemas/Attribution" },
                   },
@@ -1327,13 +1419,13 @@ const spec = {
           "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/PlanRequired" },
+          "403": { $ref: "#/components/responses/AccountContextRequired" },
           "404": {
-            description: "Institution not found (code not_found)",
+            description: "Institution not found, or the saved peer set is missing or not authorized for this holder (code not_found). Missing and unauthorized saved sets return the same error.",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "429": { $ref: "#/components/responses/RateLimited" },
-          "503": { $ref: "#/components/responses/Unavailable" },
+          "503": { $ref: "#/components/responses/ContextUnavailable" },
         },
       },
     },
@@ -1451,7 +1543,7 @@ const spec = {
   },
   "x-caching": {
     description:
-      "Successful JSON and CSV responses carry Cache-Control: private, max-age=300 and a weak ETag. Send the ETag back in If-None-Match to get 304 Not Modified with no body when the data has not changed. A 304 still counts against the per-minute and monthly allowances. Errors carry Cache-Control: no-store.",
+      "Successful JSON and CSV data responses carry Cache-Control: private, max-age=300 and a weak ETag. Send the ETag back in If-None-Match to get 304 Not Modified with no body when the data has not changed. A 304 still counts against the per-minute and monthly allowances. /hamilton-context and personalized /peers responses instead use Cache-Control: private, no-store with no ETag or 304. On /peers this applies when saved context is enabled for a mapped holder or an explicit saved set is used. Errors are not cached.",
   },
 };
 

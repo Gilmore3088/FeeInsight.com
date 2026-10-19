@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
+import { exactAmount, readTakedownWitness, type TakedownWitness } from "@/lib/agents/knox/takedown-witness";
 
 type SqlTag = typeof sql;
 
@@ -38,6 +39,8 @@ export interface SecondLookCandidate {
   amount?: number | null;
   sourceDocumentId?: number | null;
   reason: string;
+  /** Optional original input witness supplied by the judging producer, never hydrated here. */
+  takedownWitness?: TakedownWitness;
 }
 
 export interface PendingFlag {
@@ -190,6 +193,11 @@ export async function secondLook<T extends SecondLookCandidate>(
       ];
     }),
     ...plan.confirmed.flatMap(({ candidate, first }) => {
+      const selected = readTakedownWitness(candidate.takedownWitness);
+      const witness = selected && selected.check === check && selected.judgeRunId === runId && selected.publishedId === candidate.feePublishedId
+        && selected.identity.institutionId === candidate.institutionId
+        && selected.identity.category === candidate.canonicalFeeKey && selected.identity.amount === exactAmount(candidate.amount)
+        && selected.source.sourceDocumentId === candidate.sourceDocumentId ? selected : null;
       const evidence = {
         flag_run_id: first.flagRunId,
         flagged_at: first.flaggedAt?.toISOString() ?? null,
@@ -198,6 +206,7 @@ export async function secondLook<T extends SecondLookCandidate>(
         confirmed_at: now.toISOString(),
         confirm_reason: candidate.reason,
         flag_key: secondLookEventKey(check, candidate.feePublishedId, "flag", first.flagRunId),
+        ...(witness ? { takedown_witness: witness } : {}),
       };
       return [
         { ...base(candidate), signal: "wrong" as const, kind: CONFIRMED_KIND, weight: 0, evidence },

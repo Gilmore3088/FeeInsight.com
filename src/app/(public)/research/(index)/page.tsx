@@ -7,57 +7,166 @@
 export const revalidate = 3600;
 
 import type { Metadata } from "next";
+import Link from "next/link";
 import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_URL } from "@/lib/constants";
-import { getPublicSnapshot } from "@/lib/public-stats";
+import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
+import { UNAVAILABLE_PUBLIC_STATS, getPublicNationalIndex, getPublicSnapshot, type PublicSnapshot } from "@/lib/public-stats";
 import {
+  getDistrictFeeIndexesCached,
+  getNationalIndicatorsCached,
   getPublishedArticleSummariesCached,
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
+import type { NationalIndicators } from "@/lib/data-store/economic-context";
+import type { ResearchCoverage } from "@/lib/data-store/geographic";
+import type { IndexEntry, StateFeeIndexes } from "@/lib/data-store";
+import { DISTRICT_NAMES } from "@/lib/fed-districts";
+import { getStatesForDistrict } from "@/lib/us-map-paths";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-import { softRead } from "@/lib/soft-read";
-import { ResearchHero, ResearchSectionNav, SectionHeading } from "../research-hero";
+import { createReadBudget } from "@/lib/read-deadline";
+import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { STATE_FINDING_MIN_INSTITUTIONS } from "@/lib/research-report/state-findings";
+import { ResearchHero, ResearchSectionNav } from "../research-hero";
 import { BenchmarkBoard, pickBenchmarks } from "../benchmark-board";
 import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
-import { MethodFlow } from "../method-flow";
+import { MethodFlow, ProBand } from "../method-flow";
 import { HubFindings } from "../hub-findings";
-import { computeFindings } from "../findings";
+import { computeFindings, sentenceName } from "../findings";
+import { DistrictsExhibit, type DistrictCard, type DistrictFeeCell, type MapFee } from "../districts-exhibit";
+import { ExploreMarket } from "../explore-market";
+import { EconomicData, nationalIndicatorTiles } from "../economic-data";
+import { HubSection } from "../district/[id]/district-hub";
+import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
+import { stateShape } from "../district/[id]/district-geo";
+import { districtOpening, districtsFallback, districtsFinding, feeSide } from "../district/[id]/district-opening";
+import { hubFeeKeys } from "../district/[id]/district-hub-view";
 
 export const metadata: Metadata = {
-  title: "Research - Bank & Credit Union Fee Analysis",
+  title: "Bank Fee Research by State and Fed District",
   description:
-    "Findings on bank and credit union fees, with national benchmarks and state and Federal Reserve district reports. Every figure traces to a published fee schedule.",
+    "National medians for everyday bank and credit union fees, all 12 Federal Reserve districts against the U.S., and a report for each state.",
+  alternates: { canonical: "/research" },
 };
 
 const ARTICLE_LIMIT = 5;
+/** One deadline for every read behind a render, as the institutions directory. */
+const RESEARCH_READ_BUDGET_MS = 15_000;
+/** The snapshot a render shows when it can't be read in time: every count unavailable, never "0". */
+const UNAVAILABLE_SNAPSHOT: PublicSnapshot = { summary: UNAVAILABLE_PUBLIC_STATS, categories: [] };
+const DISTRICT_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
+/** Alaska, Hawaii and the territories sit in insets or off the map, so they don't place a district's label. */
+const OFF_MAINLAND = new Set(["AK", "HI", "PR", "VI", "GU", "AS", "MP"]);
+
+/**
+ * District 7's size-weighted center falls on Lake Michigan, so its number sits on Illinois's
+ * label point instead.
+ */
+const LABEL_STATE: Record<number, string> = { 7: "IL" };
+
+/** Where a district's number sits: its mainland states' label points, weighted by each state's size. */
+function districtLabel(district: number): { x: number; y: number } | null {
+  const fixed = LABEL_STATE[district] ? stateShape(LABEL_STATE[district]) : null;
+  if (fixed) return fixed.label;
+  const shapes = getStatesForDistrict(district)
+    .filter((c) => !OFF_MAINLAND.has(c))
+    .map((c) => stateShape(c))
+    .filter((s) => s !== null);
+  const weight = shapes.reduce((sum, s) => sum + s.box.w * s.box.h, 0);
+  if (weight <= 0) return null;
+  return {
+    x: shapes.reduce((sum, s) => sum + s.label.x * s.box.w * s.box.h, 0) / weight,
+    y: shapes.reduce((sum, s) => sum + s.label.y * s.box.w * s.box.h, 0) / weight,
+  };
+}
+
+function sentenceStart(key: string): string {
+  const name = sentenceName(key);
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 export default async function ResearchHubPage() {
-  // All reads are served from the public cache between publishes. Counts and benchmarks
-  // come from one shared snapshot, so they match the homepage and fee index.
-  // The coverage read is required: without it the page would state a wrong state count, so a
-  // failure goes to the error boundary (not cached; a failed background regeneration keeps
-  // serving the last good page). A failed article read hides the library, and a render with
-  // it or an incomplete snapshot is cached for a minute, not an hour.
-  const [{ summary, categories: summaries }, coverage, articlesRead] = await Promise.all([
-    getPublicSnapshot(),
-    getResearchCoverageCached(),
-    softRead(getPublishedArticleSummariesCached(ARTICLE_LIMIT), [] as ArticleSummary[]),
-  ]);
-  if (!summary.complete || summaries.length === 0 || articlesRead.failed) await shortenPageLife();
-  const articles = articlesRead.value;
+  // The page renders what a signed-out reader sees, so it can be cached for everyone.
+  const showAllCategories = false;
 
-  const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
+  // All reads are served from the public cache between publishes. Counts and benchmarks
+  // come from one shared snapshot, so they match the homepage and fee index. The page
+  // prerenders at build time, so every read is optional with an honest fallback under one
+  // deadline (findings/2026-10-19-required-read-fails-build.md): a slow or failed read hides
+  // or labels its part as unavailable, and that render is cached for a minute, not an hour.
+  const budget = createReadBudget(RESEARCH_READ_BUDGET_MS, "Research hub");
+  const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive, indicators] = await Promise.all([
+    budget.optional(getPublicSnapshot(), "public snapshot", UNAVAILABLE_SNAPSHOT),
+    budget.optional<ResearchCoverage | null>(getResearchCoverageCached(), "research coverage", null),
+    budget.optional(getPublishedArticleSummariesCached(ARTICLE_LIMIT), "articles", [] as ArticleSummary[]),
+    budget.optional(getPublicNationalIndex(), "national index", [] as IndexEntry[]),
+    Promise.all(
+      DISTRICT_IDS.map((id) => budget.optional<StateFeeIndexes | null>(getDistrictFeeIndexesCached(id), `district ${id} index`, null)),
+    ),
+    budget.optional(sampleReportAvailable(), "sample report", false),
+    budget.optional<NationalIndicators | null>(getNationalIndicatorsCached(), "national indicators", null),
+  ]);
+  if (budget.failed() || !summary.complete || summaries.length === 0 || nationalIndicatorTiles(indicators).length === 0) {
+    await shortenPageLife();
+  }
+  // With no national index, or no district read, the district comparison says it's unavailable.
+  const districtsDown = nationalIndex.length === 0 || districtIndexes.every((x) => x === null);
+
+  const statesWithFees = (coverage?.states ?? []).filter((s) => s.verified_institutions > 0);
   // US_TERRITORIES includes DC; count DC separately.
   const territoryCount = statesWithFees.filter((s) => US_TERRITORIES.has(s.state_code) && s.state_code !== "DC").length;
   const hasDc = statesWithFees.some((s) => s.state_code === "DC");
-  const stateCount = statesWithFees.length - territoryCount - (hasDc ? 1 : 0);
+  const stateCount = coverage ? statesWithFees.length - territoryCount - (hasDc ? 1 : 0) : null;
   const benchmarks = pickBenchmarks(summaries);
   const findings = computeFindings(benchmarks);
   const asOf = summary.refreshedOn;
-  const coverageLabel = `${stateCount} states${hasDc ? ", DC" : ""}${territoryCount > 0 ? ` and ${territoryCount} territories` : ""}`;
+  const coverageLabel = coverage
+    ? `${stateCount} states${hasDc ? ", DC" : ""}${territoryCount > 0 ? ` and ${territoryCount} territories` : ""}`
+    : null;
+  const usMedian = new Map(nationalIndex.map((e) => [e.fee_category, e.median_amount]));
+
+  // Every district card reads the same fee; each district's other large gaps sit in its own report.
+  const openings = DISTRICT_IDS.map((id, i) => {
+    const indexes = districtIndexes[i];
+    const name = DISTRICT_NAMES[id] ?? `District ${id}`;
+    const opening = indexes ? districtOpening(indexes, nationalIndex, showAllCategories, `${name} district`) : null;
+    return { id, name, indexes, opening };
+  });
+  // The map's fees: the district hub's fees this reader may see, kept only where at least half the districts compare.
+  const mapFees: MapFee[] = hubFeeKeys(showAllCategories)
+    .filter((key) => openings.filter((o) => o.opening && feeSide(o.opening, key) !== null).length >= DISTRICT_IDS.length / 2)
+    .map((key) => ({ key, name: sentenceStart(key) }));
+  // The map opens on an everyday account fee rather than overdraft, so overdraft isn't the page's lead story.
+  const initialFee = mapFees.find((f) => f.key === "monthly_maintenance")?.key ?? mapFees[0]?.key ?? "overdraft";
+  const districts: DistrictCard[] = openings.map(({ id, name, indexes, opening }) => ({
+    id,
+    name,
+    region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
+    available: indexes !== null && nationalIndex.length > 0,
+    institutions: indexes?.verified_institutions ?? 0,
+    fees: Object.fromEntries(
+      mapFees.map(({ key }): [string, DistrictFeeCell] => {
+        const f = opening?.againstUs.find((x) => x.key === key);
+        // The U.S. median comes from the national index itself, so a district with no row for the fee reads as too few institutions, not unavailable.
+        return [key, { side: opening ? feeSide(opening, key) : null, median: f?.median ?? null, us: usMedian.get(key) ?? null }];
+      }),
+    ),
+    label: districtLabel(id),
+  }));
+  // The section's finding for each map fee; the exhibit shows the one for the selected fee.
+  const districtLines: Record<string, string> = Object.fromEntries(
+    mapFees.map(({ key }) => [
+      key,
+      districtsFinding(
+        openings.map(({ opening }) => (opening ? feeSide(opening, key) : null)),
+        DISTRICT_IDS.length,
+        key,
+      ) ?? districtsFallback(key),
+    ]),
+  );
+  const LINK = "inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
   return (
     <>
@@ -68,31 +177,110 @@ export default async function ResearchHubPage() {
         ]}
       />
 
-      <ResearchHero summary={summary} />
+      <ResearchHero summary={summary} sampleHref={sampleLive ? "/reports/sample-competitive-fee-position" : null} />
       <ResearchSectionNav />
 
-      <div className="mx-auto max-w-page space-y-14 px-4 py-10 sm:space-y-16 sm:px-6 sm:py-12">
+      <div className="mx-auto max-w-page space-y-16 px-4 py-10 sm:space-y-24 sm:px-6 sm:py-14">
         <HubFindings findings={findings} asOf={asOf} />
+
+        <HubSection
+          id="explore"
+          title="Explore your market"
+          line={
+            coverageLabel
+              ? `Reports for ${coverageLabel}, all 12 Federal Reserve districts and the U.S.`
+              : "Reports for all 12 Federal Reserve districts and the U.S. The state list isn't available right now."
+          }
+          source={
+            <>
+              {PRODUCT_NAME}, verified published fee schedules, one value per institution. A state is listed once any of its institutions
+              has published fees.{asOf ? ` Data as of ${asOf}.` : ""}
+            </>
+          }
+        >
+          <ExploreMarket
+            state={
+              coverage ? (
+                <GeoReports states={coverage.states} />
+              ) : (
+                <p className="text-[14px] text-ink-muted">The state list isn&apos;t available right now. Try again in a minute.</p>
+              )
+            }
+            district={
+              <div>
+                <DistrictsExhibit
+                  districts={districts}
+                  mapFees={mapFees}
+                  initialFee={initialFee}
+                  findings={districtLines}
+                  fallback={
+                    districtsDown
+                      ? "District comparisons aren't available right now. Try again in a minute."
+                      : mapFees.length > 0
+                        ? districtsFallback(initialFee)
+                        : "Too few districts have enough published fees yet for a comparison."
+                  }
+                  minInstitutions={STATE_FINDING_MIN_INSTITUTIONS}
+                />
+                <details className="group mt-3">
+                  <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-[13px] font-semibold text-ink-soft [&::-webkit-details-marker]:hidden">
+                    How districts are compared
+                    <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
+                  </summary>
+                  <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted">
+                    Each institution counts once, at the median of its published prices for a fee (overdraft: its highest), and a
+                    district&apos;s median is taken across its institutions. A district is shaded only when at least{" "}
+                    {STATE_FINDING_MIN_INSTITUTIONS} of its institutions publish the fee. A gap under 1% of the national median is
+                    shaded as &ldquo;within 1%&rdquo;; the card still shows both figures. Each state is shaded by the district that
+                    covers most of it. A district&apos;s own report lists its other notable differences.
+                  </p>
+                </details>
+              </div>
+            }
+            national={
+              <div className="max-w-3xl">
+                <p className="text-[15px] leading-relaxed text-ink-soft">
+                  U.S. medians for {summary.categoriesLabel} fee categories from {summary.institutionsLabel} banks and credit unions.
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-x-6">
+                  <li>
+                    <a href="#benchmarks" className={LINK}>
+                      Everyday fees, banks against credit unions
+                    </a>
+                  </li>
+                  <li>
+                    <Link href="/research/national-fee-index" className={LINK}>
+                      The national fee index
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/fees" className={LINK}>
+                      Every fee category
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+            }
+          />
+        </HubSection>
 
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
-        <section id="geography" className="scroll-mt-28">
-          <SectionHeading eyebrow="Regional reports" title="States and Federal Reserve districts">
-            The same benchmarks for one state or district, with its coverage and economic context.
-          </SectionHeading>
-          <div className="mt-5">
-            <GeoReports states={coverage.states} districts={coverage.districts} />
-          </div>
-        </section>
+        <EconomicData indicators={indicators} />
 
-        <ResearchLibrary articles={articles} asOf={asOf} />
+        <ProBand sampleLive={sampleLive} />
 
         <MethodFlow summary={summary} stateCount={stateCount} coverageLabel={coverageLabel} />
+
+        <ResearchLibrary articles={articles} asOf={asOf} />
       </div>
 
-      {/* Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
-      <style>{`@media print {
-        header, footer, nextjs-portal, #geo-filter, #geo-pick, [role="radiogroup"] { display: none !important; }
+      {/* Anchors clear the sticky header and section bar. Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
+      <style>{`#findings, #explore, #districts, #benchmarks, #economic-data, #apply, #about-data, #in-progress { scroll-margin-top: 7.5rem; }
+      @media (min-width: 640px) { #findings, #explore, #districts, #benchmarks, #economic-data, #apply, #about-data, #in-progress { scroll-margin-top: 7rem; } }
+      @media print {
+        header, footer, nextjs-portal, #geo-filter, #district-fee, [role="tablist"] { display: none !important; }
+        [role="tabpanel"][hidden] { display: block !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
         a { text-decoration: none !important; }
@@ -104,10 +292,15 @@ export default async function ResearchHubPage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "CollectionPage",
-            name: "Bank Fee Research Reports",
+            name: "Bank Fee Research",
             description:
-              "National benchmarks and geographic analysis of bank and credit union fees by state and Federal Reserve district.",
+              "National benchmarks and geographic analysis of bank and credit union fees by Federal Reserve district and state.",
             url: `${SITE_URL}/research`,
+            hasPart: DISTRICT_IDS.map((id) => ({
+              "@type": "WebPage",
+              name: `${DISTRICT_NAMES[id]} Fed District ${id} Fee Analysis`,
+              url: `${SITE_URL}/research/district/${id}`,
+            })),
           }).replace(/</g, "\\u003c"),
         }}
       />

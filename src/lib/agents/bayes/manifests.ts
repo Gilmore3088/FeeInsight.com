@@ -275,6 +275,13 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // #2186: prospective hard-hold proof cannot be fabricated for historical confirmations.
+  TAKEDOWN_LESSONS_VERSION: "v2 restricts newly inserted learned holds to complete supported fee identity and a limit-guard witness captured before judgement, retained in confirmation, and current at insertion. Missing/unsupported/contended proof leaves new candidates for ordinary Darwin. Existing raw rows/holds and extract83/stale78/verify3/batch4/publish3/refresh2/current-copy2/newer-copy1 fingerprints stay settled; no historical release, replay or provider work is queued.",
+  // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
+  ANCILLARY_PRODUCT_VERSION: "v1 owns only newly inserted raw rows from a bounded single-primary-product document. Existing raw conflicts, held takeovers and settled extract/verify/publish/copy decisions stay unchanged. Normalized represented-product guards restrict future matching and ordinary live duplicate sweeps; no metadata backfill, historical replay, numeric-policy change or recovery is queued.",
+  // v2 (#1862): provenance gating excludes old unbound fixture judgments. Original document
+  // mappings are absent; replay cannot manufacture them or convert old scores into new trust.
+  DARWIN_VERDICT_SCORE_STRATEGY: "Frozen-reference provenance starts a distinct protocol/manifest series. Unbound historical chunks and lessons remain historical; no fee replay or key repair is authorized.",
   // Discovery's own selector searches banks last checked by an older method. Guessed-path
   // memory affects future attempts, without rewriting attempt history or existing fee data.
   DISCOVERY_METHOD_VERSION: "The discovery selector searches banks last checked by an older method; its normal runs apply the new guessed-path memory, with no separate replay.",
@@ -327,14 +334,16 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // it works through are picked by the same query every publish step, so there is nothing to replay.
   // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
   // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
-  REFRESH_COPY_STRATEGY: "Refreshes matching-audience stale fees in place on normal publish steps. The audience safety restriction keeps v2 decisions closed; no historical correction or replay is queued.",
+  REFRESH_COPY_STRATEGY: "Refreshes matching-audience/product stale fees in place on normal publish steps. The audience/product safety restrictions keep v2 decisions closed; no historical correction or replay is queued.",
   // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
   // Previously settled pairs require a separately reviewed impact/official-source decision.
+  // #1674 also treats an exact account-type-held twin as present in planning/final restore;
+  // it prevents future hold bypasses without reopening any settled v1 pair.
   NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
   // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
   // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
-  HAMILTON_PUBLISH_STRATEGY: "Audience-safe exact duplicate checks retain publish v3 decisions. No historical publish replay or closed-duplicate recovery is queued; ordinary live sweeps use the restricted identity predicate.",
+  HAMILTON_PUBLISH_STRATEGY: "Audience/product-safe duplicate checks retain publish v3 decisions. No historical publish replay or closed-duplicate recovery is queued; ordinary live sweeps use the restricted identity predicate.",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live
@@ -417,6 +426,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
   // From reader-versions.ts, which imports nothing: the readers themselves load PDF and OCR code.
   const rosetta = await loadRosettaVersions();
   const manifests: ReplayManifest[] = [
+    // v83 (#2151): faithful wrapped bullets use the existing due-text selection.
+    // No stale-floor increase or historical rejection replay accompanies this fix.
     {
       key: "knox.rules",
       owner: "knox",
