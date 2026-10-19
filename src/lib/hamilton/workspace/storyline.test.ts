@@ -443,10 +443,11 @@ describe("list questions (#2033)", () => {
     expect(story.exhibits).toHaveLength(1);
     const x = story.exhibits[0].exhibit;
     if (x.kind !== "peer_list") throw new Error("expected a peer list");
-    expect(x.rows[0]).toMatchObject({ own: true, amount: 32, status: "published" });
+    expect(x.rows[0]).toMatchObject({ own: true, institutionName: r.institutionName, amount: 32, status: "published" });
     const peers = x.rows.filter((row) => !row.own);
     expect(peers.filter((row) => row.status === "published")).toHaveLength(r.peers.length);
-    expect(peers.slice(-2).map((row) => [row.institutionName, row.status])).toEqual([
+    // Largest first across both kinds of row; the fixture's publishing peers have no assets on file, so they follow.
+    expect(peers.slice(0, 2).map((row) => [row.institutionName, row.status])).toEqual([
       ["Quiet Ridge Credit Union", "not_on_schedule"],
       ["No Schedule Credit Union", "no_schedule"],
     ]);

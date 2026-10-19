@@ -23,7 +23,7 @@ function feeText(r: PeerListRow): string {
 }
 
 function Source({ r }: { r: PeerListRow }) {
-  if (r.status !== "published") return <span className="text-warm-500">None</span>;
+  if (r.status !== "published") return null;
   const date = r.publishedAt ? dayDate(r.publishedAt) : null;
   return r.documentUrl ? (
     <a href={r.documentUrl} target="_blank" rel="noreferrer" className="text-terra-text underline decoration-terra/40 hover:decoration-terra">
@@ -49,8 +49,12 @@ function Rows({ rows }: { rows: PeerListRow[] }) {
               <p className={`shrink-0 text-sm ${ANSWER_TYPE.num} ${r.status === "published" ? "font-semibold text-warm-900" : "text-warm-600"}`}>{feeText(r)}</p>
             </div>
             <p className={`mt-0.5 text-xs text-warm-600 ${ANSWER_TYPE.num}`}>
-              {r.own ? null : <>Assets {r.totalAssets == null ? "not available" : fmtAssets(r.totalAssets)} · </>}
-              <Source r={r} />
+              {[
+                r.own ? null : <span key="a">Assets {r.totalAssets == null ? "not available" : fmtAssets(r.totalAssets)}</span>,
+                r.status === "published" ? <Source key="s" r={r} /> : null,
+              ]
+                .filter(Boolean)
+                .flatMap((part, i) => (i === 0 ? [part] : [" · ", part]))}
             </p>
           </li>
         ))}

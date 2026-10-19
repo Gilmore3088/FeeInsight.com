@@ -536,7 +536,7 @@ function ownListRow(research: FeeResearch): PeerListRow[] {
   const own = research.ownRows[0];
   return [{
     institutionId: research.institutionId,
-    institutionName: subjectName(research),
+    institutionName: research.subjectName || research.institutionName || "Your institution",
     stateCode: null,
     totalAssets: null,
     amount: research.current,
@@ -548,12 +548,12 @@ function ownListRow(research: FeeResearch): PeerListRow[] {
 }
 
 /**
- * Every institution in the peer group by name: those publishing the fee with it and its source,
- * then those with none on file and why. The governing thought counts them, so the title only
+ * Every institution in the peer group by name, largest first: the fee and its source, or why
+ * none is on file. The governing thought counts them, so the title only
  * says how the rows are ordered.
  */
 function peerListPiece(research: FeeResearch, name: string): Piece | null {
-  const published = research.peers.map(listedRow).sort(byAssets);
+  const published = research.peers.map(listedRow);
   const coverage = research.peerGroup ?? null;
   const missing: PeerListRow[] = (coverage?.missing ?? []).map((m) => ({
     institutionId: m.institutionId,
@@ -574,7 +574,7 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
       ? `${count(n)} of ${count(total)} peers publish ${article(name)} ${name} fee${median}.`
       : `${count(n)} peers publish ${article(name)} ${name} fee${median}.`;
   const unlisted = total !== null ? Math.max(0, total - n - missing.length) : 0;
-  const rows = [...published, ...missing.sort(byAssets)];
+  const rows = [...published, ...missing].sort(byAssets);
   return {
     key: "peerList",
     actionTitle,
