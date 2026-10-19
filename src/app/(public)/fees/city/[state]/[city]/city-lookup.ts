@@ -31,7 +31,4 @@ export function dottedCityName(cityName: string): string | null {
   return dotted === cityName ? null : dotted;
 }
 
-/** The one address for a city: its stored name, lowercased and encoded. */
-export function cityPath(stateCode: string, cityName: string): string {
-  return `/fees/city/${stateCode.toLowerCase()}/${encodeURIComponent(cityName.toLowerCase())}`;
-}
+export { canonicalCityName, cityPath, decodedSegment } from "./city-address";

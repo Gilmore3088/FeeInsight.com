@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { activeInstitutionFilter } from "./fee-stats";
-import { placesInFold, sameCitySpellings, type StatePlace } from "@/lib/geo/city-names";
+import { cityKey, foldCitySpellings, placesInFold, sameCitySpellings, type StatePlace } from "@/lib/geo/city-names";
 
 /**
  * The stored spellings of one city, read for the queries that match a city by name (#2092).
@@ -19,6 +19,27 @@ export async function hqCitySpellings(city: string, stateCode: string): Promise<
        AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   `) as { city: unknown }[];
   return sameCitySpellings(city, rows.map((r) => String(r.city)));
+}
+
+/**
+ * The headquarters spelling a city is named under once its spellings are folded: the one most
+ * active institutions use, as the city lists name it (`foldCitySummaries`). Null when no active
+ * institution is headquartered there under any spelling.
+ */
+export async function hqCityName(city: string, stateCode: string): Promise<string | null> {
+  const key = cityKey(city);
+  if (!key) return null;
+  const rows = (await sql`
+    SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, COUNT(*) AS institutions
+      FROM institution_sources ct
+     WHERE ct.state_code = ${stateCode.toUpperCase()} AND ct.city IS NOT NULL AND ct.city <> ''
+       AND ${sql.unsafe(activeInstitutionFilter("ct"))}
+     GROUP BY LOWER(ct.city)
+  `) as { city: unknown; institutions: unknown }[];
+  const same = rows
+    .map((r) => ({ name: String(r.city), branches: Number(r.institutions) || 0, row: null }))
+    .filter((s) => cityKey(s.name) === key);
+  return foldCitySpellings(same)[0]?.name ?? null;
 }
 
 /**

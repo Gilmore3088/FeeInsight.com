@@ -20,7 +20,7 @@ vi.mock("./connection", () => {
 
 import { foldCitySummaries, getCitiesInState, getCityAutocomplete, getCityFeeAverages, getCityInstitutions, getTopCitiesByState } from "./geographic";
 import { cityHasBranches } from "./city-market";
-import { hqPlacesInBranchCounties } from "./city-spellings";
+import { hqCityName, hqPlacesInBranchCounties } from "./city-spellings";
 
 beforeEach(() => {
   state.calls.length = 0;
@@ -108,5 +108,18 @@ describe("branch and market reads", () => {
       { kind: "hq", state: "FL", city: "ORLANDO" },
     ]);
     expect(await hqPlacesInBranchCounties(2026, ["12103"])).toEqual(["FL|SAINT PETERSBURG"]);
+  });
+});
+
+describe("hqCityName", () => {
+  it("names a city by the headquarters spelling most institutions use", async () => {
+    state.replies.push([
+      { city: "Saint Louis", institutions: "1" },
+      { city: "St. Louis", institutions: "6" },
+      { city: "Kansas City", institutions: "9" },
+    ]);
+    expect(await hqCityName("st louis", "mo")).toBe("St. Louis");
+    state.replies.push([{ city: "Kansas City", institutions: "9" }]);
+    expect(await hqCityName("st louis", "mo")).toBeNull();
   });
 });
