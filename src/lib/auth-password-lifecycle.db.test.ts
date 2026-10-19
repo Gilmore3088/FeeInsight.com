@@ -87,6 +87,15 @@ describe.skipIf(!connection)("password login lifecycle in isolated PostgreSQL", 
 
   const currentHash = async () => (await db`SELECT password_hash FROM users WHERE id = 1`)[0]?.password_hash;
   const sessionCount = async () => (await db`SELECT count(*)::int AS n FROM sessions`)[0].n;
+  async function blockedBy(blocker: number): Promise<number> {
+    const deadline = Date.now() + 2_000;
+    while (Date.now() < deadline) {
+      const [waiting] = await admin`SELECT pid FROM pg_stat_activity WHERE ${blocker} = ANY(pg_blocking_pids(pid))`;
+      if (waiting) return Number(waiting.pid);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("Expected a competing transaction blocked by the selected login row lock");
+  }
 
   it("upgrades the selected legacy verifier and commits its session before emitting the cookie", async () => {
     const { login } = await import("./auth");
@@ -171,6 +180,44 @@ describe.skipIf(!connection)("password login lifecycle in isolated PostgreSQL", 
     expect(await currentHash()).toBe("new-hash:reset password");
     expect(await sessionCount()).toBe(0);
   });
+
+  it.each([bcrypt, scrypt])("holds the user lock through session insertion against a competing reset (%s)", async (stored) => {
+    await db`UPDATE users SET password_hash = ${stored} WHERE id = 1`;
+    const key = BigInt(`0x${randomBytes(6).toString("hex")}`).toString();
+    const gate = postgres(connection!, { max: 1, ssl: "require", prepare: false });
+    const [{ pid: gatePid }] = await gate`SELECT pg_backend_pid() AS pid, pg_advisory_lock(${key}::bigint)`;
+    // The trigger pauses the real INSERT after the application's SELECT guard.
+    // All DDL and rows belong to this random test schema; key is locally generated.
+    await db.unsafe(`CREATE FUNCTION hold_session_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN PERFORM pg_advisory_xact_lock(${key}::bigint); RETURN NEW; END $$`);
+    await db`CREATE TRIGGER hold_session_insert BEFORE INSERT ON sessions FOR EACH ROW EXECUTE FUNCTION hold_session_insert()`;
+    const { login } = await import("./auth");
+    const { createPasswordResetToken } = await import("./password-reset");
+    const { resetPassword } = await import("@/app/(auth)/reset-password/actions");
+    const pendingLogin = login("reader@example.test", "old password");
+    let pendingReset: ReturnType<typeof resetPassword> | undefined;
+    let resetFinished = false;
+    try {
+      const loginPid = await blockedBy(Number(gatePid));
+      pendingReset = resetPassword(form({ token: createPasswordResetToken(1, stored), password: "reset password", confirm: "reset password" }));
+      void pendingReset.then(() => { resetFinished = true; });
+      const resetPid = await blockedBy(loginPid);
+      expect(resetPid).not.toBe(loginPid);
+      expect(resetFinished).toBe(false);
+      expect(await sessionCount()).toBe(0);
+    } finally {
+      await gate`SELECT pg_advisory_unlock(${key}::bigint)`;
+      await Promise.allSettled([pendingLogin, ...(pendingReset ? [pendingReset] : [])]);
+      await gate.end();
+      await db`DROP TRIGGER hold_session_insert ON sessions`;
+      await db`DROP FUNCTION hold_session_insert()`;
+    }
+    expect(await pendingLogin).toMatchObject({ id: 1 });
+    expect(await pendingReset).toEqual({ ok: true });
+    expect(await currentHash()).toBe("new-hash:reset password");
+    expect(await sessionCount()).toBe(0);
+    expect(state.cookies).toHaveLength(1);
+  }, 10_000);
 
   it("rolls the credential upgrade back if session insertion fails", async () => {
     await db`ALTER TABLE sessions ADD CONSTRAINT synthetic_insert_failure CHECK (false)`;

@@ -58,9 +58,13 @@ continues to delete every session, including the newly committed login session.
   previously issued links. Requesting a new reset link is the existing recovery path.
   Concurrent legacy logins selecting the same old verifier have one successful upgrade;
   the loser gets the existing generic credential failure and can retry.
-- The schema fixture defines `users.password_hash` as `text`, which accommodates the
-  189-character encoding. No schema migration or production password/hash/user read,
-  mass rewrite, production mutation, permission setting or provider change is included.
+- At 2026-10-19 08:22:25 UTC, a read-only production catalog query confirmed
+  `public.users.password_hash` is `pg_catalog.text`, has no character maximum or domain,
+  and has no check constraint referencing that column. This accommodates the
+  189-character encoding; the schema fixture also uses `text`. The query read only
+  `information_schema.columns` and PostgreSQL constraint/attribute catalogs. No schema
+  migration, production password/hash/user read, mass rewrite, production mutation,
+  permission setting or provider change is included.
 - A local synthetic native-crypto probe measured about 345 ms for two parallel derives
   on the development machine. This is not a production latency or throughput promise.
 
@@ -77,7 +81,12 @@ The shared CI E2E inventory includes the new lifecycle suite alongside all exist
 limiter, history, refresh and retirement suites.
 
 The SQL tests use barriers around verification and actual reset actions, plus a forced
-session constraint failure, to prove the final guard and transaction rollback. Separate
+session constraint failure, to prove the final guard and transaction rollback. Two
+additional contention cases pause actual bcrypt/scrypt login session insertion with a
+private-schema trigger. They observe the actual reset blocked by the login's user row
+lock, then release insertion and verify reset revokes the committed session. Both cases
+fail when `FOR UPDATE` is removed from an external copy of the login code; the real
+application source remains unchanged during that negative probe. Separate
 native end-to-end fixture cases exercise registration, reset, long legacy upgrade and
 subsequent login without mocking the cryptography. Validation receipts record the exact
 review head and full local/CI results; no production authentication or browser session
