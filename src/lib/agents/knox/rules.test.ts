@@ -1766,3 +1766,27 @@ describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
     expect(hint("Travel Money Card")).toBeNull();
   });
 });
+
+describe("v80 (#2032): rows named by the heading above them", () => {
+  const read = (text: string) => runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+  it("reads a heading with footnote numbers glued to it", () => {
+    const fees = read("Cashier’s Check1,4\nCustomer ......................................$10.00\nNon-Customer .............................Not Available\nMoney Orders1,4\nCustomer ......................................$5.00");
+    expect(fees).toContainEqual(["Cashier’s Check: Customer", 10, "cashiers_check"]);
+    expect(fees).toContainEqual(["Money Orders: Customer", 5, "money_order"]);
+  });
+
+  it("reads wires under a one-word Domestic or International line", () => {
+    const fees = read(
+      "Wire Transfers\nDomestic\nIncoming1,2 .............................$15.00\nOutgoing ...............................$30.00\nInternational\nUSD Outgoing ...........................$40.00\nForeign Currency Outgoing ..............$25.00",
+    );
+    expect(fees).toContainEqual(["Domestic Wire Transfers: Incoming", 15, "wire_domestic_incoming"]);
+    expect(fees).toContainEqual(["Domestic Wire Transfers: Outgoing", 30, "wire_domestic_outgoing"]);
+    expect(fees).toContainEqual(["International Wire Transfers: USD Outgoing", 40, "wire_intl_outgoing"]);
+    expect(fees).toContainEqual(["International Wire Transfers: Foreign Currency Outgoing", 25, "wire_intl_outgoing"]);
+  });
+
+  it("files another bank's ATMs named in more than one word", () => {
+    expect(classifyFeeText("Direct S/C-Fee (non-Beacon Bank ATMs)")).toBe("atm_non_network");
+  });
+});
