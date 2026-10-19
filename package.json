@@ -31,7 +31,7 @@
     "geist": "^1.7.0",
     "htmlparser2": "8.0.2",
     "lucide-react": "^0.564.0",
-    "maplibre-gl": "^5.24.0",
+    "maplibre-gl": "6.15.0",
     "next": "16.4.2",
     "postgres": "^3.4.8",
     "radix-ui": "^1.4.3",
