@@ -755,10 +755,28 @@ another name is a different printed line.
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
-live row exactly (same institution, canonical key, variant, frequency, amount and fee
+live row exactly (same institution, canonical key, audience, variant, compatible frequency, amount and fee
 name). The newest copy stays live; the others get `rolled_back_reason = 'duplicate of
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
+
+Exact applicability (#2131) keeps `consumer`, `business`, `both` and `unknown` separate;
+legacy null means `unknown` only. Neither `both` nor `unknown` is a wildcard. The old
+known-over-unknown preference no longer applies to exact copies: an uncertain scope is
+retained rather than silently relabelled or erased. Amount kind, rate basis, rate bounds
+and rate value also belong to the exact key. Within one identity the existing frequency
+classes/unstated-frequency preference remain, then the newest copy wins. The live-copy
+selector, pure decision, batch grouping and in-step map use this same identity. Quarantined
+rows are neither collapse candidates nor exact-copy witnesses. The final UPDATE locks both
+members of every selected pair in ID order and compares the complete locked target/keeper
+states against their selected states, including lineage and operator actions. Any intervening
+change skips that pair; only actual UPDATE RETURNING rows count. The separate operator-hold insert guard retains its
+conservative overlapping-audience policy; near-name and page-copy rules are unchanged.
+
+Publish retains v3 fingerprints, so previously skipped rows and closed duplicate history
+are not replayed or restored automatically. Bayes records this no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.HAMILTON_PUBLISH_STRATEGY`. Preventing the cause is not a claim
+of end-to-end recovery of historical missing fees.
 
 **Near names (#1302).** Two live rows of one document, category, variant and amount whose names
 differ only by punctuation, case, a plural, a leading article or a trailing "fee" ("Stop
@@ -836,16 +854,16 @@ exact and near-name collapses still have this gap.
 
 **At publish (#1069 step 1, live).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
-category, variant, value and name; frequency classes that agree; the copy kept states its
-audience, then its frequency, then is newest). A row the collapse would close is counted as
+category, audience, variant, value/basis/bounds and name; frequency classes that agree;
+within that scope the copy kept states its frequency, then is newest). A row the collapse would close is counted as
 `would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
 `PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
 before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
 the late collapse to close it. Set it back to false to count only.
 Two gaps let 14 of the first 16 such rows through on Oct 17 (#1069). Twins read in one step: the
-step now takes each collapse line's rows best first (`collapseKeepOrder`: stated audience, then
-frequency, then the row it would insert last, which the collapse keeps). A later twin is refused
+step now takes each collapse line's rows best first (`collapseKeepOrder`: stated frequency,
+then the row it would insert last, which the collapse keeps). A later twin is refused
 against the copy already published in the step (`in_step`), so one copy goes live. A dry run
 tracks the copies it would have published. Before this, 13 rows of step 42289 went live and were
 closed at the same instant. A category the fold's live split moves: copies are looked up under the

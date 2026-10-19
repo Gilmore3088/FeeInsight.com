@@ -2099,7 +2099,12 @@ export async function runHamiltonPublish(
       canonicalFeeKey: row.canonical_fee_key,
       variantType: row.variant_type,
       amount: percent ? null : normalizedAmount(row.amount),
+      amountKind: percent ? "percent" : "flat",
       ratePercent: percent ? ratePercentOf(row) : null,
+      rateMinAmount: percent ? normalizedAmount(row.rate_min_amount ?? null) : null,
+      rateMaxAmount: percent ? normalizedAmount(row.rate_max_amount ?? null) : null,
+      rateBasis: percent ? row.rate_basis : null,
+      feeAudience: row.fee_audience,
       feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
     };
   };
