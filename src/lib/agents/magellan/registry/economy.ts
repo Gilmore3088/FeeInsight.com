@@ -61,7 +61,7 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 
 export const ECONOMY_PARSER_VERSION = 1;
 export const BRANCH_TRACT_PARSER_VERSION = 2;
-export const BEA_PARSER_VERSION = 2;
+export const BEA_PARSER_VERSION = 3;
 
 /**
  * The remittance source's own reader version, so a change to it re-runs only that source.
@@ -328,6 +328,8 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   for (const r of rows) byGeo[r.geo_type] = (byGeo[r.geo_type] ?? 0) + 1;
   const detail = {
     parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION,
+    ...(fetched.unavailableParts?.length ? {partial:true,unavailable_parts:fetched.unavailableParts,
+      partial_reason:`Unavailable upstream requests: ${fetched.unavailableParts.map(part=>part.key).join(", ")}; ${fetched.unavailableParts[0].reason}`} : {}),
     rows: rows.length,
     rows_by_geo_type: byGeo,
     series: [...new Set(rows.map((r) => r.series_key))],
@@ -343,7 +345,14 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   if (options.dryRun) {
     return result(options, { sourceUrl: fetched.url, rows: rows.length, missingFields: fetched.missingFields, checks, summary: `${plan.label} ${options.partitionKey}: read ${n(rows.length)} values (${geoText})${gaps} (dry run).`, detail });
   }
-  const written = await upsertAreaStats(db, options.source, rows, fetched.url, options.runId ?? null);
+  // BEA combines state and county tables: preserve each request's redacted URL on its own rows.
+  const requests = new Map<string|null,AreaStat[]>();
+  for (const row of rows) {
+    const url = options.source === ECONOMY_SOURCES.bea ? row.source_url ?? fetched.url : fetched.url;
+    const group = requests.get(url) ?? []; group.push(row); requests.set(url,group);
+  }
+  let written = 0;
+  for (const [url,group] of requests) written += await upsertAreaStats(db,options.source,group,url,options.runId ?? null);
   await recordRegistryPartition(db, {
     source: options.source,
     partitionKey: options.partitionKey,

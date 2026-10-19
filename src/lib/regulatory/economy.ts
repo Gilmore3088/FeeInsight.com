@@ -33,6 +33,8 @@ import { streamXlsxSheets } from "./xlsx-stream";
 export type AreaGeoType = "nation" | "state" | "county" | "metro";
 
 export interface AreaStat {
+  /** A specific upstream request when a source combines several tables/geographies. */
+  source_url?: string | null;
   geo_type: AreaGeoType;
   geo_code: string;
   geo_name: string | null;
@@ -100,6 +102,8 @@ async function fetchFirst(
 
 /** Result of one source fetch: rows plus the gaps the parser found. */
 export interface AreaFetch {
+  /** Explicit unavailable subrequests; valid values may still have loaded elsewhere. */
+  unavailableParts?: Array<{key:string;reason:string}>;
   url: string | null;
   rows: AreaStat[];
   /** Expected columns or fields the file did not carry. */
@@ -835,7 +839,7 @@ export async function fetchSaipe(year: number, options: RegistryFetchOptions = {
 }
 
 // ---------------------------------------------------------------------------
-// (e) BEA personal income by county, state and metro (CAINC1; needs BEA_API_KEY)
+// (e) BEA personal income by county, state and metro (SAINC1/CAINC1; needs BEA_API_KEY)
 // ---------------------------------------------------------------------------
 
 export const BEA_API_URL = "https://apps.bea.gov/api/data";
@@ -846,10 +850,10 @@ export const BEA_LINES = [
   { line: 3, key: "bea_per_capita_personal_income", unit: "dollars" },
 ] as const;
 
-const BEA_GEOS: Array<{ geo_type: AreaGeoType; geoFips: string }> = [
-  { geo_type: "state", geoFips: "STATE" },
-  { geo_type: "county", geoFips: "COUNTY" },
-  { geo_type: "metro", geoFips: "MSA" },
+const BEA_GEOS: Array<{ geo_type: AreaGeoType; geoFips: string; table: string }> = [
+  { geo_type: "state", geoFips: "STATE", table: "SAINC1" },
+  { geo_type: "county", geoFips: "COUNTY", table: "CAINC1" },
+  { geo_type: "metro", geoFips: "MSA", table: "CAINC1" },
 ];
 
 /** BEA refused the key (or none was given). */
@@ -860,18 +864,24 @@ export class BeaKeyError extends Error {
   }
 }
 
-export function beaUrl(key: string, line: number, geoFips: string, year: number): string {
+export function beaUrl(key: string, line: number, geoFips: string, year: number, table = geoFips === "STATE" ? "SAINC1" : "CAINC1"): string {
   const params = new URLSearchParams({
     UserID: key,
     method: "GetData",
     datasetname: "Regional",
-    TableName: "CAINC1",
+    TableName: table,
     LineCode: String(line),
     GeoFips: geoFips,
     Year: String(year),
     ResultFormat: "json",
   });
   return `${BEA_API_URL}?${params.toString()}`;
+}
+
+/** Official Regional metadata method, filtered by table rather than a guessed release year. */
+export function beaYearsUrl(key: string, table: string): string {
+  return `${BEA_API_URL}?${new URLSearchParams({UserID:key,method:"GetParameterValuesFiltered",
+    datasetname:"Regional",TargetParameter:"Year",TableName:table,ResultFormat:"json"})}`;
 }
 
 interface BeaApiError {
@@ -882,6 +892,7 @@ interface BeaApiError {
   ErrorDetail?: { Description?: string };
 }
 interface BeaResult {
+  ParamValue?: Array<{Key?: unknown}> | {Key?: unknown};
   Error?: BeaApiError | BeaApiError[];
   Data?: Array<Record<string, unknown>>;
 }
@@ -941,7 +952,9 @@ export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeo
       bump(skipped, "unreadable_geography");
       continue;
     }
-    const value = publishedNumber(d.DataValue);
+    const reference = text(d.NoteRef);
+    const suppressed = Boolean(reference && /\((?:D|NA|NM|L)\)/i.test(reference));
+    const value = suppressed ? null : publishedNumber(d.DataValue);
     out.push({
       ...geo,
       geo_name: text(d.GeoName),
@@ -949,7 +962,7 @@ export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeo
       series_key: series.key,
       value,
       unit: text(d.CL_UNIT)?.toLowerCase() ?? series.unit,
-      note: value === null ? blankFlag(d.DataValue) : null,
+      note: value === null ? (suppressed ? reference : blankFlag(d.DataValue)) : null,
       raw: d,
     });
   }
@@ -957,17 +970,52 @@ export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeo
 }
 
 export async function fetchBea(year: number, key: string, options: RegistryFetchOptions = {}): Promise<AreaFetch> {
+  const availableYears = new Map<string, Set<number>>();
+  const yearsFor = async (table: string): Promise<Set<number>> => {
+    const cached = availableYears.get(table);
+    if (cached) return cached;
+    const body = await registryFetchJson<unknown>(beaYearsUrl(key,table),options);
+    const error = beaError(body,key);
+    const context = `BEA Regional/${table} published-year metadata`;
+    if (error && /code=1(?:;|$)|user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(`${context}: ${error}`);
+    if (error) throw new Error(`${context}: ${error}`);
+    const years = new Set<number>();
+    for (const result of beaResults(body)) {
+      for (const row of result.ParamValue ? Array.isArray(result.ParamValue) ? result.ParamValue : [result.ParamValue] : []) {
+        const match = /^(\d{4})(?:-(\d{4}))?$/.exec(String(row.Key ?? "").trim());
+        if (!match) continue;
+        const first = Number(match[1]), last = Number(match[2] ?? match[1]);
+        if (last < first || last-first > 300) continue;
+        for (let value=first;value<=last;value++) years.add(value);
+      }
+    }
+    if (years.size === 0) throw new Error(`${context}: missing published-year metadata`);
+    availableYears.set(table,years);
+    return years;
+  };
   const combined: AreaFetch = { url: null, rows: [], missingFields: [], skipped: {}, emptyReason: null };
   for (const series of BEA_LINES) {
     for (const geo of BEA_GEOS) {
-      const url = beaUrl(key, series.line, geo.geoFips, year);
+      if (!(await yearsFor(geo.table)).has(year)) {
+        combined.missingFields.push(`${series.key} ${geo.geo_type}: ${geo.table} has no published year ${year}`);
+        continue;
+      }
+      const url = beaUrl(key, series.line, geo.geoFips, year, geo.table);
       const body = await registryFetchJson<unknown>(url, options);
       const rawError = beaError(body, key);
       const error = rawError ? redactRegistrySecrets(rawError.replaceAll(key, "***")) : null;
-      const context = `BEA Regional/CAINC1 year=${year} line=${series.line} GeoFips=${geo.geoFips}`;
+      const context = `BEA Regional/${geo.table} year=${year} line=${series.line} GeoFips=${geo.geoFips}`;
       if (error && /code=1(?:;|$)|user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(`${context}: ${error}`);
       if (error && /no data|data.*not available/i.test(error)) {
         combined.missingFields.push(`${series.key} ${geo.geo_type}: ${error.slice(0, 120)}`);
+        continue;
+      }
+      if (error && geo.geo_type === "metro" && /^code=101;/.test(error)) {
+        // Observed on production's CAINC1/MSA requests for 2023 and 2024. Do not invent
+        // a metro sum or discard the valid published state/county responses.
+        const reason = `${context}: ${error}`;
+        (combined.unavailableParts ??= []).push({key:`MSA/line=${series.line}`,reason:reason.slice(0,500)});
+        combined.missingFields.push(reason.slice(0,160));
         continue;
       }
       if (error) throw new Error(`${context}: ${error}`);
@@ -975,12 +1023,14 @@ export async function fetchBea(year: number, key: string, options: RegistryFetch
       if (results.length === 0 || results.some(result => !Array.isArray(result.Data))) throw new Error(`${context}: missing Data array`);
       const parsed = parseBeaData(body, geo.geo_type, series, year);
       combined.url ??= url.replace(/UserID=[^&]+/, "UserID=***");
-      combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation")));
+      combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation"))
+        .map(row=>({...row,source_url:url.replace(/UserID=[^&]+/, "UserID=***")})));
       combined.missingFields.push(...parsed.missingFields.map((f) => `${series.key} ${geo.geo_type}: ${f}`));
       for (const [k, v] of Object.entries(parsed.skipped)) combined.skipped[`${geo.geo_type}_${k}`] = (combined.skipped[`${geo.geo_type}_${k}`] ?? 0) + v;
     }
   }
-  if (combined.rows.length === 0) combined.emptyReason = `BEA has not published ${year} county personal income`;
+  if (combined.rows.length === 0 && combined.unavailableParts?.length) throw new Error(combined.unavailableParts[0].reason);
+  if (combined.rows.length === 0) combined.emptyReason = `BEA has no published personal-income values for ${year} in the requested tables`;
   return combined;
 }
 

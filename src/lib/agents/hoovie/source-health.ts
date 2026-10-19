@@ -128,6 +128,7 @@ export function sourceHealth(
     const issue = contract.missingSource ? ` (#${contract.missingSource.issue})` : "";
     return result("empty", `${host} refused production's request${issue}`);
   }
+  if (feed.partial) return result("failed", `${feed.partial} partition${feed.partial === 1 ? "" : "s"} partially loaded${feed.partialReason ? `: ${clip(feed.partialReason)}` : "; unavailable upstream requests recorded"}`);
   if (feed.succeeded === 0) {
     const evidence = feed.emptyReason ? `; latest empty check${feed.emptyPartition ? ` ${clip(feed.emptyPartition)}` : ""}: ${clip(feed.emptyReason)}` : "";
     return result("empty", `every load so far came back empty${evidence}`);
