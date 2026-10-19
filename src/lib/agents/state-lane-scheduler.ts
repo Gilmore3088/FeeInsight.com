@@ -8,7 +8,8 @@ import { normalizeStateCode, syncStateLaneProfiles, type StateLaneMemorySyncResu
 import { KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { thinRereadKindSql } from "./thin-document";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
-import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
+import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION, pdfStackedRepairsPendingQuery } from "./rosetta/read";
+import { pdfStackedRepairSchemaReady, PDF_STACKED_REPAIR_STRATEGY } from "./rosetta/pdf-stacked-repair";
 import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
@@ -319,6 +320,13 @@ function isMissingStateLaneSchemaError(error: unknown): boolean {
  */
 export async function stateHasDocumentBacklog(stateCode: string): Promise<boolean> {
   try {
+    // Use Rosetta's actual current-copy/profile/access/attempt selection, rather
+    // than a second approximation that can keep a lane awake after it settles.
+    if (await pdfStackedRepairSchemaReady(sql)) {
+      const repairQuery = pdfStackedRepairsPendingQuery(stateCode);
+      const [repair] = await sql.unsafe<Array<{ repair_due: boolean }>>(repairQuery.query, repairQuery.params);
+      if (repair?.repair_due === true) return true;
+    }
     const [row] = await sql<{ backlog: boolean }[]>`
       SELECT EXISTS (
         SELECT 1
@@ -366,6 +374,7 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                AND NOT EXISTS (
                  SELECT 1 FROM pipeline_attempts pa
                   WHERE pa.stage = 'read'
+                    AND pa.strategy <> ${PDF_STACKED_REPAIR_STRATEGY}
                     AND pa.institution_id = adt.institution_id
                     AND pa.input_fingerprint = adt.source_hash
                     AND pa.strategy_version >= ${ROSETTA_READ_VERSION}

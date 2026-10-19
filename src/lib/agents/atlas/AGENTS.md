@@ -174,6 +174,10 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   free work left (`stateHasDocumentBacklog`, which must use the same filters as those steps'
   selectors); otherwise it sleeps until its next full pass, checking again at least every 12
   hours (`STATE_LANE_IDLE_RECHECK_HOURS`).
+- Scoped stacked-PDF repair readiness (#2219) calls Rosetta's exact owner query with
+  LIMIT1/EXISTS. It respects the same current-copy, vault/source-hash and versioned
+  attempt guards as the four-per-step free repair dispatch; it does not raise global
+  reader or prose replay floors. Bayes and Rosetta's health number count that same pool.
 - A state runs daily full passes instead of monthly while more than
   `DAILY_FULL_PASS_MISSING_LINKS` (50) of its banks have no fee link and a search can still
   find them (website on file, not offline or manual-review, last search not `dead` or
