@@ -827,10 +827,14 @@ export function OneQuestionFlow({ view, sampleHref }: { view: OneQuestionView | 
 
   const ask = asks[clock.index] ?? null;
   const tabAsk = asks.find((a) => a.output === OUTPUTS[tab].key) ?? null;
-  const litKeys = step !== null && ask ? ask.evidence.slice(0, step) : (tabAsk ?? ask)?.evidence ?? OUTPUTS[tab].evidence;
+  // Mid-sequence: the question's cards lit so far. Settled: the open tab's question's evidence, or,
+  // for a tab no question opens, the evidence that output reads.
+  const litKeys = step !== null && ask ? ask.evidence.slice(0, step) : tabAsk ? tabAsk.evidence : OUTPUTS[tab].evidence;
   const lit = new Set<EvidenceKey>(litKeys);
   const litFlags = EVIDENCE.map((e) => lit.has(e.key));
   const cardFee = ask?.fee ?? view?.fee ?? null;
+  /** Every fee the competitive card can show through the rotation, in question order. */
+  const cardFees = [view?.fee ?? null, ...asks.map((a) => a.fee ?? view?.fee ?? null)];
   const panelFee = (key: OutputKey) => asks.find((a) => a.output === key)?.fee ?? view?.fee ?? null;
   const dotsRun = reduced ? null : run;
 
@@ -839,7 +843,7 @@ export function OneQuestionFlow({ view, sampleHref }: { view: OneQuestionView | 
       {/* A. The question */}
       <div className="mx-auto max-w-[36rem] rounded-[8px] border border-border bg-surface-0 px-4 py-3.5 shadow-[3px_3px_0_rgb(9_39_71/0.03)] sm:px-5 sm:py-4" data-question-card="">
         <div className="flex min-h-7 items-center justify-between gap-3">
-          <p className={`${LABEL} flex items-center gap-2`}>
+          <p className={`${LABEL} flex shrink-0 items-center gap-2 whitespace-nowrap`}>
             <MessageSquareText aria-hidden="true" strokeWidth={1.5} className="size-4 text-ink" />
             Your question
           </p>
@@ -879,15 +883,25 @@ export function OneQuestionFlow({ view, sampleHref }: { view: OneQuestionView | 
             </div>
           ) : null}
         </div>
-        <p
-          key={ask?.key ?? "question"}
-          className="fi-home-fade mt-2 min-h-[3.3rem] text-[18px] font-medium leading-snug text-ink sm:min-h-[3.6rem] sm:text-[21px]"
-          style={{ fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" }}
-          aria-live={clock.manual ? "polite" : "off"}
-          data-question-text=""
-        >
-          &ldquo;{ask?.question ?? view?.question ?? DEFAULT_QUESTION}&rdquo;
-        </p>
+        {/* Every question sits in one grid cell, so the tallest sets the card's height and nothing
+            below moves when the question changes. The wrapper is the live region: polite only after a
+            visitor's pick, silent while the questions rotate on their own. */}
+        <div className="fi-home-stack mt-2" aria-live={clock.manual ? "polite" : "off"} aria-atomic="true">
+          {(asks.length ? asks : [null]).map((a, i) => {
+            const on = asks.length ? i === clock.index : true;
+            return (
+              <p
+                key={on ? `${a?.key ?? "question"}:on` : (a?.key ?? "question")}
+                className={`text-[18px] font-medium leading-snug text-ink sm:text-[21px] ${on ? "fi-home-fade" : "invisible"}`}
+                style={{ fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" }}
+                aria-hidden={on ? undefined : true}
+                data-question-text={on ? "" : undefined}
+              >
+                &ldquo;{a?.question ?? view?.question ?? DEFAULT_QUESTION}&rdquo;
+              </p>
+            );
+          })}
+        </div>
       </div>
 
       <Connectors dir="out" lit={litFlags} run={dotsRun} />
@@ -898,6 +912,10 @@ export function OneQuestionFlow({ view, sampleHref }: { view: OneQuestionView | 
         {EVIDENCE.map((e, i) => {
           const on = litFlags[i];
           const fig = cardFigure(e.key, view, cardFee);
+          // The competitive card's figure changes with the question: every version shares one grid
+          // cell, so the card keeps the tallest one's height through the rotation.
+          const versions =
+            e.key === "competitive" ? [...new Map(cardFees.map((f) => [f?.key ?? "none", f])).values()].map((f) => cardFigure(e.key, view, f)) : [fig];
           return (
             <li
               key={e.key}
@@ -916,16 +934,23 @@ export function OneQuestionFlow({ view, sampleHref }: { view: OneQuestionView | 
                 </span>
                 <span className="min-w-0">{e.name}</span>
               </p>
-              <div className={`mt-3 transition-opacity duration-500 motion-reduce:transition-none ${on ? "opacity-100" : "opacity-55"}`}>
-                {fig.metric !== null ? (
-                  <p key={fig.key} className={`fi-home-fade text-[24px] font-semibold leading-none tracking-[-0.02em] text-ink sm:text-[30px] ${NUM}`} data-evidence-metric="">
-                    {fig.metric}
-                  </p>
-                ) : null}
-                <p className="mt-1.5 text-[12px] leading-snug text-ink-soft" data-evidence-caption="">
-                  {fig.caption}
-                  {fig.source ? <span className="sr-only">. Source: {fig.source}</span> : null}
-                </p>
+              <div className={`fi-home-stack mt-3 transition-opacity duration-500 motion-reduce:transition-none ${on ? "opacity-100" : "opacity-55"}`}>
+                {versions.map((v) => {
+                  const shown = v.key === fig.key;
+                  return (
+                    <div key={v.key} className={shown ? undefined : "invisible"} aria-hidden={shown ? undefined : true}>
+                      {v.metric !== null ? (
+                        <p key={shown ? `${v.key}:on` : v.key} className={`${shown ? "fi-home-fade " : ""}text-[24px] font-semibold leading-none tracking-[-0.02em] text-ink sm:text-[30px] ${NUM}`} data-evidence-metric={shown ? "" : undefined}>
+                          {v.metric}
+                        </p>
+                      ) : null}
+                      <p className="mt-1.5 text-[12px] leading-snug text-ink-soft" data-evidence-caption={shown ? "" : undefined}>
+                        {v.caption}
+                        {v.source && shown ? <span className="sr-only">. Source: {v.source}</span> : null}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
               {fig.chart ? <div className={`mt-auto pt-3 transition-opacity duration-500 motion-reduce:transition-none ${on ? "opacity-100" : "opacity-55"}`}>{fig.chart}</div> : null}
             </li>

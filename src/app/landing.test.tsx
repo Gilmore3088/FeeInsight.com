@@ -713,6 +713,44 @@ describe("one question section", () => {
     expect(document.querySelector('[data-panel="monitor"]')!.getAttribute("data-active")).toBe("true");
   });
 
+  it("keeps the section's height through the rotation: every question and fee figure shares one cell", () => {
+    const html = full();
+    const asks = view().asks;
+    // Every question is in the markup; only the current one is visible and exposed.
+    for (const a of asks) expect(text(html)).toContain(`“${a.question}”`);
+    expect(html.match(/data-question-text=""/g)).toHaveLength(1);
+    expect(html.match(/<p[^>]*class="[^"]*invisible[^"]*"[^>]*aria-hidden="true"[^>]*>“/g)).toHaveLength(asks.length - 1);
+    // The competitive card holds each fee's figure in one cell; one is shown.
+    const card = html.slice(html.indexOf('data-evidence="competitive"'), html.indexOf('data-evidence="market"'));
+    expect(card.match(/data-evidence-caption=""/g)).toHaveLength(1);
+    expect(text(card)).toContain("Our overdraft fee vs. local median");
+  });
+
+  it("announces a question politely only after a visitor picks one", () => {
+    vi.useFakeTimers();
+    stubBrowser();
+    render(<LandingResearch report={report} revenue={revenue} peers={peers} branches={branches} />);
+    const region = document.querySelector("[data-question-text]")!.parentElement!;
+    expect(region.getAttribute("aria-live")).toBe("off");
+    act(() => vi.advanceTimersByTime(ASK_MS + 1));
+    expect(document.querySelector("[data-question-text]")!.parentElement).toBe(region);
+    expect(region.getAttribute("aria-live")).toBe("off");
+    fireEvent.click(screen.getByRole("button", { name: `Question 4 of 4: ${view().asks[3].question}` }));
+    expect(region.getAttribute("aria-live")).toBe("polite");
+    expect(region.getAttribute("aria-atomic")).toBe("true");
+  });
+
+  it("lights an output's own evidence for a tab no question opens", () => {
+    stubBrowser({ reduced: true });
+    // No income read: no Monitor question.
+    render(<LandingResearch report={report} peers={peers} branches={branches} />);
+    act(() => {
+      fireEvent.click(screen.getAllByRole("tab")[2]);
+    });
+    expect(tabNow()).toBe("monitor");
+    expect(litNow()).toEqual(inEvidenceOrder(OUTPUTS[2].evidence));
+  });
+
   it("credits no source the licence rule or #1885 took off the page", () => {
     const named = [full(), ...EVIDENCE.map((e) => `${e.name} ${e.detail}`)].join(" ");
     expect(named).not.toMatch(/FRED|USDA|FINRA|regional Fed|Reserve Bank|national deposit rate|deposit rates/i);
@@ -733,7 +771,9 @@ describe("sample report page", () => {
     expect(words).toContain("Capital City Bank against its local market");
     expect(words).toContain("Tallahassee, FL area (3 counties) · verified fees for 21 of 24 local competitors · prepared October 18, 2026 by Fee Insight");
     // The report's at-a-glance page, cut to four fees.
-    expect(html).toContain('id="glance-heading"');
+    // Under the section's own h2, the page's heading is an h3; the report itself keeps its h2.
+    expect(html).toMatch(/<h3 id="glance-heading"/);
+    expect(html).not.toMatch(/<h2 id="glance-heading"/);
     expect(words).toContain("3 more fees in the full report");
     // None of the One question section's financial findings, no price and no buy.
     expect(words).not.toMatch(/Deposit service charges|million|Frost/i);

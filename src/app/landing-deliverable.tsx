@@ -88,7 +88,7 @@ export function LandingDeliverable({ report, preparedOn }: { report: MarketRepor
                 </p>
               </div>
               <div className="[&>section]:mt-3 [&>section]:p-5">
-                <AtAGlance lines={report.analysis.lines} narrow limit={PAGE_ROWS} />
+                <AtAGlance lines={report.analysis.lines} narrow limit={PAGE_ROWS} headingAs="h3" />
               </div>
               <span aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-paper to-transparent" />
             </div>
