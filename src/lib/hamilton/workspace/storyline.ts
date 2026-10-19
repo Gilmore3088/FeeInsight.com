@@ -493,12 +493,11 @@ function moneyPiece(research: FeeResearch, name: string): Piece | null {
   if (rows.length === 0) return null;
   const missing =
     line === null
-      ? fin?.source === "ncua"
-        ? `NCUA reports no ${name} income line; this is all fee income.`
-        : `${subjectPossessive(research)} filing has no ${name} income line; this is all deposit service charges.`
+      ? `The latest filing has no ${name} income line; this is all ${fin?.source === "ncua" ? "fee income" : "service charges"}.`
       : undefined;
+  // A share needs both figures from the same four quarters (#2034).
   const actionTitle = line
-    ? fin?.latestTtm
+    ? fin?.latestTtm && fin.quarterEnd === line.quarterEnd
       ? `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income, ${Math.round((line.annualIncome / fin.latestTtm) * 100)}% of all service charges.`
       : `${subjectPossessive(research)} filing shows ${formatDollarsInWords(line.annualIncome)} a year in ${name} income.`
     : `${subjectPossessive(research)} ${fin!.source === "ncua" ? "fee income" : "service charges"} came to ${formatDollarsInWords(fin!.latestTtm!)} in the year to ${longDate(fin!.quarterEnd)}.`;

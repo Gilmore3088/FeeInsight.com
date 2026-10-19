@@ -59,6 +59,10 @@ describe("feeRevenueLine", () => {
     expect(feeRevenueLine(cuRows, "wire_domestic_outgoing", "credit_union")).toBeNull();
     expect(feeRevenueLine(cuRows.slice(4), "overdraft", "credit_union")).toBeNull();
     expect(feeRevenueLine(cuRows.map((r) => ({ ...r, overdraft_revenue: null })), "overdraft", "credit_union")).toBeNull();
+    // #2034: a line the newest filing lacks is an older year's figure, not current revenue.
+    const stale = cuRows.map((r) => (r.report_date >= "2026-01-01" ? { ...r, overdraft_revenue: null, nsf_revenue: null } : r));
+    expect(feeRevenueLine(stale, "overdraft", "credit_union")).toBeNull();
+    expect(feeRevenueLine(stale, "nsf", "credit_union")).toBeNull();
   });
 });
 

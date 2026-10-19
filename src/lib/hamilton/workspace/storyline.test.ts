@@ -143,9 +143,22 @@ describe("storyline", () => {
     expect(money.actionTitle).toBe("Your fee income came to $209 thousand in the year to June 30, 2026.");
     if (money.exhibit.kind === "money_at_stake") {
       expect(money.exhibit.rows).toEqual([{ label: "Fee income (NCUA 5300), last four quarters", low: 209_400, high: 209_400, evidenceLevel: "institution" }]);
-      expect(money.exhibit.note).toBe("NCUA reports no overdraft income line; this is all fee income.");
+      expect(money.exhibit.note).toBe("The latest filing has no overdraft income line; this is all fee income.");
     }
     expect(story.lenses.finance.some((f) => /\$209 thousand/.test(f.text))).toBe(true);
+  });
+
+  it("gives the fee's share of service charges only when both figures cover the same four quarters (#2034)", () => {
+    const line = (quarterEnd: string) => ({
+      annualIncome: 120_000,
+      label: "Overdraft fee income (NCUA 5300)",
+      quarterEnd,
+      source: { label: "NCUA 5300 call report", table: "institution_financial_records" },
+    });
+    const title = (quarterEnd: string) =>
+      buildFeeAnswer(research({ revenueLine: line(quarterEnd) }), { story: { wantsDecision: true } }).storyline!.exhibits.find((e) => e.exhibit.kind === "money_at_stake")!.actionTitle;
+    expect(title("2026-06-30")).toMatch(/% of all service charges\.$/);
+    expect(title("2024-12-31")).not.toMatch(/%/);
   });
 
   it("prices each option off the filed fee line at today's item count, labelled as such", () => {

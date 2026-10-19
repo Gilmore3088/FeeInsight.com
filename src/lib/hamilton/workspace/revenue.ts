@@ -129,7 +129,9 @@ const OVERDRAFT_LINE_CATEGORIES = new Set(["overdraft", "od_daily_cap", "continu
  * The filed income line for one fee, trailing four quarters, when the filing has one.
  * Credit unions file overdraft (IS0048) and NSF (IS0049) income separately. Banks over $1B
  * file one line for consumer overdraft and NSF together (RIAD H032), so that line is
- * returned for either fee with `combinedWith` naming the other.
+ * returned for either fee with `combinedWith` naming the other. A line missing from the newest
+ * filing is not returned: an older year's figure is not current revenue, and set beside the
+ * newest filing it would make a ratio across two periods (#2034, #2047).
  */
 export function feeRevenueLine(rows: ServiceChargeRow[], feeCategory: string, charterType: string): RevenueLine | null {
   const isOverdraft = OVERDRAFT_LINE_CATEGORIES.has(feeCategory);
@@ -140,7 +142,8 @@ export function feeRevenueLine(rows: ServiceChargeRow[], feeCategory: string, ch
   const source = creditUnion ? "ncua" : "fdic";
   const filed = rows.filter((r) => r.source === source && r[field] !== null && r[field] !== undefined);
   const latest = filed.map((r) => r.report_date.slice(0, 10)).sort().pop();
-  if (!latest) return null;
+  const newestFiling = rows.filter((r) => r.source === source).map((r) => r.report_date.slice(0, 10)).sort().pop();
+  if (!latest || latest !== newestFiling) return null;
   const annualIncome = sumAll(quarterlyIncome(rows, source, field), quarterEnds(latest, 4));
   if (annualIncome === null) return null;
   const label = creditUnion
