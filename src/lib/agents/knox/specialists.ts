@@ -143,7 +143,9 @@ import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 // eligibility-held; paid and minimal-row callers share the source-bearing writer gate.
 // v87 (#2248): new raw lineage keeps literal own charging units and full conditions;
 // known special units leave mixed-unit comparisons. Historical raw metadata stays settled.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 87 } as const;
+// v88 (#2021/#2284/#2286): explicit domestic post-price directions bind paired wire
+// prices; the same bounded own-price refusal applies to free, paid and live rechecks.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 88 } as const;
 
 export interface SpecialistRun {
   strategy: string;
