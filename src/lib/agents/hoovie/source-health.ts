@@ -1,3 +1,4 @@
+import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { sql } from "@/lib/data-store/connection";
 import { getRegistryFeedFreshness, type RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
 import type { HoovieCadence, HoovieSourceContract } from "./contract";
@@ -74,7 +75,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : null);
 
 function clip(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = redactRegistrySecrets(text).replace(/\s+/g, " ").trim();
   return flat.length > REASON_ERROR_CHARS ? `${flat.slice(0, REASON_ERROR_CHARS - 1)}…` : flat;
 }
 
@@ -127,7 +128,10 @@ export function sourceHealth(
     const issue = contract.missingSource ? ` (#${contract.missingSource.issue})` : "";
     return result("empty", `${host} refused production's request${issue}`);
   }
-  if (feed.succeeded === 0) return result("empty", "every load so far came back empty");
+  if (feed.succeeded === 0) {
+    const evidence = feed.emptyReason ? `; latest empty check${feed.emptyPartition ? ` ${clip(feed.emptyPartition)}` : ""}: ${clip(feed.emptyReason)}` : "";
+    return result("empty", `every load so far came back empty${evidence}`);
+  }
   const limit = STALE_AFTER_DAYS[contract.cadence];
   if (limit != null && lastSuccessAt) {
     const age = Math.floor((now.getTime() - new Date(lastSuccessAt).getTime()) / DAY_MS);
