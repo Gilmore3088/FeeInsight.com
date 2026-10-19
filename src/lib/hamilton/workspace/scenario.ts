@@ -208,7 +208,7 @@ export function buildScenario(input: ScenarioInput): Scenario {
   const assumptions = [
     peerAssumption,
     line === undefined || line === null
-      ? "No filing reports income for this fee on its own, so there is no dollar estimate from public data."
+      ? "No current filing reports income for this fee on its own, so there is no dollar estimate from public data."
       : "The reported income for this fee cannot support an estimate at the current price.",
   ];
   return {

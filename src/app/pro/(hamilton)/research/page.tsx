@@ -120,8 +120,8 @@ function FilingExhibits({
             {revenueLine
               ? `${revenueLine.label}: ${fmtFiledThousands(revenueLine.annualIncome / 1000)} over the last four quarters${revenueLine.combinedWith ? `, reported together with ${revenueLine.combinedWith}` : ""}.`
               : credit
-                ? "Overdraft and NSF income (5300 lines IS0048 and IS0049): not reported by NCUA. Its public data carries no figures on those lines for any credit union, so Fee Insight shows none rather than a zero."
-                : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). Fee Insight hasn't loaded that line yet, so it isn't shown."}
+                ? "Overdraft and NSF income (5300 lines IS0048 and IS0049): not on the latest filings, so Fee Insight shows no older year in their place."
+                : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). No current figure is on file, so it isn't shown."}
           </p>
         </Exhibit>
       ) : (
