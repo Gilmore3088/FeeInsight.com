@@ -9,7 +9,7 @@ vi.mock("./data-store/connection", () => ({
   withTransaction: vi.fn(async (fn: (tx: typeof mocks.tx) => unknown) => fn(mocks.tx)),
 }));
 
-import { markInstitutionOfflineCommand } from "./institution-commands";
+import { markInstitutionOfflineCommand, setInstitutionFeeUrl } from "./institution-commands";
 
 const text = (call: unknown[]) => (call[0] as TemplateStringsArray).join("?");
 
@@ -49,5 +49,22 @@ describe("marking an institution offline (#1884)", () => {
   it("refuses an invalid id without writing", async () => {
     expect((await markInstitutionOfflineCommand(0)).success).toBe(false);
     expect(mocks.tx).not.toHaveBeenCalled();
+  });
+});
+
+describe("setting a fee link on a bank marked offline (#1884)", () => {
+  beforeEach(() => {
+    mocks.tx.mockReset();
+  });
+
+  it("brings the profile back from offline so Magellan fetches the new link", async () => {
+    mocks.tx.mockResolvedValueOnce([{ state_code: "TX" }]).mockResolvedValueOnce([]);
+    await expect(setInstitutionFeeUrl(42, "https://www.example.com/fees.pdf")).resolves.toEqual({ success: true });
+
+    const [, profile] = mocks.tx.mock.calls;
+    expect(text(profile)).toContain("canonical_source_url = ?");
+    expect(text(profile)).toContain("CASE WHEN source_kind = 'offline' THEN 'unknown' ELSE source_kind END");
+    expect(text(profile)).not.toContain("read_strategy");
+    expect(profile[1]).toBe("https://www.example.com/fees.pdf");
   });
 });
