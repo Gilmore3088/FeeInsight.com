@@ -15,6 +15,8 @@ import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { readAccuracyHistory, type AccuracyHistory } from "@/lib/agents/deming/accuracy-history";
 import { accuracyStatusLabel, formatAccuracyBound } from "@/lib/agents/deming/accuracy-measure";
 import { AccuracyHistoryPanel } from "./accuracy-history";
+import { LiveSourceAuditPanel } from "./live-source-audit-panel";
+import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 
 interface Metric {
   key: keyof ScoreboardSnapshotRow;
@@ -129,10 +131,11 @@ export default async function ScoreboardPage({
   await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await scoreboardSchemaReady().catch(() => false);
-  const [rows, accuracyHistory]: [ScoreboardSnapshotRow[], AccuracyHistory | null] = ready ? await Promise.all([
+  const [rows, accuracyHistory,liveSourceAudit]: [ScoreboardSnapshotRow[], AccuracyHistory | null,Awaited<ReturnType<typeof readLiveSourceAudit>>] = ready ? await Promise.all([
     listScoreboardSnapshots(30),
     readAccuracyHistory().catch((error) => { console.error("Accuracy history read failed", error); return null; }),
-  ]) : [[], null];
+    readLiveSourceAudit().catch(()=>null),
+  ]) : [[], null,null];
   const latest = rows.at(-1) ?? null;
   const previous = rows.length > 1 ? rows.at(-2) ?? null : null;
 
@@ -172,6 +175,7 @@ export default async function ScoreboardPage({
         <>
         <GoalSection rows={rows} />
         <AccuracyHistoryPanel history={accuracyHistory} />
+        <LiveSourceAuditPanel current={liveSourceAudit} history={rows.map(row=>({date:row.snapshot_date,detail:{goal:row.goal}}))} />
         <details className="admin-card p-4">
           <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">
             Pipeline diagnostics (older numbers, not goal measures)

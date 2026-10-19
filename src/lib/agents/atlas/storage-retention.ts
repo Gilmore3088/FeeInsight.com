@@ -1,6 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { TABLE_BUDGET_MB, hoovieTableBudgets, overBudgetTables, sourcesHeldForSize, type OverBudgetTable } from "@/lib/agents/hoovie/size-budgets";
+import { degradeLiveAuditRetention } from "@/lib/data-store/live-source-audit-read";
+import type { LiveAuditContext } from "@/lib/data-store/live-source-audit";
 
 type SqlTag = typeof sql;
 
@@ -219,13 +221,20 @@ async function trimLegacyEventLog(db: SqlTag, live: boolean): Promise<TrimResult
  * Old run events, minus the newest of each kind per step and any that carried a cost. The same
  * condition is written into the count and the delete below.
  */
-async function trimRunEvents(db: SqlTag, live: boolean): Promise<TrimResult> {
+async function trimRunEvents(db: SqlTag, live: boolean,context?:LiveAuditContext): Promise<TrimResult> {
+  // A real storage step must leave a compact degradation receipt before releasing
+  // this diagnostic's origins. The enclosing savepoint rolls back both on failure.
+  if(live&&context)await degradeLiveAuditRetention(db,context);
   const [row] = await db<{ n: string }[]>`
     SELECT count(*)::bigint AS n
       FROM agent_run_events e
       LEFT JOIN agent_run_steps s ON s.id = e.step_id
      WHERE e.created_at < NOW() - make_interval(days => ${RUN_EVENTS_DAYS}::int)
        AND e.cost_microusd = 0
+       AND (e.event_type NOT LIKE 'live_fee_audit.%' OR (
+         e.created_at<clock_timestamp()-interval '97 days' AND EXISTS(SELECT 1 FROM agent_run_events proof
+           WHERE proof.event_type='live_fee_audit.provenance_unavailable'
+             AND (proof.detail->>'originEventId'=e.id::text OR proof.detail->>'drawId'=CASE WHEN e.event_type='live_fee_audit.draw' THEN e.id::text ELSE e.detail->>'drawId' END))))
        AND EXISTS (
          SELECT 1 FROM agent_run_events newer
            LEFT JOIN agent_run_steps ns ON ns.id = newer.step_id
@@ -244,6 +253,10 @@ async function trimRunEvents(db: SqlTag, live: boolean): Promise<TrimResult> {
            LEFT JOIN agent_run_steps s ON s.id = e.step_id
           WHERE e.created_at < NOW() - make_interval(days => ${RUN_EVENTS_DAYS}::int)
             AND e.cost_microusd = 0
+            AND (e.event_type NOT LIKE 'live_fee_audit.%' OR (
+              e.created_at<clock_timestamp()-interval '97 days' AND EXISTS(SELECT 1 FROM agent_run_events proof
+                WHERE proof.event_type='live_fee_audit.provenance_unavailable'
+                  AND (proof.detail->>'originEventId'=e.id::text OR proof.detail->>'drawId'=CASE WHEN e.event_type='live_fee_audit.draw' THEN e.id::text ELSE e.detail->>'drawId' END))))
             AND EXISTS (
               SELECT 1 FROM agent_run_events newer
                 LEFT JOIN agent_run_steps ns ON ns.id = newer.step_id
@@ -378,7 +391,7 @@ export function storageAlerts(databaseMb: number | null, growthMb: number | null
  * or trim is reported and the others still run, each in its own savepoint.
  */
 export async function runStorageRetention(
-  options: { db?: SqlTag; dryRun?: boolean; live?: Partial<Record<RetentionPolicy, boolean>> } = {},
+  options: { db?: SqlTag; dryRun?: boolean; live?: Partial<Record<RetentionPolicy, boolean>>;context?:LiveAuditContext } = {},
 ): Promise<StorageResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
@@ -406,7 +419,7 @@ export async function runStorageRetention(
   const failed = (policy: RetentionPolicy, error: unknown): TrimResult => ({ policy, live: isLive(policy), eligible: null, deleted: 0, error: message(error) });
 
   trims.push(await inSavepoint(db, (scope) => trimLegacyEventLog(scope, isLive("legacy_event_log"))).catch((error) => failed("legacy_event_log", error)));
-  trims.push(await inSavepoint(db, (scope) => trimRunEvents(scope, isLive("run_events"))).catch((error) => failed("run_events", error)));
+  trims.push(await inSavepoint(db, (scope) => trimRunEvents(scope, isLive("run_events"),options.context)).catch((error) => failed("run_events", error)));
   let attemptWindow: StorageResult["attemptWindow"] = null;
   try {
     const repeats = await inSavepoint(db, (scope) => trimAttemptRepeats(scope, isLive("attempt_repeats"), previous.nextAfterId));
