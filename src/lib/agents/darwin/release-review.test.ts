@@ -94,10 +94,13 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
     if (templateText(strings).includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
     return Promise.resolve([]);
   }) as DbMock;
-  db.unsafe = vi.fn(() => Promise.resolve(rows.map(row => ({
+  db.unsafe = vi.fn((query: string, params: unknown[] = []) => Promise.resolve(rows
+    .filter(row => !query.includes(" AND rel.id = $") || Number(row.fee_raw_id) === Number(params.at(-2)) &&
+      1_000 + Number(row.fee_raw_id) === Number(params.at(-1)))
+    .map(row => ({
     ...row,
     selected_attempt_id: 1_000 + Number(row.fee_raw_id), selected_policy_state: state(row),
-  }))));
+    }))));
   return db;
 }
 

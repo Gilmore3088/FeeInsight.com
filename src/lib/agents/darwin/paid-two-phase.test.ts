@@ -94,9 +94,9 @@ function dbFixture() {
     if (text.includes("paid_input_state")) return [{ state: tuple(Number(values[3])), document_state: "document", artifact_state: "artifact" }];
     return [];
   }), {
-    unsafe: vi.fn(async (text: string) => {
+    unsafe: vi.fn(async (text: string, params: unknown[] = []) => {
       if (!text.includes("rel.detail->>'verdict' = 'review'") && fixture.adjudicationSelectionError) throw new Error("synthetic adjudication selection error");
-      return text.includes("rel.detail->>'verdict' = 'review'") ? Array.from({ length: fixture.reviewCount }, (_, i) => ({
+      const rows = text.includes("rel.detail->>'verdict' = 'review'") ? Array.from({ length: fixture.reviewCount }, (_, i) => ({
         ...raw(i + 1), institution_name: "Example Bank", state_code: "VT",
         held_reason: "peer_outlier", held_canonical_fee_key: "stop_payment", source_line: "Stop Payment $30.00",
         selected_attempt_id: 1_001 + i, selected_policy_state: tuple(i + 1)
@@ -106,6 +106,8 @@ function dbFixture() {
           knox_key: "stop_payment", suggested_key: "account_research", suggested_probability: "0.99", decision: "verified",
           selected_attempt_id: 1_099, selected_policy_state: tuple(99)
         }] : [];
+      return rows.filter(row => !text.includes(" AND fr.fee_raw_id = $") ||
+        Number(row.fee_raw_id) === Number(params.at(text.includes(" AND rel.id = $") ? -2 : -1)));
     })
   });
   Object.assign(db, { savepoint: (work: (scope: typeof db) => Promise<unknown>) => work(db) });

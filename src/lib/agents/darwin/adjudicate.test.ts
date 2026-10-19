@@ -52,10 +52,12 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
     return Promise.resolve([]);
   }) as DbMock;
   // The release review's candidates come first; these tests have none.
-  db.unsafe = vi.fn((query: string) => Promise.resolve(query.includes("rel.detail->>'verdict' = 'review'") ? [] : rows.map(row => ({
+  db.unsafe = vi.fn((query: string, params: unknown[] = []) => Promise.resolve(query.includes("rel.detail->>'verdict' = 'review'") ? [] : rows
+    .filter(row => !query.includes(" AND fr.fee_raw_id = $") || Number(row.fee_raw_id) === Number(params.at(-1)))
+    .map(row => ({
     ...row,
     selected_attempt_id: 1_000 + Number(row.fee_raw_id), selected_policy_state: state(row),
-  }))));
+    }))));
   Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
   return db;
 }

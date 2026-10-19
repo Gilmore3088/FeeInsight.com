@@ -231,4 +231,53 @@ describe.skipIf(!connection)("generic paid collection before current-input settl
     expect(await rawState(f)).toBe(before);
     expect(await db`SELECT id FROM pipeline_attempts WHERE institution_id=${f.institutionId}`).toHaveLength(2);
   });
+
+  it.each([
+    ["review_done", true], ["shadow_done", true], ["shadow_new_qualifying_cm", true],
+    ["review_new_rel", false], ["shadow_new_nonqualifying_cm", false],
+    ["review_transient_done", false], ["shadow_transient_done", false], ["shadow_old_disagreement", false],
+  ] as const)("revalidates original selector standing after append-only %s", async (mode, defer) => {
+    const shadow = mode.startsWith("shadow");
+    const f = await seed(); await prior(f, shadow); model();
+    const { DARWIN_ADJUDICATE_STRATEGY, runDarwinAdjudicate } = await import("./adjudicate");
+    const { recordAttempt } = await import("../learning/attempts");
+    let appendedIds: number[] = [];
+    vi.spyOn(paid, "paidModelCall").mockImplementation(async () => {
+      await inTx(async other => {
+        const cm = mode.includes("_cm"), rel = mode === "review_new_rel";
+        const strategy = cm ? category.DARWIN_CATEGORY_MODEL_STRATEGY : rel ? release.DARWIN_RELEASE_STRATEGY
+          : shadow ? DARWIN_ADJUDICATE_STRATEGY : reviews.DARWIN_RELEASE_REVIEW_STRATEGY;
+        await recordAttempt(other, {
+          institutionId: f.institutionId, sourceDocumentId: f.documentId, stage: "verify",
+          strategy: strategy.strategy, version: mode === "shadow_old_disagreement" ? strategy.version - 1 : strategy.version,
+          fingerprint: `raw:${f.rawIds[0]}`, runId: f.runId, yieldCount: 0, costMicrousd: 0, foldIntoPlaybook: false,
+          outcome: mode.includes("transient") ? "network_error" : mode === "shadow_old_disagreement" || mode === "shadow_new_qualifying_cm" ? "evidence_mismatch" : "ok",
+          detail: cm ? { fee_raw_id: f.rawIds[0], canonical_fee_key: "account_research", suggested_key: "stop_payment", suggested_probability: .99, decision: "verified" }
+            : rel ? { verdict: "review", held_reason: "peer_outlier", canonical_fee_key: "stop_payment", source_line: "Stop Payment | $30.00 per item" }
+              : { fee_raw_id: f.rawIds[0], passes: false, side: "knox", reason: "Concurrent completed standing" },
+        });
+      });
+      appendedIds = (await db`SELECT id FROM pipeline_attempts WHERE institution_id=${f.institutionId} ORDER BY id`).map(row => Number(row.id));
+      return response(f.rawIds, false);
+    });
+    const result = await inTx(tx => shadow
+      ? runDarwinAdjudicate({ db: tx, runId: f.runId, limit: 1, measure: true, stateCode: "ZZ" })
+      : reviews.runDarwinReleaseReview({ db: tx, runId: f.runId, calls: 1, acts: false, stateCode: "ZZ" }));
+    const finalIds = (await db`SELECT id FROM pipeline_attempts WHERE institution_id=${f.institutionId} ORDER BY id`).map(row => Number(row.id));
+    expect(finalIds.length - appendedIds.length).toBe(defer ? 0 : 1);
+    if (defer) {
+      expect(finalIds).toEqual(appendedIds);
+      expect(result).toMatchObject({ succeeded: 0, failed: 0, costMicrousd: 1_250 });
+    } else expect(result.succeeded).toBe(1);
+    expect(await db`SELECT id FROM pipeline_feedback WHERE institution_id=${f.institutionId}`).toHaveLength(0);
+    expect(await db`SELECT fee_verified_id FROM verified_fee_observations WHERE institution_id=${f.institutionId}`).toHaveLength(0);
+  });
+
+  it("preserves the selecting query's global fallback standing for a short state lane", async () => {
+    const f = await seed(); await prior(f); model();
+    vi.spyOn(paid, "paidModelCall").mockResolvedValue(response(f.rawIds, false));
+    const result = await inTx(tx => reviews.runDarwinReleaseReview({ db: tx, runId: f.runId, calls: 1, acts: false, stateCode: "YY" }));
+    expect(result).toMatchObject({ selected: 1, processed: 1, succeeded: 1, failed: 0 });
+    expect(result.deferred ?? 0).toBe(0);
+  });
 });

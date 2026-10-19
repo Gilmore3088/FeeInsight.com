@@ -15,6 +15,9 @@ then settle exactly once in review→shadow order. Before every ordinary paid ou
 compare actual current locked document/artifact/full body and complete selected
 raw/upstream attempt. Defer a mismatch or unavailable input without ordinary settlement.
 The factual lock wrapper uses savepoints/NOWAIT and a rejected row releases its prefix.
+The original selector's standing predicates are repeated for the selected identity;
+immutable tuple comparison alone cannot detect an appended completion or a newer
+qualifying model attempt. State fallback scope and transient/version exceptions remain.
 No date feature, Business policy, original-Knox-header requirement, selector/epoch or
 provider activation is included. Paid calls that already returned retain their usage
 even if later source changes prevent row settlement.
@@ -29,4 +32,8 @@ artifact and raw locks during a later synthetic call; ordinary→ordinary positi
 negative, failed and shadow body races; complete raw/attempt CAS; missing factual source;
 source-prefix release while the outer transaction stays open; exact cost/duration;
 one-time settlement; actual positive release/raw preservation; and a healthy legacy raw
-without a generated original header. The native suite is registered in serial CI.
+without a generated original header. Three retained actual append-only OLD-red controls
+catch stale selector standing, with new-rel/nonqualifying-CM/transient/prior-disagreement
+and state fallback positives. Only guarded paid settlers share raw locking; arbitrary
+attempt append phantoms remain outside this boundary. The native suite is registered
+in serial CI.

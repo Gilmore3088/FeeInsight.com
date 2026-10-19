@@ -221,7 +221,7 @@ export function parseVerdicts(parsed: unknown): Map<number, AdjudicationVerdict>
   return verdicts;
 }
 
-async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): Promise<AdjudicationCandidate[]> {
+async function selectCandidates(db: SqlTag, scan: number, stateCode?: string, standingRawId?: number): Promise<AdjudicationCandidate[]> {
   const params: Array<string | number> = [];
   const modelStrategy = `$${params.push(DARWIN_CATEGORY_MODEL_STRATEGY.strategy)}`;
   const adjudicateStrategy = `$${params.push(DARWIN_ADJUDICATE_STRATEGY.strategy)}`;
@@ -230,6 +230,9 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
   const limit = `$${params.push(scan)}`;
   const normalizedState = normalizeStateCode(stateCode);
   const stateFilter = normalizedState ? `AND upper(btrim(inst.state_code)) = $${params.push(normalizedState)}` : "";
+  // Keep DISTINCT ON's newest QUALIFYING model attempt, not latest-all. Narrowing
+  // inside that query avoids changing a row's standing when unrelated scan order moves.
+  const standingFilter = standingRawId == null ? "" : ` AND fr.fee_raw_id = $${params.push(standingRawId)}`;
   const rows = await db.unsafe<CandidateRow[]>(
     `
       SELECT * FROM (
@@ -260,7 +263,7 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
                )
              )
            )
-           ${stateFilter}
+           ${stateFilter}${standingFilter}
            -- Done at this version, or agreed with Knox at an earlier one; an earlier
            -- disagreement is read again with the schedule rows (v2).
            AND NOT EXISTS (
@@ -465,6 +468,11 @@ async function stageAdjudication(options: AdjudicateOptions, calls: number): Pro
             const context = await withLockedCurrentRawSource(scope, candidate.feeRawId);
             await requireCurrentPaidInput(scope, candidate.feeRawId, candidate, context,
               sourceInputs.get(Number(candidate.sourceDocumentId)));
+            const [standing] = await selectCandidates(scope, 1, options.stateCode, candidate.feeRawId);
+            if (!standing || !qualifies(standing) || standing.selectedAttemptId !== candidate.selectedAttemptId ||
+                standing.selectedPolicyState !== candidate.selectedPolicyState) {
+              throw new VerificationAudienceDeferred("paid_input:standing_changed");
+            }
             result.processed += 1;
             if (failure) {
               result.failed += 1;

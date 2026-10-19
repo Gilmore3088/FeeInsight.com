@@ -111,6 +111,8 @@ const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveE
 export interface ReleaseReviewCandidate extends SelectedPaidInput {
   row: HeldFeeRow;
   sourceLine: string;
+  /** Actual selecting query's state scope; a lane's global fallback has none. */
+  selectedStateCode?: string | null;
   /** The rows around the line in the stored schedule (release-held `scheduleContext`). */
   sourceContext?: string | null;
 }
@@ -664,7 +666,10 @@ export function parseReleaseReviews(parsed: unknown): Map<number, ReleaseReviewV
 
 type CandidateRow = HeldFeeRow & { source_line: string; source_context: string | null; selected_attempt_id: number | string; selected_policy_state: string };
 
-async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: string): Promise<ReleaseReviewCandidate[]> {
+async function selectReviewCandidates(
+  db: SqlTag, limit: number, stateCode?: string,
+  standing?: { feeRawId: number; attemptId: number },
+): Promise<ReleaseReviewCandidate[]> {
   const params: Array<string | number> = [
     limit,
     DARWIN_RELEASE_STRATEGY.strategy,
@@ -674,6 +679,10 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
   ];
   const state = normalizeStateCode(stateCode);
   const stateFilter = state ? `AND upper(btrim(inst.state_code)) = $${params.push(state)}` : "";
+  // A post-call standing check uses the SAME predicates, narrowed to this selected
+  // identity, independent of global scan limits/order. Review is not latest-rel-only.
+  const standingFilter = standing
+    ? ` AND fr.fee_raw_id = $${params.push(standing.feeRawId)} AND rel.id = $${params.push(standing.attemptId)}` : "";
   const rows = await db.unsafe<CandidateRow[]>(
     `
       SELECT rel.id AS selected_attempt_id, jsonb_build_array(to_jsonb(fr),to_jsonb(rel))::text AS selected_policy_state,
@@ -702,7 +711,7 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
          AND rel.strategy_version = $3
          AND rel.detail->>'verdict' = 'review'
          AND rel.detail->>'source_line' IS NOT NULL
-         ${stateFilter}
+         ${stateFilter}${standingFilter}
          AND NOT EXISTS (
            SELECT 1 FROM pipeline_attempts done
             WHERE done.input_fingerprint = rel.input_fingerprint
@@ -721,6 +730,7 @@ async function selectReviewCandidates(db: SqlTag, limit: number, stateCode?: str
     sourceLine: source_line,
     sourceContext: source_context,
     selectedAttemptId: Number(selected_attempt_id), selectedPolicyState: selected_policy_state,
+    selectedStateCode: state,
   }));
 }
 
@@ -877,6 +887,11 @@ export async function stageDarwinReleaseReview(
             const admission = await prepareVerificationAudience(scope, selectedCandidate.row, textOf(selectedCandidate));
             await requireCurrentPaidInput(scope, feeRawId, selectedCandidate, admission.sourceContext,
               sourceInputs.get(Number(selectedCandidate.row.source_document_id)));
+            const [standing] = await selectReviewCandidates(scope, 1, selectedCandidate.selectedStateCode ?? undefined,
+              { feeRawId, attemptId: selectedCandidate.selectedAttemptId! });
+            if (!standing || standing.selectedPolicyState !== selectedCandidate.selectedPolicyState) {
+              throw new VerificationAudienceDeferred("paid_input:standing_changed");
+            }
             const raw = admission.row as HeldFeeRow;
             requireInternationalVerification(admission, raw.held_canonical_fee_key, resolvedRawCategory(admission.row));
             const effectiveRow = admission.audience ? { ...raw, fee_audience: admission.audience.feeAudience } : raw;

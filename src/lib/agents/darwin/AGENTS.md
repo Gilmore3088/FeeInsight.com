@@ -19,6 +19,15 @@ unavailable full factual input cannot certify a paid shadow verdict, so its retu
 usage is retained while row settlement is deferred. No source-history, date or Business
 policy is activated by this generic factor.
 
+The same original selector predicates are revalidated for the selected identity after
+calls, before every paid outcome. A newer qualifying model attempt or completed standing
+verdict can remove eligibility without changing the old immutable tuple. Review remains
+not-latest-rel-only; model selection remains newest qualifying, and transient/prior-version
+exceptions remain unchanged. Global scan limits do not remove a selected row's standing,
+and a state lane's global fallback keeps its actual selecting scope. Guarded paid settlers
+share the raw lock; arbitrary CM/manual-attempt append producers are not globally serialized
+by this check, so it is not a claim of serializable phantom protection.
+
 ## Prospective international wire applicability (#2278, #2368)
 
 The current shared admission's readonly factual source context supplies the raw row and
