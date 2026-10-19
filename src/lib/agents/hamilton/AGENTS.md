@@ -642,6 +642,12 @@ re-verified or queued for its source check. Dry runs write nothing. The read-onl
 08:47 UTC impact snapshot found zero retired rows with a same-identity account-type-held twin;
 it is a dated candidate count, not a source verdict or recovery receipt.
 
+A failed mutation savepoint returns `writeFailed` and `failedRestores` separately from
+guard no-ops, with actual restored count zero. The parent publish receipt carries the failure
+flag/count and says the restoration proposals remain pending. Neither a pair decision nor a
+restored lineage/source-check receipt survives rollback; the normal next check can retry the
+still-pending pair. This adds no retry subsystem or historical replay.
+
 These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
 can retire more. Bayes records the explicit no-replay policy in

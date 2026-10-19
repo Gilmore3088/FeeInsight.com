@@ -204,13 +204,29 @@ export interface NewerCopyRetireResult {
   restoreBlockReasons: Partial<Record<RestoreBlockReason, number>>;
   /** Eligible proposals whose final selected-state/twin guard updated nothing. */
   notUpdatedRestores: number;
+  /** The mutation savepoint failed; its pair decision remains pending. */
+  writeFailed: boolean;
+  /** Proposals in the failed write, distinct from final-guard no-ops. */
+  failedRestores: number;
   /** Actual UPDATE RETURNING count; zero in dry runs and shadow mode. */
   restored: number;
 }
 
 const EMPTY: NewerCopyRetireResult = { live: NEWER_COPY_RETIRE_LIVE, documentsChecked: 0, unrecognized: 0, stillStated: 0, stillNamed: 0, retired: [],
-  proposedRestores: 0, blockedRestores: 0, restoreBlockReasons: {}, notUpdatedRestores: 0, restored: 0 };
+  proposedRestores: 0, blockedRestores: 0, restoreBlockReasons: {}, notUpdatedRestores: 0,
+  writeFailed: false, failedRestores: 0, restored: 0 };
 const RETIRED = `${NEWER_COPY_RETIRE_REASON}:%`;
+
+/** Parent publish receipt: a failed write is visible, while proposals stay separate from changes. */
+export function newerCopyReceiptNote(result: Pick<NewerCopyRetireResult,
+  "live" | "retired" | "restored" | "proposedRestores" | "writeFailed" | "failedRestores">, dryRun: boolean): string {
+  if (result.writeFailed) return ` Newer-copy check write failed; ${result.failedRestores} restoration proposal(s) remain pending for normal retry. No newer-copy pair decision was recorded.`;
+  const retired = result.live ? result.retired.length : 0;
+  const restored = result.live ? (dryRun ? result.proposedRestores : result.restored) : 0;
+  return retired > 0 || restored > 0
+    ? ` ${dryRun ? "Would retire" : "Retired"} ${retired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${restored > 0 ? ` and ${dryRun ? "would restore" : "restored"} ${restored.toLocaleString()} a later copy states again` : ""}.`
+    : "";
+}
 
 /**
  * One controlled fragment for planning and the final write, correlated to `fp`.
@@ -427,6 +443,8 @@ export async function retireFeesDroppedFromNewerCopy(
     blockedRestores: documents.reduce((total, doc) => total + doc.blockedRestore.length, 0),
     restoreBlockReasons: blockReasonCounts(documents.flatMap((doc) => doc.blockedRestore)),
     notUpdatedRestores: 0,
+    writeFailed: false,
+    failedRestores: 0,
     restored: 0,
   };
   if (options.dryRun) return result;
@@ -570,7 +588,7 @@ export async function retireFeesDroppedFromNewerCopy(
     });
   } catch (error) {
     console.error("retireFeesDroppedFromNewerCopy write failed:", error);
-    return { ...result, retired: [], restored: 0 };
+    return { ...result, retired: [], restored: 0, notUpdatedRestores: 0, writeFailed: true, failedRestores: restoreIds.length };
   }
   if (change && (result.retired.length > 0 || result.restored > 0)) invalidatePublicReadCache();
   return result;

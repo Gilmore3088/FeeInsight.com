@@ -13,7 +13,7 @@ import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-re
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
 import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
-import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
+import { newerCopyReceiptNote, retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
@@ -1511,10 +1511,7 @@ async function executeAgenticStep(
         sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
           ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
           : "";
-      const newerCopyNote =
-        newerCopyRetired > 0 || newerCopyRestored > 0
-          ? ` ${published.dryRun ? "Would retire" : "Retired"} ${newerCopyRetired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${newerCopyRestored > 0 ? ` and ${published.dryRun ? "would restore" : "restored"} ${newerCopyRestored.toLocaleString()} a later copy states again` : ""}.`
-          : "";
+      const newerCopyNote = newerCopyReceiptNote(newerCopy, published.dryRun);
       const refreshNote =
         refreshCopy.refreshed > 0
           ? ` ${published.dryRun ? "Would move" : "Moved"} ${refreshCopy.refreshed.toLocaleString()} live fee(s) to the current copy of their page (same name and amount).`
@@ -1837,6 +1834,12 @@ async function executeAgenticStep(
           newer_copy_still_named: newerCopy.stillNamed,
           newer_copy_retired: newerCopy.retired.length,
           newer_copy_restored: newerCopy.restored,
+          newer_copy_proposed_restores: newerCopy.proposedRestores,
+          newer_copy_blocked_restores: newerCopy.blockedRestores,
+          newer_copy_restore_block_reasons: newerCopy.restoreBlockReasons,
+          newer_copy_not_updated_restores: newerCopy.notUpdatedRestores,
+          newer_copy_write_failed: newerCopy.writeFailed,
+          newer_copy_failed_restores: newerCopy.failedRestores,
           newer_copy_samples: newerCopy.retired.slice(0, 10).map((fee) => ({
             fee_published_id: Number(fee.fee_published_id),
             institution_id: Number(fee.institution_id),

@@ -4,6 +4,7 @@ import {
   NEWER_COPY_RETIRE_REASON,
   judgeNewerCopy,
   newerCopyFingerprint,
+  newerCopyReceiptNote,
   newerCopyVerdict,
   retireFeesDroppedFromNewerCopy,
   type NewerCopyFeeRow,
@@ -144,6 +145,21 @@ describe("Hamilton newer-copy check", () => {
     const judged = judgeNewerCopy([...olderFees.slice(0,3),held],newerText,`${olderText}\nPaper Statement | $3.00`);
     expect(judged.restore).toEqual([]);
     expect(judged).toMatchObject({ blockedRestore:[held] });
+  });
+
+  it("makes a write failure visible in the parent receipt without reporting a restore", () => {
+    const note = newerCopyReceiptNote({live:true,retired:[],restored:0,proposedRestores:1,
+      writeFailed:true,failedRestores:1},false);
+    expect(note).toContain('write failed');
+    expect(note).toContain('1 restoration proposal(s) remain pending');
+    expect(note).toContain('No newer-copy pair decision was recorded');
+    expect(note).not.toContain('restored 1');
+  });
+  it("shows eligible preview proposals while actual receipts use only updated counts", () => {
+    const result={live:true,retired:[],restored:0,proposedRestores:1,writeFailed:false,failedRestores:0};
+    expect(newerCopyReceiptNote(result,true)).toContain('would restore 1');
+    expect(newerCopyReceiptNote(result,false)).toBe('');
+    expect(newerCopyReceiptNote({...result,restored:1},false)).toContain('restored 1');
   });
 
   it("changes no fee in shadow mode but logs what it would retire", async () => {

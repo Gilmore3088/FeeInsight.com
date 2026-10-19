@@ -444,4 +444,28 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect((await attempt()).detail).toMatchObject({ restored:1, proposed_restores:1, blocked_restores:1 });
     expect((await db`SELECT input_fingerprint FROM pipeline_attempts WHERE strategy='hamilton.source_check'`)).toHaveLength(1);
   });
+  it("rolls back a failed restore write, reports failure, and leaves the pair pending for normal retry", async () => {
+    await restorableMonthlyFee();
+    await db.begin(async(transaction)=>{
+      const tx=transaction as unknown as typeof db;
+      function failReverification(scope: typeof db): Db {
+        const wrapped=async(strings:TemplateStringsArray,...values:postgres.ParameterOrJSON<never>[])=>{
+          if(strings.join(' ').includes("outlier_flags = outlier_flags -")) await scope`SELECT 1/0`;
+          return scope(strings,...values);
+        };
+        return Object.assign(wrapped,{unsafe:scope.unsafe.bind(scope),
+          savepoint:(work:(inner:Db)=>Promise<unknown>)=>scope.savepoint(inner=>work(failReverification(inner as unknown as typeof db))),
+        }) as unknown as Db;
+      }
+      expect(await run(false,failReverification(tx))).toMatchObject({ restored:0, proposedRestores:1,
+        blockedRestores:0, notUpdatedRestores:0, writeFailed:true, failedRestores:1 });
+      const [target]=await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=4`;
+      expect(target.rolled_back_reason).toBe('newer_copy_drops_fee:#800');
+      expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=1004`)[0].review_status).toBe('rejected');
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint IN ('restored:4:9','v1:500:900')`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM agent_run_events`).toHaveLength(0);
+      expect(await run(false,tx as unknown as Db)).toMatchObject({ restored:1, writeFailed:false, failedRestores:0 });
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='v1:500:900'`).toHaveLength(1);
+    });
+  });
 });

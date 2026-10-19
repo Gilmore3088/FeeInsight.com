@@ -38,6 +38,14 @@ zero actual restorations; preview text names proposals. A guarded no-op is not f
 a restore, a verification update or a source-check receipt. The no-op counter does not identify
 which selected-state/twin guard changed.
 
+Review also found that a failed write returned zero actual changes without a returned failure
+state. The receipt now carries `writeFailed`/`failedRestores`, separate from guarded no-ops,
+and the parent publish summary makes the pending retry visible. An actual enclosing PostgreSQL
+transaction/savepoint test forces an error after restoration and its source-check receipt,
+then proves rollback preserves the retirement/rejected lineage and removes all restoration/
+pair receipts. A normal retry in the same enclosing transaction can then succeed. This is a
+mutation-savepoint guarantee, not a new retry subsystem.
+
 Real PostgreSQL controls include exact held/live twins, different audience/amount/kind/frequency/
 variant, legacy equivalent unknowns, defensive rate/bounds identity, unrelated closure reasons,
 an interstatement committed held twin, dry/shadow behavior and a mixed batch where only the
