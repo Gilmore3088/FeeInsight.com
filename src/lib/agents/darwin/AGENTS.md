@@ -1,5 +1,24 @@
 # Darwin Agent Guide
 
+## Paid collection before locked settlement (#2285; shared boundary #1915)
+
+Release-review and adjudication collect every allowed model response before acquiring
+source/artifact/raw admission locks. Each returned call retains its own duration and
+integer cost share immediately. The standalone review settles once; the combined pass
+settles review then shadow in `finally`, including a later stop or collection failure.
+No provider call occurs in settlement. Models, prompts, selectors, call limits, switches
+and strategy versions are unchanged.
+
+Before positive, negative, malformed-response or transport-failure settlement, the row's
+factual locked context must still match the actual full source body/document/artifact
+used by that call and the complete selected raw/upstream-attempt tuple. Changed, busy or
+unavailable inputs defer without an ordinary attempt, feedback or verification. Returned
+provider usage remains accounted for. This is current-input CAS, not a requirement for
+an original generated Knox header; healthy ordinary legacy rows remain supported. An
+unavailable full factual input cannot certify a paid shadow verdict, so its returned
+usage is retained while row settlement is deferred. No source-history, date or Business
+policy is activated by this generic factor.
+
 ## Prospective international wire applicability (#2278, #2368)
 
 The current shared admission's readonly factual source context supplies the raw row and

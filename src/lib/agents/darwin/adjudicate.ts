@@ -18,9 +18,13 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 
 import { DARWIN_CATEGORY_MODEL_STRATEGY } from "./category-model";
 import { DARWIN_RELEASE_ACTS, scheduleContext } from "./release-held";
-import { runDarwinReleaseReview } from "./release-review";
+import { stageDarwinReleaseReview, type StagedReleaseReview } from "./release-review";
 import { loadReviewMisses, runDarwinVerdictScore, type ReviewMiss } from "./verdict-score";
 import { loadSourceTexts, rawFeeFingerprint } from "./verify";
+import { capturePaidSourceInputs, requireCurrentPaidInput, type SelectedPaidInput } from "./paid-input";
+import { withLockedCurrentRawSource } from "./locked-raw-source";
+import { VerificationAudienceDeferred } from "./verification-audience";
+import { inSavepoint } from "@/lib/agents/savepoint";
 
 type SqlTag = typeof sql;
 
@@ -65,7 +69,7 @@ const TRANSIENT_OUTCOMES = ["timeout", "network_error", "http_429", "http_5xx", 
 const STOP_ERRORS = new Set(["ProviderBudgetBlockedError", "EmergencyStopActiveError", "ProviderCircuitOpenError"]);
 const VALID_KEYS = new Set(Object.values(CANONICAL_KEY_MAP));
 
-export interface AdjudicationCandidate {
+export interface AdjudicationCandidate extends SelectedPaidInput {
   feeRawId: number;
   institutionId: number;
   sourceDocumentId: number | null;
@@ -89,6 +93,8 @@ interface CandidateRow {
   fee_name: string;
   amount: number | string | null;
   conditions: string | null;
+  selected_attempt_id: number | string;
+  selected_policy_state: string;
   knox_key: string;
   suggested_key: string;
   suggested_probability: number | string;
@@ -229,6 +235,7 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
       SELECT * FROM (
         SELECT DISTINCT ON (fr.fee_raw_id)
                fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.fee_name, fr.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
+               cm.id AS selected_attempt_id, jsonb_build_array(to_jsonb(fr),to_jsonb(cm))::text AS selected_policy_state,
                cm.detail->>'canonical_fee_key' AS knox_key,
                cm.detail->>'suggested_key' AS suggested_key,
                cm.detail->>'suggested_probability' AS suggested_probability,
@@ -279,6 +286,7 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string): P
     feeName: row.fee_name,
     amount: row.amount == null ? null : Number(row.amount),
     conditions: row.conditions,
+    selectedAttemptId: Number(row.selected_attempt_id), selectedPolicyState: row.selected_policy_state,
     knoxKey: row.knox_key,
     suggestedKey: row.suggested_key,
     suggestedProbability: Number(row.suggested_probability),
@@ -333,24 +341,73 @@ async function reviewAndAdjudicate(
   if (!reviewPays) result.results.push({ pass: "release_review", skipped: "releases are off, so a verdict would change nothing" });
   if (!adjudicatePays) result.results.push({ pass: "adjudicate", skipped: "shadow verdicts are off; they never change a decision" });
 
-  // Held fees waiting on their release review (release-review.ts) go first, from the same call budget.
-  if (reviewPays) {
-    const review = await runDarwinReleaseReview({ ...options, db, calls, acts: releaseActs });
-    result.selected += review.selected;
-    result.processed += review.processed;
-    result.succeeded += review.succeeded;
-    result.failed += review.failed;
-    result.costMicrousd += review.costMicrousd;
-    result.results.push(...review.results.slice(0, 10).map((entry) => ({ ...entry, pass: "release_review" })));
-    if (review.calls > 0) result.results.push({ pass: "release_review", lessons: review.lessons });
-    if (review.budgetStopped) {
-      result.budgetStopped = true;
-      result.budgetReason = review.budgetReason;
-      return result;
+  let stagedReview: StagedReleaseReview | undefined;
+  let stagedAdjudication: StagedAdjudication | undefined;
+  try {
+    if (reviewPays) {
+      stagedReview = await stageDarwinReleaseReview({ ...options, db, calls, acts: releaseActs });
+      if (stagedReview.collectionFailure) throw stagedReview.collectionFailure.error;
+      calls -= stagedReview.result.calls;
     }
-    calls -= review.calls;
+    if (!stagedReview?.result.budgetStopped && calls > 0 && adjudicatePays) {
+      stagedAdjudication = await stageAdjudication({ ...options, db }, calls);
+      if (stagedAdjudication.collectionFailure) throw stagedAdjudication.collectionFailure.error;
+    }
+  } finally {
+    // No provider call remains possible. Settle returned work once, in the same
+    // review→adjudication order, even if later collection or earlier settlement fails.
+    try {
+      if (stagedReview) {
+        const review = await stagedReview.settle();
+        result.selected += review.selected;
+        result.processed += review.processed;
+        result.succeeded += review.succeeded;
+        result.failed += review.failed;
+        result.costMicrousd += review.costMicrousd;
+        result.results.push(...review.results.slice(0, 10).map((entry) => ({ ...entry, pass: "release_review" })));
+        if (review.calls > 0) result.results.push({ pass: "release_review", lessons: review.lessons });
+        if (review.deferred) result.results.push({
+          pass: "release_review", deferred: review.deferred,
+          samples: review.audienceDeferrals?.slice(0, 25) ?? []
+        });
+        if (review.budgetStopped) { result.budgetStopped = true; result.budgetReason = review.budgetReason; }
+      }
+    } finally {
+      if (stagedAdjudication) {
+        const adjudication = await stagedAdjudication.settle();
+        result.selected += adjudication.selected;
+        result.processed += adjudication.processed;
+        result.succeeded += adjudication.succeeded;
+        result.failed += adjudication.failed;
+        result.costMicrousd += adjudication.costMicrousd;
+        result.results.push(...adjudication.results);
+        if (adjudication.budgetStopped) { result.budgetStopped = true; result.budgetReason = adjudication.budgetReason; }
+      }
+    }
   }
-  if (calls <= 0 || !adjudicatePays) return result;
+  return result;
+}
+
+interface StagedAdjudication {
+  readonly result: PaidPassResult;
+  readonly collectionFailure?: { readonly error: unknown };
+  settle(): Promise<PaidPassResult>;
+}
+
+async function stageAdjudication(options: AdjudicateOptions, calls: number): Promise<StagedAdjudication> {
+  const db = options.db ?? sql;
+  const dryRun = Boolean(options.dryRun);
+  const result = emptyPaidPassResult(dryRun);
+  let settlement = async () => result;
+  let settled = false;
+  let collectionFailure: StagedAdjudication["collectionFailure"];
+  const staged = (): StagedAdjudication => ({
+    result, collectionFailure, settle: async () => {
+      if (settled) throw new Error("Adjudication settlement already consumed");
+      settled = true;
+      return settlement();
+    }
+  });
 
   // Rejects are re-checked in code (the guard must accept the model's category), so scan extra.
   const candidates = (await selectCandidates(db, calls * FEES_PER_CALL * 2, options.stateCode))
@@ -364,7 +421,7 @@ async function reviewAndAdjudicate(
       suggested_key: candidate.suggestedKey,
       decision: candidate.decision,
     })));
-    return result;
+    return staged();
   }
 
   const texts = await loadSourceTexts(db, [
@@ -377,113 +434,148 @@ async function reviewAndAdjudicate(
     );
   }
 
+  const sourceInputs = await capturePaidSourceInputs(db, texts);
   const misses = await loadReviewMisses(db, "verify.adjudicate", candidates.map((candidate) => candidate.knoxKey));
   const model = PAID_PASS_MODELS.verify();
-  for (let start = 0; start < candidates.length; start += FEES_PER_CALL) {
-    const batch = candidates.slice(start, start + FEES_PER_CALL);
-    const batchKeys = new Set(batch.map((candidate) => candidate.knoxKey));
-    const batchMisses = misses.filter((miss) => miss.filedAs != null && batchKeys.has(miss.filedAs));
-    const startedAt = Date.now();
-    const common = (candidate: AdjudicationCandidate) => ({
-      institutionId: candidate.institutionId,
-      sourceDocumentId: candidate.sourceDocumentId,
-      stage: "verify" as const,
-      strategy: DARWIN_ADJUDICATE_STRATEGY.strategy,
-      version: DARWIN_ADJUDICATE_STRATEGY.version,
-      fingerprint: rawFeeFingerprint(candidate.feeRawId),
-      runId: options.runId,
-      stepId: options.stepId ?? null,
-      // A side check on one fee; it must not reset the institution's playbook.
-      foldIntoPlaybook: false,
-    });
-    let call: Awaited<ReturnType<typeof paidModelCall>>;
-    try {
-      call = await paidModelCall({
-        agent: "darwin",
-        operation: "adjudicate",
+  const returned: Array<{
+    batch: AdjudicationCandidate[]; lessonCount: number; durationMs: number; share: number;
+    verdicts: Map<number, AdjudicationVerdict>;
+    failure?: { outcome: AttemptOutcome; message: string };
+  }> = [];
+  settlement = async () => {
+    let deferred = 0;
+    const samples: Array<{ feeRawId: number; reason: string }> = [];
+    for (const { batch, lessonCount, durationMs, share, verdicts, failure } of returned) {
+      const failedIds: number[] = [];
+      const common = (candidate: AdjudicationCandidate) => ({
+        institutionId: candidate.institutionId,
+        sourceDocumentId: candidate.sourceDocumentId,
+        stage: "verify" as const,
+        strategy: DARWIN_ADJUDICATE_STRATEGY.strategy,
+        version: DARWIN_ADJUDICATE_STRATEGY.version,
+        fingerprint: rawFeeFingerprint(candidate.feeRawId),
         runId: options.runId,
-        params: {
-          model,
-          max_tokens: MAX_OUTPUT_TOKENS,
-          messages: [{ role: "user", content: adjudicatePrompt(batch, batchMisses) }],
-        },
-        create: options.create,
-        metadata: { fee_raw_ids: batch.map((candidate) => candidate.feeRawId) },
+        stepId: options.stepId ?? null,
+        // A side check on one fee; it must not reset the institution's playbook.
+        foldIntoPlaybook: false,
       });
-    } catch (error) {
-      if (isStopError(error)) {
-        // Nothing was spent: no attempt rows, so the fees stay eligible.
-        result.budgetStopped = true;
-        result.budgetReason = error instanceof Error ? error.message : String(error);
-        break;
-      }
-      const outcome = failureOutcome(error);
-      const message = error instanceof Error ? error.message.slice(0, 200) : String(error);
       for (const candidate of batch) {
-        result.processed += 1;
-        result.failed += 1;
-        await recordAttempt(db, {
-          ...common(candidate),
-          outcome,
-          yieldCount: 0,
-          costMicrousd: 0,
-          durationMs: Date.now() - startedAt,
-          detail: { fee_raw_id: candidate.feeRawId, model, error: message },
-        });
+        try {
+          await inSavepoint(db, async scope => {
+            const context = await withLockedCurrentRawSource(scope, candidate.feeRawId);
+            await requireCurrentPaidInput(scope, candidate.feeRawId, candidate, context,
+              sourceInputs.get(Number(candidate.sourceDocumentId)));
+            result.processed += 1;
+            if (failure) {
+              result.failed += 1;
+              await recordAttempt(scope, {
+                ...common(candidate), outcome: failure.outcome, yieldCount: 0,
+                costMicrousd: 0, durationMs, detail: { fee_raw_id: candidate.feeRawId, model, error: failure.message }
+              });
+              failedIds.push(candidate.feeRawId);
+              return;
+            }
+            const verdict = verdicts.get(candidate.feeRawId);
+            if (!verdict) {
+              result.failed += 1;
+              await recordAttempt(scope, {
+                ...common(candidate),
+                outcome: "parse_error",
+                yieldCount: 0,
+                costMicrousd: share,
+                durationMs,
+                detail: { fee_raw_id: candidate.feeRawId, model },
+              });
+              return;
+            }
+            result.succeeded += 1;
+            const side = verdictSide(candidate, verdict);
+            await recordAttempt(scope, {
+              ...common(candidate),
+              // Shadow: agreeing with Knox's category is ok; anything else is evidence for a change.
+              outcome: side === "knox" ? "ok" : "evidence_mismatch",
+              yieldCount: side === "knox" ? 1 : 0,
+              costMicrousd: share,
+              durationMs,
+              detail: {
+                fee_raw_id: candidate.feeRawId,
+                fee_name: candidate.feeName,
+                amount: candidate.amount,
+                decision: candidate.decision,
+                knox_key: candidate.knoxKey,
+                suggested_key: candidate.suggestedKey,
+                suggested_probability: candidate.suggestedProbability,
+                is_fee: verdict.isFee,
+                verdict_key: verdict.category,
+                side,
+                reason: verdict.reason,
+                price_check: candidate.priceCheck ?? null,
+                lessons: lessonCount,
+                source_context: candidate.sourceContext ?? null,
+                model,
+              },
+            });
+            if (result.results.length < 50) {
+              result.results.push({ fee_raw_id: candidate.feeRawId, decision: candidate.decision, knox_key: candidate.knoxKey, verdict_key: verdict.category, side });
+            }
+          });
+        } catch (error) {
+          if (!(error instanceof VerificationAudienceDeferred)) throw error;
+          deferred += 1;
+          if (samples.length < 25) samples.push({ feeRawId: candidate.feeRawId, reason: error.reason });
+        }
       }
-      result.results.push({ fee_raw_ids: batch.map((candidate) => candidate.feeRawId), outcome, error: message });
-      continue;
+      if (failure && failedIds.length) result.results.push({ fee_raw_ids: failedIds, outcome: failure.outcome, error: failure.message });
     }
-
-    result.costMicrousd += call.costMicrousd;
-    const verdicts = parseVerdicts(paidResponseJson(call.message));
-    const share = Math.floor(call.costMicrousd / batch.length);
-    for (const candidate of batch) {
-      result.processed += 1;
-      const verdict = verdicts.get(candidate.feeRawId);
-      if (!verdict) {
-        result.failed += 1;
-        await recordAttempt(db, {
-          ...common(candidate),
-          outcome: "parse_error",
-          yieldCount: 0,
-          costMicrousd: share,
-          durationMs: Date.now() - startedAt,
-          detail: { fee_raw_id: candidate.feeRawId, model },
+    if (deferred) result.results.push({ pass: "adjudicate", deferred, samples });
+    return result;
+  };
+  try {
+    for (let start = 0; start < candidates.length; start += FEES_PER_CALL) {
+      const batch = candidates.slice(start, start + FEES_PER_CALL);
+      const batchKeys = new Set(batch.map(candidate => candidate.knoxKey));
+      const batchMisses = misses.filter(miss => miss.filedAs != null && batchKeys.has(miss.filedAs));
+      const startedAt = Date.now();
+      let call: Awaited<ReturnType<typeof paidModelCall>>;
+      try {
+        call = await paidModelCall({
+          agent: "darwin",
+          operation: "adjudicate",
+          runId: options.runId,
+          params: {
+            model,
+            max_tokens: MAX_OUTPUT_TOKENS,
+            messages: [{ role: "user", content: adjudicatePrompt(batch, batchMisses) }],
+          },
+          create: options.create,
+          metadata: { fee_raw_ids: batch.map((candidate) => candidate.feeRawId) },
+        });
+      } catch (error) {
+        if (isStopError(error)) {
+          // Nothing was spent: no attempt rows, so the fees stay eligible.
+          result.budgetStopped = true;
+          result.budgetReason = error instanceof Error ? error.message : String(error);
+          break;
+        }
+        const outcome = failureOutcome(error);
+        const message = error instanceof Error ? error.message.slice(0, 200) : String(error);
+        returned.push({
+          batch, lessonCount: batchMisses.length, durationMs: Date.now() - startedAt,
+          share: 0, verdicts: new Map(), failure: { outcome, message }
         });
         continue;
       }
-      result.succeeded += 1;
-      const side = verdictSide(candidate, verdict);
-      await recordAttempt(db, {
-        ...common(candidate),
-        // Shadow: agreeing with Knox's category is ok; anything else is evidence for a change.
-        outcome: side === "knox" ? "ok" : "evidence_mismatch",
-        yieldCount: side === "knox" ? 1 : 0,
-        costMicrousd: share,
-        durationMs: Date.now() - startedAt,
-        detail: {
-          fee_raw_id: candidate.feeRawId,
-          fee_name: candidate.feeName,
-          amount: candidate.amount,
-          decision: candidate.decision,
-          knox_key: candidate.knoxKey,
-          suggested_key: candidate.suggestedKey,
-          suggested_probability: candidate.suggestedProbability,
-          is_fee: verdict.isFee,
-          verdict_key: verdict.category,
-          side,
-          reason: verdict.reason,
-          price_check: candidate.priceCheck ?? null,
-          lessons: batchMisses.length,
-          source_context: candidate.sourceContext ?? null,
-          model,
-        },
+
+      result.costMicrousd += call.costMicrousd;
+      const durationMs = Date.now() - startedAt;
+      returned.push({
+        batch, lessonCount: batchMisses.length, durationMs,
+        share: Math.floor(call.costMicrousd / batch.length), verdicts: parseVerdicts(paidResponseJson(call.message))
       });
-      if (result.results.length < 50) {
-        result.results.push({ fee_raw_id: candidate.feeRawId, decision: candidate.decision, knox_key: candidate.knoxKey, verdict_key: verdict.category, side });
-      }
+
     }
+  } catch (error) {
+    collectionFailure = { error };
   }
-  return result;
+  return staged();
 }
