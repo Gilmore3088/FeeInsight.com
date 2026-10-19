@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { feeCheckedBy, MACHINE_ANSWER_KEYERS, type AnswerKeyInstitution } from "@/lib/data-store/answer-key";
 
 import {
   feedbackSchemaReady,
@@ -96,6 +97,8 @@ interface AnswerKeyRow {
   uncertain: boolean | null;
   document_url: string | null;
   confirmed_by: string | null;
+  key_status: AnswerKeyInstitution["status"];
+  key_confirmed_by: string | null;
 }
 
 const num = (value: number | string | null | undefined) => (value == null ? null : Number(value));
@@ -328,7 +331,8 @@ export async function syncPipelineFeedback(
     result.categoryRejects = rejects.length;
 
     const answerKeyFees = await inSavepoint(db, (scope) => scope<AnswerKeyRow[]>`
-      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url, f.confirmed_by
+      SELECT f.id, ak.institution_id, f.canonical_key, f.amount, f.amount_kind, f.source_line, f.uncertain, ak.document_url,
+             f.confirmed_by, ak.status AS key_status, ak.confirmed_by AS key_confirmed_by
         FROM answer_key_fees f
         JOIN answer_key_institutions ak ON ak.id = f.answer_key_institution_id
        WHERE f.status = 'confirmed'
@@ -341,15 +345,16 @@ export async function syncPipelineFeedback(
         aboutStage: "extract",
         signal: "right",
         kind: "answer_key",
-        // Keys the Knox thread keyed line by line are not a person's check; say so.
-        reportedBy: row.confirmed_by === "knox-hand-key" ? "knox" : "human",
+        // Keys the Knox thread keyed line by line are not a person's check, unless a person
+        // then confirmed the whole bank, which covers every row on it.
+        reportedBy: MACHINE_ANSWER_KEYERS.has(feeCheckedBy(row.confirmed_by, { status: row.key_status, confirmed_by: row.key_confirmed_by }) ?? "") ? "knox" : "human",
         checkName: "answer_key",
         institutionId: num(row.institution_id),
         sourceUrl: row.document_url,
         canonicalFeeKey: row.canonical_key,
         amount: num(row.amount),
         weight: row.uncertain ? 0.5 : 1,
-        evidence: { source_line: row.source_line, amount_kind: row.amount_kind, confirmed_by: row.confirmed_by ?? null },
+        evidence: { source_line: row.source_line, amount_kind: row.amount_kind, confirmed_by: feeCheckedBy(row.confirmed_by, { status: row.key_status, confirmed_by: row.key_confirmed_by }) ?? null },
         runId: options.runId,
         dedupeKey: `answer_key:fee:${row.id}`,
       });
