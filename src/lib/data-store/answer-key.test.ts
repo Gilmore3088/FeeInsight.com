@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { banksToCheck, confirmAnswerKeyInstitution, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
+import { banksToCheck, confirmAnswerKeyInstitution, feeCheckedBy, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
 
 describe("normalizeFeeAmount", () => {
   it("derives the amount kind when it is missing", () => {
@@ -66,6 +66,13 @@ describe("person-checked answer keys", () => {
   it("queues every bank a person still has to check, shortest key first", () => {
     const rows = [bank(1, "confirmed", "knox-hand-key", 38), bank(2, "confirmed", "james", 5), bank(3, "prefilled", null, 21), bank(4, "confirmed", "knox-hand-key", 14)];
     expect(banksToCheck(rows).map((row) => row.id)).toEqual([4, 3, 1]);
+  });
+
+  it("a person's bank-level confirm covers rows a Claude thread keyed, so nobody re-presses Confirm", () => {
+    expect(feeCheckedBy("knox-hand-key", { status: "confirmed", confirmed_by: "hello@bankfeeindex.com" })).toBe("hello@bankfeeindex.com");
+    expect(feeCheckedBy("knox-hand-key", { status: "confirmed", confirmed_by: "knox-hand-key" })).toBe("knox-hand-key");
+    expect(feeCheckedBy("knox-hand-key", { status: "prefilled", confirmed_by: null })).toBe("knox-hand-key");
+    expect(feeCheckedBy("james", { status: "confirmed", confirmed_by: "hello@bankfeeindex.com" })).toBe("james");
   });
 
   it("Confirm all re-stamps rows a Claude thread keyed to the person, not only unconfirmed rows (#629)", async () => {

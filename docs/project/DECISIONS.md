@@ -1275,3 +1275,14 @@ a median of 21 minutes from open to merge, and 1,123 CI workflow runs (`actions/
 #1729, #1700, #1564, #1624, #1647, #1631, #1629, #1589, #1558, #1529, #1506, #1486, #1461, #1429),
 15 had no submitted GitHub review, which the Oct 14 "Reviewed" rule requires. Migrations,
 production-data changes and the other gated actions in CLAUDE.md still need his yes.
+
+**James's fee checking is one live batch of 100 a week, nothing more.** James, 2026-10-19 03:48-03:49 UTC
+(project thread "James's to-do checklist"): "I'm fucking chasing my tail trying to validate individual
+fees every fucking day", "I gave you four live batches of data yesterday. How is that not good
+enough?", then "I'm happy to do a live batch of a hundred every week, but I don't wanna then be asked
+to do ten more." His only recurring check is a weekly Claude in Chrome live batch of about 100
+published fees against each bank's own document. That batch is the accuracy measurement against the
+99.5% target, and the data quality lane works from what it finds. No lane asks him to confirm answer
+keys, press Confirm on rows, or check more fees by hand on top of it. A person's bank-level Confirm
+on an answer key covers every row on it (`feeCheckedBy` in `src/lib/data-store/answer-key.ts`), so
+he is never asked to re-press it.

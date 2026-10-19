@@ -122,6 +122,18 @@ export function isPersonChecked(row: Pick<AnswerKeyInstitution, "status" | "conf
   return row.status === "confirmed" && !MACHINE_ANSWER_KEYERS.has(row.confirmed_by ?? "");
 }
 
+/**
+ * Who checked one fee row. A person's bank-level confirmation covers every row on the key, so a
+ * row a Claude thread keyed (`knox-hand-key`) counts as that person's once they confirm the bank.
+ */
+export function feeCheckedBy(
+  feeConfirmedBy: string | null,
+  institution: Pick<AnswerKeyInstitution, "status" | "confirmed_by">,
+): string | null {
+  if (MACHINE_ANSWER_KEYERS.has(feeConfirmedBy ?? "") && isPersonChecked(institution)) return institution.confirmed_by;
+  return feeConfirmedBy;
+}
+
 /** Banks a person still has to check, shortest key first, so each one is a quick read. */
 export function banksToCheck<T extends Pick<AnswerKeyInstitution, "status" | "confirmed_by" | "fee_count" | "id">>(rows: readonly T[]): T[] {
   return rows.filter((row) => !isPersonChecked(row)).sort((a, b) => a.fee_count - b.fee_count || a.id - b.id);
