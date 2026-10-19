@@ -34,8 +34,9 @@ export function InstitutionActions({
     setQueuedJob(null);
     startTransition(async () => {
       if (pdf) {
-        // The box opens on the old link; saving a PDF under it would keep the wrong fee link.
-        if (url.trim() === (currentUrl ?? "").trim()) {
+        // The box opens on the old link; saving a PDF under a web page's link would keep the wrong
+        // fee link. A link that is already the PDF's own address (a site that blocks our fetcher) stays.
+        if (url.trim() === (currentUrl ?? "").trim() && !/\.pdf(?:$|[?#])/i.test(url.trim())) {
           setError("That is still the old link. Paste the PDF's own address (or the page it came from), then save.");
           return;
         }
