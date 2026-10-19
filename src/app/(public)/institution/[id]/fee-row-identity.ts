@@ -18,4 +18,3 @@ export function displayFeeIdentity(fee: Pick<DisplayFee,
     fee.sourceUrl,
   ]);
 }
-
