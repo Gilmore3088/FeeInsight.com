@@ -28,7 +28,8 @@
 #   sql-placeholder-kill
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
 #   findings-file-kill
-#                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09 or a findings/ file is misnamed.
+#                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09, a findings/ file is misnamed,
+#                 or a finding this PR adds has no **Guard:** line.
 #   heading-wrap-kill
 #                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
 #   plausible-kill
@@ -660,11 +661,11 @@ migration_version_kill() {
   local dir="supabase/migrations"
   [[ -d "$dir" ]] || { echo "migration-version-kill: OK (no $dir)"; return 0; }
   local bad dupes
-  bad=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort \
+  bad=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -print | sed 's|.*/||' | sort \
     | grep -vE '^(2026[0-9]{4}|[0-9]{14})_[a-z0-9_]+\.sql$' || true)
-  bad+=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort \
+  bad+=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -print | sed 's|.*/||' | sort \
     | awk -F_ 'length($1) == 8 && $1 > "20260517"' || true)
-  dupes=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -d_ -f1 | sort | uniq -d)
+  dupes=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -print | sed 's|.*/||' | cut -d_ -f1 | sort | uniq -d)
   if [[ -n "$bad" || -n "$dupes" ]]; then
     echo "migration-version-kill: migration file names must be <14-digit number>_<snake_name>.sql with a unique number:" >&2
     [[ -n "$bad" ]] && echo "$bad" >&2
@@ -682,7 +683,7 @@ findings_file_kill() {
   local late bad
   late=$(grep -nE '^## [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/project/FINDINGS.md \
     | awk -F'## ' '{ d = substr($2, 1, 10); if (d > "2026-10-09") print }' || true)
-  bad=$(find docs/project/findings -maxdepth 1 -type f ! -name README.md -printf '%f\n' 2>/dev/null \
+  bad=$(find docs/project/findings -maxdepth 1 -type f ! -name README.md -print 2>/dev/null | sed 's|.*/||' \
     | grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\.md$' || true)
   if [[ -n "$late" || -n "$bad" ]]; then
     echo "findings-file-kill: add each new finding as docs/project/findings/YYYY-MM-DD-short-slug.md (see docs/project/findings/README.md), not in FINDINGS.md:" >&2
@@ -690,7 +691,33 @@ findings_file_kill() {
     [[ -n "$bad" ]] && echo "misnamed: $bad" >&2
     exit 1
   fi
-  echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/)"
+  # A lesson nothing enforces happens again (#1108): a finding this PR adds names its guard, the
+  # test, CI guard, scorecard alarm or checklist line that catches a repeat. Compares the PR with
+  # its base, like api-docs-kill; findings already on main are only counted.
+  local base_ref="" added unguarded old
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    git fetch --no-tags --quiet --depth=1 origin "$GITHUB_BASE_REF" 2>/dev/null && base_ref="FETCH_HEAD"
+  elif git rev-parse --quiet --verify origin/main >/dev/null; then
+    base_ref=$(git merge-base origin/main HEAD 2>/dev/null) || base_ref="origin/main"
+  fi
+  if [[ -z "$base_ref" ]]; then
+    echo "findings-file-kill: no base branch to compare with; new-finding guard check skipped"
+  else
+    added=$(git diff --name-only --diff-filter=A "$base_ref" -- 'docs/project/findings/*.md' 2>/dev/null \
+      | grep -v '/README\.md$' || true)
+    unguarded=""
+    for f in $added; do
+      [[ -f "$f" ]] && ! grep -qE '^\*\*Guard:\*\*[[:space:]]*[^[:space:]]' "$f" && unguarded+="$f"$'\n'
+    done
+    if [[ -n "$unguarded" ]]; then
+      echo "findings-file-kill: each new finding needs a '**Guard:**' line naming the test, CI guard, scorecard alarm or checklist line that catches a repeat (see docs/project/findings/README.md):" >&2
+      printf '%s' "$unguarded" >&2
+      exit 1
+    fi
+  fi
+  old=$(find docs/project/findings -maxdepth 1 -type f -name '*.md' ! -name README.md \
+    -exec grep -LE '^\*\*Guard:\*\*[[:space:]]*[^[:space:]]' {} + 2>/dev/null | wc -l | tr -d ' ' || true)
+  echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/ and name their guard; ${old} older findings name none)"
 }
 
 bayes_manifest_kill() {
@@ -798,8 +825,10 @@ financial_source_kill() {
   # institution_financial_records holds ffiec rows in other units that duplicate fdic quarters
   # (src/lib/data-store/financial-sources.ts). Every FROM/JOIN of the table in src/ must filter
   # by source within the next eight lines: source = / source IN, or the shared helper.
-  local hits="" files=()
-  mapfile -t files < <(grep -rlE '(FROM|JOIN)[[:space:]]+institution_financial_records' \
+  local hits="" file files=()
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(grep -rlE '(FROM|JOIN)[[:space:]]+institution_financial_records' \
     --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude='*.test.tsx' src 2>/dev/null || true)
   if [[ ${#files[@]} -gt 0 ]]; then
     hits=$(awk '

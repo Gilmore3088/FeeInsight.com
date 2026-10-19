@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { UtilityHeading, UtilityShell } from "@/components/utility/utility-shell";
 import { UTILITY_CARD, utilityButton, utilityNotice } from "@/components/utility/form-style";
+import { ConfirmEmailButton } from "@/app/account/confirm-email-button";
 import { canAccessPremium, hasTeamSeat } from "@/lib/access";
 import { getCurrentUser, hasWorkspaceSeat } from "@/lib/auth";
 import {
@@ -129,6 +130,14 @@ export default async function WorkspaceInvitePage({
               )}
             >
               {signedInviteMessage(result, userEmail)}
+            </div>
+          )}
+          {result?.status === "email_unconfirmed" && (
+            <div className={`${UTILITY_CARD} space-y-2`}>
+              <p className="text-[14px] leading-relaxed text-ink-muted">
+                No confirmation email? Send a new link to {userEmail}.
+              </p>
+              <ConfirmEmailButton />
             </div>
           )}
           {activeMemberships.length > 0 ? (

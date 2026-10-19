@@ -32,7 +32,7 @@ async function attempt<T>(read: () => Promise<T>): Promise<T | null> {
  * and the marketing pause and budget state. Nothing posts or sends from here.
  */
 export default async function GrowthPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { view, filter } = parseGrowthPage(await searchParams);
   // The run ledger and lessons are drawn only on the team view, so only that view reads them.
   const team = view === "team";

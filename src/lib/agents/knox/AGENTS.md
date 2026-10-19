@@ -30,11 +30,18 @@ Knox owns conservative raw fee extraction.
   When a Rosetta re-read changes a document's text, Knox extracts the new text and retires the
   unverified rows it took from the older text (`needs_darwin_verification` removed,
   `superseded_by_reread` added). Rows Darwin already verified are left alone.
-- The raw-row dedupe index is (document, lowercased name, amount, `fee_audience`)
-  (`raw_fee_observations_knox_agentic_dedup_idx`, migration
-  `20270110000040_fee_audience_integrity.sql`), so one document may hold the same name and price
-  once per audience. A traced read that meets a row of the same key held as `unclassified` or
+- The raw-row dedupe index is (document, lowercased name, amount, `fee_audience`, `line_share`)
+  (`raw_fee_observations_knox_agentic_dedup_idx`, migrations
+  `20270110000040_fee_audience_integrity.sql` and `20270110000065_raw_line_share.sql`), so one
+  document may hold the same name and price once per audience. `line_share` is empty except on
+  the second fee a shared line carries: since v82 (#2123) a combined "Overdraft/NSF Fee | $30"
+  stores its NSF twin as `twin:nsf`, where before the key dropped it. A current copy with a
+  combined overdraft or NSF row and no twin, last read below v82, is read again once
+  (`KNOX_TWIN_READ_BELOW_VERSION`). A traced read that meets a row of the same key held as `unclassified` or
   `untraced` takes it over (`knox_promoted_from_held`); any other existing row is left as it is.
+  A same-row lineup enrichment after an insert conflict matches that audience too (#2108),
+  so a consumer, business, both or unknown row never fills another audience's account facts.
+  This restricts future enrichment only: extraction rules stay v81 and no old text is requeued.
 - One document per page. When Magellan stores a newer copy of a page (`superseded_by_id`,
   `magellan/current-copy.ts`), Knox stops reading the older copy once the current copy has
   a text. Each extract step also retires up to 2,000 unverified rows from older copies
@@ -114,6 +121,28 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 677 of 736 (92.0%), 677 found (55.7%).
 
 ## Rules versions (`extract.rules`)
+
+v83 (Oct 19, #2151) preserves an explicitly labeled single-column fee bullet across at most six
+physical lines and 2,000 characters, before blank separators disappear. Its primary title and
+own terminal dot-leader price are read together; the complete condition text is retained beyond
+the legacy 180-character raw excerpt limit. A new bullet, blank, heading, table cell, ambiguous
+price or budget limit stops assembly; unresolved recognized units record
+`wrapped_bullet_unresolved` and their consumed spans cannot return as legacy fragments. The
+shared source check owns that same unit, so a returned-payment row cannot borrow a neighboring
+paid-payment price. Existing category, threshold, audience and publication gates still apply.
+An explicit asterisk-linked count-cap note can cross only adjacent complete units carrying that
+reference, within 12 physical lines. It is retained as `linked_conditions` before the final
+`excerpt` audit field, separate from the fee's own charging-unit text; a max-three-per-share-per-day
+condition becomes neither a daily fee nor a derived dollar price.
+
+The unchanged official SchoolsFirst October 2026 PDF now supplies its two separate $22 disclosure
+fees in disposable raw→Darwin→Hamilton tests, with complete paid/returned conditions and the
+shared count cap. This is a code regression fixture, not a confirmed answer key or a production
+recovery receipt. The stale-read floor stays v78 and the twin floor v82; Bayes's existing
+`knox.rules` manifest counts only the ordinary due-text cohort. Old category/source decisions,
+operator holds and unrelated article lineages receive no blanket replay. Bellco multicolumn
+associations, Cascade expansion, payroll-source contamination and broader #1908/#1918 recovery
+remain separate work.
 
 v14 added names the keys showed held as unclassified (account closing, reactivation, domestic
 wires without a direction, child support, legal orders, negative balance, audit confirmations,
@@ -1354,7 +1383,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v80 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v83 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

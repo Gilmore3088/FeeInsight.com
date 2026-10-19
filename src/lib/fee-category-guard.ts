@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { ATM_ABROAD, COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -428,7 +428,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
     // v69: what a non-customer pays at the institution's own ATMs (`OUTSIDER_ATM`) is out too.
     // A monthly ATM add-on or plan (`ATM_PLAN`) is not a per-use fee either.
-    // v72 (#1788): an ATM used outside the U.S. (`INTERNATIONAL_ATM`) is International ATM & Card.
+    // v72 (#1788): an ATM used outside the U.S. (`INTERNATIONAL_ATM`) is International ATM.
     // v74: a withdrawal at one named institution's own ATM (`NAMED_OWN_ATM`) is out too.
     exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|${CARD_SERVICE_ELSEWHERE}|${INTERNATIONAL_ATM.source}|` +
       /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
@@ -555,13 +555,28 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
   // names the card. A rate's name is often a sentence ("you will be charged a foreign
   // transaction fee of"), so sentences are checked only on dollar amounts (below).
-  // Since v45 it is International ATM & Card: an ATM used outside the U.S. ("Non–Wells Fargo
-  // ATMs outside the U.S.") is this fee too. v72 (#1788): "outside of the U.S." and "All Other
-  // Countries" name it too.
+  // From v45 to v75 it was International ATM & Card and held ATMs used abroad too. v76 (James,
+  // Oct 19, #2037: "Split"): an ATM used abroad with no card purchase in the name (`ATM_ABROAD`) is
+  // International ATM again; one price for ATM and debit card use abroad stays here.
   card_foreign_txn: {
     include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b|outside (of )?(the )?(u\.?s|united states)|\bcountr(y|ies)\b|abroad|overseas)/i,
+    exclude: new RegExp(
+      String.raw`${ATM_ABROAD.source}|` +
+        /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/.source,
+      "i",
+    ),
+  },
+  // v76 (James, Oct 19, #2037): an ATM used outside the U.S. (`INTERNATIONAL_ATM`: an ATM or cash
+  // disbursement and a place abroad). One price for domestic and international ATMs, or a line
+  // inside the U.S., is not matched and re-files to the non-network ATM fee; an ATM and debit card
+  // or purchase line re-files to the card's foreign transaction fee. A reimbursement cap ("up to
+  // $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner network
+  // ("Allpoint ATM Transactions" $0 at SoFi) are no fee here (the Oct 9 review the retired fold
+  // rule recorded).
+  atm_international: {
+    include: INTERNATIONAL_ATM,
     exclude:
-      /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
+      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
   // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
@@ -802,7 +817,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // closure; see each rule's v74 note. Counts in the PR (#1026 ledger).
 // v75 (Oct 19, #2023, James's "Take down"): `CLUB_WITHDRAWAL_LIVE` on, so a club or holiday account's
 // withdrawal fails early closure; the live ones go to the second look and come down.
-export const CATEGORY_GUARD_VERSION = 75;
+// v76 (Oct 19, #2037, James's "Split"): International ATM is its own type again. An ATM used abroad
+// filed as International ATM & Card (`ATM_ABROAD`) or as the non-network ATM fee re-files to
+// `atm_international`, which gets its own rule; the card's type is Foreign Transaction again. Counts
+// in the PR (#1026 ledger).
+export const CATEGORY_GUARD_VERSION = 76;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -811,7 +830,7 @@ export const CATEGORY_GUARD_VERSION = 75;
  * as dollars or a neighbouring figure. A rate itself is stored as a rate with no dollar
  * amount, so this never touches it.
  */
-const RATE_CATEGORIES: ReadonlySet<string> = new Set(["card_foreign_txn"]);
+const RATE_CATEGORIES: ReadonlySet<string> = new Set(["card_foreign_txn", "atm_international"]);
 // "Currency conversion fees will be assessed when ..." quotes a rate stated elsewhere.
 const RATE_IN_NAME = /(\d\s*%|percent|\brates?\b|\b(will|may) be (assessed|charged)\b)/i;
 const RATE_IN_CONDITIONS = /(\d\s*%|percent)/i;
@@ -885,8 +904,14 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },
-  // v72 (#1788): an ATM used outside the U.S. is International ATM & Card.
-  { from: "atm_non_network", to: "card_foreign_txn", when: INTERNATIONAL_ATM },
+  // v72 (#1788): an ATM used outside the U.S. is International ATM (International ATM & Card until v76).
+  { from: "atm_non_network", to: "atm_international", when: INTERNATIONAL_ATM },
+  // v76 (#2037): and so is one filed as the card's foreign transaction fee. An international ATM
+  // line that also prices debit card use or purchases is the card's fee, and one priced for domestic
+  // and international ATMs together, or inside the U.S., is the non-network ATM fee.
+  { from: "card_foreign_txn", to: "atm_international", when: ATM_ABROAD },
+  { from: "atm_international", to: "card_foreign_txn", when: /\b(?:debit|pos|point of sale|purchases?|check ?cards?)\b/i },
+  { from: "atm_international", to: "atm_non_network", when: /\bdomestic\b|\bnon[- ]?international\b|\binternationally\b|\b(?:inside|within)\s+(?:the\s+)?(?:u\.?s\.?a?(?![a-z])|united states)/i },
   { from: "atm_non_network", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   // v70: skipping a loan payment is other lending, not a late payment or a loan origination.
   { from: "late_payment", to: "other_lending_fee", when: SKIP_A_PAY },

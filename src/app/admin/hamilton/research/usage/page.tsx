@@ -8,7 +8,7 @@ import {
 import { AgentUsageTable, UserUsageTable, DailyUsageTable } from "@/components/usage-tables";
 
 export default async function ResearchUsagePage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   await ensureResearchTables();
 
   const dashboard = await getUsageDashboard();

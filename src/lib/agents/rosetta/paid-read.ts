@@ -1,3 +1,4 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/ai-provider-usage";
@@ -234,7 +235,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
     return result;
   }
 
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const pageCounter = options.pageCounter ?? countPdfPages;
   const model = PAID_PASS_MODELS.read();
 

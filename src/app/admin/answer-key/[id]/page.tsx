@@ -93,7 +93,7 @@ export default async function AnswerKeyDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [{ id }, { message }] = await Promise.all([params, searchParams]);
   const answerKeyId = Number(id);
   if (!Number.isInteger(answerKeyId) || answerKeyId <= 0) notFound();

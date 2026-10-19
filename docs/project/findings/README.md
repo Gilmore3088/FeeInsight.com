@@ -20,4 +20,10 @@ Template:
 **Cause:** the root cause, or "not yet known".
 **Fix:** PR or issue, and whether it is merged or applied.
 **Lesson:** what any session should do differently.
+**Guard:** the test, CI guard (`scripts/ci-guards.sh`), scorecard alarm or checklist line that
+catches a repeat, or the issue that will add it.
 ```
+
+A finding without a guard is a lesson nothing enforces, so the same thing happens again (#1108).
+`findings-file-kill` fails a PR that adds a finding without a `**Guard:**` line. Its OK line
+counts the older findings that name none.

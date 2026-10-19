@@ -34,6 +34,7 @@ describe("outcomes", () => {
   });
 
   it("classifies HTTP failures and thrown errors into typed outcomes", () => {
+    expect(classifyFetchFailure(null, Object.assign(new Error("source body exceeds cap"), { name: "FeeSourceFetchError", code: "too_large" }))).toBe("too_large");
     expect(classifyFetchFailure(403)).toBe("http_403");
     expect(classifyFetchFailure(401)).toBe("http_403");
     expect(classifyFetchFailure(404)).toBe("http_404");

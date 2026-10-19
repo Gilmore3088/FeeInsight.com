@@ -162,9 +162,9 @@ function queueEmailConfirmation(userId: number, email: string): void {
 export async function createUserWithSession(input: NewUserInput): Promise<CreateUserResult> {
   const { hashPassword } = await import("@/lib/passwords");
   const email = input.email.trim().toLowerCase();
-  const passwordHash = await hashPassword(input.password);
 
   try {
+    const passwordHash = await hashPassword(input.password);
     const { userId, signed } = await withTransaction(async (tx) => {
       const [row] = await tx`
         INSERT INTO users (username, email, password_hash, display_name, role,
@@ -209,13 +209,33 @@ export async function login(
 
   if (!row) return null;
 
-  const { verifyPassword: verifyPw } = await import("@/lib/passwords");
-  const { valid } = await verifyPw(password, row.password_hash);
+  const { verifyPassword: verifyPw, hashPassword } = await import("@/lib/passwords");
+  const { valid, needsRehash } = await verifyPw(password, row.password_hash);
   if (!valid) return null;
 
+  // Expensive work stays outside the transaction. The final row lock binds session
+  // creation to this exact verified credential and active account, for every format.
+  const upgradedHash = needsRehash ? await hashPassword(password) : null;
   const { password_hash: _, ...user } = userFromRow(row);
-  const { signed } = await issueSession(user.id);
-  await setSessionCookie(signed);
+  const session = await withTransaction(async (tx) => {
+    const [current] = await tx`
+      SELECT id FROM users
+      WHERE id = ${user.id} AND password_hash = ${row.password_hash} AND is_active = true
+      FOR UPDATE
+    `;
+    if (!current) return null;
+    if (upgradedHash) {
+      const changed = await tx`
+        UPDATE users SET password_hash = ${upgradedHash}
+        WHERE id = ${user.id} AND password_hash = ${row.password_hash} AND is_active = true
+        RETURNING id
+      `;
+      if (changed.length !== 1) return null;
+    }
+    return issueSession(user.id, tx);
+  });
+  if (!session) return null;
+  await setSessionCookie(session.signed);
 
   return user;
 }
@@ -334,7 +354,8 @@ export async function requireAuth(permission?: Permission): Promise<User> {
     redirect("/login");
   }
   if (permission && !hasPermission(user, permission)) {
-    redirect("/admin?error=forbidden");
+    // Customers cannot enter /admin, including its forbidden page redirect.
+    redirect(permission === "operate" ? "/account" : "/admin?error=forbidden");
   }
   return user;
 }

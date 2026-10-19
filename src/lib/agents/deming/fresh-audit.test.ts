@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { FRESH_AUDIT_MIN_SCORABLE, nameQuality, scoreFreshAudit, summarizeFreshAudit, type FreshAuditFee } from "./fresh-audit";
+import { describe, expect, it, vi } from "vitest";
+import { FRESH_AUDIT_MIN_SCORABLE, FRESH_AUDIT_SAMPLE, freshAuditDetail, nameQuality, runFreshAudit, scoreFreshAudit, summarizeFreshAudit, type FreshAuditFee } from "./fresh-audit";
+import { poolFreshAudits } from "./accuracy-measure";
 
 function fee(id: number, overrides: Partial<FreshAuditFee> = {}): FreshAuditFee {
   return {
@@ -91,6 +92,19 @@ describe("scoreFreshAudit", () => {
     expect(scoreFreshAudit([fee(1)], schedule).accuracy).toBeNull();
     const many = Array.from({ length: FRESH_AUDIT_MIN_SCORABLE }, (_, i) => fee(i + 1));
     expect(scoreFreshAudit(many, schedule).accuracy).toBe(1);
+  });
+
+  it("keeps every sample outcome in the durable receipt, including unknowns and misses", async () => {
+    const db = Object.assign(vi.fn(async (parts: TemplateStringsArray) => {
+      const query = parts.join("?");
+      if (query.includes("FROM published_fee_catalog")) return [fee(1), fee(2, { amount: 99 }), fee(3, { institution_id: 2 })];
+      if (query.includes("FROM agent_source_texts")) return [{ institution_id: 1, ...schedule.get(1)![0] }];
+      return [];
+    }), { unsafe: vi.fn(async () => []) });
+    const result = await runFreshAudit({ db: db as never, now: new Date("2026-10-18T01:00:00Z") });
+    const detail = freshAuditDetail(result);
+    expect(detail).toMatchObject({ sample_requested: FRESH_AUDIT_SAMPLE, observations: [[1, "right"], [2, "amount"], [3, "unknown"]] });
+    expect(poolFreshAudits([{ at: "2026-10-18T01:00:00Z", detail }])).toMatchObject({ right: 1, scorable: 2, unknown: 1, sampled: 3, series: expect.any(String) });
   });
 });
 

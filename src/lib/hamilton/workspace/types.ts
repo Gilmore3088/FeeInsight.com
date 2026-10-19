@@ -29,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.19.2";
+export const WORKSPACE_ENGINE_VERSION = "1.19.5";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -404,6 +404,8 @@ export interface FeeResearch {
   peers: PeerValue[];
   /** True when `peers` is the bank's own saved peer group; false when Hamilton picked it. Absent on older payloads. */
   peerGroupSaved?: boolean;
+  /** How many institutions the peer group holds, publishing this fee or not (#2046). Absent for the national index or when the count fails. */
+  peerGroupSize?: number;
   /**
    * Everyone in the chosen peer group, loaded for a list question (#2033), so the list names the
    * peers with no value for the fee too. Absent when not loaded.
@@ -562,6 +564,8 @@ export type Exhibit =
       markers: ExhibitMarker[];
       sources: SourceRef[];
       note?: string;
+      /** How the percentile beside it is figured (#2048); set when the exhibit places a price. */
+      method?: string;
     }
   | {
       kind: "trend";
@@ -582,6 +586,8 @@ export type Exhibit =
       items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
+      /** The competitors beyond the charted largest, lowest fee first; the page lists them under "Show N more" (#2036). */
+      rest?: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       sources: SourceRef[];
       note?: string;
     }

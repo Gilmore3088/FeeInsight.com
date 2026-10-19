@@ -2430,60 +2430,6 @@ export async function getDistrictOverview(): Promise<DistrictOverviewRow[]> {
 }
 
 // ---------------------------------------------------------------------------
-// National Fee Index
-// ---------------------------------------------------------------------------
-
-export interface NationalIndexRow {
-  fee_category: string;
-  display_name: string;
-  fee_family: string | null;
-  median: number | null;
-  p25: number | null;
-  p75: number | null;
-  min_amount: number | null;
-  max_amount: number | null;
-  institution_count: number;
-  observation_count: number;
-  approved_count: number;
-  bank_count: number;
-  cu_count: number;
-  maturity: string;
-}
-
-export async function getNationalIndexData(): Promise<NationalIndexRow[]> {
-  try {
-    // Through the shared reader: it ignores a stale or old-method cache and computes live.
-    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
-    const rows = await getNationalIndexCached();
-
-    const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
-
-    return rows.map((r) => {
-      const cat = String(r.fee_category);
-      return {
-        fee_category: cat,
-        display_name: DISPLAY_NAMES[cat] || cat.replace(/_/g, " "),
-        fee_family: r.fee_family ? String(r.fee_family) : null,
-        median: r.median_amount != null ? Number(Number(r.median_amount).toFixed(2)) : null,
-        p25: r.p25_amount != null ? Number(Number(r.p25_amount).toFixed(2)) : null,
-        p75: r.p75_amount != null ? Number(Number(r.p75_amount).toFixed(2)) : null,
-        min_amount: r.min_amount != null ? Number(Number(r.min_amount).toFixed(2)) : null,
-        max_amount: r.max_amount != null ? Number(Number(r.max_amount).toFixed(2)) : null,
-        institution_count: Number(r.institution_count),
-        observation_count: Number(r.observation_count),
-        approved_count: Number(r.approved_count),
-        bank_count: Number(r.bank_count),
-        cu_count: Number(r.cu_count),
-        maturity: String(r.maturity_tier),
-      };
-    });
-  } catch (e) {
-    console.error("getNationalIndexData failed:", e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Market Index (segment vs national)
 // ---------------------------------------------------------------------------
 
@@ -2500,6 +2446,7 @@ export async function getMarketData(filters: {
   charter_type?: string;
   asset_tier?: string;
   state_code?: string;
+  fed_district?: number;
 }): Promise<MarketIndexRow[]> {
   try {
     // National baseline through the shared cached reader
@@ -2516,7 +2463,7 @@ export async function getMarketData(filters: {
       });
     }
 
-    const hasFilters = !!(filters.charter_type || filters.asset_tier || filters.state_code);
+    const hasFilters = !!(filters.charter_type || filters.asset_tier || filters.state_code || filters.fed_district);
 
     if (!hasFilters) {
       return national.map((r) => {
@@ -2551,6 +2498,10 @@ export async function getMarketData(filters: {
     if (filters.state_code) {
       conditions.push(`ct.state_code = $${paramIdx++}`);
       params.push(filters.state_code);
+    }
+    if (filters.fed_district) {
+      conditions.push(`ct.fed_district = $${paramIdx++}`);
+      params.push(filters.fed_district);
     }
 
     const where = conditions.join(" AND ");
@@ -2599,100 +2550,6 @@ export async function getMarketData(filters: {
     return results;
   } catch (e) {
     console.error("getMarketData failed:", e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Peer Index
-// ---------------------------------------------------------------------------
-
-export interface PeerIndexRow {
-  fee_category: string;
-  display_name: string;
-  peer_median: number | null;
-  national_median: number | null;
-  delta_pct: number | null;
-  peer_count: number;
-  national_count: number;
-}
-
-export async function getPeerIndexData(filters: {
-  charter_type?: string;
-  asset_tier?: string;
-  fed_district?: number;
-}): Promise<PeerIndexRow[]> {
-  try {
-    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
-    const national = await getNationalIndexCached();
-
-    const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
-
-    const nationalMap = new Map<string, { median: number | null; count: number }>();
-    for (const r of national) {
-      nationalMap.set(String(r.fee_category), {
-        median: r.median_amount != null ? Number(r.median_amount) : null,
-        count: Number(r.institution_count),
-      });
-    }
-
-    const conditions = [
-      "ef.fee_category IS NOT NULL",
-      "ef.amount IS NOT NULL",
-    ];
-    const params: (string | number | null)[] = [];
-    let paramIdx = 1;
-
-    if (filters.charter_type) {
-      conditions.push(`ct.charter_type = $${paramIdx++}`);
-      params.push(filters.charter_type);
-    }
-    if (filters.asset_tier) {
-      conditions.push(`ct.asset_size_tier = $${paramIdx++}`);
-      params.push(filters.asset_tier);
-    }
-    if (filters.fed_district) {
-      conditions.push(`ct.fed_district = $${paramIdx++}`);
-      params.push(filters.fed_district);
-    }
-
-    const where = conditions.join(" AND ");
-    const peerRows = await sql.unsafe(
-      `SELECT ef.fee_category,
-              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) as median,
-              COUNT(DISTINCT ct.id) as inst_count
-       FROM published_fee_catalog ef
-       JOIN institution_sources ct ON ef.institution_id = ct.id
-       WHERE ${where}
-       GROUP BY ef.fee_category`,
-      params,
-    );
-
-    const results: PeerIndexRow[] = [];
-    for (const r of peerRows) {
-      const cat = String(r.fee_category);
-      const nat = nationalMap.get(cat);
-      const peerMedian = Number(r.median);
-      const natMedian = nat?.median ?? null;
-      let deltaPct: number | null = null;
-      if (natMedian != null && natMedian !== 0) {
-        deltaPct = Number(((peerMedian - natMedian) / natMedian * 100).toFixed(1));
-      }
-      results.push({
-        fee_category: cat,
-        display_name: DISPLAY_NAMES[cat] || cat.replace(/_/g, " "),
-        peer_median: Number(peerMedian.toFixed(2)),
-        national_median: natMedian != null ? Number(natMedian.toFixed(2)) : null,
-        delta_pct: deltaPct,
-        peer_count: Number(r.inst_count),
-        national_count: nat?.count ?? 0,
-      });
-    }
-
-    results.sort((a, b) => b.peer_count - a.peer_count);
-    return results;
-  } catch (e) {
-    console.error("getPeerIndexData failed:", e);
     return [];
   }
 }

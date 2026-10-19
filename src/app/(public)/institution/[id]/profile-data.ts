@@ -22,6 +22,7 @@ import {
 import { countsInMarketComparison, marketIneligibleReason, type MarketEligibilityInput } from "@/lib/market-eligibility";
 import { productNameFromFeeName, readableProductName } from "@/lib/agents/knox/lineup";
 import { waiverPhrase } from "./account-waiver";
+import { feeScheduleContext } from "./profile-fee-context";
 
 export const getPublicInstitutionForPage = cache(getPublicInstitutionById);
 
@@ -76,7 +77,7 @@ export function toDisplayFees(fees: ExtractedFee[]): DisplayFee[] {
     feeCategory: fee.fee_category ?? null,
     amount: fee.amount,
     frequency: fee.frequency,
-    conditions: fee.conditions,
+    conditions: feeScheduleContext(fee),
     status: isVerifiedFee(fee) ? "verified" : "provisional",
     sourceUrl: fee.source_url ?? null,
     accountProduct: fee.account_product_type ?? null,

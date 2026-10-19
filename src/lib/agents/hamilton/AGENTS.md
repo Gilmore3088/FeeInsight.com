@@ -529,6 +529,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
     v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    Both rows must keep the same audience (#2109): missing legacy audience means `unknown`,
+    never a wildcard for consumer, business or both. The selector, pure plan and final write
+    enforce it; an audience changed since selection leaves the live row where it was. This
+    safety restriction stays in v2, so already-decided pairs are not reopened. It repairs no
+    prior audience change and creates no replay or backfill; Bayes records that no-replay
+    contract in `VERSIONS_WITHOUT_REPLAY.REFRESH_COPY_STRATEGY`.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
@@ -595,6 +601,36 @@ belongs to the publish step once Knox reads the newer copy. Each pair is checked
 `v1:<older>:<newer>`). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
+
+The Knox-row witness preserves the fee's normalized name, institution, audience (missing
+legacy values mean `unknown`), frequency, amount kind/rate basis, and available raw product
+scope (#2117). Price alone never identifies a fee; absent or incompatible witnesses follow
+the existing stored-source verdict and recognition gates. Quarantined rows are excluded from
+selection and planning, and retirement/restoration writes re-check the hold (#2118). A retirement
+or restore also requires the selected lineage to remain unchanged. Only the publication rows returned by
+the guarded update can reject verified lineage; returned results, attempt counts and events
+describe actual changes, with planned counts retained separately in attempts. A hold or closure
+committed after selection cannot reject unchanged lineage.
+
+A restore must still refer to the exact selected closure (reason and rollback timestamp),
+so an intervening newer-copy closure with the same lineage is never cleared. The selector
+reads and binds that timestamp as text; only the server casts it to `timestamptz`, preserving
+PostgreSQL microseconds that the driver's timestamp-array serializer would truncate through Date.
+
+The restore duplicate check compares the same audience, frequency, variant, amount kind,
+rate basis and rate values as well as the institution/category/name/amount (#2121). A live
+consumer sibling cannot block a distinct business fee; unstated applicability is equal only
+to the same normalized unstated value, never a wildcard. An equivalent live twin still blocks
+restoration. Percentage fees have no dollar amount, so the existing planner does not select
+them for retirement or restoration; rate comparisons are defensive identity boundaries.
+
+These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
+without reopening settled decisions; unlike the earlier text guards, tightening the witness
+can retire more. Bayes records the explicit no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
+list of wrong fees or approved takedowns. Any historical replay needs its own impact review and
+applicable official-source evidence. Different-URL editions (#1945/#1911) remain a separate
+source/product provenance problem.
 
 ## Current-copy check
 
@@ -719,10 +755,28 @@ another name is a different printed line.
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
-live row exactly (same institution, canonical key, variant, frequency, amount and fee
+live row exactly (same institution, canonical key, audience, variant, compatible frequency, amount and fee
 name). The newest copy stays live; the others get `rolled_back_reason = 'duplicate of
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
+
+Exact applicability (#2131) keeps `consumer`, `business`, `both` and `unknown` separate;
+legacy null means `unknown` only. Neither `both` nor `unknown` is a wildcard. The old
+known-over-unknown preference no longer applies to exact copies: an uncertain scope is
+retained rather than silently relabelled or erased. Amount kind, rate basis, rate bounds
+and rate value also belong to the exact key. Within one identity the existing frequency
+classes/unstated-frequency preference remain, then the newest copy wins. The live-copy
+selector, pure decision, batch grouping and in-step map use this same identity. Quarantined
+rows are neither collapse candidates nor exact-copy witnesses. The final UPDATE locks both
+members of every selected pair in ID order and compares the complete locked target/keeper
+states against their selected states, including lineage and operator actions. Any intervening
+change skips that pair; only actual UPDATE RETURNING rows count. The separate operator-hold insert guard retains its
+conservative overlapping-audience policy; near-name and page-copy rules are unchanged.
+
+Publish retains v3 fingerprints, so previously skipped rows and closed duplicate history
+are not replayed or restored automatically. Bayes records this no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.HAMILTON_PUBLISH_STRATEGY`. Preventing the cause is not a claim
+of end-to-end recovery of historical missing fees.
 
 **Near names (#1302).** Two live rows of one document, category, variant and amount whose names
 differ only by punctuation, case, a plural, a leading article or a trailing "fee" ("Stop
@@ -800,16 +854,16 @@ exact and near-name collapses still have this gap.
 
 **At publish (#1069 step 1, live).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
-category, variant, value and name; frequency classes that agree; the copy kept states its
-audience, then its frequency, then is newest). A row the collapse would close is counted as
+category, audience, variant, value/basis/bounds and name; frequency classes that agree;
+within that scope the copy kept states its frequency, then is newest). A row the collapse would close is counted as
 `would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
 `PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
 before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
 the late collapse to close it. Set it back to false to count only.
 Two gaps let 14 of the first 16 such rows through on Oct 17 (#1069). Twins read in one step: the
-step now takes each collapse line's rows best first (`collapseKeepOrder`: stated audience, then
-frequency, then the row it would insert last, which the collapse keeps). A later twin is refused
+step now takes each collapse line's rows best first (`collapseKeepOrder`: stated frequency,
+then the row it would insert last, which the collapse keeps). A later twin is refused
 against the copy already published in the step (`in_step`), so one copy goes live. A dry run
 tracks the copies it would have published. Before this, 13 rows of step 42289 went live and were
 closed at the same instant. A category the fold's live split moves: copies are looked up under the

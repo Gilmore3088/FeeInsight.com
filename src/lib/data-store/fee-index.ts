@@ -18,6 +18,7 @@ import {
   statsPopulationFilters,
   summarizeFeesBy,
   valuePerInstitution,
+  activeInstitutionFilter,
 } from "./fee-stats";
 import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
 import { peerFilterParts } from "@/lib/peer-filter-words";
@@ -197,7 +198,8 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}])
        AND ${statusFilter}
-       AND ${STATS_ROW_FILTER}`
+       AND ${STATS_ROW_FILTER}
+       AND ${activeInstitutionFilter("ct")}`
   ) as IndexRow[];
 }
 
@@ -463,9 +465,11 @@ export async function getInstitutionOwnFees(
 export async function getSourcedInstitutionCount(): Promise<number> {
   const [row] = await sql.unsafe(
     `SELECT COUNT(DISTINCT ef.institution_id)::int AS count
-       FROM published_fee_catalog ef
+        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`
   ) as { count: number }[];
   return Number(row?.count ?? 0);
 }
@@ -474,7 +478,7 @@ export async function getPeerIndex(
   filters: PeerFilterSet,
   approvedOnly = true
 ): Promise<IndexEntry[]> {
-  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
+  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER, activeInstitutionFilter("ct")];
   const params: (string | number | string[] | number[])[] = [];
   let paramIdx = 0;
 
@@ -600,6 +604,7 @@ export async function getPeerIndexes(
   const conditions = [
     "ef.fee_category IS NOT NULL",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     approvedOnly ? "ef.review_status = 'approved'" : "ef.review_status != 'rejected'",
   ];
   const params: (string[] | number[])[] = [];
@@ -701,6 +706,7 @@ export async function getDistrictMedianByCategory(
     "ef.fee_category = $1",
     "ef.review_status = 'approved'",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     "ct.fed_district IS NOT NULL",
   ];
   const params: (string | number)[] = [category];
@@ -757,6 +763,7 @@ export async function getDistrictFeeMedians(
       AND ef.amount IS NOT NULL
       AND ef.amount >= 0
       AND ${sql.unsafe(STATS_ROW_FILTER)}
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { fee_category: string; amount: number | null; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]
@@ -1127,7 +1134,8 @@ export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeInd
       WHERE ct.state_code = $1
         AND ef.fee_category IS NOT NULL
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [stateCode],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
@@ -1146,7 +1154,8 @@ export async function getDistrictFeeIndexes(district: number): Promise<StateFeeI
       WHERE ct.fed_district = $1
         AND ef.fee_category IS NOT NULL
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [district],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
@@ -1219,6 +1228,7 @@ export async function getComparableMarketIndex(scope: MarketScope): Promise<Inde
         AND ef.review_status = 'approved'
         AND ef.amount IS NOT NULL AND ef.amount >= 0
         AND ef.source_document_id IS NOT NULL
+        AND ${activeInstitutionFilter("ct")}
         AND COALESCE(ef.fee_audience, 'unknown') IN (${sqlList(MARKET_AUDIENCES)})`,
     params,
   )) as ComparableMarketRow[];
@@ -1314,7 +1324,8 @@ export async function getPeerFeeValues(
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [categories] as never[],
   ) as (PeerRow & {
     id: number | string;

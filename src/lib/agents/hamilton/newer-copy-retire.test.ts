@@ -57,7 +57,9 @@ function createDb(fees: NewerCopyFeeRow[], text = newerText): DbMock {
   return vi.fn((strings: TemplateStringsArray) => {
     const sqlText = templateText(strings);
     if (sqlText.includes("WITH older AS")) return Promise.resolve([{ older_id: 500, newer_id: 900 }]);
-    if (sqlText.includes("FROM unnest(")) return Promise.resolve(sqlText.includes("UPDATE") ? [] : fees);
+    if (sqlText.includes("FROM unnest(")) return Promise.resolve(sqlText.includes("UPDATE")
+      ? fees.filter((row) => row.fee_published_id === 4).map((row) => ({ fee_published_id: row.fee_published_id, lineage_ref: row.lineage_ref }))
+      : fees);
     if (sqlText.includes("FROM agent_source_texts")) {
       return Promise.resolve([
         { source_document_id: 900, normalized_text: text },
@@ -73,12 +75,25 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof retireFeesDroppe
 
 describe("Hamilton newer-copy check", () => {
 
-  it("never retires a fee Knox read from the newer text under any name or category", () => {
+  it("keeps a dropped line only when the query supplies a positive same-identity Knox witness", () => {
     const fees = olderFees.map((row) => (row.fee_published_id === 4 ? { ...row, newer_row_match: true } : row));
     const result = judgeNewerCopy(fees, newerText, olderText);
     expect(result.recognized).toBe(true);
     expect(result.dropped).toBe(0);
     expect(result.retire).toEqual([]);
+  });
+
+  it("never plans a retirement or restore for an operator-held row, even if supplied by a stale caller", () => {
+    const held = new Date();
+    const rows = [
+      ...olderFees.map((row) => row.fee_published_id === 4 ? { ...row, quarantined_at: held } : row),
+      fee(5, "Paper Statement", 3, { retired: true, quarantined_at: held }),
+    ];
+    const result = judgeNewerCopy(rows, newerText, `${olderText}\nPaper Statement | $3.00`);
+    expect(result.recognized).toBe(true);
+    expect(result.retire).toEqual([]);
+    expect(result.restore).toEqual([]);
+    expect(result.dropped).toBe(0);
   });
 
   it("separates fees still stated, still named and dropped", () => {

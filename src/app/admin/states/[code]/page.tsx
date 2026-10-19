@@ -85,7 +85,7 @@ export default async function StateDetailPage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   const { code } = await params;
   const stateCode = code.toUpperCase();
   const stateName = STATE_NAMES[stateCode] ?? stateCode;

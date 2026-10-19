@@ -275,6 +275,11 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // Discovery's own selector searches banks last checked by an older method. Guessed-path
+  // memory affects future attempts, without rewriting attempt history or existing fee data.
+  DISCOVERY_METHOD_VERSION: "The discovery selector searches banks last checked by an older method; its normal runs apply the new guessed-path memory, with no separate replay.",
+  SITE_SEARCH_STRATEGY: "Reporting-only version: future query receipts distinguish unchecked hits from rejected ones; historical receipts are not rewritten or replayed.",
+  ROSETTA_DOCUMENT_ACCESS_VERSION: "Logging-only strategy for failures before a reader runs; existing reader versions and retry windows decide eligibility, with no separate replay.",
   // v1 (#1868): the first LEI match rules. Every institution is checked by the gleif registry's
   // lei-match partitions in bounded batches; nothing was matched under an earlier version.
   LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
@@ -320,7 +325,16 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   AUDIENCE_RELABEL_VERSION: "Its own step reads every live unknown-audience fee on each run; nothing to replay.",
   // v2 (#1068) changes how a refresh is written (in place), not which fee moves; the stale fees
   // it works through are picked by the same query every publish step, so there is nothing to replay.
-  REFRESH_COPY_STRATEGY: "Writes the same refresh in place; the next publish steps pick up every stale fee as before.",
+  // #2109 only excludes cross-audience pairs from future refreshes. It intentionally keeps v2
+  // fingerprints: previously decided pairs and already-moved lineage need no automatic replay.
+  REFRESH_COPY_STRATEGY: "Refreshes matching-audience stale fees in place on normal publish steps. The audience safety restriction keeps v2 decisions closed; no historical correction or replay is queued.",
+  // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
+  // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
+  // Previously settled pairs require a separately reviewed impact/official-source decision.
+  NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
+  // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
+  // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
+  HAMILTON_PUBLISH_STRATEGY: "Audience-safe exact duplicate checks retain publish v3 decisions. No historical publish replay or closed-duplicate recovery is queued; ordinary live sweeps use the restricted identity predicate.",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live
@@ -403,6 +417,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
   // From reader-versions.ts, which imports nothing: the readers themselves load PDF and OCR code.
   const rosetta = await loadRosettaVersions();
   const manifests: ReplayManifest[] = [
+    // v83 (#2151): faithful wrapped bullets use the existing due-text selection.
+    // No stale-floor increase or historical rejection replay accompanies this fix.
     {
       key: "knox.rules",
       owner: "knox",
@@ -432,6 +448,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // shipping leaves rush card, loan payments leave returned deposited items, and a withdrawal at
     // the institution's own named ATM fails the non-network ATM fee.
     // v75 (Oct 19, #2023, James's "Take down"): a club or holiday account withdrawal fails early closure.
+    // v76 (Oct 19, #2037, James's "Split"): an ATM used abroad re-files from card_foreign_txn and
+    // atm_non_network to atm_international, its own type again.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

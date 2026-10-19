@@ -38,6 +38,9 @@ import {
   ASSET_TIER_RANGES,
   buildInstitutionPeerFilterCandidates,
   describePeerFilters,
+  coversOwnFees,
+  defaultCandidateEntries,
+  PEER_GROUP_ANCHOR,
   peerSetCandidate,
   type ActivePeerSet,
   type HamiltonPeerFilters,
@@ -153,37 +156,50 @@ function peerLabel(filters: HamiltonPeerFilters): string {
   return Object.keys(filters).length === 0 ? "Verified national index" : describePeerFilters(filters);
 }
 
+export { PEER_GROUP_ANCHOR } from "../peer-index";
+
+/** `covers[i]`: candidate i passes the shared group rule (coversOwnFees); index-aligned with the candidates. */
+type GroupOptions = { activeFirst?: boolean; covers?: readonly boolean[] };
+
 /**
- * Peers per fee: the first of the institution's default peer groups (state, charter, size
- * and district, then progressively wider, then national) where at least
- * MIN_PEERS_FOR_POSITION other institutions publish that fee. With `activeFirst`, the first
- * candidate is the bank's own peer group from Settings. A fee the first group is too thin for
- * widens to the next group, and the label says how many the first group had.
+ * Which candidate group is the institution's peer group, the same for every fee and every
+ * question (#2046): the saved group from Settings when there is one, otherwise the narrowest
+ * default group (state, charter, size and district, then progressively wider, then national)
+ * where at least MIN_PEERS_FOR_POSITION other institutions publish 80% of the bank's own fees
+ * (#2098), the same rule Simulate and reports use.
+ */
+export function peerGroupIndex(valuesBySet: Map<string, PeerFeeValue[]>[], candidateCount: number, options: GroupOptions = {}): number {
+  if (options.activeFirst) return 0;
+  for (let index = 0; index < candidateCount - 1; index++) {
+    // `covers` is the shared rule (#2098, coversOwnFees); without it, the overdraft test.
+    const fits = options.covers ? options.covers[index] : peerAmounts(valuesBySet[index]?.get(PEER_GROUP_ANCHOR) ?? []).length >= MIN_PEERS_FOR_POSITION;
+    if (fits) return index;
+  }
+  return candidateCount - 1;
+}
+
+/**
+ * Peers per fee, all from the one peer group (#2046). A fee too few in the group publish is not
+ * widened to another group, which made the peer count drift from question to question; its label
+ * says how many publish it, and the answer says too few to compare.
  */
 export function choosePeers(
   candidates: HamiltonPeerFilters[],
   valuesBySet: Map<string, PeerFeeValue[]>[],
   categories: string[],
-  options: { activeFirst?: boolean } = {},
+  options: GroupOptions = {},
 ): Map<string, CategoryPeers> {
+  const index = peerGroupIndex(valuesBySet, candidates.length, options);
+  const filters = candidates[index] ?? {};
   const chosen = new Map<string, CategoryPeers>();
   for (const category of categories) {
-    for (const [index, filters] of candidates.entries()) {
-      const values = valuesBySet[index]?.get(category) ?? [];
-      // Counted as the band counts them: sister charters of one shared schedule once (rule 7).
-      if (peerAmounts(values).length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
-        const ownCount = peerAmounts(valuesBySet[0]?.get(category) ?? []).length;
-        // A wider group than the default always says why (#1544): "OH · bank peers; only 3 of
-        // bank · over $250B peers publish this fee".
-        const label = index === 0
-          ? peerLabel(filters)
-          : options.activeFirst
-            ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
-            : `${peerLabel(filters)}; ${ownCount === 0 ? "none" : `only ${ownCount}`} of ${peerLabel(candidates[0])} publish this fee`;
-        chosen.set(category, { label, filters, values, saved: Boolean(options.activeFirst) && index === 0 });
-        break;
-      }
-    }
+    const values = valuesBySet[index]?.get(category) ?? [];
+    // Counted as the band counts them: sister charters of one shared schedule once (rule 7).
+    const publishing = peerAmounts(values).length;
+    const label = publishing >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1
+      ? peerLabel(filters)
+      : `${peerLabel(filters)}; ${publishing === 0 ? "none" : `only ${publishing}`} of them publish this fee`;
+    chosen.set(category, { label, filters, values, saved: Boolean(options.activeFirst) && index === 0 });
   }
   return chosen;
 }
@@ -231,6 +247,23 @@ export interface EnginePeerOptions {
   peerSet?: Pick<ActivePeerSet, "filters" | "label"> | null;
 }
 
+/**
+ * Which candidates pass the shared group rule (coversOwnFees, #2098), from per-fee counts of each
+ * default candidate. The bank's full list of published fees is read when only some were asked for.
+ * Undefined when a read fails, so the overdraft test still picks a group.
+ */
+async function groupCoverage(institutionId: number, candidates: HamiltonPeerFilters[], ownCategories?: ReadonlySet<string>): Promise<boolean[] | undefined> {
+  try {
+    const [indexes, own] = await Promise.all([
+      defaultCandidateEntries(candidates.slice(0, -1)),
+      ownCategories ? Promise.resolve(ownCategories) : getInstitutionOwnFees(institutionId).then((fees) => new Set(fees.keys())),
+    ]);
+    return candidates.map((_, i) => i < indexes.length && coversOwnFees(indexes[i] ?? [], own));
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadBase(
   institutionId: number,
   categories?: string[],
@@ -243,6 +276,8 @@ async function loadBase(
   for (const [category, fee] of ownFees) if (fee.price !== null) ownValues.set(category, fee.price);
   const ownCategories = new Set(ownFees.keys());
   const wanted = categories ?? [...ownCategories];
+  // The anchor fee is always read: it picks the one peer group every answer uses (#2046).
+  const read = wanted.includes(PEER_GROUP_ANCHOR) ? wanted : [...wanted, PEER_GROUP_ANCHOR];
   const activeFirst = Boolean(options.peerSet);
   const candidates: HamiltonPeerFilters[] = [
     ...(options.peerSet ? [peerSetCandidate(options.peerSet)] : []),
@@ -252,7 +287,12 @@ async function loadBase(
   const layerSets = marketLayerSets(institution);
   // One read for the peer candidates and the layers; national is already the last candidate.
   const extra = layerSets.filter((l) => l.scope !== "national");
-  const valuesBySet = await getPeerFeeValues([...candidates, ...extra.map((l) => l.filters)], wanted, institutionId);
+  const [valuesBySet, covers] = await Promise.all([
+    getPeerFeeValues([...candidates, ...extra.map((l) => l.filters)], read, institutionId),
+    activeFirst ? Promise.resolve(undefined) : groupCoverage(institutionId, candidates, categories ? undefined : ownCategories),
+  ]);
+  const groupOptions = { activeFirst, covers };
+  const groupIndex = peerGroupIndex(valuesBySet.slice(0, candidates.length), candidates.length, groupOptions);
   const readAt = new Date();
   const national = valuesBySet[candidates.length - 1] ?? new Map();
   return {
@@ -268,10 +308,10 @@ async function loadBase(
       ...extra.map((l, i) => ({ scope: l.scope, label: l.label, filters: l.filters, values: valuesBySet[candidates.length + i] ?? new Map() })),
     ],
     readAt,
-    peerLabel: peerLabel(candidates[0]),
+    peerLabel: peerLabel(candidates[groupIndex]),
     ownValues,
     ownCategories,
-    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, { activeFirst }),
+    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, groupOptions),
   };
 }
 
@@ -1081,6 +1121,17 @@ async function loadPeerGroupCoverage(filters: HamiltonPeerFilters, institutionId
   }
 }
 
+/** How many institutions a scoped peer group holds; undefined for the national index or when the read fails. */
+async function loadPeerGroupSize(filters: HamiltonPeerFilters, institutionId: number, feeCategory: string): Promise<number | undefined> {
+  const scoped = Boolean(filters.institutionIds?.length || filters.charter_type || filters.state_code || filters.states?.length || filters.asset_tiers?.length || filters.fed_districts?.length);
+  if (!scoped) return undefined;
+  try {
+    return (await getPeerGroupMembers(filters, institutionId, feeCategory, 1)).total;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
@@ -1093,6 +1144,10 @@ export async function getFeeResearch(
   const regulatorRead = getInstitutionRegulators(institutionId).catch(() => null);
   // Read beside the rest; used only when the bank has no row for the fee (#2035).
   const ownScheduleRead = loadOwnSchedule(institutionId, feeCategory);
+  // Every answer says how many institutions the one peer group holds (#2046); a list question
+  // reads the whole group below, so only the others count it here, beside the rest.
+  const groupFilters = base.peers.get(feeCategory)?.filters;
+  const peerGroupSizeRead = !options.listPeers && groupFilters ? loadPeerGroupSize(groupFilters, institutionId, feeCategory) : Promise.resolve(undefined);
   const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
@@ -1122,6 +1177,7 @@ export async function getFeeResearch(
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
   // A list question names the whole group, so the peers with no value for the fee are read too.
   const peerGroup = options.listPeers && chosen?.filters ? await loadPeerGroupCoverage(chosen.filters, institutionId, feeCategory, peers) : undefined;
+  const peerGroupSize = peerGroup ? peerGroup.total : await peerGroupSizeRead;
   const sorted = countedAmounts(peers);
   const band = sorted.length > 0
     ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
@@ -1158,6 +1214,7 @@ export async function getFeeResearch(
     peerLabel: chosen?.label ?? base.peerLabel,
     peers,
     peerGroupSaved: chosen?.saved ?? false,
+    ...(peerGroupSize !== undefined ? { peerGroupSize } : {}),
     ...(peerGroup !== undefined ? { peerGroup } : {}),
     band,
     bands: priceBands(sorted, current),
@@ -1200,7 +1257,7 @@ export async function getFeeResearch(
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
-      peerGroup: { label: chosen?.label ?? base.peerLabel, n: peers.length },
+      peerGroup: { label: chosen?.label ?? base.peerLabel, n: sorted.length },
       dataAsOf: {
         fees: newest([...peers.map((p) => p.publishedAt), ...layers.map((l) => l.asOf)]),
         financials: revenueLine?.quarterEnd ?? financials?.quarterEnd ?? null,
@@ -1224,9 +1281,11 @@ export async function getFeeResearch(
         ...(wire.some((f) => f.source.table === "institution_enforcement_actions") ? [{ label: "OCC, Federal Reserve and state enforcement action lists", table: "institution_enforcement_actions" }] : []),
       ],
       assumptions: [
-        peers.length < MIN_PEERS_FOR_POSITION
-          ? `Only ${peers.length} institutions publish this fee even nationally, too few for percentiles.`
-          : `Peers are the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish this fee.`,
+        sorted.length < MIN_PEERS_FOR_POSITION
+          ? `Only ${sorted.length} institutions in the peer group publish this fee, too few for percentiles.`
+          : chosen?.saved
+            ? "Peers are the saved peer group, the same group for every fee."
+            : `Peers are one group for every fee: the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish an overdraft fee.`,
         "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
         ...(rates
           ? ["Where a fee is stated as a rate, rates are compared only with other rates, one per institution, never with dollar amounts."]

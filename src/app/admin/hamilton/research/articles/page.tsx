@@ -11,7 +11,7 @@ export default async function ArticlesPage({
 }: {
   searchParams: Promise<{ status?: string; category?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   await ensureResearchTables();
 
   const params = await searchParams;

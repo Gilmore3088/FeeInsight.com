@@ -1,3 +1,4 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
@@ -255,7 +256,7 @@ export async function runWebsiteFind(options: {
     return result;
   }
 
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const model = PAID_PASS_MODELS.find();
   for (const row of rows) {
     const institutionId = Number(row.id);

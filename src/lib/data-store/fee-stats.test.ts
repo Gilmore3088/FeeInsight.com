@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeInstitutionFilter,
   maturityTier,
   summarizeFees,
   summarizeFeesBy,
@@ -351,7 +352,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
-    expect(STATS_METHOD_VERSION).toBe(13);
+    expect(STATS_METHOD_VERSION).toBe(15);
   });
 
   it("switched off, selects no keys and counts each charter", () => {
@@ -439,5 +440,17 @@ describe("statistics population descriptions (#1924)", () => {
     expect(statsCounting()).toBe(COUNT_SHARED_SCHEDULE_ONCE ? "counted_once" : "per_charter");
     expect(statsCounting(true)).toBe("counted_once");
     expect(statsCounting(false)).toBe("per_charter");
+  });
+});
+
+describe("activeInstitutionFilter", () => {
+  it("keeps every institution the regulator has not marked inactive, a null status included", () => {
+    expect(activeInstitutionFilter("ct")).toBe("ct.regulatory_status IS DISTINCT FROM 'inactive'");
+    expect(activeInstitutionFilter()).toBe(activeInstitutionFilter("ct"));
+  });
+
+  it("rejects an alias that is not a plain identifier, as statsRowFilter does", () => {
+    expect(() => activeInstitutionFilter("ct; DROP TABLE x")).toThrow("Invalid institution table alias");
+    expect(() => activeInstitutionFilter("")).toThrow();
   });
 });
