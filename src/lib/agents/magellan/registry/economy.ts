@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { CensusKeyError } from "@/lib/regulatory/census-acs";
 import type { GeocodeInput } from "@/lib/regulatory/census-geocoder";
+import { validCoordinates } from "@/lib/regulatory/coordinates";
 import {
   BeaKeyError,
   checkAreaStats,
@@ -59,6 +60,7 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  */
 
 export const ECONOMY_PARSER_VERSION = 1;
+export const BRANCH_TRACT_PARSER_VERSION = 2;
 
 /**
  * The remittance source's own reader version, so a change to it re-runs only that source.
@@ -567,7 +569,7 @@ async function runBranchTracts(db: RegistryDb, options: RegistryEconomyOptions):
     });
     // Address not matched but coordinates on file (SOD carries them; NCUA offices once geocoded): one lookup each.
     const retry = withAddress
-      .filter((r) => placements.get(`${r.branch_kind}|${r.branch_key}`)?.status !== "matched" && r.latitude !== null && r.longitude !== null)
+      .filter((r) => placements.get(`${r.branch_kind}|${r.branch_key}`)?.status !== "matched" && validCoordinates(r.latitude, r.longitude))
       .slice(0, BRANCH_POINT_LOOKUPS);
     pointLookups = retry.length;
     await mapWithConcurrency(retry, 4, async (r) => {
@@ -577,7 +579,10 @@ async function runBranchTracts(db: RegistryDb, options: RegistryEconomyOptions):
   }
   const counts: Record<string, number> = {};
   for (const p of placements.values()) counts[p.status] = (counts[p.status] ?? 0) + 1;
-  const base = { parser_version: ECONOMY_PARSER_VERSION, pending_before: pending, batch: rows.length, sent_to_geocoder: withAddress.length, point_lookups: pointLookups, outcomes: counts };
+  const invalidCoordinates = rows.filter(r => (r.latitude !== null || r.longitude !== null)
+    && !validCoordinates(r.latitude, r.longitude)).length;
+  const base = { parser_version: BRANCH_TRACT_PARSER_VERSION, pending_before: pending, batch: rows.length,
+    sent_to_geocoder: withAddress.length, point_lookups: pointLookups, invalid_coordinates: invalidCoordinates, outcomes: counts };
   if (options.dryRun) {
     return result(options, {
       rows: rows.length,
