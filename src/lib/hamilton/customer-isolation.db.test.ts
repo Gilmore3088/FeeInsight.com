@@ -335,6 +335,10 @@ describe.skipIf(!env.url)("Hamilton customer data isolation in isolated PostgreS
       const [upload] = await db`SELECT status FROM hamilton_uploads WHERE id = ${ids.upload}`;
       expect(upload.status).toBe("mapped");
       expect((await getMemoryFacts(A, X)).map((f) => f.fieldKey)).toEqual(["income.overdraft"]);
+      // A lone number is stored as a number, not the JSON string "1250000" (#2004).
+      expect((await getMemoryFacts(A, X)).map((f) => f.value)).toEqual([1250000]);
+      const [stored] = await db`SELECT jsonb_typeof(value) AS kind FROM hamilton_institution_memory WHERE user_id = ${A} AND institution_id = ${X} AND superseded_at IS NULL`;
+      expect(stored.kind).toBe("number");
       expect((await listDecisions(A, X)).map((d) => d.id)).toEqual([ids.decision]);
     });
   });
