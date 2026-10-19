@@ -30,6 +30,8 @@ export interface FiledFeeIncome {
   institution_id: number;
   institution_name: string;
   charter_type: string;
+  /** Current registry status; null/unknown status remains eligible, inactive peers do not. */
+  regulatory_status?: string | null;
   state_code: string | null;
   asset_size_tier: string | null;
   /** Fed district on file for the institution, when known. */
@@ -56,7 +58,7 @@ export interface FeeRevenueCorrelation extends FiledFeeIncome {
  */
 export async function getFiledFeeIncomeData(source?: FinancialSource): Promise<FiledFeeIncome[]> {
   const rows = await sql`
-    SELECT ct.id AS institution_id, ct.institution_name, ct.charter_type,
+    SELECT ct.id AS institution_id, ct.institution_name, ct.charter_type, ct.regulatory_status,
            ct.state_code, ct.asset_size_tier, ct.fed_district,
            ifin.report_date, ifin.source AS financial_source,
            ifin.total_assets, ifin.service_charge_income,
