@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { branchCitySpellings } from "./city-spellings";
 import { HIGHEST_TIER_CATEGORIES, statsRowFilter } from "./fee-stats";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { ownFeeFromRows, severalFeesOf, type SeveralFees } from "@/lib/own-fee";
@@ -80,12 +81,14 @@ async function marketFromOwnBranches(cert: number): Promise<{ counties: number[]
   };
 }
 
+/** The counties of the branches in the headquarters city, under every spelling the fold reads as that city (#2092). */
 async function marketFromHqCity(city: string, state: string): Promise<{ counties: number[]; year: number } | null> {
+  const spellings = await branchCitySpellings(city, state);
   const rows = await sql`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits WHERE state = ${state})
     SELECT DISTINCT b.county_fips, b.year
       FROM institution_branch_deposits b, latest
-     WHERE b.year = latest.y AND b.state = ${state} AND UPPER(b.city) = UPPER(${city})
+     WHERE b.year = latest.y AND b.state = ${state} AND UPPER(b.city) = ANY(${spellings}::text[])
        AND b.county_fips IS NOT NULL
      LIMIT ${MAX_MARKET_COUNTIES}
   `;
