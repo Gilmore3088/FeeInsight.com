@@ -6,6 +6,7 @@ const cards: DistrictCard[] = Array.from({ length: 12 }, (_, i) => ({
   id: i + 1,
   name: `District ${i + 1} name`,
   region: "the Southeast",
+  available: true,
   institutions: 100 + i,
   fees: {
     overdraft: { side: i % 3 === 0 ? "above" : i % 3 === 1 ? "below" : null, median: 35, us: 32 },
@@ -39,8 +40,25 @@ describe("DistrictsExhibit", () => {
     expect(screen.getAllByText("Overdraft: fewer than 10 institutions publish it").length).toBe(4);
   });
 
-  it("states the actual gap, even within 1%", () => {
-    expect(gapWords({ side: "same", median: 29.8, us: 30 })).toBe("within 1% of U.S.");
+  it("says a failed district read or a missing U.S. median is not available, never too few institutions", () => {
+    const down = cards.map((c, i) => (i === 0 ? { ...c, available: false } : i === 1 ? { ...c, fees: { ...c.fees, overdraft: { side: null, median: null, us: null } } } : c));
+    const { container } = render(<DistrictsExhibit {...props} districts={down} />);
+    expect(screen.getAllByText("Overdraft: not available right now")).toHaveLength(2);
+    expect(screen.getByText("Not available right now")).toBeTruthy();
+    // The failed district shows no "0 institutions" count.
+    expect(container.textContent).not.toContain("100 institutions with published fees");
+    // One hatch pattern id per swatch, never repeated.
+    const ids = [...container.querySelectorAll("pattern")].map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("lists 'not available' in the legend only when a district is", () => {
+    render(<DistrictsExhibit {...props} />);
+    expect(screen.queryByText("Not available right now")).toBeNull();
+  });
+
+  it("states the actual gap, even under 1%", () => {
+    expect(gapWords({ side: "same", median: 29.8, us: 30 })).toBe("less than 1% from U.S.");
     expect(gapWords({ side: "below", median: 29, us: 30 })).toBe("$1 below U.S. (3%)");
     expect(gapWords({ side: null, median: null, us: 30 })).toBe("");
   });
@@ -76,7 +94,7 @@ describe("DistrictsExhibit", () => {
     // Two districts compare on NSF; the other ten are hatched.
     expect(screen.getByText("(10)")).toBeTruthy();
     // Every card now follows NSF: two compare, within 1%, with both figures shown.
-    expect(screen.getAllByText("within 1% of U.S.")).toHaveLength(2);
+    expect(screen.getAllByText("less than 1% from U.S.")).toHaveLength(2);
     expect(screen.getByRole("list", { name: "NSF median in each district, against the U.S." })).toBeTruthy();
   });
 });

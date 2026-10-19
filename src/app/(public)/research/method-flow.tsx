@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
 import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
-import type { PublicStatsSummary } from "@/lib/public-stats";
+import { UNAVAILABLE_LABEL, type PublicStatsSummary } from "@/lib/public-stats";
 import { PrintButton } from "./print-button";
 import { HubSection } from "./district/[id]/district-hub";
 
@@ -59,11 +59,20 @@ function Dots({ items }: { items: string[] }) {
 }
 
 /** Coverage counts, how the data is built and checked, and the PDF; after the findings, not before them. */
-export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: PublicStatsSummary; stateCount: number; coverageLabel: string }) {
+export function MethodFlow({
+  summary,
+  stateCount,
+  coverageLabel,
+}: {
+  summary: PublicStatsSummary;
+  /** Null when the coverage read failed: shown as unavailable, never "0". */
+  stateCount: number | null;
+  coverageLabel: string | null;
+}) {
   const stats = [
     { value: summary.observationsLabel, label: "published fee entries" },
     { value: summary.categoriesLabel, label: "fee categories" },
-    { value: String(stateCount), label: "states with published fees" },
+    { value: stateCount == null ? UNAVAILABLE_LABEL : String(stateCount), label: "states with published fees" },
   ];
 
   return (
@@ -71,7 +80,7 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
       id="about-data"
       title="Methodology"
       line={`${summary.institutionsLabel} of the ${summary.monitoredLabel} banks and credit unions monitored have verified published fees.`}
-      source={`${PRODUCT_NAME}, verified published fee schedules; coverage spans ${coverageLabel}.`}
+      source={`${PRODUCT_NAME}, verified published fee schedules${coverageLabel ? `; coverage spans ${coverageLabel}` : ""}.`}
     >
       <div>
       <p id="about-data-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">Coverage of the index today</p>
@@ -126,7 +135,7 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
         <Note title="Sources and coverage">
           <Dots items={SOURCES} />
           <p className="mt-3 text-[12px] text-ink-muted">
-            Coverage: banks and credit unions of every asset size, all 12 Federal Reserve districts, {coverageLabel}.
+            Coverage: banks and credit unions of every asset size, all 12 Federal Reserve districts{coverageLabel ? `, ${coverageLabel}` : ""}.
             Each state and district report shows how many of its institutions have published fees so far.
           </p>
         </Note>
@@ -164,7 +173,7 @@ export function ProBand({ sampleLive }: { sampleLive: boolean }) {
           Apply this to your institution
         </h2>
         <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">
-          Hamilton, the {SITE_NAME} Pro workspace, sets your fees against a peer set you choose, from your own counties to the
+          Hamilton, the {SITE_NAME} workspace, sets your fees against a peer set you choose, from your own counties to the
           nation, with the source for every figure.
         </p>
       </div>

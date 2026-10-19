@@ -312,6 +312,18 @@ function gapWords(gap: number): string {
   return `${formatFeeAmount(Math.abs(gap))} ${gap > 0 ? "above" : "below"}`;
 }
 
+/** The fees openingFinding names, by the same rules, so the report doesn't list them again. */
+export function openingKeys(fees: OpeningFee[], minInstitutions: number): string[] {
+  const solid = fees.filter((f) => f.us && f.us.median > 0 && f.institutions >= minInstitutions);
+  const od = solid.find((f) => f.key === "overdraft");
+  const nsf = solid.find((f) => f.key === "nsf");
+  if (od && nsf && (gapOf(od) !== 0 || gapOf(nsf) !== 0)) return ["overdraft", "nsf"];
+  const widest = [...solid]
+    .filter((f) => gapOf(f) !== 0)
+    .sort((x, y) => Math.abs(gapOf(y)) / y.us!.median - Math.abs(gapOf(x)) / x.us!.median)[0];
+  return [...(od && nsf ? ["overdraft", "nsf"] : []), ...(widest ? [widest.key] : [])];
+}
+
 /**
  * The district's opening takeaway: its overdraft and NSF medians against the national median,
  * or, when both are about the same as it, the fee with the widest gap. Only fees with at least `minInstitutions`

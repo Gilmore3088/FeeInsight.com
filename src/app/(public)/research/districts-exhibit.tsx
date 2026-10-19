@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useSyncExternalStore } from "react";
+import { useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { US_STATES } from "@/lib/us-map-paths";
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
@@ -14,8 +14,20 @@ export interface DistrictFeeCell {
   side: Side;
   /** The district median; null when the district has no median for the fee. */
   median: number | null;
-  /** The national median it is compared with. */
+  /** The national median it is compared with; null when the national figure isn't available. */
   us: number | null;
+}
+
+/** What a district shows for one fee: a side, too few institutions, or no figure available right now. */
+export type CellStatus = "above" | "same" | "below" | "thin" | "unavailable";
+
+/**
+ * A failed district read, or a national median that is missing or not above $0, is "unavailable"
+ * (not "too few institutions"); a district with a figure but no side has too few institutions.
+ */
+export function cellStatus(d: Pick<DistrictCard, "available">, cell: DistrictFeeCell | undefined): CellStatus {
+  if (!d.available || !cell || cell.us == null || cell.us <= 0) return "unavailable";
+  return cell.side ?? "thin";
 }
 
 /** One Fed district as the hub's districts exhibit draws it. */
@@ -25,6 +37,8 @@ export interface DistrictCard {
   name: string;
   /** The region in a reader's words, e.g. "the Southeast". */
   region: string;
+  /** False when the district's index couldn't be read; its cards and shading then say so. */
+  available: boolean;
   institutions: number;
   /** Each map fee's shading and figures, by fee key: the same rule as the section's finding. */
   fees: Record<string, DistrictFeeCell>;
@@ -55,29 +69,38 @@ function feeFromUrl(): string | null {
 /** Rows a phone shows before "Show all". */
 const PHONE_ROWS = 5;
 
-function legendFor(minInstitutions: number): { key: "above" | "same" | "below" | "none"; label: string; fill: string }[] {
+const UNAVAILABLE_FILL = "var(--fi-viz-none)";
+
+function legendFor(minInstitutions: number): { key: CellStatus; label: string; fill: string }[] {
   return [
     { key: "above", label: "Above the national median", fill: SIDE_FILL.above },
-    { key: "same", label: "Within 1% of it", fill: SIDE_FILL.same },
+    { key: "same", label: "Less than 1% from it", fill: SIDE_FILL.same },
     { key: "below", label: "Below", fill: SIDE_FILL.below },
-    { key: "none", label: `Fewer than ${minInstitutions} institutions publish it`, fill: "none" },
+    { key: "thin", label: `Fewer than ${minInstitutions} institutions publish it`, fill: "hatch" },
+    { key: "unavailable", label: "Not available right now", fill: UNAVAILABLE_FILL },
   ];
 }
 
-function fillFor(side: Side): string {
-  return side ? SIDE_FILL[side] : NOT_COMPARED;
+function fillFor(status: CellStatus): string {
+  if (status === "thin") return NOT_COMPARED;
+  if (status === "unavailable") return UNAVAILABLE_FILL;
+  return SIDE_FILL[status];
 }
 
 function Swatch({ fill }: { fill: string }) {
+  // Each swatch gets its own pattern id, so the page never repeats one.
+  const hatch = `legend-hatch-${useId().replace(/:/g, "")}`;
   return (
     <svg aria-hidden="true" viewBox="0 0 14 14" className="h-3.5 w-3.5 shrink-0">
-      <defs>
-        <pattern id="legend-hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <rect width="4" height="4" fill="var(--color-surface-200)" />
-          <line x1="0" y1="0" x2="0" y2="4" stroke="var(--color-ink)" strokeOpacity={0.3} strokeWidth={1.5} />
-        </pattern>
-      </defs>
-      <rect width="14" height="14" rx="3" fill={fill === "none" ? "url(#legend-hatch)" : fill} stroke="var(--color-ink)" strokeOpacity={0.25} />
+      {fill === "hatch" && (
+        <defs>
+          <pattern id={hatch} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="4" height="4" fill="var(--color-surface-200)" />
+            <line x1="0" y1="0" x2="0" y2="4" stroke="var(--color-ink)" strokeOpacity={0.3} strokeWidth={1.5} />
+          </pattern>
+        </defs>
+      )}
+      <rect width="14" height="14" rx="3" fill={fill === "hatch" ? `url(#${hatch})` : fill} stroke="var(--color-ink)" strokeOpacity={0.25} />
     </svg>
   );
 }
@@ -118,8 +141,10 @@ export function DistrictsExhibit({
   const fee = mapFees.find((f) => f.key === feeKey) ?? mapFees[0];
   const legend = legendFor(minInstitutions);
   const finding = (fee && findings[fee.key]) || fallback;
-  const count = (key: string) => districts.filter((d) => (d.fees[fee?.key ?? ""]?.side ?? "none") === key).length;
-  const sideOf = (d: DistrictCard): Side => (fee ? (d.fees[fee.key]?.side ?? null) : null);
+  const statusOf = (d: DistrictCard): CellStatus => cellStatus(d, fee ? d.fees[fee.key] : undefined);
+  const count = (key: CellStatus) => districts.filter((d) => statusOf(d) === key).length;
+  // "Not available right now" is listed only when some district is.
+  const shownLegend = legend.filter((l) => l.key !== "unavailable" || count("unavailable") > 0);
 
   return (
     <div className="space-y-6">
@@ -163,7 +188,7 @@ export function DistrictsExhibit({
             const path = (
               <path
                 d={st.d}
-                fill={card ? fillFor(sideOf(card)) : "var(--fi-viz-none)"}
+                fill={card ? fillFor(statusOf(card)) : "var(--fi-viz-none)"}
                 fillOpacity={active === null || active === d || !d ? 1 : 0.4}
                 stroke="var(--color-paper)"
                 strokeWidth={1}
@@ -214,11 +239,11 @@ export function DistrictsExhibit({
             {fee ? `${fee.name} median` : "Median"} against the national median, by Federal Reserve district
           </p>
           <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-[12px] text-ink-soft">
-            {legend.map((l) => (
+            {shownLegend.map((l) => (
               <li key={l.key} className="flex items-center gap-1.5">
                 <Swatch fill={l.fill} />
                 {l.label}
-                <span className="tabular-nums text-ink-muted">({count(l.key === "none" ? "none" : l.key)})</span>
+                <span className="tabular-nums text-ink-muted">({count(l.key)})</span>
               </li>
             ))}
           </ul>
@@ -259,10 +284,12 @@ export function DistrictsExhibit({
                       <span className="font-normal text-ink-muted"> · {d.region.replace(/^the /, "")}</span>
                     )}
                   </span>
-                  {fee && <FeeLine fee={fee} cell={d.fees[fee.key]} minInstitutions={minInstitutions} />}
-                  <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
-                    {NUMBER.format(d.institutions)} institutions with published fees
-                  </span>
+                  {fee && <FeeLine fee={fee} cell={d.fees[fee.key]} status={statusOf(d)} minInstitutions={minInstitutions} />}
+                  {d.available && (
+                    <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
+                      {NUMBER.format(d.institutions)} institutions with published fees
+                    </span>
+                  )}
                 </span>
                 <span aria-hidden="true" className="self-center text-ink-muted group-hover:text-brick">
                   &rsaquo;
@@ -292,21 +319,31 @@ export function DistrictsExhibit({
   );
 }
 
-/** The gap in words: "$2 above U.S. (7%)", or "within 1% of U.S." when the gap is under 1% of the U.S. median. */
+/** The gap in words: "$2 above U.S. (7%)", or "less than 1% from U.S." when the gap is under 1% of the U.S. median. */
 export function gapWords(cell: DistrictFeeCell): string {
   if (!cell.side || cell.median == null || cell.us == null || cell.us <= 0) return "";
-  if (cell.side === "same") return "within 1% of U.S.";
+  if (cell.side === "same") return "less than 1% from U.S.";
   const gap = Math.abs(cell.median - cell.us);
   const share = Math.round((gap / cell.us) * 100);
   return `${formatFeeAmount(gap)} ${cell.side} U.S.${share >= 1 ? ` (${share}%)` : ""}`;
 }
 
-/** The selected fee in one district: its median, the national median and the actual gap, or why it can't be compared. */
-function FeeLine({ fee, cell, minInstitutions }: { fee: MapFee; cell: DistrictFeeCell | undefined; minInstitutions: number }) {
-  if (!cell?.side || cell.median == null || cell.us == null || cell.us <= 0) {
+/** The selected fee in one district: its median, the national median and the actual gap, or why there's no comparison. */
+function FeeLine({
+  fee,
+  cell,
+  status,
+  minInstitutions,
+}: {
+  fee: MapFee;
+  cell: DistrictFeeCell | undefined;
+  status: CellStatus;
+  minInstitutions: number;
+}) {
+  if (status === "unavailable" || status === "thin" || !cell || cell.median == null || cell.us == null) {
     return (
       <span className="mt-1 block text-[12px] text-ink-muted">
-        {fee.name}: fewer than {minInstitutions} institutions publish it
+        {fee.name}: {status === "unavailable" ? "not available right now" : `fewer than ${minInstitutions} institutions publish it`}
       </span>
     );
   }

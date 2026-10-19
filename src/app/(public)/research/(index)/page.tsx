@@ -11,18 +11,19 @@ import Link from "next/link";
 import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
-import { getPublicNationalIndex, getPublicSnapshot } from "@/lib/public-stats";
+import { UNAVAILABLE_PUBLIC_STATS, getPublicNationalIndex, getPublicSnapshot, type PublicSnapshot } from "@/lib/public-stats";
 import {
   getDistrictFeeIndexesCached,
   getPublishedArticleSummariesCached,
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
+import type { ResearchCoverage } from "@/lib/data-store/geographic";
 import type { IndexEntry, StateFeeIndexes } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getStatesForDistrict } from "@/lib/us-map-paths";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-import { softRead } from "@/lib/soft-read";
+import { createReadBudget } from "@/lib/read-deadline";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { STATE_FINDING_MIN_INSTITUTIONS } from "@/lib/research-report/state-findings";
 import { ResearchHero, ResearchSectionNav } from "../research-hero";
@@ -48,6 +49,10 @@ export const metadata: Metadata = {
 };
 
 const ARTICLE_LIMIT = 5;
+/** One deadline for every read behind a render, as the institutions directory. */
+const RESEARCH_READ_BUDGET_MS = 15_000;
+/** The snapshot a render shows when it can't be read in time: every count unavailable, never "0". */
+const UNAVAILABLE_SNAPSHOT: PublicSnapshot = { summary: UNAVAILABLE_PUBLIC_STATS, categories: [] };
 const DISTRICT_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
 /** Alaska, Hawaii and the territories sit in insets or off the map, so they don't place a district's label. */
 const OFF_MAINLAND = new Set(["AK", "HI", "PR", "VI", "GU", "AS", "MP"]);
@@ -84,36 +89,37 @@ export default async function ResearchHubPage() {
   const showAllCategories = false;
 
   // All reads are served from the public cache between publishes. Counts and benchmarks
-  // come from one shared snapshot, so they match the homepage and fee index.
-  // The coverage read is required: without it the page would state a wrong state count, so a
-  // failure goes to the error boundary. A failed optional read hides its part, and the render
-  // is cached for a minute, not an hour.
-  const [{ summary, categories: summaries }, coverage, articlesRead, nationalRead, districtReads, sampleRead] = await Promise.all([
-    getPublicSnapshot(),
-    getResearchCoverageCached(),
-    softRead(getPublishedArticleSummariesCached(ARTICLE_LIMIT), [] as ArticleSummary[]),
-    softRead(getPublicNationalIndex(), [] as IndexEntry[]),
-    Promise.all(DISTRICT_IDS.map((id) => softRead(getDistrictFeeIndexesCached(id), null as StateFeeIndexes | null))),
-    softRead(sampleReportAvailable(), false),
+  // come from one shared snapshot, so they match the homepage and fee index. The page
+  // prerenders at build time, so every read is optional with an honest fallback under one
+  // deadline (findings/2026-10-19-required-read-fails-build.md): a slow or failed read hides
+  // or labels its part as unavailable, and that render is cached for a minute, not an hour.
+  const budget = createReadBudget(RESEARCH_READ_BUDGET_MS, "Research hub");
+  const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive] = await Promise.all([
+    budget.optional(getPublicSnapshot(), "public snapshot", UNAVAILABLE_SNAPSHOT),
+    budget.optional<ResearchCoverage | null>(getResearchCoverageCached(), "research coverage", null),
+    budget.optional(getPublishedArticleSummariesCached(ARTICLE_LIMIT), "articles", [] as ArticleSummary[]),
+    budget.optional(getPublicNationalIndex(), "national index", [] as IndexEntry[]),
+    Promise.all(
+      DISTRICT_IDS.map((id) => budget.optional<StateFeeIndexes | null>(getDistrictFeeIndexesCached(id), `district ${id} index`, null)),
+    ),
+    budget.optional(sampleReportAvailable(), "sample report", false),
   ]);
-  const articles = articlesRead.value;
-  // Without the national index no district can be compared, so the district map shows its fallback.
-  const nationalIndex = nationalRead.value;
-  const districtIndexes = districtReads.map((r) => r.value);
-  const sampleLive = sampleRead.value;
-  if (!summary.complete || summaries.length === 0 || articlesRead.failed || nationalRead.failed || sampleRead.failed || districtReads.some((r) => r.failed)) {
-    await shortenPageLife();
-  }
+  if (budget.failed() || !summary.complete || summaries.length === 0) await shortenPageLife();
+  // With no national index, or no district read, the district comparison says it's unavailable.
+  const districtsDown = nationalIndex.length === 0 || districtIndexes.every((x) => x === null);
 
-  const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
+  const statesWithFees = (coverage?.states ?? []).filter((s) => s.verified_institutions > 0);
   // US_TERRITORIES includes DC; count DC separately.
   const territoryCount = statesWithFees.filter((s) => US_TERRITORIES.has(s.state_code) && s.state_code !== "DC").length;
   const hasDc = statesWithFees.some((s) => s.state_code === "DC");
-  const stateCount = statesWithFees.length - territoryCount - (hasDc ? 1 : 0);
+  const stateCount = coverage ? statesWithFees.length - territoryCount - (hasDc ? 1 : 0) : null;
   const benchmarks = pickBenchmarks(summaries);
   const findings = computeFindings(benchmarks);
   const asOf = summary.refreshedOn;
-  const coverageLabel = `${stateCount} states${hasDc ? ", DC" : ""}${territoryCount > 0 ? ` and ${territoryCount} territories` : ""}`;
+  const coverageLabel = coverage
+    ? `${stateCount} states${hasDc ? ", DC" : ""}${territoryCount > 0 ? ` and ${territoryCount} territories` : ""}`
+    : null;
+  const usMedian = new Map(nationalIndex.map((e) => [e.fee_category, e.median_amount]));
 
   // Every district card reads the same fee; each district's other large gaps sit in its own report.
   const openings = DISTRICT_IDS.map((id, i) => {
@@ -132,11 +138,13 @@ export default async function ResearchHubPage() {
     id,
     name,
     region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
+    available: indexes !== null && nationalIndex.length > 0,
     institutions: indexes?.verified_institutions ?? 0,
     fees: Object.fromEntries(
       mapFees.map(({ key }): [string, DistrictFeeCell] => {
         const f = opening?.againstUs.find((x) => x.key === key);
-        return [key, { side: opening ? feeSide(opening, key) : null, median: f?.median ?? null, us: f?.us?.median ?? null }];
+        // The U.S. median comes from the national index itself, so a district with no row for the fee reads as too few institutions, not unavailable.
+        return [key, { side: opening ? feeSide(opening, key) : null, median: f?.median ?? null, us: usMedian.get(key) ?? null }];
       }),
     ),
     label: districtLabel(id),
@@ -172,7 +180,11 @@ export default async function ResearchHubPage() {
         <HubSection
           id="explore"
           title="Explore your market"
-          line={`Reports for ${coverageLabel}, all 12 Federal Reserve districts and the U.S.`}
+          line={
+            coverageLabel
+              ? `Reports for ${coverageLabel}, all 12 Federal Reserve districts and the U.S.`
+              : "Reports for all 12 Federal Reserve districts and the U.S. The state list isn't available right now."
+          }
           source={
             <>
               {PRODUCT_NAME}, verified published fee schedules, one value per institution. A state is listed once any of its institutions
@@ -181,7 +193,13 @@ export default async function ResearchHubPage() {
           }
         >
           <ExploreMarket
-            state={<GeoReports states={coverage.states} />}
+            state={
+              coverage ? (
+                <GeoReports states={coverage.states} />
+              ) : (
+                <p className="text-[14px] text-ink-muted">The state list isn&apos;t available right now. Try again in a minute.</p>
+              )
+            }
             district={
               <div>
                 <DistrictsExhibit
@@ -189,7 +207,13 @@ export default async function ResearchHubPage() {
                   mapFees={mapFees}
                   initialFee={initialFee}
                   findings={districtLines}
-                  fallback={mapFees.length > 0 ? districtsFallback(initialFee) : "Too few districts have enough published fees yet for a comparison."}
+                  fallback={
+                    districtsDown
+                      ? "District comparisons aren't available right now. Try again in a minute."
+                      : mapFees.length > 0
+                        ? districtsFallback(initialFee)
+                        : "Too few districts have enough published fees yet for a comparison."
+                  }
                   minInstitutions={STATE_FINDING_MIN_INSTITUTIONS}
                 />
                 <details className="group mt-3">

@@ -8,7 +8,7 @@ import {
 import { boardFees, splitForAccess, type BoardFee } from "../../state/[code]/state-view";
 import { formatFeeAmount } from "@/lib/format";
 import { sentenceName } from "../../findings";
-import { nationalGap, openingFinding, type OpeningFee } from "./district-hub-view";
+import { nationalGap, openingFinding, openingKeys, type OpeningFee } from "./district-hub-view";
 
 /**
  * The district's fees against the U.S. and its one-line opening finding, shaped once so the
@@ -122,11 +122,18 @@ export function districtsFinding(sides: ("above" | "below" | "same" | null)[], t
   if (known.length < Math.ceil(total / 2)) return null;
   const name = sentenceName(fee);
   const n = (side: string) => known.filter((s) => s === side).length;
-  const [above, below, same] = [n("above"), n("below"), n("same")];
   const of = known.length === total ? `${known.length} districts` : `${known.length} districts with enough ${name} fees`;
-  const parts = [`above the national median in ${above} of ${of}`];
-  if (below > 0) parts.push(`below it in ${below}`);
-  if (same > 0) parts.push(`within 1% of it in ${same}`);
+  // Only sides with districts are named, so the line never says "in 0 of 12".
+  const parts = (
+    [
+      ["above", "above the national median", "above it"],
+      ["below", "below the national median", "below it"],
+      ["same", "less than 1% from the national median", "less than 1% from it"],
+    ] as const
+  )
+    .filter(([side]) => n(side) > 0)
+    .map(([side, first, later], i) => (i === 0 ? `${first} in ${n(side)} of ${of}` : `${later} in ${n(side)}`));
+  if (parts.length === 0) return null;
   const tail = parts.length > 1 ? `${parts.length > 2 ? "," : ""} and ${parts.pop()}` : "";
   return `The ${name} median is ${parts.join(", ")}${tail}.`;
 }
@@ -139,10 +146,11 @@ export function districtsFallback(fee: string): string {
 /**
  * The district report's "other notable differences": up to `limit` fees furthest from the
  * national median as a share of it (the strongestFee rule: enough institutions, a gap over 1%
- * and over MIN_LEAD_GAP dollars), skipping fees the page already leads with. Each line states
+ * and over MIN_LEAD_GAP dollars), skipping the fees the page's opening sentence names
+ * (openingKeys, by default). Each line states
  * both medians and the gap, so a reader sees the size of the difference.
  */
-export function notableDifferences(fees: OpeningFee[], minInstitutions: number, skip: string[] = [], limit = 3): { key: string; line: string }[] {
+export function notableDifferences(fees: OpeningFee[], minInstitutions: number, skip: string[] = openingKeys(fees, minInstitutions), limit = 3): { key: string; line: string }[] {
   const share = (f: OpeningFee) => Math.abs(nationalGap(f)) / f.us!.median;
   return fees
     .filter((f) => !skip.includes(f.key) && f.us && f.us.median > 0 && f.institutions >= minInstitutions)

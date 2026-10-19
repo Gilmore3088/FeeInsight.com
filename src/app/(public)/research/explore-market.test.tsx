@@ -14,6 +14,10 @@ describe("ExploreMarket", () => {
     expect(screen.getByText("State panel").closest("[role=tabpanel]")?.hasAttribute("hidden")).toBe(true);
     fireEvent.keyDown(tabs[1], { key: "ArrowRight" });
     expect(tabs[2].getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tabs[2], { key: "Home" });
+    expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(tabs[0], { key: "End" });
+    expect(tabs[2].getAttribute("aria-selected")).toBe("true");
   });
 
   it("keeps the /districts anchor on the page", () => {

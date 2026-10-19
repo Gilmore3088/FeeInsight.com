@@ -104,10 +104,16 @@ describe("strongestDifference (the hub's card line)", () => {
 });
 
 describe("districtsFinding", () => {
-  it("counts districts above, below and within 1%", () => {
+  it("never says 'in 0 of 12'", () => {
+    expect(districtsFinding([...Array(8).fill("below"), ...Array(4).fill("same")], 12)).toBe(
+      "The overdraft median is below the national median in 8 of 12 districts and less than 1% from it in 4.",
+    );
+  });
+
+  it("counts districts above, below and less than 1% from it", () => {
     const sides = [...Array(5).fill("above"), ...Array(4).fill("below"), ...Array(3).fill("same")];
     expect(districtsFinding(sides, 12)).toBe(
-      "The overdraft median is above the national median in 5 of 12 districts, below it in 4, and within 1% of it in 3.",
+      "The overdraft median is above the national median in 5 of 12 districts, below it in 4, and less than 1% from it in 3.",
     );
   });
 
@@ -140,9 +146,23 @@ describe("notableDifferences (the district report's list)", () => {
       { key: "stop_payment", median: 30.1, institutions: 50, us: { median: 30 } },
       { key: "nsf", median: 60, institutions: 3, us: { median: 30 } },
     ];
+    // By default it skips the fees the opening names: overdraft and NSF here.
+    expect(notableDifferences(fees, 10).map((f) => f.key)).toEqual(["wire_domestic_outgoing", "monthly_maintenance"]);
     expect(notableDifferences(fees, 10, ["overdraft"])).toEqual([
       { key: "wire_domestic_outgoing", line: "Outgoing domestic wire: $30 median, versus $25 nationally ($5 higher, 20%)." },
       { key: "monthly_maintenance", line: "Monthly maintenance: $8 median, versus $10 nationally ($2 lower, 20%)." },
     ]);
+  });
+});
+
+describe("notableDifferences skips the opening's widest fee", () => {
+  it("leaves out the fee the opening sentence names when overdraft and NSF match the U.S.", () => {
+    const fees = [
+      { key: "overdraft", median: 30.1, institutions: 50, us: { median: 30 } },
+      { key: "nsf", median: 30, institutions: 50, us: { median: 30 } },
+      { key: "wire_domestic_outgoing", median: 35, institutions: 50, us: { median: 25 } },
+      { key: "monthly_maintenance", median: 8, institutions: 50, us: { median: 10 } },
+    ];
+    expect(notableDifferences(fees, 10).map((f) => f.key)).toEqual(["monthly_maintenance"]);
   });
 });

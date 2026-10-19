@@ -60,6 +60,7 @@ import {
   hubFeeKeys,
   hubFeeName,
   monthYear,
+  nationalGap,
   quarterLabel,
   revenueTrend,
   stateHubRows,
@@ -160,9 +161,10 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
   );
 
   // The research hub's district cards follow one fee; each district's other large gaps are listed here.
-  // Overdraft and NSF lead the opening sentence, so they aren't repeated.
-  const notable = notableDifferences(againstUs, STATE_FINDING_MIN_INSTITUTIONS, ["overdraft", "nsf"]);
-  const aboveUs = againstUs.filter((f) => f.us && f.median > f.us.median * 1.01).length;
+  // The fees the opening sentence names aren't repeated.
+  const notable = notableDifferences(againstUs, STATE_FINDING_MIN_INSTITUTIONS);
+  // Same 1% rule as nationalGap, so the heading and the shading agree at the boundary.
+  const aboveUs = againstUs.filter((f) => f.us && f.us.median > 0 && nationalGap(f) > 0).length;
   // The hero's band figure counts the same fees as the list and the heading below it.
   const insideBand = againstUs.filter((f) => positionIn(f.median, f.us!) === "within").length;
   const charter: CharterFee[] = paired.map((f) => ({
@@ -655,7 +657,7 @@ export async function DistrictReport({ id, user }: { id: string; user: User | nu
           {!isPro && (
             <div className="mt-4 border-t border-border pt-4">
               <p className="text-[14px] text-ink-muted">
-                Hamilton, the Fee Insight Pro workspace, sets every fee you charge against institutions your size and in your
+                Hamilton, the Fee Insight workspace, sets every fee you charge against institutions your size and in your
                 district.
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
