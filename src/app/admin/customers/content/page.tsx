@@ -153,7 +153,7 @@ function DraftCard({ draft }: { draft: ContentDraft }) {
 
 /** The content queue: every post the content workflows drafted, waiting for James. */
 export default async function ContentQueuePage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const ready = await contentSchemaReady().catch(() => false);
   const drafts = ready ? await listContentDrafts(80) : [];
 

@@ -23,7 +23,7 @@ export default async function DistrictDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { id } = await params;
   const districtId = parseInt(id, 10);
 

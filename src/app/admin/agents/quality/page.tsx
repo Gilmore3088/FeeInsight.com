@@ -146,7 +146,7 @@ function RepeatedErrors({ quality }: { quality: AgentQuality }) {
 
 /** Quality (PRD 12.3): regressions, the replay backlog, schedules and repeated errors, from the ledgers. */
 export default async function AgentsQualityPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const quality = await getAgentQuality();
   return (
     <section className="flex flex-col gap-4 pb-10">

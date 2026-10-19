@@ -123,7 +123,7 @@ export default async function ScoreboardPage({
 }: {
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await scoreboardSchemaReady().catch(() => false);
   const rows = ready ? await listScoreboardSnapshots(30) : [];

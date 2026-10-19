@@ -334,7 +334,8 @@ export async function requireAuth(permission?: Permission): Promise<User> {
     redirect("/login");
   }
   if (permission && !hasPermission(user, permission)) {
-    redirect("/admin?error=forbidden");
+    // Customers cannot enter /admin, including its forbidden page redirect.
+    redirect(permission === "operate" ? "/account" : "/admin?error=forbidden");
   }
   return user;
 }

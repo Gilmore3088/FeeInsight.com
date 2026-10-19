@@ -9,7 +9,7 @@ export const maxDuration = 30;
 
 /** One plain page: which institution each agent just handled and what happened to it. */
 export default async function LivePage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [snapshot, waiting] = await Promise.all([
     getFlowSnapshot().catch((error) => {
       console.error("Live flow snapshot failed", error);

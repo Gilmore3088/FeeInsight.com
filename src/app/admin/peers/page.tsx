@@ -31,7 +31,7 @@ export default async function PeersPage({
     district?: string;
   }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const params = await searchParams;
   const charter = params.charter ?? "";

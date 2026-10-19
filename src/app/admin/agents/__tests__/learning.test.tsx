@@ -33,7 +33,7 @@ describe("Learning reporting", () => {
       method({ strategy: "read.docx_text", version: 1, attempts: 4, ok: 4, outcomes: { ok: 4 } }),
     ] });
     render(await LearningPage());
-    expect(requireAuth).toHaveBeenCalledWith("view");
+    expect(requireAuth).toHaveBeenCalledWith("operate");
     const guard = screen.getByText("Guard requeue").closest("li")!;
     expect(within(guard).getByText("held / flagged", { exact: false })).toBeTruthy();
     expect(within(guard).getByText("Rejected by checks: 1,840")).toBeTruthy();
