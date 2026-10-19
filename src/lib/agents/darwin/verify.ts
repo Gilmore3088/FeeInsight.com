@@ -27,7 +27,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
-import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
+import { recheckVerifiedFees, unavailableRecheckResult, type VerifiedRecheckResult } from "./verified-recheck";
 import { recheckDocumentOwners, type DocumentOwnerResult } from "./document-owner";
 import {
   categoryChangeCandidates,
@@ -1860,7 +1860,7 @@ export async function runDarwinVerify(
   const recheck = learning
     ? await recheckVerifiedFees(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
         console.warn("[darwin] verified recheck failed", error instanceof Error ? error.message : error);
-        return null;
+        return unavailableRecheckResult({ runId: options.runId, stepId: options.stepId ?? null });
       })
     : null;
   // Darwin's re-check of shared documents against the bank their own text names (document-owner.ts).

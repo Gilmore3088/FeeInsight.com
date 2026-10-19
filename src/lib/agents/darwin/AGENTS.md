@@ -173,6 +173,41 @@ can already report authorized live actions; only the shadow packets are assessme
 Parent #2072's activation/deletion decisions and broader switch audit remain open, with no
 additional James task introduced here.
 
+## Selected-batch execution attestation (#2072, 2026-10-19)
+
+New real-ledger rechecks use `darwin.recheck.execution.v1` and a saved
+`darwin.recheck.receipt.v2` reference. The producer requires a supported transaction
+savepoint and valid positive run/step context. Each selected row rechecks the selected
+published/verified/raw/source identities under bounded NOWAIT locks; a held, corrected,
+changed, unavailable or contended target is unresolved, not a completed fee decision.
+A row's strict feedback/audit, actual UPDATE RETURNING and returned attempt ID succeed
+together. Default shared second-look and attempt APIs keep their previous contracts.
+
+A current-run producer event `darwin.recheck.assessed` is persisted in the same recheck
+savepoint. Its actual returned ID, batch key, bounded row witnesses and selected manifest
+identify committed work. Event failure rolls back all recheck effects/attempts/feedback,
+while earlier ordinary raw verification stays intact. Counts returned to a caller remain
+provisional until its transaction commits. The later `step.finished` write uses a separate
+transaction; v2 references the producer event and is not a second measurement. If that
+later write fails, the committed producer witness and attempts remain recoverable. An
+enclosing producer transaction rollback removes the event and all its effects.
+
+Successful empty selection, unavailable required phase, partial assessment, source
+unavailability and actual cadence skips stay distinct. Unavailable counts are not invented
+zeros. Scope is only this selected authorized batch; whole backlog is unknown. Legacy
+shadow reports retain unknown completeness even when a v2 parent references their report.
+Old v1 receipts retain their original producer-reported/unknown meaning. Pending, waiting
+and other-code outcomes are persisted assessments, not archives or final fee/policy decisions;
+the saved summary and activity narration disclose these counts separately.
+
+This changes execution attestation, not the guard epoch: recheck v5, verify v3, source v2,
+all old attempt exclusions, default-off switches, narrow `tier_perk_zero` due authority and
+12-hour/other-run gates remain unchanged. Operational failure writes no terminal recheck
+attempt or right/wrong feedback; the existing bounded ordinary selector can retry it on a
+later run. No replay, new retry loop, paid activation or historical adjudication is added.
+Existing settled decisions and legacy receipts are not reopened or relabeled. The original
+#2072 family enable/delete/count obligations and #1110/#1111 remain open.
+
 ## Authority
 
 - Darwin reads `raw_fee_observations`.
