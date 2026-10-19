@@ -659,7 +659,8 @@ runtime_ddl_kill() {
   # Schema comes from supabase/migrations only. Request code that runs CREATE/ALTER/DROP
   # TABLE/INDEX/... drifts from the migrated schema and writes on a public read (#2234).
   # Tests may build throwaway tables; *.test.ts(x) files are skipped.
-  local pattern='\b(create|alter|drop)[[:space:]]+(or[[:space:]]+replace[[:space:]]+)?(unique[[:space:]]+)?(temp(orary)?[[:space:]]+)?(table|index|schema|extension|type|view|materialized[[:space:]]+view|trigger|sequence|function)\b'
+  # Git's macOS ERE engine does not recognize \b; keep identifier boundaries portable (#2392).
+  local pattern='(^|[^[:alnum:]_])(create|alter|drop)[[:space:]]+(or[[:space:]]+replace[[:space:]]+)?(unique[[:space:]]+)?(temp(orary)?[[:space:]]+)?(table|index|schema|extension|type|view|materialized[[:space:]]+view|trigger|sequence|function)([^[:alnum:]_]|$)'
   local hits=""
   if git rev-parse --git-dir >/dev/null 2>&1; then
     hits=$(git grep -niE "$pattern" -- 'src/*.ts' 'src/*.tsx' 'src/*.js' 'src/*.mjs' \
