@@ -176,6 +176,30 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     }
   }));
 
+  it("defers a full stale international caller after the actual verified category changed to domestic", async () => rollback(async tx => {
+    const { withInternationalPublicationWrite } = await import("../hamilton/international-publication");
+    const f = await seed(tx, pdf);
+    await sourceBackedDepth(tx, f);
+    const v = await historicalVerified(tx, f, "International Wire Outgoing", 45, "wire_intl_outgoing");
+    const [stale] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,
+      fr.agent_event_id AS raw_agent_event_id,fr.source_document_id,fr.product_name
+      FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id
+      WHERE fv.fee_verified_id=${v.verifiedId}`;
+    await tx`UPDATE verified_fee_observations SET canonical_fee_key='wire_domestic_outgoing' WHERE fee_verified_id=${v.verifiedId}`;
+    const writer = vi.fn(async (scope: Db) => publish.insertPublishedFee(scope, { runId: f.runId,
+      batchId: `agentic-run-${f.runId}`, row: stale as unknown as import("../hamilton/publish").VerifiedFeeRow }));
+    const result = await withInternationalPublicationWrite(tx,
+      { feeVerifiedId: v.verifiedId, expectedVerifiedState: stale.selected_verified_state }, writer);
+    expect(result).toMatchObject({ kind: "deferred", detail: { reason: "selected_changed" } });
+    // A legacy direct row without a snapshot still supplies a category CAS expectation,
+    // while a minimal identity-only call must derive its actual current classification.
+    expect(await withInternationalPublicationWrite(tx,
+      { feeVerifiedId: v.verifiedId, expectedCategory: stale.canonical_fee_key }, writer))
+      .toMatchObject({ kind: "deferred", detail: { reason: "selected_changed" } });
+    expect(writer).not.toHaveBeenCalled();
+    expect(await tx`SELECT fee_published_id FROM published_fee_records WHERE lineage_ref=${v.verifiedId}`).toHaveLength(0);
+  }));
+
   it("keeps an unavailable original peer market-comparable and defers instead of proving false clearance", async () => rollback(async tx => {
     const { withInternationalPublicationWrite } = await import("../hamilton/international-publication");
     const { countsInMarketComparison } = await import("@/lib/market-eligibility");

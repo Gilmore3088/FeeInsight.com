@@ -66,6 +66,30 @@ describe("source-owned international wire scope, independent of price admission 
     expect(internationalWireEligibility("International Wire Incoming | $35", candidate)).toMatchObject({ kind: "decline", reason: "missing_owner" });
   });
 
+  it.each(["Free", "No Charge", "No Fee"])("retains factual own scope for an already admitted zero marker %s", marker => {
+    const text = `Incoming International Wire | ${marker}`;
+    expect(checkFeeAgainstSource(text, "Incoming International Wire", 0, ".", "wire_intl_incoming").ok).toBe(true);
+    expect(typeof groundPaidRow({ fee_name: "Incoming International Wire", amount: 0,
+      canonical_key: "wire_intl_incoming", source_line: text }, text)).toBe("object");
+    expect(sourceOwnedWireScope(text, "Incoming International Wire", 0)).toMatchObject({ kind: "owned", geography: "international", directions: ["incoming"] });
+    expect(sourceOwnedWireScope(text, "Incoming International Wire", 35)).toMatchObject({ kind: "unresolved" });
+  });
+
+  it("preserves a complete dot-leader zero and a bounded explicit wire heading", () => {
+    expect(sourceOwnedWireScope("Wire-International Incoming ........ No Charge", "Wire-International Incoming", 0)).toMatchObject({ kind: "owned", directions: ["incoming"] });
+    expect(sourceOwnedWireScope("Wire Transfers\nDomestic Incoming | Free\nInternational Incoming | No Charge", "Wire Transfers: International Incoming", 0))
+      .toMatchObject({ kind: "owned", geography: "international", directions: ["incoming"] });
+  });
+
+  it.each(["No Charge if account qualifies", "No Charge | Unlimited", "Free / No Fee"])("declines unsupported zero-marker tails rather than inferring eligibility: %s", price => {
+    expect(sourceOwnedWireScope(`Incoming International Wire | ${price}`, "Incoming International Wire", 0)).toMatchObject({ kind: "unresolved", reason: "unsupported_shape" });
+  });
+
+  it("does not borrow a neighboring zero marker or choose repeated free owners", () => {
+    expect(sourceOwnedWireScope("Incoming International Wire | $35\nOutgoing International Wire | Free", "Incoming International Wire", 0)).toMatchObject({ kind: "unresolved" });
+    expect(sourceOwnedWireScope("Incoming International Wire | Free\nIncoming International Wire | No Charge", "Incoming International Wire", 0)).toMatchObject({ kind: "unresolved", reason: "ambiguous_owner" });
+  });
+
   it("validates a previously admitted literal international slash clause without creating its price", () => {
     const scope = sourceOwnedWireScope(html.normalizedText, "Outgoing International Wire Transfer Fees", 45);
     expect(scope).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });

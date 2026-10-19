@@ -127,6 +127,8 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
   feeVerifiedId: number;
   /** A normal selected snapshot is a CAS expectation, never source or classification evidence. */
   expectedVerifiedState?: string;
+  /** Direct legacy callers still cannot carry a stale international category through an ordinary exit. */
+  expectedCategory?: string;
 }, work: (tx: Db, actual: VerifiedFeeRow | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
   const savepoint = (db as unknown as { savepoint?: (work: (tx: Db) => Promise<InternationalPublicationWrite<T>>) => Promise<InternationalPublicationWrite<T>> }).savepoint;
   if (!savepoint) {
@@ -139,8 +141,11 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
       if (!positive(options.feeVerifiedId)) return defer("missing_candidate");
       const before = await candidateOf(tx, options.feeVerifiedId);
       if (!before) return defer("missing_candidate");
-      if (!before.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(tx, null) };
       if (options.expectedVerifiedState != null && before.verified_state !== options.expectedVerifiedState) return defer("selected_changed");
+      if (options.expectedCategory != null && (options.expectedCategory.startsWith("wire_intl_")
+        || before.canonical_fee_key.startsWith("wire_intl_")) && options.expectedCategory !== before.canonical_fee_key)
+        return defer("selected_changed");
+      if (!before.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(tx, null) };
       if (!positive(before.source_document_id) || !positive(before.fee_raw_id)) return defer("candidate_source_unavailable");
       const peers = await peersOf(tx, before);
       const relevantPeers = peers.filter(row => potentialInternationalPublicationPeer(candidateFacts(before), peerFacts(row)));

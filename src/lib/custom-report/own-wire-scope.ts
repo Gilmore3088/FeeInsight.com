@@ -17,6 +17,7 @@ export type InternationalDirectionReview =
   | { kind: "decline"; reason: "missing_owner" | "ambiguous_owner" | "unsupported_shape" };
 
 const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})(?![\d.])/g;
+const ZERO_MARKER = /\b(?:no\s+charge|no\s+fee|free)\b/gi;
 const INTERNATIONAL = /\b(?:international|foreign|intl|int['’]?l|internacional|extranjer[oa]s?)\b/i;
 const DOMESTIC = /\b(?:domestic|dom[eé]stic[oa]?|nacional)\b/i;
 const INCOMING = /\b(?:incoming|inbound|in\s+coming|receiv(?:ed|ing)|entrantes?)\b|\b(?:wire|wires|transfer|transfers)\s*[-:]?\s*in\b|^\s*in\s*$/i;
@@ -47,7 +48,7 @@ function facts(own: string): { geography: WireGeography; directions: WireDirecti
     directions: [...(incoming ? ["incoming" as const] : []), ...(outgoing ? ["outgoing" as const] : [])] };
 }
 
-function headingBefore(lines: string[], at: number): string | null {
+function headingBefore(lines: string[], at: number, admittedZero: boolean): string | null {
   let visited = 0;
   for (let index = at - 1; index >= 0 && at - index <= 14 && visited < 8; index--) {
     const line = clean(lines[index]);
@@ -59,7 +60,9 @@ function headingBefore(lines: string[], at: number): string | null {
     const cells = line.split("|").map(clean);
     const price = cells.at(-1) ?? "";
     const label = cells.slice(0, -1).join(" ");
-    if (!(cells.length === 2 && WIRE_WORDS.test(label) && /^\$\s*[\d,.]+\s*(?:per wire|each|per item)?\s*$/i.test(price))) break;
+    const simplePrice = /^\$\s*[\d,.]+\s*(?:per wire|each|per item)?\s*$/i.test(price)
+      || (admittedZero && /^(?:free|no charge|no fee)\s*(?:per wire|each|per item)?\s*$/i.test(price));
+    if (!(cells.length === 2 && WIRE_WORDS.test(label) && simplePrice)) break;
   }
   return null;
 }
@@ -86,11 +89,14 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
     const sourceLine = raw.trim();
     if (sourceLine.length > MAX_ROW) continue;
     const cells = sourceLine.split("|").map(clean);
-    const heading = headingBefore(lines, lineIndex);
+    const heading = headingBefore(lines, lineIndex, admittedAmount === 0);
     for (const [cellIndex, cell] of cells.entries()) {
-      const prices = [...cell.matchAll(MONEY)];
+      const dollars = [...cell.matchAll(MONEY)];
+      // Factual ownership for an ALREADY admitted zero; no numeric admission is added.
+      const zeroMarker = admittedAmount === 0 && dollars.length === 0;
+      const prices = zeroMarker ? [...cell.matchAll(ZERO_MARKER)] : dollars;
       const price = prices[0];
-      if (!price || !prices.some(row => Number(row[1].replace(/,/g, "")) === admittedAmount)) continue;
+      if (!price || (!zeroMarker && !prices.some(row => Number(row[1].replace(/,/g, "")) === admittedAmount))) continue;
       let label = clean(cell.slice(0, price.index));
       let ownText = cell;
       if (!label && cellIndex > 0 && !/[$%]/.test(cells[cellIndex - 1])) {
@@ -101,6 +107,8 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
       if (labelKey(label) !== key && labelKey(combined) !== key) continue;
       if (prices.length !== 1 || /%/.test(ownText)) { unsupported = true; continue; }
       const after = clean(cell.slice(price.index! + price[0].length));
+      if (zeroMarker && (!/^(?:(?:per wire|each|per item)[.!]?)?\s*$/i.test(after)
+        || cells.slice(cellIndex + 1).some(next => next.length > 0))) { unsupported = true; continue; }
       const tailScope = INTERNATIONAL.test(after) || DOMESTIC.test(after) || INCOMING.test(after) || OUTGOING.test(after);
       if (tailScope && !WIRE_WORDS.test(after.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim())) { unsupported = true; continue; }
       const labelFacts = facts(label), headingFacts = heading ? facts(heading) : null;
