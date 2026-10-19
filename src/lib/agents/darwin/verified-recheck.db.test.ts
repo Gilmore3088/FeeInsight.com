@@ -22,7 +22,7 @@ async function seed(tx:Tx,state:State):Promise<Fixture> {
   const [inst]=await tx`INSERT INTO institution_sources (institution_name,charter_type,state,state_code,website_url,fee_schedule_url,source,status) VALUES ('Recheck fixture','bank','Texas','TX','https://recheck.example/','https://recheck.example/fees','e2e','active') RETURNING id`;
   await tx`INSERT INTO agent_runs (id,agent_name,run_kind,title,status) VALUES (${runId},'darwin','state_agent','Recheck settlement fixture','running')`;
   const [step]=await tx`INSERT INTO agent_run_steps (agent_run_id,step_key,agent_name,title,status) VALUES (${runId},'classify','darwin','Recheck fixture','running') RETURNING id`;
-  const [event]=await tx`INSERT INTO agent_events (agent_name,action,status) VALUES ('darwin','recheck-fixture','completed') RETURNING event_id`;
+  const [event]=await tx`INSERT INTO agent_events (agent_name,action,status) VALUES ('darwin','recheck-fixture','success') RETURNING event_id`;
   const tier=state!=="restore",name=tier?"Stop Payment":"Bill Pay",category=tier?"stop_payment":"bill_pay";
   const sourceUrl=tier?"https://recheck.example/premium-account-fees":"https://recheck.example/fees";
   const text=tier?"Premium Account\nStop Payment | $0":"Bill Pay | No Charge";
