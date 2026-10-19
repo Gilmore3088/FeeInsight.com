@@ -6,6 +6,7 @@ import { runFreeSpecialists } from "./specialists";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkWireClausePrice, domesticWireClausePrices, wireClausePrices } from "@/lib/custom-report/wire-clause-prices";
 import { institutionValue } from "@/lib/data-store/fee-stats";
+import { groundPaidRow } from "./paid-extract";
 
 const family = JSON.parse(readFileSync(new URL("./__fixtures__/family-wire-inline-directions.json", import.meta.url), "utf8"));
 const newHeights = "Wire Out/Wire In | $15.00 Per Transaction Outgoing/$5 Per Transaction Incoming";
@@ -23,6 +24,14 @@ describe("own post-price wire directions (#2021)", () => {
   it("uses the same bounded own price in the shared live checker", () => {
     expect(checkFeeAgainstSource(family.normalizedText, "Incoming Wires", 10, ".", "wire_domestic_incoming").ok).toBe(true);
     expect(checkFeeAgainstSource(family.normalizedText, "Incoming Wires", 20, ".", "wire_domestic_incoming").ok).toBe(false);
+  });
+
+  it("does not let a paid source-line fallback override an explicit own-direction refusal", () => {
+    const sourceLine = family.normalizedText.split("\n").find((line: string) => line.includes("$10.00 on Incoming Wires"));
+    const row = { fee_name: "Incoming Wires", canonical_key: "wire_domestic_incoming", source_line: sourceLine };
+    expect(groundPaidRow({ ...row, amount: 10 }, family.normalizedText)).toMatchObject({ amount: 10 });
+    expect(groundPaidRow({ ...row, amount: 20 }, family.normalizedText)).toBe("not_in_text");
+    expect(groundPaidRow({ ...row, amount: 10, canonical_key: "wire_domestic_outgoing" }, family.normalizedText)).toBe("not_in_text");
   });
 
   it("retains both actual slash-joined directions from the #2021 source row", () => {
@@ -94,10 +103,28 @@ describe("own post-price wire directions (#2021)", () => {
     ]) expect(wireClausePrices(text), text).toEqual([]);
   });
 
+  it("also declines conflicting ordinary In/Out aliases supported by the paired header", () => {
+    for (const ordinary of [
+      "Wire In | $10.00",
+      "Wire Out | $30.00",
+      "Wire Transfer Fee In | $10.00",
+      "Wire Transfer Fee Out | $30.00",
+      "Wire Fees\nIn | $10.00",
+      "Wire Fees\nOut | $30.00",
+    ]) {
+      for (const text of [newHeights + "\n" + ordinary, ordinary + "\n" + newHeights]) {
+        expect(domesticWireClausePrices(text), text).toEqual([]);
+        expect(checkWireClausePrice(text, "Wire In", 5, "wire_domestic_incoming", ".")).toBeNull();
+        expect(checkWireClausePrice(text, "Wire Out", 15, "wire_domestic_outgoing", ".")).toBeNull();
+        expect(runFreeSpecialists(text).candidates.some(row => row.ownedPolicy && row.canonicalHint.startsWith("wire_"))).toBe(false);
+      }
+    }
+  });
+
   it("does not turn an age or account section's literal pair into new standard-tier authority", () => {
     const first = "Wire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic";
     const second = "Wire In/Wire Out | $5 Per Transaction Incoming/$10 Per Transaction Outgoing";
-    for (const heading of ["Youth Checking (ages18andunder)", "Senior Accounts", "Student Fees"]) {
+    for (const heading of ["Youth Checking (ages18andunder)", "Senior Accounts", "Student Fees", "Business Wire Fees", "Commercial Wire Services"]) {
       const text = heading + "\n" + first + "\nOther services\n" + second;
       expect(domesticWireClausePrices(text)).toEqual([]);
       expect(checkWireClausePrice(text, "Incoming Wires", 5, "wire_domestic_incoming", ".")).toBeNull();

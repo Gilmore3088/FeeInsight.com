@@ -185,6 +185,24 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
     });
   }, 60_000);
 
+  it("does not newly admit an unknown-audience own-price pair from a business or commercial heading", async () => {
+    for (const heading of ["Business Wire Fees", "Commercial Wire Services"]) {
+      await rolledBack(async tx => {
+        const source = { ...official, normalizedText: heading + "\nWire Transfer Fee | $5 on Incoming Wires / $10 on Outgoing Domestic" };
+        const f = await seed(tx, source);
+        await stages(tx, f);
+        const rows = await tx`SELECT fp.amount,fp.fee_audience,fp.canonical_fee_key FROM published_fee_records fp
+          WHERE fp.institution_id=${f.institutionId} AND fp.rolled_back_at IS NULL`;
+        // The unchanged legacy path can still misread this synthetic section.
+        // This change must not add its newly recovered own prices as unscoped fees.
+        expect(rows.filter(row => row.fee_audience !== "business" && (
+          (row.canonical_fee_key === "wire_domestic_incoming" && row.amount === 5) ||
+          (row.canonical_fee_key === "wire_domestic_outgoing" && row.amount === 10)
+        ))).toEqual([]);
+      });
+    }
+  }, 60_000);
+
   it("keeps the accepted paid-row path behind the same own-direction publication check without a provider call", async () => {
     await rolledBack(async tx => {
       const f = await seed(tx);
@@ -194,6 +212,9 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
         fee_name: "Incoming Wires", canonical_key: "wire_domestic_incoming", amount: 10, source_line: sourceLine,
       }, f.text);
       expect(grounded).toMatchObject({ feeName: "Incoming Wires", amount: 10, canonicalKey: "wire_domestic_incoming" });
+      expect(groundPaidRow({
+        fee_name: "Incoming Wires", canonical_key: "wire_domestic_incoming", amount: 20, source_line: sourceLine,
+      }, f.text)).toBe("not_in_text");
       const row = { document_text_id: f.textId, source_document_id: f.documentId, institution_id: f.institutionId,
         source_url: official.sourceURL, normalized_text: f.text, text_hash: f.hash } as Parameters<typeof extract.insertCandidate>[1]["row"];
       expect(typeof grounded).toBe("object");

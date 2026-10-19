@@ -18,7 +18,7 @@ const CATEGORIES: ReadonlySet<string> = new Set([
 const MAX_LINE = 700;
 const MAX_ROWS = 60;
 const SCHEDULE_HEADING = /^(?:fee schedule|fees(?: (?:and|&) charges)?|(?:standard|regular|general) (?:fees|services?))\s*:?$/i;
-const ELIGIBILITY_HEADING = /\b(?:ages?|youth|senior|junior|student|minor|teen|checking|(?:savings|business|commercial|club|reward|premier) accounts?)\b|\b(?:under|over)\s+\d/i;
+const ELIGIBILITY_HEADING = /\b(?:ages?|youth|senior|junior|student|minor|teen|checking|business|commercial|(?:savings|club|reward|premier) accounts?)\b|\b(?:under|over)\s+\d/i;
 
 function nameKey(value: string): string {
   return value.replace(/[*_]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
@@ -122,7 +122,9 @@ export function domesticWireClausePrices(text: string): WireClausePrice[] {
     if (rows.some(other => other.canonicalKey === row.canonicalKey && other.amount !== row.amount)) {
       ambiguous.add(row.lineIndex);
     }
-    const direction = row.canonicalKey.endsWith("_incoming") ? /\b(?:incoming|inbound)\b/i : /\b(?:outgoing|outbound)\b/i;
+    const direction = row.canonicalKey.endsWith("_incoming")
+      ? /\b(?:incoming|inbound)\b|\bwires?(?:\s+(?:transfers?|fees?))*\s+in\b|^\s*\|?\s*in\s*(?:\||:|\$)/i
+      : /\b(?:outgoing|outbound)\b|\bwires?(?:\s+(?:transfers?|fees?))*\s+out\b|^\s*\|?\s*out\s*(?:\||:|\$)/i;
     for (const [index, line] of lines.entries()) {
       if (handled.has(index) || !direction.test(line) || !line.includes("$")) continue;
       // A literal wire label or its immediate unpriced wire heading supplies the service.
