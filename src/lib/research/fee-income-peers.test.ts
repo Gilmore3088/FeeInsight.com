@@ -91,6 +91,27 @@ describe("feeIncomeAgainstPeers", () => {
     });
   });
 
+  it.each([
+    ["ncua", "credit_union"], ["fdic", "bank"],
+  ] as const)("preserves an inactive selected %s subject while excluding inactive peers", (source, charter) => {
+    const financials = rows.map((item) => ({ ...item, financial_source: source, charter_type: charter,
+      regulatory_status: item.institution_id <= 2 ? "inactive" : item.institution_id === 3 ? "active" : null,
+    }));
+    const result = feeIncomeAgainstPeers(financials, 1, {});
+    expect(result).toMatchObject({
+      subject: { institution_id: 1, regulatory_status: "inactive", service_charge_income: 100 },
+      peer_count: 5, peer_median_income_per_10k_assets: 5, peer_median_service_charge_income: 500,
+      comparison: { status_basis: "current_registry_status", inactive_peers_excluded: true, sample_size: 5 },
+    });
+    expect("peers" in result && result.peers.map((item) => item.institution_id)).not.toContain(2);
+    expect("comparison" in result && result.comparison.eligibility).toContain("does not establish historical activity");
+    financials[6].regulatory_status = "inactive";
+    expect(feeIncomeAgainstPeers(financials, 1, {})).toMatchObject({
+      subject: { institution_id: 1, regulatory_status: "inactive" }, peer_count: 4,
+      peer_median_service_charge_income: null, peer_median_income_per_10k_assets: null,
+    });
+  });
+
   it("passes the full answer gate for dollar totals without treating asset intensity as a dollar total or revenue share (#2358)", () => {
     const cus = rows.map((r) => ({ ...r, fee_income_ratio: r.institution_id === 1 ? 7.49 : r.fee_income_ratio, financial_source: "ncua", charter_type: "credit_union" }));
     const result = feeIncomeAgainstPeers(cus, 1, {});

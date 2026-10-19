@@ -42,6 +42,7 @@ function describe(row: FiledFeeIncome) {
     name: row.institution_name,
     state: row.state_code,
     charter_type: row.charter_type,
+    regulatory_status: row.regulatory_status ?? null,
     total_assets: row.total_assets,
     service_charge_income: row.service_charge_income,
     financial_source: row.financial_source,
@@ -71,6 +72,7 @@ export function feeIncomeAgainstPeers(
   }
   const peers = rows.filter((row) =>
     row.institution_id !== institutionId
+    && row.regulatory_status !== "inactive"
     && row.report_date === subject.report_date
     && row.financial_source === source
     && financialSourceForCharter(row.charter_type) === source
@@ -98,7 +100,7 @@ export function feeIncomeAgainstPeers(
     measure: "income_per_10k_assets is service charge income per $10,000 of total assets",
     subject: describe(subject),
     peer_count: peers.length,
-    peers_rule: "Peers filed for the same quarter with the same canonical regulator and charter type; the institution itself is not counted. Published fee-schedule coverage is not required. Bank deposit-account service charges and NCUA broad fee income are not comparable measures.",
+    peers_rule: "Peers not currently marked inactive filed for the same quarter with the same canonical regulator and charter type; the institution itself is not counted. An inactive selected institution retains its own filing. Published fee-schedule coverage is not required. Bank deposit-account service charges and NCUA broad fee income are not comparable measures.",
     comparison: {
       ...financialMeasureDefinition(source),
       financial_source: source,
@@ -110,7 +112,9 @@ export function feeIncomeAgainstPeers(
       sample_size: peers.length,
       population_basis: "filed_financials",
       fee_schedule_coverage_required: false,
-      eligibility: "Same canonical regulator and charter, the subject's exact filing quarter, computable standalone-quarter income and finite income per $10,000 of positive reported assets, matching the saved filters; the subject is excluded",
+      status_basis: "current_registry_status",
+      inactive_peers_excluded: true,
+      eligibility: "Current registry status is not marked inactive (null status remains eligible), same canonical regulator and charter, the subject's exact filing quarter, computable standalone-quarter income and finite income per $10,000 of positive reported assets, matching the saved filters; the subject is excluded. Current status does not establish historical activity on the filing date",
       minimum_median_count: MIN_PEERS_FOR_MEDIAN,
       filters,
     },
