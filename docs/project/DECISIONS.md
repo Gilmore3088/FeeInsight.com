@@ -7,9 +7,9 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 **Review findings become checklist lines, not new issues.** James, 2026-10-19 17:01 UTC, on a
 decision card in the backlog thread, after asking at 16:48 how to start closing issues "we have
-ballooned to nearly 300". GitHub REST on Oct 19: 295 open issues. A sort of all 295 found 41 that
-could close as fixed, duplicate, obsolete or folded into a parent, and 13 more were closed by
-merged PRs, which left 245. About 180 issues were opened on Oct 19 against about 105 closed, and
+ballooned to nearly 300". GitHub REST on Oct 19: 295 open issues. A sort of all 295 closed 41 as
+fixed, duplicate, obsolete or folded into a parent, merged PRs closed more, and new issues kept
+arriving; GitHub REST at 17:10 UTC showed 242 open. About 180 issues were opened on Oct 19 against about 105 closed, and
 most were single findings from one review or one PR. New rule:
 - A finding the PR under review can fix is fixed in that PR before it merges.
 - Any other finding is a checklist line on the issue for its root cause, or on the agent's or
@@ -457,7 +457,8 @@ it closes, and James re-orders the list weekly (about ten minutes).
 
 **Review the pipeline one agent at a time before relying on it again.** James, Oct 12, in a
 Claude Code session. Each agent gets a written review with production measurements and a GitHub
-tracker issue with one sub-issue per change, under one master tracker
+tracker issue with one sub-issue per change (narrowed 2026-10-19: a change is a checklist line
+on the tracker unless it is a new root cause), under one master tracker
 (`docs/plans/pipeline-review-2026-10-12.md`). Order: Magellan, Rosetta, Knox, Darwin, Hamilton,
 state experts, Atlas. Reviews are documents and issues; code follows one issue and one PR at a time.
 
