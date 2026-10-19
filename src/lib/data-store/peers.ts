@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy } from "./fee-stats";
+import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, summarizeFeesBy } from "./fee-stats";
 
 export interface PeerFilteredStats {
   total_institutions: number;
@@ -21,7 +21,7 @@ export async function getTopCategoriesForPeerSet(
   filters: { charter_type?: string; asset_tiers?: string[]; fed_districts?: number[] },
   limit = 5
 ): Promise<PeerTopCategory[]> {
-  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
+  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER, activeInstitutionFilter("ct")];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
@@ -89,7 +89,8 @@ export async function getPeerPreviewStats(filters: {
   asset_tiers?: string[];
   fed_districts?: number[];
 }): Promise<PeerPreviewStats> {
-  const conditions: string[] = [];
+  // Both counts below read institution_sources ct; inactive institutions are left out (#2149).
+  const conditions: string[] = [activeInstitutionFilter("ct")];
   const params: (string | number)[] = [];
   let paramIdx = 0;
 
@@ -115,7 +116,7 @@ export async function getPeerPreviewStats(filters: {
     params.push(...filters.fed_districts);
   }
 
-  const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+  const where = "WHERE " + conditions.join(" AND ");
 
   const [row] = await sql.unsafe(
     `SELECT COUNT(*) as total,

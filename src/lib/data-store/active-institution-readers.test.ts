@@ -31,7 +31,33 @@ vi.mock("@/lib/data-store/connection", () => {
 
 const { activeInstitutionFilter } = await import("./fee-stats");
 const { getFeeCategoryDetail } = await import("./fees");
-const { getComparableMarketIndex, getDistrictMedianByCategory, getSourcedInstitutionCount } = await import("./fee-index");
+const {
+  getCategoryChargeBases,
+  getComparableMarketIndex,
+  getContractFeeRows,
+  getDistrictMedianByCategory,
+  getNationalUnstatedAudienceCountsCached,
+  getSegmentFeeRows,
+  getSegmentFeeValues,
+  getSourcedInstitutionCount,
+} = await import("./fee-index");
+const { getCheapestAndMostExpensive } = await import("./fees");
+const {
+  getCitiesInState,
+  getCityAutocomplete,
+  getCityFeeAverages,
+  getCityInstitutions,
+  getDistrictStats,
+  getStateStats,
+  getStatesWithFeeData,
+  getTopCitiesByState,
+} = await import("./geographic");
+const { getPublicStats, getStats } = await import("./core");
+const { getPeerPreviewStats, getTopCategoriesForPeerSet } = await import("./peers");
+const { getNationalRateStats } = await import("./rate-fees");
+const { getStateHub } = await import("./district-hub");
+const { loadSnapshotRows } = await import("@/lib/agents/growth/market-snapshot");
+const { sql: mockSql } = await import("./connection");
 
 const RULE = activeInstitutionFilter("ct");
 
@@ -52,5 +78,51 @@ describe("public readers take the active-institution rule (#1980)", () => {
     expect(main).toBeDefined();
     expect(main).toContain("JOIN institution_sources ct");
     expect(main).toContain(RULE);
+  });
+});
+
+/**
+ * The remaining public readers (#2149). Every query a reader sends against the registry or the
+ * catalogs must carry the rule, so a page never prints a count or median over a different set of
+ * institutions than the national, state and district medians beside it.
+ */
+const READS_INSTITUTIONS = /FROM (institution_sources|published_fee_catalog|published_fee_rate_catalog)\b/;
+
+describe("remaining public readers take the active-institution rule (#2149)", () => {
+  it.each([
+    ["getStats (/methodology schedule links, /research/data-sources)", () => getStats()],
+    ["getPublicStats (Pro data, market and district pages)", () => getPublicStats()],
+    ["getPeerPreviewStats", () => getPeerPreviewStats({ charter_type: "bank" })],
+    ["getTopCategoriesForPeerSet", () => getTopCategoriesForPeerSet({ charter_type: "bank" })],
+    ["getSegmentFeeRows (national trends report)", () => getSegmentFeeRows(["overdraft"])],
+    ["getSegmentFeeValues (Hamilton segments)", () =>
+      getSegmentFeeValues({ minAssets: null, maxAssets: null, charterType: null, stateCode: "TX", largest: null }, "overdraft", "nsf")],
+    ["getContractFeeRows (Hamilton research)", () => getContractFeeRows({ categories: ["overdraft"] })],
+    ["getCategoryChargeBases (Pro report charge basis)", () => getCategoryChargeBases()],
+    ["loadNationalUnstatedAudienceCounts (/fees audience-not-stated note)", () => getNationalUnstatedAudienceCountsCached()],
+    ["getStateStats", () => getStateStats("TX")],
+    ["getDistrictStats", () => getDistrictStats(11)],
+    ["getCityInstitutions", () => getCityInstitutions("Austin", "TX")],
+    ["getCityFeeAverages", () => getCityFeeAverages("Austin", "TX")],
+    ["getCitiesInState", () => getCitiesInState("TX")],
+    ["getTopCitiesByState", () => getTopCitiesByState(3, 10)],
+    ["getCityAutocomplete", () => getCityAutocomplete("Aus")],
+    ["getStatesWithFeeData", () => getStatesWithFeeData()],
+    ["getCheapestAndMostExpensive (/fees/[category])", () => getCheapestAndMostExpensive("overdraft")],
+    ["getNationalRateStats (/fees/[category] rate figure)", () => getNationalRateStats("foreign_transaction")],
+    ["loadSnapshotRows (/tools/price-check)", () => loadSnapshotRows(mockSql as never, [1, 2], ["overdraft"])],
+  ])("%s", async (_name, read) => {
+    await (read as () => Promise<unknown>)().catch(() => undefined);
+    const reads = queries.filter((query) => READS_INSTITUTIONS.test(query));
+    expect(reads.length).toBeGreaterThan(0);
+    for (const query of reads) expect(query).toContain(RULE);
+  });
+
+  it("loadStateFees (state and district hub fee medians)", async () => {
+    await getStateHub("TX").catch(() => undefined);
+    const fees = queries.find((query) => query.includes("ef.fee_category = ANY($2::text[])"));
+    expect(fees).toBeDefined();
+    expect(fees).toContain("JOIN institution_sources ct");
+    expect(fees).toContain(RULE);
   });
 });
