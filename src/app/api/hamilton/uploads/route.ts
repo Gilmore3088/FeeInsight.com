@@ -29,7 +29,7 @@ async function handlePOST(request: Request) {
   }
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "Attach a CSV or XLSX file." }, { status: 400 });
-  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "The file is over 2 MB." }, { status: 413 });
+  if (file.size > MAX_UPLOAD_BYTES) return NextResponse.json({ error: "The file is over 2 MB. Export a smaller data range and upload it again." }, { status: 413 });
   try {
     const result = await receiveUpload(user, {
       institutionId: form.get("institutionId"),
