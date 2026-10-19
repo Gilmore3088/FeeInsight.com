@@ -267,7 +267,7 @@ test.afterAll(() => {
     });
     lines.push(`| \`${action.file}#${action.name}\` | premium | ${row.join(" | ")} |`);
   }
-  lines.push("", "Not sent: " + ACTIONS.filter((a) => a.kind !== "premium").map((a) => `\`${a.name}\` (${a.kind === "server_only" ? "server-only; " : ""}${a.reason})`).join(", ") + ".");
+  lines.push("", "Not sent: " + ACTIONS.filter((a) => a.kind !== "premium").map((a) => `\`${a.name}\` (${a.kind === "server_only" ? "server-only; " : a.kind === "route_only" ? "route-only; " : ""}${a.reason})`).join(", ") + ".");
   writeFileSync(path.join(outDir, "matrix.md"), `${lines.join("\n")}\n`);
   writeFileSync(path.join(outDir, "matrix.json"), `${JSON.stringify(json, null, 2)}\n`);
 });
@@ -311,6 +311,9 @@ test("G10 #1920: every server action under src/app/pro in the build is classifie
   expect(unlisted, "server actions with no entry in billing-access.ts ACTIONS").toEqual([]);
   const gainedId = ACTIONS.filter((a) => a.kind === "server_only" && built.has(`src/app/${a.file}#${a.name}`)).map((a) => a.name);
   expect(gainedId, "server_only actions that the browser can now call: classify and send them").toEqual([]);
+  const onPage = ACTIONS.filter((a) => a.kind === "route_only" && (built.get(`src/app/${a.file}#${a.name}`)?.workers ?? []).some((w) => !w.startsWith("app/api/")))
+    .map((a) => a.name);
+  expect(onPage, "route_only actions a page now loads, so the browser can call them: send them").toEqual([]);
   const missing = ACTIONS.filter((a) => a.kind !== "server_only" && !built.has(`src/app/${a.file}#${a.name}`)).map((a) => a.name);
   expect(missing, "actions listed as callable that the build has no id for").toEqual([]);
 });

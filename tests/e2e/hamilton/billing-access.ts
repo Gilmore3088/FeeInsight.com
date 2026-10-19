@@ -343,8 +343,10 @@ export interface ActionEntry {
    * "premium": sent; expects EXPECTED.pro_export. "not_sent": callable, but the reason says why it
    * is not sent and what the code checks. "server_only": no client code imports it, so the build
    * has no action id for it and it cannot be called over HTTP; the journey fails if it gains one.
+   * "route_only": the build has an id for it, but its only workers are API routes, which run their
+   * own handler (probed as a route) and never the action; the journey fails if a page loads it.
    */
-  kind: "premium" | "not_sent" | "server_only";
+  kind: "premium" | "not_sent" | "server_only" | "route_only";
   /** JSON array of arguments, with ACTION_TOKENS placeholders. */
   args?: string;
   reason?: string;
@@ -352,7 +354,7 @@ export interface ActionEntry {
 
 const A = "pro/(hamilton)";
 const notSent = (file: string, name: string, reason: string): ActionEntry => ({ file: `${A}/${file}`, name, kind: "not_sent", reason });
-const serverOnly = (file: string, name: string, reason: string): ActionEntry => ({ file: `${A}/${file}`, name, kind: "server_only", reason });
+const routeOnly = (file: string, name: string, reason: string): ActionEntry => ({ file: `${A}/${file}`, name, kind: "route_only", reason });
 const sent = (file: string, name: string, args = "[]"): ActionEntry => ({ file: `${A}/${file}`, name, kind: "premium", args });
 
 export const ACTIONS: ActionEntry[] = [
@@ -365,20 +367,20 @@ export const ACTIONS: ActionEntry[] = [
   notSent("analyze/conversation-actions.ts", "recordAnalyzeConversationAction", "writes; checks canAccessPremium"),
   sent("reports/actions.ts", "loadActiveScenarios"),
   sent("reports/actions.ts", "loadScenarioById", `["${ACTION_TOKENS.ownScenario}"]`),
-  serverOnly("reports/actions.ts", "loadRecentReports", "checks canAccessPremium"),
-  serverOnly("reports/actions.ts", "loadReport", "checks canAccessPremium"),
+  routeOnly("reports/actions.ts", "loadRecentReports", "loaded only by the /api/pro/report-pdf route, probed above; checks canAccessPremium"),
+  routeOnly("reports/actions.ts", "loadReport", "loaded only by the /api/pro/report-pdf route, probed above; checks canAccessPremium"),
   notSent("reports/actions.ts", "previewReportPeerCoverage", "needs a report draft; checks canAccessPremium"),
   notSent("reports/actions.ts", "generateReport", "may call a provider; checks canAccessPremium"),
-  serverOnly("reports/actions.ts", "loadPublishedReport", "checks canAccessPremium"),
-  serverOnly("reports/actions.ts", "saveLandingResearchReport", "writes; checks canAccessPremium"),
+  routeOnly("reports/actions.ts", "loadPublishedReport", "loaded only by the /api/pro/report-pdf route, probed above; checks canAccessPremium"),
+  routeOnly("reports/actions.ts", "saveLandingResearchReport", "writes; loaded only by the /api/pro/report-pdf route, probed above; checks canAccessPremium"),
   notSent("reports/board-actions.ts", "saveBoardBrief", "writes; checks canAccessPremium"),
   notSent("reports/board-actions.ts", "createMarketBoardBrief", "writes; checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "listScenarios", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getScenario", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getDistributionForCategory", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getInstitutionFee", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getSimulationCategories", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "saveScenario", "writes; checks canAccessPremium"),
+  routeOnly("simulate/actions.ts", "listScenarios", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
+  routeOnly("simulate/actions.ts", "getScenario", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
+  routeOnly("simulate/actions.ts", "getDistributionForCategory", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
+  routeOnly("simulate/actions.ts", "getInstitutionFee", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
+  routeOnly("simulate/actions.ts", "getSimulationCategories", "loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
+  routeOnly("simulate/actions.ts", "saveScenario", "writes; loaded only by the /api/hamilton/simulate route, probed above; checks canAccessPremium"),
   sent("settings/actions.ts", "getIntelligenceSnapshot"),
   notSent("settings/actions.ts", "updateWorkspaceInstitution", "writes; checks canAccessPremium"),
   notSent("settings/actions.ts", "grantWorkspaceAccess", "writes; checks canAccessPremium"),
