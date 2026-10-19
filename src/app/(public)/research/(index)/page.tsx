@@ -14,10 +14,12 @@ import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { UNAVAILABLE_PUBLIC_STATS, getPublicNationalIndex, getPublicSnapshot, type PublicSnapshot } from "@/lib/public-stats";
 import {
   getDistrictFeeIndexesCached,
+  getNationalIndicatorsCached,
   getPublishedArticleSummariesCached,
   getResearchCoverageCached,
 } from "@/lib/data-store/public-cached-reads";
 import type { ArticleSummary } from "@/lib/data-store/articles";
+import type { NationalIndicators } from "@/lib/data-store/economic-context";
 import type { ResearchCoverage } from "@/lib/data-store/geographic";
 import type { IndexEntry, StateFeeIndexes } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
@@ -35,6 +37,7 @@ import { HubFindings } from "../hub-findings";
 import { computeFindings, sentenceName } from "../findings";
 import { DistrictsExhibit, type DistrictCard, type DistrictFeeCell, type MapFee } from "../districts-exhibit";
 import { ExploreMarket } from "../explore-market";
+import { EconomicData, nationalIndicatorTiles } from "../economic-data";
 import { HubSection } from "../district/[id]/district-hub";
 import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
 import { stateShape } from "../district/[id]/district-geo";
@@ -94,7 +97,7 @@ export default async function ResearchHubPage() {
   // deadline (findings/2026-10-19-required-read-fails-build.md): a slow or failed read hides
   // or labels its part as unavailable, and that render is cached for a minute, not an hour.
   const budget = createReadBudget(RESEARCH_READ_BUDGET_MS, "Research hub");
-  const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive] = await Promise.all([
+  const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive, indicators] = await Promise.all([
     budget.optional(getPublicSnapshot(), "public snapshot", UNAVAILABLE_SNAPSHOT),
     budget.optional<ResearchCoverage | null>(getResearchCoverageCached(), "research coverage", null),
     budget.optional(getPublishedArticleSummariesCached(ARTICLE_LIMIT), "articles", [] as ArticleSummary[]),
@@ -103,8 +106,11 @@ export default async function ResearchHubPage() {
       DISTRICT_IDS.map((id) => budget.optional<StateFeeIndexes | null>(getDistrictFeeIndexesCached(id), `district ${id} index`, null)),
     ),
     budget.optional(sampleReportAvailable(), "sample report", false),
+    budget.optional<NationalIndicators | null>(getNationalIndicatorsCached(), "national indicators", null),
   ]);
-  if (budget.failed() || !summary.complete || summaries.length === 0) await shortenPageLife();
+  if (budget.failed() || !summary.complete || summaries.length === 0 || nationalIndicatorTiles(indicators).length === 0) {
+    await shortenPageLife();
+  }
   // With no national index, or no district read, the district comparison says it's unavailable.
   const districtsDown = nationalIndex.length === 0 || districtIndexes.every((x) => x === null);
 
@@ -260,6 +266,8 @@ export default async function ResearchHubPage() {
 
         <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
+        <EconomicData indicators={indicators} />
+
         <ProBand sampleLive={sampleLive} />
 
         <MethodFlow summary={summary} stateCount={stateCount} coverageLabel={coverageLabel} />
@@ -268,8 +276,8 @@ export default async function ResearchHubPage() {
       </div>
 
       {/* Anchors clear the sticky header and section bar. Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
-      <style>{`#findings, #explore, #districts, #benchmarks, #apply, #about-data, #in-progress { scroll-margin-top: 7.5rem; }
-      @media (min-width: 640px) { #findings, #explore, #districts, #benchmarks, #apply, #about-data, #in-progress { scroll-margin-top: 7rem; } }
+      <style>{`#findings, #explore, #districts, #benchmarks, #economic-data, #apply, #about-data, #in-progress { scroll-margin-top: 7.5rem; }
+      @media (min-width: 640px) { #findings, #explore, #districts, #benchmarks, #economic-data, #apply, #about-data, #in-progress { scroll-margin-top: 7rem; } }
       @media print {
         header, footer, nextjs-portal, #geo-filter, #district-fee, [role="tablist"] { display: none !important; }
         [role="tabpanel"][hidden] { display: block !important; }

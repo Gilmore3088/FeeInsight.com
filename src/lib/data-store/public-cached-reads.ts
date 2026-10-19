@@ -23,7 +23,12 @@ import {
 } from "./fee-revenue";
 import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
-import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
+import {
+  getNationalIndicators,
+  getStateEconomicContext,
+  isEmptyEconomicContext,
+  isEmptyNationalIndicators,
+} from "./economic-context";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
 import {
@@ -164,6 +169,12 @@ export const getStateEconomicContextCached = cachedPublicRead(
   "state-economic-context",
   getStateEconomicContext,
   isEmptyEconomicContext,
+);
+/** The research hub's national indicator strip (BLS unemployment and CPI, Fed Board funds rate). */
+export const getNationalIndicatorsCached = cachedPublicRead(
+  "national-indicators-v1",
+  getNationalIndicators,
+  isEmptyNationalIndicators,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
 export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);

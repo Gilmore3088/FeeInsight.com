@@ -10,6 +10,7 @@ export const RESEARCH_SECTIONS = [
   { id: "findings", label: "Key findings" },
   { id: "explore", label: "Explore your market" },
   { id: "benchmarks", label: "National benchmarks" },
+  { id: "economic-data", label: "Economic data" },
   { id: "apply", label: "For your institution" },
   { id: "about-data", label: "Methodology" },
 ] as const;

@@ -11,6 +11,7 @@ const reads = vi.hoisted(() => ({
   coverage: vi.fn(),
   national: vi.fn(),
   district: vi.fn(),
+  indicators: vi.fn(),
 }));
 const shortenPageLife = vi.hoisted(() => vi.fn(async () => undefined));
 
@@ -22,6 +23,7 @@ vi.mock("@/lib/public-stats", async (importOriginal) => ({
 vi.mock("@/lib/data-store/public-cached-reads", () => ({
   getResearchCoverageCached: reads.coverage,
   getDistrictFeeIndexesCached: reads.district,
+  getNationalIndicatorsCached: reads.indicators,
   getPublishedArticleSummariesCached: vi.fn(async () => []),
 }));
 vi.mock("@/app/landing-serif", () => ({ homeSerif: { variable: "serif-var" } }));
@@ -66,6 +68,7 @@ describe("research hub read deadline", () => {
     reads.national.mockResolvedValue([]);
     reads.district.mockResolvedValue(null);
     reads.coverage.mockRejectedValue(new Error("pool exhausted"));
+    reads.indicators.mockResolvedValue(null);
     const pending = ResearchHubPage();
     await vi.advanceTimersByTimeAsync(15_000);
     const page = (await pending) as ReactElement;
