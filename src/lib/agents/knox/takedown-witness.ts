@@ -3,6 +3,8 @@ import type { ExtractedFeeCandidate } from "./rules";
 import { candidateWriteFacts } from "./candidate-facts";
 
 export const MAX_TAKEDOWN_WITNESS_BYTES = 64_000;
+/** Optional snapshot transport, not a limit on the existing verdict cohort. */
+export const MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES = 1_024_000;
 export const MAX_TAKEDOWN_TEXT_CHARS = 250_000;
 const HASH = /^[a-f0-9]{64}$/;
 const text = (value: unknown) => typeof value === "string" ? productKey(value) : "";
@@ -77,7 +79,7 @@ export interface TakedownWitness {
 }
 export type TakedownWitnessHeader = Omit<TakedownWitness, "publishedState" | "verifiedState" | "rawState">;
 
-export interface TakedownWitnessRow {
+interface TakedownWitnessInput {
   witness_published_state?: string | null;
   witness_verified_state?: string | null;
   witness_raw_state?: string | null;
@@ -88,22 +90,29 @@ export interface TakedownWitnessRow {
   witness_text_hash?: string | null;
   witness_text_verified?: boolean | null;
 }
+export interface TakedownWitnessRow { witness_payload?: unknown }
 
 /** Select with fp/fv/fr aliases, before judgement. Closure is the only expected later publication change. */
-export const TAKEDOWN_WITNESS_COLUMNS = `
-  (to_jsonb(fp) - ARRAY['rolled_back_at','rolled_back_reason','rolled_back_by_batch_id'])::text AS witness_published_state,
-  to_jsonb(fv)::text AS witness_verified_state, to_jsonb(fr)::text AS witness_raw_state,
-  fp.amount::text AS witness_amount, original.id AS witness_text_id,
-  original.source_document_id AS witness_document_id, original.institution_id AS witness_institution_id,
-  original.text_hash AS witness_text_hash,
-  original.text_hash = encode(sha256(convert_to(original.normalized_text,'UTF8')),'hex') AS witness_text_verified`;
+export const TAKEDOWN_WITNESS_COLUMNS = `CASE
+  WHEN octet_length(snapshot.payload::text) <= ${MAX_TAKEDOWN_WITNESS_BYTES}
+  THEN snapshot.payload END AS witness_payload`;
 
 /** An original raw observation's recorded artifact, never the document's latest text. */
 export const TAKEDOWN_ORIGINAL_TEXT_JOIN = `LEFT JOIN agent_source_texts original
   ON original.id::text = substring(COALESCE(fr.extraction_note,fr.conditions) from 'Rosetta artifact #([1-9][0-9]{0,15})\\M')
  AND original.text_hash = substring(COALESCE(fr.extraction_note,fr.conditions) from 'text_hash=([a-f0-9]{64});')
  AND original.source_document_id = fr.source_document_id AND original.institution_id = fr.institution_id
- AND original.status = 'completed' AND char_length(original.normalized_text) <= ${MAX_TAKEDOWN_TEXT_CHARS}`;
+ AND original.status = 'completed' AND char_length(original.normalized_text) <= ${MAX_TAKEDOWN_TEXT_CHARS}
+ LEFT JOIN LATERAL (
+   SELECT CASE WHEN original.id IS NOT NULL THEN jsonb_build_object(
+     'witness_published_state',(to_jsonb(fp) - ARRAY['rolled_back_at','rolled_back_reason','rolled_back_by_batch_id'])::text,
+     'witness_verified_state',to_jsonb(fv)::text,'witness_raw_state',to_jsonb(fr)::text,
+     'witness_amount',fp.amount::text,'witness_text_id',original.id,
+     'witness_document_id',original.source_document_id,'witness_institution_id',original.institution_id,
+     'witness_text_hash',original.text_hash,
+     'witness_text_verified',original.text_hash=encode(sha256(convert_to(original.normalized_text,'UTF8')),'hex')
+   ) END AS payload
+ ) snapshot ON TRUE`;
 
 function object(value: string | null | undefined): Record<string, unknown> | null {
   if (!value) return null;
@@ -112,8 +121,11 @@ function object(value: string | null | undefined): Record<string, unknown> | nul
 }
 
 /** Called on the selected row BEFORE limitGuardVerdict. Missing proof is unknown, never inferred. */
-export function captureTakedownWitness(row: TakedownWitnessRow, judgement: { runId: number; batchId: string }): TakedownWitness | null {
+export function captureTakedownWitness(selected: TakedownWitnessRow, judgement: { runId: number; batchId: string }): TakedownWitness | null {
   if (!id(judgement.runId) || typeof judgement.batchId!=="string" || !judgement.batchId || judgement.batchId.length>128) return null;
+  if (!selected.witness_payload || typeof selected.witness_payload!=="object" || Array.isArray(selected.witness_payload)
+    || Buffer.byteLength(JSON.stringify(selected.witness_payload),"utf8")>MAX_TAKEDOWN_WITNESS_BYTES) return null;
+  const row=selected.witness_payload as TakedownWitnessInput;
   if ([row.witness_published_state,row.witness_verified_state,row.witness_raw_state]
     .reduce((n,s)=>n+(typeof s==="string"?Buffer.byteLength(s,"utf8"):0),0)>MAX_TAKEDOWN_WITNESS_BYTES) return null;
   const pub=object(row.witness_published_state), verified=object(row.witness_verified_state), raw=object(row.witness_raw_state);

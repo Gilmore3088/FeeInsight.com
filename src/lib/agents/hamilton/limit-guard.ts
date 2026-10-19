@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { captureTakedownWitness, TAKEDOWN_ORIGINAL_TEXT_JOIN, TAKEDOWN_WITNESS_COLUMNS, type TakedownWitness, type TakedownWitnessRow } from "@/lib/agents/knox/takedown-witness";
+import { captureTakedownWitness, MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES, TAKEDOWN_ORIGINAL_TEXT_JOIN, TAKEDOWN_WITNESS_COLUMNS, type TakedownWitness, type TakedownWitnessRow } from "@/lib/agents/knox/takedown-witness";
 import { DAILY_CAP_CATEGORIES } from "@/lib/custom-report/source-check";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { namesAWorkedExample, WORKED_EXAMPLE_PG } from "@/lib/agents/knox/layout";
@@ -225,6 +225,7 @@ export async function rollBackLimitsPublishedAsFees(
   let candidates: LiveLimitRow[];
   try {
     candidates = await inSavepoint(db, (scope) => scope<LiveLimitRow[]>`
+      WITH selected AS MATERIALIZED (
       SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
              ${scope.unsafe(TAKEDOWN_WITNESS_COLUMNS)}
         FROM published_fee_records fp
@@ -235,7 +236,15 @@ export async function rollBackLimitsPublishedAsFees(
          AND (fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT} OR fp.fee_name ~* ${WORKED_EXAMPLE_PG}
               OR fp.fee_name ~* ${CONDITION_SENTENCE_PG} OR COALESCE(fr.extraction_note, fr.conditions) ~* ${TRANSACTION_AMOUNT_PG})
          ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
-       ORDER BY fp.fee_published_id
+      ), budgeted AS (
+        SELECT selected.*,sum(COALESCE(octet_length(witness_payload::text),0)) OVER
+          (ORDER BY fee_published_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS witness_transfer_bytes
+          FROM selected
+      )
+      SELECT fee_published_id,institution_id,canonical_fee_key,fee_name,amount,conditions,
+        CASE WHEN witness_transfer_bytes<=${MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES}
+             THEN witness_payload END AS witness_payload
+        FROM budgeted ORDER BY fee_published_id
     `);
   } catch (error) {
     // A failed sweep must never block publishing new verified rows.

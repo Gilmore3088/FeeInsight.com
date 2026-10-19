@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ExtractedFeeCandidate } from "./rules";
-import { prospectiveTakedownIdentity } from "./takedown-witness";
+import { MAX_TAKEDOWN_WITNESS_BYTES, MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES, prospectiveTakedownIdentity,
+  TAKEDOWN_ORIGINAL_TEXT_JOIN, TAKEDOWN_WITNESS_COLUMNS } from "./takedown-witness";
 
 vi.mock("@/lib/data-store/fee-cache", () => ({ invalidatePublicReadCache: vi.fn() }));
 vi.mock("@/lib/agents/fee-source-fetch", async (original) => ({
@@ -81,7 +82,7 @@ describe.skipIf(!connection)("Confirmed learned holds preserve identity and orig
       WHERE fv.fee_verified_id=${verifiedId} RETURNING fee_published_id`;
     return {...f,candidate:c,rawId:Number(rawId),verifiedId:Number(verifiedId),publishedId:Number(publishedId),runIds:[f.runId]};
   }
-  async function confirm(tx:Db,f:Fixture){
+  async function confirm(tx:Db,f:Fixture,expectWitness=true){
     const options={runId:f.runId,batchId:`learned-${f.runId}`,institutionId:f.institutionId,dryRun:false};
     expect(await limits.rollBackLimitsPublishedAsFees(tx,options)).toEqual([]);
     await tx`UPDATE pipeline_feedback SET evidence=jsonb_set(evidence,'{flagged_at}',to_jsonb((now()-interval '13 hours')::text))
@@ -92,8 +93,9 @@ describe.skipIf(!connection)("Confirmed learned holds preserve identity and orig
     const closed=await limits.rollBackLimitsPublishedAsFees(tx,{...options,runId,batchId:`learned-${runId}`});
     expect(closed).toHaveLength(1);
     const [row]=await tx`SELECT evidence,kind FROM pipeline_feedback WHERE fee_published_id=${f.publishedId} AND kind='takedown_confirmed'`;
-    expect(row?.evidence?.takedown_witness).toMatchObject({version:1,judgeRunId:runId,publishedId:f.publishedId,
+    if(expectWitness)expect(row?.evidence?.takedown_witness).toMatchObject({version:1,judgeRunId:runId,publishedId:f.publishedId,
       source:{artifactId:f.textId,sourceDocumentId:f.documentId,hash:f.hash}});
+    else expect(row?.evidence?.takedown_witness).toBeUndefined();
     return lessons.loadTakedownLessons(tx,[f.institutionId]);
   }
   async function insertCopy(tx:Db,f:Fixture,index:Awaited<ReturnType<typeof lessons.loadTakedownLessons>>,c=f.candidate,text=f.text){
@@ -112,6 +114,74 @@ describe.skipIf(!connection)("Confirmed learned holds preserve identity and orig
       expect(row.outlier_flags).toEqual(expect.arrayContaining(["knox_review:taken_down","knox_lesson:taken_down:hamilton.limit_guard"]));
       expect(row.outlier_flags).not.toContain("needs_darwin_verification");
       expect(row.product_name).toBe("Alpha Checking");
+    });
+  });
+  async function witnessSizes(tx:Db,f:Fixture){
+    return tx<{fee_published_id:number|string;bytes:number}[]>`SELECT fp.fee_published_id,octet_length(snapshot.payload::text) AS bytes
+      FROM published_fee_records fp JOIN verified_fee_observations fv ON fv.fee_verified_id=fp.lineage_ref
+      JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id ${tx.unsafe(TAKEDOWN_ORIGINAL_TEXT_JOIN)}
+      WHERE fp.institution_id=${f.institutionId} ORDER BY fp.fee_published_id`;
+  }
+  it("caps the optional SQL snapshot before transfer at the exact per-row byte boundary",async()=>{
+    await rollback(async tx=>{
+      const f=await seed(tx);
+      await tx`UPDATE published_fee_records SET batch_id='' WHERE fee_published_id=${f.publishedId}`;
+      const [{bytes:base}]=await witnessSizes(tx,f),fill=MAX_TAKEDOWN_WITNESS_BYTES-base;
+      expect(fill).toBeGreaterThan(0);
+      const projection=()=>tx`SELECT ${tx.unsafe(TAKEDOWN_WITNESS_COLUMNS)} FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id=fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id ${tx.unsafe(TAKEDOWN_ORIGINAL_TEXT_JOIN)}
+        WHERE fp.fee_published_id=${f.publishedId}`;
+      await tx`UPDATE published_fee_records SET batch_id=repeat('x',${fill}) WHERE fee_published_id=${f.publishedId}`;
+      expect((await witnessSizes(tx,f))[0].bytes).toBe(MAX_TAKEDOWN_WITNESS_BYTES);
+      expect((await projection())[0].witness_payload).not.toBeNull();
+      await tx`UPDATE published_fee_records SET batch_id=batch_id||'x' WHERE fee_published_id=${f.publishedId}`;
+      expect((await witnessSizes(tx,f))[0].bytes).toBe(MAX_TAKEDOWN_WITNESS_BYTES+1);
+      expect((await projection())[0].witness_payload).toBeNull();
+    });
+  });
+  it("keeps the ordinary limit verdict and closure when an optional snapshot is oversized",async()=>{
+    await rollback(async tx=>{
+      const f=await seed(tx);
+      await tx`UPDATE published_fee_records SET batch_id=repeat('x',${MAX_TAKEDOWN_WITNESS_BYTES+1}) WHERE fee_published_id=${f.publishedId}`;
+      const index=await confirm(tx,f,false);
+      expect(index.size).toBe(0);expect(index.unknownReasons).toEqual({missing_or_invalid_original_witness:1});
+      const [closed]=await tx`SELECT rolled_back_at,rolled_back_reason FROM published_fee_records WHERE fee_published_id=${f.publishedId}`;
+      expect(closed.rolled_back_at).not.toBeNull();expect(closed.rolled_back_reason).toContain("limit_as_fee:name_states_limit");
+      const {receipt,row}=await insertCopy(tx,f,index);
+      expect(receipt.takenDownBy).toBeNull();expect(row.outlier_flags).toContain("needs_darwin_verification");
+    });
+  });
+  it.each([0,1])("retains every verdict at the cumulative optional transfer boundary +%s byte",async extra=>{
+    await rollback(async tx=>{
+      const f=await seed(tx),count=17;
+      await tx`UPDATE published_fee_records SET batch_id='' WHERE fee_published_id=${f.publishedId}`;
+      await tx`INSERT INTO published_fee_records(lineage_ref,institution_id,canonical_fee_key,fee_name,amount,frequency,fee_audience,
+        amount_kind,published_by_adversarial_event_id,verified_by_agent_event_id,agent_event_id,batch_id)
+        SELECT lineage_ref,institution_id,canonical_fee_key,fee_name,amount,frequency,fee_audience,amount_kind,
+          published_by_adversarial_event_id,verified_by_agent_event_id,agent_event_id,''
+        FROM published_fee_records CROSS JOIN generate_series(1,${count-1}) copy WHERE fee_published_id=${f.publishedId}`;
+      const sizes=await witnessSizes(tx,f),each=Math.floor(MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES/count);
+      expect(sizes).toHaveLength(count);
+      for(let i=0;i<sizes.length;i++){
+        const target=each+(i===sizes.length-1?MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES%count+extra:0);
+        expect(target).toBeLessThan(MAX_TAKEDOWN_WITNESS_BYTES);
+        await tx`UPDATE published_fee_records SET batch_id=repeat('x',${target-sizes[i].bytes}) WHERE fee_published_id=${sizes[i].fee_published_id}`;
+      }
+      expect((await witnessSizes(tx,f)).reduce((n,row)=>n+row.bytes,0)).toBe(MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES+extra);
+      const options={runId:f.runId,batchId:"budget-first",institutionId:f.institutionId,dryRun:false};
+      expect(await limits.rollBackLimitsPublishedAsFees(tx,options)).toEqual([]);
+      await tx`UPDATE pipeline_feedback SET evidence=jsonb_set(evidence,'{flagged_at}',to_jsonb((now()-interval '13 hours')::text))
+        WHERE institution_id=${f.institutionId} AND kind='takedown_pending'`;
+      const runId=nextRunId--;f.runIds.push(runId);
+      await tx`INSERT INTO agent_runs(id,agent_name,run_kind,title,status) VALUES(${runId},'hamilton','state_agent','Budget confirmation','running')`;
+      const closed=await limits.rollBackLimitsPublishedAsFees(tx,{...options,runId,batchId:"budget-confirmed"});
+      expect(closed).toHaveLength(count);
+      expect(closed.filter(row=>row.takedownWitness)).toHaveLength(count-extra);
+      expect(closed.every(row=>row.code==="name_states_limit")).toBe(true);
+      const feedback=await tx`SELECT evidence FROM pipeline_feedback WHERE institution_id=${f.institutionId} AND kind='takedown_confirmed'`;
+      expect(feedback).toHaveLength(count);
+      expect(feedback.filter(row=>row.evidence.takedown_witness==null)).toHaveLength(extra);
     });
   });
   it("counts only the actual held insert in the extract caller on a normally due current copy",async()=>{

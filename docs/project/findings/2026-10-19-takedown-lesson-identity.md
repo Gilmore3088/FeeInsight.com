@@ -25,6 +25,16 @@ judgement cannot manufacture it. Only this producer is supported initially; sour
 business-schedule and legacy missing-witness confirmations are unknown for new learned holds.
 Their takedown policies, kinds/weights and old raw holds do not change.
 
+Final review caught an availability gap in the first implementation: full selected snapshots
+were transferred before the JavaScript receipt cap. SQL now omits an optional snapshot input
+above 64,000 serialized bytes and limits cumulative optional input transfer to 1,024,000 bytes
+in the existing publication-ID order. Overflow is NULL/unknown, never clipped. All original
+candidate rows, verdict inputs, first/second-look policy and closure decisions remain checked;
+this does not claim that unrelated legacy fields or database-internal work are bounded by the
+new receipt caps. Actual SQL controls exercise the exact per-row cap/cap+1, cumulative cap/cap+1
+across 17 confirmations, ordinary positive proof, and an oversized row's unchanged limit verdict
+and closure with a new candidate left for Darwin.
+
 Prospective identity uses the same grounded ownership/applicability/conditions facts as the raw
 writer. Full supported flat identity and exact decimal keys preserve meaningful digits, product,
 audience, frequency, treatment, conditions, variant and represented rate distinctions. SQL

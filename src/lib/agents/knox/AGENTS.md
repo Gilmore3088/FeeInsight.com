@@ -1126,6 +1126,12 @@ still down with no complete-identity live twin. v2 (#2186) permits a new raw hol
 bounded original witness captured from the limit guard's actual selected publication,
 verification, raw observation and recorded Rosetta artifact **before** its verdict, then carried
 in the existing second-look confirmation. No later join supplies missing historical proof.
+SQL projects optional witness inputs only up to 64,000 serialized bytes each, then applies a
+1,024,000-byte cumulative transfer budget in the existing publication-ID order. Oversized or
+over-budget inputs become NULL/unknown, never clipped proof. Every original candidate and its
+existing verdict inputs remain selected and checked; these caps do not limit takedown decisions
+or claim to bound unrelated legacy fields in that selection. Final single-lesson reads enforce
+the same per-input cap, and the complete saved receipt is capped separately at 64,000 bytes.
 The supported flat identity includes institution, category, meaningful name/digits, exact price,
 assigned or unassigned product, audience, frequency, conditions, treatment, variant and represented
 rate fields. Null product is not every product. The candidate uses the facts the raw writer will
