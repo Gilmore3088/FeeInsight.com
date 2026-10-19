@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ARTICLE_LINK_SQL } from "./link-coverage";
+import * as finders from "./finders";
+import { isPermanentForInput, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
 import {
   COMPANION_RESERVE_MS,
@@ -199,8 +201,254 @@ describe("Magellan agentic discovery", () => {
       "discover.site_crawl",
     ]);
     expect(logged.every((attempt) => attempt.detail.method_version === DISCOVERY_METHOD_VERSION)).toBe(true);
-    expect(logged.find((attempt) => attempt.strategy === "discover.common_paths")?.outcome).toBe("http_404");
+    expect(logged.find((attempt) => attempt.strategy === "discover.common_paths")?.outcome).toBe("no_candidates");
     expect(db.mock.calls.some((call) => call.includes("magellan_dead"))).toBe(true);
+  });
+
+  describe("guessed-path learning memory", () => {
+    function retryFixture(extra: Handler = () => undefined) {
+      let memory: unknown[] = [];
+      const row = bank(144, "https://memorybank.example");
+      const db = createDbMock([row], learningHandler((text, values) => {
+        if (text.includes("SELECT format, best_strategy")) return [{ do_not_retry: memory }];
+        return extra(text, values);
+      }));
+      const remember = (strategy: string, versionOffset = 0) => {
+        const call = db.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO pipeline_attempts") && entry[4] === strategy)!;
+        memory = isPermanentForInput(call[7] as AttemptOutcome)
+          ? [{ stage: "discover", strategy, version: Number(call[5]) + versionOffset, fingerprint: call[6], outcome: call[7], at: new Date().toISOString() }]
+          : [];
+      };
+      const run = (fetchImpl: ReturnType<typeof site>) => runMagellanDiscovery({ runId: 190, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0, secondDocuments: false });
+      return { db, row, remember, run };
+    }
+
+    it("withholds permanent common-path misses for matching inputs and records no new attempt", async () => {
+      const fixture = retryFixture();
+      const fetchImpl = site({ "https://memorybank.example/": () => response("<p>Welcome</p>") });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.common_paths");
+      fixture.db.mockClear();
+      fetchImpl.mockClear();
+
+      const result = await fixture.run(fetchImpl);
+
+      expect(result.results[0].learningSkippedFinders).toContain("commonPaths");
+      expect(fetched(fetchImpl)).not.toContain("https://memorybank.example/schedule-of-fees.pdf");
+      expect(attempts(fixture.db).map((attempt) => attempt.strategy)).not.toContain("discover.common_paths");
+    });
+
+    it("remembers guessed misses without filling document memory with observed-search misses", async () => {
+      const documentMemory = { stage: "read", strategy: "read.pdf_text", version: 1, fingerprint: "document-hash", outcome: "scanned_pdf", at: new Date().toISOString() };
+      let profile: Record<string, unknown> = {
+        do_not_retry: [documentMemory, { stage: "discover", strategy: "discover.sitemap", version: 2, fingerprint: "older-homepage", outcome: "no_candidates", at: new Date().toISOString() }],
+      };
+      const db = createDbMock([bank(144, "https://memorybank.example")], learningHandler((text, values) => {
+        if (text.includes("SELECT format, best_strategy")) return [profile];
+        if (text.includes("SET format = COALESCE")) {
+          profile = {
+            format: values[0], best_strategy: JSON.parse(String(values[1])),
+            strategy_stats: JSON.parse(String(values[2])), do_not_retry: JSON.parse(String(values[3])),
+            expected_fee_count: values[4], cost_to_date_microusd: values[5],
+          };
+          return [];
+        }
+        return undefined;
+      }));
+
+      await runMagellanDiscovery({ runId: 191, db: asDiscoveryDb(db), fetchImpl: site({ "https://memorybank.example/": () => response("<p>Welcome</p>") }), politeDelayMs: 0, secondDocuments: false });
+
+      expect(profile.do_not_retry).toEqual([
+        documentMemory,
+        expect.objectContaining({ stage: "discover", strategy: "discover.common_paths", version: finders.FINDERS.commonPaths.version, outcome: "no_candidates" }),
+      ]);
+      expect(profile.strategy_stats).toEqual(expect.objectContaining({
+        "discover:discover.homepage_links@1": expect.objectContaining({ attempts: 1, lastOutcome: "no_candidates" }),
+      }));
+    });
+
+    it("finishes a resumed search with only learned skips without reporting an invalid website", async () => {
+      const fixture = retryFixture();
+      const fetchImpl = site({ "https://memorybank.example/": () => response("<p>Welcome</p>") });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.common_paths");
+      Object.assign(fixture.row, {
+        discovery_cut_off: true,
+        discovery_resume: {
+          methodVersion: DISCOVERY_METHOD_VERSION,
+          done: ["rejectedPageLinks", "knownLink", "homepageLinks", "sitemap", "hubPages", "platformPaths", "peerHint", "siteCrawl"],
+          cutIn: null, cutCount: 0, ticks: 1, skipped: [], sawCandidates: true,
+        },
+      });
+      fixture.db.mockClear();
+
+      const result = await fixture.run(fetchImpl);
+
+      expect(result.results[0]).toMatchObject({ outcome: "dead", code: "candidates_failed", finders: [], learningSkippedFinders: ["commonPaths"] });
+      expect(attempts(fixture.db)).toHaveLength(1);
+      expect(attempts(fixture.db)[0].outcome).toBe("no_candidates");
+    });
+
+    it.each(["homepage", "version"])("retries common guesses when the %s changes", async (change) => {
+      const fixture = retryFixture();
+      let homepage = "<p>Welcome</p>";
+      const fetchImpl = site({ "https://memorybank.example/": () => response(homepage) });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.common_paths", change === "version" ? -1 : 0);
+      if (change === "homepage") homepage = "<p>Welcome back</p>";
+      fetchImpl.mockClear();
+
+      const result = await fixture.run(fetchImpl);
+
+      expect(result.results[0].learningSkippedFinders).not.toContain("commonPaths");
+      expect(fetched(fetchImpl)).toContain("https://memorybank.example/schedule-of-fees.pdf");
+    });
+
+    it("includes platform knowledge in the input and retries a newly applicable path", async () => {
+      let paths = ["/old-fee-schedule"];
+      const fixture = retryFixture((text) => text.includes("FROM platform_registry") ? [{ fee_paths: paths }] : undefined);
+      const fetchImpl = site({
+        "https://memorybank.example/": () => response('<script src="https://cdn.q2ebanking.com/x.js"></script>'),
+        "https://memorybank.example/new-fee-schedule": () => response(FEE_TABLE),
+      });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.platform_paths");
+      fetchImpl.mockClear();
+      expect((await fixture.run(fetchImpl)).results[0].learningSkippedFinders).toContain("platformPaths");
+      paths = ["/new-fee-schedule"];
+      fetchImpl.mockClear();
+
+      const result = await fixture.run(fetchImpl);
+
+      expect(result.results[0]).toMatchObject({ foundBy: "platformPaths", url: "https://memorybank.example/new-fee-schedule" });
+      expect(fetched(fetchImpl)).toContain("https://memorybank.example/new-fee-schedule");
+    });
+
+    it("normalizes equivalent path spellings and ignores guesses beyond the request cap", async () => {
+      let paths = ["/fee-schedule/", "/fees-two", "/fees-three", "/fees-four", "/zz-unused-tail"];
+      const fixture = retryFixture((text) => text.includes("FROM platform_registry") ? [{ fee_paths: paths }] : undefined);
+      const fetchImpl = site({ "https://memorybank.example/": () => response('<script src="https://cdn.q2ebanking.com/x.js"></script>') });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.platform_paths");
+      paths = ["/fee-schedule", "/fees-two", "/fees-three", "/fees-four", "/zz-changed-tail"];
+
+      expect((await fixture.run(fetchImpl)).results[0].learningSkippedFinders).toContain("platformPaths");
+    });
+
+    it("honors peer memory and retries when a newly learned peer path changes its input", async () => {
+      let peerPath = "/about/deposit-pricing";
+      const fixture = retryFixture((text) => {
+        if (text.includes("to_regclass('public.pipeline_feedback')")) return [{ ready: true }];
+        if (text.includes("outcome.kind AS yield_kind") && text.includes("FROM institution_sources inst")) {
+          return [{ id: 145, url: `https://peer.example${peerPath}`, rejected: [], yield_kind: "produced_live_fees", live_fees: 12 }];
+        }
+        return undefined;
+      });
+      const fetchImpl = site({
+        "https://memorybank.example/": () => response('<script src="https://cdn.q2ebanking.com/x.js"></script>'),
+        "https://memorybank.example/about/account-pricing": () => response(FEE_TABLE),
+      });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.peer_hint");
+      expect((await fixture.run(fetchImpl)).results[0].learningSkippedFinders).toContain("peerHint");
+      peerPath = "/about/account-pricing";
+
+      expect((await fixture.run(fetchImpl)).results[0]).toMatchObject({ foundBy: "peerHint", url: "https://memorybank.example/about/account-pricing" });
+    });
+
+    it.each([403, 429, 503])("retries transient HTTP %s guessed-path failures", async (status) => {
+      const fixture = retryFixture();
+      const fetchImpl = site({
+        "https://memorybank.example/": () => response("<p>Welcome</p>"),
+        "https://memorybank.example/schedule-of-fees.pdf": () => response("Try later", "text/html", status),
+      });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.common_paths");
+      fetchImpl.mockClear();
+
+      const result = await fixture.run(fetchImpl);
+
+      expect(result.results[0].learningSkippedFinders).not.toContain("commonPaths");
+      expect(fetched(fetchImpl)).toContain("https://memorybank.example/schedule-of-fees.pdf");
+      const outcomes = attempts(fixture.db).filter((attempt) => attempt.strategy === "discover.common_paths").map((attempt) => attempt.outcome);
+      expect(outcomes).toEqual([status === 503 ? "http_5xx" : `http_${status}`, status === 503 ? "http_5xx" : `http_${status}`]);
+    });
+
+    it("does not turn a partly rejected, interrupted or unreachable guess batch into permanent memory", () => {
+      const result: finders.FinderResult = {
+        found: null, fetches: 2, ran: true, outOfTime: false,
+        trail: ["too_few_fee_words", "http_503"].map((verdict, index) => ({
+          url: `https://memorybank.example/fee-${index}`, source: "platform_path", foundOn: null, label: "Fee Schedule", score: 0.9, verdict,
+        })),
+      };
+      expect(finders.guessedFinderOutcome(result)).toBe("http_5xx");
+      expect(finders.guessedFinderOutcome({ ...result, outOfTime: true })).toBe("timeout");
+      expect(finders.guessedFinderOutcome({ ...result, trail: [{ ...result.trail[0], verdict: "fetch_failed" }] })).toBe("network_error");
+      expect(finders.guessedFinderOutcome({ ...result, trail: [{ ...result.trail[0], verdict: "http_410" }] })).toBe("no_candidates");
+      // The same gone URL is a failure when it came from a real link instead of a guess.
+      expect(finders.finderOutcome({ ...result, trail: [{ ...result.trail[0], verdict: "http_410" }] })).toBe("http_410");
+    });
+
+    it("does not log inapplicable platform or peer finders", async () => {
+      const fixture = retryFixture();
+      await fixture.run(site({ "https://memorybank.example/": () => response("<p>Welcome</p>") }));
+      expect(attempts(fixture.db).map((attempt) => attempt.strategy)).not.toContain("discover.platform_paths");
+      expect(attempts(fixture.db).map((attempt) => attempt.strategy)).not.toContain("discover.peer_hint");
+    });
+
+    it("leaves the replaced link outside both the guessed input and its request cap", async () => {
+      const ctx: finders.SearchContext = {
+        institutionId: 144, stateCode: "VT", site: new URL("https://memorybank.example"),
+        fetchImpl: vi.fn(), rejected: new Set(), tried: new Set(),
+        replacing: new Set([finders.urlIdentity("https://memorybank.example/current-fees")]),
+        homepageHtml: "", homepageLinks: [], platform: "q2", knownUrl: null,
+        deadline: Date.now() + 60_000, politeDelayMs: 0, pages: new Map(),
+        knowledge: {
+          platformPaths: async () => ["/current-fees", "/fee-one", "/fee-two", "/fee-three", "/fee-four"],
+          peerPaths: async () => [],
+        },
+      };
+
+      const candidates = await finders.prepareGuessedCandidates(ctx, "platformPaths");
+
+      expect(candidates.map((candidate) => candidate.url)).toEqual([
+        "https://memorybank.example/fee-one", "https://memorybank.example/fee-two",
+        "https://memorybank.example/fee-three", "https://memorybank.example/fee-four",
+      ]);
+    });
+
+    it("keeps observed homepage links retryable even when the homepage is unchanged", async () => {
+      const fixture = retryFixture();
+      let feePage = "<p>Not the fee document</p>";
+      const fetchImpl = site({
+        "https://memorybank.example/": () => response('<a href="/disclosures/consumer-fee-schedule">Fee Schedule</a>'),
+        "https://memorybank.example/disclosures/consumer-fee-schedule": () => response(feePage),
+      });
+      await fixture.run(fetchImpl);
+      fixture.remember("discover.homepage_links");
+      feePage = FEE_TABLE;
+
+      const repeat = await fixture.run(fetchImpl);
+      expect(repeat.results[0]).toMatchObject({ foundBy: "homepageLinks", url: "https://memorybank.example/disclosures/consumer-fee-schedule" });
+    });
+
+    it("records preparation exceptions as failures without a suppressing fingerprint", async () => {
+      const fixture = retryFixture();
+      const originalPrepare = finders.prepareGuessedCandidates;
+      const preparation = vi.spyOn(finders, "prepareGuessedCandidates").mockImplementation(async (ctx, key) => {
+        if (key === "commonPaths") throw new Error("Unable to prepare paths");
+        return originalPrepare(ctx, key);
+      });
+      try {
+        await fixture.run(site({ "https://memorybank.example/": () => response("<p>Welcome</p>") }));
+        const call = fixture.db.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO pipeline_attempts") && entry[4] === "discover.common_paths")!;
+        expect(call[6]).toBeNull();
+        expect(call[7]).toBe("parse_error");
+        expect(JSON.parse(String(call[13])).note).toContain("Unable to prepare paths");
+      } finally {
+        preparation.mockRestore();
+      }
+    });
   });
 
   it("re-checks misses on a schedule and at once when the method version changes", async () => {
