@@ -69,11 +69,36 @@ export default function ForConsumersPage() {
       </PageHero>
 
       <div className={PAGE_HERO_WRAP}>
+        <section aria-labelledby="toolkit-heading" className="border-b border-border pb-10 pt-12 sm:pt-16">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-brick">Your consumer toolkit</p>
+          <h2 id="toolkit-heading" className="mt-2 text-[28px] font-semibold tracking-tight sm:text-[34px]">Learn, check, and explore.</h2>
+          <ul className="mt-8 grid gap-7 sm:grid-cols-2 lg:grid-cols-4 lg:gap-8">
+            <li className="border-t border-control-border pt-4">
+              <Link href="#consumer-guides" className={`${TEXT_LINK} group text-[18px]`}>Consumer guides <Arrow /></Link>
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Understand a charge, avoid unnecessary fees, and weigh the cost of a service.</p>
+            </li>
+            <li className="border-t border-control-border pt-4">
+              <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1">
+                <h3 className="text-[18px] font-semibold">Fee Check</h3>
+                <span className="text-[12px] font-medium text-ink-muted">Coming soon</span>
+              </div>
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">See how your institution’s fees compare with state and national medians.</p>
+            </li>
+            <li className="border-t border-control-border pt-4">
+              <Link href="#institution-lookup" className={`${TEXT_LINK} group text-[18px]`}>Institution lookup <Arrow /></Link>
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Find a bank or credit union and the fee information available for it.</p>
+            </li>
+            <li className="border-t border-control-border pt-4">
+              <Link href="#local-options" className={`${TEXT_LINK} group text-[18px]`}>Local options <Arrow /></Link>
+              <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Explore banks and credit unions with branches in your city.</p>
+            </li>
+          </ul>
+        </section>
         <section id="find-your-options" aria-labelledby="lookup-heading" className="scroll-mt-24 border-b border-border py-12 sm:py-16">
           <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-brick">Your bank. Your market.</p>
           <h2 id="lookup-heading" className="mt-2 text-[28px] font-semibold tracking-tight sm:text-[34px]">See the options available to you.</h2>
           <div className="mt-8 grid gap-10 lg:grid-cols-2 lg:gap-20">
-            <div>
+            <div id="institution-lookup" className="scroll-mt-24">
               <h3 className="text-[20px] font-semibold">Look up a bank or credit union</h3>
               <p className="mb-5 mt-3 text-[16px] leading-relaxed text-ink-soft">Search by name to open its profile and see the fee information we have collected.</p>
               <p className="mb-2 text-[14px] font-medium" aria-hidden="true">Bank or credit union name</p>
@@ -82,7 +107,7 @@ export default function ForConsumersPage() {
               </div>
               <Link href="/institutions" className={`${TEXT_LINK} group mt-3 text-[14px]`}>Browse the institution directory <Arrow /></Link>
             </div>
-            <div>
+            <div id="local-options" className="scroll-mt-24">
               <h3 className="text-[20px] font-semibold">What’s available in my market?</h3>
               <p className="mb-5 mt-3 text-[16px] leading-relaxed text-ink-soft">Explore institutions with branches in your city and compare their available published fees.</p>
               <ConsumerMarketLookup />
