@@ -156,7 +156,7 @@ const CURRENCY_SERVICE = /\bcurrenc(?:y|ies)\b|\bforeign\s+cash\b/i;
  * fraud") on a deposit card line is not read as a credit card.
  */
 const CREDIT_CARD_ONLY =
-  /^(?![\s\S]*(?:debit|\batm\b|\bcheck\s?cards?\b|\bhsa\b|\btravel\s+cards?\b|\bprepaid\b|\bgift\b))(?:[\s\S]*\bcredit(?:\b|(?=cards?\b))(?![-\s]*unions?\b)[^.;()$]{0,20}?cards?\b|[\s\S]*\bcards?\b[^.;$]{0,30}\(\s*credit\s*\)|[\s\S]*\btarjetas?\s+de\s+cr[eé]dito\b|(?=[\s\S]*\bcards?\b)[\s\S]*(?:\bheloc\b|\bhome\s+equity\b|\bline\s+of\s+credit\b))/i;
+  /^(?![\s\S]*(?:debit|\batm\b|\bcheck\s?cards?\b|\bhsa\b|\btravel\s+cards?\b|\bprepaid\b|\bgift\b))(?:[\s\S]*\bcredit(?:\b|(?=cards?\b))(?![-\s]*unions?\b)(?:(?!\b(?:to|back|if|refund)\b)[^.;()$]){0,20}?cards?\b|[\s\S]*\bcards?\b[^.;$]{0,30}\(\s*credit\s*\)|[\s\S]*\btarjetas?\s+de\s+cr[eé]dito\b|(?=[\s\S]*\bcards?\b)[\s\S]*(?:\bheloc\b|\bhome\s+equity\b|\bline\s+of\s+credit\b))/i;
 /** v74: investigating or tracing a payment ("Online Bill Payment Investigation" $30, 154324) is research, not bill pay. */
 const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
 /**

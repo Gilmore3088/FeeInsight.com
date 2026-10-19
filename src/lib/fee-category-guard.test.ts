@@ -2087,6 +2087,8 @@ describe("guard v76 (#2037, James's \"Split\"): International ATM is its own typ
       "Credit-Union Card Replacement",
       "VisaDebit/Credit Card Replacement",
       "Replacement Travel Card",
+      "Replacement card (credit back if card stolen)",
+      "Card replacement; credit to card if fraud",
     ]) {
       expect(checkFeeCategory("card_replacement", name), name).toEqual({ ok: true });
     }
