@@ -13,9 +13,9 @@ import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { feeItem, proseFeeName } from "./names";
-import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
+import { annualItemsQuestion, countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
-import { buildStoryline, largestNote, MAX_LISTED_ROWS, type StoryIntent } from "./storyline";
+import { buildStoryline, largestNote, MAX_LISTED_ROWS, peerGroupNote, type StoryIntent } from "./storyline";
 import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
 
 import { uniqueStampedFigures, type StampedFigure } from "@/lib/dataset-note";
@@ -274,7 +274,7 @@ function positionExhibit(research: FeeResearch, name: string): Exhibit | null {
     ...(research.current !== null && band.n >= MIN_PEERS_FOR_POSITION ? { method: PERCENTILE_METHOD } : {}),
     markers,
     sources: [feeSource(research), ...research.layers.filter((l) => l.median !== null).map((l) => ({ ...l.source, asOf: l.asOf }))],
-    note: "Shaded: the middle half of peers. Each marker is a market's median and its institution count.",
+    note: `Shaded: the middle half of peers. Each marker is a market's median and its institution count. ${peerGroupNote(research, { publishing: true })}`,
   };
 }
 
@@ -348,10 +348,10 @@ function headline(research: FeeResearch, name: string): string {
   const byRate = rateHeadline(research, name);
   if (byRate) return byRate;
   const band = research.band;
-  const amounts = research.peers.map((p) => p.amount);
+  const amounts = countedPeerAmounts(research);
   if (research.current !== null) {
     const position = pricePosition(research.current, amounts);
-    if (band && position !== null) {
+    if (band && band.n >= MIN_PEERS_FOR_POSITION && position !== null) {
       return `${subjectPossessive(research)} ${money(research.current)} ${name} fee is ${placeAmong(position, band.n)} (median ${money(band.median)}).`;
     }
     return `${subjectPossessive(research)} ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;

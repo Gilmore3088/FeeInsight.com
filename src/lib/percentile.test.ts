@@ -11,7 +11,7 @@ describe("midRankPercentile (#2048)", () => {
     expect(midRankPercentile(30, [29.996, 30.004, 31, 32, 28])).toBe(40);
   });
   it("rounds to the places asked for, and gives none without peers", () => {
-    expect(midRankPercentile(30, [10, 20, 40], 1)).toBe(66.7);
+    expect(midRankPercentile(30, [10, 20, 40], { decimals: 1 })).toBe(66.7);
     expect(midRankPercentile(30, [])).toBeNull();
   });
 });

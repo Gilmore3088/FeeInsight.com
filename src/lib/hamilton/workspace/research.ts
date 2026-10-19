@@ -1115,6 +1115,10 @@ export async function getFeeResearch(
   const regulatorRead = getInstitutionRegulators(institutionId).catch(() => null);
   // Read beside the rest; used only when the bank has no row for the fee (#2035).
   const ownScheduleRead = loadOwnSchedule(institutionId, feeCategory);
+  // Every answer says how many institutions the one peer group holds (#2046); a list question
+  // reads the whole group below, so only the others count it here, beside the rest.
+  const groupFilters = base.peers.get(feeCategory)?.filters;
+  const peerGroupSizeRead = !options.listPeers && groupFilters ? loadPeerGroupSize(groupFilters, institutionId, feeCategory) : Promise.resolve(undefined);
   const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
     loadServiceChargeRows(institutionId),
@@ -1144,8 +1148,7 @@ export async function getFeeResearch(
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
   // A list question names the whole group, so the peers with no value for the fee are read too.
   const peerGroup = options.listPeers && chosen?.filters ? await loadPeerGroupCoverage(chosen.filters, institutionId, feeCategory, peers) : undefined;
-  // Every answer says how many institutions the one peer group holds (#2046).
-  const peerGroupSize = peerGroup ? peerGroup.total : chosen?.filters ? await loadPeerGroupSize(chosen.filters, institutionId, feeCategory) : undefined;
+  const peerGroupSize = peerGroup ? peerGroup.total : await peerGroupSizeRead;
   const sorted = countedAmounts(peers);
   const band = sorted.length > 0
     ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
@@ -1225,7 +1228,7 @@ export async function getFeeResearch(
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
-      peerGroup: { label: chosen?.label ?? base.peerLabel, n: peers.length },
+      peerGroup: { label: chosen?.label ?? base.peerLabel, n: sorted.length },
       dataAsOf: {
         fees: newest([...peers.map((p) => p.publishedAt), ...layers.map((l) => l.asOf)]),
         financials: revenueLine?.quarterEnd ?? financials?.quarterEnd ?? null,
@@ -1251,7 +1254,9 @@ export async function getFeeResearch(
       assumptions: [
         peers.length < MIN_PEERS_FOR_POSITION
           ? `Only ${peers.length} institutions publish this fee even nationally, too few for percentiles.`
-          : `Peers are the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish this fee.`,
+          : chosen?.saved
+            ? "Peers are the saved peer group, the same group for every fee."
+            : `Peers are one group for every fee: the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish an overdraft fee.`,
         "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
         ...(rates
           ? ["Where a fee is stated as a rate, rates are compared only with other rates, one per institution, never with dollar amounts."]

@@ -51,6 +51,17 @@ describe("storyline", () => {
     expect(asksAboutStructure("how does my overdraft fee compare?")).toBe(false);
   });
 
+  it("ranks a price among the peers the band counts, sister charters once (#2048)", () => {
+    const base = research();
+    // Six publishing rows, three of them sister charters of one schedule: four counted peers.
+    const peers = base.peers.slice(0, 6).map((p, i) => ({ ...p, amount: 20 + i, ...(i >= 3 ? { countedAs: base.peers[3].institutionId } : {}) }));
+    const thin = { ...base, current: 30, peers, band: { p25: 20.75, median: 21.5, p75: 22.75, n: 4 } };
+    const answer = buildFeeAnswer(thin);
+    expect(answer.headline).toBe("Your overdraft fee is $30; only 4 peers publish one, too few to rank.");
+    expect(answer.storyline!.exhibits.some((e) => e.exhibit.kind === "fee_position")).toBe(false);
+    expect(answer.storyline!.keyFigures.some((k) => /percentile|Highest|Lowest/.test(`${k.value} ${k.label}`))).toBe(false);
+  });
+
   it("never prints a 0th percentile, a range of one price, or the institution's name twice in a title (Space Coast review)", () => {
     const base = research();
     const lowest = {
@@ -336,7 +347,9 @@ describe("storyline", () => {
   it("names the one peer group and how many institutions it holds on the position exhibit (#2046)", () => {
     const story = buildFeeAnswer(research({ peerGroupSize: 38 })).storyline!;
     const position = story.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
-    expect(position.exhibit.kind === "fee_position" && position.exhibit.note).toMatch(/^Peer group picked by Hamilton: .+ \(38 institutions\)\.$|^Peer group picked by Hamilton \(38 institutions\)\.$/);
+    const n = buildFeeAnswer(research()).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
+    const publishing = n.exhibit.kind === "fee_position" ? n.exhibit.band.n : 0;
+    expect(position.exhibit.kind === "fee_position" && position.exhibit.note).toMatch(new RegExp(`^Peer group picked by Hamilton: (.+; )?${publishing} of its 38 institutions publish this fee\\.$`));
     const saved = buildFeeAnswer(research({ peerGroupSize: 6, peerGroupSaved: true, peerLabel: "Lancaster rivals" })).storyline!.exhibits.find((e) => e.exhibit.kind === "fee_position")!;
     expect(saved.exhibit.kind === "fee_position" && saved.exhibit.note).toBe("Saved peer group: Lancaster rivals (6 institutions).");
   });
