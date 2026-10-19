@@ -16,6 +16,7 @@
 import { conflictsWithAudienceStatement, feeApplicability, scopedFeeStatements } from "@/lib/fee-audience";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { newestColumnText } from "@/lib/fee-change-columns";
+import { feeBullets, ownsBulletName } from "./fee-bullets";
 import { accountTableRow } from "@/lib/custom-report/account-table";
 
 export type SourceCheckFailure =
@@ -1090,6 +1091,20 @@ export function checkFeeAgainstSource(
   if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
   // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
   const text = droppedPointText(rawText);
+  // An explicit primary bullet owns its price. Never fall back to a neighboring
+  // equal/unequal-price row when the owned unit is incomplete or disagrees.
+  const owned = feeBullets(text).filter((row) => ownsBulletName(row, feeName));
+  if (owned.length > 0) {
+    for (const row of owned) {
+      if (row.problem || row.price !== amount) continue;
+      const checked = checkAgainstLines([row.compactText], feeName, amount, categoryPattern, false,
+        canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey));
+      if (checked.ok && !conflictsWithAudienceStatement(feeName, amount, row.compactText)) {
+        return { ok: true, sourceLine: row.compactText };
+      }
+    }
+    return { ok: false, reason: "amount_not_the_fee" };
+  }
   // An explicitly eliminated fee is $0 even when the bank does not print a zero.
   // Only the exact scoped name/amount pair derived from that completed statement passes.
   const statements = scopedFeeStatements(text);

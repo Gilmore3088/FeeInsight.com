@@ -103,6 +103,12 @@ Darwin owns verification and classification.
   is stated on a price line right under such a note (read-only count), so a bump would re-read 1,259
   rows for nothing this fix changes. Gate City's own row (raw 767395) is undecided and gets the new
   check on its first read.
+  The wrapped-bullet fix (#2151, Oct 19) also leaves source-check v2: it adds an own-row witness
+  for newly faithful Knox candidates and restricts neighboring-price fallback. A read-only
+  current-copy screen of latest-v3 `not_in_source` rejections found 149 rows whose texts contain
+  the bullet-label grammar; none matches an owned primary label, and stored-source replay changed
+  zero verdicts. SchoolsFirst's old misnamed row was rejected for category, not source. New
+  undecided candidates receive the check normally; old decisions are not reopened as a side effect.
 - `retired_category`, `conditional_zero` and `name_rule` (2026-10-09, `postSourceCheck` in
   `verify.ts`) run after the source check on the line it matched. UAT's hand check of the first
   36 rows the `not_in_source` re-select verified found 16 of a random 20 right: three were $0
