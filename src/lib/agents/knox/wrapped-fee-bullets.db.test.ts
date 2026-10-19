@@ -45,8 +45,13 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
 
   async function rolledBack(test: (tx: Db) => Promise<void>) {
     const rollback = new Error("roll back owned SQL fixture");
-    await db.begin(async (scope) => { await test(scope as unknown as Db); throw rollback; })
-      .catch((error) => { if (error !== rollback) throw error; });
+    await db.begin(async (scope) => {
+      // The base CI schema has trigger40; exercise the already-released Darwin
+      // audience trigger47. Rollback restores the shared fixture's original DDL.
+      await scope.unsafe(readFileSync(new URL("../../../../supabase/migrations/20270110000047_darwin_audience_decision.sql", import.meta.url), "utf8"));
+      await test(scope as unknown as Db);
+      throw rollback;
+    }).catch((error) => { if (error !== rollback) throw error; });
   }
   async function seed(tx: Db, text: string, identity: { name?: string; website?: string; url?: string } = {}): Promise<Fixture> {
     const [{ id: institutionId }] = await tx`INSERT INTO institution_sources

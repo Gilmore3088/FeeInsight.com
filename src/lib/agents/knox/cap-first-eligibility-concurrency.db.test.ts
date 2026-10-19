@@ -189,8 +189,19 @@ describe.skipIf(!connection)("Cap applicability hold and Darwin concurrency (#23
           .toHaveLength(0);
         release.resolve();
         await firstTask;
-        secondResult = await secondConnection.begin(scope =>
-          verify(scope as unknown as Db, fixture, legacy, canonicalFeeKey));
+        // The held write changed selected metadata: the identical stale callback
+        // must defer rather than settle against that now-different raw identity.
+        await expect(secondConnection.begin(scope =>
+          verify(scope as unknown as Db, fixture, legacy, canonicalFeeKey)))
+          .rejects.toMatchObject({ reason: "admitted_raw_changed" });
+        expect(await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`)
+          .toHaveLength(0);
+        // A normal fresh selection reaches the pre-existing eligibility guard,
+        // even if the callback still proposes the stale alternate category.
+        const [fresh] = await observer`SELECT fr.*, COALESCE(fr.extraction_note,fr.conditions) AS conditions
+          FROM raw_fee_observations fr WHERE fr.fee_raw_id=${fixture.rawId}`;
+        secondResult = await secondConnection.begin(scope => verify(scope as unknown as Db,
+          { ...fixture, row: fresh as unknown as RawFeeRow }, legacy, canonicalFeeKey));
       }
       const [current] = await observer`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${fixture.rawId}`;
       const judgments = await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`;
