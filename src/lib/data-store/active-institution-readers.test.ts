@@ -151,7 +151,7 @@ function marketRows(query: string): unknown[] {
     return [{ city: "AUSTIN", institution_ids: [1], published_ids: [1], branches: 1, metro: null, lat: null, lon: null }];
   }
   if (query.includes("FROM institution_branch_deposits") && query.includes("UNION ALL")) return [{ city: "AUSTIN", institution_id: 1 }];
-  if (query.includes("SELECT institution_id, deposits, latitude")) return [{ institution_id: 1, deposits: 1, county_fips: 48453 }];
+  if (query.includes("SELECT d.institution_id, d.deposits, d.latitude")) return [{ institution_id: 1, deposits: 1, county_fips: 48453 }];
   if (query.includes("MAX(year) AS y")) return [{ y: 2025 }];
   return [];
 }
@@ -205,6 +205,47 @@ describe("readers #2149 missed take the active-institution rule (#2190)", () => 
     for (const query of overdraft) expect(query).toContain(RULE);
   });
 
+  /**
+   * Branch and deposit figures beside the fees count the same institutions (#2190): county
+   * coverage, the top deposit holders and the city's branch counts leave out the regulator's
+   * inactive institutions through a LEFT JOIN, so a branch with no institution on file stays.
+   */
+  const BRANCH_RULE = `LEFT JOIN institution_sources bs ON bs.id = `;
+  const branchReads = () => queries.filter((query) => /FROM (institution_branch_deposits d|credit_union_branches c)\b/.test(query));
+
+  it("the state report's county coverage and top deposit holders leave out inactive institutions", async () => {
+    respond = marketRows;
+    await getStateVisualsData("TX");
+    const reads = branchReads();
+    // countyFeeRows' branches and the holders' branches.
+    expect(reads).toHaveLength(2);
+    for (const query of reads) {
+      expect(query).toContain(BRANCH_RULE + "d.institution_id");
+      expect(query).toContain(activeInstitutionFilter("bs"));
+    }
+  });
+
+  it("the price-check county map's branches leave out inactive institutions", async () => {
+    respond = marketRows;
+    await getCountyFeeMap("TX", "overdraft");
+    const reads = branchReads();
+    expect(reads).toHaveLength(2);
+    for (const query of reads) expect(query).toContain(activeInstitutionFilter("bs"));
+  });
+
+  it.each(["city", "metro"] as const)("the %s market's bank and credit union branches leave out inactive institutions", async (area) => {
+    respond = (query) => {
+      if (query.includes("msa_code, MAX(msa_name)")) return [{ msa_code: 12420, msa_name: "Austin-Round Rock" }];
+      return marketRows(query);
+    };
+    await getCityMarket("Austin", "TX", area);
+    const reads = branchReads();
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).toContain(BRANCH_RULE + "d.institution_id");
+    expect(reads[1]).toContain(BRANCH_RULE + "c.institution_id");
+    for (const query of reads) expect(query).toContain(activeInstitutionFilter("bs"));
+  });
+
   it("the financial peer group keeps the institution itself", async () => {
     await getPeerFinancialMedians(7).catch(() => undefined);
     expect(queries.find((query) => query.includes("JOIN institution_sources s"))).toContain(`(${activeInstitutionFilter("s")} OR s.id = 7)`);
@@ -217,13 +258,16 @@ describe("readers #2149 missed take the active-institution rule (#2190)", () => 
  * of in review. Take a file off the list when it gains the rule; a file added to it needs a
  * reason it shows no public count or median across institutions.
  */
-const CATALOG_READ = /FROM\s+(published_fee_catalog|published_fee_rate_catalog)\b/;
+const CATALOG_READ = /(FROM|JOIN)\s+(published_fee_catalog|published_fee_rate_catalog)\b/;
+/** A call of the rule, not a mention of its name in a comment. */
+const RULE_CALL = /activeInstitutionFilter\(/;
 const WITHOUT_RULE: Record<string, string> = {
   // Admin, agent and pipeline reads: not shown to visitors or customers.
   "data-room.ts": "admin data room and agent work lists",
   "fee-correction-audit.ts": "admin corrections audit",
   "hit-list.ts": "admin Magellan hit list",
   "live-source-audit.ts": "Deming's live-source audit",
+  "live-source-audit-read.ts": "admin scoreboard's live-source audit panel and agent goals",
   "pipeline-funnel.ts": "admin pipeline funnel",
   "pro-accounts.ts": "subscriber accounts",
   "states.ts": "admin state pipeline page",
@@ -257,13 +301,13 @@ describe("catalog readers without the active-institution rule are named (#2190)"
   const text = (file: string) => readFileSync(join(dir, file), "utf8");
 
   it("every catalog reader takes the rule or is on the list", () => {
-    const missing = files.filter((file) => CATALOG_READ.test(text(file)) && !text(file).includes("activeInstitutionFilter") && !(file in WITHOUT_RULE));
+    const missing = files.filter((file) => CATALOG_READ.test(text(file)) && !RULE_CALL.test(text(file)) && !(file in WITHOUT_RULE));
     expect(missing).toEqual([]);
   });
 
   it("the list names only files that still read the catalogs without the rule", () => {
     const stale = Object.keys(WITHOUT_RULE).filter(
-      (file) => !files.includes(file) || !CATALOG_READ.test(text(file)) || text(file).includes("activeInstitutionFilter"),
+      (file) => !files.includes(file) || !CATALOG_READ.test(text(file)) || RULE_CALL.test(text(file)),
     );
     expect(stale).toEqual([]);
   });

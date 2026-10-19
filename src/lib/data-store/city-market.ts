@@ -172,15 +172,19 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
   const metro = metroRows[0] ? { code: num(metroRows[0].msa_code), name: String(metroRows[0].msa_name ?? "") } : null;
   const useMetro = area === "metro" && metro != null;
 
+  // Branches of the regulator's inactive institutions are left out, as the state directory
+  // (getStateMarketCities) leaves them out (#2190); a branch with no institution on file stays.
   const bankBranches = (useMetro
     ? await sql`
-        SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips, address
-          FROM institution_branch_deposits
-         WHERE year = ${year} AND msa_code = ${metro!.code}`
+        SELECT d.institution_id, d.deposits, d.latitude, d.longitude, d.state, UPPER(d.city) AS city, d.county_fips, d.address
+          FROM institution_branch_deposits d
+          LEFT JOIN institution_sources bs ON bs.id = d.institution_id
+         WHERE d.year = ${year} AND d.msa_code = ${metro!.code} AND ${sql.unsafe(activeInstitutionFilter("bs"))}`
     : await sql`
-        SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips, address
-          FROM institution_branch_deposits
-         WHERE year = ${year} AND state = ${state} AND UPPER(city) = ANY(${spellings}::text[])`) as Record<string, unknown>[];
+        SELECT d.institution_id, d.deposits, d.latitude, d.longitude, d.state, UPPER(d.city) AS city, d.county_fips, d.address
+          FROM institution_branch_deposits d
+          LEFT JOIN institution_sources bs ON bs.id = d.institution_id
+         WHERE d.year = ${year} AND d.state = ${state} AND UPPER(d.city) = ANY(${spellings}::text[]) AND ${sql.unsafe(activeInstitutionFilter("bs"))}`) as Record<string, unknown>[];
 
   const places = useMetro
     ? [...new Set(bankBranches.map((b) => `${b.state}|${b.city}`))]
@@ -188,8 +192,10 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
   const cuBranches = (await sql`
     SELECT c.institution_id, c.latitude, c.longitude, c.address
       FROM credit_union_branches c
+      LEFT JOIN institution_sources bs ON bs.id = c.institution_id
      WHERE c.institution_id IS NOT NULL
        AND (c.state || '|' || UPPER(c.city)) = ANY(${places}::text[])
+       AND ${sql.unsafe(activeInstitutionFilter("bs"))}
   `) as Record<string, unknown>[];
 
   if (bankBranches.length === 0 && cuBranches.length === 0) return null;
