@@ -277,6 +277,9 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.
   ANCILLARY_PRODUCT_VERSION: "v1 owns only newly inserted raw rows from a bounded single-primary-product document. Existing raw conflicts, held takeovers and settled extract/verify/publish/copy decisions stay unchanged. Normalized represented-product guards restrict future matching and ordinary live duplicate sweeps; no metadata backfill, historical replay, numeric-policy change or recovery is queued.",
+  // v2 (#1862): provenance gating excludes old unbound fixture judgments. Original document
+  // mappings are absent; replay cannot manufacture them or convert old scores into new trust.
+  DARWIN_VERDICT_SCORE_STRATEGY: "Frozen-reference provenance starts a distinct protocol/manifest series. Unbound historical chunks and lessons remain historical; no fee replay or key repair is authorized.",
   // Discovery's own selector searches banks last checked by an older method. Guessed-path
   // memory affects future attempts, without rewriting attempt history or existing fee data.
   DISCOVERY_METHOD_VERSION: "The discovery selector searches banks last checked by an older method; its normal runs apply the new guessed-path memory, with no separate replay.",

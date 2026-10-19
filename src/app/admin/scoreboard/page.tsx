@@ -27,7 +27,7 @@ interface Metric {
   /** Why this is a diagnostic, not a goal measure (#1040). */
   caveat?: string;
   /** Snapshots compare only when this matches: the trend breaks and the change is hidden where it differs. */
-  series?: (row: ScoreboardSnapshotRow) => number | null;
+  series?: (row: ScoreboardSnapshotRow) => string | number | null;
 }
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -68,10 +68,10 @@ const METRICS: Metric[] = [
     label: "Accuracy",
     unit: "% precision against the answer key (end to end)",
     format: percent,
-    detail: (row) => `recall ${row.accuracy_recall == null ? "—" : percent(row.accuracy_recall)}${row.accuracy_scorer_version == null ? "" : `, scorer v${row.accuracy_scorer_version}`}`,
-    caveat: "The answer key's newest score, not dated here. The goal measure is Deming's 7-day accuracy above.",
+    detail: (row) => `recall ${row.accuracy_recall == null ? "—" : percent(row.accuracy_recall)}, ${(row.accuracy_reference_state ?? "legacy_ungated").replaceAll("_", " ")}${row.accuracy_reference ? `; ${row.accuracy_reference.eligibleBanks} eligible / ${row.accuracy_reference.excludedBanks} excluded` : ""}${row.legacy_accuracy_precision != null ? `; historical ungated precision ${percent(row.legacy_accuracy_precision)} (excluded from current measurement)` : ""}${row.accuracy_scorer_version == null ? "" : `, scorer v${row.accuracy_scorer_version}`}`,
+    caveat: "Reference eligibility and exact fee snapshots define this cohort. A changed reference starts a separate measure; it is not evidence of a better pipeline. Launch accuracy uses the weekly live 50-institution batch.",
     // A new scorer version rescores the same fees: its numbers start a new line (#1354).
-    series: (row) => row.accuracy_scorer_version,
+    series: (row) => row.accuracy_series ?? null,
   },
   {
     key: "freshness_median_days",
@@ -84,10 +84,10 @@ const METRICS: Metric[] = [
   },
 ];
 
-function Sparkline({ values, series }: { values: Array<number | null>; series?: Array<number | null> }) {
+function Sparkline({ values, series }: { values: Array<number | null>; series?: Array<string | number | null> }) {
   const points = values
     .map((value, index) => (value == null ? null : { x: index, y: value, key: series?.[index] ?? null }))
-    .filter((point): point is { x: number; y: number; key: number | null } => point != null);
+    .filter((point): point is { x: number; y: number; key: string | number | null } => point != null);
   if (points.length < 2) return <p className="text-[10px] text-gray-400">Trend appears after two days.</p>;
   const width = 200;
   const height = 36;
@@ -115,7 +115,7 @@ function Sparkline({ values, series }: { values: Array<number | null>; series?: 
         })}
       </svg>
       {breaks.length > 1 ? (
-        <p className="text-[10px] text-gray-400">Scorer {breaks.map((run) => `v${run.key}`).join(", then ")}: the line breaks where the scorer changed.</p>
+        <p className="text-[10px] text-gray-400">The line breaks where the scorer or reference cohort changed.</p>
       ) : null}
     </>
   );

@@ -8,6 +8,7 @@
  * an empty database first; the test seeds its own banks. CI does this on every push.
  * Never point it at a shared database: it deletes every VT institution first.
  */
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { scannedFeePdf } from "@/lib/agents/rosetta/test-fixtures/scanned-pdf";
@@ -19,6 +20,7 @@ import { researchSplitTarget } from "@/lib/fee-fold";
 // policy tests using owned loopback servers.
 vi.mock("@/lib/agents/fee-source-fetch", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/lib/agents/fee-source-fetch")>(),
+  createFeeSourceFetch: () => (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
   feeSourceFetch: (...args: Parameters<typeof fetch>) => globalThis.fetch(...args),
 }));
 
@@ -26,7 +28,7 @@ const E2E_DATABASE_URL = process.env.E2E_DATABASE_URL;
 const STATE = "VT";
 
 const FEE_TABLE = `
-  <h1>Schedule of Fees</h1>
+  <h1>Consumer Fee Schedule</h1>
   <p>Effective January 1, 2026</p>
   <table>
     <tr><th>Service</th><th>Fee</th></tr>
@@ -78,6 +80,10 @@ const SITE: Record<string, { body: string | Uint8Array; type: string }> = {
       <nav><a href="/personal">Personal</a> <a href="/about">About</a>
       <a href="/disclosures/fee-schedule">Fee Schedule</a></nav>
       <p>Welcome to Green Mountain Test Bank.</p>`),
+  },
+  "https://www.greenmountain-test-bank.com/personal": {
+    type: "text/html",
+    body: page("Personal Banking", '<main><a href="/disclosures/fee-schedule">Consumer Fee Schedule</a></main>'),
   },
   "https://www.greenmountain-test-bank.com/disclosures/fee-schedule": {
     type: "text/html",
@@ -564,9 +570,11 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     const [bank] = await sql`SELECT id FROM institution_sources WHERE cert_number = 'E2E-1'`;
     const institutionId = Number(bank.id);
     await sql`DELETE FROM answer_key_institutions WHERE institution_id = ${institutionId}`;
+    const documentUrl="https://www.greenmountain-test-bank.com/disclosures/fee-schedule";
+    const contentHash=createHash("sha256").update(SITE[documentUrl].body).digest("hex");
     const [entry] = await sql`
-      INSERT INTO answer_key_institutions (institution_id, document_url, document_type, status, confirmed_by, confirmed_at)
-      VALUES (${institutionId}, 'https://greenmountain-test-bank.com/disclosures/fee-schedule/', 'html', 'confirmed', 'e2e', NOW())
+      INSERT INTO answer_key_institutions (institution_id, document_url, document_type, content_hash, status, confirmed_by, confirmed_at)
+      VALUES (${institutionId}, ${documentUrl}, 'html', ${contentHash}, 'confirmed', 'e2e', NOW())
       RETURNING id
     `;
     const fees: Array<[string, number]> = [
@@ -574,10 +582,12 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
       ["wire_domestic_outgoing", 25], ["wire_domestic_incoming", 15], ["atm_non_network", 3],
       ["cashiers_check", 10], ["paper_statement", 3],
     ];
-    for (const [key, amount] of fees) {
+    // This positive fixture binds each complete expected line to the exact captured HTML.
+    const sourceLines=[...FEE_TABLE.matchAll(/<tr><td>(.*?)<\/td><td>(.*?)<\/td><\/tr>/g)].map((match)=>`${match[1]} ${match[2]}`);
+    for (const [index, [key, amount]] of fees.entries()) {
       await sql`
-        INSERT INTO answer_key_fees (answer_key_institution_id, canonical_key, amount, amount_kind, status, confirmed_by, confirmed_at)
-        VALUES (${entry.id}, ${key}, ${amount}, 'fixed', 'confirmed', 'e2e', NOW())
+        INSERT INTO answer_key_fees (answer_key_institution_id, canonical_key, amount, amount_kind, source_line, status, confirmed_by, confirmed_at)
+        VALUES (${entry.id}, ${key}, ${amount}, 'fixed', ${sourceLines[index]}, 'confirmed', 'e2e', NOW())
       `;
     }
 
@@ -606,6 +616,9 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     `;
     const versions = await sql`SELECT scorer_version FROM answer_key_score_runs WHERE agent_run_id = ${started.run.id} ORDER BY scorer_version`;
     expect(versions.map((row) => Number(row.scorer_version))).toEqual([1, 2, 3, 4, 5]);
+    expect((scoreRun.by_stage as Record<string,unknown>)._reference).toMatchObject({protocol:1,state:"measured",eligibleBanks:1,eligibleFees:9,excludedBanks:0});
+    const [receipt]=await sql`SELECT detail FROM agent_run_events WHERE agent_run_id=${started.run.id} AND event_type='answer_key.eligibility'`;
+    expect(receipt.detail).toMatchObject({status:"eligible",facts:{consumer:{status:"pass"},current:{status:"pass"},priced:{status:"pass"}}});
     expect(Number(scoreRun.precision)).toBe(1);
     expect(Number(scoreRun.recall)).toBe(1);
     const bankScore = (scoreRun.by_bank as Array<Record<string, unknown>>).find((row) => Number(row.institution_id) === institutionId);

@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import registry from "./should-move.json";
+import { referenceScoreCohort, sameReferenceCohort } from "@/lib/data-store/answer-key-reference-store";
 
 type SqlTag = typeof sql;
 
@@ -54,7 +55,14 @@ export function sameScorer(before: Record<string, unknown> | null | undefined, a
   const version = (row: Record<string, unknown> | null | undefined) =>
     row?.accuracy_scorer_version == null ? null : Number(row.accuracy_scorer_version);
   const a = version(before);
-  return a != null && a === version(after);
+  const cohort = (row: Record<string, unknown> | null | undefined) => {
+    const detail = typeof row?.detail === "string" ? JSON.parse(row.detail) : row?.detail;
+    return referenceScoreCohort(row?.accuracy_reference ?? (detail as Record<string, unknown> | null)?.accuracy_reference);
+  };
+  try {
+    const left = cohort(before), right = cohort(after);
+    return a != null && a === version(after) && left?.state === "measured" && right?.state === "measured" && sameReferenceCohort(left, right);
+  } catch { return false; }
 }
 
 /** Stored-copy accuracy changes are not data improvements when a checker/reporting series changed. */

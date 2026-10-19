@@ -63,6 +63,7 @@ function pct(value: number): string {
 }
 
 function OutcomeBar({ row }: { row: MethodRow }) {
+  if (row.referenceState) return <div className="h-2 rounded-full bg-black/[0.06] dark:bg-white/[0.08]" role="presentation" />;
   if (row.score) {
     if (row.score.decided <= 0) {
       return <div className="h-2 rounded-full bg-black/[0.06] dark:bg-white/[0.08]" role="presentation" />;
@@ -166,6 +167,7 @@ export default async function LearningPage() {
                     </p>
                     <div className="min-w-0 self-center">
                       <OutcomeBar row={current} />
+                      {current.referenceState ? <p className="mt-1 text-[11px] text-gray-500">No current review accuracy measurement: frozen references lack original document binding. Historical chunks remain unbound.</p> : null}
                       {score ? <p className="mt-1 text-[11px] text-gray-500">Answer-key accuracy: green is correct, red is incorrect.</p> : null}
                       {method.strategy === "publish.guard_requeue" ? <p className="mt-1 text-[11px] text-gray-500">Previously rejected fees checked again; those still rejected remain blocked.</p> : null}
                       {method.strategy === "read.table_rows" ? <p className="mt-1 text-[11px] text-gray-500">Successful table-row outputs only; documents with no rows do not log this method.</p> : null}
@@ -173,7 +175,7 @@ export default async function LearningPage() {
                         : ACCESS_METHOD_NAMES[method.strategy] && method.strategy !== "read.table_rows" ? <p className="mt-1 text-[11px] text-gray-500">Document access and format outcomes; these do not measure reader accuracy.</p> : null}
                       {method.older.length > 0 ? (
                         <p className="mt-1 text-[11px] text-gray-500">
-                          Earlier: {method.older.slice(0, 3).map((row) => row.score && row.score.decided > 0
+                          Earlier: {method.older.slice(0, 3).map((row) => row.referenceState ? `v${row.version} historical unbound, no current accuracy` : row.score && row.score.decided > 0
                             ? `v${row.version} ${pct(row.score.correct / row.score.decided)} correct of ${row.score.decided.toLocaleString("en-US")} verdicts`
                             : `v${row.version} ${pct(share(row, "worked"))} worked of ${row.attempts.toLocaleString("en-US")}`).join(" · ")}
                         </p>
@@ -181,7 +183,10 @@ export default async function LearningPage() {
                       <OutcomeDetails row={current} />
                     </div>
                     <p className="min-w-0 text-xs tabular-nums text-gray-600 dark:text-gray-300 xl:text-right">
-                      {score ? (
+                      {current.referenceState ? (<>
+                        <span className="font-semibold">No measurement</span>
+                        {current.legacyScore ? <span className="block text-[11px] text-gray-500">Historical unbound: {current.legacyScore.correct} of {current.legacyScore.decided} decided verdicts. These results cannot authorize promotion or teach reviews.</span> : null}
+                      </>) : score ? (
                         <>
                           <span className="font-semibold">{score.decided > 0 ? pct(score.correct / score.decided) : "—"} correct</span>
                           <span className="block text-[11px] text-gray-500">{score.correct.toLocaleString("en-US")} of {score.decided.toLocaleString("en-US")} decided verdicts</span>
