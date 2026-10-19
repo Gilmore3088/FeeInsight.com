@@ -269,7 +269,7 @@ let promptStats: { value: Promise<Awaited<ReturnType<typeof getPublicStats>>>; e
 function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
   const now = Date.now();
   if (!promptStats || promptStats.expiresAt <= now) {
-    const value = getPublicStats();
+    const value = getPublicStats({ strict: true });
     promptStats = { value, expiresAt: now + PROMPT_STATS_TTL_MS };
     // A failed lookup is not reused.
     value.catch(() => {
@@ -281,9 +281,12 @@ function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
 
 export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
   if (role !== "consumer") warmDataCatalog();
-  const s = await getPromptStats();
+  const s = await getPromptStats().catch(() => null);
 
-  const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), economic indicators (BLS, BEA, Federal Reserve Board), Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
+  const coverage = s
+    ? `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions.`
+    : "Global published-fee coverage counts are unavailable; do not infer zero observations, categories or institutions. Use the returned institution and source-specific evidence for this answer.";
+  const dataStats = `${coverage} Your tools also cover: FDIC Call Reports (revenue trends), economic indicators (BLS, BEA, Federal Reserve Board), Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
 
   switch (role) {
     case "consumer": {

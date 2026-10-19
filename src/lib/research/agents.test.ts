@@ -68,6 +68,7 @@ vi.mock("./tool-query-data", () => ({
 
 // Import after mocks
 import { buildMonitorModeSuffix, buildSavedPeerSetPrompt, getHamilton, savedPeerSetUsed } from "./agents";
+import { getPublicStats } from "@/lib/data-store";
 
 describe("getHamilton", () => {
   beforeEach(() => {
@@ -271,6 +272,40 @@ describe("getHamilton", () => {
     } finally {
       delete process.env.HAMILTON_MODEL;
     }
+  });
+});
+
+describe("Hamilton global coverage availability (#2373)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.mocked(getPublicStats).mockReset();
+  });
+
+  it("treats a failed optional count as unknown, retains capabilities, and retries instead of caching a zero", async () => {
+    vi.mocked(getPublicStats).mockRejectedValueOnce(new Error("statement timeout")).mockResolvedValue({ total_observations: 125000, total_institutions: 4200, total_states: 51, total_categories: 49 });
+    const fresh = await import("./agents");
+    const unavailable = await fresh.getHamilton("pro");
+    expect(getPublicStats).toHaveBeenCalledWith({ strict: true });
+    expect(unavailable.systemPrompt).toContain("Global published-fee coverage counts are unavailable; do not infer zero");
+    expect(unavailable.systemPrompt).not.toContain("0+ fee observations");
+    expect(unavailable.systemPrompt).toContain("FDIC Call Reports (revenue trends)");
+    expect(unavailable.tools.getInstitution).toBeDefined();
+    const recovered = await fresh.getHamilton("pro");
+    expect(recovered.systemPrompt).toContain("125,000+ fee observations");
+    expect(recovered.systemPrompt).not.toContain("Global published-fee coverage counts are unavailable");
+    await fresh.getHamilton("pro");
+    expect(getPublicStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches a successful measured zero and does not label it unavailable", async () => {
+    vi.mocked(getPublicStats).mockResolvedValue({ total_observations: 0, total_institutions: 0, total_states: 0, total_categories: 0 });
+    const fresh = await import("./agents");
+    for (const role of ["pro", "admin"] as const) {
+      const config = await fresh.getHamilton(role);
+      expect(config.systemPrompt).toContain("0+ fee observations across 0 categories from 0+ institutions");
+      expect(config.systemPrompt).not.toContain("Global published-fee coverage counts are unavailable");
+    }
+    expect(getPublicStats).toHaveBeenCalledTimes(1);
   });
 });
 
