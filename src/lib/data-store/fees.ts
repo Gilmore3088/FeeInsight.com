@@ -315,6 +315,7 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
       AND ${sql.unsafe(STATS_ROW_FILTER)}
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
       AND ef.amount IS NOT NULL AND ef.amount >= 0
     ORDER BY ef.amount DESC NULLS LAST
   ` as (Omit<FeeInstance, "source_document_id"> & {

@@ -465,9 +465,11 @@ export async function getInstitutionOwnFees(
 export async function getSourcedInstitutionCount(): Promise<number> {
   const [row] = await sql.unsafe(
     `SELECT COUNT(DISTINCT ef.institution_id)::int AS count
-       FROM published_fee_catalog ef
+        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`
   ) as { count: number }[];
   return Number(row?.count ?? 0);
 }
@@ -704,6 +706,7 @@ export async function getDistrictMedianByCategory(
     "ef.fee_category = $1",
     "ef.review_status = 'approved'",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     "ct.fed_district IS NOT NULL",
   ];
   const params: (string | number)[] = [category];
@@ -760,6 +763,7 @@ export async function getDistrictFeeMedians(
       AND ef.amount IS NOT NULL
       AND ef.amount >= 0
       AND ${sql.unsafe(STATS_ROW_FILTER)}
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { fee_category: string; amount: number | null; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]
@@ -1224,6 +1228,7 @@ export async function getComparableMarketIndex(scope: MarketScope): Promise<Inde
         AND ef.review_status = 'approved'
         AND ef.amount IS NOT NULL AND ef.amount >= 0
         AND ef.source_document_id IS NOT NULL
+        AND ${activeInstitutionFilter("ct")}
         AND COALESCE(ef.fee_audience, 'unknown') IN (${sqlList(MARKET_AUDIENCES)})`,
     params,
   )) as ComparableMarketRow[];
