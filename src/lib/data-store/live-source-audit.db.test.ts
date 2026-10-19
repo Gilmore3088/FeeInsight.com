@@ -183,7 +183,10 @@ describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL",
     const track=(socket:Socket)=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));socket.on('error',()=>undefined);return socket;};
     const server=createServer(socket=>{track(socket);socket.once('data',first=>{
       if(first.length>=8&&first.readInt32BE(4)===80877102){cancellationChannels++;cancelSockets.push(socket);socket.write(Buffer.from([90,0,0,0,5,73]));return;}
-      const upstream=track(connectSocket({host:'127.0.0.1',port:Number(new URL(connection!).port)},()=>upstream.write(first)));socket.pipe(upstream);upstream.pipe(socket);
+      const upstream=track(connectSocket({host:'127.0.0.1',port:Number(new URL(connection!).port)},()=>upstream.write(first)));
+      // The proxy owns a second connection: forward actual client closure to its peer.
+      socket.once('close',()=>upstream.destroy());upstream.once('close',()=>socket.destroy());
+      socket.pipe(upstream);upstream.pipe(socket);
     });});
     await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const address=server.address();if(!address||typeof address==='string')throw new Error('fixture_port');
     const supplied=postgres({...db.options,host:['127.0.0.1'],port:[address.port],ssl:false} as unknown as postgres.Options<Record<string,postgres.PostgresType>>);
