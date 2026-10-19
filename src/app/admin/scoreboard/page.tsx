@@ -12,6 +12,9 @@ import {
 import { runScoreboardNowAction } from "../answer-key/actions";
 import { GOAL_WINDOW_DAYS, READER_MISS_KINDS, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
+import { readAccuracyHistory, type AccuracyHistory } from "@/lib/agents/deming/accuracy-history";
+import { accuracyStatusLabel, formatAccuracyBound } from "@/lib/agents/deming/accuracy-measure";
+import { AccuracyHistoryPanel } from "./accuracy-history";
 
 interface Metric {
   key: keyof ScoreboardSnapshotRow;
@@ -126,7 +129,10 @@ export default async function ScoreboardPage({
   await requireAuth("view");
   const { message } = await searchParams;
   const ready = await scoreboardSchemaReady().catch(() => false);
-  const rows = ready ? await listScoreboardSnapshots(30) : [];
+  const [rows, accuracyHistory]: [ScoreboardSnapshotRow[], AccuracyHistory | null] = ready ? await Promise.all([
+    listScoreboardSnapshots(30),
+    readAccuracyHistory().catch((error) => { console.error("Accuracy history read failed", error); return null; }),
+  ]) : [[], null];
   const latest = rows.at(-1) ?? null;
   const previous = rows.length > 1 ? rows.at(-2) ?? null : null;
 
@@ -165,6 +171,7 @@ export default async function ScoreboardPage({
       ) : (
         <>
         <GoalSection rows={rows} />
+        <AccuracyHistoryPanel history={accuracyHistory} />
         <details className="admin-card p-4">
           <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">
             Pipeline diagnostics (older numbers, not goal measures)
@@ -214,6 +221,8 @@ interface GoalCardSpec {
   unit: string;
   detail: (goal: GoalScorecard) => React.ReactNode;
   lowerIsBetter?: boolean;
+  /** Accuracy has its own weekly, versioned table instead of an unversioned rolling line. */
+  versionedAccuracy?: boolean;
 }
 
 const GOAL_CARDS: GoalCardSpec[] = [
@@ -244,12 +253,13 @@ const GOAL_CARDS: GoalCardSpec[] = [
       : "Could not be read.",
   },
   {
-    label: "Accuracy",
+    label: "Automated source audit",
     query: "goal.deming_accuracy_7d",
     value: (goal) => goal.accuracy?.accuracy,
     format: share,
-    unit: `of audited live fees right on amount, category, source, line and name (target ${ACCURACY_TARGET_LABEL})`,
+    unit: `of sampled dollar fees supported by stored documents (target ${ACCURACY_TARGET_LABEL})`,
     detail: (goal) => goal.accuracy ? <AccuracyDetail accuracy={goal.accuracy} /> : "Could not be read.",
+    versionedAccuracy: true,
   },
   {
     label: "Wrong after publish",
@@ -356,7 +366,8 @@ function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {GOAL_CARDS.map((card) => {
           const value = card.value(latest.goal!);
-          const prior = before?.goal ? card.value(before.goal) : null;
+          const sameSeries = !card.versionedAccuracy || Boolean(latest.goal?.accuracy?.series && latest.goal.accuracy.series === before?.goal?.accuracy?.series);
+          const prior = before?.goal && sameSeries ? card.value(before.goal) : null;
           const delta = value != null && prior != null ? value - prior : null;
           const better = delta == null || delta === 0 ? null : card.lowerIsBetter ? delta < 0 : delta > 0;
           return (
@@ -371,7 +382,7 @@ function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
                 ) : null}
               </p>
               <p className="text-xs text-gray-500">{card.unit}</p>
-              <Sparkline values={withGoal.map((row) => (row.goal ? card.value(row.goal) ?? null : null))} />
+              {!card.versionedAccuracy && <Sparkline values={withGoal.map((row) => (row.goal ? card.value(row.goal) ?? null : null))} />}
               <p className="text-[11px] text-gray-500">{card.detail(latest.goal!)}</p>
               {card.query ? <p className="font-mono text-[10px] text-gray-400">query: {card.query}</p> : null}
             </div>
@@ -514,7 +525,9 @@ function AccuracyDetail({ accuracy }: { accuracy: NonNullable<GoalScorecard["acc
   return (
     <>
       {n(accuracy.right)} of {n(accuracy.scorable)} scorable fees over {accuracy.audits} Deming audits
-      {accuracy.range ? `; 95% range ${percent(accuracy.range.low)}–${percent(accuracy.range.high)}` : ""}.
+      {accuracy.range ? `; 95% range ${formatAccuracyBound(accuracy.range.low, "low")}–${formatAccuracyBound(accuracy.range.high, "high")}` : ""}.
+      <span className="block">Target {ACCURACY_TARGET_LABEL}: {accuracyStatusLabel(accuracy)}.</span>
+      <span className="block">{accuracy.series ?? "Legacy — versions unknown"}; unknown {accuracy.unknown == null ? "not recorded" : n(accuracy.unknown)}; repeated fees excluded {n(accuracy.repeatedFees ?? 0)}; other scoring series excluded {n(accuracy.excludedAudits ?? 0)}.</span>
       {misses ? (
         <span className="block">
           Misses: amount {n(misses.amount)} · category {n(misses.category)} · not the bank&apos;s schedule {n(misses.evidence)} · not a fee line {n(misses.notAFee)} · bad name {n(misses.name)}

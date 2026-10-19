@@ -62,7 +62,7 @@ describe("buildDailyBrief", () => {
     expect(text).not.toContain("documents downloaded");
     expect(text).toContain("Coverage: 64 of 161 state and size groups under $10B meet the target; 524 more covered institutions would close the gap (480 7 days ago).");
     expect(text).toContain("Institutions with live fees: 3,858, 12 added in the last 7 days and 20 dropped (net -8).");
-    expect(text).toContain("Accuracy: could not be read today.");
+    expect(text).toContain("Automated stored-copy audit: could not be read today.");
     expect(text).toContain("Wrong after publish: 2.0% (20 of 1,000");
     expect(text).toContain("$5.00 per institution added");
     expect(text).toContain("Audience not stated: 99.7% of live fees");
