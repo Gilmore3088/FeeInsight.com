@@ -32,13 +32,14 @@ export function internationalVerificationDecision(raw: ActualRaw, finalCategory:
   const flags = flagValues(actual.outlier_flags);
   if (flags.includes(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG)) return { kind: "deferred", reason: "private_eligibility_hold" };
   const affected = finalCategory.startsWith("wire_intl_") || existingRawResolvedCategory?.startsWith("wire_intl_");
-  if (!affected && !finalCategory.startsWith("wire_") && !existingRawResolvedCategory?.startsWith("wire_"))
-    return { kind: "not_applicable" };
   if (context.kind !== "bound") return affected ? { kind: "deferred", reason: "source_unavailable" } : { kind: "not_applicable" };
   if (actual.amount == null || actual.amount === "" || !Number.isFinite(Number(actual.amount)))
     return affected ? { kind: "deferred", reason: "own_direction_unproven" } : { kind: "not_applicable" };
   const scope = sourceOwnedWireScope(context.source.normalizedText, actual.fee_name, Number(actual.amount));
-  if (!affected && !(scope.kind === "owned" && scope.geography === "international")) return { kind: "not_applicable" };
+  // A stale ordinary key cannot negate a positive actual own international wire
+  // clause. Conversely a nonwire "International Money Order" is not a wire fact.
+  if (!affected && !(scope.kind === "owned" && scope.geography === "international"
+    && /\b(?:wires?|transfers?)\b/i.test(scope.ownText))) return { kind: "not_applicable" };
   if (matchOriginalRawSource(actual, context.source).kind !== "matched")
     return { kind: "deferred", reason: "original_unavailable" };
   return reviewInternationalDirection(scope, finalCategory).kind === "admit" ? { kind: "ready" }

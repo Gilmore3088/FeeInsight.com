@@ -31,6 +31,17 @@ describe("final international verification uses held current source facts (#2278
     const f = facts(pdf.normalizedText, "International Wire Outgoing", 45);
     expect(internationalVerificationDecision(f.raw, "wire_intl_incoming", "wire_intl_outgoing", f.context).kind).toBe("deferred");
   });
+  it("does not treat two stale unrelated keys as absence of actual own international scope", () => {
+    const f = facts(pdf.normalizedText, "International Wire Outgoing", 45);
+    const actual = { ...f.raw, outlier_flags: ["canonical_hint:minimum_balance"],
+      extraction_note: f.raw.extraction_note.replace("canonical_hint=wire_intl_outgoing", "canonical_hint=minimum_balance") };
+    expect(internationalVerificationDecision(actual, "minimum_balance", "minimum_balance", { ...f.context, currentRaw: actual }))
+      .toEqual({ kind: "deferred", reason: "own_direction_unproven" });
+  });
+  it("does not turn a literal nonwire International Money Order into wire authority", () => {
+    const f = facts("International Money Order | $5", "International Money Order", 5);
+    expect(internationalVerificationDecision(f.raw, "money_order", "money_order", f.context)).toEqual({ kind: "not_applicable" });
+  });
   it.each([{ flags: [] }, { flags: ["knox_review:eligibility"] }])("detects own international scope even with a stale ordinary raw hint $flags", ({ flags }) => {
     const f = facts(pdf.normalizedText, "International Wire Outgoing", 45);
     f.raw.outlier_flags = flags as never[];
