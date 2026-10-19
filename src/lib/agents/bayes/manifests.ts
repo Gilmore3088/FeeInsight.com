@@ -228,6 +228,7 @@ export interface RosettaVersions {
   ocr: number;
   jsFallback: number;
   tableRows: number;
+  pdfStackedRepair: number;
 }
 
 async function loadRosettaVersions(): Promise<RosettaVersions> {
@@ -238,6 +239,7 @@ async function loadRosettaVersions(): Promise<RosettaVersions> {
     ocr: versions.ROSETTA_OCR_VERSION,
     jsFallback: versions.ROSETTA_JS_FALLBACK_VERSION,
     tableRows: versions.ROSETTA_TABLE_ROWS_VERSION,
+    pdfStackedRepair: versions.PDF_STACKED_REPAIR_VERSION,
   };
 }
 
@@ -266,6 +268,36 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
     reader("ocr", "read.ocr_tesseract", versions.ocr, "Scanned PDFs read by an older OCR pass."),
     reader("js_fallback", "read.js_fallback", versions.jsFallback, "JavaScript-built pages read by an older browser fallback."),
     reader("table_rows", "read.table_rows", versions.tableRows, "Fee tables split into rows by an older table reader."),
+    {
+      key: "rosetta.pdf_stacked_repair",
+      owner: "rosetta", stage: "read", strategy: "read.pdf_layout",
+      version: versions.pdfStackedRepair,
+      unit: "current-copy PDF text",
+      affects: "Stored PDFs with crossed and standalone bullet-price lines; a free geometry check, at most four per read step. General reader3 and prose-layout4 replay floors stay settled.",
+      count: async (db): Promise<ReplayCount> => {
+        const { countPdfStackedRepairsDue } = await import("@/lib/agents/rosetta/read");
+        const queued = await countPdfStackedRepairsDue(db);
+        const [row] = await db<Array<{ done: number | string; failed: number | string }>>`
+          SELECT COUNT(*) FILTER (WHERE succeeded) AS done,
+                 COUNT(*) FILTER (WHERE NOT succeeded) AS failed
+            FROM (
+              SELECT doc.id,
+                     BOOL_OR(COALESCE((pa.detail->>'pdf_stacked')::int, 0) >= ${versions.pdfStackedRepair}) AS succeeded
+                FROM source_documents doc
+                JOIN pipeline_attempts pa ON pa.source_document_id = doc.id
+                 AND pa.input_fingerprint = doc.content_hash
+               WHERE doc.superseded_by_id IS NULL AND doc.duplicate_of_id IS NULL
+                 AND pa.stage = 'read'
+                 AND COALESCE((pa.detail->>'pdf_stacked_requested')::int, (pa.detail->>'pdf_stacked')::int, 0) >= ${versions.pdfStackedRepair}
+               GROUP BY doc.id
+            ) checked
+        `;
+        const done = n(row?.done);
+        const failed = n(row?.failed);
+        return { affected: queued + done + failed, done, queued, exclusions: failed ? { repair_failed_requires_review: failed } : {},
+          note: "Queued uses the complete read owner's due query; done counts successful current-copy checks, including unchanged geometry. Failed checks retain earlier text and require review rather than retrying every lane run. A check is not a claim that every fee was corrected or published." };
+      },
+    },
   ];
 }
 
@@ -275,6 +307,7 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  PDF_PROSE_REREAD_VERSION: "Frozen layout4 prose retry floor. Stacked layout5 has a separate measured current-copy witness and pdf_stacked@1 check; changing PDF_LAYOUT_VERSION does not reopen every settled prose document.",
   // #2186: prospective hard-hold proof cannot be fabricated for historical confirmations.
   TAKEDOWN_LESSONS_VERSION: "v2 restricts newly inserted learned holds to complete supported fee identity and a limit-guard witness captured before judgement, retained in confirmation, and current at insertion. Missing/unsupported/contended proof leaves new candidates for ordinary Darwin. Existing raw rows/holds and extract83/stale78/verify3/batch4/publish3/refresh2/current-copy2/newer-copy1 fingerprints stay settled; no historical release, replay or provider work is queued.",
   // #1911 code phase: evidence format, not a new extraction selector or recovery authorization.

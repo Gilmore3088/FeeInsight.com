@@ -30,6 +30,10 @@ Rosetta version constant that neither names (registry parsers count through
 Rosetta's five reader versions and Darwin's `verify.rules` and `verify.peer_range` have
 manifests (#1120) that are not counted yet: the owners' re-read and re-verify selections are not
 shared as counts. They show as `not_counted` until a counter is added.
+The scoped stacked-PDF repair (#2219, `rosetta.pdf_stacked_repair`) is counted with
+Rosetta's complete current-copy due query. Successful checks include unchanged geometry;
+failed access/hash/layout checks retain the earlier text and are exclusions requiring
+review. Neither result certifies downstream fees or retires old published mistakes.
 
 ## Boundaries
 
