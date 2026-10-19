@@ -5,8 +5,6 @@ import {
   availabilityLine,
   bandsInUse,
   coverageFinding,
-  HEADLINE_FEE_NAMES,
-  headlineFeeList,
   normalizeFeesFilter,
   directoryHref,
   nationalCoverage,
@@ -19,6 +17,7 @@ import {
   stateSummaryLine,
   stateRows,
 } from "./directory-view";
+import { HEADLINE_FEE_NAMES, headlineFeeList } from "./headline-fee-names";
 
 function summary(state_code: string, verified: number, total: number): InstitutionStateDirectorySummary {
   return {

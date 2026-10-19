@@ -42,7 +42,6 @@ import {
   charterNoun,
   coverageFinding,
   directoryHref,
-  headlineFeeList,
   nationalCoverage,
   normalizeCharter,
   normalizeFeesFilter,
@@ -53,6 +52,7 @@ import {
   stateSummaryLine,
   type Charter,
 } from "./directory-view";
+import { headlineFeeList } from "./headline-fee-names";
 
 /**
  * The directory, shared by /institutions (cached, ISR: the plain directory every crawler and
@@ -269,8 +269,11 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
   const tableCaption = `${resultsTitle}. ${resultsNote}`;
 
   const filterCard = (
-    <div className="grid gap-3 rounded-2xl border border-border bg-surface-0 p-3 text-ink shadow-[0_18px_40px_-24px_rgba(16,45,67,0.45)] sm:p-4 lg:grid-cols-[minmax(0,1fr)_auto_200px_auto] lg:items-center">
-      <InstitutionSearchBar initialQuery={query} ariaLabel="Search by bank or credit union name" placeholder="Bank or credit union name" />
+    // The search takes the whole first row; the three filters share the second on a wide screen.
+    <div className="grid gap-3 rounded-2xl border border-border bg-surface-0 p-3 text-ink shadow-[0_18px_40px_-24px_rgba(16,45,67,0.45)] sm:p-4 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
+      <div className="md:col-span-3">
+        <InstitutionSearchBar initialQuery={query} ariaLabel="Search by bank or credit union name" placeholder="Bank or credit union name" />
+      </div>
       <nav aria-label="Institution type" className="flex justify-center">
         <ul className="inline-flex rounded-full border border-control-border bg-surface-0 p-1">
           {CHARTER_OPTIONS.map((option) => {
@@ -341,7 +344,7 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
       </div>
 
       <div className={`${PAGE_HERO_WRAP} pb-14 sm:pb-20`}>
-        <section aria-labelledby="results-heading" className="fi-reveal fi-reveal-delay-1">
+        <section aria-labelledby="results-heading" className="fi-reveal fi-reveal-delay-1 pt-6 sm:pt-8">
           <h2 id="results-heading" className={H2}>
             {resultsTitle}
           </h2>
@@ -393,7 +396,7 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
               </p>
             </div>
           ) : (
-            <p className="mt-5 rounded-xl border border-dashed border-border px-5 py-8 text-center text-[15px] text-ink-soft">
+            <p className="mt-5 rounded-xl border border-dashed border-border px-5 py-6 text-[15px] text-ink-soft">
               The list of largest institutions is unavailable right now. Search by name or choose a state above.
             </p>
           )}
