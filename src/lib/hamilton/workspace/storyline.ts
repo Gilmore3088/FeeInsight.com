@@ -15,7 +15,7 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { ownFeeFromRows, ownFeeLabel, ownFeeList, statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
-import { plainName, proseFeeName } from "./names";
+import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
@@ -333,7 +333,8 @@ function structurePiece(research: FeeResearch): Piece | null {
   if (!set) return null;
   const group = set.rows.filter((r) => !r.own);
   if (group.length < MIN_PEERS_FOR_POSITION) return null;
-  const has = (category: string) => group.filter((r) => r.values[category] !== undefined).length;
+  // A $0 on the schedule is no fee: only a charge above $0 counts as charging one (#2035).
+  const has = (category: string) => group.filter((r) => (r.values[category] ?? 0) > 0 || (r.several?.[category]?.high ?? 0) > 0).length;
   const nsf = has("nsf");
   const transfer = has("od_protection_transfer");
   const cap = has("od_daily_cap");
@@ -341,14 +342,19 @@ function structurePiece(research: FeeResearch): Piece | null {
   const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_MATRIX_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
   return {
     key: "structure",
-    actionTitle: `Of ${count(group.length)} ${label}: ${count(nsf)} publish an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
+    actionTitle: `Of ${count(group.length)} ${label}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
     exhibit: {
       kind: "structure_matrix",
       title: `Overdraft and NSF structure: ${subjectName(research)} and ${label}`,
       columns: set.columns.map((c) => c.label),
       rows: shown.map((r) => ({
         name: r.name,
-        cells: set.columns.map((c) => (r.values[c.category] === undefined ? null : statedFeeText(r.values[c.category], r.several?.[c.category], money))),
+        cells: set.columns.map((c) => {
+          const value = r.values[c.category];
+          if (value === undefined) return null;
+          // A $0 cap is a cap of $0, not an absent fee.
+          return value === 0 && !r.several?.[c.category] && c.category !== "od_daily_cap" ? "No fee ($0)" : statedFeeText(value, r.several?.[c.category], money);
+        }),
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
@@ -935,7 +941,8 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
   if (set) {
     const others = set.rows.filter((r) => !r.own);
     const ownRow = set.rows.find((r) => r.own);
-    const withTransfer = others.filter((r) => r.values.od_protection_transfer !== undefined);
+    // A $0 transfer is no fee, so it is not counted as pricing one (#2035), as in the structure matrix.
+    const withTransfer = others.filter((r) => (r.values.od_protection_transfer ?? 0) > 0);
     if (others.length >= MIN_PEERS_FOR_POSITION && withTransfer.length > 0) {
       const ownTransfer = ownRow?.values.od_protection_transfer;
       const transfers = withTransfer.map((r) => r.values.od_protection_transfer).sort((a, b) => a - b);
@@ -1051,7 +1058,7 @@ function watch(research: FeeResearch, name: string, intent: StoryIntent = {}): F
   }
   if (!research.revenueLine) {
     out.push({
-      text: `${subjectPossessive(research)} yearly count of ${name} items would put a dollar range on each price.`,
+      text: `${subjectPossessive(research)} yearly count of ${feeItem(name, true)} would put a dollar range on each price.`,
       source: { label: "Figures you give Hamilton", asOf: research.provenance.generatedAt.slice(0, 10) },
     });
   }

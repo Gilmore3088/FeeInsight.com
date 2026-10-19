@@ -11,7 +11,7 @@ import { revenueLineName } from "./revenue";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
-import { proseFeeName } from "./names";
+import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
 import { buildStoryline, type StoryIntent } from "./storyline";
@@ -73,8 +73,33 @@ function feeSource(research: FeeResearch, label = FEE_SOURCE_LABEL): SourceRef {
 
 // ─── Consultant: sourced claims ──────────────────────────────────────────────
 
+/**
+ * Where the bank's own fee stands when it has no row for it (#2035): its schedule, as read,
+ * lists none, or no schedule is on file. Neither is a $0 fee. Null when that was not read.
+ */
+function missingOwnFee(research: FeeResearch, name: string): { lead: string; fact: Fact } | null {
+  if (research.current !== null || research.ownRows.length > 0 || research.ownSchedule === undefined || ownRate(research) !== null) return null;
+  const schedule = research.ownSchedule;
+  const who = subjectPossessive(research);
+  if (schedule === null) {
+    const subject = research.subjectName ?? "You";
+    const has = research.subjectName ? "has" : "have";
+    return {
+      lead: `${subject} ${has} no fee schedule on file`,
+      fact: { text: `${subject} ${has} no fee schedule on file, so no ${name} fee can be read.`, source: { label: "Bank Fee Index, published fee schedules", table: "published_fee_catalog" } },
+    };
+  }
+  return {
+    lead: `${who} schedule lists no ${name} fee`,
+    fact: {
+      text: `${who} fee schedule${schedule.readAt ? `, read ${longDate(schedule.readAt)},` : ""} lists no ${name} fee.`,
+      source: { label: `${who} published fee schedule`, table: "published_fee_catalog", url: schedule.documentUrl ?? undefined, asOf: schedule.readAt },
+    },
+  };
+}
+
 function ownFeeClaim(research: FeeResearch, name: string): Fact | null {
-  if (research.current === null) return null;
+  if (research.current === null) return missingOwnFee(research, name)?.fact ?? null;
   const row = research.ownRows[0];
   return {
     text: `${subjectPossessive(research)} published ${name} fee is ${money(research.current)}.`,
@@ -330,6 +355,8 @@ function headline(research: FeeResearch, name: string): string {
     return `${subjectPossessive(research)} ${name} fee is ${money(research.current)}; only ${count(amounts.length)} peers publish one, too few to rank.`;
   }
   // No amount on file means the fee is not in the index, never that the bank charges none.
+  const missing = missingOwnFee(research, name);
+  if (missing) return band ? `${missing.lead}; ${count(band.n)} peers' median is ${money(band.median)}.` : `${missing.lead}, and too few peers publish one to compare.`;
   if (band) return `${subjectPossessive(research)} ${name} fee is not in the index yet; ${count(band.n)} peers' median is ${money(band.median)}.`;
   return `${subjectPossessive(research)} ${name} fee is not in the index yet, and too few peers publish one to compare.`;
 }
@@ -338,7 +365,7 @@ function headline(research: FeeResearch, name: string): string {
 
 function currentFeeQuestion(feeCategory: string, research?: Pick<FeeResearch, "subjectName">): ClarifyingQuestion {
   return {
-    prompt: `${research?.subjectName ? `What does ${research.subjectName}` : "What do you"} charge for one ${proseFeeName(feeCategory)} item today?`,
+    prompt: `${research?.subjectName ? `What does ${research.subjectName}` : "What do you"} charge for one ${feeItem(proseFeeName(feeCategory))} today?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.current_amount`,
   };

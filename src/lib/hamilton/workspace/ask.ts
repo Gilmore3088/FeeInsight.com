@@ -17,7 +17,7 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { buildFeeAnswer, type ExhibitFocus } from "./answer";
-import { proseFeeName } from "./names";
+import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong, waiverRateQuestion } from "./scenario";
 import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
@@ -214,7 +214,7 @@ export function testedPricesQuestion(feeCategory: string): ClarifyingQuestion {
 
 function currentAmountQuestion(feeCategory: string, subject?: { subjectName?: string }): ClarifyingQuestion {
   return {
-    prompt: `${subject?.subjectName ? `What does ${subject.subjectName}` : "What do you"} charge for one ${proseFeeName(feeCategory)} item today?`,
+    prompt: `${subject?.subjectName ? `What does ${subject.subjectName}` : "What do you"} charge for one ${feeItem(proseFeeName(feeCategory))} today?`,
     inputKind: "number",
     fieldKey: `fee.${feeCategory}.current_amount`,
   };
