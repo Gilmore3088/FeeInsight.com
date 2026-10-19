@@ -757,7 +757,23 @@ export const HAND_REFILES: readonly HandRefile[] = [
   // is still the joined one.
   { feePublishedId: 83792, from: "rush_card", amount: 30, to: "rush_card", name: "Expedited card delivery (domestic)",
     oldName: "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)",
-    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees whose
+  // price is right and whose name or category is not, each traced to its stored text.
+  { feePublishedId: 154438, from: "account_research", amount: 3, to: "excess_withdrawal", name: "Savings withdrawal in excess of six per quarter",
+    oldName: "Service charge fee",
+    why: "#2018, inst 4105 (Bank of Bearden), doc 36666: \"A service charge fee of $3.00 will be charged for each withdrawal in excess of six during a quarter.\"" },
+  { feePublishedId: 154181, from: "paper_statement", amount: 3, to: "paper_statement", name: "Paper statements",
+    oldName: "Optional: Yes Paper Statements available",
+    why: "#2018, inst 2954 (Lyon County State Bank), doc 37121: \"eStatements² | Optional | Yes Paper Statements available for $3 per month\"" },
+  { feePublishedId: 154214, from: "paper_statement", amount: 3, to: "paper_statement", name: "Paper Statements",
+    oldName: "with eStatements¹ Paper Statements available for an additional",
+    why: "#2018, inst 2954 (Lyon County State Bank), doc 37116: \"Maintenance Fee | $10 per month with eStatements¹ Paper Statements available for an additional $3 per month\"" },
+  { feePublishedId: 123514, from: "wire_domestic_outgoing", amount: 15, to: "wire_domestic_outgoing", name: "Wire Out",
+    oldName: "Wire Out/Wire In",
+    why: "#2018, inst 6911 (New Heights), doc 25640: \"Wire Out/Wire In | $15.00 Per Transaction Outgoing/$5 Per Transaction Incoming\"; the $5 incoming price is not live yet (follow-up)" },
+  { feePublishedId: 153002, from: "deposited_item_return", amount: 2, to: "other_lending_fee", name: "ACH Loan Payment on Website",
+    oldName: "Foreign Returned Item | Varies | ACH Loan Payment on Website",
+    why: "#2018, inst 7515 (Partner Colorado CU), doc 2336: \"Foreign Returned Item | Varies | ACH Loan Payment on Website | $2 per transaction\" under LOAN PRODUCT FEES (the guard moves it too; this also fixes the name)" },
 ];
 
 interface HandRow {

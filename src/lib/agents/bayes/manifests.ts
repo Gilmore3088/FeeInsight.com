@@ -422,6 +422,10 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
     // v73 (Oct 17, #1837): a bare direction row read under another column's heading ("Check Printing:
     // Incoming", a wire price) fails outside the categories a direction prices.
+    // v74 (Oct 19, #2018): payment investigations re-file to account research, withdrawal limits and
+    // returned mail leave account research, excess IRA withdrawals leave IRA termination, currency
+    // shipping leaves rush card, loan payments leave returned deposited items, and a withdrawal at
+    // the institution's own named ATM fails the non-network ATM fee.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

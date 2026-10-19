@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { amountEnvelopeFor } from "@/lib/agents/darwin/envelopes";
 
-import { borrowedDirection, cardProductMisfile, checkFeeCategory, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
+import { borrowedDirection, cardProductMisfile, checkFeeCategory, CLUB_WITHDRAWAL, CLUB_WITHDRAWAL_LIVE, GUARDED_CATEGORIES, refileCategory, refileFromLine } from "./fee-category-guard";
 
 describe("checkFeeCategory", () => {
   it("passes keys it does not guard", () => {
@@ -1928,5 +1928,69 @@ describe("borrowed direction (#1837): a direction row read under the other colum
     expect(checkFeeCategory("check_printing", "Check Printing: Incoming").ok).toBe(false);
     expect(borrowedDirection("check_printing", "Check Printing: Incoming", false)).toBeNull();
     expect(checkFeeCategory("check_printing", "Check Printing: Incoming", undefined, { borrowedDirection: false }).ok).toBe(true);
+  });
+});
+
+describe("guard v74 (#2018): James's 20-defect register", () => {
+  it("re-files a payment investigation from bill pay to account research", () => {
+    expect(checkFeeCategory("bill_pay", "Online Bill Payment Investigation").ok).toBe(false);
+    expect(refileCategory("bill_pay", "Online Bill Payment Investigation")).toBe("account_research");
+    expect(checkFeeCategory("bill_pay", "Bill Pay monthly fee")).toEqual({ ok: true });
+  });
+
+  it("moves withdrawal limits and returned mail out of account research, and keeps real research", () => {
+    expect(refileCategory("account_research", "service charge for each withdrawal over 6 per calendar month")).toBe("excess_withdrawal");
+    expect(refileCategory("account_research", "Excessive savings withdrawals")).toBe("excess_withdrawal");
+    expect(refileCategory("account_research", "Returned mail")).toBe("returned_mail");
+    for (const name of ["Account Research (per hour)", "Excess withdrawal research", "Returned mail research"]) {
+      expect(checkFeeCategory("account_research", name)).toEqual({ ok: true });
+    }
+  });
+
+  it("re-files excess IRA withdrawals to IRA administration and keeps IRA closing", () => {
+    expect(refileCategory("ira_termination", "Excessive IRA Withdrawals")).toBe("ira_administration");
+    expect(checkFeeCategory("ira_termination", "IRA Closing Fee")).toEqual({ ok: true });
+  });
+
+  it("re-files foreign currency shipping from rush card to courier delivery", () => {
+    expect(refileCategory("rush_card", "Foreign Currency – Expedited Shipping")).toBe("courier_delivery");
+    expect(checkFeeCategory("rush_card", "Rush debit card delivery")).toEqual({ ok: true });
+  });
+
+  it("re-files a loan payment from returned deposited items to other lending", () => {
+    expect(refileCategory("deposited_item_return", "Foreign Returned Item | Varies | ACH Loan Payment on Website")).toBe("other_lending_fee");
+    expect(checkFeeCategory("deposited_item_return", "Deposited Item Returned")).toEqual({ ok: true });
+  });
+
+  it("fails a withdrawal at the institution's own named ATM, and keeps other banks' and networks' ATMs", () => {
+    for (const name of ["ATM Withdrawal Fee at JSFCU ATM", "ATM Cash Withdrawal at NCB ATM"]) {
+      expect(checkFeeCategory("atm_non_network", name).ok).toBe(false);
+    }
+    for (const name of [
+      "ATM withdrawal at other bank ATM",
+      "Withdrawal at non-network ATMs",
+      "Withdrawal at Allpoint ATMs",
+      "Withdrawals at Nonproprietary ATMs",
+      "Free at our ATM's; $2 at others",
+      "Withdrawal at Bank's ATM network excluded",
+      "Cash withdrawal at foreign ATMs",
+    ]) {
+      expect(checkFeeCategory("atm_non_network", name).ok, name).toBe(true);
+    }
+  });
+
+  it("leaves club withdrawals in early closure while the switch is off (315 live fees wait on James)", () => {
+    expect(CLUB_WITHDRAWAL_LIVE).toBe(false);
+    expect(CLUB_WITHDRAWAL.test("Holiday Account Early Withdrawal")).toBe(true);
+    expect(CLUB_WITHDRAWAL.test("Christmas Club closed early")).toBe(false);
+    expect(checkFeeCategory("early_closure", "Holiday Account Early Withdrawal")).toEqual({ ok: true });
+  });
+});
+
+describe("guard v74: an excess withdrawal that names IRA only to exclude it", () => {
+  it("stays where it is", () => {
+    const name = "Excessive Withdrawal/Transfer -- Savings and other non-club accounts, excluding IRA/Cert";
+    expect(refileCategory("ira_termination", name)).not.toBe("ira_administration");
+    expect(refileCategory("ira_termination", "IRA withdrawals over 2 per year")).toBe("ira_administration");
   });
 });

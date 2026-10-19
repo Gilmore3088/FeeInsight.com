@@ -1251,7 +1251,18 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v73 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v73 (Oct 17,
+- The guard is at v74 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v74 (Oct 19,
+  #2018, James's 20-defect register): a bill pay investigation or research request re-files to
+  account research; a withdrawal limit ("withdrawal over 6 per month") or returned mail leaves
+  account research for its own type (a rule marked `onlyIfRefiles` fails a fee only when the other
+  type accepts it, so "Excess withdrawal research" stays); an excess IRA withdrawal leaves IRA
+  termination for IRA administration; foreign currency shipping leaves rush card for courier
+  delivery; a loan payment line that names no deposit leaves returned deposited items for other
+  lending; and a withdrawal at the institution's own named ATM ("at JSFCU ATM", `NAMED_OWN_ATM`;
+  never "at other/non-network/Allpoint/our ATMs") fails the non-network ATM fee. A club or holiday
+  account withdrawal (`CLUB_WITHDRAWAL`) would fail early closure, but `CLUB_WITHDRAWAL_LIVE` is off:
+  315 live fees would go, and that waits on James. Dry run on 606 live candidates: 38 re-files, 2 to
+  the second look. v73 (Oct 17,
   #1837, James's yes): `borrowedDirection` is on. A name whose part after its last colon is only a
   direction ("Check Printing: Incoming", a wire row read under the other column's heading) fails
   outside the categories a direction prices (`DIRECTION_KEYS`, any `wire_` key; a stop payment or
