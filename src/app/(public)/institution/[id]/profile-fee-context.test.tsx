@@ -26,6 +26,12 @@ describe("public fee context from W43 regressions (#2124)", () => {
     expect(rows[0]).toMatchObject({ amount: 8, frequency: "monthly", status: "verified" });
   });
 
+  it("exposes exact public row identity and category on desktop and phone for repeatable audits", () => {
+    const html = renderToStaticMarkup(<FeeScheduleTable fees={toDisplayFees([row()])} disclosureUrl={null} />);
+    expect(html.split('data-fee-id="catalog-95792"')).toHaveLength(3);
+    expect(html.split('data-fee-category="monthly_maintenance"')).toHaveLength(3);
+  });
+
   it("adds the stored account when a generic price name omits it, preserving existing conditions", () => {
     expect(feeScheduleContext(row({ fee_name: "Monthly fee", conditions: "Only for new accounts", source_line: `United Checking: ${row().source_line}` })))
       .toBe(`Account: United Checking · Only for new accounts · ${row().waiver_text}`);
@@ -41,6 +47,31 @@ describe("public fee context from W43 regressions (#2124)", () => {
       source_line: "A Gold checking account has a monthly $10 fee if the daily balance falls below $300 any day during the month.",
       waiver_text: "avoid the $5 returned mail fee",
     }))).toBeNull();
+  });
+
+  it("rejects neighbouring service prices, repeated prices and ages masquerading as fee amounts", () => {
+    for (const source of [
+      "Gold checking monthly fee $10. Returned mail: use eStatements to avoid the $5 returned mail fee.",
+      "Gold checking monthly fee $10. Premier checking $25, waived with direct deposit.",
+      "Gold checking monthly fee $10. Premier checking $10, waived with direct deposit.",
+      "$10 monthly fee for ages 25 and older; waived with direct deposit",
+    ]) {
+      const waiver = source.includes("returned mail") ? "use eStatements to avoid the $5 returned mail fee" : "waived with direct deposit";
+      expect(feeScheduleContext(row({ fee_name: "Monthly fee", account_product_type: null,
+        amount: source.includes("ages") ? 25 : 10, source_line: source, waiver_text: waiver,
+      }))).toBeNull();
+    }
+  });
+
+  it("preserves strict balance comparators in complete corroborated waivers", () => {
+    expect(feeScheduleContext(row({
+      amount: 25, source_line: "$25 monthly fee waived when balance over $5,000 is maintained",
+      waiver_text: "waived when balance over $5,000 is maintained",
+    }))).toBe("waived when balance over $5,000 is maintained");
+    expect(feeScheduleContext(row({
+      amount: 3, source_line: "A service charge fee of $3.00 will be imposed quarterly if the balance in the account falls below $100.00 any day of the cycle.",
+      waiver_text: "if the balance in the account falls below $100.00 any day of the cycle",
+    }))).toBeNull(); // A trigger alone is not rewritten as a waiver.
   });
 
   it("keeps uncorroborated, cross-footnote and cut waivers in the repair queue", () => {
