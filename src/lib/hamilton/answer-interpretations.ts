@@ -11,6 +11,8 @@ SOURCE MEANING:
 - NCUA dividends on shares are reported year-to-date expense, not evidence of cash paid. Keep the expense label even when the question says "paid".
 - A current fee schedule is a price, not realized revenue or a historical record of prices, waivers, refunds or charged items. A $0 overdraft price cannot establish zero overdraft income or zero paying members in a prior period. Broad fee income cannot identify either figure; say unavailable unless a dedicated reported line answers it.
 - A cross-sectional peer median describes the filers for that date. Do not call changes between separately selected quarterly peer populations growth, outperformance, keeping pace or falling behind. A common comparable cohort, including merger treatment, is needed first. You may report the current median, its date and coverage.
+- Do not invent a reason for an unqueried peer filter. A nationwide sample does not establish that a Fed-district group would be too small. Read the exact district and otherwise matching group first, or say its coverage has not been checked.
+- A missing, unreported or unusable overdraft figure in the available evidence does not establish that NCUA's filing has no overdraft line or field. Describe the evidence's missing usable figure; do not infer absence from the publisher's schema.
 - Correlations, similar peer growth and fee-income totals do not identify a pricing or market cause. Do not conclude that pricing, the market or a zero-fee stance caused revenue, or rank a funding-cost change against an unmeasured fee-schedule change. Describe observed figures and the evidence missing to explain them.
 - Preserve missing overdraft income and payer counts as unavailable. Do not fill the gap with zero, a schedule price, account counts or a revenue/price quotient. Clearly separate a question for further research from a finding.`;
 
@@ -23,6 +25,15 @@ interface Observation {
   unit: string;
   value: number;
 }
+interface PeerScope {
+  districts: number[];
+  fingerprint: string;
+}
+interface PeerCoverage extends PeerScope {
+  period: string;
+  count: number;
+  memberCount: number | null;
+}
 interface Evidence {
   ncua: boolean;
   incomplete: boolean;
@@ -31,6 +42,7 @@ interface Evidence {
   dividendExpense: boolean;
   selectedIds: Set<string>;
   selectedId: string | null;
+  peerCoverage: PeerCoverage[];
 }
 
 const record = (v: unknown): RecordValue | null => v !== null && typeof v === "object" && !Array.isArray(v) ? v as RecordValue : null;
@@ -39,26 +51,34 @@ const textValue = (v: unknown): string | null => typeof v === "string" && v.trim
 const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source ?? "")) || /\bNCUA\b/i.test(String(r.publisher ?? ""));
 
 function evidenceFrom(data: unknown): Evidence {
-  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null };
+  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [] };
   let visited = 0;
   const seen = new WeakSet<object>();
-  function visit(value: unknown, depth: number, scopeId: string | null = null): void {
+  function visit(value: unknown, depth: number, scopeId: string | null = null, peerScope: PeerScope | null = null): void {
     if (++visited > 5000 || depth > 16) { result.incomplete = true; return; }
     if (typeof value === "string") {
       if (/^[\s]*[\[{]/.test(value)) {
         if (value.length > 1_000_000) { result.incomplete = true; return; }
-        try { visit(JSON.parse(value), depth + 1, scopeId); } catch { /* Prose is not evidence. */ }
+        try { visit(JSON.parse(value), depth + 1, scopeId, peerScope); } catch { /* Prose is not evidence. */ }
       }
       return;
     }
     if (!value || typeof value !== "object" || seen.has(value)) return;
     seen.add(value);
-    if (Array.isArray(value)) { for (const child of value) visit(child, depth + 1, scopeId); return; }
+    if (Array.isArray(value)) { for (const child of value) visit(child, depth + 1, scopeId, peerScope); return; }
     const r = value as RecordValue;
     if (finite(r.selected_institution_id) !== null && Number(r.selected_institution_id) > 0) result.selectedId = String(r.selected_institution_id);
     const input = record(r.input);
     const scope = record(input?.scope);
     const id = scope?.kind === "institution" && scope.id != null ? String(scope.id) : scopeId;
+    let currentPeer = peerScope;
+    if (scope?.kind === "peer_set") {
+      const peer = record(scope.peer) ?? {};
+      const districts = Array.isArray(peer.fed_districts) ? peer.fed_districts.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 12) : [];
+      const otherFilters = Object.fromEntries(Object.keys(peer).filter((key) => key !== "fed_districts").sort()
+        .map((key) => [key, Array.isArray(peer[key]) ? [...peer[key] as unknown[]].sort() : peer[key]]));
+      currentPeer = { districts, fingerprint: JSON.stringify({ id: scope.id == null ? null : String(scope.id), measure: input?.measure, peer: otherFilters }) };
+    }
     if (ncuaSource(r)) result.ncua = true;
     const metadata = record(r.measure_metadata);
     // Captions identify a measure's limitations, even when its value is missing.
@@ -74,6 +94,10 @@ function evidenceFrom(data: unknown): Evidence {
         const row = record(value);
         const period = textValue(row?.period);
         if (!row || !period) continue;
+        const count = finite(row.institution_count);
+        if (r.scope === "peer_set" && currentPeer && count !== null && count >= 0) {
+          result.peerCoverage.push({ ...currentPeer, period, count, memberCount: finite(row.member_count) });
+        }
         const number = finite(row.value);
         if (r.scope !== "institution" || number === null) continue;
         const unit = String(row.unit ?? metadata.unit ?? r.unit ?? "");
@@ -98,7 +122,7 @@ function evidenceFrom(data: unknown): Evidence {
         if (["research", "account_evidence"].includes(String(r.context_role))) result.selectedIds.add(String(r.institution_id));
       }
     }
-    for (const child of Object.values(r)) visit(child, depth + 1, id);
+    for (const child of Object.values(r)) visit(child, depth + 1, id, currentPeer);
   }
   visit(data, 0);
   return result;
@@ -180,6 +204,35 @@ function memberGrowthSupported(clause: string, evidence: Evidence): boolean {
   return false;
 }
 
+function districtSizeSupported(clause: string, evidence: Evidence): boolean {
+  const districts = [...new Set([...clause.matchAll(/\bdistrict\s+(\d{1,2})\b/gi)].map((m) => Number(m[1])))];
+  if (districts.length !== 1) return false;
+  const claimed = claimedPeriods(clause);
+  if (claimed.length > 1 || claimed.includes("unresolved-month")) return false;
+  return evidence.peerCoverage.some((coverage) => {
+    if (coverage.districts.length !== 1 || coverage.districts[0] !== districts[0] || coverage.count >= 5) return false;
+    // A group with many members and few reported figures supports a limited
+    // filing sample, rather than a claim that the group itself is too small.
+    const sampleClaim = /\b(?:reported|filing|filed|usable|filers?|sample)\b/i.test(clause);
+    if (!sampleClaim && (coverage.memberCount === null || coverage.memberCount >= 5)) return false;
+    const baseline = evidence.peerCoverage.filter((other) => other.districts.length === 0 && other.fingerprint === coverage.fingerprint);
+    const latest = baseline.map((other) => other.period).sort().at(-1);
+    return latest !== undefined && (claimed.length === 1 ? coverage.period.startsWith(claimed[0]) : coverage.period === latest);
+  });
+}
+
+/** An epistemic withdrawal must govern this assertion. An unrelated "Unavailable"
+ * label or an unavailable result followed by "because" cannot excuse its reason. */
+function explicitlyWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
+  const index = assertion.index ?? 0;
+  const before = clause.slice(Math.max(0, index - 160), index);
+  const after = clause.slice(index + assertion[0].length);
+  const epistemicPrefix = /\b(?:cannot|can't|do not|don't|does not|doesn't)\s+(?:infer|conclude|establish|prove|determine|show|know|say)\b(?:\s+(?:whether|if|that|from|the|a|an|missing|available|reported|figures?|values?|data|evidence)){0,12}\s*$/i;
+  const uncertainPrefix = /\b(?:unknown|not (?:known|established|determined|checked))\s+(?:whether|if|that)\s+(?:the\s+)?$|\bno (?:evidence|data)\s+(?:shows?|establishes?|proves?)\s+that\s+(?:the\s+)?$/i;
+  const withdrawnSuffix = /^\s*["'”’]?\s*(?:(?:is|was|remains)\s+(?:not (?:established|known|determined|shown)|unproven|unsupported)|(?:cannot|can't)\s+be\s+(?:established|shown|determined|inferred))\b/i;
+  return epistemicPrefix.test(before) || uncertainPrefix.test(before) || withdrawnSuffix.test(after);
+}
+
 /** Negations apply to the claim's clause, never to an entire answer. */
 function refuses(clause: string, topic: RegExp): boolean {
   const refusal = /\b(?:cannot|can't|does not|do not|did not|doesn't|don't|didn't|is not|isn't|are not|aren't|not enough(?: (?:data|evidence|information))? to|insufficient(?: (?:data|evidence|information))? to|no basis to)\s+(?:\w+[ -]){0,5}(?:infer|establish|show|prove|determine|identify|conclude|mean|imply|tell|say|reveal|attribute|evidence|measure|known|available|reported|supported)|\b(?:unavailable|unknown|unreported|not (?:established|reported|available|shown|known|measured|supported))\b/i;
@@ -223,6 +276,16 @@ export function checkAnswerInterpretations(text: string, data: unknown): string[
     if (payers.test(clause) && !refuses(clause, /\b(?:members?|customers?|payers?|paid)\b/i)
       && !reportedLineSupports(clause, evidence, ["overdraft_payer_count"], "count", false)) {
       problems.add("The supplied NCUA measures do not report overdraft payer counts. Do not infer members paying fees from account counts, schedule prices or aggregate income.");
+    }
+    const districtTooSmall = /\bdistrict\s+\d{1,2}\b.{0,100}\b(?:too (?:small|few)|insufficient|not enough|fewer than (?:5|five)|below (?:5|five))\b/i;
+    const districtClaim = clause.match(districtTooSmall);
+    if (districtClaim && !explicitlyWithdrawn(clause, districtClaim) && !districtSizeSupported(clause, evidence)) {
+      problems.add("A nationwide peer read does not establish that an unqueried district group is too small. Query the same group with that district filter, or say its coverage has not been checked.");
+    }
+    const absentOverdraftField = /\b(?:NCUA|filings?|call reports?|5300)\b.{0,70}\b(?:has|have|contains?|includes?|reports?)\s+no\s+(?:reported\s+)?overdraft(?:[ -]only)?(?:[ -](?:income|revenue))?\s+(?:line|field)\b|\b(?:NCUA|filings?|call reports?|5300)\b.{0,70}\b(?:does not|doesn't|do not|don't)\s+(?:contain|include|have|report)\s+(?:an?\s+)?overdraft(?:[ -]only)?(?:[ -](?:income|revenue))?\s+(?:line|field)\b|\b(?:NCUA|filings?|call reports?|5300)\b.{0,220}\b(?:with no|without(?: an?)?)\s+overdraft(?:[ -]only)?(?:[ -](?:income|revenue))?\s+(?:line|field)\b/i;
+    const fieldClaim = clause.match(absentOverdraftField);
+    if (fieldClaim && !explicitlyWithdrawn(clause, fieldClaim)) {
+      problems.add("A missing or unusable overdraft figure in available evidence does not prove the NCUA filing has no overdraft line. Describe the missing usable figure without asserting absence from the publisher's schema.");
     }
     const peerTrend = /(?:\bpeer(?:s|'s|s')?\b|\b(?:state|national|metro)\s+(?:peer\s+)?(?:median|group)\b).{0,65}\b(?:grew|grow\w*|rose|increas\w*|decreas\w*|fell|declin\w*|pace|pulling\s+(?:further\s+)?ahead|falling behind)\b|\b(?:growth|grows?|grew|pulling\s+(?:further\s+)?ahead|falling behind)\b.{0,50}\b(?:peers?|group|median)\b|\b(?:keeping|keeps?|kept)\s+pace\b/i;
     // No current tool supplies a verified comparable-cohort contract. A single

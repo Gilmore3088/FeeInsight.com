@@ -232,6 +232,101 @@ describe("bounded NCUA interpretation gate (#2331)", () => {
     expect(check(`The ${scope} median grew.`, { toolResults: [observations] }).join(" ")).toContain("comparable-cohort growth");
   });
 
+  function groupRead(district?: number, overrides: { id?: string; measure?: string; period?: string; count?: number; members?: number; assetTier?: string } = {}) {
+    const read = query(overrides.measure ?? "acct_131", [21839203], "peer_set", overrides.id ?? "8322");
+    const count = overrides.count ?? 23;
+    return { ...read, input: { ...read.input, scope: { ...read.input.scope, peer: {
+      charter_type: "credit_union", asset_tiers: [overrides.assetTier ?? "regional"], ...(district ? { fed_districts: [district] } : {}),
+    } } }, output: { ...read.output, rows: [{ ...read.output.rows[0], period: overrides.period ?? "2026-06-30",
+      median: count < 5 ? null : 21839203, institution_count: count, member_count: overrides.members ?? 24 }] } };
+  }
+
+  it("holds an invented district-size rationale when only the nationwide group was queried", () => {
+    const nationwide = groupRead();
+    const answer = "No Fed district filter, because a District 5 credit-union group this size would be too small.";
+    const result = writtenAnswerCheck(answer, [nationwide.output], undefined, { institutionId: 8322, toolResults: [nationwide] });
+    expect(result.passed).toBe(false);
+    expect(result.problems.join(" ")).toContain("unqueried district group");
+    expect(check("The nationwide group includes 24 institutions, with 23 reporting a usable figure for June 2026.", { toolResults: [nationwide] })).toEqual([]);
+    expect(check("District 5 coverage has not been checked.", { toolResults: [nationwide] })).toEqual([]);
+    expect(check("We cannot determine whether the District 5 group would be too small.", { toolResults: [nationwide] })).toEqual([]);
+    expect(check("District 5 coverage is unavailable because the group is too small.", { toolResults: [nationwide] }).join(" ")).toContain("unqueried district group");
+  });
+
+  it("permits a small district-group limitation only after an exact current matching query", () => {
+    const nationwide = groupRead();
+    const district = groupRead(5, { count: 3, members: 3 });
+    const answer = "The District 5 credit-union group is too small for a median.";
+    expect(check(answer, { toolResults: [nationwide, district] })).toEqual([]);
+    for (const mismatch of [
+      groupRead(6, { count: 3, members: 3 }),
+      groupRead(5, { count: 3, members: 3, id: "4382" }),
+      groupRead(5, { count: 3, members: 3, measure: "acct_380" }),
+      groupRead(5, { count: 3, members: 3, period: "2025-06-30" }),
+      groupRead(5, { count: 3, members: 3, assetTier: "community_large" }),
+    ]) expect(check(answer, { toolResults: [nationwide, mismatch] }).join(" ")).toContain("unqueried district group");
+    const lowCoverage = groupRead(5, { count: 3, members: 24 });
+    expect(check(answer, { toolResults: [nationwide, lowCoverage] })).not.toEqual([]);
+    expect(check("The District 5 reported sample is too small for a median.", { toolResults: [nationwide, lowCoverage] })).toEqual([]);
+  });
+
+  it.each([
+    "The NCUA filing has no overdraft line.",
+    "The filing has no overdraft-only line.",
+    "NCUA filings do not include an overdraft-only income line.",
+    "Alliant's NCUA filing reports fee income of $2,941 thousand year-to-date through June 30, 2026, with no overdraft line.",
+    "Overdraft income: Unavailable — the NCUA filing has no overdraft-only line.",
+  ])("does not infer publisher-field absence from a missing usable figure: %s", (answer) => {
+    const income = query("acct_131");
+    const result = writtenAnswerCheck(answer, [income.output], undefined, { institutionId: 8322, toolResults: [income] });
+    expect(result.passed).toBe(false);
+    expect(result.problems.join(" ")).toContain("does not prove the NCUA filing has no overdraft line");
+  });
+
+  it.each([
+    "The available data has no usable overdraft-only figure.",
+    "There is no reported overdraft-only figure in the available evidence.",
+    "The NCUA filing has no usable overdraft-only figure in the available data.",
+    "We cannot infer that the NCUA filing has no overdraft line.",
+    "We cannot conclude NCUA has no overdraft field from a missing figure.",
+  ])("preserves the distinction between usable evidence and publisher schema: %s", (answer) => expect(check(answer)).toEqual([]));
+
+  it("holds the full archived Alliant overdraft answer despite unrelated unavailable labels", () => {
+    // Literal candidate from the five-question rerun; no external fixture dependency.
+    const answer = `## Hamilton's View
+Neither figure can be determined from the data. Alliant's NCUA filing reports fee income of $2,941 thousand year-to-date through June 30, 2026, with no overdraft line. No source reports how many members paid overdraft fees.
+
+## What This Means
+The filed figure covers all service and membership fees together. It cannot be split by fee type, and it cannot be divided into a count of members who paid.
+
+## Why It Matters
+- Alliant's current fee schedule lists Courtesy Pay and NSF at $0.
+- A current price does not show what members were actually charged earlier.
+- So a $0 schedule cannot prove that overdraft income was zero.
+
+## Evidence
+- Fee income, year to date: $2,941 thousand — NCUA 5300, June 30, 2026, all fee types combined.
+- Overdraft income: Unavailable — the NCUA filing has no overdraft-only line.
+- Members who paid overdraft fees: Unavailable — no filing or fee schedule reports payer counts.
+- Courtesy Pay (overdraft) price: $0 — Alliant's published fee schedule, verified, current only.
+- NSF item price: $0 — Alliant's published fee schedule, verified, current only.
+
+## Explore Further
+- How does Alliant's fee income through June 2026 compare with large credit unions in District 7?
+- What other fees on Alliant's verified schedule could make up its filed fee income?
+- How has Alliant's year-to-date fee income moved across its 2024–2026 filings?
+
+If you want, a full fee-revenue-correlation analysis can be generated next. It would give a more detailed, structured comparison.`;
+    const income = query("acct_131", [2941000]);
+    income.output.rows[0].period = "2026-06-30";
+    const fees = { toolName: "searchFees", input: { category: "overdraft" }, output: { fee: 0 } };
+    const result = writtenAnswerCheck(answer, [income.output, fees.output], undefined,
+      { institutionId: 8322, toolResults: [income, fees] });
+    expect(result.figureCheck.unmatched).toEqual([]);
+    expect(result.passed).toBe(false);
+    expect(result.problems.join(" ")).toContain("does not prove the NCUA filing has no overdraft line");
+  });
+
   it.each([
     "The June 2026 peer median was $21.84 million across 23 filers.",
     "The peer median was $19.12 million in June 2025 and $21.84 million in June 2026; these are separate cross-sections.",
