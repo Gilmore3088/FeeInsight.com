@@ -95,17 +95,17 @@ export default async function ExplorePeersPage({
       ? `District ${peerFilters.districts![0]} - ${DISTRICT_NAMES[peerFilters.districts![0]] || ""}`
       : "Explore";
 
-  // Build back link
+  // Build back link: the catalog's segment (the old Peers page) for the same group.
   const backParams = new URLSearchParams();
-  if (params.tier) backParams.set("tier", params.tier);
-  if (params.district) backParams.set("district", params.district);
-  if (params.type) backParams.set("type", params.type);
+  if (peerFilters.charter) backParams.set("charter", peerFilters.charter);
+  if (peerFilters.tiers?.length === 1) backParams.set("tier", peerFilters.tiers[0]);
+  if (peerFilters.districts?.length === 1) backParams.set("district", String(peerFilters.districts[0]));
   const backQs = backParams.toString();
   const backHref = fromQuality
     ? "/admin/quality"
     : backQs
-      ? `/admin/peers?${backQs}`
-      : "/admin/peers";
+      ? `/admin/fees/catalog?${backQs}`
+      : "/admin/fees/catalog";
 
   // Pagination params to preserve
   const paginationParams: Record<string, string> = {};
@@ -122,7 +122,7 @@ export default async function ExplorePeersPage({
             { label: "Dashboard", href: "/admin" },
             fromQuality
               ? { label: "Data Quality", href: "/admin/quality" }
-              : { label: "Peer Index", href: "/admin/peers" },
+              : { label: "Fee Catalog", href: backHref },
             { label: breadcrumbLabel },
           ]}
         />

@@ -1,7 +1,7 @@
 import { displayCity } from "@/lib/format";
 import { RESEARCH_SPLIT_LIVE } from "@/lib/fee-fold";
 import { sql } from "@/lib/data-store/connection";
-import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, valuePerInstitution } from "@/lib/data-store/fee-stats";
+import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, activeInstitutionFilter, valuePerInstitution } from "@/lib/data-store/fee-stats";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { median } from "@/lib/hamilton/fee-scenario";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -311,7 +311,11 @@ export async function loadMarket(
   return { subject, peers: peerRows.map(toInstitution), scope: "metro" };
 }
 
-/** Statistics-grade catalog rows for the snapshot's fees, with each row's newest source text. */
+/**
+ * Statistics-grade catalog rows for the snapshot's fees, with each row's newest source text.
+ * The public price check (/tools/price-check) reads its state figures here, so institutions the
+ * regulator marks inactive are left out, as in every public median (activeInstitutionFilter, #2149).
+ */
 export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], categories: readonly string[]): Promise<SnapshotFeeRow[]> {
   if (institutionIds.length === 0) return [];
   const rows = await db.unsafe(
@@ -321,6 +325,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
             COALESCE(sd.last_checked_at, sd.crawled_at) AS read_at,
             t.normalized_text
        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
        LEFT JOIN source_documents sd ON sd.id = ef.source_document_id
        LEFT JOIN LATERAL (
          SELECT ast.normalized_text FROM agent_source_texts ast
@@ -329,6 +334,7 @@ export async function loadSnapshotRows(db: SqlTag, institutionIds: number[], cat
           ORDER BY ast.id DESC LIMIT 1
        ) t ON true
       WHERE ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}
         AND ef.fee_category = ANY($1::text[])
         AND ef.institution_id = ANY($2::bigint[])
         AND ef.amount IS NOT NULL AND ef.amount >= 0`,

@@ -51,6 +51,12 @@ interface ShapeInfo {
 }
 
 const SHAPES: Record<string, ShapeInfo> = {
+  eligibility: {
+    label: "A price limited to an age or product tier",
+    owner: "Knox and the product-tier comparison contract (#1060, #1911)",
+    wayOut: "Retained with complete source conditions; no automatic release until represented eligibility and standard-tier comparisons can keep this price scoped.",
+    hasExit: false,
+  },
   unclassified: {
     label: "No category Knox could match",
     owner: "Knox's held re-check and name filing; James labels the weekly name queue (/admin/knox/labels)",

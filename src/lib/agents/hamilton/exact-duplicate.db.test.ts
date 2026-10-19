@@ -28,15 +28,22 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
       rate_max_amount numeric, rate_basis text, published_at timestamptz, rolled_back_at timestamptz,
       rolled_back_reason text, rolled_back_by_batch_id text, quarantined_at timestamptz,
       lineage_ref bigint, source_url text)`;
+    await db`CREATE TEMP TABLE verified_fee_observations (fee_verified_id bigint PRIMARY KEY, fee_raw_id bigint)`;
+    await db`CREATE TEMP TABLE raw_fee_observations (fee_raw_id bigint PRIMARY KEY, product_name text)`;
     await db`CREATE TEMP TABLE agent_run_events (agent_run_id bigint, event_type text, status text, message text, detail jsonb)`;
   });
   afterAll(async () => { if (db) await db.end(); });
-  beforeEach(async () => { await db`TRUNCATE published_fee_records, agent_run_events`; });
+  beforeEach(async () => { await db`TRUNCATE published_fee_records, verified_fee_observations, raw_fee_observations, agent_run_events`; });
   async function seed(a: string | null, b: string | null) {
     await db`INSERT INTO published_fee_records (fee_published_id, institution_id, canonical_fee_key, fee_name,
       amount, frequency, fee_audience, published_at) VALUES
       (1, 42, 'coin_counting', 'Coin Counting', 5, 'per_item', ${a}, '2026-10-01'),
       (2, 42, 'coin_counting', 'Coin Counting', 5, 'per_item', ${b}, '2026-10-02')`;
+  }
+  async function representedLineages() {
+    await db`INSERT INTO raw_fee_observations SELECT fee_published_id + 1000, NULL FROM published_fee_records`;
+    await db`INSERT INTO verified_fee_observations SELECT fee_published_id + 100, fee_published_id + 1000 FROM published_fee_records`;
+    await db`UPDATE published_fee_records SET lineage_ref = fee_published_id + 100`;
   }
   const run = (dryRun = false) => collapsePublishedDuplicates(db as unknown as Db,
     { runId: 2131, batchId: "test-2131", dryRun, institutionId: 42 });
@@ -132,12 +139,31 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
     expect((await db`SELECT detail FROM agent_run_events`)[0].detail).toMatchObject({ collapsed: 500 });
   });
 
+  it("rolls back actual duplicate changes and receipts at the enclosing savepoint, then retries normally",async()=>{
+    await seed('consumer','consumer');
+    await representedLineages();
+    await db.begin(async(scope)=>{
+      const tx=scope as unknown as Db;
+      const failure=new Error('fail after actual collapse');
+      await (scope as unknown as {savepoint:(fn:(inner:Db)=>Promise<void>)=>Promise<void>}).savepoint(async(inner)=>{
+        expect(await collapsePublishedDuplicates(inner,{runId:2131,batchId:'rollback-product',dryRun:false})).toHaveLength(1);
+        throw failure;
+      }).catch((error)=>{if(error!==failure) throw error;});
+      expect(await tx`SELECT 1 FROM published_fee_records WHERE rolled_back_at IS NULL`).toHaveLength(2);
+      expect(await tx`SELECT 1 FROM agent_run_events`).toHaveLength(0);
+      expect(await collapsePublishedDuplicates(tx,{runId:2131,batchId:'retry-product',dryRun:false})).toHaveLength(1);
+      expect(await tx`SELECT 1 FROM published_fee_records WHERE rolled_back_at IS NULL`).toHaveLength(1);
+      expect(await tx`SELECT 1 FROM agent_run_events WHERE event_type='hamilton.duplicates_collapsed'`).toHaveLength(1);
+    });
+  });
+
   it.each([
     ["hold", 1, false], ["closure", 1, false], ["audience", 1, false], ["frequency", 1, false],
     ["amount", 1, false], ["variant", 1, false], ["rate_basis", 1, false], ["lineage", 1, false],
     ["source", 1, false], ["hold", 2, false], ["closure", 2, false], ["audience", 2, false],
     ["lineage", 2, false], ["source", 2, false], ["hold", 3, false], ["audience", 3, false],
-    ["audience", 1, true],
+    ["audience", 1, true], ["raw_product", 1, false], ["raw_product", 2, false],
+    ["raw_lineage", 1, false], ["raw_lineage", 2, false], ["raw_product_wait",1,false], ["raw_product_wait",2,false],
   ] as const)("rechecks committed %s on pair member %i; unrelated pair: %s", async (change, changedId, unrelated) => {
     await seed("consumer", "consumer");
     if (changedId === 3) await db`INSERT INTO published_fee_records (fee_published_id, institution_id,
@@ -147,11 +173,16 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
       canonical_fee_key, fee_name, amount, frequency, fee_audience, published_at) VALUES
       (10, 42, 'coin_counting', 'Other Coin Fee', 5, 'per_item', 'consumer', '2026-10-01'),
       (11, 42, 'coin_counting', 'Other Coin Fee', 5, 'per_item', 'consumer', '2026-10-02')`;
+    await representedLineages();
     const schema = `exact_duplicate_${randomBytes(8).toString("hex")}`;
     await db`CREATE SCHEMA ${db(schema)}`;
     await db`CREATE TABLE ${db(schema)}.published_fee_records (LIKE pg_temp.published_fee_records INCLUDING ALL)`;
     await db`CREATE TABLE ${db(schema)}.agent_run_events (LIKE pg_temp.agent_run_events INCLUDING ALL)`;
+    await db`CREATE TABLE ${db(schema)}.verified_fee_observations (LIKE pg_temp.verified_fee_observations INCLUDING ALL)`;
+    await db`CREATE TABLE ${db(schema)}.raw_fee_observations (LIKE pg_temp.raw_fee_observations INCLUDING ALL)`;
     await db`INSERT INTO ${db(schema)}.published_fee_records SELECT * FROM pg_temp.published_fee_records`;
+    await db`INSERT INTO ${db(schema)}.verified_fee_observations SELECT * FROM pg_temp.verified_fee_observations`;
+    await db`INSERT INTO ${db(schema)}.raw_fee_observations SELECT * FROM pg_temp.raw_fee_observations`;
     const holder = postgres(connection!, { max: 1, ssl: "require", types });
     const writer = postgres(connection!, { max: 1, ssl: "require", types });
     let release!: () => void;
@@ -164,8 +195,11 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
       const tx = scope as unknown as typeof db;
       await tx`SET LOCAL search_path TO ${tx(schema)}`;
       // Every case blocks the writer on target 1; the keeper may change while it waits.
-      await tx`SELECT fee_published_id FROM published_fee_records WHERE fee_published_id = 1 FOR UPDATE`;
-      if (change === "hold") await tx`UPDATE published_fee_records SET quarantined_at = NOW() WHERE fee_published_id = ${changedId}`;
+      if(change==='raw_product_wait') await tx`SELECT fee_raw_id FROM raw_fee_observations WHERE fee_raw_id=${changedId+1000} FOR UPDATE`;
+      else await tx`SELECT fee_published_id FROM published_fee_records WHERE fee_published_id = 1 FOR UPDATE`;
+      if (change === "raw_product" || change === "raw_product_wait") await tx`UPDATE raw_fee_observations SET product_name = 'Premium Debit Account' WHERE fee_raw_id = ${changedId + 1000}`;
+      else if (change === "raw_lineage") await tx`UPDATE verified_fee_observations SET fee_raw_id = 9999 WHERE fee_verified_id = ${changedId + 100}`;
+      else if (change === "hold") await tx`UPDATE published_fee_records SET quarantined_at = NOW() WHERE fee_published_id = ${changedId}`;
       else if (change === "closure") await tx`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'operator_closed' WHERE fee_published_id = ${changedId}`;
       else if (change === "audience") await tx`UPDATE published_fee_records SET fee_audience = 'business' WHERE fee_published_id = ${changedId}`;
       else if (change === "frequency") await tx`UPDATE published_fee_records SET frequency = 'annual' WHERE fee_published_id = ${changedId}`;
@@ -205,7 +239,8 @@ describe.skipIf(!connection)("Exact duplicate identity in isolated PostgreSQL (#
       if (change === "hold") expect(changed.quarantined_at).not.toBeNull();
       if (change === "closure") expect(changed.rolled_back_reason).toBe("operator_closed");
       if (change === "audience") expect(changed.fee_audience).toBe("business");
-      const events = await db`SELECT detail FROM ${db(schema)}.agent_run_events`;
+      const events = await db`SELECT detail FROM ${db(schema)}.agent_run_events WHERE event_type = 'hamilton.duplicates_collapsed'`;
+      expect(await db`SELECT 1 FROM ${db(schema)}.agent_run_events WHERE event_type = 'hamilton.selected_identity_changed'`).toHaveLength(1);
       if (unrelated) expect(events.map((row) => row.detail)).toMatchObject([{ collapsed: 1 }]);
       else expect(events).toHaveLength(0);
     } finally {

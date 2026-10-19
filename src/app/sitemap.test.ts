@@ -156,6 +156,9 @@ describe("sitemap duplicates and dates (#1163)", () => {
 
   it("gives static pages no lastmod instead of the time of the rebuild", async () => {
     const entries = await sitemap();
+    const consumers = entries.find((item) => item.url === `${SITE_URL}/for-consumers`);
+    expect(consumers).toBeDefined();
+    expect(consumers?.lastModified).toBeUndefined();
     const about = entries.find((item) => item.url === `${SITE_URL}/about`);
     expect(about).toBeDefined();
     expect(about?.lastModified).toBeUndefined();

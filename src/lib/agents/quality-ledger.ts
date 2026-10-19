@@ -30,7 +30,7 @@ const PER_ITEM_PERIOD_SQL = [
 ].join(" OR ");
 
 export interface QualityLedger {
-  answerKey: { precision: number | null; recall: number | null; scoredAt: string; scorerVersion: number } | null;
+  answerKey: { precision: number | null; recall: number | null; scoredAt: string; scorerVersion: number; referenceState?: string; eligibleBanks?: number; excludedBanks?: number } | null;
   liveFees: number;
   storedNotes: number;
   perItemPeriods: number;
@@ -56,7 +56,7 @@ export async function readQualityLedger(db: SqlTag = sql): Promise<QualityLedger
   ]);
   return {
     answerKey: run
-      ? { precision: run.precision, recall: run.recall, scoredAt: run.scored_at, scorerVersion: run.scorer_version }
+      ? { precision: run.precision, recall: run.recall, scoredAt: run.scored_at, scorerVersion: run.scorer_version, referenceState: run.referenceState, eligibleBanks: run.reference?.eligibleBanks, excludedBanks: run.reference?.excludedBanks }
       : null,
     liveFees: Number(row?.live_fees ?? 0),
     storedNotes: Number(row?.stored_notes ?? 0),
@@ -72,7 +72,9 @@ const pct = (value: number | null) => (value == null ? "not scored" : `${(value 
 export function qualityLedgerLines(ledger: QualityLedger): string[] {
   const k = ledger.answerKey;
   return [
-    k
+    k?.referenceState && k.referenceState !== "measured"
+      ? `Answer key: no current measurement (${k.referenceState.replaceAll("_", " ")}); ${k.referenceState === "unavailable" ? "Reference counts unavailable." : `${count(k.eligibleBanks ?? 0)} eligible and ${count(k.excludedBanks ?? 0)} excluded reference banks.`} Historical scores remain separate.`
+      : k
       ? `Answer key (scorer v${k.scorerVersion}, ${k.scoredAt.slice(0, 10)}): ${pct(k.precision)} of the fees we publish are right; we find ${pct(k.recall)} of the fees we should.`
       : "Answer key: no score yet.",
     `Knox's note still stored in a live fee's conditions: ${count(ledger.storedNotes)} of ${count(ledger.liveFees)} (target 0).`,

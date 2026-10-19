@@ -7,18 +7,6 @@ import type {
   InstitutionSourceNeededReason,
 } from "@/lib/institution-quality";
 
-export interface InstitutionSummary {
-  id: number;
-  institution_name: string;
-  state_code: string | null;
-  charter_type: string;
-  asset_size: number | null;
-  website_url: string | null;
-  fee_schedule_url: string | null;
-  document_type: string | null;
-  fee_count: number;
-}
-
 export interface ExtractedFee {
   fee_audience?: FeeAudience;
   audience_evidence?: string | null;
@@ -49,14 +37,6 @@ export interface ExtractedFee {
   source_line?: string | null;
 }
 
-export interface ReviewableFee extends ExtractedFee {
-  state_code: string | null;
-  charter_type: string;
-  fee_category: string | null;
-  document_url: string | null;
-  fee_schedule_url: string | null;
-}
-
 export interface FeeReview {
   id: number;
   fee_id: number;
@@ -68,14 +48,6 @@ export interface FeeReview {
   new_values: unknown;
   notes: string | null;
   created_at: string | Date;
-}
-
-export interface ReviewStats {
-  pending: number;
-  staged: number;
-  flagged: number;
-  approved: number;
-  rejected: number;
 }
 
 export interface InstitutionDetail {

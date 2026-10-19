@@ -77,11 +77,6 @@ vi.mock("@/lib/access", () => ({
   canAccessPremium: vi.fn(() => true),
 }));
 
-vi.mock("@/lib/research/rate-limit", () => ({
-  checkAdminRateLimit: () => ({ allowed: true }),
-  checkPublicRateLimit: () => ({ allowed: true }),
-}));
-
 vi.mock("@/lib/research/history", () => ({
   getDailyCostCents: async () => 0,
   logUsage: vi.fn(async () => {}),

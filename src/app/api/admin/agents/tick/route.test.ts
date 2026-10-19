@@ -271,7 +271,7 @@ describe("/api/admin/agents/tick", () => {
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(expect.objectContaining({ allowProviderSteps: false }));
   });
 
-  it("does not schedule or drain while both the pipeline and marketing are paused", async () => {
+  it("continues only the existing daily scoreboard while both controls are paused", async () => {
     getPipelineControlMock.mockResolvedValue({
       enabled: false,
       reason: "Operator pause for maintenance",
@@ -286,6 +286,8 @@ describe("/api/admin/agents/tick", () => {
       changedAt: "2026-10-08T00:00:00.000Z",
       revision: 1,
     });
+    // A paid run elsewhere must not even cause a budget read on this narrow path.
+    hasQueuedProviderStepsMock.mockResolvedValue(true);
     const { GET } = await import("./route");
 
     const response = await GET(request());
@@ -294,13 +296,24 @@ describe("/api/admin/agents/tick", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.paused).toBe(true);
-    expect(body.pauseReason).toBe("Operator pause for maintenance");
+    expect(body.measurementOnly).toBe(true);
+    expect(body.pauseReason).toContain("only queued daily scoreboard measurements");
     expect(body.marketing).toMatchObject({ enabled: false, reason: "Holding marketing" });
-    expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
+    const scope = { agent: "atlas", kind: "workflow", source: "atlas.scoreboard" };
+    expect(reapStaleAgentStepsMock).toHaveBeenCalledExactlyOnceWith({ scope });
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
     expect(scheduleStaleOutreachWithdrawalMock).not.toHaveBeenCalled();
-    expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
+    expect(scheduleGuardCatchUpRunMock).not.toHaveBeenCalled();
+    expect(schedulePublishSweepsRunMock).not.toHaveBeenCalled();
+    expect(hasQueuedProviderStepsMock).not.toHaveBeenCalled();
+    expect(assertCronTickBudgetAllowedMock).not.toHaveBeenCalled();
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledExactlyOnceWith({
+      runLimit: 10, maxStepsPerRun: 10, allowProviderSteps: false,
+      deadlineAt: expect.any(Number), paused: { pipeline: true, marketing: true }, scope,
+      pauseExemptOnly: true,
+    });
+    expect(body.results).toEqual([{ runId: 123, status: "queued", terminal: false, executedSteps: 1 }]);
   });
 
   it("queues a re-check of every live fee once per deployed guard and frequency version, before draining", async () => {

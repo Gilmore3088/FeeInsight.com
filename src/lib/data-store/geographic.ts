@@ -23,7 +23,7 @@ export async function getStateStats(stateCode: string): Promise<GeoStats> {
       COUNT(*) as total,
       SUM(CASE WHEN charter_type = 'bank' THEN 1 ELSE 0 END) as banks,
       SUM(CASE WHEN charter_type = 'credit_union' THEN 1 ELSE 0 END) as cus
-    FROM institution_sources WHERE state_code = ${stateCode}
+    FROM institution_sources ct WHERE ct.state_code = ${stateCode} AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { total: number; banks: number; cus: number }[];
 
   const [fees] = await sql`
@@ -33,6 +33,7 @@ export async function getStateStats(stateCode: string): Promise<GeoStats> {
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.state_code = ${stateCode} AND ef.review_status = 'approved'
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { with_fees: number; total_fees: number; categories: number }[];
 
   return {
@@ -51,7 +52,7 @@ export async function getDistrictStats(districtId: number): Promise<GeoStats> {
       COUNT(*) as total,
       SUM(CASE WHEN charter_type = 'bank' THEN 1 ELSE 0 END) as banks,
       SUM(CASE WHEN charter_type = 'credit_union' THEN 1 ELSE 0 END) as cus
-    FROM institution_sources WHERE fed_district = ${districtId}
+    FROM institution_sources ct WHERE ct.fed_district = ${districtId} AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { total: number; banks: number; cus: number }[];
 
   const [fees] = await sql`
@@ -61,6 +62,7 @@ export async function getDistrictStats(districtId: number): Promise<GeoStats> {
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${districtId} AND ef.review_status = 'approved'
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { with_fees: number; total_fees: number; categories: number }[];
 
   return {
@@ -235,6 +237,7 @@ export async function getCityInstitutions(city: string, stateCode: string): Prom
     ) fc ON ct.id = fc.institution_id
     WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}
     AND fc.fee_count > 0
+    AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     ORDER BY ct.asset_size DESC NULLS LAST
   ` as RawCityInstitutionRow[];
 
@@ -253,6 +256,7 @@ export async function getCityFeeAverages(city: string, stateCode: string): Promi
       AND ef.amount >= 0
       AND ef.fee_category IS NOT NULL
       AND ${sql.unsafe(statsRowFilter("ef"))}
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as CityInstitutionFeeRow[];
 
   return aggregateCityFeeAverages(rows);
@@ -271,6 +275,7 @@ export async function getCitiesInState(stateCode: string): Promise<CitySummary[]
       GROUP BY institution_id
     ) fc ON ct.id = fc.institution_id
     WHERE ct.state_code = ${upperState} AND ct.city IS NOT NULL AND ct.city != ''
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     GROUP BY LOWER(ct.city), ct.state_code
     HAVING COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) > 0
     ORDER BY COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) DESC, COUNT(*) DESC
@@ -300,6 +305,7 @@ export async function getTopCitiesByState(
       FROM institution_sources ct
       LEFT JOIN fc ON ct.id = fc.institution_id
       WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}
       GROUP BY LOWER(ct.city), ct.state_code
     ), ranked AS (
       SELECT *, ROW_NUMBER() OVER (
@@ -324,6 +330,7 @@ export async function getCityAutocomplete(query: string, limit: number = 10): Pr
     SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code, COUNT(DISTINCT ct.id) as count
     FROM institution_sources ct
     WHERE ct.city ILIKE ${pattern} AND ct.city IS NOT NULL
+    AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     AND ct.id IN (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
     GROUP BY LOWER(ct.city), ct.state_code
     ORDER BY count DESC
@@ -343,6 +350,7 @@ export async function getStatesWithFeeData(): Promise<{ state_code: string; inst
      JOIN published_fee_catalog ef ON ct.id = ef.institution_id
      WHERE ct.state_code IN (${placeholders})
        AND ef.review_status = 'approved'
+       AND ${activeInstitutionFilter("ct")}
      GROUP BY ct.state_code
      ORDER BY COUNT(DISTINCT ct.id) DESC`,
     params

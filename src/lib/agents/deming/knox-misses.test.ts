@@ -6,7 +6,13 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { gateKeyFor, gateReads, scoreAnswerKeys, type AnswerKeyDocument } from "@/lib/agents/knox/answer-key-gate";
-import { caseKeyFor, judgeBank, knoxMissesDetail, rightDocumentIds, rotationOrder, runKnoxMisses, summarizeKnoxMisses, type KeyFee } from "./knox-misses";
+import { fixtureEligibility, fixtureReference, fixtureReceipt, CONSUMER_TEXT } from "@/lib/data-store/__fixtures__/answer-key-reference";
+import { referenceKeyFingerprint } from "@/lib/data-store/answer-key-eligibility";
+import { referenceFeeFingerprint } from "@/lib/data-store/answer-key-reference-store";
+import { caseKeyFor as originalCaseKeyFor, judgeBank, knoxMissesDetail, rightDocumentIds, rotationOrder, runKnoxMisses, summarizeKnoxMisses, type KeyFee } from "./knox-misses";
+
+let referenceFingerprint: string | undefined;
+const caseKeyFor = (id: number) => originalCaseKeyFor(id, id === 99 ? undefined : referenceFingerprint);
 
 const TEXT = ["Fee Schedule", "Stop Payment Fee | $30.00", "Overdraft Fee | $35.00 per item"].join("\n");
 
@@ -65,14 +71,30 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
     documents?: Array<Record<string, unknown>>;
     text?: Record<string, unknown> | null;
   }) {
+    const fixture = fixtureReference([CONSUMER_TEXT, ...state.keys.map((row) => String(row.source_line))].join("\n"));
+    fixture.input.key.institutionId=7;fixture.input.key.documentUrl="https://bank.example/fees.pdf";
+    fixture.page.requestedUrl=fixture.page.finalUrl=fixture.input.key.documentUrl;
+    fixture.input.key.fees=state.keys.map((row) => ({ id:Number(row.fee_id),canonicalKey:String(row.canonical_key),amount:row.amount as number|null,
+      amountKind:String(row.amount_kind),sourceLine:row.source_line as string,frequency:null,conditions:null,uncertain:false,status:"confirmed",confirmedBy:"fixture person",confirmedAt:null }));
+    const eligibility=fixtureEligibility(fixture), receipt=fixtureReceipt(fixture);
+    referenceFingerprint=referenceKeyFingerprint(fixture.input.key);
+    // These positive-control cases explicitly represent new, receipt-bound fixtures.
+    const cases=(state.cases ?? []).map((row) => {
+      const id=Number(String(row.case_key).split(":")[1]), fee=fixture.input.key.fees.find((fee)=>fee.id===id);
+      return !fee ? row : {...row,case_key:caseKeyFor(id),input:{kind:"knox_answer_key_read",reference_protocol:1,reference_event_id:1,
+        reference_key_fingerprint:referenceFingerprint,reference_fee_fingerprint:referenceFeeFingerprint(fixture.input.key,id),
+        answer_key_fee_id:id,institution_id:7,document_url:fixture.input.key.documentUrl,document_type:fixture.input.key.documentType,
+        canonical_key:fee.canonicalKey,amount:fee.amount,amount_kind:fee.amountKind,source_line:fee.sourceLine}};
+    });
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const tag = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join("?");
       if (text.includes("to_regclass")) return [{ ready: true }];
       if (text.includes("FROM answer_key_fees")) return state.keys;
-      if (text.includes("FROM eval_cases")) return state.cases ?? [];
+      if (text.includes("FROM eval_cases")) return cases;
+      if (text.includes("FROM agent_run_events")) return [{ id:1,detail:receipt }];
       if (text.includes("FROM agent_run_steps")) return [];
-      if (text.includes("FROM source_documents")) return state.documents ?? [{ id: 11, institution_id: 7, document_url: "https://bank.example/fees.pdf", content_hash: null }];
+      if (text.includes("FROM source_documents")) return state.documents ?? [{ id: 11, institution_id: 7, document_url: "https://bank.example/fees.pdf", content_hash: fixture.input.key.contentHash }];
       if (text.includes("FROM agent_source_texts")) return state.text === null ? [] : [state.text ?? { id: 9, institution_id: 7, source_document_id: 11, text_hash: "h", normalized_text: TEXT }];
       writes.push({ text, values });
       if (text.includes("INSERT INTO eval_cases")) return JSON.parse(String(values.find((value) => typeof value === "string" && value.startsWith("[")))).map((_: unknown, id: number) => ({ id }));
@@ -80,7 +102,7 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
     });
     // inSavepoint runs its callback on the same tag in tests.
     const db = Object.assign(tag, { begin: undefined, savepoint: (fn: (scope: typeof tag) => unknown) => fn(tag) });
-    return { db, writes };
+    return { db, writes, eligibility };
   }
 
   const keyRow = (id: number, key: string, amount: number | null, kind = "fixed") => ({
@@ -89,7 +111,7 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
   });
 
   it("adds a case for each new miss, activates a case now read, flags a regression and retires a removed fee", async () => {
-    const { db, writes } = fakeDb({
+    const { db, writes, eligibility } = fakeDb({
       keys: [keyRow(1, "stop_payment", 30), keyRow(2, "wire_domestic_outgoing", 25), keyRow(3, "overdraft", 35), keyRow(4, "nsf", 29)],
       cases: [
         { case_key: caseKeyFor(1), status: "candidate", institution_id: 7, last_checked_at: null },
@@ -97,7 +119,7 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
         { case_key: caseKeyFor(99), status: "candidate", institution_id: 7, last_checked_at: null },
       ],
     });
-    const result = await runKnoxMisses({ db: db as never, runId: 5 });
+    const result = await runKnoxMisses({ db: db as never, eligibility, runId: 5 });
     expect(result).toMatchObject({
       ready: true, banksRead: 1, feesScored: 4, feesRead: 2, feesMissed: 2, missRate: 0.5,
       newCases: 1, activated: 1, retired: 1,
@@ -131,14 +153,14 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
   });
 
   it("writes nothing on a dry run, and counts a bank with no text apart from Knox's misses", async () => {
-    const { db, writes } = fakeDb({ keys: [keyRow(1, "stop_payment", 31)], text: null });
-    const result = await runKnoxMisses({ db: db as never, runId: 5, dryRun: true });
+    const { db, writes, eligibility } = fakeDb({ keys: [keyRow(1, "stop_payment", 31)], text: null });
+    const result = await runKnoxMisses({ db: db as never, eligibility, runId: 5, dryRun: true });
     expect(result).toMatchObject({ banksRead: 0, banksNoText: 1, feesScored: 0, feesMissed: 0, newCases: 0 });
     expect(writes).toHaveLength(0);
   });
 
   it("reopens a retired case whose key fee is confirmed again, and keeps replaying a case the gate no longer scores", async () => {
-    const { db, writes } = fakeDb({
+    const { db, writes, eligibility } = fakeDb({
       keys: [keyRow(2, "wire_domestic_outgoing", 25), keyRow(1, "stop_payment", 30), keyRow(3, "safe_deposit_box", null, "varies")],
       cases: [
         { case_key: caseKeyFor(2), status: "retired", institution_id: 7, last_checked_at: null },
@@ -146,7 +168,7 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
         { case_key: caseKeyFor(3), status: "candidate", institution_id: 7, last_checked_at: null },
       ],
     });
-    const result = await runKnoxMisses({ db: db as never, runId: 6 });
+    const result = await runKnoxMisses({ db: db as never, eligibility, runId: 6 });
     expect(result).toMatchObject({ reopened: 2, newCases: 0, retired: 0 });
     const replay = writes.find((write) => write.text.includes("last_verdict = r.verdict"))!;
     expect(replay.text).toContain("WHEN e.status = 'retired' AND r.verdict = 'missed' THEN 'candidate'");
@@ -174,8 +196,8 @@ describe("Deming's replay of Knox's answer-key misses (#1099)", () => {
 
   it("leaves banks for the next day once the budget is spent", async () => {
     let clock = 0;
-    const { db } = fakeDb({ keys: [keyRow(1, "stop_payment", 30)] });
-    const result = await runKnoxMisses({ db: db as never, runId: 5, dryRun: true, now: () => (clock += 1000), budgetMs: 500 });
+    const { db, eligibility } = fakeDb({ keys: [keyRow(1, "stop_payment", 30)] });
+    const result = await runKnoxMisses({ db: db as never, eligibility, runId: 5, dryRun: true, now: () => (clock += 1000), budgetMs: 500 });
     expect(result).toMatchObject({ banksRead: 0, banksLeft: 1, banksLeftIds: [7] });
     expect(knoxMissesDetail(result).banks_left_ids).toEqual([7]);
   });

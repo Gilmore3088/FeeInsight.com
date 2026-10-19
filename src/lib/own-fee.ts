@@ -104,3 +104,11 @@ export function statedFeeLabel(amount: number, several?: SeveralFees | null, mon
 export function statedFeeText(amount: number, several?: SeveralFees | null, money: Money = formatAmount): string {
   return several ? `${statedFeeLabel(amount, several, money)} (${ownFeeList(several, money)})` : money(amount);
 }
+
+/** All stored schedule links behind a named price/range; a legacy single link stays usable. */
+export function feeScheduleUrls(urls?: readonly string[] | null, legacy?: string | null): string[] {
+  return [...new Set([...(urls ?? []), ...(legacy ? [legacy] : [])])].filter((value) => {
+    try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password; }
+    catch { return false; }
+  });
+}

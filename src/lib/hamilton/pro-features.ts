@@ -43,7 +43,7 @@ export const PRO_WORKSPACE_FEATURES: readonly ProFeature[] = [
   },
   {
     key: "market_monitor",
-    label: "All changes",
+    label: "Alerts and watches",
     href: "/pro/monitor",
     description: "Alerts when a bank you watch changes its published fees.",
   },

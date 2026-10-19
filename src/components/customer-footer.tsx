@@ -7,7 +7,7 @@ import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, SITE_NAME, TRADEMARK_NOTICE } from "@
  * The footer's essential links: one short row, not a sitemap (James's review, 2026-10-15). Every
  * page the older four-column footer listed is still one click away from the header: the Product
  * menu (institutions, the index, market data, national index, the Pro workspace) and the Resources menu
- * (guides, methodology, data sources, API, submit a fee source). State and district hubs are linked
+ * (consumer guides, methodology, data sources, API, submit a fee source). State and district hubs are linked
  * from /research, which the Product menu carries. No link points at a gated or noindexed page.
  * The chrome carries the parent brand, Fee Insight; the Bank Fee Index and Hamilton marks belong
  * to the pages and workspace they name (James, 2026-10-15, docs/project/DECISIONS.md).
@@ -16,7 +16,7 @@ export const FOOTER_LINKS: readonly { label: string; href: string }[] = [
   { label: "Product", href: "/for-institutions" },
   { label: "Reports", href: "/reports" },
   { label: "Pricing", href: "/subscribe" },
-  { label: "Methodology", href: "/methodology" },
+  { label: "For consumers", href: "/for-consumers" },
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
 ];
