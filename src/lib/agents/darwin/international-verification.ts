@@ -1,0 +1,46 @@
+import { sourceOwnedWireScope, reviewInternationalDirection } from "@/lib/custom-report/own-wire-scope";
+import { INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "../knox/international-wire-eligibility";
+import { matchOriginalRawSource, type LockedSourceSnapshot } from "./locked-raw-source";
+
+type ActualRaw = Parameters<typeof matchOriginalRawSource>[0] & {
+  fee_name: string;
+  amount: number | string | null;
+  outlier_flags: unknown;
+};
+/** Facts held by the shared audience admission; never reconstructed from a CAS stamp. */
+type CurrentSource = { kind: "bound"; source: LockedSourceSnapshot; currentRaw: ActualRaw }
+  | { kind: "busy" | "changed" | "unavailable" };
+export type InternationalVerificationDecision = { kind: "not_applicable" | "ready" }
+  | { kind: "deferred"; reason: "private_eligibility_hold" | "source_unavailable" | "original_unavailable" | "own_direction_unproven" };
+
+function flagValues(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try { const parsed: unknown = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+  }
+  return [];
+}
+
+/**
+ * Review final admission, after existing category checks and the fresh raw CAS. The
+ * raw-resolved category only identifies an affected stale caller; it supplies no price,
+ * new category, geography or direction. Ordinary domestic missing-source behavior stays.
+ */
+export function internationalVerificationDecision(raw: ActualRaw, finalCategory: string,
+  existingRawResolvedCategory: string | null, context: CurrentSource): InternationalVerificationDecision {
+  const actual = context.kind === "bound" ? context.currentRaw : raw;
+  const flags = flagValues(actual.outlier_flags);
+  if (flags.includes(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG)) return { kind: "deferred", reason: "private_eligibility_hold" };
+  const affected = finalCategory.startsWith("wire_intl_") || existingRawResolvedCategory?.startsWith("wire_intl_");
+  if (!affected && !finalCategory.startsWith("wire_") && !existingRawResolvedCategory?.startsWith("wire_"))
+    return { kind: "not_applicable" };
+  if (context.kind !== "bound") return affected ? { kind: "deferred", reason: "source_unavailable" } : { kind: "not_applicable" };
+  if (actual.amount == null || actual.amount === "" || !Number.isFinite(Number(actual.amount)))
+    return affected ? { kind: "deferred", reason: "own_direction_unproven" } : { kind: "not_applicable" };
+  const scope = sourceOwnedWireScope(context.source.normalizedText, actual.fee_name, Number(actual.amount));
+  if (!affected && !(scope.kind === "owned" && scope.geography === "international")) return { kind: "not_applicable" };
+  if (matchOriginalRawSource(actual, context.source).kind !== "matched")
+    return { kind: "deferred", reason: "original_unavailable" };
+  return reviewInternationalDirection(scope, finalCategory).kind === "admit" ? { kind: "ready" }
+    : { kind: "deferred", reason: "own_direction_unproven" };
+}
