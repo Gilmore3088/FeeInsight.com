@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { getArticleById } from "@/lib/data-store/articles";
-import { ensureResearchTables } from "@/lib/research/history";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
 import { ArticleActions } from "../article-actions";
@@ -16,7 +15,6 @@ import { ArticleTextEditor } from "./article-text-editor";
  */
 export default async function ArticlePreviewPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAuth("operate");
-  await ensureResearchTables();
   const { id } = await params;
   const articleId = Number(id);
   if (!Number.isInteger(articleId)) notFound();

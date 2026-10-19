@@ -84,3 +84,34 @@ describe("bayes-manifest-kill local base", () => {
     expect(output).toContain("note: no merge base with origin/main");
   });
 });
+
+/** runtime-ddl-kill (#2234): request code never creates schema; tests may. */
+describe("runtime-ddl-kill", () => {
+  function ddlRepo(files: Record<string, string>) {
+    repo = mkdtempSync(join(tmpdir(), "ddl-guard-"));
+    git("init", "-q", "-b", "main");
+    for (const [path, text] of Object.entries(files)) write(path, text);
+    git("add", "-A");
+    git("commit", "-qm", "files");
+    const out = spawnSync("bash", [GUARD, "runtime-ddl-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("fails a helper that creates a table or index at request time", () => {
+    const { status, output } = ddlRepo({
+      "src/lib/news.ts": "await sql`CREATE TABLE IF NOT EXISTS reg_articles (guid TEXT)`;\n",
+      "src/app/research/page.tsx": "await sql`create unique index if not exists idx_x on t(a)`;\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("src/lib/news.ts");
+    expect(output).toContain("src/app/research/page.tsx");
+  });
+
+  it("passes tests that build throwaway tables and comments that name DDL", () => {
+    const { status, output } = ddlRepo({
+      "src/lib/news.db.test.ts": "await sql`CREATE TEMP TABLE t (a int)`;\n",
+      "src/lib/news.ts": "// reg_articles comes from a migration; never CREATE TABLE here.\nexport const x = 1;\n",
+    });
+    expect(status, output).toBe(0);
+  });
+});
