@@ -37,7 +37,8 @@ export async function schedulePublishSweepsRun(
          WHERE params_json->>'source' = ${PUBLISH_SWEEPS_SOURCE}
            AND status IN ('queued', 'running', 'cancel_requested')
       ) AS active,
-      (SELECT MAX(created_at) FROM agent_runs WHERE params_json->>'source' = ${PUBLISH_SWEEPS_SOURCE}) AS last_queued_at,
+      -- agent_runs has no created_at: a run's started_at is set when it is queued (createAgentRun).
+      (SELECT MAX(started_at) FROM agent_runs WHERE params_json->>'source' = ${PUBLISH_SWEEPS_SOURCE}) AS last_queued_at,
       (
         SELECT MAX(s.completed_at)
           FROM agent_run_steps s
