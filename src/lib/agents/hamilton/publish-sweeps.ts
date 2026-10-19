@@ -153,7 +153,8 @@ export function publishSweepMode(options: {
  * - `feedbackSync`, `holdFeedback`: learning-store upkeep over every outcome; nothing about the bank.
  * - `handAmounts`, `cutNameDuplicates`, `handTakedowns`, `handAudience`: fixed hand lists keyed by
  *   fee ids already applied; a row the Read-now step publishes gets a new id, so no list can name
- *   it. A newly merged list entry reaches its rows at the next `publish-sweeps` run (one tick).
+ *   it. A newly merged list entry reaches its rows at the next `publish-sweeps` run (one tick), as
+ *   does a re-read of a listed line (`handTakedowns`' returns, matched by line, not id).
  * - `extractionNotes`: a tidy of Knox's raw rows (`conditions` to `extraction_note`); it never
  *   decides whether a fee publishes.
  * `accountTypeHold` stays in the Read-now publish, scoped to its bank: it holds the bank's own
@@ -321,7 +322,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
   }));
   // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
   const handTakedowns = await sweep(ctx, "handTakedowns", (): Result<typeof applyHandTakedowns> => ({
-    dryRun, takenDown: [], skipped: [], waitingRejected: [], error: null,
+    dryRun, takenDown: [], skipped: [], waitingRejected: [], returns: [], returnsLive: false, error: null,
   }), () => applyHandTakedowns(tx, {
     runId,
     stepId: ctx.stepId,

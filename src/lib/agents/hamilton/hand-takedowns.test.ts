@@ -7,7 +7,7 @@ import { CARD_PRODUCT_TAKEDOWN_LIVE } from "@/lib/fee-category-guard";
 
 import { planHandRefiles } from "./taxonomy-fold";
 import {
-  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
+  applyHandAudienceFixes, applyHandTakedowns, ATM_SURCHARGE_TAKEDOWN_LIVE, lineKey, planHandTakedownReturns, atmSurchargeTakedowns, HAND_AUDIENCE_FIXES, HAND_TAKEDOWN_BATCH_LIMIT, HAND_TAKEDOWNS,
   HAND_WAITING_REJECTIONS, handAudienceEvidence, handTakedownBatchSizes, JAMES_APPROVED_BATCHES, planHandAudienceFixes, planHandTakedowns,
   TEXAS_CAPITAL_TAKEDOWN_LIVE, texasCapitalTakedowns, texasCapitalWaitingRejections, type LiveAudienceRow, type LiveTakedownRow,
 } from "./hand-takedowns";
@@ -1002,3 +1002,56 @@ describe("#1880: Texas Capital's closed-account table", () => {
     expect(again.writes).toHaveLength(0);
   });
 });
+
+// Live rows on prod (read-only, Oct 19) at institutions with a listed takedown, matched by line.
+const lineRow = (id: number, institution: number, key: string, name: string, amount: string, lineage = id + 1_000_000): LiveTakedownRow => ({
+  fee_published_id: id, lineage_ref: lineage, institution_id: institution, canonical_fee_key: key, fee_name: name, amount,
+});
+const RE_READS: LiveTakedownRow[] = [
+  lineRow(154638, 4956, "dormant_account", "Inactivity Fee", "5.00"), // #1765's 122350, Navy Federal's Oct 19 re-read (doc 37977)
+  lineRow(154639, 4956, "card_replacement", "Lost/Stolen Card", "5.00"), // #1905's 122351
+  lineRow(154640, 4956, "atm_non_network", "Visa/PLUS Network ATM domestic and foreign cash withdrawal and balance inquiry", "1.00"), // #1905's 129718
+  lineRow(153311, 4493, "atm_non_network", "ATM-surcharge", "4.00"), // #1772's 115027
+  lineRow(152525, 12, "monthly_maintenance", "Monthly fee", "3.00"), // #1774's 64716, TD's checking page at a new address (doc 37065)
+  lineRow(154157, 8048, "minimum_balance", "Only on Money Market In Excess of 6 Withdrawals per month Minimum Balance Fee (if not maintained)", "25.00"), // #1755's 74560 and 125809
+];
+const NOT_RE_READS: LiveTakedownRow[] = [
+  lineRow(99586, 1636, "deposited_item_return", "Return Check Fee", "15.00"), // #1755's 13031 re-filed to the right category
+  lineRow(30240, 58, "wire_domestic_incoming", "Domestic Wire-IN", "12.00"), // #1755's 102758 re-filed
+  lineRow(120678, 6673, "paper_statement", "Monthly Paper Statements", "2.00"), // the twin #1755's duplicates repeat
+  lineRow(151680, 7204, "garnishment_levy", "Judicial Attachment (Garnishment)", "34.00"), // a #1661 duplicate's line: the collapse's job
+  lineRow(153602, 69, "overdraft", "Paid Overdraft Fee", "15.00"), // #1880 was the old document's fault; this is from the current PDF (doc 37594)
+  lineRow(41001, 4956, "dormant_account", "Inactivity Fee", "10.00"), // another price
+];
+
+describe("re-reads of a listed line (#1905 triage, Oct 19)", () => {
+  it("names the six live re-reads on prod, each with its entry's reason", () => {
+    const planned = planHandTakedownReturns([...RE_READS, ...NOT_RE_READS]);
+    expect(planned.map((item) => item.feePublishedId)).toEqual([152525, 153311, 154157, 154638, 154639, 154640]);
+    expect(planned.find((item) => item.feePublishedId === 152525)).toMatchObject({ feeVerifiedId: 1_152_525, reason: expect.stringMatching(/ \(re-read of #64716\)$/) });
+  });
+
+  it("never names a listed row itself, and reads names without case, spaces or punctuation", () => {
+    const listed = HAND_TAKEDOWNS.find((entry) => entry.feePublishedId === 64716)!;
+    expect(planHandTakedownReturns([lineRow(64716, 12, listed.canonicalFeeKey, listed.feeName, "3.00")])).toEqual([]);
+    expect(lineKey("ATM-surcharge")).toBe(lineKey("ATM Surcharge"));
+    expect(planHandTakedownReturns([lineRow(1, 4493, "atm_non_network", "atm surcharge", "4")]).map((item) => item.feePublishedId)).toEqual([1]);
+  });
+
+  it("only reports re-reads while the switch is off, and takes them down with their verified row when on", async () => {
+    const off = fakeDb(RE_READS);
+    const reported = await applyHandTakedowns(off.db as never, { runId: 7, stepId: 70, batchId: "b", dryRun: false, list: HAND_TAKEDOWNS });
+    expect(reported).toMatchObject({ returnsLive: false, takenDown: [] });
+    expect(reported.returns).toHaveLength(6);
+    expect(off.writes).toHaveLength(0);
+
+    const on = fakeDb(RE_READS);
+    const result = await applyHandTakedowns(on.db as never, { runId: 8, stepId: 80, batchId: "b", dryRun: false, returnsLive: true });
+    expect(result.returns.map((item) => item.feePublishedId)).toEqual([152525, 153311, 154157, 154638, 154639, 154640]);
+    expect(on.writes.filter((write) => write.text.includes("UPDATE published_fee_records"))).toHaveLength(6);
+    expect(on.writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(6);
+    const event = on.writes.find((write) => write.text.includes("INSERT INTO agent_run_events"));
+    expect(String(event?.values.at(-1))).toContain('"returns_live":true');
+  });
+});
+

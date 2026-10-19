@@ -1615,6 +1615,8 @@ async function executeAgenticStep(
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
             waiting_rejected: handTakedowns.waitingRejected.length,
+            returns_live: handTakedowns.returnsLive,
+            returns: handTakedowns.returns.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             error: handTakedowns.error,
           },
           hand_audience_fix: {
