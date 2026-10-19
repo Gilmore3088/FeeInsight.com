@@ -36,9 +36,9 @@ export const OEWS_LEVELS: OewsLevel[] = ["nat", "st", "ma"];
 
 /** Workbook inside each zip (May 2024 naming: national_M2024_dl.xlsx, state_M2024_dl.xlsx, MSA_M2024_dl.xlsx). */
 const WORKBOOK_PATTERN: Record<OewsLevel, RegExp> = {
-  nat: /national_M\d{4}_dl\.xlsx$/i,
-  st: /state_M\d{4}_dl\.xlsx$/i,
-  ma: /MSA_M\d{4}_dl\.xlsx$/i,
+  nat: /^national_M\d{4}_dl\.xlsx$/i,
+  st: /^state_M\d{4}_dl\.xlsx$/i,
+  ma: /^MSA_M\d{4}_dl\.xlsx$/i,
 };
 
 export function oewsUrl(year: number, level: OewsLevel): string {
@@ -186,22 +186,30 @@ export function parseOewsWorkbook(bytes: Uint8Array, year: number, level: OewsLe
 }
 
 /** Picks the level's workbook out of a downloaded BLS zip (or takes the bytes as the workbook). */
-export function oewsWorkbookFromZip(bytes: Uint8Array, level: OewsLevel): { name: string | null; bytes: Uint8Array | null } {
+export function oewsWorkbookFromZip(bytes: Uint8Array, level: OewsLevel, year?: number): { name: string | null; bytes: Uint8Array | null } {
   // A bare xlsx is itself a zip with an xl/ folder; a BLS download holds the xlsx.
   let isWorkbook = false;
-  let workbooks = 0;
-  const inner = unzipSync(bytes, {
+  const workbooks: string[] = [];
+  // Inspect directory metadata before inflating anything. Resource forks are not workbooks.
+  unzipSync(bytes, {
     filter: (f) => {
       if (/^xl\//i.test(f.name)) isWorkbook = true;
-      if (!WORKBOOK_PATTERN[level].test(f.name)) return false;
+      const parts = f.name.split(/[\\/]/);
+      const basename = parts.at(-1) ?? "";
+      if (parts.some(part => /^__MACOSX$/i.test(part)) || basename.startsWith("._")) return false;
+      if (!WORKBOOK_PATTERN[level].test(basename)) return false;
+      if (year !== undefined && !basename.toLowerCase().endsWith(`_m${year}_dl.xlsx`)) return false;
       if (f.originalSize > OEWS_MAX_WORKBOOK_BYTES) throw new Error(`workbook exceeds ${OEWS_MAX_WORKBOOK_BYTES} bytes: ${f.originalSize}`);
-      if (++workbooks > 1) throw new Error(`multiple ${level} workbooks in archive`);
-      return true;
+      workbooks.push(f.name);
+      if (workbooks.length > 1) throw new Error(`multiple ${level} workbooks in archive: ${workbooks.map(name => JSON.stringify(name.slice(0, 100))).join(", ")}`);
+      return false;
     },
   });
   if (isWorkbook) return { name: null, bytes };
-  const [name] = Object.keys(inner);
-  return name ? { name, bytes: inner[name] } : { name: null, bytes: null };
+  const [name] = workbooks;
+  if (!name) return { name: null, bytes: null };
+  const inner = unzipSync(bytes, { filter: file => file.name === name });
+  return { name, bytes: inner[name] };
 }
 
 /** Explicit memory bounds for the download and the selected compressed XLSX workbook. */
@@ -253,7 +261,7 @@ export async function fetchOewsLevel(year: number, level: OewsLevel, options: Re
     bytes = await readOewsBytes(found.response);
     if (!isZip(bytes)) throw new Error("response is not a ZIP (possibly a block page)");
     phase = "outer ZIP";
-    const workbook = oewsWorkbookFromZip(bytes, level);
+    const workbook = oewsWorkbookFromZip(bytes, level, year);
     if (!workbook.bytes) throw new Error(`no ${level} workbook (${WORKBOOK_PATTERN[level].source}) in archive`);
     phase = "XLSX";
     workbookName = workbook.name;
