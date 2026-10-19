@@ -61,7 +61,7 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
 
 export const ECONOMY_PARSER_VERSION = 1;
 export const BRANCH_TRACT_PARSER_VERSION = 2;
-export const BEA_PARSER_VERSION = 2;
+export const BEA_PARSER_VERSION = 3;
 
 /**
  * The remittance source's own reader version, so a change to it re-runs only that source.
