@@ -13,7 +13,8 @@ describe("MarketContext (#2042)", () => {
   it("reads the institution's state, leads with fees and keeps the rest one click away", async () => {
     const html = renderToStaticMarkup(await MarketContext({ stateCode: "FL" }));
     expect(html).toContain("The market in Florida");
-    expect(html).toContain('href="/pro/intelligence"');
+    // The U.S. landscape is the market overview, every lens, not one Research lens.
+    expect(html).toMatch(/href="\/pro\/hamilton\?research=[^"]+"[^>]*>Open the U.S. fee landscape/);
     const details = html.indexOf("<details");
     expect(details).toBeGreaterThan(html.indexOf("Published fee landscape"));
     expect(html.indexOf("Economic conditions")).toBeGreaterThan(details);
@@ -21,7 +22,8 @@ describe("MarketContext (#2042)", () => {
   });
 
   it("falls back to the U.S. market for a state outside research coverage", async () => {
-    const html = renderToStaticMarkup(await MarketContext({ stateCode: null }));
-    expect(html).toContain("The market in the United States");
+    for (const stateCode of [null, "PR"]) {
+      expect(renderToStaticMarkup(await MarketContext({ stateCode }))).toContain("The market in the United States");
+    }
   });
 });

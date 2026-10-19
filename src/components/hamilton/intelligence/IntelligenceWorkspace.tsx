@@ -79,7 +79,7 @@ export async function MarketContext({ stateCode }: { stateCode: string | null })
         <p className="fi-text-label text-[var(--fi-muted)]">Market context</p>
         <h2 id="market-context" className="mt-1 text-2xl font-semibold">The market in {place}</h2>
       </div>
-      <Link href="/pro/intelligence" className="text-sm font-medium text-[var(--fi-ink)] underline">Open the U.S. fee landscape</Link>
+      <Link href={`/pro/hamilton?${new URLSearchParams({ research: encodeLandingResearch(DEFAULT) })}`} className="text-sm font-medium text-[var(--fi-ink)] underline">Open the U.S. fee landscape</Link>
     </header>
     {panels.fees}
     {/* The rest of the market stays one click away, so the briefing leads the page. */}
