@@ -819,6 +819,11 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 127408, institutionId: 2675, canonicalFeeKey: "overdraft", amount: 5, feeName: "Transaction that leads to or increases overdraft",
     reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
     evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  // #2032: Beacon Bank & Trust (96). Its fee link moved from the loan-servicing page to the consumer
+  // fee schedule PDF (doc 37581); this row is the loan page's, filed as legal process.
+  { feePublishedId: 99795, institutionId: 96, canonicalFeeKey: "legal_process", amount: 20, feeName: "Extended Service Fee Document Request / Subpoena / Research",
+    reason: "source_mismatch: #2032", issue: 2032, kind: "not_on_schedule",
+    evidence: "Beacon's consumer fee schedule (doc 37581) prices \"Legal Process Fee, per occurrence ... $125.00\" and \"Subpoena Research Fee, per hour ... $75.00\"; the $20 is a loan-servicing document request from consumer-loan-servicing-fee-schedule." },
 ];
 
 export interface LiveTakedownRow {

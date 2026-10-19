@@ -273,6 +273,8 @@ export const V78_RECALL_PATTERNS: FeePattern[] = [
   { key: "wire_domestic_incoming", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\binbound wires?\b/i },
   { key: "wire_domestic_outgoing", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\boutbound wires?\b/i },
   { key: "atm_non_network", pattern: /\bnon[-\s]?[\w-]+(?:\s+owned)?(?:\s*\/\s*affiliated)?\s+(?:ATMs|machines?)\b/i },
+  // v80: a bank's name of two or three capitalised words before "ATMs" ("non-Beacon Bank ATMs").
+  { key: "atm_non_network", pattern: /\b[Nn]on[-\s]?[\w-]+(?:\s+[A-Z][\w&-]*){1,2}\s+(?:ATMs|ATMS)\b/ },
   { key: "deposited_item_return", pattern: /\bdeposited items? returns\b/i },
   { key: "check_image", pattern: /\bimage cop(?:y|ies)\b/i },
   { key: "estatement_fee", pattern: /^\W*electronic statements?\W*$/i },
@@ -858,8 +860,24 @@ export function joinWrappedProse(lines: string[]): string[] {
 const HEADING_REACH_LINES = 4;
 const FEE_FAMILY_HEADING = /\bwire(?:s|\s+transfers?)?\b/i;
 const MAX_HEADING_WORDS = 4;
+/** v80: footnote numbers printed onto the end of a heading's last word ("Cashier’s Check1,4", "Money Orders1,4"). */
+const GLUED_HEADING_FOOTNOTES = /([A-Za-z’')])\d{1,2}(?:\s*,\s*\d{1,2})*(\s*:?)\s*$/;
+/**
+ * v80: a one-word line under a wire heading names the wires below it ("Wire Transfers" /
+ * "Domestic" / "Incoming ... $15.00"; Beacon Bank & Trust, doc 37581): the rows read under
+ * "Domestic Wire Transfers", then "International Wire Transfers".
+ */
+const WIRE_SUBHEADING = /^(Domestic|International|Foreign)$/i;
+const WIRE_SUBHEADING_WORD = /^(?:Domestic|International|Foreign)\s+/i;
 
-export function headingName(line: string): string | null | undefined {
+export function headingName(rawLine: string): string | null | undefined {
+  const unmarked = rawLine.replace(GLUED_HEADING_FOOTNOTES, "$1$2");
+  // Only a line that heads a fee once its marks are off reads differently ("Checking Plus1" stays a figure line).
+  if (unmarked !== rawLine) return plainHeadingName(unmarked) || undefined;
+  return plainHeadingName(rawLine);
+}
+
+function plainHeadingName(line: string): string | null | undefined {
   if (line.includes("$") || PERCENT_PATTERN.test(line) || /\d/.test(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""))) return undefined;
   const name = normalizeSegment(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""));
   const words = name.split(" ").filter(Boolean);
@@ -906,7 +924,10 @@ function candidateSegments(text: string): HeadedSegment[] {
   for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.replace(/\s+/g, " ").replace(SPLIT_DOLLAR_CELL, "$").trim();
     const asHeading = headingName(line);
-    if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
+    const wireSub: string | undefined =
+      asHeading === null && heading && index - heading.at <= HEADING_REACH_LINES && FEE_FAMILY_HEADING.test(heading.name) ? line.match(WIRE_SUBHEADING)?.[1] : undefined;
+    if (wireSub && heading) heading = { name: `${wireSub} ${heading.name.replace(WIRE_SUBHEADING_WORD, "")}`, at: index };
+    else if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
     if (asHeading !== undefined) section += 1;
     const isPriced = line.includes("$") || PERCENT_PATTERN.test(line) || hasZeroCell(line);
     if (!isPriced && !hasUnpricedFeeRow(line)) continue;
@@ -938,9 +959,13 @@ function candidateSegments(text: string): HeadedSegment[] {
  */
 const MAX_HEADED_LINE_WORDS = 10;
 const MAX_HEADED_LABEL_WORDS = 4;
+const WIRE_ROW_LABEL = /^(?:(?:USD|U\.?S\.?\s+Dollars?|Foreign\s+Currency|FX)\s+)?(?:Incoming|Outgoing|Inbound|Outbound)$/i;
+
+/** v80: footnote numbers printed onto a row's label before its dot leader ("Incoming1,2 ....$15.00"). */
+const GLUED_LABEL_FOOTNOTES = /(?!(?<=\d\s?)[xX×])([A-Za-z’')])\d{1,2}(?:,\d{1,2})*(?=\s*(?:\.{2,}|…))/;
 
 export function readUnderHeading(segment: string, heading: string): ExtractedFeeCandidate[] {
-  const line = normalizeSegment(segment);
+  const line = normalizeSegment(segment).replace(GLUED_LABEL_FOOTNOTES, "$1");
   const amounts = amountsIn(line);
   if (amounts.length !== 1 || line.split(" ").length > MAX_HEADED_LINE_WORDS || PERCENT_PATTERN.test(line)) return [];
   const label = normalizeSegment(line.slice(0, amounts[0].start).replace(/(?:\.{2,}|…)[.…]*/g, " "));
@@ -951,7 +976,9 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   // A label with its own colon, or a title of three or more capitalized words ("Picture Check
   // Card:", "RBD Scanner Replacement"), is another fee's row, not a row of this heading.
   if (/:\s*$/.test(line.slice(0, amounts[0].start).replace(/[\s|]+$/, ""))) return [];
-  if ((label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
+  // v80: a wire's currency and direction is a row of its wire heading ("Foreign Currency Outgoing").
+  const wireRow = FEE_FAMILY_HEADING.test(heading) && WIRE_ROW_LABEL.test(label);
+  if (!wireRow && (label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
   if (after.includes(CELL_SEPARATOR) && /[a-z]{3,}/i.test(after.slice(after.indexOf(CELL_SEPARATOR)))) return [];
   // Under one fee's own heading ("Monthly service fee:") the line only qualifies its price ("$12
   // or waived", "$15 per item"); a capitalized label there is another fee's row in a second column.

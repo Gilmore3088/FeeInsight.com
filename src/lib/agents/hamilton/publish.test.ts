@@ -160,6 +160,15 @@ describe("Hamilton agentic publish", () => {
     expect(publishNameHold("GUASFCU charges a", "check_image", 2)?.code).toBe("cutoff_name");
     expect(publishNameHold("Our overdraft fee of", "overdraft", 35)).toBeNull(); // repairs to "Overdraft fee"
     expect(publishNameHold("Fax Fee (incoming and outgoing)", "account_research", 2)).toBeNull();
+    // #2032: a clause saying what the fee covers, or the legal cap, comes off; the fee publishes (Beacon).
+    expect(publishNameHold("Stop Payment, all items including ACH and bill pay", "stop_payment", 30)).toBeNull();
+    expect(publishedFeeName("Stop Payment, all items including ACH and bill pay", "stop_payment")).toBe("Stop Payment");
+    expect(publishNameHold("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process", 125)).toBeNull();
+    expect(publishedFeeName("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process")).toBe("Legal Process Fee, per occurrence");
+    // Any other clause may be the fee's condition, and a line cut mid-sentence has no name: both stay held.
+    expect(publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Any replacement cards whether lost, stolen, or damaged will be charged a", "card_replacement", 5)?.code).toBe("cutoff_name");
+    expect(publishedFeeName("Wire Transfer Outgoing, including international", "wire_domestic_outgoing")).not.toBe("Wire Transfer Outgoing");
     // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
     expect(publishNameHold("Courtesy Pay Fee…..$35.005", "overdraft", 35)).toBeNull();
     expect(publishedFeeName("Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", "overdraft")).toBe("Courtesy Pay (Paid Overdraft) Fee");
