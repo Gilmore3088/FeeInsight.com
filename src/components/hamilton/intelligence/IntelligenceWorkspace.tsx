@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { decodeLandingResearch, encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff } from "@/lib/hamilton/landing-research-handoff";
+import { decodeLandingResearch, encodeLandingResearch, RESEARCH_STATE_CODES, type LandingResearchHandoff, type ResearchStateCode } from "@/lib/hamilton/landing-research-handoff";
 import { loadLandingGeographicResearch, type GeographicResearchResult } from "@/lib/hamilton/landing-geographic-research";
 import { getStateEconomicContext, type IndicatorSeries, type StateEconomicContext } from "@/lib/data-store/economic-context";
 import { getRevenueByTier, getRevenueTrend, type RevenueTrend, type TierRevenue } from "@/lib/data-store/call-reports";
@@ -59,6 +59,40 @@ export async function IntelligenceWorkspace({ params, overview = false }: { para
   const size = assetSizeFor(params.size);
   const data = await loadIntelligence(selection, overview ? LENSES.map(l => l.id) : [lens], { compact: overview, segment: size.id === "all" ? null : size });
   return <IntelligenceView selection={selection} data={data} lens={lens} overview={overview} instId={params.instId} size={size} />;
+}
+
+/**
+ * The market behind an institution's briefing (#2042): its state's fees, finances, economy,
+ * complaints and regulation, compact, as the supporting layer under the briefing on Overview.
+ * National research stays its own view, linked here.
+ */
+export async function MarketContext({ stateCode }: { stateCode: string | null }) {
+  const state = stateCode && (RESEARCH_STATE_CODES as readonly string[]).includes(stateCode) ? stateCode as ResearchStateCode : null;
+  const selection: LandingResearchHandoff = state ? { ...DEFAULT, scope: { kind: "state", stateCode: state } } : DEFAULT;
+  const place = state ? STATE_NAMES[state] ?? state : "the United States";
+  const data = await loadIntelligence(selection, LENSES.map(l => l.id), { compact: true });
+  const lensHref = (id: Lens) => `/pro/intelligence?${new URLSearchParams({ research: encodeLandingResearch(selection), lens: id })}`;
+  const panels = lensPanels({ data, selection, stateHrefs: stateLinks(selection, "/pro/hamilton"), compact: true, explore: lensHref });
+  return <section aria-labelledby="market-context" className="flex flex-col gap-7">
+    <header className="flex flex-col gap-2 border-t border-[var(--fi-border)] pt-7 sm:flex-row sm:items-baseline sm:justify-between">
+      <div>
+        <p className="fi-text-label text-[var(--fi-muted)]">Market context</p>
+        <h2 id="market-context" className="mt-1 text-2xl font-semibold">The market in {place}</h2>
+      </div>
+      <Link href={`/pro/hamilton?${new URLSearchParams({ research: encodeLandingResearch(DEFAULT) })}`} className="text-sm font-medium text-[var(--fi-ink)] underline">Open the U.S. fee landscape</Link>
+    </header>
+    {panels.fees}
+    {/* The rest of the market stays one click away, so the briefing leads the page. */}
+    <details className="group flex flex-col gap-7">
+      <summary className="cursor-pointer text-sm font-medium text-[var(--fi-ink)] underline">More on {state ? place : "the market"}: finances, economy, complaints and regulation</summary>
+      <div className="mt-7 flex flex-col gap-7">
+        {panels.financials}
+        {panels.economy}
+        {panels.complaints}
+        {panels.regulation}
+      </div>
+    </details>
+  </section>;
 }
 
 /** Loads only what the chosen lenses show, in parallel; a reader that fails leaves its slot null. */
