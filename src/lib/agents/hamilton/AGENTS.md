@@ -612,6 +612,11 @@ the guarded update can reject verified lineage; returned results, attempt counts
 describe actual changes, with planned counts retained separately in attempts. A hold or closure
 committed after selection cannot reject unchanged lineage.
 
+A restore must still refer to the exact selected closure (reason and rollback timestamp),
+so an intervening newer-copy closure with the same lineage is never cleared. The selector
+reads that timestamp as text and the write compares it as `timestamptz`, preserving PostgreSQL
+microseconds that a JavaScript Date would truncate.
+
 The restore duplicate check compares the same audience, frequency, variant, amount kind,
 rate basis and rate values as well as the institution/category/name/amount (#2121). A live
 consumer sibling cannot block a distinct business fee; unstated applicability is equal only

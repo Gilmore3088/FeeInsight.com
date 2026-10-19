@@ -47,6 +47,9 @@ export interface NewerCopyFeeRow {
   quarantined_at?: string | Date | null;
   /** Retired by an earlier newer-copy check; restored if the newest copy states it again. */
   retired?: boolean | null;
+  /** Exact selected closure, with the timestamp read as text to preserve PostgreSQL microseconds. */
+  rolled_back_at?: string | null;
+  rolled_back_reason?: string | null;
   /**
    * True when Knox read a row of the same institution, normalized name, audience,
    * frequency, amount kind/rate basis and product scope from the newer text. An amount
@@ -317,6 +320,7 @@ export async function retireFeesDroppedFromNewerCopy(
       )
       SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fr.source_document_id, pair.newer_id AS newer_document_id,
              fp.canonical_fee_key, fp.fee_name, fp.amount, fp.quarantined_at,
+             fp.rolled_back_at::text AS rolled_back_at, fp.rolled_back_reason,
              fp.rolled_back_at IS NOT NULL AS retired,
              EXISTS (
                SELECT 1 FROM newer_rows
@@ -415,10 +419,14 @@ export async function retireFeesDroppedFromNewerCopy(
              SET rolled_back_at = NULL,
                  rolled_back_by_batch_id = NULL,
                  rolled_back_reason = NULL
-            FROM unnest(${restoreIds}::bigint[], ${restoreFees.map((fee) => Number(fee.lineage_ref))}::bigint[])
-                 AS restore(fee_published_id, lineage_ref)
+            FROM unnest(${restoreIds}::bigint[], ${restoreFees.map((fee) => Number(fee.lineage_ref))}::bigint[],
+                        ${restoreFees.map((fee) => fee.rolled_back_at ?? null)}::timestamptz[],
+                        ${restoreFees.map((fee) => fee.rolled_back_reason ?? null)}::text[])
+                 AS restore(fee_published_id, lineage_ref, rolled_back_at, rolled_back_reason)
            WHERE fp.fee_published_id = restore.fee_published_id
              AND fp.lineage_ref = restore.lineage_ref
+             AND fp.rolled_back_at = restore.rolled_back_at
+             AND fp.rolled_back_reason = restore.rolled_back_reason
              AND fp.rolled_back_reason LIKE ${RETIRED}
              AND fp.quarantined_at IS NULL
              AND NOT EXISTS (

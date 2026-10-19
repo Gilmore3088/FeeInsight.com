@@ -232,7 +232,7 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
   });
 
   it("still restores its own unheld retirement and records the actual restore", async () => {
-    await db`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_reason = 'newer_copy_drops_fee:#800' WHERE fee_published_id = 4`;
+    await db`UPDATE published_fee_records SET rolled_back_at = '2026-10-01T00:00:00.123456Z', rolled_back_reason = 'newer_copy_drops_fee:#800' WHERE fee_published_id = 4`;
     await db`UPDATE verified_fee_observations SET review_status = 'rejected', outlier_flags = '["newer_copy_drops_fee"]' WHERE fee_verified_id = 1004`;
     await db`UPDATE agent_source_texts SET normalized_text = ${olderText} WHERE id = 2`;
     expect(await run()).toMatchObject({ retired: [], restored: 1 });
@@ -253,6 +253,21 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect((await row()).lineage_ref).toBe("2004");
     expect((await verified()).review_status).toBe("rejected");
     expect((await verified(2004)).review_status).toBe("approved");
+    expect((await attempt()).detail).toMatchObject({ planned_restored: 1, restored: 0 });
+    expect(await db`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint = 'restored:4:9'`).toHaveLength(0);
+  });
+
+  it.each(["reason", "timestamp"])("does not clear a newer closure with a changed %s after selecting a restore", async (changed) => {
+    await db`UPDATE published_fee_records SET rolled_back_at = '2026-10-01', rolled_back_reason = 'newer_copy_drops_fee:#800' WHERE fee_published_id = 4`;
+    await db`UPDATE verified_fee_observations SET review_status = 'rejected', outlier_flags = '["newer_copy_drops_fee"]' WHERE fee_verified_id = 1004`;
+    await db`UPDATE agent_source_texts SET normalized_text = ${olderText} WHERE id = 2`;
+    const changingDb = changeAfterSelection(async () => {
+      if (changed === "reason") await db`UPDATE published_fee_records SET rolled_back_reason = 'newer_copy_drops_fee:#950' WHERE fee_published_id = 4`;
+      else await db`UPDATE published_fee_records SET rolled_back_at = '2026-10-03' WHERE fee_published_id = 4`;
+    });
+    expect(await run(false, changingDb)).toMatchObject({ retired: [], restored: 0 });
+    expect((await row()).rolled_back_at).not.toBeNull();
+    expect((await verified()).review_status).toBe("rejected");
     expect((await attempt()).detail).toMatchObject({ planned_restored: 1, restored: 0 });
     expect(await db`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint = 'restored:4:9'`).toHaveLength(0);
   });

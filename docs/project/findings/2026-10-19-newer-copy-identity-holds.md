@@ -22,6 +22,11 @@ guarded publication update can reject verified rows. Returned results and ledger
 counts reflect actual updates; attempt detail retains `planned_retired` and
 `planned_restored` to explain skipped writes. Dry runs write nothing.
 
+Restoration additionally requires the exact selected closure reason and timestamp, so a
+newer closure in the same `newer_copy_drops_fee:` family cannot be cleared using an old
+decision. Timestamps are selected as text and compared as `timestamptz` to preserve full
+PostgreSQL microsecond precision; a legitimate restore at `.123456` is a regression case.
+
 The restore duplicate guard also preserves audience, frequency, variant, amount kind,
 rate basis and rate value distinctions (#2121). A live consumer fee cannot suppress a
 source-stated business sibling. An equivalent live twin still prevents a duplicate
