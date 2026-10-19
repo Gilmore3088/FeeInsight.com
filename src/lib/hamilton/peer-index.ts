@@ -15,6 +15,7 @@ import {
 } from "@/lib/data-store/saved-peers";
 import type { InstitutionDetail } from "@/lib/data-store/types";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
+import { MIN_PEERS_FOR_POSITION } from "./workspace/scenario";
 import { ASSET_TIER_RANGES, chosenInstitutionIds, chosenInstitutionsLabel, peerFilterParts } from "@/lib/peer-filter-words";
 
 export interface HamiltonPeerFilters {
@@ -155,6 +156,17 @@ export function buildInstitutionPeerFilterCandidates(
       seen.add(key);
       return true;
     });
+}
+
+/** The fee that picks Hamilton's peer group: nearly every institution publishes one (#2046). */
+export const PEER_GROUP_ANCHOR = "overdraft";
+
+/**
+ * The one rule for a default peer group, shared with every answer (#2046, #2096): the narrowest
+ * candidate where at least MIN_PEERS_FOR_POSITION institutions publish the anchor fee.
+ */
+export function anchorsPeerGroup(entries: Pick<IndexEntry, "fee_category" | "institution_count">[]): boolean {
+  return (entries.find((entry) => entry.fee_category === PEER_GROUP_ANCHOR)?.institution_count ?? 0) >= MIN_PEERS_FOR_POSITION;
 }
 
 export function hasUsablePeerIndex(
@@ -315,7 +327,8 @@ export async function resolveHamiltonPeerIndex(
   for (const [index, filters] of candidates.entries()) {
     const candidate = candidateIndexes[index];
     const entries = candidate?.entries ?? [];
-    if (candidate && hasUsablePeerIndex(entries, minUsableCategories)) {
+    // The same group every answer uses (#2096), not the first with enough usable categories.
+    if (candidate && anchorsPeerGroup(entries)) {
       return {
         entries,
         label: describePeerFilters(filters),

@@ -38,6 +38,7 @@ import {
   ASSET_TIER_RANGES,
   buildInstitutionPeerFilterCandidates,
   describePeerFilters,
+  PEER_GROUP_ANCHOR,
   peerSetCandidate,
   type ActivePeerSet,
   type HamiltonPeerFilters,
@@ -153,8 +154,7 @@ function peerLabel(filters: HamiltonPeerFilters): string {
   return Object.keys(filters).length === 0 ? "Verified national index" : describePeerFilters(filters);
 }
 
-/** The fee that picks Hamilton's peer group: nearly every institution publishes one (#2046). */
-export const PEER_GROUP_ANCHOR = "overdraft";
+export { PEER_GROUP_ANCHOR } from "../peer-index";
 
 /**
  * Which candidate group is the institution's peer group, the same for every fee and every
