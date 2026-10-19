@@ -149,8 +149,16 @@ export const queryFeeRevenueCorrelation = tool({
             period_basis: "standalone_quarter",
           },
           fee_schedule_amount_unit: "USD",
+          units: "thousands of dollars",
           ...(view === "institutions" ? { total: data.length } : {}),
-          data: view === "institutions" ? data.slice(0, limit ?? 20) : data,
+          data: (view === "institutions" ? data.slice(0, limit ?? 20) : data).map((row) => ({
+            ...row,
+            field_units: {
+              avg_fee: "USD", avg_fee_amount: "USD", median_overdraft: "USD",
+              fee_income_ratio: "USD income per 10,000 USD assets",
+              avg_fee_income_ratio: "USD income per 10,000 USD assets",
+            },
+          })),
         };
       })),
     };
@@ -599,6 +607,7 @@ function financialSources(source?: FinancialSource): readonly FinancialSource[] 
 
 function financialGroup(source: FinancialSource) {
   return {
+    source,
     financial_source: source,
     charter_type: source === "ncua" ? "credit_union" : "bank",
     fee_income_definition: financialMeasureDefinition(source),
@@ -626,6 +635,7 @@ async function handleCallReports(
     ]);
     return {
       ...financialGroup(financialSource),
+      units: "dollar amounts in thousands; yoy_change_pct is a percentage",
       ...(trend === undefined ? {} : { trend }),
       ...(topInstitutions === undefined ? {} : { top_institutions: topInstitutions }),
       ...(byTier === undefined ? {} : { by_tier: byTier }),
@@ -672,12 +682,23 @@ async function handleHealth(view: string | undefined, quarters: number, source?:
     ]);
     return {
       ...financialGroup(financialSource),
-      ...(metrics === undefined ? {} : { metrics }),
-      ...(deposits === undefined ? {} : { deposits }),
-      ...(loans === undefined ? {} : { loans }),
-      ...(institutionCounts === undefined ? {} : { institution_counts: institutionCounts }),
+      ...(metrics === undefined ? {} : { metrics: { ...metrics, unit: "percent" } }),
+      ...(deposits === undefined ? {} : { deposits: growthWithUnits(deposits) }),
+      ...(loans === undefined ? {} : { loans: growthWithUnits(loans) }),
+      ...(institutionCounts === undefined ? {} : { institution_counts: institutionCounts.map((row) => ({
+        ...row, unit: "count", field_units: { bank_change_pct: "percent", cu_change_pct: "percent" },
+      })) }),
     };
   })) };
+}
+
+function growthWithUnits(trend: Awaited<ReturnType<typeof getDepositGrowthTrend>>) {
+  if (!trend || !Array.isArray(trend.history)) return null;
+  return {
+    ...trend,
+    unit: "percent",
+    history: trend.history.map((row) => ({ ...row, field_units: { absolute: "thousands of dollars", yoy_pct: "percent" } })),
+  };
 }
 
 async function handleComplaints(district: number | undefined) {
@@ -725,6 +746,7 @@ async function handleDerived(
         ...financialGroup(financialSource),
         ...(dependency === undefined ? {} : { dependency: {
           ...dependency,
+          unit: "percent",
           measure_definition: {
             measure: "fee_income_share_of_total_revenue",
             unit: "percent",
@@ -734,6 +756,8 @@ async function handleDerived(
         } }),
         ...(revenuePerInstitution === undefined ? {} : { revenue_per_institution: {
           ...revenuePerInstitution,
+          unit: "USD",
+          signals: { ...revenuePerInstitution.signals, unit: "percent" },
           measure_definition: { ...financialMeasureDefinition(financialSource), unit: "USD", aggregation: "mean income per reporting institution" },
         } }),
       };

@@ -36,6 +36,25 @@ describe("checkNarrativeFigures", () => {
   });
 });
 
+describe("explicit field units in mixed financial rows (#2358)", () => {
+  const data = {
+    source: "ncua", units: "thousands of dollars",
+    service_charge_income: 153080, avg_fee: 30, fee_income_ratio: 0.0382,
+    income_per_10k_assets: 7.49, absolute: 1200000,
+    field_units: { avg_fee: "USD", fee_income_ratio: "fraction", income_per_10k_assets: "USD income per 10,000 USD assets", absolute: "thousands of dollars" },
+  };
+  const options = { explicitFinancialDerivations: true };
+
+  it("uses per-field units before the shared scale, including explicitly tagged nonmoney field names", () => {
+    expect(checkNarrativeFigures("Income was $153.08 million, the fee was $30, revenue share was 3.82%, and deposits were $1.2 billion.", data, options).unmatched).toEqual([]);
+  });
+
+  it("keeps wrong scales, fractions, asset intensity, and unvalidated NCUA arithmetic held", () => {
+    expect(checkNarrativeFigures("The fee was $30,000. Revenue share was 0.0382%. Income was $7,490 or 7.49% of revenue. The gap was $153.07997 million.", data, options).unmatched).toEqual(["$30,000", "$7,490", "$153.07997 million", "0.0382%", "7.49%"]);
+    expect(checkNarrativeFigures("Income was $1.2 billion.", { ...data, field_units: { absolute: "unrecognized" } }, options).unmatched).toEqual(["$1.2 billion"]);
+  });
+});
+
 describe("figures that are not the data's to trace (#1425)", () => {
   const data = { institution_amount: 35, peer_median: 30 };
 

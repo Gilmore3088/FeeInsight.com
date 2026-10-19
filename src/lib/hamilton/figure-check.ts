@@ -88,13 +88,15 @@ interface PayloadNumber {
   ncuaFinancial?: boolean;
   implicitArithmeticAllowed?: boolean;
   denominatorUnit?: NarrativeFigure["denominatorUnit"];
+  /** An explicit per-field currency unit supports fields such as health's `absolute`. */
+  explicitDollarField?: boolean;
 }
 
 /** Every finite number in the payload with the key it sits under (numeric strings included). */
 export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
   const found: PayloadNumber[] = [];
   const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0,
-    ncuaFinancial = false, implicitArithmeticAllowed = true, denominatorUnit?: NarrativeFigure["denominatorUnit"]) => {
+    ncuaFinancial = false, implicitArithmeticAllowed = true, denominatorUnit?: NarrativeFigure["denominatorUnit"], explicitDollarField = false) => {
     if (found.length >= MAX_PAYLOAD_NUMBERS || depth > 12) return;
     const number = numericPayloadValue(value);
     if (number !== null) {
@@ -109,6 +111,7 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
         ...(ncuaFinancial ? { ncuaFinancial: true } : {}),
         ...(!implicitArithmeticAllowed ? { implicitArithmeticAllowed: false } : {}),
         ...(denominatorUnit ? { denominatorUnit } : {}),
+        ...(explicitDollarField ? { explicitDollarField: true } : {}),
       });
     } else if (typeof value === "string") {
       const text = value.trim();
@@ -133,9 +136,13 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
       const ownArithmetic = implicitArithmeticAllowed && record.numeric_arithmetic_allowed !== false;
       const ownDenominator = record.denominator_unit === "account" || record.denominator_unit === "employee"
         ? record.denominator_unit : denominatorUnit;
+      const fieldUnits = record.field_units && typeof record.field_units === "object" && !Array.isArray(record.field_units)
+        ? record.field_units as Record<string, unknown> : {};
       for (const [childKey, child] of Object.entries(record)) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
-        visit(child, childKey, own, depth + 1, ownNcua, ownArithmetic, ownDenominator);
+        const fieldUnit = typeof fieldUnits[childKey] === "string" ? fieldUnits[childKey] : undefined;
+        visit(child, childKey, fieldUnit ?? own, depth + 1, ownNcua, ownArithmetic, ownDenominator,
+          fieldUnit !== undefined && dollarUnitScale(fieldUnit) !== null);
       }
     }
   };
@@ -155,7 +162,7 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
     // Existing fee prices can be described "per account" without being a calculated
     // balance/account ratio. Preserve legacy sources; NCUA totals require the typed ratio.
     || (denominatorUnit !== undefined && n.denominatorUnit === undefined && !(options.explicitFinancialDerivations && n.ncuaFinancial));
-  const money = usable.filter((n) => MONEY_KEY.test(n.key) && n.dollars !== null && sameQuantity(n));
+  const money = usable.filter((n) => (MONEY_KEY.test(n.key) || n.explicitDollarField) && n.dollars !== null && sameQuantity(n));
   const arithmetic = money.filter((n) => !n.denominatorUnit && n.implicitArithmeticAllowed !== false && !(options.explicitFinancialDerivations && n.ncuaFinancial));
   const candidates = new Set<number>();
   if (kind === "usd") {
@@ -206,7 +213,7 @@ const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
  * threshold ("under $1 billion in assets", "assets above $10 billion"). A bound that only shares
  * a sentence with the word "assets" ("earned $1 billion in fees, with assets of ...") still traces.
  */
-function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
+export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
   const accepted = new Set<NarrativeFigure>();
   const definedRanges = new Set<string>();
   const references: Array<{ a: NarrativeFigure; b: NarrativeFigure; range: string }> = [];

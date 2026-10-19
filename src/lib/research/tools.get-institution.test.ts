@@ -5,6 +5,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { writtenAnswerEvidence } from "@/lib/hamilton/written-answer-binding";
+import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
+import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 
 const readers = vi.hoisted(() => ({
   charter: "bank",
@@ -30,6 +32,7 @@ describe("getInstitution fee rows", () => {
     readers.charter = "bank";
     readers.financials = [];
     readers.ranking = null;
+    readers.getInstitutionRevenueTrend.mockResolvedValue([]);
     vi.clearAllMocks();
   });
   it("carry the catalog row and stored schedule, and only an approved row reads as a published record", async () => {
@@ -68,6 +71,32 @@ describe("getInstitution fee rows", () => {
     readers.financials = [{ source: "fdic", service_charge_income: 999 }];
     expect(await execute()).toMatchObject({ financials: { latest: null, records: [], definition: null }, peer_ranking: null });
     expect(readers.getInstitutionRevenueTrend).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the complete written-answer gate with the actual comparable-quarter tool containers (#2358)", async () => {
+    readers.charter = "credit_union";
+    readers.financials = [{ source: "ncua", report_date: "2026-06-30", service_charge_income: 297363, fee_income_ratio: 0.0382375 }];
+    readers.getInstitutionRevenueTrend.mockResolvedValue([
+      { quarter: "2026-Q2", service_charge_income: 153080, fee_income_ratio: 0.0382375, yoy_change_pct: 17.0 },
+    ]);
+    readers.ranking = {
+      sc_income: 153080, sc_rank: 1, peer_count: 25, peer_median_sc: 11125,
+      fee_income_ratio: 0.0382375, peer_median_fee_ratio: 0.0430845,
+      comparison: financialPeerComparison({ source: "ncua", reportDate: "2026-06-30", tier: "regional", minimumAssetsUsd: 1e10, maximumAssetsUsd: 250e9, subjectIncluded: true, eligibleCount: 25, reportedCount: 25, ratioReportedCount: 25, minimumMedianCount: 5 }),
+    };
+    const { getInstitution } = await import("./tools");
+    const output = await getInstitution.execute!({ id: 4956 }, { toolCallId: "t1", messages: [] });
+    expect(output).toMatchObject({
+      revenue_trend: [{ source: "ncua", units: expect.stringContaining("thousands") }],
+      peer_ranking: { source: "ncua", units: expect.stringContaining("thousands") },
+    });
+    const toolResults = [{ toolName: "getInstitution", input: { id: 4956 }, output }];
+    const check = (answer: string) => writtenAnswerCheck(answer, [output], "How does Navy Federal fee income compare with credit unions in Q2 2026?", { institutionId: 4956, toolResults });
+    expect(check("Q2 2026 Navy Federal broad fee income was $153.08 million, versus a peer median of $11.13 million for 25 credit unions with $10 billion to $250 billion in assets. Navy is included.")).toMatchObject({ passed: true, problems: [], figureCheck: { unmatched: [] } });
+    expect(check("The peer median was $11.13 million, and Navy Federal fee income was $153.08 million in Q2 2026.")).toMatchObject({ passed: true, problems: [] });
+    expect(check("Q2 2026 Navy Federal fee income was $153.08 million. Year-to-date fee income was 3.8% of revenue, against a peer median ratio of 4.3%. The quarter's fee income was 17.0% higher than a year earlier.")).toMatchObject({ passed: true, problems: [] });
+    expect(check("Q2 2026 Navy Federal fee income was $153.08 thousand, and the peer median was $11.13 million.").passed).toBe(false);
+    expect(check("Q2 2026 Navy Federal fee income was $153.08 million, and its YTD fee-income share of revenue was 0.0382%.").passed).toBe(false);
   });
 
 });

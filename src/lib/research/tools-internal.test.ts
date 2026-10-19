@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 
 // Mock all data-store modules before importing the tool
 vi.mock("@/lib/data-store/call-reports", () => ({
@@ -451,6 +452,35 @@ describe("Hamilton financial tool comparability (#2330)", () => {
     const result = await national({ source: "derived", quarters: 8, limit: 10, top_n: 5 });
     expect(result.financial_groups[0]).toMatchObject({ dependency: { measure_definition: { unit: "percent", period_basis: "standalone_quarter" } }, revenue_per_institution: { measure_definition: { unit: "USD", period_basis: "standalone_quarter" } } });
     expect(result.financial_groups[1]).toMatchObject({ dependency: { measure_definition: { unit: "percent", period_basis: "year_to_date" } }, revenue_per_institution: { measure_definition: { unit: "USD", period_basis: "standalone_quarter" } } });
+  });
+
+  it("passes the full answer gate for national thousands, derived dollars, and health percentages (#2358)", async () => {
+    vi.mocked(callReports.getRevenueTrend).mockResolvedValueOnce({ latest: { quarter: "2026-Q2", total_service_charges: 2640000, total_institutions: 4000, bank_service_charges: 0, cu_service_charges: 2640000, yoy_change_pct: 2.5 }, quarters: [] });
+    const nationalIncome = await national({ source: "call_reports", financial_source: "ncua", view: "trend", quarters: 8, limit: 10, top_n: 5 });
+    expect(writtenAnswerCheck("Credit unions reported $2.64 billion in broad fee income for Q2 2026.", [nationalIncome])).toMatchObject({ passed: true, figureCheck: { unmatched: [] } });
+    expect(writtenAnswerCheck("Credit unions reported $2.64 million in broad fee income.", [nationalIncome]).passed).toBe(false);
+
+    vi.mocked(derivedAnalytics.getFeeDependencyTrend).mockResolvedValueOnce({ trend: [{ report_date: "2026-06-30", avg_fee_income_ratio: 4.3, institution_count: 25 }], signals: { qoq_change_pct: null, yoy_change_pct: null } });
+    vi.mocked(derivedAnalytics.getRevenuePerInstitutionTrend).mockResolvedValueOnce({ current: { by_tier: [], by_charter: [] }, trend: [{ report_date: "2026-06-30", avg_sc_income: 11125000, institution_count: 25 }], signals: { qoq_change_pct: null, yoy_change_pct: null } });
+    const derived = await national({ source: "derived", financial_source: "ncua", quarters: 8, limit: 10, top_n: 5 });
+    expect(writtenAnswerCheck("The reported revenue share was 4.3%, and mean quarterly income was $11.125 million.", [derived])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The reported revenue share was $4.3.", [derived]).passed).toBe(false);
+
+    vi.mocked(health.getIndustryHealthMetrics).mockResolvedValueOnce({ roa: { current: 0.75, history: [], trend: "stable", asOf: "2026-06-30", minimum_median_count: 5 }, roe: null, efficiency_ratio: null });
+    vi.mocked(health.getDepositGrowthTrend).mockResolvedValueOnce({ current_yoy_pct: 2.5, history: [{ quarter: "2026-Q2", yoy_pct: 2.5, absolute: 1200000 }], trend: "stable", asOf: "2026-06-30" });
+    const metrics = await national({ source: "health", financial_source: "ncua", quarters: 8, limit: 10, top_n: 5 });
+    expect(writtenAnswerCheck("The return on assets was 0.75%. Deposits were $1.2 billion, with reported growth of 2.5%.", [metrics])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The return on assets was $0.75.", [metrics]).passed).toBe(false);
+  });
+
+  it.each(["institutions", "by_tier", "by_charter"])("keeps correlation %s schedule prices, financial totals, and asset intensity in separate units (#2358)", async (view) => {
+    const row = { financial_source: "ncua", report_date: "2026-06-30", service_charge_income: 153080, avg_service_charge_income: 153080, avg_fee: 30, avg_fee_amount: 30, median_overdraft: 30, fee_income_ratio: 7.49, avg_fee_income_ratio: 7.49 };
+    const reader = view === "institutions" ? feeRevenue.getFeeRevenueData : view === "by_tier" ? feeRevenue.getTierFeeRevenueSummary : feeRevenue.getCharterFeeRevenueSummary;
+    vi.mocked(reader).mockResolvedValueOnce([row] as never);
+    const result = await correlation({ view, limit: 20, financial_source: "ncua" });
+    expect(writtenAnswerCheck("Reported broad fee income was $153.08 million. The published schedule price was $30.", [result])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The published schedule price was $30,000.", [result]).passed).toBe(false);
+    expect(writtenAnswerCheck("Fee income was 7.49% of revenue.", [result]).passed).toBe(false);
   });
 
   it("leaves same-fee prices comparable across charters and labels schedule concentration correctly", async () => {

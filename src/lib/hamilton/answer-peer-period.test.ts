@@ -210,6 +210,22 @@ describe("actual Navy peer-answer failures (#2355)", () => {
     expect(checkAnswerInterpretations("YTD fee income was $297.36 million through June 2026.", actualEvidence, "How much fee income was reported year to date through Q2 2026?")).toEqual([]);
   });
 
+  it.each([
+    "The peer median was $11.13 million, and Navy Federal fee income was $153.08 million in Q2 2026.",
+    "In Q2 2026, the peer median was $11.13 million versus Navy Federal's fee income of $153.08 million.",
+    "In Q2 2026, Navy Federal fee income was $153.08 million and the peer median was $11.13 million.",
+  ])("binds the role to each figure across assertion order and conjunctions (#2359): %s", (answer) => {
+    expect(checkAnswerInterpretations(answer, quarterEvidence, question)).toEqual([]);
+  });
+
+  it("checks income assertions even when the same clause states valid asset bounds (#2360)", () => {
+    const mixed = { ...quarterEvidence, tool_evidence: [...quarterEvidence.tool_evidence, ...actualReads] };
+    const falseAnswer = "Q2 2026 Navy fee income was $153.08 million. In a cohort with $10 billion to $250 billion in assets, Q2 Navy fee income was $297.36 million and the peer median was $22.44 million.";
+    expect(checkAnswerInterpretations(falseAnswer, mixed, question).join(" ")).toContain("standalone-quarter");
+    expect(checkAnswerInterpretations("In a cohort with $10 billion to $250 billion in assets, Q2 2026 Navy fee income was $153.08 million and the peer median was $11.13 million.", quarterEvidence, question)).toEqual([]);
+    expect(checkAnswerInterpretations("Q2 2026 Navy fee income was $153.08 million. The peer median was $22.44 million for credit unions with $10 billion to $250 billion in assets.", mixed, question).join(" ")).toContain("standalone-quarter");
+  });
+
   it("accepts the server's matched institution-quarter result with its shown YTD subtraction", () => {
     const evidence = { selected_institution_id: 4382, publisher: "NCUA", validated_calculations: [{ source: "ncua", institution_id: 4382, measure: "call:acct_131", metric: "Fee income, standalone quarter", operation: "ytd_to_quarter", unit: "USD", period_basis: "standalone_quarter", report_date: "2026-06-30", value: 30032341 }] };
     expect(checkAnswerInterpretations("April through June 2026 fee income was $30.032341 million = $57.261959 million YTD minus $27.229618 million YTD.", evidence, "How much fee income did PenFed earn during April through June 2026, rather than the first six months? Show the calculation.")).toEqual([]);

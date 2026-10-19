@@ -255,7 +255,8 @@ export const getInstitution = tool({
           ]
         : [];
     const provisionalFees = [...catalogProvisionalFees, ...pipelineProvisionalFees];
-    const sameScaleFinancials = financials.filter((record) => financialSource && record.source === financialSource);
+    const sameScaleFinancials = financials.filter((record) => financialSource && record.source === financialSource)
+      .map((record) => ({ ...record, field_units: { fee_income_ratio: "fraction" } }));
     const status = inst.fee_publication_status ?? "unavailable";
 
     return {
@@ -295,13 +296,24 @@ export const getInstitution = tool({
         latest: sameScaleFinancials[0] ?? null,
         records: sameScaleFinancials.slice(0, 8),
       },
-      revenue_trend: revenueTrend,
+      // Numeric evidence inherits units and source from its containing row, not a sibling definition.
+      revenue_trend: revenueTrend.map((quarter) => ({
+        ...quarter,
+        source: financialSource,
+        units: "thousands of dollars",
+        field_units: { fee_income_ratio: "fraction", yoy_change_pct: "percent" },
+      })),
       revenue_trend_definition: financialSource ? {
         ...financialMeasureDefinition(financialSource),
         ratio_definition: financialSource === "ncua" ? "Year-to-date broad fee income divided by year-to-date total revenue" : "Quarterly deposit-account service charges divided by quarterly total revenue",
         ratio_period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter",
       } : null,
-      peer_ranking: peerRanking?.comparison?.source === financialSource && peerRanking.comparison.charter_type === inst.charter_type ? peerRanking : null,
+      peer_ranking: peerRanking?.comparison?.source === financialSource && peerRanking.comparison.charter_type === inst.charter_type ? {
+        ...peerRanking,
+        source: financialSource,
+        units: "thousands of dollars",
+        field_units: { fee_income_ratio: "fraction", peer_median_fee_ratio: "fraction" },
+      } : null,
       quality: {
         label: inst.quality_label ?? null,
         status: inst.quality_status ?? null,

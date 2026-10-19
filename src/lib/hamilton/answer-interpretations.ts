@@ -5,7 +5,7 @@
  * remains the caller's responsibility. Discovery alone never proves a reported value.
  */
 
-import { extractFigures } from "./figure-check";
+import { extractFigures, tierBoundsAsSize } from "./figure-check";
 import { validFinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 
 export const HAMILTON_INTERPRETATION_INSTRUCTION = `
@@ -306,20 +306,27 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
   const failure = "The question asks for standalone-quarter fee income. Answer that quarter from matched institution-quarter calculations or the dated comparable-quarter tool, or clearly state that the requested quarter comparison cannot be computed; a YTD substitute does not answer it.";
   let answeredRequestedQuarter = false;
   for (const clause of clauses) {
-    if (clause.endsWith("?") || /\bassets?\b/i.test(clause)) continue;
+    if (clause.endsWith("?")) continue;
     const explicitQuarter = namesQuarter(clause);
     const peerMedian = /\bpeer(?:s|'s|s')?\s+median\b/i.test(clause);
     const ytd = /\b(?:year[ -]to[ -]date|YTD|half[ -]year|six months)\b/i.test(clause);
     if ((!explicitQuarter && !peerMedian) || (!explicitQuarter && ytd)) continue;
-    const quoted = extractFigures(clause).filter((figure) => figure.kind === "usd" && !figure.denominatorUnit);
+    const allFigures = extractFigures(clause);
+    const assetBounds = tierBoundsAsSize(clause, allFigures);
+    // Size criteria exempt only their actual bounds, never income claims in the same sentence.
+    const quoted = allFigures.filter((figure) => figure.kind === "usd" && !figure.denominatorUnit && !assetBounds.has(figure));
     if (quoted.length === 0) continue;
     // A calculation's first amount is its result; source inputs remain checked by the numeric gate.
     const figures = /[=−]|\b(?:minus|less|subtract\w*)\b/i.test(clause) ? quoted.slice(0, 1) : quoted;
     const periods = claimedPeriods(clause).filter((period) => /^20\d{2}-(?:03|06|09|12)(?:-\d{2})?$/.test(period))
       .map((period) => period.length === 7 ? `${period}-${["03", "12"].includes(period.slice(5)) ? "31" : "30"}` : period);
     const dates = periods.length ? periods : [requested.period];
-    for (const figure of figures) {
-      const before = clause.slice(0, figure.index).split(/\b(?:vs|versus|while|against|compared with)\b/i).at(-1) ?? "";
+    for (const [index, figure] of figures.entries()) {
+      const previous = figures[index - 1];
+      // A peer label governs its own amount. It cannot cross an earlier figure or
+      // a new assertion such as "and Navy Federal fee income was ...".
+      const before = clause.slice(previous ? previous.index + previous.raw.length : 0, figure.index)
+        .split(/\b(?:vs|versus|while|against|compared with|and|but)\b/i).at(-1) ?? "";
       const after = clause.slice(figure.index + figure.raw.length, figure.index + figure.raw.length + 20);
       const role = /\b(?:peer|median)\b/i.test(before) || /^\s*(?:peer\s+)?median\b/i.test(after) ? "peer_median" : "subject";
       const matches = evidence.quarterIncomes.filter((income) => income.role === role && dates.includes(income.period)

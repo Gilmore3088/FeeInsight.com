@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FeeRevenueCorrelation } from "@/lib/data-store/fee-revenue";
 import { feeIncomeAgainstPeers } from "./fee-income-peers";
+import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 
 // Invented rows for tests only; no figure here is live data.
 function row(id: number, ratio: number | null, extra: Partial<FeeRevenueCorrelation> = {}): FeeRevenueCorrelation {
@@ -71,6 +72,15 @@ describe("feeIncomeAgainstPeers", () => {
 
   it("says so when the institution has no fee income on file", () => {
     expect(feeIncomeAgainstPeers(rows, 99, {})).toMatchObject({ view: "peers", error: expect.stringContaining("cannot be compared") });
+  });
+
+  it("passes the full answer gate for dollar totals without treating asset intensity as a dollar total or revenue share (#2358)", () => {
+    const cus = rows.map((r) => ({ ...r, financial_source: "ncua", charter_type: "credit_union" }));
+    const result = feeIncomeAgainstPeers(cus, 1, {});
+    expect(writtenAnswerCheck("The credit union reported $100,000 in quarterly broad fee income, against a peer median of $450,000.", [result])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The peer median was $450.", [result]).passed).toBe(false);
+    expect(writtenAnswerCheck("The peer median share of revenue was 4.5%.", [result]).passed).toBe(false);
+    expect(writtenAnswerCheck("The peer median income was $4,500.", [result]).passed).toBe(false);
   });
 });
 

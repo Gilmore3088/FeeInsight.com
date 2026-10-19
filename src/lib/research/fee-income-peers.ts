@@ -45,6 +45,9 @@ function describe(row: FeeRevenueCorrelation) {
     total_assets: row.total_assets,
     service_charge_income: row.service_charge_income,
     financial_source: row.financial_source,
+    source: row.financial_source,
+    units: "thousands of dollars",
+    field_units: { income_per_10k_assets: "USD income per 10,000 USD assets" },
     report_date: row.report_date,
     income_per_10k_assets: row.fee_income_ratio,
   };
@@ -85,6 +88,9 @@ export function feeIncomeAgainstPeers(
     : null;
   return {
     view: "peers" as const,
+    source,
+    units: "thousands of dollars",
+    field_units: { peer_median_income_per_10k_assets: "USD income per 10,000 USD assets" },
     quarter: subject.report_date ?? null,
     income_basis: subject.financial_source === "ncua"
       ? "NCUA 5300 broad fee income (account 131) for this quarter (year to date less the prior quarter); not deposit-only service charges"
