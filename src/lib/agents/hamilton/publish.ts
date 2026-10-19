@@ -61,6 +61,13 @@ import {
   PUBLISH_REFUSE_PAGE_COPIES_LIVE,
   selectPageCopyKeeper,
 } from "@/lib/agents/hamilton/page-copy-refuse";
+import {
+  PublicationEvidenceUnavailable,
+  publicationEvidenceValue,
+  readPublicationEvidence,
+  type PublicationEvidenceCheck,
+  type PublishEvidenceCheck,
+} from "./publication-evidence";
 
 type SqlTag = typeof sql;
 
@@ -159,6 +166,9 @@ export interface PriorPublishedFeeRow extends RateFields, Partial<Omit<Published
 export interface HamiltonPublishResult {
   /** Selected state changed under the final lock: visible guard skip, no settled fingerprint. */
   identityDeferred?: boolean;
+  /** Required evidence was unavailable; leave this exact input undecided and retryable. */
+  evidenceDeferred?: boolean;
+  unavailableEvidence?: PublicationEvidenceCheck[];
   feeVerifiedId: number;
   institutionId: number;
   feeName: string;
@@ -232,6 +242,7 @@ export interface RunHamiltonPublishResult {
   skippedFees: number;
   /** Still-undecided selected-state guard skips, included in skippedFees. */
   identityDeferredFees?: number;
+  evidenceDeferredFees?: number;
   /** Live rows closed because the same fee was published at a new amount. */
   supersededFees: number;
   /** Published rows that are explicit $0 (free) fees. */
@@ -253,6 +264,7 @@ export interface RunHamiltonPublishResult {
   sweepCheck: PublishSweepCheck;
   /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
   pageCopyCheck: PublishPageCopyCheck;
+  evidenceCheck?: PublishEvidenceCheck;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
@@ -820,11 +832,10 @@ export async function insertPublishedFee(
 async function selectLivePublishedFees(
   db: SqlTag,
   row: VerifiedFeeRow,
-  options: { anyVariant?: boolean } = {},
+  options: { anyVariant?: boolean; required?: boolean } = {},
 ): Promise<PriorPublishedFeeRow[]> {
   const anyVariant = options.anyVariant === true;
-  try {
-    return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
+  const read = await readPublicationEvidence<PriorPublishedFeeRow[]>("live_prior", () => inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fp.fee_published_id,
              fp.amount,
              fp.amount_kind,
@@ -850,11 +861,8 @@ async function selectLivePublishedFees(
          AND (${anyVariant} OR COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, ''))
          AND fp.rolled_back_at IS NULL
        ORDER BY fp.published_at DESC, fp.fee_published_id DESC
-    `);
-  } catch (error) {
-    console.error("selectLivePublishedFees failed:", error);
-    return [];
-  }
+    `));
+  return publicationEvidenceValue(read, [], options.required);
 }
 
 function sameDocument(a: number | string | null | undefined, b: number | string | null | undefined): boolean {
@@ -1457,20 +1465,20 @@ function escapeRegExp(text: string): string {
 }
 
 /** The current read of a document (\`agent_source_texts\`), for the same-line check. */
-async function selectDocumentText(db: SqlTag, documentId: number | string | null | undefined): Promise<string | null> {
-  if (documentId == null) return null;
-  try {
-    const [row] = await inSavepoint(db, (scope) => scope<{ normalized_text: string | null }[]>`
+async function selectDocumentText(db: SqlTag, documentId: number | string | null | undefined, required = false): Promise<string | null> {
+  if (documentId == null) {
+    if (required) throw new PublicationEvidenceUnavailable("document_text");
+    return null;
+  }
+  const read = await readPublicationEvidence<{ normalized_text: string | null }[]>("document_text", () => inSavepoint(db, (scope) => scope<{ normalized_text: string | null }[]>`
       SELECT normalized_text FROM agent_source_texts
        WHERE source_document_id = ${Number(documentId)} AND normalized_text IS NOT NULL
        ORDER BY id DESC
        LIMIT 1
-    `);
-    return row?.normalized_text ?? null;
-  } catch (error) {
-    console.error("selectDocumentText failed:", error);
-    return null;
-  }
+    `));
+  const text = publicationEvidenceValue(read, [], required)[0]?.normalized_text ?? null;
+  if (required && !text?.trim()) throw new PublicationEvidenceUnavailable("document_text");
+  return text;
 }
 
 /**
@@ -1480,10 +1488,10 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
  * Source spot checks of 20 such rows, 9 Oct: words alone 13, 10 and 14 of 20; with the page check
  * see docs/project/findings/2026-10-09-identical-skip-ignored-name.md.
  */
-async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
+async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[], required = false): Promise<Set<PriorPublishedFeeRow>> {
   const { candidates, balanced } = sameValueLines(row, live);
   if (candidates.length === 0 && balanced.length === 0) return new Set();
-  return sameValueLinesApart(row, live, await selectDocumentText(db, row.source_document_id));
+  return sameValueLinesApart(row, live, await selectDocumentText(db, row.source_document_id, required));
 }
 
 function sameValueLines(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): { candidates: PriorPublishedFeeRow[]; balanced: PriorPublishedFeeRow[] } {
@@ -1545,19 +1553,15 @@ export interface ListedFeeLine {
 }
 
 /** Every line Knox read from these documents, for the same-name price check below. */
-export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>, options: { required?: boolean } = {}): Promise<ListedFeeLine[]> {
   const ids = documentIds.filter((id) => id != null).map(Number);
   if (ids.length === 0) return [];
-  try {
-    return await inSavepoint(db, (scope) => scope<ListedFeeLine[]>`
+  const read = await readPublicationEvidence<ListedFeeLine[]>("listed_fee_lines", () => inSavepoint(db, (scope) => scope<ListedFeeLine[]>`
       SELECT source_document_id, fee_name, amount
         FROM raw_fee_observations
        WHERE source_document_id = ANY(${ids}::bigint[])
-    `);
-  } catch (error) {
-    console.error("selectListedFeeLines failed:", error);
-    return [];
-  }
+    `));
+  return publicationEvidenceValue(read, [], options.required);
 }
 
 /**
@@ -2028,7 +2032,8 @@ const NO_MOVEMENT = {
   movementDirection: null,
 } as const;
 
-function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome {
+function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome | null {
+  if (result.evidenceDeferred) return null;
   if (result.status === "published") return "ok";
   if (result.identityDeferred) return "evidence_mismatch";
   return result.reason === "Identical fee already published" ||
@@ -2103,7 +2108,7 @@ export async function runHamiltonPublish(
   const results: HamiltonPublishResult[] = [];
   const twinUnreproduced = await unreproducedTwins(db, rows);
   // #1069 step 2: the sweeps' own rules, read once for the batch. Counted always; refused only
-  // while `refuseSweepRulesLive` is on. A failed read refuses nothing.
+  // while `refuseSweepRulesLive` is on. A failed required read leaves input pending.
   const sweepReads = await selectPublishSweepRefusals(db, rows.map((row) => Number(row.fee_verified_id)));
   // #1069: of the rows on one exact-duplicate collapse line, the copy the collapse would keep is
   // decided first, and a later twin is refused against it (`exactDuplicateDecision`), so a step
@@ -2174,86 +2179,88 @@ export async function runHamiltonPublish(
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
     let decision: PriorFeeDecision | null = null;
-    if (!skipReason) {
-      const live = await selectLivePublishedFees(db, row);
-      const apart = await linesApartFrom(db, row, live);
-      decision = decidePriorFee(row, live, (prior) => apart.has(prior));
-      // A row decided once more after the same-line check may since have had its frequency or
-      // variant re-read ("per_item" to none), so the live line it was identical to no longer
-      // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
-      // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
-      // check reads every live line of the category on its own document, and another
-      // document's line only under the same name (an older crawl of the same schedule: 72051
-      // "Loan Late Payment" $25 beside 6464 on Feb's copy). Another document's line under
-      // another name is a different printed line ("Overdraft" $25 beside another document's
-      // "Debit Card Overdraft" $25, #1314).
-      if (row.same_line_reselect && decision.kind !== "identical") {
-        const wide = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter(
-          (prior) => sameDocument(prior.source_document_id, row.source_document_id) || nameCore(prior.fee_name ?? "") === nameCore(row.fee_name ?? ""),
-        );
-        const wideApart = await linesApartFrom(db, row, wide);
-        const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
-        if (wideDecision.kind === "identical") decision = wideDecision;
+    let priorReadsAvailable = true;
+    const unavailableEvidence: PublicationEvidenceCheck[] = [];
+    const requiredUnavailable: PublicationEvidenceCheck[] = [];
+    const unavailable = (check: PublicationEvidenceCheck, required: boolean) => {
+      if (!unavailableEvidence.includes(check)) unavailableEvidence.push(check);
+      if (required && !requiredUnavailable.includes(check)) requiredUnavailable.push(check);
+    };
+    try {
+      if (!skipReason) {
+        const live = await selectLivePublishedFees(db, row, { required: true });
+        const apart = await linesApartFrom(db, row, live, true);
+        decision = decidePriorFee(row, live, (prior) => apart.has(prior));
+        // A row decided once more after the same-line check may since have had its frequency or
+        // variant re-read ("per_item" to none), so the live line it was identical to no longer
+        // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
+        // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
+        // check reads every live line of the category on its own document, and another
+        // document's line only under the same name (an older crawl of the same schedule: 72051
+        // "Loan Late Payment" $25 beside 6464 on Feb's copy). Another document's line under
+        // another name is a different printed line ("Overdraft" $25 beside another document's
+        // "Debit Card Overdraft" $25, #1314).
+        if (row.same_line_reselect && decision.kind !== "identical") {
+          const wide = (await selectLivePublishedFees(db, row, { anyVariant: true, required: true })).filter(
+            (prior) => sameDocument(prior.source_document_id, row.source_document_id) || nameCore(prior.fee_name ?? "") === nameCore(row.fee_name ?? ""),
+          );
+          const wideApart = await linesApartFrom(db, row, wide, true);
+          const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
+          if (wideDecision.kind === "identical") decision = wideDecision;
+        }
       }
-    }
-    if (decision?.kind === "older_document" && newerCopyPrintsLine(row, await selectDocumentText(db, decision.prior.source_document_id))) {
-      decision = { kind: "additional_line" };
-    }
-    if (
-      decision?.kind === "supersede" &&
-      listsBothPrices(await selectListedFeeLines(db, [row.source_document_id, decision.prior.source_document_id]), row, decision.prior)
-    ) {
-      decision = { kind: "additional_line" };
+      if (decision?.kind === "older_document" && newerCopyPrintsLine(row, await selectDocumentText(db, decision.prior.source_document_id, true))) {
+        decision = { kind: "additional_line" };
+      }
+      if (
+        decision?.kind === "supersede" &&
+        listsBothPrices(await selectListedFeeLines(db, [row.source_document_id, decision.prior.source_document_id], { required: true }), row, decision.prior)
+      ) {
+        decision = { kind: "additional_line" };
+      }
+    } catch (error) {
+      if (!(error instanceof PublicationEvidenceUnavailable)) throw error;
+      // A partial prior-line decision is not proof of identical/older/supersede.
+      decision = null;
+      priorReadsAvailable = false;
+      unavailable(error.check, true);
     }
     const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
-    // #1069: a row about to publish whose line is already live under the collapse's own test
-    // (same category, variant, value and name; frequencies that agree) is closed by the exact
-    // duplicate collapse later. Counted always; refused only while `refuseDuplicatesLive` is on.
-    // Copies published earlier in this step are marked, and a dry run, which inserts nothing,
-    // adds the ones it would have published.
     let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
     const line = collapseLineOf(row);
     const lineKey = collapseLineKey(line);
-    if (!skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document") {
+    const needsGate = !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document";
+    if (needsGate && priorReadsAvailable) {
+      // In-step copies remain evidence even when the external read is unavailable.
       const inStep = stepCopies.get(lineKey) ?? [];
       const inStepIds = new Set(inStep.map((copy) => Number(copy.fee_published_id)));
-      const live = (await selectExactCopies(db, line)).map((copy) =>
+      const read = await selectExactCopies(db, line);
+      if (read.state === "unavailable") unavailable(read.check, refuseDuplicatesLive);
+      const live = (read.state === "available" ? read.value : []).map((copy) =>
         inStepIds.has(Number(copy.fee_published_id)) ? { ...copy, in_step: true } : copy,
       );
       const liveIds = new Set(live.map((copy) => Number(copy.fee_published_id)));
       exactDuplicate = exactDuplicateDecision(row, [
-        ...live,
-        ...inStep.filter((copy) => !liveIds.has(Number(copy.fee_published_id))),
+        ...live, ...inStep.filter((copy) => !liveIds.has(Number(copy.fee_published_id))),
       ]);
     }
-    const sweepRule =
-      !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
-        ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null)
-        : null;
-    // A dollar row whose line is already live from another copy of the same page ("?print=1",
-    // "www.") is closed by the page-copy collapse later; read with its own test, and refused only
-    // while `refusePageCopiesLive` is on (page-copy-refuse.ts).
-    const pageCopyOf =
-      !skipReason &&
-      decision?.kind !== "identical" &&
-      decision?.kind !== "older_document" &&
-      exactDuplicate.kind !== "refuse" &&
-      !sweepRule &&
-      line.amount != null &&
-      line.ratePercent == null &&
-      row.source_document_id != null
-        ? await selectPageCopyKeeper(db, {
-            institutionId: line.institutionId,
-            canonicalFeeKey: line.canonicalFeeKey,
-            variantType: line.variantType,
-            amount: line.amount,
-            feeName: line.feeName,
-            frequency: row.frequency,
-            feeAudience: row.fee_audience,
-            productName: row.product_name,
-            sourceDocumentId: Number(row.source_document_id),
-          })
-        : null;
+    const sweepRule = needsGate ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null) : null;
+    if (needsGate) {
+      for (const check of sweepReads.unavailable) unavailable(check, refuseSweepRulesLive);
+    }
+    let pageCopyOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null) {
+      const read = await selectPageCopyKeeper(db, {
+        institutionId: line.institutionId, canonicalFeeKey: line.canonicalFeeKey,
+        variantType: line.variantType, amount: line.amount, feeName: line.feeName,
+        frequency: row.frequency, feeAudience: row.fee_audience, productName: row.product_name,
+        sourceDocumentId: Number(row.source_document_id),
+      });
+      if (read.state === "available") pageCopyOf = read.value;
+      else unavailable(read.check, refusePageCopiesLive);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2299,6 +2306,12 @@ export async function runHamiltonPublish(
         reason: `${PUBLISH_PAGE_COPY_REFUSE_REASON_PREFIX}${pageCopyOf}`,
         feePublishedId: null,
         ...NO_MOVEMENT,
+      };
+    } else if (requiredUnavailable.length > 0) {
+      result = {
+        ...base, status: "skipped", feePublishedId: null, ...NO_MOVEMENT,
+        reason: "Required publication evidence unavailable: " + requiredUnavailable.join(", ") + "; left pending",
+        evidenceDeferred: true,
       };
     } else if (dryRun) {
       result = {
@@ -2369,6 +2382,7 @@ export async function runHamiltonPublish(
         changeRecorded: written.changeRecorded,
       };
     }
+    if (unavailableEvidence.length) result.unavailableEvidence = unavailableEvidence;
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
@@ -2389,14 +2403,15 @@ export async function runHamiltonPublish(
 
     // A stale selected tuple is not a decision about the current verified input. Its guard
     // event is durable; leave the ordinary pending input eligible without replaying history.
-    if (learning && !result.identityDeferred) {
+    const outcome = attemptOutcome(result);
+    if (learning && !result.identityDeferred && outcome != null) {
       await recordAttempt(db, {
         institutionId: result.institutionId,
         stage: "publish",
         strategy: HAMILTON_PUBLISH_STRATEGY.strategy,
         version: HAMILTON_PUBLISH_STRATEGY.version,
         fingerprint: verifiedFeeFingerprint(result.feeVerifiedId),
-        outcome: attemptOutcome(result),
+        outcome,
         yieldCount: result.status === "published" ? 1 : 0,
         costMicrousd: 0,
         runId: options.runId,
@@ -2481,16 +2496,39 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
+  for (const result of results) {
+    for (const check of result.unavailableEvidence ?? []) {
+      unavailableByCheck[check] = (unavailableByCheck[check] ?? 0) + 1;
+    }
+  }
+  const unavailableChecks = [...new Set<PublicationEvidenceCheck>([
+    ...sweepReads.unavailable, ...Object.keys(unavailableByCheck) as PublicationEvidenceCheck[],
+  ])];
+  const evidenceCheck: PublishEvidenceCheck = {
+    protocol: "publish.evidence.v1",
+    readState: unavailableChecks.length ? "unavailable" : "available",
+    unavailableChecks,
+    deferred: results.filter((result) => result.evidenceDeferred).length,
+    unavailableByCheck,
+    samples: results.filter((result) => result.unavailableEvidence?.length).slice(0, 20).map((result) => ({
+      fee_verified_id: result.feeVerifiedId, checks: result.unavailableEvidence!, deferred: result.evidenceDeferred === true,
+    })),
+  };
   return {
     selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
     publishedFees: published.length,
     skippedFees: results.length - published.length,
     identityDeferredFees: results.filter((result) => result.identityDeferred).length,
+    evidenceDeferredFees: evidenceCheck.deferred,
     supersededFees: results.filter((result) => result.supersededFeePublishedId != null).length,
     zeroFeesPublished: published.filter((result) => result.amount === 0).length,
     learning,
-    outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
+    outcomes: learning ? countOutcomes(results.flatMap((result) => {
+      const outcome = attemptOutcome(result);
+      return outcome == null ? [] : [outcome];
+    })) : {},
     limit,
     minConfidence,
     minInstitutionFees,
@@ -2502,6 +2540,7 @@ export async function runHamiltonPublish(
     duplicateCheck,
     sweepCheck,
     pageCopyCheck,
+    evidenceCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }
