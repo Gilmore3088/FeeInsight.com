@@ -39,7 +39,9 @@ export async function getStateMarketFees(stateCode: string): Promise<StateMarket
   const state = stateCode.toUpperCase();
   const cities = (await getStateMarketCities(state)).slice(0, STATE_MARKETS_COMPARED);
   if (cities.length === 0) return [];
-  const names = cities.map((c) => c.city);
+  // Every spelling of each market, read back to the city it was folded into.
+  const names = cities.flatMap((c) => c.spellings);
+  const cityOf = new Map(cities.flatMap((c) => c.spellings.map((s) => [s, c.city] as const)));
 
   const branchRows = (await sql`
     SELECT UPPER(city) AS city, institution_id
@@ -54,7 +56,7 @@ export async function getStateMarketFees(stateCode: string): Promise<StateMarket
 
   const byCity = new Map<string, { ids: Set<number> }>();
   for (const r of branchRows) {
-    const city = String(r.city);
+    const city = cityOf.get(String(r.city)) ?? String(r.city);
     const entry = byCity.get(city) ?? { ids: new Set<number>() };
     if (r.institution_id != null) entry.ids.add(num(r.institution_id));
     byCity.set(city, entry);

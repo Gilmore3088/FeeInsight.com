@@ -1,5 +1,6 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { cityHasBranches, fullCityForCut } from "@/lib/data-store";
+import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
 import { cityPath, dottedCityName, loadCityInstitutions, titleCase } from "./city-lookup";
 
 /**
@@ -13,6 +14,10 @@ import { cityPath, dottedCityName, loadCityInstitutions, titleCase } from "./cit
  *   more goes to the full name its institutions moved to (#1213);
  * - an address that dropped the period of a short word ("st-louis") goes to the stored
  *   spelling ("st.%20louis") (#1267).
+ *
+ * A second spelling of a city the state directory folds into one ("saint petersburg" beside
+ * "st. petersburg", `src/lib/geo/city-names.ts`) redirects permanently to the spelling the
+ * directory links to, so one market has one address. The check reads the directory's cached list.
  */
 export default async function CityLayout({
   children,
@@ -24,6 +29,10 @@ export default async function CityLayout({
   const { state, city } = await params;
   const stateCode = state.toUpperCase();
   const cityName = titleCase(city);
+  const asked = cityName.toUpperCase();
+  const directory = await getStateMarketCitiesCached(stateCode).catch(() => []);
+  const folded = directory.find((c) => c.city !== asked && c.spellings.includes(asked));
+  if (folded) permanentRedirect(cityPath(state, folded.city));
   const institutions = await loadCityInstitutions(cityName, stateCode);
   // A city is a market when a bank or credit union has a branch there, wherever it is headquartered.
   if (institutions.length === 0 && !(await cityHasBranches(cityName, stateCode))) {
