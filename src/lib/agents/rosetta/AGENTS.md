@@ -191,6 +191,31 @@ Rosetta owns source text normalization.
     bytes (below); their transcription replaces the stored text only when it lists at
     least as many fees with an amount, otherwise the attempt is `low_yield` and the
     earlier text stays.
+    Paid response policy v2 accepts ordinary end-turn text and usable `max_tokens` or
+    `model_context_window_exceeded` fragments under those same content/yield checks. The
+    latter are explicitly `ok_partial`; a completed stored text means a usable artifact,
+    not an exhaustive PDF transcription. Refusal, paused/tool work, unconfigured stop
+    sequences, absent/unknown stop reasons and unexpected tool/result blocks settle as
+    `rejected` before text/profile/table writes. No semantic continuation or retry is added
+    for those native response reasons.
+    Attempts bind the selected source hash, produced text hash and separately retained
+    text hash when a better prior text stays. This scoped version bump does not reopen
+    settled attempts on the same bytes.
+    Paid detail and narration show known cost estimates plus a count of returned replies
+    whose estimate is unavailable. Missing/malformed totals and unpriced models stay
+    unknown, while observed zero remains zero. Unknown-cost attempt columns use an
+    explicitly marked zero placeholder excluded from playbook cost statistics; those
+    replies are therefore absent from that strategy's learned mean. Usage ledger cost is
+    NULL. Pre-call budget denials are not unknown returned responses. Generic paid tools,
+    no-return transport uncertainty and the existing incurred-spend predicate stay unchanged.
+    The provider receipt and paid attempt remain outside the artifact write group
+    (#1050/#1048). With witness schema ready, main's shared transaction/savepoint makes
+    artifact/table/profile and witness writes atomic; without it, the legacy fallback
+    can still leave partial subwrites. A successfully committed usage receipt survives
+    a later artifact-write failure, but that error can prevent the normal paid
+    result/attempt/summary. A first text-write failure retains earlier text and can leave
+    later paid selection eligible. This policy adds no atomic provider/artifact/attempt
+    settlement or global no-retry guarantee.
   - Fees that hold up (`text-survival.ts`, learning plan steps 1 to 4). At most once per
     `TEXT_SURVIVAL_REFRESH_HOURS` (20) the read step judges each document's current
     completed text by the published fees Knox pulled from it since that text first
@@ -310,7 +335,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BATCH_REVIEW_VERSION` | — | v1 | `rosetta/batch-review.ts` |
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
-| `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
+| `ROSETTA_PAID_READ_VERSION` | — | v2 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
 | `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
 | `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |

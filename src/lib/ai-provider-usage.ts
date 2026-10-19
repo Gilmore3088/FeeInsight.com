@@ -30,6 +30,16 @@ export interface ProviderUsage {
   webSearchRequests?: number;
 }
 
+/** Opt-in caller contract; a usable source fragment need not be a complete generation. */
+export interface AnthropicResponseAssessment {
+  accepted: boolean;
+  complete: boolean;
+  reason: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type AnthropicResponsePolicy<T> = (response: T) => AnthropicResponseAssessment;
+
 /** Missing SDK totals are unknown; do not turn mapper defaults into observed zero. */
 export function observedProviderUsage(value: unknown): ProviderUsage | undefined {
   if (!value || typeof value !== "object") return undefined;
@@ -241,7 +251,7 @@ export async function recordProviderUsage(
   context: ProviderCallContext,
   status: ProviderStatus,
   usage: ProviderUsage = {},
-  options: { latencyMs?: number; error?: string; usageObservation?: "observed" | "unknown" } = {},
+  options: { latencyMs?: number; error?: string; usageObservation?: "observed" | "unknown"; responseComplete?: boolean } = {},
 ): Promise<void> {
   // Failed provenance comes only from validated recording options, never annotations.
   const observed = options.usageObservation === "observed" ? observedProviderUsage(usage) : undefined;
@@ -271,7 +281,7 @@ export async function recordProviderUsage(
            ...(context.metadata ?? {}),
            ...(usageObservation ? {
              usage_observation: usageObservation,
-             response_complete: status === "completed",
+             response_complete: options.responseComplete ?? status === "completed",
              token_counts_are_placeholders: usageObservation === "unknown",
            } : {}),
            route_id: context.routeId ?? null,
@@ -336,18 +346,35 @@ export async function guardProviderCall(
 export async function trackAnthropicRequest<T>(
   context: Omit<ProviderCallContext, "provider">,
   request: () => PromiseLike<T>,
+  responsePolicy?: AnthropicResponsePolicy<T>,
 ): Promise<T> {
   const fullContext: ProviderCallContext = { ...context, provider: "anthropic" };
   const startedAt = await guardProviderCall(fullContext);
 
   try {
     const response = await request();
-    const usage = (response as { usage?: AnthropicUsageShape }).usage;
+    const assessment = responsePolicy?.(response);
+    const usage = responsePolicy ? (response as { usage?: AnthropicUsageShape } | null)?.usage
+      : (response as { usage?: AnthropicUsageShape }).usage;
+    if (assessment) {
+      fullContext.metadata = {
+        ...(fullContext.metadata ?? {}),
+        ...(assessment.metadata ?? {}),
+        provider_finish_reason: assessment.reason,
+      };
+      if (!assessment.accepted) {
+        throw new IncompleteProviderResponseError(assessment.reason, observedProviderUsage(usage));
+      }
+    }
+    const observed = assessment ? observedProviderUsage(usage) : undefined;
     await recordProviderUsage(
       fullContext,
       "completed",
-      normalizeUsage(usage),
-      { latencyMs: Date.now() - startedAt },
+      assessment ? observed ?? {} : normalizeUsage(usage),
+      {
+        latencyMs: Date.now() - startedAt,
+        ...(assessment ? { usageObservation: observed ? "observed" as const : "unknown" as const, responseComplete: assessment.complete } : {}),
+      },
     );
     return response;
   } catch (error) {

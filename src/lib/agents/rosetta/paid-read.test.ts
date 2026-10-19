@@ -1,13 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 
-const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>) => request());
+const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>, policy?: PaidResponsePolicy) => {
+  const response = await request() as Parameters<PaidResponsePolicy>[0];
+  const assessment = policy?.(response);
+  if (assessment && !assessment.accepted) throw new IncompleteProviderResponseError(assessment.reason, observedProviderUsage(response.usage));
+  return response;
+});
 vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/ai-provider-usage")>()),
-  trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>) => trackAnthropicRequest(context, request),
+  trackAnthropicRequest: (context: unknown, request: () => PromiseLike<unknown>, policy?: PaidResponsePolicy) => trackAnthropicRequest(context, request, policy),
 }));
 
-import { ProviderBudgetBlockedError } from "@/lib/ai-provider-usage";
-import { PAID_PASS_MODELS } from "@/lib/agents/paid-pass";
+import { ProviderBudgetBlockedError, observedProviderUsage } from "@/lib/ai-provider-usage";
+import { IncompleteProviderResponseError } from "@/lib/ai-response-budget";
+import { PAID_PASS_MODELS, type PaidResponsePolicy } from "@/lib/agents/paid-pass";
 
 import { PAID_READ_PROMPT, runRosettaPaidRead } from "./paid-read";
 
@@ -68,7 +74,7 @@ describe("Rosetta paid read (pass 3)", () => {
       source: { type: "base64", media_type: "application/pdf", data: Buffer.from(pdfBytes).toString("base64") },
     });
     expect(params.messages[0].content[1]).toEqual({ type: "text", text: PAID_READ_PROMPT });
-    expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "rosetta", operation: "paid_read", agentRunId: 900 }), expect.any(Function));
+    expect(trackAnthropicRequest).toHaveBeenCalledWith(expect.objectContaining({ agent: "rosetta", operation: "paid_read", agentRunId: 900 }), expect.any(Function), expect.any(Function));
 
     const insert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO agent_source_texts"));
     expect(insert).toEqual(expect.arrayContaining([900, 1, 41, "completed", transcription]));
@@ -141,7 +147,7 @@ describe("Rosetta paid read (pass 3)", () => {
 
     const result = await runRosettaPaidRead({ runId: 901, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter: async () => 2 });
 
-    expect(result).toMatchObject({ selected: 2, processed: 0, budgetStopped: true, budgetReason: "Rosetta monthly cap reached", costMicrousd: 0 });
+    expect(result).toMatchObject({ selected: 2, processed: 0, budgetStopped: true, budgetReason: "Rosetta monthly cap reached", costMicrousd: 0, unknownCostResponses: 0 });
     expect(create).not.toHaveBeenCalled();
     expect(attempts(db)).toEqual([]);
   });

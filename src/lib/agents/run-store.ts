@@ -652,6 +652,10 @@ async function executeAgenticStep(
         db: tx,
       });
       const dollars = (paid.costMicrousd / 1_000_000).toFixed(2);
+      const unknownCosts = paid.unknownCostResponses ?? 0;
+      const costSummary = unknownCosts > 0
+        ? `$${dollars} in known estimates; cost unavailable for ${unknownCosts.toLocaleString()} returned response${unknownCosts === 1 ? "" : "s"}`
+        : `$${dollars}`;
       // A pass switched off because its verdicts could not act (#1111) says so.
       const skipped = paid.results.flatMap((entry) => (typeof entry.skipped === "string" ? [`${entry.pass}: ${entry.skipped}`] : []));
       return {
@@ -660,7 +664,7 @@ async function executeAgenticStep(
           ? `Paid pass skipped: ${paid.budgetReason ?? "budget cap"}.`
           : paid.processed === 0 && skipped.length > 0
             ? `Paid pass skipped, $0 spent (${skipped.join("; ")}).`
-            : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for $${dollars}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
+            : `Paid pass: ${paid.succeeded.toLocaleString()} of ${paid.processed.toLocaleString()} succeeded for ${costSummary}${paid.budgetStopped ? `; then stopped: ${(paid.budgetReason ?? "a budget cap (which cap was not recorded)").replace(/\.$/, "")}` : ""}.`,
         detail: {
           selected: paid.selected,
           processed: paid.processed,
@@ -669,6 +673,7 @@ async function executeAgenticStep(
           budget_stopped: paid.budgetStopped,
           budget_reason: paid.budgetReason,
           cost_microusd: paid.costMicrousd,
+          ...(paid.unknownCostResponses !== undefined ? { unknown_cost_responses: unknownCosts, known_cost_subtotal_microusd: paid.costMicrousd } : {}),
           dry_run: paid.dryRun,
           sample_results: paid.results.slice(0, 10),
           // Every work-list entry, which the 10-entry sample usually cuts (#1269).
