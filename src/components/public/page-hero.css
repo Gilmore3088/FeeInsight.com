@@ -16,6 +16,7 @@
     clip-path: ellipse(160% 100% at 28% 0%);
   }
 }
+/* Printers drop backgrounds by default, which would leave the white text on white paper. */
 @media print {
-  .fi-page-hero::before { clip-path: none; }
+  .fi-page-hero::before { clip-path: none; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
