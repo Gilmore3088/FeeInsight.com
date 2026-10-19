@@ -32,6 +32,20 @@ beforeEach(() => {
 });
 
 describe("listData", () => {
+  it.each([
+    ["staffing", ["call:acct_564a"]],
+    ["funding", ["call:acct_380"]],
+    ["checking", ["call:acct_452", "call:acct_902"]],
+    ["savings", ["call:acct_657"]],
+  ])("discovers NCUA lines from the customer term %s", async (query, expected) => {
+    vi.mocked(getAreaSeries).mockResolvedValue([]);
+    vi.mocked(getNcuaCallSeries).mockResolvedValue(NCUA_CALL_MEASURES.map((m) => ({ ...m,
+      periodMin: "2023-03-31", periodMax: "2026-06-30", sourceUrl: "https://ncua.gov/quarter.zip", fetchedAt: null,
+    })));
+    const result = await listDataCatalog({ query });
+    expect(result.call_measures?.filter((m) => m.measure.startsWith("call:acct_")).map((m) => m.measure).sort()).toEqual(expected.sort());
+  });
+
   it("lets a CU question discover real keys, period basis and caveats before querying them", async () => {
     vi.mocked(getAreaSeries).mockResolvedValue([]);
     vi.mocked(getNcuaCallSeries).mockResolvedValue(NCUA_CALL_MEASURES.map((m) => ({ ...m,

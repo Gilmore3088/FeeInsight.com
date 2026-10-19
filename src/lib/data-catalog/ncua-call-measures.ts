@@ -36,13 +36,13 @@ export const NCUA_CALL_MEASURES: readonly NcuaCallMeasure[] = [
   },
   {
     key: "acct_564a", code: "ACCT_564A", name: "Full-time employees",
-    description: "Number of credit union employees working 26 hours or more per week.",
+    description: "Credit union staffing: number of employees working 26 hours or more per week.",
     storedUnit: "count", unit: "count", periodBasis: "point_in_time",
     caveat: "Quarter-end employee headcount under NCUA's 26-hour threshold, not full-time equivalents (FTEs).",
   },
   {
     key: "acct_380", code: "ACCT_380", name: "Dividends on shares",
-    description: "Year-to-date dividend expense on all classes of credit union shares.",
+    description: "Member share funding cost: year-to-date dividend expense on all classes of credit union shares.",
     storedUnit: "dollars", unit: "USD", periodBasis: "ytd",
     caveat: "Year-to-date funding expense, not fee income, a dividend rate or a standalone quarter. Do not annualize it.",
   },
