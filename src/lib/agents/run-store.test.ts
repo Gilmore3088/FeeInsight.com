@@ -1554,6 +1554,31 @@ describe("agentic run store", () => {
     expect(combinedSql).toContain("SET status = 'failed'");
     expect(combinedSql).toContain("SET status = 'cancelled'");
   });
+
+  it("records the deploy on a reaper death, as a step failure does (#2014)", async () => {
+    const previous = process.env.VERCEL_GIT_COMMIT_SHA;
+    process.env.VERCEL_GIT_COMMIT_SHA = "deploy-2014";
+    try {
+      sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("AS prior_reaps")) {
+          return Promise.resolve([{ id: 9, agent_run_id: 242, step_key: "publish", prior_reaps: 2 }]);
+        }
+        return Promise.resolve([]);
+      });
+      txMock.mockResolvedValue([]);
+
+      await reapStaleAgentSteps({ maxAttempts: 3 });
+
+      const deadCall = txMock.mock.calls.find((call) => (call[0] as string[]).join("?").includes("'step.dead'"));
+      expect(deadCall).toBeDefined();
+      const detail = JSON.parse(String(deadCall!.at(-1)));
+      expect(detail).toMatchObject({ step_key: "publish", attempts: 3, reaper: true, deploy: "deploy-2014" });
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
+      else process.env.VERCEL_GIT_COMMIT_SHA = previous;
+    }
+  });
 });
 
 describe("recordProRequest", () => {
