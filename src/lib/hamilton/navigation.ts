@@ -69,26 +69,29 @@ export function isWorkspaceNavActive(pathname: string | null, item: { label: str
 
 /**
  * The sub-tabs of the two areas that hold two pages (#2044). The institution tab is named for the
- * institution being researched, so the reader sees whose fees it shows.
+ * institution being researched, so the reader sees whose fees it shows. `current` marks the tab the
+ * reader is on: the monthly briefing (`/pro/intelligence?view=institution`) is the institution's page.
  */
-export function workspaceSubnav(pathname: string | null, institutionName: string | null): { label: string; href: string }[] | null {
+export function workspaceSubnav(pathname: string | null, institutionName: string | null, view: string | null = null): { ariaLabel: string; tabs: { label: string; href: string; current: boolean }[] } | null {
   if (!pathname) return null;
   if (under(pathname, ["/pro/intelligence", "/pro/research"])) {
-    return [
-      { label: "Market", href: `${HAMILTON_BASE}/intelligence` },
-      { label: institutionName ? `${institutionName} fees` : "Institution fees", href: `${HAMILTON_BASE}/research` },
-    ];
+    const onInstitution = under(pathname, ["/pro/research"]) || view === "institution";
+    return { ariaLabel: "Research pages", tabs: [
+      { label: "Market", href: `${HAMILTON_BASE}/intelligence`, current: !onInstitution },
+      { label: institutionName ? `${institutionName} fees` : "Institution fees", href: `${HAMILTON_BASE}/research`, current: onInstitution },
+    ] };
   }
   if (under(pathname, TRY_A_PRICE_PATHS)) {
-    return [
-      { label: "Try a price", href: `${HAMILTON_BASE}/simulate` },
-      { label: "Saved analyses", href: `${HAMILTON_BASE}/saved` },
-    ];
+    const onSaved = under(pathname, ["/pro/saved"]);
+    return { ariaLabel: "Try a price pages", tabs: [
+      { label: "Try a price", href: `${HAMILTON_BASE}/simulate`, current: !onSaved },
+      { label: "Saved analyses", href: `${HAMILTON_BASE}/saved`, current: onSaved },
+    ] };
   }
   return null;
 }
 
-/** Account menu: the bank and its data, and what changed, outside the four tabs. */
+/** Account menu: the bank and its data, and what changed, outside the workspace areas. */
 export const HAMILTON_ACCOUNT_NAV = [
   { label: "My bank and data", href: `${HAMILTON_BASE}/settings` },
   { label: "Alerts and watches", href: `${HAMILTON_BASE}/monitor`  },

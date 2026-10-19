@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
+import { Activity, Calculator, ChartNoAxesColumnIncreasing, FileText, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
 import { HAMILTON_ALERTS_NAV, HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive, workspaceSubnav } from "@/lib/hamilton/navigation";
 import { NavAccount } from "@/components/nav-account";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
@@ -12,7 +12,7 @@ import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
 import { useHamiltonNavigationHref } from "./hamilton-navigation-context";
 
-const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, MessageCircle, Search, Settings };
+const icons = { Activity, Calculator, ChartNoAxesColumnIncreasing, FileText, MessageCircle, Search, Settings };
 
 /**
  * The workspace's left navigation and institution bar, from #1011 (James's Oct 11 unified
@@ -98,10 +98,11 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
 /** The two pages of Research, or of Try a price, as tabs above the content (#2044). */
 function WorkspaceSubnav({ pathname, institutionName }: { pathname: string; institutionName: string | null }) {
   const hrefFor = useHamiltonNavigationHref();
-  const tabs = workspaceSubnav(pathname, institutionName);
-  if (!tabs) return null;
-  return <nav aria-label="Section" className="workspace-subnav print:hidden">
-    {tabs.map(tab => <Link key={tab.href} href={hrefFor(tab.href)} aria-current={pathname === tab.href ? "page" : undefined}>{tab.label}</Link>)}
+  const params = useSearchParams();
+  const subnav = workspaceSubnav(pathname, institutionName, params?.get("view") ?? null);
+  if (!subnav) return null;
+  return <nav aria-label={subnav.ariaLabel} className="workspace-subnav print:hidden">
+    {subnav.tabs.map(tab => <Link key={tab.href} href={hrefFor(tab.href)} aria-current={tab.current ? "page" : undefined}>{tab.label}</Link>)}
   </nav>;
 }
 

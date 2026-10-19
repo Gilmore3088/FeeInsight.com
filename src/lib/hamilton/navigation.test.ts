@@ -196,12 +196,20 @@ describe("workspace left navigation: five areas (#2044, James's Oct 19 review)",
 
   it("names the institution tab for the institution being researched", async () => {
     const { workspaceSubnav } = await import("./navigation");
-    expect(workspaceSubnav("/pro/research", "Capital City Bank")).toEqual([
-      { label: "Market", href: "/pro/intelligence" },
-      { label: "Capital City Bank fees", href: "/pro/research" },
-    ]);
-    expect(workspaceSubnav("/pro/intelligence", null)?.[1].label).toBe("Institution fees");
-    expect(workspaceSubnav("/pro/saved", null)?.map(t => t.label)).toEqual(["Try a price", "Saved analyses"]);
+    expect(workspaceSubnav("/pro/research", "Capital City Bank")).toEqual({ ariaLabel: "Research pages", tabs: [
+      { label: "Market", href: "/pro/intelligence", current: false },
+      { label: "Capital City Bank fees", href: "/pro/research", current: true },
+    ] });
+    expect(workspaceSubnav("/pro/intelligence", null)?.tabs[1].label).toBe("Institution fees");
+    expect(workspaceSubnav("/pro/saved", null)?.tabs.map(t => [t.label, t.current])).toEqual([["Try a price", false], ["Saved analyses", true]]);
     expect(workspaceSubnav("/pro/analyze", "Capital City Bank")).toBeNull();
+  });
+
+  it("marks the institution tab current on its monthly briefing, and Try a price on its sub-pages", async () => {
+    const { workspaceSubnav } = await import("./navigation");
+    const current = (path: string, view: string | null = null) => workspaceSubnav(path, "Capital City Bank", view)?.tabs.filter(t => t.current).map(t => t.label);
+    expect(current("/pro/intelligence", "institution")).toEqual(["Capital City Bank fees"]);
+    expect(current("/pro/intelligence")).toEqual(["Market"]);
+    expect(current("/pro/simulate/plan")).toEqual(["Try a price"]);
   });
 });

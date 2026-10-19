@@ -37,7 +37,7 @@ describe("H01 retained Hamilton shell navigation", () => {
     expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pro/reports?instId=8109");
     // The institution's fees (/pro/research) are a Research sub-tab named for it (#2044).
     expect(nav.getByRole("link", { name: "Research" })).toHaveAttribute("aria-current", "page");
-    const section = within(screen.getByRole("navigation", { name: "Section" }));
+    const section = within(screen.getByRole("navigation", { name: "Research pages" }));
     expect(section.getByRole("link", { name: `${homeName} fees` })).toHaveAttribute("aria-current", "page");
     expect(section.getByRole("link", { name: `${homeName} fees` })).toHaveAttribute("href", "/pro/research?instId=8109");
     expect(section.getByRole("link", { name: "Market" })).toHaveAttribute("href", "/pro/intelligence?instId=8109");
