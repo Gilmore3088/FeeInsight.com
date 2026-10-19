@@ -42,6 +42,12 @@ function pendingInvitation(overrides: Record<string, unknown> = {}) {
   };
 }
 
+let emailConfirmed = true;
+
+function confirmCall() {
+  return mocks.tx.mock.calls.find((call) => (call[0] as string[]).join("?").includes("email_confirmed_at"));
+}
+
 const membership = {
   id: 51,
   institutionId: 2945,
@@ -56,6 +62,10 @@ describe("signed workspace invite links", () => {
     previousSecret = process.env.BFI_COOKIE_SECRET;
     process.env.BFI_COOKIE_SECRET = SECRET;
     vi.clearAllMocks();
+    emailConfirmed = true;
+    mocks.tx.mockImplementation(async (strings: TemplateStringsArray) =>
+      strings.join("?").includes("email_confirmed_at") ? [{ confirmed: emailConfirmed }] : [],
+    );
   });
 
   afterEach(() => {
@@ -133,6 +143,42 @@ describe("signed workspace invite links", () => {
     expect(result).toEqual({ status: "wrong_email", invitedEmail: "analyst@bank.com" });
     expect(mocks.accept).not.toHaveBeenCalled();
     expect(signedInviteMessage(result, "someone@else.com")).toContain("This invitation is for analyst@bank.com");
+  });
+
+  it("checks the account's own email is the invited one and confirmed", async () => {
+    mocks.getInvitation.mockResolvedValue(pendingInvitation());
+    mocks.accept.mockResolvedValue(membership);
+    await acceptSignedWorkspaceInvite({ invitationId: 91, token: signWorkspaceInviteToken(invite)!, user });
+    const call = confirmCall();
+    expect((call![0] as string[]).join("?")).toContain("WHERE id = ? AND lower(email) = ?");
+    expect(call!.slice(1)).toEqual([8, "analyst@bank.com"]);
+  });
+
+  it("rejects the invited email until it is confirmed (#2002)", async () => {
+    mocks.getInvitation.mockResolvedValue(pendingInvitation());
+    emailConfirmed = false;
+    const result = await acceptSignedWorkspaceInvite({
+      invitationId: 91,
+      token: signWorkspaceInviteToken(invite)!,
+      user,
+    });
+    expect(result).toEqual({ status: "email_unconfirmed", invitedEmail: "analyst@bank.com" });
+    expect(mocks.accept).not.toHaveBeenCalled();
+    expect(signedInviteMessage(result, "analyst@bank.com")).toBe(
+      "Confirm analyst@bank.com before you join. Open the confirmation link we emailed you, then open this invite link again.",
+    );
+  });
+
+  it("rejects when only the username matches the invited email", async () => {
+    mocks.getInvitation.mockResolvedValue(pendingInvitation());
+    mocks.tx.mockImplementation(async () => []);
+    const result = await acceptSignedWorkspaceInvite({
+      invitationId: 91,
+      token: signWorkspaceInviteToken(invite)!,
+      user: { ...user, email: null },
+    });
+    expect(result).toEqual({ status: "email_unconfirmed", invitedEmail: "analyst@bank.com" });
+    expect(mocks.accept).not.toHaveBeenCalled();
   });
 
   it("rejects an expired invite, whether marked expired or past its date", async () => {
