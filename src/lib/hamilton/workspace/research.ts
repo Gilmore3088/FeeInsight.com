@@ -976,7 +976,7 @@ async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: As
     const members = values.map((v) => {
       const limit = limits.get(v.institution_id);
       return {
-        ...toPeerValue(v),
+        ...toPeerValueWithRecords(v),
         totalAssets: v.total_assets,
         charterType: v.charter_type,
         dailyCap: caps.get(v.institution_id) ?? null,
