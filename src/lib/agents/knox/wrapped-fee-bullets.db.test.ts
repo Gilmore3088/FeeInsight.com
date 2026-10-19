@@ -68,9 +68,9 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       (institution_id,status,document_url,content_hash,content_type)
       VALUES (${base.institutionId},'success',${base.sourceUrl ?? 'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf'},${hash},'application/pdf') RETURNING id`;
     const [{ id: textId }] = await tx`INSERT INTO agent_source_texts
-      (agent_run_id,source_document_id,institution_id,source_url,document_type,content_type,status,normalized_text,text_hash,char_count)
+      (agent_run_id,source_document_id,institution_id,source_url,document_type,content_type,status,normalized_text,text_hash,char_count,source_hash)
       VALUES (${base.runId},${documentId},${base.institutionId},
-      ${base.sourceUrl ?? 'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf'},'text_pdf','application/pdf','completed',${text},${hash},${text.length}) RETURNING id`;
+      ${base.sourceUrl ?? 'https://www.schoolsfirstfcu.org/globalassets/pdf/disclosures/mk360-fees.pdf'},'text_pdf','application/pdf','completed',${text},${hash},${text.length},${hash}) RETURNING id`;
     return { ...base, documentId: Number(documentId), textId: Number(textId), text };
   }
   async function stages(tx: Db, fixture: Fixture) {
@@ -105,6 +105,8 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       const { readerFeeConditions } = await import("@/lib/fee-conditions");
       const unitRows = catalog.filter(row => expected.has(String(row.fee_name)));
       expect(unitRows).toHaveLength(7);
+      expect(unitRows.find(row => row.fee_name === "Check Images"))
+        .toMatchObject({ amount: 10, frequency: "per_statement", fee_audience: "consumer" });
       const keyRow = catalog.find(row => row.fee_name === "Replace Safe Deposit Box Key");
       expect(keyRow).toMatchObject({ amount: 50, frequency: "per_item", fee_category: "safe_deposit_box" });
       expect(readerFeeConditions(keyRow?.conditions)).toContain("$50.00 per key (Plus Locksmith Fee if unable to locate both keys)");
