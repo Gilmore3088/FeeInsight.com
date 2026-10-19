@@ -36,7 +36,7 @@ vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
 vi.mock("@/lib/hamilton/quota", () => ({ checkProAiQuota: async () => ({ allowed: true }), quotaExceededMessage: () => "quota" }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({ getUserInstitutionMemberships: async () => [] }));
 vi.mock("@/lib/hamilton/active-peer-set", () => ({ getActivePeerSet: async () => null }));
-vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefing: async () => "Fixture evidence." }));
+vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefingSnapshot: async () => ({ prompt: "Fixture evidence.", evidence: [] }) }));
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: async (id: number) => ({ id, institution_name: "Fixture institution" }) }));
 vi.mock("@/lib/research/history", () => ({ logUsage: mocks.log }));
 vi.mock("@/lib/analytics-server", () => ({ trackFirstHamiltonUse: async () => {} }));

@@ -627,6 +627,7 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
       scope: scope.kind,
       ...metadata,
       rows: rows.map((r) => ({
+        institution_id: Number(scope.id),
         period: r.period,
         value: r.value,
         unit: r.unit,
@@ -635,6 +636,8 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
         item_description: r.item_description,
         schedule: r.schedule,
         source: r.source,
+        source_url: r.source_url,
+        fetched_at: iso(r.fetched_at),
       })),
       unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
       citation: citation(rows, [...new Set(rows.map((r) => r.source))]),

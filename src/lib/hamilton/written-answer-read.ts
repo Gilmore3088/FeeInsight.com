@@ -18,15 +18,16 @@ import { cacheLatestMessage, cachedSystem, trackerUsage } from "@/lib/research/t
 import type { AnswerEvidenceCheck } from "./answer-gate";
 import { questionOnly, writtenAnswerCheck } from "./answer-save";
 import type { ActivePeerSet } from "./active-peer-set";
-import { buildHamiltonInstitutionBriefing } from "./institution-briefing";
+import { buildHamiltonInstitutionBriefingSnapshot, type HamiltonBriefingEvidence } from "./institution-briefing";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildHamiltonRequestContractPrompt, type HamiltonRequestContract } from "./request-contract";
+import { writtenAnswerStepSystemPrompt } from "./written-answer-evidence";
 
 export const WRITTEN_ANSWER_ROUTE_ID = "api.research.hamilton";
 const VALID_FOCUS = new Set(["Pricing", "Risk", "Peer Position", "Trend"]);
 
 export type WrittenAnswerPrompt =
-  | { status: "ok"; systemPrompt: string; focus: string }
+  | { status: "ok"; systemPrompt: string; focus: string; briefingEvidence: HamiltonBriefingEvidence[] }
   | { status: "institution_not_found" };
 
 /** The text of the reader's latest message, earlier turns' context included. */
@@ -55,19 +56,22 @@ export async function buildWrittenAnswerSystemPrompt(input: {
   const lastUserText = lastUserTextOf(messages);
 
   let systemPrompt = agent.systemPrompt;
+  const briefingEvidence: HamiltonBriefingEvidence[] = [];
   systemPrompt += buildHamiltonRequestContractPrompt(contract);
   systemPrompt += buildSavedPeerSetPrompt(peerSet);
 
   if (institutionId !== null) {
-    const selectedInstitutionContext = await buildHamiltonInstitutionBriefing(contract);
+    const selectedInstitutionContext = await buildHamiltonInstitutionBriefingSnapshot(contract, { writtenAnswer: true });
     if (!selectedInstitutionContext) return { status: "institution_not_found" };
-    systemPrompt += selectedInstitutionContext;
+    systemPrompt += selectedInstitutionContext.prompt;
+    briefingEvidence.push(...selectedInstitutionContext.evidence);
   }
   if (homeId && homeId !== institutionId && /\b(us|our|ours|we)\b/i.test(lastUserText)) {
-    const homeBriefing = await buildHamiltonInstitutionBriefing({ ...contract, institutionId: homeId }, { contextRole: "account_evidence" }).catch(() => null);
+    const homeBriefing = await buildHamiltonInstitutionBriefingSnapshot({ ...contract, institutionId: homeId }, { contextRole: "account_evidence", writtenAnswer: true }).catch(() => null);
     systemPrompt += homeBriefing
-      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
+      ? `\nACCOUNT INSTITUTION EVIDENCE (${homeId}). This is the account/home institution for comparisons with us; the research subject remains ${institutionId ?? "unselected"}.\n${homeBriefing.prompt}\nEND ACCOUNT INSTITUTION EVIDENCE.\n`
       : "\nAccount institution evidence could not be loaded. State that limitation; do not substitute research-subject or peer data for our institution.\n";
+    if (homeBriefing) briefingEvidence.push(...homeBriefing.evidence);
   }
 
   // Analyze mode: override output structure with structured analysis sections (ARCH-05)
@@ -109,7 +113,7 @@ export async function buildWrittenAnswerSystemPrompt(input: {
     }
   }
 
-  return { status: "ok", systemPrompt, focus };
+  return { status: "ok", systemPrompt, focus, briefingEvidence };
 }
 
 /** One tool result the answer was written from. */
@@ -173,7 +177,10 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
           model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
           system: cachedSystem(prompt.systemPrompt),
           messages: await convertToModelMessages(contract.messages),
-          prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+          prepareStep: ({ messages: stepMessages, steps }) => ({
+            messages: cacheLatestMessage(stepMessages),
+            system: cachedSystem(writtenAnswerStepSystemPrompt(prompt.systemPrompt, steps)),
+          }),
           tools: agent.tools,
           maxOutputTokens: agent.maxTokens,
           stopWhen: stepCountIs(agent.maxSteps),
@@ -187,7 +194,8 @@ export const writeWrittenAnswer: WrittenAnswerWriter = async ({ institutionId, i
     const text = (result.generated.text ?? "").trim();
     if (!text) return { status: "unavailable", reason: "Hamilton wrote no answer within its steps." };
     const toolResults = (result.generated.steps ?? []).flatMap((step) => step.toolResults.map((r) => ({ toolName: r.toolName, input: r.input, output: r.output })));
-    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question) };
+    return { status: "written", text, toolResults, check: writtenAnswerCheck(text, toolResults.map((r) => r.output), question,
+      { briefingEvidence: prompt.briefingEvidence, toolResults, institutionId }) };
   } catch (error) {
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
     const message = error instanceof Error ? error.message : String(error);

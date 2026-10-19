@@ -34,7 +34,7 @@ import {
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
 import { extractFigures, type NarrativeFigure } from "./figure-check";
-import { RECOMMENDATION } from "./workspace/four-roles";
+import { findUnrequestedAdvice } from "./workspace/four-roles";
 
 export const NARRATIVE_BINDING_VERSION = 1 as const;
 
@@ -232,7 +232,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       binding.omitted.push({ text, reason: "instruction_text" });
       continue;
     }
-    if (RECOMMENDATION.test(text.replace(/"[^"]*"/g, ""))) {
+    if (findUnrequestedAdvice(text.replace(/"[^"]*"/g, ""))) {
       binding.omitted.push({ text, reason: "advice" });
       continue;
     }

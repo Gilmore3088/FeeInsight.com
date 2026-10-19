@@ -110,3 +110,90 @@ describe("explicit monetary units and compacted evidence (#2274)",()=>{
     expect(checkNarrativeFigures("Deposit growth was $1.234 million.", { deposit_growth: 1234, unit: "thousands_dollars" }).unmatched).toEqual([]);
   });
 });
+
+describe("written NCUA answers use explicit financial derivations", () => {
+  const options = { explicitFinancialDerivations: true };
+  const filings = {
+    measure: "call:acct_131", scope: "institution", unit: "USD",
+    rows: [{ value: 57_261_959, period: "2026-06-30", source: "ncua", period_basis: "ytd" },
+      { value: 27_229_618, period: "2026-03-31", source: "ncua", period_basis: "ytd" }],
+  };
+
+  it("keeps observed NCUA values but requires a server-calculated candidate for a standalone quarter", () => {
+    expect(checkNarrativeFigures("The cumulative filings were $57.26 million and $27.23 million.", filings, options).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The quarter was $30.03 million.", filings, options).unmatched).toEqual(["$30.03 million"]);
+    // Existing non-written consumers retain their historical numerical check.
+    expect(checkNarrativeFigures("The quarter was $30.03 million.", filings).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The quarter was $30.03 million.", { filings, validated_calculations: [{ value: 30_032_341, unit: "USD", source: "ncua", operation: "ytd_to_quarter" }] }, options).unmatched).toEqual([]);
+  });
+
+  it("does not combine different NCUA subjects, dates or metrics into a matching subtraction or percentage", () => {
+    const data = { facts: [{ institution_id: 1, value: 120, unit: "USD", source: "ncua", metric: "income" },
+      { institution_id: 2, value: 80, unit: "USD", source: "ncua", metric: "balance" }] };
+    expect(checkNarrativeFigures("The income was $120, a $40 gain and 50% growth.", data, options).unmatched).toEqual(["$40", "50%"]);
+  });
+
+  it("never derives quarterly peer income by subtracting separate NCUA medians", () => {
+    const data = { measure: "call:acct_131", scope: "peer_set", rows: [{ median: 80, unit: "USD", sources: "ncua" }, { median: 30, unit: "USD", sources: "ncua" }] };
+    expect(checkNarrativeFigures("The reported median was $80. Quarterly peer income was $50, up 166.7%.", data, options).unmatched).toEqual(["$50", "166.7%"]);
+  });
+
+  it("does not re-derive additional arithmetic from validated calculation values", () => {
+    const data = { validated_calculations: [{ value: 30_032_341, unit: "USD", source: "ncua" }, { value: 796_408, unit: "USD", source: "ncua" }] };
+    expect(checkNarrativeFigures("The values were $30.03 million and $796,408, implying $29.24 million.", data, options).unmatched).toEqual(["$29.24 million"]);
+  });
+
+  it("honors direct-only wrappers through nested and compacted JSON without rejecting the observed amounts", () => {
+    const data = { numeric_arithmetic_allowed: false, nested: JSON.stringify({ rows: [{ value: 100, unit: "USD" }, { value: 30, unit: "USD" }] }) };
+    expect(checkNarrativeFigures("The figures were $100 and $30; the gap was $70.", data, options).unmatched).toEqual(["$70"]);
+  });
+
+  it("preserves ordinary fee comparison arithmetic alongside NCUA evidence", () => {
+    const data = { filings, fees: { period_basis: "fee_schedule", source: "ncua", institution_amount: 35, peer_median: 30 } };
+    expect(checkNarrativeFigures("The $35 price is $5 or 16.7% above the $30 median.", data, options).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The maintenance fee is $35 per account.", data, options).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The price is $27,229,583 lower.", data, options).unmatched).toEqual(["$27,229,583"]);
+  });
+
+  it.each(["fdic", "ffiec"])("leaves %s arithmetic unchanged in the first bounded NCUA release", (source) => {
+    const data = { source, rows: [{ value: 100, unit: "USD" }, { value: 80, unit: "USD" }] };
+    expect(checkNarrativeFigures("The $20 increase was 25%.", data, options).unmatched).toEqual([]);
+  });
+
+  it("accepts an explicitly validated percentage as a percentage without multiplying it again", () => {
+    const data = { source: "ncua", validated_calculations: [{ value: 2.724072462, unit: "percent" }] };
+    expect(checkNarrativeFigures("Quarterly income increased 2.7%.", data, options).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Quarterly income increased 272.4%.", data, options).unmatched).toEqual(["272.4%"]);
+  });
+});
+
+describe("derived dollar ratios retain their denominator", () => {
+  const data = { validated_calculations: [{ value: 2497.471532, unit: "USD", denominator_unit: "account", source: "ncua", operation: "ratio" }] };
+  const options = { explicitFinancialDerivations: true };
+
+  it.each([
+    "The balance was $2,497 per account.",
+    "The balance was $2,497 per checking account.",
+    "The balance was $2,497/share-draft account.",
+    "The per-account balance was $2,497.",
+    "The balance was **$2,497** per account.",
+  ])("matches the explicit per-account quantity: %s", (text) => {
+    expect(checkNarrativeFigures(text, data, options).unmatched).toEqual([]);
+  });
+
+  it.each([
+    "Fee income was $2,497.",
+    "The fee price was $2,497.",
+    "The balance was $2,497 per employee.",
+    "The balance was $2,497 per member.",
+    "Accounts grew. Fee income was $2,497.",
+  ])("does not use a ratio to substantiate another quantity: %s", (text) => {
+    expect(checkNarrativeFigures(text, data, options).unmatched).toEqual(["$2,497"]);
+  });
+
+  it("does not label a total balance as a per-account amount or mix total/ratio arithmetic", () => {
+    const totals = { facts: [{ value: 2497.471532, unit: "USD", source: "ncua" }] };
+    expect(checkNarrativeFigures("The balance was $2,497 per account.", totals, options).unmatched).toEqual(["$2,497"]);
+    expect(checkNarrativeFigures("The gap was $2,487.", { ...data, price: { amount: 10, unit: "USD" } }, options).unmatched).toEqual(["$2,487"]);
+  });
+});
