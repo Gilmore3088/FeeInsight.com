@@ -147,19 +147,40 @@ export async function setInstitutionWebsiteUrl(
   }
 }
 
+/**
+ * A bank a person marks offline is forgotten by its profile too (#1884). Magellan's fetch picks
+ * candidates by `canonical_source_url` and skips only `source_kind = 'offline'`, so clearing
+ * `fee_schedule_url` alone left it fetching the old remembered page. As with a person's fee link,
+ * this wins over a locked correction: it is the newer word.
+ */
+async function forgetOfflineSource(tx: typeof sql, institutionId: number): Promise<void> {
+  await tx`
+    UPDATE institution_source_profiles
+       SET canonical_source_url = NULL,
+           source_kind = 'offline',
+           read_strategy = 'manual_review',
+           updated_at = NOW()
+     WHERE institution_id = ${institutionId}
+  `;
+}
+
 export async function markInstitutionOfflineCommand(
   institutionId: number,
 ): Promise<InstitutionCommandResult> {
   await requireAuth("edit");
   try {
     validateInstitutionId(institutionId);
-    const rows = await sql`
-      UPDATE institution_sources
-         SET fee_schedule_url = NULL,
-             document_type = 'offline'
-       WHERE id = ${institutionId}
-       RETURNING state_code
-    `;
+    const rows = await withTransaction(async (tx) => {
+      const updated = await tx`
+        UPDATE institution_sources
+           SET fee_schedule_url = NULL,
+               document_type = 'offline'
+         WHERE id = ${institutionId}
+         RETURNING state_code
+      `;
+      if (updated.length > 0) await forgetOfflineSource(tx, institutionId);
+      return updated;
+    });
     if (rows.length === 0) return { success: false, error: "Institution not found" };
     revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
     return { success: true };
