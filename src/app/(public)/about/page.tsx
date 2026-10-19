@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
+import { PAGE_HERO_WRAP } from "@/components/public/page-hero";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
@@ -36,7 +37,7 @@ export default async function AboutPage() {
   return (
     <div className="bg-paper">
       <AboutHero />
-      <div className="mx-auto max-w-page space-y-12 px-4 py-10 sm:px-6 sm:py-14">
+      <div className={`${PAGE_HERO_WRAP} space-y-12 py-10 sm:py-14`}>
         <AboutProducts />
         <AboutEvidence />
         <AboutFounder email={CONTACT_EMAIL} />
