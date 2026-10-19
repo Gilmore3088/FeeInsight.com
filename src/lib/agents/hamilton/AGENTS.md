@@ -624,6 +624,30 @@ to the same normalized unstated value, never a wildcard. An equivalent live twin
 restoration. Percentage fees have no dollar amount, so the existing planner does not select
 them for retirement or restoration; rate comparisons are defensive identity boundaries.
 
+An otherwise equivalent twin held as `account_type_hold:%` also counts as present (#1674),
+as in the cross-page and business-schedule restores. One controlled SQL fragment supplies
+the complete identity and presence predicate to both selection and the final restoration
+UPDATE. Source-stated rows still count in schedule recognition; a known twin instead
+excludes them from the restoration proposal, with `existing_twin` or
+`account_type_hold_twin` recorded as the reason. Other closure reasons and distinct
+audience/frequency/variant/price/rate identities do not block a legitimate restore.
+
+`proposedRestores` counts eligible proposals; `blockedRestores` and `restoreBlockReasons`
+count source-stated retired rows excluded during planning. `restored` counts only actual
+UPDATE RETURNING rows and is zero in dry-run/shadow results; preview wording uses proposals.
+`notUpdatedRestores` counts eligible proposals skipped by the final selected-state/twin guard,
+including a held twin committed after selection. It does not claim which guard changed.
+Attempts and events retain these separate numbers, and only actually restored lineage is
+re-verified or queued for its source check. Dry runs write nothing. The read-only Oct 19
+08:47 UTC impact snapshot found zero retired rows with a same-identity account-type-held twin;
+it is a dated candidate count, not a source verdict or recovery receipt.
+
+A failed mutation savepoint returns `writeFailed` and `failedRestores` separately from
+guard no-ops, with actual restored count zero. The parent publish receipt carries the failure
+flag/count and says the restoration proposals remain pending. Neither a pair decision nor a
+restored lineage/source-check receipt survives rollback; the normal next check can retry the
+still-pending pair. This adds no retry subsystem or historical replay.
+
 These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
 can retire more. Bayes records the explicit no-replay policy in

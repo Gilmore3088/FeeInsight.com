@@ -331,6 +331,8 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
   // Previously settled pairs require a separately reviewed impact/official-source decision.
+  // #1674 also treats an exact account-type-held twin as present in planning/final restore;
+  // it prevents future hold bypasses without reopening any settled v1 pair.
   NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
   // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
   // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
