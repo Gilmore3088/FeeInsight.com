@@ -62,3 +62,8 @@ Relates to #1945 and #1911; their broader same-account/new-edition provenance wo
 **Lesson.** A publication hold is continuing intent, not evidence that a fee disappeared. Share
 the exact blocker identity between previews and mutation, then report actual UPDATE RETURNING
 rows separately from planned or blocked work.
+
+**Guard:** `src/lib/agents/hamilton/newer-copy-retire.db.test.ts` exercises held/live twins,
+identity boundaries, final-guard no-ops and real savepoint rollback/retry;
+`src/lib/agents/hamilton/newer-copy-retire.test.ts` checks pure planning and parent receipt
+wording; `src/lib/agents/run-store.test.ts` covers the parent publish runtime.
