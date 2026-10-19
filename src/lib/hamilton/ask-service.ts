@@ -498,13 +498,14 @@ export async function resolveAskIntent(
 ): Promise<ResolvedAsk> {
   let intent = parseAsk(question, fallbackFee);
   // "Where do we stand on every fee?" is answered outright: an overview of every fee,
-  // then the fee furthest from its peer median in detail.
+  // then the fee furthest from its peer median in detail. A list of one fee's peers is only
+  // for a fee the reader named, so "list all our fees vs peers" keeps the overview (#2033).
   const schedule = !intent.feeCategory ? await scheduleFor(institutionId, question, peers, subjectName) : null;
-  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top };
+  if (schedule?.top) intent = { ...intent, feeCategory: schedule.top, list: false };
   // "Why is our fee income lower than peers?" leads with what price explains of the gap, then
   // answers in full for the fee furthest from its median when the question named none.
   const why = await incomeWhyFor(institutionId, question, peers, subjectName);
-  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top };
+  if (!intent.feeCategory && why?.top) intent = { ...intent, feeCategory: why.top, list: false };
   return { intent, schedule, why };
 }
 

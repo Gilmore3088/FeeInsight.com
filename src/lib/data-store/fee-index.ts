@@ -1381,18 +1381,22 @@ export interface PeerGroupMember {
   state_code: string | null;
   /** Thousands of dollars. */
   total_assets: number | null;
-  /** Whether the index holds any approved fee from its schedule, so a missing fee can say which. */
+  /** Whether the index counts any fee from its schedule, so a missing fee can say which. */
   has_schedule: boolean;
+  /** Whether the index holds an approved row for the fee that the peer figures do not count (business-only, unsourced). */
+  has_uncounted_fee: boolean;
 }
 
 /**
- * Every active institution a peer group's filters take in, largest first, so a peer list can
- * name the peers that publish no value for the fee as well as those that do. `total` counts all
- * of them; `members` stops at `limit`. The asking institution is left out, as it is of its peers.
+ * Every institution a peer group's filters take in, largest first, so a peer list can name the
+ * peers that publish no value for the fee as well as those that do. An inactive institution is
+ * in only when the peer figures count its fee, as getPeerFeeValues does, so the two reads agree.
+ * `total` counts all of them; `members` stops at `limit`. The asking institution is left out.
  */
 export async function getPeerGroupMembers(
   filters: PeerFilterSet,
   excludeInstitutionId: number,
+  feeCategory: string,
   limit = 200,
 ): Promise<{ total: number; members: PeerGroupMember[] }> {
   const ids = peerInstitutionIds(filters);
@@ -1405,13 +1409,16 @@ export async function getPeerGroupMembers(
     ids ? null : filters.asset_tiers?.length ? filters.asset_tiers : null,
     ids ? null : filters.fed_districts?.length ? filters.fed_districts : null,
     limit,
+    feeCategory,
   ];
+  const counted = `EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = $9 AND ef.review_status = 'approved' AND ${STATS_ROW_FILTER})`;
   const rows = (await sql.unsafe(
     `SELECT ct.id, ct.institution_name, ct.state_code, ct.asset_size,
-            EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.review_status = 'approved') AS has_schedule,
+            EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.review_status = 'approved' AND ${STATS_ROW_FILTER}) AS has_schedule,
+            EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = $9 AND ef.review_status = 'approved') AS has_uncounted_fee,
             COUNT(*) OVER ()::int AS total
        FROM institution_sources ct
-      WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'
+      WHERE (COALESCE(ct.regulatory_status, 'active') <> 'inactive' OR ${counted})
         AND ct.id <> $1::int
         AND ($2::int[] IS NULL OR ct.id = ANY($2::int[]))
         AND ($3::text IS NULL OR ct.charter_type = $3)
@@ -1422,7 +1429,7 @@ export async function getPeerGroupMembers(
       ORDER BY ct.asset_size DESC NULLS LAST, ct.id
       LIMIT $8::int`,
     params as never[],
-  )) as { id: number | string; institution_name: string; state_code: string | null; asset_size: number | string | null; has_schedule: boolean; total: number }[];
+  )) as { id: number | string; institution_name: string; state_code: string | null; asset_size: number | string | null; has_schedule: boolean; has_uncounted_fee: boolean; total: number }[];
   return {
     total: Number(rows[0]?.total ?? 0),
     members: rows.map((r) => ({
@@ -1431,6 +1438,8 @@ export async function getPeerGroupMembers(
       state_code: r.state_code ?? null,
       total_assets: r.asset_size === null || r.asset_size === undefined ? null : Number(r.asset_size),
       has_schedule: Boolean(r.has_schedule),
+      // Read for members the peer figures left out, so any approved row for the fee is one they did not count.
+      has_uncounted_fee: Boolean(r.has_uncounted_fee),
     })),
   };
 }

@@ -141,8 +141,12 @@ export interface PeerListRow {
   amount: number | null;
   /** The fees by name when the schedule states several different ones (#1931): "$25 to $35 (...)". */
   amountText?: string;
-  /** published: the fee is on file; not_on_schedule: other fees from its schedule are, this one is not; no_schedule: no schedule is on file. */
-  status: "published" | "not_on_schedule" | "no_schedule";
+  /**
+   * published: the fee is on file; not_counted: it is on file but outside what peer figures count
+   * (business-only, unsourced); not_on_schedule: other fees from its schedule are, this one is
+   * not; no_schedule: no schedule is on file.
+   */
+  status: "published" | "not_counted" | "not_on_schedule" | "no_schedule";
   documentUrl: string | null;
   /** When the fee was published to the index (ISO date). */
   publishedAt: string | null;

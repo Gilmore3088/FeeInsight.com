@@ -12,7 +12,7 @@
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
-import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
+import { ownFeeFromRows, ownFeeLabel, ownFeeList, statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import { formatRatePercent } from "@/lib/percent-fees";
 import { MAX_NOTE_WORDS, MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { plainName, proseFeeName } from "./names";
@@ -530,16 +530,24 @@ function byAssets(a: PeerListRow, b: PeerListRow): number {
   return (b.totalAssets ?? -1) - (a.totalAssets ?? -1) || a.institutionName.localeCompare(b.institutionName);
 }
 
-/** The bank's own row, first and marked, when it publishes the fee. */
+/**
+ * The bank's own row, first and marked, when it publishes the fee: its one price, or the range
+ * and named fees when its schedule states several (#1913).
+ */
 function ownListRow(research: FeeResearch): PeerListRow[] {
-  if (research.current === null) return [];
-  const own = research.ownRows[0];
+  const consumer = research.ownRows.filter((r) => r.feeAudience !== "business");
+  const several =
+    research.current === null ? ownFeeFromRows(research.feeCategory, consumer.map((r) => ({ fee_name: r.feeName, amount: r.amount })), 0, false) : null;
+  const amount = research.current ?? several?.low ?? null;
+  if (amount === null) return [];
+  const own = consumer[0] ?? research.ownRows[0];
   return [{
     institutionId: research.institutionId,
     institutionName: research.subjectName || research.institutionName || "Your institution",
     stateCode: null,
     totalAssets: null,
-    amount: research.current,
+    amount,
+    ...(several ? { amountText: several.price === null ? `${ownFeeLabel(several, money)} (${ownFeeList(several, money)})` : money(several.price) } : {}),
     status: "published",
     documentUrl: own?.documentUrl ?? own?.sourceUrl ?? null,
     publishedAt: own?.publishedAt?.slice(0, 10) ?? null,
@@ -547,10 +555,20 @@ function ownListRow(research: FeeResearch): PeerListRow[] {
   }];
 }
 
+/** "1 peer publishes" / "3 peers publish". */
+function publishing(n: number, noun: string): string {
+  return n === 1 ? `1 ${noun} publishes` : `${count(n)} ${noun}s publish`;
+}
+
+/** "Overdraft fee of 1 peer" / "Overdraft fees of 24 peers". */
+function feesOf(name: string, n: number, noun: string): string {
+  return n === 1 ? `${capitalize(name)} fee of 1 ${noun}` : `${capitalize(name)} fees of ${count(n)} ${noun}s`;
+}
+
 /**
- * Every institution in the peer group by name, largest institutions first: the fee and its source, or why
- * none is on file. The governing thought counts them, so the title only
- * says how the rows are ordered.
+ * Every institution in the peer group by name, largest institutions first: the fee and its
+ * source, or why none is on file. The governing thought counts them, so the title only says
+ * how the rows are ordered.
  */
 function peerListPiece(research: FeeResearch, name: string): Piece | null {
   const published = research.peers.map(listedRow);
@@ -561,7 +579,7 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
     stateCode: m.stateCode,
     totalAssets: m.totalAssets,
     amount: null,
-    status: m.hasSchedule ? "not_on_schedule" : "no_schedule",
+    status: m.uncounted ? "not_counted" : m.hasSchedule ? "not_on_schedule" : "no_schedule",
     documentUrl: null,
     publishedAt: null,
   }));
@@ -571,8 +589,8 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
   const median = research.band && research.band.n >= MIN_PEERS_FOR_POSITION ? `; the median is ${money(research.band.median)}` : "";
   const actionTitle =
     total !== null && total > n
-      ? `${count(n)} of ${count(total)} peers publish ${article(name)} ${name} fee${median}.`
-      : `${count(n)} peers publish ${article(name)} ${name} fee${median}.`;
+      ? `${count(n)} of ${count(total)} peers ${n === 1 ? "publishes" : "publish"} ${article(name)} ${name} fee${median}.`
+      : `${publishing(n, "peer")} ${article(name)} ${name} fee${median}.`;
   const unlisted = total !== null ? Math.max(0, total - n - missing.length) : 0;
   const rows = [...published, ...missing].sort(byAssets);
   return {
@@ -580,7 +598,7 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
     actionTitle,
     exhibit: {
       kind: "peer_list",
-      title: `${capitalize(name)} fees of ${count(rows.length + unlisted)} peers, largest institutions first`,
+      title: `${feesOf(name, rows.length + unlisted, "peer")}, largest institutions first`,
       feeLabel: `${capitalize(name)} fee`,
       rows: [...ownListRow(research), ...rows],
       unlisted,
@@ -605,10 +623,10 @@ function localListPiece(research: FeeResearch, name: string): Piece | null {
   const amounts = list.map((p) => p.amount);
   return {
     key: "localList",
-    actionTitle: `${count(list.length)} local competitors publish ${article(name)} ${name} fee; they charge ${spanOf(money(Math.min(...amounts)), money(Math.max(...amounts)))}.`,
+    actionTitle: `${publishing(list.length, "local competitor")} ${article(name)} ${name} fee; ${list.length === 1 ? "it charges" : "they charge"} ${spanOf(money(Math.min(...amounts)), money(Math.max(...amounts)))}.`,
     exhibit: {
       kind: "peer_list",
-      title: `${capitalize(name)} fees of ${count(list.length)} local competitors`,
+      title: feesOf(name, list.length, "local competitor"),
       feeLabel: `${capitalize(name)} fee`,
       // Local competitors arrive largest deposits first; that order is kept.
       rows: [...ownListRow(research), ...list.map(listedRow)],

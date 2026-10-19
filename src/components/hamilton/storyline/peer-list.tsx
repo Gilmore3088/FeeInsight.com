@@ -13,6 +13,7 @@ const th = ANSWER_TYPE.th;
 const SHOWN = 40;
 
 const MISSING: Record<Exclude<PeerListRow["status"], "published">, string> = {
+  not_counted: "On its schedule, not counted",
   not_on_schedule: "Not found on its schedule",
   no_schedule: "No schedule on file",
 };

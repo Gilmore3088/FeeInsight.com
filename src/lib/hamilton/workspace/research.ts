@@ -1006,16 +1006,21 @@ async function loadRates(institutionId: number, feeCategory: string, asOf: strin
   }
 }
 
-/** The group's institutions with no value for the fee; null when the read fails, so the list still shows. */
-async function loadPeerGroupCoverage(filters: HamiltonPeerFilters, institutionId: number, peers: PeerValue[]): Promise<PeerGroupCoverage | null> {
+/**
+ * The group's institutions with no value for the fee; null when the read fails, so the list still
+ * shows, and null for the national fallback, which is every institution rather than a group.
+ */
+async function loadPeerGroupCoverage(filters: HamiltonPeerFilters, institutionId: number, feeCategory: string, peers: PeerValue[]): Promise<PeerGroupCoverage | null> {
+  const scoped = Boolean(filters.institutionIds?.length || filters.charter_type || filters.state_code || filters.states?.length || filters.asset_tiers?.length || filters.fed_districts?.length);
+  if (!scoped) return null;
   try {
-    const group = await getPeerGroupMembers(filters, institutionId);
+    const group = await getPeerGroupMembers(filters, institutionId, feeCategory);
     const listed = new Set(peers.map((p) => p.institutionId));
     return {
       total: group.total,
       missing: group.members
         .filter((m) => !listed.has(m.institution_id))
-        .map((m) => ({ institutionId: m.institution_id, institutionName: m.institution_name, stateCode: m.state_code, totalAssets: m.total_assets, hasSchedule: m.has_schedule })),
+        .map((m) => ({ institutionId: m.institution_id, institutionName: m.institution_name, stateCode: m.state_code, totalAssets: m.total_assets, hasSchedule: m.has_schedule, uncounted: m.has_uncounted_fee })),
     };
   } catch {
     return null;
@@ -1058,7 +1063,7 @@ export async function getFeeResearch(
   const chosen = base.peers.get(feeCategory);
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
   // A list question names the whole group, so the peers with no value for the fee are read too.
-  const peerGroup = options.listPeers && chosen?.filters ? await loadPeerGroupCoverage(chosen.filters, institutionId, peers) : undefined;
+  const peerGroup = options.listPeers && chosen?.filters ? await loadPeerGroupCoverage(chosen.filters, institutionId, feeCategory, peers) : undefined;
   const sorted = countedAmounts(peers);
   const band = sorted.length > 0
     ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }

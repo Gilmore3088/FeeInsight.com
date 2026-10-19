@@ -467,8 +467,10 @@ export interface PeerGroupCoverage {
     stateCode: string | null;
     /** Thousands of dollars. */
     totalAssets: number | null;
-    /** True when the index holds other fees from its schedule (the fee was not found on it); false when it holds no schedule. */
+    /** True when the index counts other fees from its schedule (the fee was not found on it); false when it holds no schedule. */
     hasSchedule: boolean;
+    /** True when the fee is on its schedule but the peer figures do not count it (business-only, unsourced). */
+    uncounted?: boolean;
   }[];
 }
 

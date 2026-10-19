@@ -435,6 +435,25 @@ describe("list questions (#2033)", () => {
     expect(parseAsk("How does our overdraft pricing compare in our market?").list).toBe(false);
   });
 
+  it("reads the other ways people ask for the rows, and not comparisons, changes or whole-schedule questions", () => {
+    for (const q of [
+      "show me peers' overdraft fees",
+      "What are our peers' overdraft fees?",
+      "Which of our peers charge an overdraft fee?",
+      "what are competitors charging for NSF",
+      "show me every peer's NSF fee",
+    ]) expect(parseAsk(q).list, q).toBe(true);
+    for (const q of [
+      "How does our overdraft fee compare to all of our peers?",
+      "Are we higher than all our competitors on NSF?",
+      "Which banks have eliminated NSF fees?",
+      "What is our list price vs peers for overdraft?",
+      "Which banks charge more than us for overdraft, and should we raise ours?",
+      "list all our fees vs peers",
+      "show all our fees vs peers",
+    ]) expect(parseAsk(q).list, q).toBe(false);
+  });
+
   it("answers with every peer by name, the ones with no fee on file too, and nothing else", () => {
     const r = research({ peerGroup: coverage, peerGroupSaved: false });
     const story = buildFeeAnswer(r, { story: { list: true } }).storyline!;
@@ -471,6 +490,30 @@ describe("list questions (#2033)", () => {
     if (x.kind !== "peer_list") throw new Error("expected a peer list");
     expect(x.rows.filter((row) => !row.own)).toHaveLength(r.localCompetitors!.length);
     expect(story.governingThought).toBe("3 local competitors publish an overdraft fee; they charge $25 to $35.");
+  });
+
+  it("says one peer and one competitor in the singular", () => {
+    const base = research();
+    const one = buildFeeAnswer(research({ peers: base.peers.slice(0, 1), band: null }), { story: { list: true } }).storyline!;
+    expect(one.governingThought).toBe("1 peer publishes an overdraft fee.");
+    expect(one.exhibits[0].exhibit.title).toBe("Overdraft fee of 1 peer, largest institutions first");
+    const local = buildFeeAnswer(research({ localCompetitors: base.localCompetitors!.slice(0, 1) }), { focus: "competitors", story: { list: true } }).storyline!;
+    expect(local.governingThought).toMatch(/^1 local competitor publishes an overdraft fee; it charges \$/);
+  });
+
+  it("marks a fee that is on the schedule but not counted, and lists the bank's several stated fees", () => {
+    const r = research({
+      current: null,
+      ownRows: [
+        { ...research().ownRows[0], id: 1, feeName: "Overdraft fee, tier 1", amount: 25 },
+        { ...research().ownRows[0], id: 2, feeName: "Overdraft fee, tier 2", amount: 35 },
+      ],
+      peerGroup: { total: 20, missing: [{ institutionId: 503, institutionName: "Business Only Bank", stateCode: "TN", totalAssets: 500_000, hasSchedule: true, uncounted: true }] },
+    });
+    const x = buildFeeAnswer(r, { story: { list: true } }).storyline!.exhibits[0].exhibit;
+    if (x.kind !== "peer_list") throw new Error("expected a peer list");
+    expect(x.rows[0]).toMatchObject({ own: true, amount: 25, amountText: "$25 to $35 (Overdraft fee, tier 1 $25; Overdraft fee, tier 2 $35)" });
+    expect(x.rows.find((row) => row.institutionId === 503)?.status).toBe("not_counted");
   });
 
   it("passes the four roles and leads the short answer with the count", () => {

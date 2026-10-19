@@ -22,6 +22,7 @@ import { annualItemsQuestion, buildScenario, MIN_PEERS_FOR_POSITION, placeAmong,
 import { parseSegment, SEGMENT_AMOUNTS } from "./segment";
 import { rateVolumeQuestion } from "./rates";
 import { asksAboutStructure } from "./storyline";
+import { asksWholeSchedule } from "./schedule";
 import type {
   AskObjective,
   AskSegment,
@@ -129,10 +130,23 @@ export function pricesIn(question: string): number[] {
 
 /**
  * A request for the rows themselves (#2033): "list peers' overdraft fees", "show me every peer's
- * NSF fee", "which credit unions charge a wire fee", "what do our competitors charge".
+ * NSF fee", "show me peers' overdraft fees", "which of our peers charge a wire fee", "what are our
+ * peers' NSF fees", "what do our competitors charge". A comparison ("compare to all of our
+ * peers") or a change ("which banks have eliminated NSF fees") is not a list.
  */
-const LIST_QUESTION =
-  /\b(?:list|lists|listing)\b|\bshow (?:me )?(?:all|every|each)\b|\bwhich (?:banks|credit unions|institutions|peers|competitors)\b|\bname (?:the|our|my|all|every) (?:peers|competitors)\b|\b(?:each|every|all)(?: of)? (?:our |my |the )?(?:peers|competitors)\b|\bwhat (?:do|does) (?:our |my |the )?(?:peers|competitors) charge\b/i;
+const LIST_QUESTION = new RegExp(
+  [
+    String.raw`\blist(?:s|ing)?\b(?! price)`,
+    String.raw`\bshow (?:me )?(?:all|every|each)\b`,
+    String.raw`\bshow (?:me )?(?:our |my |the )?(?:peers|competitors)['’]`,
+    String.raw`\bwhich (?:of (?:our|my|the) )?(?:banks|credit unions|institutions|peers|competitors) (?:charge|publish|still charge)\b`,
+    String.raw`\bname (?:the|our|my|all|every) (?:peers|competitors)\b`,
+    String.raw`\b(?:each|every) (?:peer|competitor)['’]s\b`,
+    String.raw`\ball (?:of )?(?:our |my |the )?(?:peers|competitors)['’](?:\s|$)`,
+    String.raw`\bwhat (?:are|do|does) (?:our |my |the )?(?:peers|competitors)(?:['’]s?\s| (?:charge|charging)\b)`,
+  ].join("|"),
+  "i",
+);
 
 /** "What regulation applies", "regulatory risk", "is this compliant", "what does the CFPB say". */
 const REGULATION_QUESTION = /\b(regulat\w*|rules?|laws?|legal|complian\w*|CFPB|OCC|FDIC|NCUA|examin\w*|Reg [A-Z]{1,2})\b/i;
@@ -148,7 +162,9 @@ export function parseAsk(question: string, fallbackCategory: string | null = nul
     focus: segment || COMPETITORS.test(question) ? "competitors" : TREND.test(question) ? "trend" : "position",
     structure: asksAboutStructure(question),
     regulation: REGULATION_QUESTION.test(question),
-    list: LIST_QUESTION.test(question),
+    // A question that also asks what to do ("which banks charge more, and should we raise ours?")
+    // gets the decision, and one about every fee ("list all our fees vs peers") the schedule overview.
+    list: LIST_QUESTION.test(question) && !OPINION.test(question) && (matchFeeCategory(question) !== null || !asksWholeSchedule(question)),
   };
 }
 
