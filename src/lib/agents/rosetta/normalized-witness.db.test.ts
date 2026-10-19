@@ -384,6 +384,13 @@ describe.skipIf(!connection)("private exact normalized witnesses", () => {
    INSERT INTO agent_source_text_witnesses(artifact_id,text_hash,source_document_id,institution_id,normalized_text,observed_artifact_status,capture_kind)
    VALUES (999,${witness.exactTextHash(textA)},1,1,'changed','completed','incoming')`)).rejects.toThrow("normalized_witness_hash");
   }));
+  it("pins the private relation owner to the reviewed current-writer owner", async () => rolledBack(async (scope) => {
+    const [relation] = await scope`
+      SELECT pg_get_userbyid(relowner) AS owner, relrowsecurity AS rls
+        FROM pg_class WHERE oid='public.agent_source_text_witnesses'::regclass
+    `;
+    expect(relation).toEqual({ owner: "postgres", rls: true });
+  }));
   it.each(["anon", "authenticated"])("gives %s no read or append path", async (role) => rolledBack(async (scope) => {
     await expect((scope as unknown as {
       savepoint: (work: (tx: Db) => Promise<unknown>) => Promise<unknown>;

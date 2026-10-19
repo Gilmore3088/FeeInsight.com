@@ -26,6 +26,9 @@ CREATE TABLE public.agent_source_text_witnesses (
   CONSTRAINT normalized_witness_nonempty CHECK (char_length(normalized_text) > 0),
   CONSTRAINT normalized_witness_capture_kind CHECK (capture_kind IN ('incoming', 'incumbent'))
 );
+-- Pin the existing current-text owner so the reviewed writer-role compatibility
+-- does not depend on which administrative role executes this new migration.
+ALTER TABLE public.agent_source_text_witnesses OWNER TO postgres;
 -- Plain identity values deliberately have no cascading foreign keys: removing a
 -- source, current artifact or run must never silently erase its retained witness.
 ALTER TABLE public.agent_source_text_witnesses ENABLE ROW LEVEL SECURITY;
@@ -38,7 +41,8 @@ CREATE POLICY normalized_witness_backend_insert ON public.agent_source_text_witn
 
 -- Privilege revocation alone cannot prevent a table owner's ordinary
 -- UPDATE/DELETE/TRUNCATE. This guard also covers that normal-write role model.
--- The deployed application's exact database role remains a rollout preflight.
+-- Complete current-writer role metadata is checked separately from deployed
+-- client attribution; this migration does not claim that client's current_user.
 -- An owner with DDL rights can disable/drop the guard; that administrator power
 -- is outside this normal-DML immutability contract.
 CREATE FUNCTION public.reject_normalized_witness_mutation() RETURNS trigger

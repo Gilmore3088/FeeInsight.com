@@ -58,11 +58,23 @@ SECURITY DEFINER function, public view, HTTP endpoint or change to current-table
 Plain retained identities have no cascading foreign keys. Removing current artifacts,
 source documents or runs does not erase the retained evidence.
 
-The deployed application's actual database session role is **not yet proven**. The
-read-only Supabase connector used `postgres`; that is not evidence of the Vercel
-application's role. Confirm the deployed role and its exact append/select contract
-through an existing supported deployment diagnostic/session before writer rollout.
-Do not add a production endpoint or broaden privileges to bypass this preflight.
+Writer permission compatibility is supported by complete metadata at 2026-10-19
+18:43:44 UTC: every role, including NOLOGIN roles and any-column SELECT/INSERT/UPDATE
+grants on the current text table, was considered. The only writer models were its
+owner `postgres`, `service_role`, and existing superuser `supabase_admin`; there were
+zero explicit column ACLs and no additional NOLOGIN writer model. The new table's
+owner is explicitly pinned to `postgres`, `service_role` receives SELECT/INSERT,
+and existing superuser authority is unchanged. Thus every observed current writer
+model has the new append/select path, without broadening an unrelated role's access.
+Refresh this metadata before application and verify the pinned owner afterward.
+
+The deployed application's actual database session identity is **not claimed**.
+The connector's `postgres` role does not establish the Vercel application's role.
+Controlled-run activity observations missed the exact write; their attribution
+limits remain. A static runtime search found no PostgreSQL role switch, but this is
+corroboration, not `SELECT current_user` from the application. Compatibility rests
+on the complete writer-model coverage, not identification of a particular client.
+No new endpoint or broader grant is needed for that proof.
 
 ## Storage and retention posture
 
@@ -106,12 +118,14 @@ change. No production migration/application action is part of patch preparation.
 1. Freeze the exact commit and migration SHA-256; compose the released PDF/performance
    parent and preserve the complete CI SQL-suite union. Obtain independent exact-head
    review and required checks. Confirm no competing migration claimed sequence 67.
-2. Complete the deployed-session-role preflight above. Confirm its SELECT/INSERT path
-   without expanding permissions. Recheck cheap database/table sizes and alert headroom.
+2. Refresh the complete writer-role/column-ACL metadata above. If a new model appears,
+   stop and review its append/select compatibility; do not expand privileges silently.
+   Recheck cheap database/table sizes and alert headroom.
 3. Present the exact SQL, role contract, storage posture and rollback to James for the
    separate production approval. Until then, do not merge or apply the migration.
 4. After approval, use the normal Supabase integration. Verify schema history, empty
-   new table, hash constraints, RLS/ACL/trigger/function settings against approved SQL.
+   new table, owner `postgres`, hash constraints, RLS/ACL/trigger/function settings
+   against approved SQL.
    Deploy the reviewed writer through the normal Vercel release. No manual seed or replay.
 5. Observe a normal free read's sanitized `witness_retention` receipt and exact retained
    hash/owner match. Verify current row uniqueness/ID and the ordinary attempt outcome.
