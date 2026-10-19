@@ -123,7 +123,7 @@ function candidateFacts(current: Candidate, source?: LockedSourceSnapshot): Inte
 }
 
 /**
- * Unwired guard adapter. Actual current lineage is authority. The real outer savepoint
+ * Actual current lineage is authority. The real outer savepoint
  * rolls back every newly acquired prefix/suffix lock on a deferred decision. All new
  * row locks are NOWAIT; it never waits for a source after an earlier outer-step fee lock.
  * Normal run-store publish steps are advisory-serialized; external/manual insertions
@@ -135,7 +135,8 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
   expectedVerifiedState?: string;
   /** Direct legacy callers still cannot carry a stale international category through an ordinary exit. */
   expectedCategory?: string;
-}, work: (tx: Db, actual: VerifiedFeeRow | null, current: VerifiedFeeRow) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
+}, work: (tx: Db, actual: VerifiedFeeRow | null, current: VerifiedFeeRow,
+  sources: ReadonlyMap<number, LockedSourceSnapshot> | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
   const savepoint = (db as unknown as { savepoint?: (work: (tx: Db) => Promise<InternationalPublicationWrite<T>>) => Promise<InternationalPublicationWrite<T>> }).savepoint;
   if (!savepoint) {
     const begin = (db as unknown as { begin?: (work: (tx: Db) => Promise<InternationalPublicationWrite<T>>) => Promise<InternationalPublicationWrite<T>> }).begin;
@@ -151,7 +152,7 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
       if (options.expectedCategory != null && (options.expectedCategory.startsWith("wire_intl_")
         || before.canonical_fee_key.startsWith("wire_intl_")) && options.expectedCategory !== before.canonical_fee_key)
         return defer("selected_changed");
-      if (!before.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(tx, null, before) };
+      if (!before.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(tx, null, before, null) };
       if (!positive(before.source_document_id) || !positive(before.fee_raw_id)) return defer("candidate_source_unavailable");
       const peers = await peersOf(tx, before);
       const relevantPeers = peers.filter(row => potentialInternationalPublicationPeer(candidateFacts(before), peerFacts(row)));
@@ -178,7 +179,7 @@ export async function withInternationalPublicationWrite<T>(db: Db, options: {
       const policy = internationalPublicationPolicy(candidateFacts(current, source),
       freshPeers.map(row => peerFacts(row, prefix.sources.get(Number(row.public_document_id)))));
       if (policy.kind === "deferred") return defer(policy.reason, policy.conflictingPublishedIds);
-      return { kind: "written", value: await work(tx, current, current) };
+      return { kind: "written", value: await work(tx, current, current, prefix.sources) };
     });
   } catch (error) {
     if (error instanceof Deferred) return { kind: "deferred", detail: error.detail };

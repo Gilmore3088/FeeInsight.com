@@ -42,6 +42,16 @@ describe("final international verification uses held current source facts (#2278
     const f = facts("International Money Order | $5", "International Money Order", 5);
     expect(internationalVerificationDecision(f.raw, "money_order", "money_order", f.context)).toEqual({ kind: "not_applicable" });
   });
+  it.each(["International Wire Outgoing", "Foreign Transfer Fee", "Int'l Wire Incoming"])("routes actual %s uncertainty even when both keys and source are unavailable", name => {
+    const f = facts(pdf.normalizedText, name, 45);
+    expect(internationalVerificationDecision(f.raw, "minimum_balance", "minimum_balance", { kind: "unavailable" }))
+      .toEqual({ kind: "deferred", reason: "source_unavailable" });
+  });
+  it.each(["Domestic Wire Outgoing", "International Money Order"])("keeps the unrelated unavailable-source path for %s", name => {
+    const f = facts("unused", name, 45);
+    expect(internationalVerificationDecision(f.raw, "minimum_balance", "minimum_balance", { kind: "unavailable" }))
+      .toEqual({ kind: "not_applicable" });
+  });
   it.each([{ flags: [] }, { flags: ["knox_review:eligibility"] }])("detects own international scope even with a stale ordinary raw hint $flags", ({ flags }) => {
     const f = facts(pdf.normalizedText, "International Wire Outgoing", 45);
     f.raw.outlier_flags = flags as never[];
@@ -74,6 +84,7 @@ describe("final international verification uses held current source facts (#2278
   it("uses FREE solely for an already-admitted exact zero and leaves ordinary nonwire rows unaffected", () => {
     const f = facts("International Wire Incoming | FREE", "International Wire Incoming", 0);
     expect(internationalVerificationDecision(f.raw, "wire_intl_incoming", "wire_intl_incoming", f.context)).toEqual({ kind: "ready" });
-    expect(internationalVerificationDecision(f.raw, "money_order", "money_order", { kind: "unavailable" })).toEqual({ kind: "not_applicable" });
+    const ordinary = facts("Money Order | FREE", "Money Order", 0);
+    expect(internationalVerificationDecision(ordinary.raw, "money_order", "money_order", { kind: "unavailable" })).toEqual({ kind: "not_applicable" });
   });
 });

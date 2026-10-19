@@ -69,6 +69,7 @@ import {
   type PublishEvidenceCheck,
 } from "./publication-evidence";
 import { deferInternationalPublication, withInternationalPublicationWrite, type InternationalPublicationDeferral, type InternationalPublicationWrite } from "./international-publication";
+import type { LockedSourceSnapshot } from "../darwin/locked-raw-source";
 
 type SqlTag = typeof sql;
 
@@ -862,8 +863,9 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
  * add a new source/availability read to every ordinary publication. Never exported to callers.
  */
 async function withSelectedInternationalPublication<T>(db: SqlTag, row: VerifiedFeeRow,
-  work: (tx: SqlTag, actual: VerifiedFeeRow | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
-  if (!row.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(db, null) };
+  work: (tx: SqlTag, actual: VerifiedFeeRow | null, current: VerifiedFeeRow,
+    sources: ReadonlyMap<number, LockedSourceSnapshot> | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
+  if (!row.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(db, null, row, null) };
   return withInternationalPublicationWrite(db, { feeVerifiedId: Number(row.fee_verified_id),
     expectedVerifiedState: row.selected_verified_state, expectedCategory: row.canonical_fee_key }, work);
 }

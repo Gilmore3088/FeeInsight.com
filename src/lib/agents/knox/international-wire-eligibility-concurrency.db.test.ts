@@ -229,4 +229,24 @@ describe.skipIf(!connection)("International applicability hold and Darwin concur
       expect(await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`).toHaveLength(0);
     } finally { await cleanup(fixture); }
   });
+
+  it.each([
+    { name: "International Wire Outgoing", key: "minimum_balance", deferred: true },
+    { name: "Domestic Wire Outgoing", key: "wire_domestic_outgoing", deferred: false },
+    { name: "International Money Order", key: "money_order", deferred: false },
+  ])("routes unavailable current $name source without changing unrelated ordinary admission", async ({ name, key, deferred: mustDefer }) => {
+    const fixture = await seed();
+    try {
+      await observer`UPDATE agent_source_texts SET status='failed' WHERE id=${fixture.textId}`;
+      await observer`UPDATE raw_fee_observations SET fee_name=${name},
+        extraction_note=replace(extraction_note,'canonical_hint=wire_intl_outgoing',${`canonical_hint=${key}`}),
+        conditions=replace(conditions,'canonical_hint=wire_intl_outgoing',${`canonical_hint=${key}`}),
+        outlier_flags=${JSON.stringify([`canonical_hint:${key}`])}::jsonb WHERE fee_raw_id=${fixture.rawId}`;
+      fixture.row = (await observer`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${fixture.rawId}`)[0] as unknown as RawFeeRow;
+      const result = await attemptVerify(firstConnection, fixture, false, key);
+      expect(result).toMatchObject(mustDefer ? { kind: "deferred" } : { kind: "completed", id: expect.any(Number) });
+      expect(await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`)
+        .toHaveLength(mustDefer ? 0 : 1);
+    } finally { await cleanup(fixture); }
+  });
 });

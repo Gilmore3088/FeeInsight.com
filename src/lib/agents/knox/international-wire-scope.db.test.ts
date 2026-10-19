@@ -158,8 +158,10 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     const f = await seed(tx, pdf);
     await sourceBackedDepth(tx, f);
     const v = await historicalVerified(tx, f, "International Wire Outgoing", 45, "wire_intl_outgoing");
-    const result = await withInternationalPublicationWrite(tx, { feeVerifiedId: v.verifiedId }, async (scope, actual) => {
+    const result = await withInternationalPublicationWrite(tx, { feeVerifiedId: v.verifiedId }, async (scope, actual, current, sources) => {
       expect(actual).toMatchObject({ fee_verified_id: String(v.verifiedId), canonical_fee_key: "wire_intl_outgoing", amount: 45 });
+      expect(current).toBe(actual);
+      expect(sources?.get(f.documentId)).toMatchObject({ artifactId: f.textId, textHash: f.hash, normalizedText: pdf.normalizedText });
       return publish.insertPublishedFee(scope, { runId: f.runId, batchId: `agentic-run-${f.runId}`, row: actual! });
     });
     expect(result).toMatchObject({ kind: "written" });
