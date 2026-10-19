@@ -578,6 +578,7 @@ export async function runKnoxPaidExtract(
             row: textRow,
             held: { shape: "zero", feeName: fee.feeName, amount: 0, amountMax: null, percent: null, frequency: fee.frequency, canonicalHint: fee.canonicalKey, excerpt },
             extraFlags: [KNOX_PAID_FLAG],
+            assignedMonthlyProduct: fee.lineup?.productName,
           })
         : await insertCandidate(db, {
             runId: options.runId,

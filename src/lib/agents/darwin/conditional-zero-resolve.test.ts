@@ -93,8 +93,12 @@ describe("runDarwinConditionalZeroResolve", () => {
     held(3, "cashiers_check", "Official Checks", "No fee for Official Checks", CHECKING),
   ];
   function createDb() {
-    const db = vi.fn((strings: TemplateStringsArray) => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join("?");
+      // The selected row is still current when insertVerifiedFee takes its raw lock.
+      if (text.includes("FOR UPDATE OF fr")) {
+        return Promise.resolve(rows.filter((row) => row.fee_raw_id === values[0]));
+      }
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("FROM agent_source_texts")) {
         return Promise.resolve([{ source_document_id: 9, normalized_text: "Fee Schedule\nBill Pay: | Free\nNo fee for Official Checks\nMonthly Service Fee | $0 | $5 | $10" }]);

@@ -393,3 +393,15 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     });
   });
 });
+
+it("uses the same scaled dollar contract in the eval while excluding nonmonetary and catalog values (#1858)",()=>{
+  expect(toolMoneyFigures([
+    {toolName:"queryData",input:{measure:"area:income"},output:{rows:[
+      {value:1234,unit:"thousands_dollars"},{value:2,unit:"millions_dollars"},{value:3,unit:"dollars (billions)"},
+      {value:1234,unit:"thousands of dollars"},{value:1,unit:"billions_dollars"},
+      {value:4.1,unit:"percent"},{value:500,unit:"persons"}]}},
+    {toolName:"queryData",input:{measure:"fee:overdraft"},output:{rows:[{value:35,unit:"usd"}]}},
+    {toolName:"getInstitution",output:{financials:{units:"dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+      latest:{service_charge_income:311051,fee_income_ratio:0.068}}}},
+  ])).toEqual([1234000,2000000,3000000000,1234000,1000000000,311051000]);
+});

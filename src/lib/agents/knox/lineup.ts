@@ -516,6 +516,14 @@ function accountKind(name: string): string | null {
   return null;
 }
 
+/** A literal, standalone account heading; no price/cell, fee heading or inferred owner. */
+export function explicitAccountHeading(value: string, institutionName?: string | null): string | null {
+  const name = squash(value).replace(/[\s:]+$/, "");
+  if (!name || /[$|]/.test(name) || namesNoAccount(name, institutionName) ||
+    (!accountKind(name) && !/\bclub\b/i.test(name))) return null;
+  return ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name) || distinctAccountName(name) ? name : null;
+}
+
 export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null }>(
   candidate: T,
   text: string,

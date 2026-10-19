@@ -1,5 +1,6 @@
 /** Real PostgreSQL checks of Knox's re-read path (#1093) in a loopback-only, temporary-table connection. */
 import postgres from "postgres";
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { insertCandidate, retireRowsFromOlderText, type KnoxTextRow } from "./extract";
@@ -142,12 +143,19 @@ describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
       ...overdraft, feeName: "Monthly Service Fee", amount: 5, canonicalHint: "monthly_maintenance",
       frequency: "monthly", excerpt: excerpts[feeAudience],
     });
+    // The common monthly writer requires its own source witness (#2259). This
+    // existing table fixture isolates audience-key enrichment, not account-owner
+    // ambiguity; keep all four literal audience rows and the assigned facts in it.
+    const monthlyText = ["Everyday Checking", ...Object.values(excerpts),
+      "Minimum opening deposit: $25", "Waived with a $500 minimum balance"].join("\n");
+    const monthlyRead: KnoxTextRow = { ...firstRead, normalized_text: monthlyText,
+      text_hash: createHash("sha256").update(monthlyText).digest("hex") };
     // The unique key intentionally permits four rows with the same document, name and price.
     for (const sibling of Object.keys(excerpts) as FeeAudience[]) {
-      expect(await insertCandidate(db as unknown as Db, { runId: 1, row: firstRead, candidate: candidateFor(sibling) })).toBe(true);
+      expect(await insertCandidate(db as unknown as Db, { runId: 1, row: monthlyRead, candidate: candidateFor(sibling) })).toBe(true);
     }
     expect(await insertCandidate(db as unknown as Db, {
-      runId: 2, row: firstRead,
+      runId: 2, row: monthlyRead,
       candidate: { ...candidateFor(audience), lineup: {
         productName: "Everyday Checking", minBalanceToAvoid: 500, minOpeningDeposit: 25,
         waiverText: "Waived with a $500 minimum balance",

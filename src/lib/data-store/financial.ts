@@ -2,8 +2,8 @@ import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
 import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
-// Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
-// ingest scaling). No query-layer multiplication needed.
+// FDIC/NCUA dollar columns retain stored thousands (financial-sources.ts).
+// Readers preserve those values; tool/presentation contracts carry their units.
 
 const numOrNull = (v: unknown): number | null =>
   v !== null && v !== undefined ? Number(v) : null;
