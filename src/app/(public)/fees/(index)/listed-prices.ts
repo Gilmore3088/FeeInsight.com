@@ -53,7 +53,7 @@ export function listedPriceLines(prices: readonly ListedPrice[], expected: Expec
     const d = detailFor(p, expected);
     // Unknown product ownership, lineage or name cannot establish positive equivalence.
     const known = d?.account?.trim() && productKey(d.account) && d.context?.verifiedId && d.context.rawId && d.fee_name?.trim();
-    const key = known ? JSON.stringify([p.amount, d.fee_name, productKey(d.account), d.fee_audience, d.fee_treatment,
+    const key = known && d ? JSON.stringify([p.amount, d.fee_name, productKey(d.account), d.fee_audience, d.fee_treatment,
       d.frequency, d.variant_type, d.amount_kind, d.rate_percent, d.rate_min_amount, d.rate_max_amount, d.rate_basis, d.conditions,
       d.waiver_text, d.min_balance_to_avoid, d.min_opening_deposit]) : `row:${p.id}`;
     const observation: ListedPrice = { ...p, detail: d, evidence: evidenceFor(p.evidence, d) };
