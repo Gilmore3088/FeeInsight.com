@@ -657,6 +657,26 @@ async function findDocumentWithContent(db: SqlTag, institutionId: number, conten
   return existing?.id == null ? null : Number(existing.id);
 }
 
+/**
+ * A side copy's fetch result (`FetchLinkContext.keepRemembered`): new bytes are stored as a document
+ * and bytes the bank already has match that document; nothing on the bank itself changes, and a
+ * failed fetch writes no document row.
+ */
+async function recordSideCopy(db: SqlTag, result: FetchResult): Promise<number | null> {
+  if (result.outcome === "unchanged") return result.previousDocumentId;
+  if (result.outcome !== "success" || !result.contentHash) return null;
+  const existingId = await findDocumentWithContent(db, result.institutionId, result.contentHash);
+  if (existingId != null) {
+    await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = ${existingId}`;
+    result.outcome = "unchanged";
+    result.attemptOutcome = "unchanged";
+    result.previousDocumentId = existingId;
+    result.reusedDocument = true;
+    return existingId;
+  }
+  return insertSourceDocument(db, result, true);
+}
+
 /** Writes the fetch result; returns the source document it created or matched. */
 async function recordFetchResult(db: SqlTag, result: FetchResult, learning: boolean): Promise<number | null> {
   if (result.outcome === "unchanged") {
@@ -895,6 +915,12 @@ export interface FetchLinkContext {
   costMicrousd?: number;
   /** Extra detail for the attempt log (the paid fetch's own error). */
   note?: string | null;
+  /**
+   * A copy fetched beside the bank's own link (`saved-link-fetch.ts`): a stored document only.
+   * The bank's remembered address, failure count, playbook and saved link are left as they are, a
+   * gone link is not sent back to discovery, and a failed fetch stores no document row.
+   */
+  keepRemembered?: boolean;
 }
 
 /**
@@ -913,12 +939,12 @@ export async function fetchAndRecordLink(
   const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
   const result = await fetchCandidate(row, fetchImpl, previous);
   if (dryRun) return { result, sourceDocumentId: null, supersededCopies };
-  const sourceDocumentId = await recordFetchResult(db, result, learning);
+  const sourceDocumentId = ctx.keepRemembered ? await recordSideCopy(db, result) : await recordFetchResult(db, result, learning);
   // The copy this fetch stored or confirmed is the page's current one.
   if (result.outcome === "success" || result.outcome === "unchanged") {
     supersededCopies += await markCurrentCopy(db, sourceDocumentId);
   }
-  if (linkIsGone(result)) {
+  if (!ctx.keepRemembered && linkIsGone(result)) {
     if (isErrorPageLink(result.sourceUrl)) result.reason = "Link is the site's error page, not a fee schedule";
     result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
   }
@@ -941,6 +967,8 @@ export async function fetchAndRecordLink(
       durationMs: result.durationMs,
       runId: ctx.runId,
       stepId: ctx.stepId,
+      // A side copy is not the bank's own fetch: its outcome stays out of the bank's playbook.
+      foldIntoPlaybook: !ctx.keepRemembered,
       detail: {
         url: result.finalUrl ?? result.sourceUrl,
         status_code: result.statusCode,
@@ -974,7 +1002,7 @@ export function withRequestedUrl(row: FetchCandidateRow, institutionId?: number,
 }
 
 /** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
-function samePage(a: string, b: string): boolean {
+export function samePage(a: string, b: string): boolean {
   const key = (value: string) => {
     const url = new URL(value);
     return `${url.hostname.toLowerCase().replace(/^www\./, "")}${url.pathname.replace(/\/+$/, "")}`;

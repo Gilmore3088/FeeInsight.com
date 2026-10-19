@@ -50,6 +50,7 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
+import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
@@ -534,6 +535,22 @@ async function executeAgenticStep(
           console.error("Address variant fetch failed:", error);
         }
       }
+      // Saved fee links the plain fetch never asked for (it asks for the remembered address
+      // first), stored beside it for the current-copy check (#1881). Free; never fails the step.
+      let savedLinks: RunSavedLinkFetchResult | null = null;
+      if (run.runKind !== "dry_run") {
+        try {
+          savedLinks = await runSavedLinkFetch({
+            db: sql,
+            fetchImpl: fetch,
+            runId: run.id,
+            stepId: step.id,
+            institutionId: numericRunParam(params, ["institution_id"]) ?? null,
+          });
+        } catch (error) {
+          console.error("Saved link fetch failed:", error);
+        }
+      }
       return {
         status: "completed",
         summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
@@ -545,6 +562,18 @@ async function executeAgenticStep(
                 recovered: addressVariants.recovered,
                 failed: addressVariants.failed,
                 results: addressVariants.results.slice(0, 10),
+              }
+            : null,
+          saved_links: savedLinks
+            ? {
+                selected: savedLinks.selected,
+                tried: savedLinks.tried,
+                stored: savedLinks.stored,
+                matched: savedLinks.matched,
+                failed: savedLinks.failed,
+                switch_live: savedLinks.live,
+                results: savedLinks.results.slice(0, 10),
+                would_fetch: savedLinks.wouldFetch,
               }
             : null,
           selected_institutions: fetched.selected,

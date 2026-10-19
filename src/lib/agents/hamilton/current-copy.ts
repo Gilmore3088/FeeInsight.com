@@ -4,6 +4,7 @@ import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { secondLook, secondLookDedupeKey, SECOND_LOOK_MIN_MINUTES } from "@/lib/agents/hamilton/second-look";
+import { sameSchedule } from "@/lib/agents/hamilton/schedule-edition";
 import {
   NEWER_COPY_MIN_SHARED_FEES,
   NEWER_COPY_MIN_SHARED_SHARE,
@@ -31,6 +32,15 @@ type SqlTag = typeof sql;
  * recognizably the same schedule: it restates at least half of the older copy's judged fees,
  * and at least two (`judgeNewerCopy`'s bar), so an error page or a redesign flags nothing.
  *
+ * Retired documents (Oct 19, James: "why aren't the agents finding these problems?"). A live
+ * fee can also cite a document that is no longer any of its bank's sources: not the fee
+ * schedule link, not a companion page, not a non-rejected additional source, and never
+ * superseded because the bank's link moved to a new address instead of changing in place
+ * (Cedar Falls, #1945). Such a document is judged the same way against the newest read copy
+ * at the bank's current fee link (`retiredCopiesSql`). Prod, read-only, Oct 19: 8,385 live fees
+ * cite 543 such documents; 258 of them (3,607 fees) have a read copy at the current link. The
+ * other 285 have no read copy there, so they wait on capture, not on this check.
+ *
  * `CURRENT_COPY_CONFIRM_LIVE` false logs first looks and confirms none, until a hand check of
  * the flags passes (18 of 20 stale), then a fix PR turns it on.
  */
@@ -41,6 +51,47 @@ export const CURRENT_COPY_CONFIRM_LIVE = false;
 export const CURRENT_COPY_DOCUMENT_LIMIT = 40;
 // v2 (9 Oct): copies judged before #471's verdict and the renamed-account fix are judged again.
 export const CURRENT_COPY_STRATEGY = { strategy: "hamilton.current_copy_check", version: 2 } as const;
+
+/**
+ * The retired documents among the `live` CTE's rows (columns older_document_id, institution_id,
+ * superseded_by_id, companion_source_id, document_url, fee_schedule_url), each paired with the
+ * newest read copy at its bank's current fee link (see the module note). Links are compared
+ * without scheme, "www.", case or trailing slashes. A bank with no fee link, or no read copy
+ * there, pairs nothing. Changes here change both the check and Bayes's count.
+ */
+export function retiredCopiesSql(db: SqlTag) {
+  return db`
+    SELECT DISTINCT ON (d.older_document_id) d.older_document_id, cur.id AS current_document_id
+      FROM (
+        SELECT DISTINCT l.older_document_id, l.institution_id,
+               lower(regexp_replace(regexp_replace(btrim(COALESCE(l.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) AS doc_key,
+               lower(regexp_replace(regexp_replace(btrim(COALESCE(l.fee_schedule_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) AS link_key
+          FROM live l
+         WHERE l.superseded_by_id IS NULL
+           AND l.companion_source_id IS NULL
+      ) d
+      JOIN LATERAL (
+        SELECT c.id
+          FROM source_documents c
+         WHERE c.institution_id = d.institution_id
+           AND c.id <> d.older_document_id
+           AND c.superseded_by_id IS NULL
+           AND lower(regexp_replace(regexp_replace(btrim(COALESCE(c.document_url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.link_key
+           AND EXISTS (SELECT 1 FROM agent_source_texts t WHERE t.source_document_id = c.id AND t.status = 'completed' AND t.normalized_text IS NOT NULL)
+         ORDER BY c.id DESC
+         LIMIT 1
+      ) cur ON TRUE
+     WHERE d.link_key <> ''
+       AND d.doc_key <> d.link_key
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_additional_sources ias
+          WHERE ias.institution_id = d.institution_id
+            AND ias.status <> 'rejected'
+            AND lower(regexp_replace(regexp_replace(btrim(COALESCE(ias.url, '')), '^https?://(www\\.)?', '', 'i'), '/+$', '')) = d.doc_key
+       )
+     ORDER BY d.older_document_id
+  `;
+}
 
 export function currentCopyFingerprint(olderDocumentId: number, currentDocumentId: number): string {
   return `v${CURRENT_COPY_STRATEGY.version}:${olderDocumentId}:${currentDocumentId}`;
@@ -57,6 +108,10 @@ export interface CurrentCopyFeeRow {
   amount: number | string | null;
   /** True when the current copy holds a verified row at this category and amount (refresh-copy moves it). */
   restated_row: boolean | null;
+  /** True when the older document is retired (no longer a source) rather than superseded in place. */
+  retired?: boolean | null;
+  older_url?: string | null;
+  current_url?: string | null;
 }
 
 export interface CurrentCopyCandidate {
@@ -81,6 +136,8 @@ export interface CurrentCopyDocument {
   dropped: number;
   unproven: number;
   recognized: boolean;
+  /** The older document is retired (no longer a source), not superseded in place. */
+  retired: boolean;
   failing: CurrentCopyCandidate[];
   passing: number[];
 }
@@ -140,6 +197,37 @@ export function currentCopyVerdict(fee: CurrentCopyFeeRow, currentText: string, 
   return traced.ok || traced.reason === "tiered_fee" ? "still_stated" : verdict;
 }
 
+/**
+ * Pure: a retired document is judged only against the same page or a newer dated edition of the
+ * same audience's schedule (`sameSchedule`, the change rule's test). The current link's newest
+ * copy is not always the bank's newest schedule: the dry run (Oct 19) found Billerica Municipal
+ * Employees FCU's link still on its Nov 2020 PDF while live fees came from the Aug 2023 one, and
+ * Lookout FCU's on its 2021 file beside a 2023 one. An undated pair on two pages judges nothing,
+ * and one page whose current file name is dated earlier than the retired one's judges nothing.
+ */
+export function retiredCopyIsNewer(fee: Pick<CurrentCopyFeeRow, "older_url" | "current_url">, currentText: string, olderText: string): boolean {
+  const match = sameSchedule({ oldUrl: fee.older_url, newUrl: fee.current_url, oldText: olderText, newText: currentText });
+  if (match !== "same_page") return match != null;
+  // `feePageKey` ignores dates in a file name, so "Schedule-of-Fees-2023Aug.pdf" and
+  // "Schedule-of-Fees-2020-Nov.pdf" are one page: a link whose file is dated earlier is not newer.
+  const olderYear = linkYear(fee.older_url);
+  const currentYear = linkYear(fee.current_url);
+  return olderYear == null || currentYear == null || currentYear >= olderYear;
+}
+
+/** The latest year (1990-2099) a link's path names, or null. Pure. */
+export function linkYear(url: string | null | undefined): number | null {
+  if (!url) return null;
+  let path = url;
+  try {
+    path = decodeURIComponent(new URL(url).pathname);
+  } catch {
+    // Not a full URL: read it as written.
+  }
+  const years = [...path.matchAll(/(?<!\d)(?:199\d|20\d\d)(?!\d)/g)].map((m) => Number(m[0]));
+  return years.length > 0 ? Math.max(...years) : null;
+}
+
 export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: string, olderText: string): CurrentCopyDocument {
   const first = fees[0];
   const doc: CurrentCopyDocument = {
@@ -151,6 +239,7 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     dropped: 0,
     unproven: 0,
     recognized: false,
+    retired: first.retired === true,
     failing: [],
     passing: [],
   };
@@ -183,7 +272,8 @@ export function judgeAgainstCurrentCopy(fees: CurrentCopyFeeRow[], currentText: 
     });
   }
   const judged = doc.stated + doc.named + doc.dropped;
-  doc.recognized = doc.stated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && doc.stated / judged >= NEWER_COPY_MIN_SHARED_SHARE;
+  doc.recognized = doc.stated >= NEWER_COPY_MIN_SHARED_FEES && judged > 0 && doc.stated / judged >= NEWER_COPY_MIN_SHARED_SHARE
+    && (!doc.retired || retiredCopyIsNewer(first, currentText, olderText));
   if (doc.recognized) doc.failing = suspect;
   return doc;
 }
@@ -202,7 +292,11 @@ export interface CurrentCopyResult {
   /** Fees the current copy states at their price by its text (not by a restated verified row), for UAT. */
   statedFeeIds: number[];
   /** Each judged copy: older and current document, and whether the current copy was recognized. */
-  copies: Array<{ older: number; current: number; recognized: boolean }>;
+  copies: Array<{ older: number; current: number; recognized: boolean; retired: boolean }>;
+  /** Of `documentsChecked`, the retired documents (no longer a source) judged against the current link's copy. */
+  retiredChecked: number;
+  /** Of `failing`, fees on retired documents. */
+  retiredFailing: number;
 }
 
 const EMPTY: CurrentCopyResult = {
@@ -218,6 +312,8 @@ const EMPTY: CurrentCopyResult = {
   samples: [],
   statedFeeIds: [],
   copies: [],
+  retiredChecked: 0,
+  retiredFailing: 0,
 };
 
 /**
@@ -228,16 +324,25 @@ const EMPTY: CurrentCopyResult = {
  */
 export async function countCurrentCopyPairs(db: SqlTag): Promise<{ pairs: number; done: number; queued: number; noText: number }> {
   const [row] = await db<Array<Record<string, number | string>>>`
-    WITH stale AS MATERIALIZED (
-      SELECT fp.canonical_fee_key, fp.amount, fp.rate_percent,
-             fr.source_document_id AS older_document_id, sd.superseded_by_id AS current_document_id
+    WITH live AS MATERIALIZED (
+      SELECT fp.canonical_fee_key, fp.amount, fp.rate_percent, fp.institution_id,
+             fr.source_document_id AS older_document_id,
+             sd.superseded_by_id, sd.companion_source_id, sd.document_url, inst.fee_schedule_url
         FROM published_fee_records fp
         JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         JOIN source_documents sd ON sd.id = fr.source_document_id
+        JOIN institution_sources inst ON inst.id = fp.institution_id
        WHERE fp.rolled_back_at IS NULL
-         AND sd.superseded_by_id IS NOT NULL
-         AND sd.superseded_by_id <> sd.id
+    ), retired AS MATERIALIZED (
+      ${retiredCopiesSql(db)}
+    ), stale AS MATERIALIZED (
+      SELECT live.canonical_fee_key, live.amount, live.rate_percent, live.older_document_id,
+             COALESCE(NULLIF(live.superseded_by_id, live.older_document_id), retired.current_document_id) AS current_document_id
+        FROM live
+        LEFT JOIN retired ON retired.older_document_id = live.older_document_id
+       WHERE (live.superseded_by_id IS NOT NULL AND live.superseded_by_id <> live.older_document_id)
+          OR (live.superseded_by_id IS NULL AND retired.current_document_id IS NOT NULL)
     ), pairs AS (
       SELECT s.older_document_id, s.current_document_id
         FROM stale s
@@ -297,20 +402,29 @@ export async function secondLookFeesNotOnCurrentCopy(
   let texts: Map<number, string>;
   try {
     fees = await inSavepoint(db, (scope) => scope<CurrentCopyFeeRow[]>`
-      WITH stale AS MATERIALIZED (
+      WITH live AS MATERIALIZED (
         SELECT fp.fee_published_id, fv.fee_verified_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name,
                fp.amount, fp.rate_percent, fr.source_document_id AS older_document_id,
-               sd.superseded_by_id AS current_document_id
+               sd.superseded_by_id, sd.companion_source_id, sd.document_url, inst.fee_schedule_url
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
           JOIN source_documents sd ON sd.id = fr.source_document_id
           JOIN institution_sources inst ON inst.id = fp.institution_id
          WHERE fp.rolled_back_at IS NULL
-           AND sd.superseded_by_id IS NOT NULL
-           AND sd.superseded_by_id <> sd.id
            AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
+      ), retired AS MATERIALIZED (
+        ${retiredCopiesSql(scope)}
+      ), stale AS MATERIALIZED (
+        SELECT live.fee_published_id, live.fee_verified_id, live.institution_id, live.canonical_fee_key, live.fee_name,
+               live.amount, live.rate_percent, live.older_document_id,
+               COALESCE(NULLIF(live.superseded_by_id, live.older_document_id), retired.current_document_id) AS current_document_id,
+               retired.current_document_id IS NOT NULL AND live.superseded_by_id IS NULL AS retired
+          FROM live
+          LEFT JOIN retired ON retired.older_document_id = live.older_document_id
+         WHERE (live.superseded_by_id IS NOT NULL AND live.superseded_by_id <> live.older_document_id)
+            OR (live.superseded_by_id IS NULL AND retired.current_document_id IS NOT NULL)
       ), marked AS MATERIALIZED (
         SELECT stale.*,
                EXISTS (
@@ -348,9 +462,12 @@ export async function secondLookFeesNotOnCurrentCopy(
          LIMIT ${limit}
       )
       SELECT m.fee_published_id, m.fee_verified_id, m.institution_id, m.older_document_id, m.current_document_id,
-             m.canonical_fee_key, m.fee_name, m.amount, m.restated_row
+             m.canonical_fee_key, m.fee_name, m.amount, m.restated_row, m.retired,
+             older_doc.document_url AS older_url, current_doc.document_url AS current_url
         FROM marked m
         JOIN docs ON docs.older_document_id = m.older_document_id AND docs.current_document_id = m.current_document_id
+        LEFT JOIN source_documents older_doc ON older_doc.id = m.older_document_id
+        LEFT JOIN source_documents current_doc ON current_doc.id = m.current_document_id
        ORDER BY m.older_document_id, m.fee_published_id
     `);
     if (fees.length === 0) return { ...EMPTY, confirmLive };
@@ -399,7 +516,9 @@ export async function secondLookFeesNotOnCurrentCopy(
     confirmLive,
     samples: failing.slice(0, 20),
     statedFeeIds: passing.slice(0, 200),
-    copies: documents.map((doc) => ({ older: doc.olderDocumentId, current: doc.currentDocumentId, recognized: doc.recognized })),
+    copies: documents.map((doc) => ({ older: doc.olderDocumentId, current: doc.currentDocumentId, recognized: doc.recognized, retired: doc.retired })),
+    retiredChecked: documents.filter((doc) => doc.retired).length,
+    retiredFailing: documents.filter((doc) => doc.retired).reduce((total, doc) => total + doc.failing.length, 0),
   };
   if (options.dryRun) return result;
 
@@ -450,6 +569,7 @@ export async function secondLookFeesNotOnCurrentCopy(
           detail: {
             current_document_id: doc.currentDocumentId,
             recognized: doc.recognized,
+            retired: doc.retired,
             stated: doc.stated,
             named: doc.named,
             dropped: doc.dropped,
@@ -461,7 +581,7 @@ export async function secondLookFeesNotOnCurrentCopy(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.current_copy_check', 'completed',
-          ${`Checked ${result.documentsChecked} superseded cop(ies) against the current copy: ${result.stated} fee(s) restated, ${result.failing} not restated at their price (${result.flagged} flagged for a second look, ${result.waiting} waiting, ${result.takenDown.length} archived${confirmLive ? "" : "; confirmations off until the hand check"}), ${result.cleared} cleared, ${result.unrecognized} current cop(ies) not recognizably the same schedule`},
+          ${`Checked ${result.documentsChecked} superseded or retired cop(ies) (${result.retiredChecked} retired) against the current copy: ${result.stated} fee(s) restated, ${result.failing} not restated at their price (${result.flagged} flagged for a second look, ${result.waiting} waiting, ${result.takenDown.length} archived${confirmLive ? "" : "; confirmations off until the hand check"}), ${result.cleared} cleared, ${result.unrecognized} current cop(ies) not recognizably the same schedule`},
           ${JSON.stringify({
             batch_id: options.batchId,
             confirm_live: confirmLive,
@@ -473,6 +593,8 @@ export async function secondLookFeesNotOnCurrentCopy(
             waiting: result.waiting,
             cleared: result.cleared,
             taken_down: result.takenDown.length,
+            retired_checked: result.retiredChecked,
+            retired_failing: result.retiredFailing,
             stated_fee_ids: result.statedFeeIds,
             copies: result.copies,
             samples: result.samples.map((fee) => ({

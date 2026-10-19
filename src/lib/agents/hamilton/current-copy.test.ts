@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { currentCopyVerdict, judgeAgainstCurrentCopy, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
+import { countCurrentCopyPairs, currentCopyVerdict, judgeAgainstCurrentCopy, linkYear, retiredCopiesSql, retiredCopyIsNewer, secondLookFeesNotOnCurrentCopy, type CurrentCopyFeeRow } from "./current-copy";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -57,11 +57,11 @@ describe("judgeAgainstCurrentCopy", () => {
   });
 });
 
-function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | null) {
+function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | null, rows: CurrentCopyFeeRow[] = fees) {
   const query = (strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("to_regclass")) return Promise.resolve([{ ready: true }]);
-    if (text.includes("WITH stale AS MATERIALIZED")) return Promise.resolve(fees);
+    if (text.includes("WITH live AS MATERIALIZED")) return Promise.resolve(rows);
     if (text.includes("FROM agent_source_texts")) {
       return Promise.resolve([
         { source_document_id: 40, normalized_text: OLDER },
@@ -94,7 +94,7 @@ describe("secondLookFeesNotOnCurrentCopy", () => {
     expect(writes(db).some((text) => text.includes("hamilton.current_copy_check"))).toBe(true);
     // UAT reads which fees passed and which copies were judged, even when nothing fails.
     expect(result.statedFeeIds).toEqual([1]);
-    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true }]);
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true, retired: false }]);
     expect(JSON.stringify(db.mock.calls)).toContain("stated_fee_ids");
   });
 
@@ -167,5 +167,69 @@ describe("currentCopyVerdict (second hand check, 9 Oct)", () => {
     const raised = TAMPA.replace("$9.95/month", "$12.95/month");
     const verdict = currentCopyVerdict(fee(1, "Fresh Start Checking Monthly Maintenance Fee", "9.95", { canonical_fee_key: "monthly_maintenance" }), raised, older);
     expect(verdict).not.toBe("still_stated");
+  });
+});
+
+describe("retired documents (no longer a source, Oct 19)", () => {
+  it("selects retired documents beside superseded ones, paired with the current link's newest read copy", async () => {
+    const db = createDb(null);
+    await secondLookFeesNotOnCurrentCopy(db, { ...options, confirmLive: true });
+    const select = writes(db).find((text) => text.includes("WITH live AS MATERIALIZED")) ?? "";
+    expect(select).toContain("retired AS MATERIALIZED");
+    expect(select).toContain("live.superseded_by_id IS NULL AND retired.current_document_id IS NOT NULL");
+    void retiredCopiesSql(db);
+    const retired = templateText(db.mock.calls.at(-1)?.[0]);
+    // Not a source: not the fee link, not a companion, not a non-rejected additional source; the pair needs a read copy.
+    expect(retired).toContain("l.companion_source_id IS NULL");
+    expect(retired).toContain("ias.status <> 'rejected'");
+    expect(retired).toContain("d.doc_key <> d.link_key");
+    expect(retired).toContain("t.status = 'completed'");
+  });
+
+  it("judges a retired document's fees like a superseded copy's and reports them apart", async () => {
+    const db = createDb(null, fees.map((row) => ({ ...row, retired: true, older_url: "https://bank.example/fees-2023.pdf", current_url: "https://bank.example/fees-2026.pdf" })));
+    const result = await secondLookFeesNotOnCurrentCopy(db, { ...options, confirmLive: false });
+    expect(result).toMatchObject({ documentsChecked: 1, retiredChecked: 1, failing: 2, retiredFailing: 2, takenDown: [] });
+    expect(result.copies).toEqual([{ older: 40, current: 41, recognized: true, retired: true }]);
+    expect(JSON.stringify(db.mock.calls)).toContain("retired_failing");
+  });
+
+  it("counts retired pairs in Bayes's manifest with the same selection", async () => {
+    const db = createDb(null);
+    await countCurrentCopyPairs(db);
+    const count = writes(db).find((text) => text.includes("SELECT COUNT(*) AS pairs")) ?? "";
+    expect(count).toContain("retired AS MATERIALIZED");
+  });
+
+  it("judges a retired document only against the same page or a newer dated edition (dry run, Oct 19)", () => {
+    const dated = (date: string, body: string) => `Fee Schedule Effective ${date}\n${body}`;
+    // Billerica Municipal Employees FCU: the link's file is dated 2020, the live fees came from 2023.
+    expect(retiredCopyIsNewer({
+      older_url: "https://www.billericamecu.com/wp-content/uploads/2023/09/Schedule-of-Fees-2023Aug.pdf",
+      current_url: "https://www.billericamecu.com/wp-content/uploads/2020/12/Schedule-of-Fees-2020-Nov.pdf",
+    }, CURRENT, OLDER)).toBe(false);
+    // Citizens Bank of Rogersville: the same file name, dated 2023 then 2026.
+    expect(retiredCopyIsNewer({
+      older_url: "https://cbofr.com/wp-content/uploads/2023/03/Service-Charge-Fee-Schedule-02012023.pdf",
+      current_url: "https://www.cbofr.com/wp-content/uploads/2026/09/Service-Charge-Fee-Schedule-09302026.pdf",
+    }, CURRENT, OLDER)).toBe(true);
+    // Two pages: only a later effective date makes the current one newer.
+    const pages = { older_url: "https://www.accessfcu.org/home/rates-fees/fees", current_url: "https://www.accessfcu.org/docs/Fee%20Schedule.pdf" };
+    expect(retiredCopyIsNewer(pages, dated("January 1, 2025", CURRENT), dated("October 31, 2023", OLDER))).toBe(true);
+    expect(retiredCopyIsNewer(pages, dated("October 31, 2023", CURRENT), dated("January 1, 2025", OLDER))).toBe(false);
+    expect(retiredCopyIsNewer(pages, CURRENT, OLDER)).toBe(false);
+  });
+
+  it("recognizes no retired document whose current copy is not newer", () => {
+    const stale = fees.map((row) => ({ ...row, retired: true, older_url: "https://bank.example/a/fees", current_url: "https://bank.example/b/fees" }));
+    const doc = judgeAgainstCurrentCopy(stale, CURRENT, OLDER);
+    expect(doc).toMatchObject({ retired: true, recognized: false, failing: [] });
+  });
+
+  it("reads the latest year a link names", () => {
+    expect(linkYear("https://x.org/uploads/2024/08/NHFCU.Fee_.Schedule.Oct_.1.2024.pdf")).toBe(2024);
+    expect(linkYear("https://x.org/2021-Fee-Schedule-102021.pdf")).toBe(2021);
+    expect(linkYear("https://x.org/fees/12345.pdf")).toBeNull();
+    expect(linkYear(null)).toBeNull();
   });
 });
