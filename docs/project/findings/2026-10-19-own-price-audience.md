@@ -44,3 +44,44 @@ No production correction, historical metadata rewrite, relabel restart, provider
 source/extraction epoch, numeric policy, migration or feature activation is part of this
 pure checkpoint. The live155214 recovery remains a separately reviewed last step after
 the process is deployed and a normal scoped recheck has completed.
+
+## Unwired factual-source checkpoint
+
+`withLockedSourcePrefix(tx, refs)` requires a real native transaction/savepoint. It validates
+every document/institution reference, locks all documents then all current artifacts in
+ascending identity order, and verifies the actual owner, status, source bytes hash and
+normalized body digest. It returns the actual locked document/artifact rows, including
+status, timestamps, stream metadata and pointers; this supplies facts, not date authority.
+It never locks raw, verified or published rows. Publication can preserve its existing
+published → verified → raw suffix instead of entering a raw-first wrapper.
+
+`withLockedRawSource(tx, rawId)` uses the same prefix, then locks raw last. Its complete
+preflight/post-lock raw snapshot must match. The actual original generated raw header's
+artifact and normalized digest must equal the locked current artifact; source quotations
+cannot supply a header, and private retained/historical witnesses are never consulted.
+`matchOriginalRawSource` exposes that same pure original-binding grammar for a publication
+suffix, without duplicating a loader or granting any admission authority.
+
+Every newly introduced row lock is `NOWAIT`, including raw. Busy, changed and unavailable
+remain distinct and roll back the helper's nested savepoint, releasing all locks it added.
+No pending raw state, attempt, outcome, marker or fee tier is written. Only a bound result
+keeps locks in the caller's transaction. A prefix consumer must wrap its later identity-CAS
+and write in its **own** savepoint and roll that back if the suffix defers, releasing the
+bound prefix as well. An autocommit/root client is rejected instead of pretending its
+locks span later work.
+
+Thirty actual disposable-PostgreSQL tests cover current facts, full pending-state equality,
+owner/body/header mismatches, absent data, every busy prefix/raw position and release of
+previous locks, complete raw document/name/amount/scope CAS, a changed source after pointer
+discovery, retained bound locks, multi-document order, invalid/conflicting refs, consumer
+rollback, native repeatable-read serialization and the Knox rawA → source-FK rawB inversion.
+The free/paid generated headers are tested without invoking providers. This is a module
+checkpoint: no existing verification or publication caller is wired to it yet.
+
+Before wiring, the admitted caller identity must also be compared with the current locked
+raw identity: it may have become stale even before module preflight. Precomputed caller or
+model audience/text cannot override the final own-source decision. Prospective outer peer,
+source and duplicate checks must use that same exact audience. Existing known raw labels
+and historical relabel behavior remain unchanged. Each consumer's busy/unavailable fallback
+requires review; this module does not impose a new global source-binding requirement on
+ordinary nonapplicable fees or turn unavailable proof into an ordinary no-qualifier result.
