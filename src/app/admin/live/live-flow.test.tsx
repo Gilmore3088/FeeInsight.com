@@ -77,6 +77,33 @@ describe("Live page polling (#2016)", () => {
     expect(screen.getByText(/queue counts from .*\(4 min old\)/)).toBeTruthy();
   });
 
+  it("stops polling and aborts a poll in flight when the page unmounts", async () => {
+    const signals: AbortSignal[] = [];
+    fetchMock.mockImplementation((_url: string, init: RequestInit) => {
+      signals.push(init.signal as AbortSignal);
+      return new Promise(() => {});
+    });
+    const view = render(<LiveFlow initial={initial} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(signals[0].aborted).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS * 4); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // A tab shown again after unmount starts nothing either.
+    setVisibility("hidden");
+    setVisibility("visible");
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("schedules nothing when the page unmounts between polls", async () => {
+    const view = render(<LiveFlow initial={initial} />);
+    view.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS * 4); });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("says how old the counts are in plain words", () => {
     expect(countsAge("2026-10-19T02:00:00.000Z", "2026-10-19T02:00:20.000Z")).toBe("under a minute old");
     expect(countsAge("2026-10-19T02:00:00.000Z", "2026-10-19T02:12:00.000Z")).toBe("12 min old");

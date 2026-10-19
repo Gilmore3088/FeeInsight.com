@@ -24,12 +24,15 @@ vi.mock("@/lib/data-store/connection", () => ({
   withTransaction: (callback: (tx: typeof txMock) => unknown) => callback(txMock),
 }));
 vi.mock("next/cache", () => ({ unstable_cache: (fn: () => unknown) => fn }));
+const { afterMock } = vi.hoisted(() => ({ afterMock: vi.fn() }));
+vi.mock("next/server", () => ({ after: afterMock }));
 
 import { FLOW_STATEMENT_TIMEOUT_MS, FLOW_WAITING_TIMEOUT_MS, getFlowSnapshot, getFlowWaitingWithin } from "./flow";
 
 describe("Live flow reads are bounded (#2016)", () => {
   beforeEach(() => {
     statements.length = 0;
+    afterMock.mockReset();
     slow.waitingMs = 0;
     slow.fail = false;
   });
@@ -48,6 +51,40 @@ describe("Live flow reads are bounded (#2016)", () => {
     expect(FLOW_WAITING_TIMEOUT_MS).toBeLessThan(30_000);
     expect(counts).toMatchObject({ magellan: 1, published: 6, total: 7 });
     expect(Number.isFinite(Date.parse(String(counts?.computedAt)))).toBe(true);
+  });
+
+  it("hands a read still running after the wait to after(), so the instance stays up until it ends", async () => {
+    vi.useFakeTimers();
+    slow.waitingMs = 14_000;
+    const pending = getFlowWaitingWithin(3_000);
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(pending).resolves.toBeNull();
+    expect(afterMock).toHaveBeenCalledTimes(1);
+    const kept = afterMock.mock.calls[0][0] as () => Promise<void>;
+    let ended = false;
+    void kept().then(() => { ended = true; });
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(ended).toBe(false);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ended).toBe(true);
+  });
+
+  it("runs one counts read per instance however many polls arrive while it runs", async () => {
+    vi.useFakeTimers();
+    slow.waitingMs = 14_000;
+    const polls = [getFlowWaitingWithin(3_000), getFlowWaitingWithin(3_000), getFlowWaitingWithin(3_000)];
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(Promise.all(polls)).resolves.toEqual([null, null, null]);
+    // A poll during the read joins it and gets its counts.
+    const late = getFlowWaitingWithin(20_000);
+    await vi.advanceTimersByTimeAsync(11_000);
+    await expect(late).resolves.toMatchObject({ magellan: 1 });
+    expect(statements.filter((text) => text.includes("AS magellan"))).toHaveLength(1);
+    // Once it ends, the next poll starts a new read.
+    slow.waitingMs = 0;
+    vi.useRealTimers();
+    await getFlowWaitingWithin(1_000);
+    expect(statements.filter((text) => text.includes("AS magellan"))).toHaveLength(2);
   });
 
   it("answers without the counts when they are not ready in time, or when they fail", async () => {

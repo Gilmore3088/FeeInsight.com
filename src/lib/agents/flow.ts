@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { after } from "next/server";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { PUBLISHER_AGENT_NAMES } from "./gutenberg/names";
@@ -196,19 +197,47 @@ export const getFlowWaiting = unstable_cache(
 );
 
 /**
+ * The one counts read in flight on this server instance. Polls and renders that arrive while it
+ * runs share it, so a cold or failing cache starts one 25 s transaction per instance, not one per
+ * poll per tab (#2027 review).
+ */
+let waitingInFlight: Promise<FlowWaitingCounts | null> | null = null;
+
+function sharedWaitingRead(): Promise<FlowWaitingCounts | null> {
+  if (!waitingInFlight) {
+    waitingInFlight = getFlowWaiting()
+      .catch((error) => {
+        console.error("Live flow waiting counts failed", error);
+        return null;
+      })
+      .finally(() => {
+        waitingInFlight = null;
+      });
+  }
+  return waitingInFlight;
+}
+
+/**
  * The cached waiting counts, or null when they are not ready within `waitMs`: a cold cache or a
- * slow refresh never holds the request (the counts finish in the background and are cached).
+ * slow refresh never holds the request. The read it leaves running is handed to `after()`, so
+ * the platform keeps the instance until that read ends (its 25 s statement timeout at most)
+ * instead of suspending it mid-transaction on a pooled connection; the counts are then cached.
  */
 export async function getFlowWaitingWithin(waitMs: number = FLOW_WAITING_WAIT_MS): Promise<FlowWaitingCounts | null> {
+  const read = sharedWaitingRead();
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<null>((resolve) => {
-    timer = setTimeout(() => resolve(null), waitMs);
+  const late = new Promise<"late">((resolve) => {
+    timer = setTimeout(() => resolve("late"), waitMs);
   });
   try {
-    return await Promise.race([getFlowWaiting().catch((error) => {
-      console.error("Live flow waiting counts failed", error);
-      return null;
-    }), late]);
+    const result = await Promise.race([read, late]);
+    if (result !== "late") return result;
+    try {
+      after(() => read.then(() => undefined));
+    } catch {
+      // Outside a request (tests, scripts): nothing to keep alive; the read ends on its own.
+    }
+    return null;
   } finally {
     if (timer) clearTimeout(timer);
   }
