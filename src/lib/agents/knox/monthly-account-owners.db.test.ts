@@ -191,6 +191,9 @@ describe.skipIf(!connection)("Monthly account ownership through real PostgreSQL 
       await automaticHeldPasses(tx, fixture);
       await darwin.runDarwinVerify({ db: tx, runId: fixture.runId, institutionId: fixture.institutionId, limit: 100 });
       await fullPublish(tx, fixture);
+      expect(await tx`SELECT product_name FROM raw_fee_observations WHERE institution_id=${fixture.institutionId}
+        AND fee_name='monthly fee if balance goes below minimum balance' AND amount=5`)
+        .toEqual([expect.objectContaining({ product_name: 'SAVINGS ACCOUNT' })]);
       const held = await tx`SELECT fee_raw_id,fee_name,amount,frequency,conditions,extraction_note,outlier_flags
         FROM raw_fee_observations WHERE institution_id=${fixture.institutionId}
         AND outlier_flags ? 'knox_review:eligibility' ORDER BY fee_raw_id`;
@@ -223,11 +226,9 @@ describe.skipIf(!connection)("Monthly account ownership through real PostgreSQL 
       const savings = await tx`SELECT fr.fee_name,fr.product_name,fr.outlier_flags,fv.outlier_flags AS verified_flags,
         fv.review_status FROM raw_fee_observations fr LEFT JOIN verified_fee_observations fv ON fv.fee_raw_id=fr.fee_raw_id
         WHERE fr.institution_id=${fixture.institutionId} AND fr.amount=5`;
-      // The pre-existing lineup-correct path can later mislabel this raw product as
-      // MONEY MARKET ACCOUNT (separate ownership finding). Its verified savings hold
-      // must survive that metadata change and every restoration owner.
       const savingsRow = savings.find(row => row.fee_name === 'monthly fee if balance goes below minimum balance');
       expect(savingsRow).toBeDefined();
+      expect(savingsRow?.product_name).toBe("SAVINGS ACCOUNT");
       expect(JSON.stringify(savingsRow?.verified_flags)).toContain("account_type:savings");
       expect(await tx`SELECT pc.id FROM published_fee_catalog pc JOIN raw_fee_observations fr ON fr.fee_raw_id=pc.fee_raw_id
         WHERE pc.institution_id=${fixture.institutionId} AND fr.fee_name='monthly fee if balance goes below minimum balance'
