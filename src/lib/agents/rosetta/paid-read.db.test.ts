@@ -1,13 +1,14 @@
 /** @vitest-environment node */
 import postgres from "postgres";
 import { randomBytes } from "node:crypto";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { sql as AppSql } from "@/lib/data-store/connection";
 
 const state = vi.hoisted(() => ({ client: null as unknown as postgres.Sql<{ json: unknown; numeric: number; text: string }>, schema: "", allowed: true }));
 vi.mock("@/lib/data-store/connection", async (original) => {
   const actual = await original<typeof import("@/lib/data-store/connection")>();
-  const qualify = (text: string) => text.replace(/\bpublic\.(institution_sources|source_documents|agent_source_texts|institution_source_profiles|pipeline_attempts|pipeline_feedback|agent_runs|ai_api_usage_events)\b/g,
+  const qualify = (text: string) => text.replace(/\bpublic\.(institution_sources|source_documents|agent_source_texts|institution_source_profiles|pipeline_attempts|pipeline_feedback|agent_runs|ai_api_usage_events|agent_source_text_witnesses)\b/g,
     (_match, table: string) => `"${state.schema}".${table}`);
   const tag = (...args: unknown[]) => {
     const parts = args[0] as TemplateStringsArray;
@@ -34,6 +35,7 @@ import { sql, JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from 
 import { runRosettaPaidRead, PAID_READ_STRATEGY, ROSETTA_PAID_READ_VERSION } from "./paid-read";
 import { hashText } from "./read";
 import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
+import { normalizedWitnessSchemaReady } from "./normalized-witness";
 
 const url = process.env.E2E_DATABASE_URL;
 const schema = `rosetta_policy_${randomBytes(8).toString("hex")}`;
@@ -43,6 +45,8 @@ const text = "SCHEDULE OF FEES\nOverdraft fee | $35.00\nNSF fee | $35.00\nStop p
 const pdf = new TextEncoder().encode("%PDF-1.4 owned Rosetta SQL fixture");
 const sourceHash = hashText(Buffer.from(pdf).toString());
 const known = { input_tokens: 10, output_tokens: 20 };
+// Exact main migration, scoped only to this suite's random schema. Production schema is unchanged.
+const witnessMigration = readFileSync(new URL("../../../../supabase/migrations/20270110000067_normalized_source_text_witnesses.sql", import.meta.url), "utf8");
 
 describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () => {
   beforeAll(async () => {
@@ -70,6 +74,14 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     await state.client.unsafe(`TRUNCATE ${tables.map((name) => `"${schema}".${name}`).join(", ")} RESTART IDENTITY`);
     await sql`INSERT INTO agent_runs (id, agent_name, run_kind) VALUES (900, 'rosetta', 'workflow')`;
   });
+  afterEach(async () => {
+    const [capability] = await state.client`SELECT to_regclass(${`${schema}.agent_source_text_witnesses`}) AS relation`;
+    if (capability?.relation) {
+      // Fixture-owner DDL only. The main migration's normal-DML immutability guard stays intact.
+      await state.client.unsafe(`DROP TABLE "${schema}".agent_source_text_witnesses CASCADE`);
+      await state.client.unsafe(`DROP FUNCTION IF EXISTS "${schema}".reject_normalized_witness_mutation()`);
+    }
+  });
   afterAll(async () => {
     vi.unstubAllEnvs();
     if (state.client) { await state.client.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`); await state.client.end(); }
@@ -89,6 +101,10 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     if (prior) await sql`INSERT INTO pipeline_feedback (institution_id, source_document_id, about_stage, check_name, signal, kind, reported_by, dedupe_key, evidence)
       VALUES (${inst.id}, ${doc.id}, 'read', 'rosetta.text_survival', 'wrong', 'text_lost_fees', 'rosetta', ${`fixture:${doc.id}`}, ${JSON.stringify({ text_hash: hashText(prior) })}::jsonb)`;
     return { institution: Number(inst.id), document: Number(doc.id), artifact: Number(artifact.id) };
+  }
+  async function enableWitnessCapability() {
+    await state.client.unsafe(witnessMigration.replace(/\bpublic\./g, `"${schema}".`));
+    expect(await normalizedWitnessSchemaReady(sql)).toBe(true);
   }
   async function run(reason: unknown = "end_turn", usage: unknown = known, output = text) {
     const create = vi.fn(async () => ({ content: [{ type: "text", text: output }], stop_reason: reason, usage }) as never);
@@ -192,10 +208,12 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy = ${PAID_READ_STRATEGY}`).toHaveLength(0);
   });
 
-  it.each([
+  it.each([false, true].flatMap((ready) => [
     { label: "known", usage: known, cost: 220, observation: "observed" },
     { label: "unknown", usage: { input_tokens: "invalid", output_tokens: 20 }, cost: null, observation: "unknown" },
-  ])("retains a committed $label provider receipt when the first text write fails; settlement may remain eligible", async (fixture) => {
+  ].map((fixture) => ({ ...fixture, ready }))))("retains a committed $label provider receipt when the first text write fails (witness ready=$ready)", async (fixture) => {
+    if (fixture.ready) await enableWitnessCapability();
+    else expect(await normalizedWitnessSchemaReady(sql)).toBe(false);
     const selected = await seed(text);
     const [beforeArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
     const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
@@ -226,6 +244,7 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     const [runRow] = await sql`SELECT actual_provider_calls, actual_estimated_cost_microusd FROM agent_runs WHERE id = 900`;
     expect(runRow.actual_provider_calls).toBe(1); expect(Number(runRow.actual_estimated_cost_microusd)).toBe(fixture.cost ?? 0);
     expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy IN (${PAID_READ_STRATEGY}, 'read.page_check', 'read.table_rows')`).toHaveLength(0);
+    if (fixture.ready) expect(await sql`SELECT * FROM agent_source_text_witnesses`).toHaveLength(0);
     // The rejected promise supplies no normal paid result/summary to the caller.
     // A later selection may still be due: this is not durable atomic settlement.
     const laterCreate = vi.fn(); const laterFetch = vi.fn();
@@ -233,5 +252,30 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
       create: laterCreate, fetchImpl: laterFetch });
     expect(later).toMatchObject({ selected: 1, processed: 0, dryRun: true });
     expect(laterCreate).not.toHaveBeenCalled(); expect(laterFetch).not.toHaveBeenCalled();
+  });
+
+  it("stores an unknown-cost usable partial with active main witness retention and matching produced/retained provenance", async () => {
+    await enableWitnessCapability(); const selected = await seed(text);
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    const { result, create } = await run("model_context_window_exceeded", { input_tokens: "invalid", output_tokens: 20 }, improved);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 1 });
+    const retention = { status: "active", incumbent: "captured", incoming: "captured" };
+    expect(result.results[0]).toMatchObject({ outcome: "ok_partial", cost_microusd: null, response_complete: false,
+      produced_text_hash: hashText(improved), retained_text_hash: hashText(improved), witness_retention: retention });
+    const [artifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    expect(artifact).toMatchObject({ status: "completed", normalized_text: improved, text_hash: hashText(improved), reader: PAID_READ_STRATEGY });
+    expect(artifact.table_rows.rows).toHaveLength(4);
+    const witnesses = await sql`SELECT text_hash, normalized_text, source_hash FROM agent_source_text_witnesses WHERE artifact_id = ${selected.artifact}`;
+    expect(witnesses).toHaveLength(2);
+    expect(witnesses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text_hash: hashText(text), normalized_text: text, source_hash: sourceHash }),
+      expect.objectContaining({ text_hash: hashText(improved), normalized_text: improved, source_hash: sourceHash }),
+    ]));
+    const [attempt] = await sql`SELECT outcome, detail FROM pipeline_attempts WHERE strategy = ${PAID_READ_STRATEGY}`;
+    expect(attempt).toMatchObject({ outcome: "ok_partial", detail: { truncated: true, cost_is_placeholder: true,
+      cost_microusd: null, selected_source_hash: sourceHash, produced_text_hash: hashText(improved), retained_text_hash: hashText(improved), witness_retention: retention } });
+    const [event] = await sql`SELECT estimated_cost_microusd, metadata FROM ai_api_usage_events`;
+    expect(event).toMatchObject({ estimated_cost_microusd: null, metadata: { usage_observation: "unknown", response_complete: false } });
   });
 });

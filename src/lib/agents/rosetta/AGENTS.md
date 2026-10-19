@@ -208,11 +208,14 @@ Rosetta owns source text normalization.
     replies are therefore absent from that strategy's learned mean. Usage ledger cost is
     NULL. Pre-call budget denials are not unknown returned responses. Generic paid tools,
     no-return transport uncertainty and the existing incurred-spend predicate stay unchanged.
-    Persistence remains non-atomic (#1050/#1048): a successfully committed usage receipt
-    survives a later artifact-write failure, but that error can prevent the normal paid
+    The provider receipt and paid attempt remain outside the artifact write group
+    (#1050/#1048). With witness schema ready, main's shared transaction/savepoint makes
+    artifact/table/profile and witness writes atomic; without it, the legacy fallback
+    can still leave partial subwrites. A successfully committed usage receipt survives
+    a later artifact-write failure, but that error can prevent the normal paid
     result/attempt/summary. A first text-write failure retains earlier text and can leave
-    later paid selection eligible; later subwrite failures can leave partial artifact
-    updates. This policy adds no atomic settlement or global no-retry guarantee.
+    later paid selection eligible. This policy adds no atomic provider/artifact/attempt
+    settlement or global no-retry guarantee.
   - Fees that hold up (`text-survival.ts`, learning plan steps 1 to 4). At most once per
     `TEXT_SURVIVAL_REFRESH_HOURS` (20) the read step judges each document's current
     completed text by the published fees Knox pulled from it since that text first

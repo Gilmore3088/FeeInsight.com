@@ -44,15 +44,17 @@ exactly-once billing guarantee; one emitted receipt can contain up to three unch
 transport attempts. No provider/model/prompt/key, package, schema, budget/control or live
 source/provider setting changes are part of this fix.
 
-At this reviewed source, the existing storage boundary remains non-atomic under open
-#1050/#1048. The provider
-receipt is recorded before the artifact writes; a successfully committed receipt survives
-a later text-write error, without a second provider event. That error rejects the reader
-before its normal paid result, settled attempt and saved success summary are returned.
-A failed first artifact write retains the prior artifact and can leave the source eligible
-for a later paid run. An error in a later table/profile statement can leave earlier
-autocommit artifact writes in place. No claim of global no-retry, atomic artifact/attempt
-settlement or recovery from storage failure is made here.
+The provider receipt is recorded before artifact writes, and the paid attempt remains
+outside that artifact group. When the normalized-witness capability is ready, main's
+`atomicTextWrite` groups artifact/table/profile and witness writes in a transaction or
+savepoint. A failure rolls back that group. Without the capability, the legacy fallback
+can still leave earlier autocommit subwrites after a later statement fails. In either
+mode, a successfully committed provider receipt survives a later text-write error without
+a second provider event. That error rejects the reader before its normal paid result,
+settled attempt and saved success summary are returned. A failed first artifact write
+retains the prior artifact and can leave later paid selection eligible. This remaining
+cross-group persistence boundary stays under open #1050/#1048; no global no-retry, atomic
+provider/artifact/attempt settlement or storage-recovery guarantee is made here.
 
 **Guard:** `src/lib/agents/rosetta/paid-read.integration.test.ts` exercises the actual installed
 SDK, factory, bounded transport, tracker and reader against intercepted synthetic JSON:
@@ -64,9 +66,12 @@ write sinks. It makes no provider/network or database request.
 loopback production-schema fixture. Real text/table/profile/attempt/ledger writes prove
 partial lineage, prior-good preservation, settled selection without another paid call,
 known-zero versus unknown playbook behavior and the unchanged incurred predicate.
-Known/unknown returned-response cases use an owned-schema failing text-INSERT trigger to
-prove the already committed ledger receipt/run counter survives, prior text/profile stay,
-no normal paid attempt is written and a later dry selection remains eligible. These SQL
+Known/unknown returned-response cases use an owned-schema failing text-INSERT trigger with
+witness capability both ready and unavailable. They prove the already committed ledger
+receipt/run counter survives, prior text/profile stay, no normal paid attempt is written
+and a later dry selection remains eligible. A normal unknown-cost usable partial with
+ready retention preserves both exact witnesses plus the response/cost/lineage fields.
+The fixture applies main's exact migration contract only in its random schema. These SQL
 responses use the existing injected creator; actual-SDK controls are the separate suite.
 `src/lib/provider-usage-accounting.db.test.ts` preserves existing observed/unknown/zero
 accounting and budget/run controls.
