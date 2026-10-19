@@ -449,6 +449,12 @@ function StructuredAskConversation({
       if (res?.answer?.storyline) {
         onStoryline?.();
         onLead?.(res.answer.storyline.governingThought);
+        // A list is the answer itself; no memo is written over it (#2033).
+        if (res.answer.storyline.kind === "list") {
+          memoFor.current = null;
+          setMemo(undefined);
+          return;
+        }
         memoFor.current = asked;
         setMemo({ state: "writing" });
         void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {

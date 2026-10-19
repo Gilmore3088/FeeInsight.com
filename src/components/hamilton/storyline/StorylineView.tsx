@@ -240,7 +240,8 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps 
         </section>
       ) : null}
 
-      <section className="border-t border-warm-300 pt-6">
+      {/* A list answer carries no readings (#2033). */}
+      {story.kind === "list" ? null : <section className="border-t border-warm-300 pt-6">
         <Kicker>What it means for you</Kicker>
         <LensSwitch
           initial={story.defaultView ?? "finance"}
@@ -257,7 +258,7 @@ export function StorylineView({ story, nextSteps, memo, identityContext, stamps 
             </div>
           }
         />
-      </section>
+      </section>}
 
       {written && written.questions.length > 0 ? (
         <section className="border-t border-warm-300 pt-6">
