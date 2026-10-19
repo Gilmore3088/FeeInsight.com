@@ -443,12 +443,13 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
       outcome: read.attemptOutcome,
       chars: text.length,
       table_rows: rows.length,
+      witness_retention: read.witnessRetention,
       pages,
       cost_microusd: costMicrousd,
       ...responseDetail,
       retained_text_hash: textHash,
     });
-    await record(read.attemptOutcome!, costMicrousd, text.length, { pages, table_rows: rows.length, truncated, page_check: pageCheck, retained_text_hash: textHash });
+    await record(read.attemptOutcome!, costMicrousd, text.length, { pages, table_rows: rows.length, truncated, page_check: pageCheck, witness_retention: read.witnessRetention, retained_text_hash: textHash });
     if (textColumns && rows.length > 0) {
       await recordAttempt(db, {
         institutionId,

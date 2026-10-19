@@ -15,6 +15,22 @@ Rosetta owns source text normalization.
   `institution_additional_sources`; it never sends the bank's main link back to Magellan,
   and its reads never change the bank's source profile or playbook.
 - Rosetta writes normalized text artifacts to `agent_source_texts`.
+- After migration 67, the shared `recordReadResult` boundary retains exact future
+  normalized bytes in private `agent_source_text_witnesses` (#2220). It inserts the
+  current row if absent, locks it, retains a hash-valid incumbent, replaces the
+  mutable current row, then retains incoming bytes in one transaction/savepoint.
+  Current artifact IDs and one-row-per-document uniqueness stay unchanged. Both
+  free and paid readers use it; status-only triage preserves the prior status first.
+  Missing schema is reported as unavailable. A corrupt incumbent is not archived
+  under its claimed hash; an archive failure aborts replacement once capture is active.
+- The exact normalized-witness resolver is diagnostic only. It requires artifact ID,
+  text hash, document ID and institution ID and verifies actual UTF-8 SHA256. It
+  distinguishes current, retained history and unavailable evidence. Capture time
+  and observed artifact metadata never become a claimed original read time. No
+  existing takedown, fee verification, release or public reader gains historical
+  authority. There is no seed/import, replay epoch, automatic purge or retention
+  deletion. Atlas warns at 256 MiB for this table; the warning neither deletes
+  evidence nor pauses a source. Application rollback keeps the table and guards.
 - A document a person supplied by hand (`magellan/hand-supplied.ts`) is read from the uploaded
   bytes as it is stored (`readHandSuppliedDocument`): the same reader, fee-page check, text record
   and attempts as the read step (`settleRead`), with every outside request answered as refused,
