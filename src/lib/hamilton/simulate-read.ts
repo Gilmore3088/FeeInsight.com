@@ -8,6 +8,8 @@
  * tells the bank what to do. Server only for `writeSimulateRead`.
  */
 
+import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
+
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
 import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
 import { checkAnswerEvidence, type AnswerEvidenceCheck } from "./answer-gate";
@@ -129,7 +131,6 @@ export async function writeSimulateRead(
 }
 
 function anthropicSimulateClient(institutionId: number | null, tracking?: MemoTracking): MemoClient {
-  const client = getAnthropicMessagesClient("Hamilton simulate read", "hamilton");
   return {
     async create({ system, user, model }) {
       const response = await trackAnthropicRequest(
@@ -142,11 +143,13 @@ function anthropicSimulateClient(institutionId: number | null, tracking?: MemoTr
           ...(tracking?.agentRunId ? { agentRunId: tracking.agentRunId } : {}),
           metadata: { institution_id: institutionId },
         },
-        () =>
-          client.messages.create(
+        () => withRawProviderResponseOperation(REQUEST_TIMEOUT_MS, (scope) => {
+          const client = getAnthropicMessagesClient("Hamilton simulate read", "hamilton", scope);
+          return (attempt) => client.messages.create(
             { model, max_tokens: SIMULATE_MAX_TOKENS, system, messages: [{ role: "user", content: user }] },
-            { timeout: REQUEST_TIMEOUT_MS },
-          ),
+            { ...attempt, timeout: REQUEST_TIMEOUT_MS },
+          );
+        }),
       );
       return extractAnthropicText(response);
     },

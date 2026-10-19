@@ -1,3 +1,4 @@
+import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 /**
  * POST /api/hamilton/simulate
@@ -26,7 +27,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { recordProRequest } from "@/lib/agents/run-store";
 import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { streamText } from "ai";
-import { guardProviderCall, recordProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { guardProviderCall, recordProviderUsage, observedProviderUsage, type ProviderUsage, estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
 import { getAnthropicLanguageModel, getHamiltonModel } from "@/lib/ai-provider";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
@@ -124,13 +125,41 @@ async function handlePOST(request: Request) {
   }
 
   let providerFailed = false;
+  let failureRecorded = false;
+  let terminalFailure: unknown;
+  let failureUsage: ProviderUsage | undefined;
+  const scope = new ProviderResponseOperation({ timeoutMs: AI_PROVIDER_TIMEOUT_MS });
+  const failProvider = async (error: unknown, observed?: ProviderUsage) => {
+    scope.dispose();
+    if (observed) failureUsage = observed;
+    if (!providerFailed) terminalFailure = error;
+    providerFailed = true;
+  };
+  const flushProviderFailure = async () => {
+    if (!providerFailed || failureRecorded) return;
+    failureRecorded = true;
+    const failure = scope.error ?? terminalFailure;
+    await recordProRequest({ operation: "simulate_interpretation", title: `Hamilton simulate: ${feeCategory}`,
+      status: "failed", summary: `Interpretation failed: ${failure instanceof Error ? failure.message : String(failure)}`,
+      userId: user.id, institutionId });
+    await recordProviderUsage(providerContext, "failed", failureUsage ?? {}, {
+      latencyMs: Date.now() - providerStartedAt, error: failure instanceof Error ? failure.message : String(failure),
+      usageObservation: failureUsage ? "observed" : "unknown",
+    });
+  };
+  try {
   const result = await streamText({
-    model: getAnthropicLanguageModel(HAMILTON_MODEL, "hamilton"),
+    model: getAnthropicLanguageModel(HAMILTON_MODEL, "hamilton", scope),
+    abortSignal: scope.signal,
     system: systemPrompt,
     prompt: userPrompt,
     // Opus 5.5 always thinks first; thinking counts toward this cap.
     maxOutputTokens: SIMULATE_MAX_TOKENS,
-    onFinish: async ({ totalUsage }) => {
+    onFinish: async ({ totalUsage, finishReason }) => {
+      if (providerFailed) { await failProvider(terminalFailure, observedProviderUsage(totalUsage)); return; }
+      try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
+      catch (error) { await failProvider(error, observedProviderUsage(totalUsage)); return; }
+      scope.dispose();
       const inputTokens = totalUsage?.inputTokens ?? 0;
       const outputTokens = totalUsage?.outputTokens ?? 0;
       const costCents = Math.round(
@@ -157,24 +186,18 @@ async function handlePOST(request: Request) {
         detail: { model: HAMILTON_MODEL, input_tokens: inputTokens, output_tokens: outputTokens, cost_cents: costCents },
       });
     },
-    onError: async ({ error }) => {
-      providerFailed = true;
-      await recordProRequest({
-        operation: "simulate_interpretation",
-        title: `Hamilton simulate: ${feeCategory}`,
-        status: "failed",
-        summary: `Interpretation failed: ${error instanceof Error ? error.message : String(error)}`,
-        userId: user.id,
-        institutionId,
-      });
-      await recordProviderUsage(providerContext, "failed", {}, {
-        latencyMs: Date.now() - providerStartedAt,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    },
+    onAbort: async () => { scope.abort("cancelled"); await failProvider(scope.error); },
+    onError: async ({ error }) => { await failProvider(error); },
   });
 
-  return result.toTextStreamResponse();
+  // Drain the SDK observer to retain terminal usage; outgoing cancellation still aborts this scope.
+  void Promise.resolve(result.consumeStream()).catch(failProvider).finally(async () => { scope.dispose(); await flushProviderFailure(); });
+  return scope.wrapOutgoingResponse(result.toTextStreamResponse(), () => failProvider(scope.error), async () => {
+    // The SDK text-only projection discards error/finish parts; reject its body instead of silent partial success.
+    assertCompletedProviderFinish(await result.finishReason);
+    if (providerFailed) throw scope.error ?? terminalFailure;
+  });
+  } catch (error) { await failProvider(error); await flushProviderFailure(); throw error; }
 }
 
 export const POST = withApiRoutePolicy("api.hamilton.simulate", "POST", handlePOST);
