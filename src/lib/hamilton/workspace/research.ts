@@ -414,11 +414,26 @@ function numOrNull(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
+export interface OwnScheduleRow {
+  fee_on_file: boolean;
+  collected: boolean;
+  schedule: { url: string | null; read: string | null } | null;
+}
+
+/** loadOwnSchedule's answer from its one row: undefined whenever either claim could be false (#2035). */
+export function ownScheduleFrom(row: OwnScheduleRow): FeeResearch["ownSchedule"] {
+  if (row.fee_on_file) return undefined;
+  if (!row.schedule) return row.collected ? undefined : null;
+  return { documentUrl: row.schedule.url ?? null, readAt: row.schedule.read ? String(row.schedule.read).slice(0, 10) : null };
+}
+
 /**
  * The schedule most of the bank's live fees were read from, and when it was last read (#2035).
  * Undefined, so the answer keeps its neutral wording, whenever "lists no such fee" or "no
- * schedule on file" could be false: a row for the fee exists in any state (held, filtered out of
- * the peer figures, not yet published), a collected schedule has no live fees yet, or the read fails.
+ * schedule on file" could be false: a row for the fee exists in any state (stated as a rate, held
+ * for review, filtered out of the peer figures, not yet published), a row is still in the
+ * verification queue (it has no category yet), a collected schedule has no live fees yet,
+ * or the read fails.
  * Null only when no schedule was ever collected.
  */
 async function loadOwnSchedule(institutionId: number, feeCategory: string): Promise<FeeResearch["ownSchedule"]> {
@@ -426,9 +441,19 @@ async function loadOwnSchedule(institutionId: number, feeCategory: string): Prom
     const [row] = await sql`
       SELECT
         EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = ${institutionId} AND p.fee_category = ${feeCategory})
+          OR EXISTS (SELECT 1 FROM published_fee_rate_catalog r WHERE r.institution_id = ${institutionId} AND r.fee_category = ${feeCategory})
           OR EXISTS (SELECT 1 FROM verified_fee_observations v WHERE v.institution_id = ${institutionId} AND v.fee_category = ${feeCategory} AND v.review_status <> 'rejected')
+          OR EXISTS (SELECT 1 FROM pipeline_attempts pa
+                      WHERE pa.institution_id = ${institutionId} AND pa.stage = 'verify'
+                        AND pa.detail->>'decision' = 'needs_review' AND pa.detail->>'canonical_fee_key' = ${feeCategory})
+          OR EXISTS (SELECT 1 FROM raw_fee_observations fr
+                      WHERE fr.institution_id = ${institutionId} AND fr.source = 'knox'
+                        AND fr.outlier_flags ? 'needs_darwin_verification'
+                        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations v WHERE v.fee_raw_id = fr.fee_raw_id)
+                        AND NOT EXISTS (SELECT 1 FROM pipeline_attempts pa
+                                         WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id AND pa.stage = 'verify'))
           AS fee_on_file,
-        EXISTS (SELECT 1 FROM source_documents d WHERE d.institution_id = ${institutionId} AND d.status IN ('success', 'unchanged')) AS collected,
+        EXISTS (SELECT 1 FROM source_documents d WHERE d.institution_id = ${institutionId} AND d.status = 'success') AS collected,
         (SELECT json_build_object('url', sd.document_url, 'read', GREATEST(sd.last_checked_at, sd.crawled_at))
            FROM published_fee_catalog ef
            JOIN source_documents sd ON sd.id = ef.source_document_id AND sd.institution_id = ef.institution_id
@@ -437,10 +462,7 @@ async function loadOwnSchedule(institutionId: number, feeCategory: string): Prom
           GROUP BY sd.id, sd.document_url, sd.last_checked_at, sd.crawled_at
           ORDER BY COUNT(*) DESC, GREATEST(sd.last_checked_at, sd.crawled_at) DESC
           LIMIT 1) AS schedule`;
-    if (!row || row.fee_on_file) return undefined;
-    const schedule = row.schedule as { url: string | null; read: string | null } | null;
-    if (!schedule) return row.collected ? undefined : null;
-    return { documentUrl: schedule.url ?? null, readAt: schedule.read ? String(schedule.read).slice(0, 10) : null };
+    return row ? ownScheduleFrom(row as OwnScheduleRow) : undefined;
   } catch {
     return undefined;
   }

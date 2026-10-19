@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { briefingLocalMarket, choosePeers, feeLayerStamps, feePeerStamp, localMarketView, marketLayerSets, peerAmounts } from "./research";
+import { briefingLocalMarket, choosePeers, ownScheduleFrom, feeLayerStamps, feePeerStamp, localMarketView, marketLayerSets, peerAmounts } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
 
@@ -209,5 +209,19 @@ describe("peer group stamp (#1924 step 3)", () => {
   it("gives none without the read time or a chosen group", () => {
     expect(feePeerStamp({ institutionId: 7, readAt: undefined, peers }, "overdraft")).toBeNull();
     expect(feePeerStamp({ institutionId: 7, readAt, peers }, "wire_domestic")).toBeNull();
+  });
+});
+
+describe("ownScheduleFrom (#2035)", () => {
+  const schedule = { url: "https://example.org/fees.pdf", read: "2026-10-09T04:00:00Z" };
+  it("names the schedule only when no row for the fee exists in any state", () => {
+    expect(ownScheduleFrom({ fee_on_file: false, collected: true, schedule })).toEqual({ documentUrl: schedule.url, readAt: "2026-10-09" });
+  });
+  it("stays neutral when a row for the fee is on file: published, a rate, verified, held or still in the queue", () => {
+    expect(ownScheduleFrom({ fee_on_file: true, collected: true, schedule })).toBeUndefined();
+  });
+  it("says no schedule is on file only when none was ever collected", () => {
+    expect(ownScheduleFrom({ fee_on_file: false, collected: false, schedule: null })).toBeNull();
+    expect(ownScheduleFrom({ fee_on_file: false, collected: true, schedule: null })).toBeUndefined();
   });
 });
