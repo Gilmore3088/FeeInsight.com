@@ -600,8 +600,8 @@ export async function getIndexRows(category: string): Promise<IndexRow[]> {
 
 /**
  * A listed row's facts: the fee as its schedule names it, its amount, how often it is charged,
- * the account it names, its conditions, the document and when it was read. The words of the
- * schedule that print its price come from `getFeeEvidence` (fee-evidence.ts).
+ * its recorded account and conditions, its document and recorded publication date. Stored
+ * price context comes from `getFeeEvidence`; a matching quote does not verify applicability.
  */
 export interface FeeRowDetail {
   fee_name: string | null;
