@@ -29,7 +29,7 @@ describe("proxy", () => {
   });
 
   it("serves a filtered directory per request and the plain directory from cache (#1811)", () => {
-    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf"]) {
+    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf", "fees=1"]) {
       const response = proxy(request(`https://feeinsight.com/institutions?${query}`));
       expect(response.headers.get("x-middleware-rewrite")).toBe(`https://feeinsight.com/institutions/results?${query}`);
     }

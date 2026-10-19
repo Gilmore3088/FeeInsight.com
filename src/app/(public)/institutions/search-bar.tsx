@@ -150,6 +150,7 @@ function InstitutionSearchBarInner({
         state: searchParams?.get("state") ?? "",
         charter: searchParams?.get("charter") ?? "",
         fee,
+        fees: searchParams?.get("fees") === "1",
       }),
     );
   }

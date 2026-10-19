@@ -21,7 +21,7 @@ import {
   getFeeRevenueData,
   getTierFeeRevenueSummary,
 } from "./fee-revenue";
-import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
+import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
 import { getStateEconomicContext, isEmptyEconomicContext } from "./economic-context";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
@@ -125,6 +125,12 @@ export const searchInstitutionsCached = cachedPublicRead(
   searchInstitutions,
   (result) => result.rows.length === 0,
 );
+/** The directory's opening list: the largest institutions by assets, one entry per type and size. */
+export const getLargestInstitutionsCached = cachedPublicRead(
+  "largest-institutions-v1",
+  getLargestInstitutions,
+  (rows) => rows.length === 0,
+);
 export const getResearchCoverageCached = cachedPublicRead(
   // v2 (#1951): each area carries counted_institutions, the population behind its medians.
   "research-coverage-v2",
@@ -181,6 +187,18 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   if (!rule || !filters) return null;
   const values = peerGroupValuesFrom(await getAllPeerRankValuesCached(), filters);
   return peerRankFromGroupValues(institutionId, rule, filters, values);
+}
+/**
+ * Headline categories live for each of `ids`, from the shared coverage entry the institution
+ * pages already read (0 for an id with none), so the directory adds no per-request read.
+ */
+export async function getInstitutionHeadlineCoverageCached(ids: number[]): Promise<Map<number, number>> {
+  const wanted = new Set(ids);
+  const coverage = new Map<number, number>(ids.map((id) => [id, 0]));
+  for (const [id, categories] of await getHeadlineCoverageRowsCached()) {
+    if (wanted.has(id)) coverage.set(id, categories);
+  }
+  return coverage;
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */

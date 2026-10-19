@@ -463,6 +463,54 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
   return rows.map(mapInstitutionSearchRow);
 }
 
+/** The most institutions the largest-institutions list reads, whatever a caller passes. */
+export const LARGEST_INSTITUTIONS_MAX = 100;
+
+/**
+ * The largest institutions by total assets (of one type when `charter_type` is set), largest
+ * first, with the same fee counts as a search row. The directory's opening list: a bounded read
+ * (the scope is the top `limit` rows by assets, so the fee counts cover only those) that the
+ * plain directory can show without a search or a state.
+ */
+export async function getLargestInstitutions(params: { charter_type?: string; limit?: number } = {}): Promise<InstitutionSearchResult[]> {
+  const limit = Math.min(Math.max(1, Math.floor(params.limit ?? 25)), LARGEST_INSTITUTIONS_MAX);
+  const charter = params.charter_type || null;
+  const scope = `SELECT ct.id FROM institution_sources ct
+    WHERE ct.asset_size IS NOT NULL AND ($2::text IS NULL OR ct.charter_type = $2)
+    ORDER BY ct.asset_size DESC, ct.id
+    LIMIT $1`;
+  const rows = await sql.unsafe<InstitutionSearchRow[]>(
+    `${searchQualityCte(scope)}
+    SELECT ct.id, ct.institution_name, ct.city, ct.state_code,
+           ct.charter_type, ct.asset_size_tier, ct.asset_size,
+           ct.source, ct.cert_number, ct.website_url, ct.fee_schedule_url,
+           (
+             COALESCE(cc.visible_fee_count, 0)
+             + COALESCE(vuc.verified_unpublished_fee_count, 0)
+             + COALESCE(ruc.raw_unverified_fee_count, 0)
+           ) as fee_count,
+           COALESCE(cc.published_fee_count, 0) as published_fee_count,
+           (
+             COALESCE(cc.catalog_provisional_fee_count, 0)
+             + COALESCE(vuc.verified_unpublished_fee_count, 0)
+             + COALESCE(ruc.raw_unverified_fee_count, 0)
+           ) as provisional_fee_count,
+           ld.latest_source_status,
+           COALESCE(ld.latest_extracted_fee_count, 0) as latest_extracted_fee_count,
+           ld.latest_source_error,
+           ld.latest_source_collected_at
+    FROM institution_sources ct
+    LEFT JOIN catalog_counts cc ON cc.institution_id = ct.id
+    LEFT JOIN verified_unpublished_counts vuc ON vuc.institution_id = ct.id
+    LEFT JOIN raw_unverified_counts ruc ON ruc.institution_id = ct.id
+    LEFT JOIN latest_docs ld ON ld.institution_id = ct.id
+    WHERE ct.id IN (SELECT id FROM scope)
+    ORDER BY ct.asset_size DESC, ct.id`,
+    [limit, charter],
+  );
+  return rows.map(mapInstitutionSearchRow);
+}
+
 export async function getInstitutionStateDirectorySummaries(params: {
   charter_type?: string;
 } = {}): Promise<InstitutionStateDirectorySummary[]> {

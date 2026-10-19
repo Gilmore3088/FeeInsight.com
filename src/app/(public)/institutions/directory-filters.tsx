@@ -13,11 +13,13 @@ interface StatePickerProps {
   charter: string;
   /** Fee focus (`?fee=`) arriving from a consumer guide; changing the state keeps it. */
   fee?: string;
+  /** The "Fees available" filter; changing the state keeps it. */
+  fees?: boolean;
   className?: string;
 }
 
 /** The state filter: a native dropdown, applied as soon as it changes. Works on every screen. */
-export function StatePicker({ query, stateCode, charter, fee = "", className = "" }: StatePickerProps) {
+export function StatePicker({ query, stateCode, charter, fee = "", fees = false, className = "" }: StatePickerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -32,7 +34,7 @@ export function StatePicker({ query, stateCode, charter, fee = "", className = "
         value={stateCode}
         aria-busy={isPending}
         onChange={(event) => {
-          const href = directoryHref({ q: query, state: event.target.value, charter, fee });
+          const href = directoryHref({ q: query, state: event.target.value, charter, fee, fees });
           startTransition(() => router.push(href));
         }}
         className={`min-h-11 w-full rounded-full border border-control-border bg-surface-0 px-4 text-[14px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-brick ${

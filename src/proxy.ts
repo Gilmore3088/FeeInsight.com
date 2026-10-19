@@ -5,7 +5,7 @@ import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 
 const FEE_CATEGORIES = new Set<string>(Object.values(FEE_FAMILIES).flat());
 /** The directory's filters; any one of them makes the view per request. */
-const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee"];
+const DIRECTORY_FILTER_KEYS = ["q", "state", "charter", "page", "fee", "fees"];
 
 /**
  * The cached route that serves a public address whose query string changes the page (#1811).

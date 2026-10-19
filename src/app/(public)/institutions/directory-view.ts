@@ -1,7 +1,7 @@
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
 import type { PublicStatsSummary } from "@/lib/public-stats";
-import { OVERSEAS_TERRITORIES, STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
-import { REPORT_OFFER } from "@/lib/constants";
+import { STATE_NAMES } from "@/lib/us-states";
+import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 
 /**
  * Pure logic for /institutions: its links, the type switch, the state shading and the coverage
@@ -39,16 +39,24 @@ export interface DirectoryParams {
   state?: string;
   charter?: string;
   fee?: string;
+  /** Only institutions with fees in the index (`?fees=1`). */
+  fees?: boolean;
   page?: number;
 }
 
+/** `?fees=1` turns on the "Fees available" filter; any other value leaves it off. */
+export function normalizeFeesFilter(raw: string | undefined): boolean {
+  return raw === "1";
+}
+
 /** One builder for every directory link, so no link drops a filter it should keep. */
-export function directoryHref({ q, state, charter, fee, page }: DirectoryParams): string {
+export function directoryHref({ q, state, charter, fee, fees, page }: DirectoryParams): string {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (state) params.set("state", state);
   if (charter) params.set("charter", charter);
   if (fee) params.set("fee", fee);
+  if (fees) params.set("fees", "1");
   if (page && page > 1) params.set("page", String(page));
   const search = params.toString();
   return search ? `/institutions?${search}` : "/institutions";
@@ -99,29 +107,16 @@ export function percentLabel(share: number): string {
 const COUNT = new Intl.NumberFormat("en-US");
 
 /**
- * The one finding line: "3,911 of the 8,775 banks and credit unions monitored have published
- * fees (45%)." A state reads "in Georgia"; zero published says so plainly.
+ * The one coverage line: "3,911 of the 8,775 banks and credit unions monitored have fees
+ * available in the index (45%)." A state reads "in Georgia"; zero published says so plainly.
  */
 export function coverageFinding(c: Coverage, charter: Charter, stateName?: string): string {
   const where = stateName ? ` in ${stateName}` : "";
   const noun = charterNoun(charter);
   if (c.published === 0) {
-    return `None of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees yet.`;
+    return `None of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have fees available in the index yet.`;
   }
-  return `${COUNT.format(c.published)} of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees (${percentLabel(publishedShare(c))}).`;
-}
-
-/**
- * The caption under the hero's coverage meter, which shows the share itself: "3,911 of the
- * 8,775 banks and credit unions monitored have published fees." A state reads "in Georgia".
- */
-export function coverageCaption(c: Coverage, charter: Charter, stateName?: string): string {
-  const where = stateName ? ` in ${stateName}` : "";
-  const noun = charterNoun(charter);
-  if (c.published === 0) {
-    return `None of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees yet.`;
-  }
-  return `${COUNT.format(c.published)} of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have published fees.`;
+  return `${COUNT.format(c.published)} of the ${COUNT.format(c.monitored)} ${noun} monitored${where} have fees available in the index (${percentLabel(publishedShare(c))}).`;
 }
 
 /** The map's shading bands, lightest first; all from the brick ramp. */
@@ -181,52 +176,52 @@ function median(values: number[]): number | null {
 }
 
 /**
- * The state section's finding, which the ranked list doesn't show: how many states have any
- * institution with published fees, and the median state's share. Null when no state has one.
- */
-export function stateFinding(rows: StateRow[]): string | null {
-  const withAny = rows.filter((r) => r.published > 0).length;
-  const mid = median(rows.map((r) => r.share));
-  if (withAny === 0 || mid === null) return null;
-  const places = placesLabel(rows.map((r) => r.code));
-  const count = withAny === rows.length ? `All ${places}` : `${withAny} of the ${places}`;
-  return `${count} ${withAny === 1 ? "has" : "have"} at least one institution with published fees; the median state share is ${percentLabel(mid)}.`;
-}
-
-/**
- * The places a state list covers, counted so no total reads as states alone: "50 states, DC and
- * the territories (54 in all)", or "3 states" when the list holds only states.
- */
-function placesLabel(codes: string[]): string {
-  const states = codes.filter((code) => US_STATES_ONLY.has(code)).length;
-  const parts = [`${states} ${states === 1 ? "state" : "states"}`];
-  if (codes.includes("DC")) parts.push("DC");
-  if (codes.some((code) => OVERSEAS_TERRITORIES.has(code))) parts.push("the territories");
-  if (parts.length === 1) return parts[0];
-  const listed = `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
-  return `${listed} (${codes.length} in all)`;
-}
-
-/**
- * The state section folded to one line once a search or filter is on: "Median state: 40%
- * published". Null when no state has published fees.
+ * The state section folded to one line once a search or state is picked: "Median state: 40%
+ * with fees in the index". Null when no state has published fees.
  */
 export function stateSummaryLine(rows: StateRow[]): string | null {
   const withAny = rows.filter((r) => r.published > 0).length;
   const mid = median(rows.map((r) => r.share));
   if (withAny === 0 || mid === null) return null;
-  return `Median state: ${percentLabel(mid)} published`;
+  return `Median state: ${percentLabel(mid)} with fees in the index`;
 }
 
-/** The one next step for bank staff: the live sample report when it exists, else the request form. */
-export function reportCta(sampleLive: boolean): {
-  href: string;
-  label: string;
-  event: "see_sample_report" | "request_report_click";
-} {
-  return sampleLive
-    ? { href: "/reports/sample-competitive-fee-position", label: "See a sample fee report", event: "see_sample_report" }
-    : { href: "/reports?report=institution&src=institutions#request", label: REPORT_OFFER.institutionCtaLabel, event: "request_report_click" };
+/**
+ * The headline fees by the names a reader uses, one distinct name each, keyed by the real
+ * category keys (the taxonomy's display names are written for tables: "Wire Transfer (Domestic
+ * In)", "NSF / Returned Item").
+ */
+export const HEADLINE_FEE_NAMES: Record<(typeof HEADLINE_FEE_KEYS)[number], string> = {
+  monthly_maintenance: "monthly maintenance",
+  overdraft: "overdraft",
+  nsf: "insufficient funds",
+  atm_non_network: "out-of-network ATM",
+  card_foreign_txn: "card or ATM use abroad",
+  wire_domestic_outgoing: "domestic outgoing wire",
+  stop_payment: "stop payment",
+  wire_intl_outgoing: "international outgoing wire",
+  wire_domestic_incoming: "domestic incoming wire",
+  cashiers_check: "cashier's check",
+  od_protection_transfer: "overdraft protection transfer",
+  paper_statement: "paper statement",
+  minimum_balance: "below minimum balance",
+  card_replacement: "debit card replacement",
+  deposited_item_return: "returned deposited item",
+};
+
+/** The headline fee names in the order the coverage count lists them, as one sentence list. */
+export function headlineFeeList(): string {
+  const names = HEADLINE_FEE_KEYS.map((key) => HEADLINE_FEE_NAMES[key]);
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * The supporting line under the search: "Published fees available for 3,960 banks and credit
+ * unions." Null when the count is unknown or zero, so the page never shows a made-up figure.
+ */
+export function availabilityLine(c: Coverage | null, charter: Charter, stateName?: string): string | null {
+  if (!c || c.published <= 0) return null;
+  return `Published fees available for ${COUNT.format(c.published)} ${charterNoun(charter)}${stateName ? ` in ${stateName}` : ""}.`;
 }
 
 /** Acronyms the registry spells as words ("Campus Usa"), keyed by that spelling. */

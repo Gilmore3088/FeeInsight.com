@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { InstitutionStateDirectorySummary } from "@/lib/data-store/search";
+import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import {
+  availabilityLine,
   bandsInUse,
-  coverageCaption,
   coverageFinding,
+  HEADLINE_FEE_NAMES,
+  headlineFeeList,
+  normalizeFeesFilter,
   directoryHref,
   nationalCoverage,
   normalizeCharter,
   normalizeStateCode,
   percentLabel,
   shareBand,
-  stateFinding,
   directoryCity,
   directoryName,
   stateSummaryLine,
@@ -45,6 +48,14 @@ describe("directory filters", () => {
       "/institutions?q=navy&state=VA&charter=credit_union&fee=overdraft&page=2",
     );
     expect(directoryHref({ q: "", state: "", page: 1 })).toBe("/institutions");
+    expect(directoryHref({ state: "TX", fees: true })).toBe("/institutions?state=TX&fees=1");
+    expect(directoryHref({ state: "TX", fees: false })).toBe("/institutions?state=TX");
+  });
+
+  it("turns the fees filter on only for fees=1", () => {
+    expect(normalizeFeesFilter("1")).toBe(true);
+    expect(normalizeFeesFilter("yes")).toBe(false);
+    expect(normalizeFeesFilter(undefined)).toBe(false);
   });
 });
 
@@ -52,7 +63,7 @@ describe("coverage lines", () => {
   it("leads with the site-wide headline counts when no type is picked", () => {
     const c = nationalCoverage(STATS, [summary("GA", 66, 205)], "");
     expect(c).toEqual({ published: 3911, monitored: 8775 });
-    expect(coverageFinding(c!, "")).toBe("3,911 of the 8,775 banks and credit unions monitored have published fees (45%).");
+    expect(coverageFinding(c!, "")).toBe("3,911 of the 8,775 banks and credit unions monitored have fees available in the index (45%).");
   });
 
   it("adds up the state summaries for one type, and when the headline read failed", () => {
@@ -64,10 +75,10 @@ describe("coverage lines", () => {
 
   it("names the state and says plainly when none has published fees", () => {
     expect(coverageFinding({ published: 12, monitored: 40 }, "credit_union", "Vermont")).toBe(
-      "12 of the 40 credit unions monitored in Vermont have published fees (30%).",
+      "12 of the 40 credit unions monitored in Vermont have fees available in the index (30%).",
     );
     expect(coverageFinding({ published: 0, monitored: 4 }, "", "Guam")).toBe(
-      "None of the 4 banks and credit unions monitored in Guam have published fees yet.",
+      "None of the 4 banks and credit unions monitored in Guam have fees available in the index yet.",
     );
   });
 
@@ -78,35 +89,40 @@ describe("coverage lines", () => {
   });
 });
 
-describe("coverage caption", () => {
-  it("leaves the share to the meter and says plainly when none are published", () => {
-    expect(coverageCaption({ published: 3911, monitored: 8775 }, "")).toBe(
-      "3,911 of the 8,775 banks and credit unions monitored have published fees.",
+describe("availability line and fee names", () => {
+  it("states the live count, and nothing when the count is unknown or zero", () => {
+    expect(availabilityLine({ published: 3960, monitored: 8775 }, "")).toBe(
+      "Published fees available for 3,960 banks and credit unions.",
     );
-    expect(coverageCaption({ published: 0, monitored: 4 }, "credit_union", "Guam")).toBe(
-      "None of the 4 credit unions monitored in Guam have published fees yet.",
+    expect(availabilityLine({ published: 12, monitored: 40 }, "credit_union", "Vermont")).toBe(
+      "Published fees available for 12 credit unions in Vermont.",
     );
+    expect(availabilityLine(null, "")).toBeNull();
+    expect(availabilityLine({ published: 0, monitored: 4 }, "")).toBeNull();
+  });
+
+  it("names every headline fee once, without table labels", () => {
+    const names = HEADLINE_FEE_KEYS.map((key) => HEADLINE_FEE_NAMES[key]);
+    expect(new Set(names).size).toBe(HEADLINE_FEE_KEYS.length);
+    expect(names.filter((name) => name.includes("wire"))).toEqual([
+      "domestic outgoing wire",
+      "international outgoing wire",
+      "domestic incoming wire",
+    ]);
+    expect(headlineFeeList()).not.toMatch(/\bnsf\b|\/|\(/i);
+    expect(headlineFeeList()).toMatch(/ and returned deposited item$/);
   });
 });
 
 describe("states", () => {
   const rows = stateRows([summary("GA", 66, 205), summary("TX", 120, 741), summary("VT", 0, 27), summary("FM", 0, 1)]);
 
-  it("ranks named states by institutions with published fees and drops codes outside the U.S.", () => {
+  it("ranks named states by institutions with fees in the index and drops codes outside the U.S.", () => {
     expect(rows.map((r) => r.code)).toEqual(["TX", "GA", "VT"]);
   });
 
-  it("says how many states have any and the median state share, which the list doesn't show", () => {
-    expect(stateFinding(rows)).toBe(
-      "2 of the 3 states have at least one institution with published fees; the median state share is 16%.",
-    );
-    const all = stateRows([summary("GA", 66, 205), summary("DC", 5, 20), summary("PR", 2, 9), summary("GU", 1, 4)]);
-    expect(stateFinding(all)).toMatch(/^All 1 state, DC and the territories \(4 in all\) have at least one/);
-    expect(stateFinding(stateRows([summary("VT", 0, 27)]))).toBeNull();
-  });
-
   it("folds to one line with the median state share once a search is on", () => {
-    expect(stateSummaryLine(rows)).toBe("Median state: 16% published");
+    expect(stateSummaryLine(rows)).toBe("Median state: 16% with fees in the index");
     expect(stateSummaryLine(stateRows([summary("VT", 0, 27)]))).toBeNull();
   });
 

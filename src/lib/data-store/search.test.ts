@@ -6,7 +6,13 @@ vi.mock("./connection", () => ({
   },
 }));
 
-import { autocompleteInstitutions, institutionNameRank, institutionSearchPatterns, searchInstitutions } from "./search";
+import {
+  autocompleteInstitutions,
+  getLargestInstitutions,
+  institutionNameRank,
+  institutionSearchPatterns,
+  searchInstitutions,
+} from "./search";
 import { sql } from "./connection";
 
 const unsafeMock = sql.unsafe as unknown as ReturnType<typeof vi.fn>;
@@ -215,5 +221,24 @@ describe("institution search bounds (2026-10-18 scrape)", () => {
     const [, params] = unsafeMock.mock.calls[0];
     expect(String(params[1])).toHaveLength(100);
     expect(params[2]).toBe(25);
+  });
+});
+
+describe("getLargestInstitutions", () => {
+  beforeEach(() => {
+    unsafeMock.mockReset();
+  });
+
+  it("reads only the top rows by assets, of one type when asked, and caps the count", async () => {
+    unsafeMock.mockResolvedValueOnce([]);
+    await getLargestInstitutions({ charter_type: "credit_union", limit: 5_000 });
+    const [text, params] = unsafeMock.mock.calls[0];
+    expect(text).toContain("ORDER BY ct.asset_size DESC, ct.id\n    LIMIT $1");
+    expect(text).toContain("WHERE ct.id IN (SELECT id FROM scope)");
+    expect(params).toEqual([100, "credit_union"]);
+
+    unsafeMock.mockResolvedValueOnce([]);
+    await getLargestInstitutions();
+    expect(unsafeMock.mock.calls[1][1]).toEqual([25, null]);
   });
 });

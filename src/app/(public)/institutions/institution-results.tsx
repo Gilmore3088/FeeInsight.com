@@ -3,53 +3,49 @@ import { ArrowLeft, ArrowRight, CircleDashed, Clock3, FileCheck2, MapPin } from 
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
 import { formatAmount } from "@/lib/format";
 import { getCharterLabel, getSegmentLabel } from "../institution/[id]/enum-labels";
-import { HEADLINE_FEE_KEYS, isInstitutionRich } from "@/lib/data-store/market-readiness";
-import { getHeadlineCoverageLabel } from "../institution/[id]/enum-labels";
+import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
 import { hasVerifiedFees } from "./directory-sort";
 import { directoryCity, directoryName } from "./directory-view";
 
-/** Headline categories published per institution id; null when the count could not be read. */
+/** Headline categories in the index per institution id; null when the count could not be read. */
 export type HeadlineCoverage = Map<number, number> | null;
 
-/** The coverage chip; null for a row with nothing published or under review (its fee count already says "None yet"). */
-function statusChip(row: InstitutionSearchResult, coverage: HeadlineCoverage): { label: string; className: string } | null {
-  // Completeness, never "verified": a published fee is not a checked, complete schedule.
-  const categories = coverage?.get(row.id);
-  if (hasVerifiedFees(row) && categories !== undefined) {
-    return {
-      label: getHeadlineCoverageLabel(categories, HEADLINE_FEE_KEYS.length),
-      className: isInstitutionRich(categories)
-        ? "border-ink/25 bg-surface-200 font-semibold text-ink"
-        : "border-border bg-surface-0 text-ink-soft",
-    };
-  }
-  if (hasVerifiedFees(row)) {
-    return { label: "Fees published", className: "border-ink/25 bg-surface-200 text-ink" };
-  }
-  if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") {
-    return { label: "Under review", className: "border-dashed border-border bg-surface-0 text-ink-soft" };
-  }
-  return null;
+/** "12 of 15 headline fees available": the dataset's coverage, never a claim about the institution. */
+export function coverageLabel(categories: number): string {
+  return `${categories} of ${HEADLINE_FEE_KEYS.length} headline fees available`;
 }
 
 /**
- * The table's coverage column: a small meter of the headline fees published, one segment per
- * headline fee, with the count beside it. Rows without a count keep the status chip.
+ * A row's published fee coverage in words: the headline count when it was read, else what is
+ * known (fees in the index, under review, or none in the index yet).
+ */
+export function coverageText(row: InstitutionSearchResult, coverage: HeadlineCoverage): string {
+  const categories = coverage?.get(row.id);
+  if (hasVerifiedFees(row)) return categories !== undefined ? coverageLabel(categories) : "Fees in the index";
+  if (row.provisional_fee_count > 0 || row.fee_publication_status === "under_review") return "Under review";
+  return "No fees in the index yet";
+}
+
+/**
+ * The coverage column: a small meter of the headline fees in the index, one segment per headline
+ * fee, with the count beside it. Rows without a count say what is known in words.
  */
 function CoverageCell({ row, coverage }: { row: InstitutionSearchResult; coverage: HeadlineCoverage }) {
   const categories = coverage?.get(row.id);
-  if (!hasVerifiedFees(row) || categories === undefined) return <StatusChip row={row} coverage={coverage} />;
+  if (!hasVerifiedFees(row) || categories === undefined) {
+    return <span className="text-[13px] text-ink-muted">{coverageText(row, coverage)}</span>;
+  }
   const total = HEADLINE_FEE_KEYS.length;
   return (
-    <span className="inline-flex items-center gap-2" title={getHeadlineCoverageLabel(categories, total)}>
+    <span className="inline-flex items-center gap-2">
       <span aria-hidden="true" className="flex gap-0.5">
         {HEADLINE_FEE_KEYS.map((key, i) => (
           <span key={key} className={`h-2.5 w-1.5 rounded-sm ${i < categories ? "bg-brick" : "bg-surface-200"}`} />
         ))}
       </span>
-      <span className="whitespace-nowrap text-[12px] tabular-nums text-ink-soft">
+      <span className="whitespace-nowrap text-[13px] tabular-nums text-ink-soft">
         {categories} of {total}
-        <span className="sr-only"> headline fees published</span>
+        <span className="sr-only"> headline fees available</span>
       </span>
     </span>
   );
@@ -99,97 +95,76 @@ function locationLabel(row: InstitutionSearchResult): string {
   return [directoryCity(row.city), row.state_code].filter(Boolean).join(", ");
 }
 
-function StatusChip({
-  row,
-  coverage,
-  small = false,
-}: {
-  row: InstitutionSearchResult;
-  coverage: HeadlineCoverage;
-  small?: boolean;
-}) {
-  const chip = statusChip(row, coverage);
-  if (!chip) return null;
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-md border font-medium ${chip.className} ${
-        small ? "px-1.5 py-0.5 text-[11px]" : "px-2 py-1 text-[11px]"
-      }`}
-    >
-      {chip.label}
-    </span>
-  );
-}
-
-function FeeCount({ row }: { row: InstitutionSearchResult }) {
-  if (hasVerifiedFees(row)) {
-    return <span className="font-semibold tabular-nums text-ink">{row.published_fee_count.toLocaleString("en-US")}</span>;
-  }
-  return <span className="text-ink-muted">None yet</span>;
-}
-
 const TH_CLASS = "px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-ink-muted";
 
 export function InstitutionResultsTable({
   rows,
   coverage,
   focus = null,
+  caption,
 }: {
   rows: InstitutionSearchResult[];
   coverage: HeadlineCoverage;
   focus?: FeeFocus | null;
+  /** What the list is, for screen readers ("The 25 largest banks and credit unions by assets"). */
+  caption: string;
 }) {
   return (
     <div className="hidden overflow-hidden rounded-xl border border-border bg-surface-0 sm:block">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[720px] text-left text-sm">
+          <caption className="sr-only">{caption}</caption>
           <thead>
             <tr className="border-b border-border bg-paper">
-              <th className={TH_CLASS}>Institution</th>
-              <th className={TH_CLASS}>Location</th>
-              <th className={`hidden md:table-cell ${TH_CLASS}`}>Type</th>
+              <th scope="col" className={TH_CLASS}>Institution</th>
+              <th scope="col" className={TH_CLASS}>Headquarters</th>
+              <th scope="col" className={`hidden md:table-cell ${TH_CLASS}`}>Type</th>
               {focus && (
-                <th className={`text-right ${TH_CLASS}`}>
+                <th scope="col" className={`text-right ${TH_CLASS}`}>
                   {focus.label}
                   {focus.median !== null && ` (national median ${formatAmount(focus.median)})`}
                 </th>
               )}
-              <th className={`text-right ${TH_CLASS}`}>Published fees</th>
-              <th className={`hidden md:table-cell ${TH_CLASS}`}>Headline fees</th>
+              <th scope="col" className={TH_CLASS}>Published fee coverage</th>
+              <th scope="col" className={TH_CLASS}>
+                <span className="sr-only">View institution</span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} className="fi-row-interaction border-b border-border last:border-0">
-                <td className="px-4 py-3">
-                  <Link
-                    href={institutionHref(row.id, focus)}
-                    className="group flex min-w-0 items-center gap-2 break-words font-medium text-ink transition-colors hover:text-brick"
-                  >
-                    <span className="min-w-0 break-words">{directoryName(row.institution_name)}</span>
-                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-                  </Link>
-                  <div className="mt-1 md:hidden">
-                    <StatusChip row={row} coverage={coverage} small />
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-ink-muted">{locationLabel(row)}</td>
-                <td className="hidden px-4 py-3 text-ink-muted md:table-cell">
-                  {getSegmentLabel(row.asset_size_tier, row.charter_type) ?? getCharterLabel(row.charter_type)}
-                </td>
-                {focus && (
-                  <td className="px-4 py-3 text-right">
-                    <FocusAmount row={row} focus={focus} />
+            {rows.map((row) => {
+              const name = directoryName(row.institution_name);
+              return (
+                <tr key={row.id} className="fi-row-interaction border-b border-border last:border-0">
+                  <th scope="row" className="px-4 py-3 font-medium">
+                    <Link href={institutionHref(row.id, focus)} className="break-words text-ink transition-colors hover:text-brick">
+                      {name}
+                    </Link>
+                  </th>
+                  <td className="px-4 py-3 text-ink-muted">{locationLabel(row)}</td>
+                  <td className="hidden px-4 py-3 text-ink-muted md:table-cell">
+                    {getSegmentLabel(row.asset_size_tier, row.charter_type) ?? getCharterLabel(row.charter_type)}
                   </td>
-                )}
-                <td className="px-4 py-3 text-right">
-                  <FeeCount row={row} />
-                </td>
-                <td className="hidden px-4 py-3 md:table-cell">
-                  <CoverageCell row={row} coverage={coverage} />
-                </td>
-              </tr>
-            ))}
+                  {focus && (
+                    <td className="px-4 py-3 text-right">
+                      <FocusAmount row={row} focus={focus} />
+                    </td>
+                  )}
+                  <td className="px-4 py-3">
+                    <CoverageCell row={row} coverage={coverage} />
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      href={institutionHref(row.id, focus)}
+                      className="inline-flex min-h-11 items-center gap-1 whitespace-nowrap text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+                    >
+                      View<span className="sr-only"> {name}</span>
+                      <ArrowRight aria-hidden="true" className="size-3.5" />
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -198,16 +173,15 @@ export function InstitutionResultsTable({
 }
 
 /**
- * The phone's coverage indicator, up front on each card: an icon and the published fee count
- * ("26 published fees"), "Under review", or "None yet".
+ * The phone's coverage indicator, up front on each card: an icon and the row's coverage
+ * ("12 of 15 headline fees available"), "Under review", or "No fees in the index yet".
  */
-function CoverageChip({ row }: { row: InstitutionSearchResult }) {
+function CoverageChip({ row, coverage }: { row: InstitutionSearchResult; coverage: HeadlineCoverage }) {
   if (hasVerifiedFees(row)) {
-    const n = row.published_fee_count;
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-brick/30 bg-brick-tint px-2.5 py-1 text-[13px] font-semibold text-brick-ink">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-brick/30 bg-brick-tint px-2.5 py-1 text-[13px] font-semibold tabular-nums text-brick-ink">
         <FileCheck2 aria-hidden="true" className="size-3.5" strokeWidth={2} />
-        <span className="tabular-nums">{n.toLocaleString("en-US")}</span> published {n === 1 ? "fee" : "fees"}
+        {coverageText(row, coverage)}
       </span>
     );
   }
@@ -222,20 +196,22 @@ function CoverageChip({ row }: { row: InstitutionSearchResult }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-0 px-2.5 py-1 text-[13px] text-ink-muted">
       <CircleDashed aria-hidden="true" className="size-3.5" strokeWidth={2} />
-      None yet
+      No fees in the index yet
     </span>
   );
 }
 
 /**
- * Phone results: the name, where it is, and its coverage. Type, asset tier and the headline-fee
- * label are on the profile and in the wider table.
+ * Phone results: the name, its headquarters, and its coverage. Type and asset tier are on the
+ * profile and in the wider table.
  */
 export function InstitutionMobileCards({
   rows,
+  coverage,
   focus = null,
 }: {
   rows: InstitutionSearchResult[];
+  coverage: HeadlineCoverage;
   focus?: FeeFocus | null;
 }) {
   return (
@@ -257,7 +233,7 @@ export function InstitutionMobileCards({
                   </span>
                 )}
                 <span className="mt-2 block">
-                  <CoverageChip row={row} />
+                  <CoverageChip row={row} coverage={coverage} />
                 </span>
               </span>
               {focus ? (
