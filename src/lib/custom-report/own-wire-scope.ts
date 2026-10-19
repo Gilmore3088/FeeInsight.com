@@ -113,7 +113,8 @@ function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow[]>
     const cells = physicalCells(line);
     const column = cells[ownerColumn] ?? "";
     const nextCell = cells[ownerColumn + 1] ?? "";
-    const ownPrice = /\$|\b(?:free|no charge|no fee)\b/i.test(column) || /^\$|^(?:free|no charge|no fee)\b/i.test(nextCell);
+    const pairedPrice = rows.get(index)?.some(row => row.priceLineIndex != null && row.cells[ownerColumn] && row.cells[ownerColumn + 1]);
+    const ownPrice = pairedPrice || /\$|\b(?:free|no charge|no fee)\b/i.test(column) || /^\$|^(?:free|no charge|no fee)\b/i.test(nextCell);
     const words = column.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
     if (!ownPrice && column.length <= 100 && /\bwires?\b/i.test(column) && WIRE_WORDS.test(words)) return geographyChild ? `${column}\n${geographyChild}` : column;
     if (!ownPrice && /^(?:international|domestic)$/i.test(column)) { geographyChild ??= column; continue; }

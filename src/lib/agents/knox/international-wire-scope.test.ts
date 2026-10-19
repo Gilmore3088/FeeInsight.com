@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import { sourceOwnedWireScope, reviewInternationalDirection } from "@/lib/custom-report/own-wire-scope";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
@@ -266,6 +267,27 @@ describe("source-owned international wire scope, independent of price admission 
     expect(sourceOwnedWireScope(`${row}\n${row}`, "International Wire Outgoing", 45)).toMatchObject({ kind: "unresolved", reason: "ambiguous_owner" });
     expect(reviewInternationalDirection(sourceOwnedWireScope("Wire Fee Foreign\n$60", "Wire Fee Foreign", 60), "wire_intl_outgoing"))
       .toMatchObject({ kind: "hold", reason: "direction_missing" });
+  });
+
+  it("does not turn a priced foreign owner into the heading of the saved Northern Communities incoming row", () => {
+    const saved = JSON.parse(gunzipSync(readFileSync(new URL("./__fixtures__/state-answer-keys.json.gz", import.meta.url))).toString("utf8"));
+    const source = saved.keys.find((row: { tid: number }) => row.tid === 12030);
+    expect(source).toBeDefined();
+    expect(createHash("sha256").update(source.text).digest("hex")).toBe("6b945e6a8cb6e89bd4d74ab0dbcfe94e4936019265e457840216f0e354ce8f2c");
+    const free = runFreeSpecialists(source.text);
+    expect(free.candidates).toContainEqual(expect.objectContaining({ canonicalHint: "wire_domestic_incoming", amount: 20 }));
+    expect(free.candidates).toContainEqual(expect.objectContaining({ canonicalHint: "wire_domestic_outgoing", amount: 30 }));
+    expect(free.held).toContainEqual(expect.objectContaining({ shape: "eligibility", feeName: "Wire Fee Foreign", amount: 60 }));
+    expect(sourceOwnedWireScope(source.text, "Wire Fee Incoming", 20)).toMatchObject({ kind: "owned", geography: "unspecified", directions: ["incoming"] });
+    expect(reviewInternationalDirection(sourceOwnedWireScope(source.text, "Wire Fee Foreign", 60), "wire_intl_outgoing"))
+      .toMatchObject({ kind: "hold", reason: "direction_missing" });
+  });
+
+  it("keeps separate priced sibling stacks under their true unpriced wire heading", () => {
+    const text = "International Wire Transfers\nIncoming\n$15\nOutgoing\n$45";
+    for (const [name, amount, direction] of [["International Wire Transfers: Incoming", 15, "incoming"], ["International Wire Transfers: Outgoing", 45, "outgoing"]] as const) {
+      expect(sourceOwnedWireScope(text, name, amount)).toMatchObject({ kind: "owned", geography: "international", directions: [direction] });
+    }
   });
 
   it.each([
