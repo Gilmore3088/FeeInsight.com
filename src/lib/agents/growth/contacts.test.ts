@@ -4,16 +4,20 @@ import { isMarketingStep, isProviderStep } from "@/lib/agents/types";
 import {
   belongsToSite,
   checkSite,
+  cleanContactTitle,
   contactPageLinks,
   contactConfidence,
   contactsCsv,
   extractContacts,
+  extractLeaders,
+  leadersCsvLines,
   isSharedMailbox,
   nameFitsEmail,
   normalizeContact,
   rankContacts,
   roleFor,
   runContactFinder,
+  splitContactSentence,
   summarizeContactFinder,
   type ProspectContactRow,
 } from "./contacts";
@@ -150,16 +154,19 @@ describe("checkSite", () => {
   });
 });
 
-function fakeDb(options: { ready?: boolean } = {}) {
+function fakeDb(options: { ready?: boolean; leaders?: boolean } = {}) {
   const writes: string[] = [];
-  const db = vi.fn((strings: TemplateStringsArray) => {
+  const reads: Array<{ query: string; values: unknown[] }> = [];
+  const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join("?");
     if (query.includes("to_regclass('public.prospect_contacts')")) return Promise.resolve([{ ready: options.ready ?? true }]);
+    if (query.includes("to_regclass('public.prospect_leaders')")) return Promise.resolve([{ ready: options.leaders ?? false }]);
+    if (query.includes("FROM live l")) reads.push({ query, values });
     if (query.includes("FROM live l")) return Promise.resolve([{ id: 7, institution_name: "First Bank", website_url: "https://www.firstbank.com/" }]);
     if (query.includes("INSERT INTO")) writes.push(query);
     return Promise.resolve([]);
   });
-  return { db: db as unknown as Db, writes };
+  return { db: db as unknown as Db, writes, reads };
 }
 
 describe("runContactFinder", () => {
@@ -186,6 +193,34 @@ describe("runContactFinder", () => {
     expect(dry.writes).toEqual([]);
     const before = await runContactFinder({ db: fakeDb({ ready: false }).db, fetcher: fakeFetcher(pages).fetcher });
     expect(before.schemaReady).toBe(false);
+  });
+
+  it("keeps named leaders printed without an address once their table exists", async () => {
+    const withoutEmail = `<html><body><h1>Leadership</h1>
+      <div><h3>Maria Gomez</h3><p>Chief Marketing Officer</p></div>
+      <div><h3>Robert Lee</h3><p>President &amp; CEO</p><p>rlee@firstbank.com</p></div>
+    </body></html>`;
+    const { db, writes, reads } = fakeDb({ leaders: true });
+    const result = await runContactFinder({
+      db,
+      runId: 9,
+      fetcher: fakeFetcher({ ...pages, "https://www.firstbank.com/about-us/leadership": { body: withoutEmail } }).fetcher,
+    });
+    expect(result.leaders).toBe(1);
+    const leaderWrites = writes.filter((query) => query.includes("prospect_leaders ("));
+    expect(leaderWrites).toHaveLength(1);
+    expect(writes.some((query) => query.includes("leaders_found)"))).toBe(true);
+    // Comparison-ready sites read before leaders were kept are due again.
+    expect(reads[0].values).toContain(true);
+    expect(summarizeContactFinder(result)).toContain("1 named leaders printed without an address");
+  });
+
+  it("leaves leaders out before their migration", async () => {
+    const { db, writes, reads } = fakeDb();
+    const result = await runContactFinder({ db, runId: 9, fetcher: fakeFetcher(pages).fetcher });
+    expect(result.leaders).toBeNull();
+    expect(writes.some((query) => query.includes("prospect_leaders") || query.includes("leaders_found"))).toBe(false);
+    expect(reads[0].values).toContain(false);
   });
 
   it("is a free marketing step", () => {
@@ -305,5 +340,87 @@ describe("contactsCsv", () => {
     expect(header.endsWith("market_coverage_pct,market_coverage_overdraft_pct")).toBe(true);
     expect(line.endsWith(",85,60")).toBe(true);
     expect(contactsCsv([row]).trim().split("\n")[1].endsWith(",,")).toBe(true);
+  });
+});
+
+describe("extractLeaders", () => {
+  const url = "https://www.firstbank.com/about-us/leadership";
+
+  it("keeps decision-makers printed by name and title, with or without an address", () => {
+    const html = `<h1>Our Leadership</h1>
+      <div><h3>Maria Gomez</h3><p>SVP, Chief Marketing Officer</p></div>
+      <div><h3>Robert Lee</h3><p>President &amp; CEO</p></div>
+      <p>Dana Whitfield, EVP Retail Banking</p>
+      <p>Tom Park | Chief Financial Officer</p>`;
+    expect(extractLeaders(html, url).map(({ name, title, role }) => [name, title, role])).toEqual([
+      ["Maria Gomez", "SVP, Chief Marketing Officer", "marketing"],
+      ["Robert Lee", "President & CEO", "executive"],
+      ["Dana Whitfield", "EVP Retail Banking", "retail"],
+      ["Tom Park", "Chief Financial Officer", "finance"],
+    ]);
+  });
+
+  it("drops lenders, branch staff, junior ranks and board members", () => {
+    const html = `<div><h3>Ann Diaz</h3><p>Branch Manager</p></div>
+      <div><h3>Sam Ortiz</h3><p>VP, Commercial Loan Officer</p></div>
+      <div><h3>Lee Chan</h3><p>Marketing Specialist</p></div>
+      <div><h3>Pat Kelly</h3><p>Board of Directors</p></div>
+      <div><h3>Our Team</h3><p>Director of Marketing</p></div>`;
+    expect(extractLeaders(html, url)).toEqual([]);
+  });
+
+  it("checkSite leaves out a leader whose address it already kept", async () => {
+    const { fetcher } = fakeFetcher({
+      "https://www.firstbank.com/robots.txt": { body: "" },
+      "https://www.firstbank.com/": { body: HOME },
+      "https://www.firstbank.com/about-us/leadership": { body: LEADERSHIP },
+    });
+    const check = await checkSite({ institutionId: 7, name: "First Bank", websiteUrl: "https://www.firstbank.com/" }, fetcher);
+    expect(check.contacts.map((contact) => contact.name)).toContain("Robert Lee");
+    expect(check.leaders.map((leader) => leader.name)).not.toContain("Robert Lee");
+  });
+
+  it("writes leaders as CSV lines with no address", () => {
+    const [line] = leadersCsvLines([
+      {
+        institution_id: 7,
+        institution_name: "First Bank",
+        charter_type: "bank",
+        state_code: "TX",
+        city: "Austin",
+        assets_musd: 900,
+        name: "Maria Gomez",
+        title: "Chief Marketing Officer",
+        role: "marketing",
+        source_url: url,
+        found_at: "2026-10-17T00:00:00.000Z",
+      },
+    ]);
+    expect(line).toBe(`7,First Bank,bank,TX,Austin,900,,,Maria Gomez,Chief Marketing Officer,marketing,,leader,${url},2026-10-17T00:00:00.000Z,,`);
+  });
+});
+
+describe("titles that are sentences", () => {
+  it("drops sentences, bullets and prices printed where a title would be", () => {
+    for (const line of [
+      "Angie serves on the Finance and Audit Committee for the Charlotte Community Foundation.",
+      "Gretchen is a member of the Board of Directors and Treasurer for the Boca Grande Area Chamber of Commerce.",
+      "- Checking, savings, money market, and loan accounts are eligible for e-Statements.",
+      "Per Item Fee: $0.15 per item (Each additional item deposited or presented after 500)",
+    ]) expect(cleanContactTitle(line)).toBeNull();
+  });
+
+  it("keeps long titles that list several roles", () => {
+    const title = "Executive Vice President / Reynolds Market President / Chief Financial Officer / Senior Loan Officer";
+    expect(cleanContactTitle(title)).toBe(title);
+    expect(cleanContactTitle("Sr. Vice President, Marketing")).toBe("Sr. Vice President, Marketing");
+  });
+
+  it("reads the name and title out of a 'Meet our …' line", () => {
+    expect(splitContactSentence("Meet our President and CEO, Julieann Thurlow.")).toEqual({ name: "Julieann Thurlow", title: "President and CEO" });
+    const html = "<h2>Meet our President and CEO, Julieann Thurlow.</h2><p>Julieann has led the bank since 2010.</p>";
+    expect(extractLeaders(html, "https://www.reading.coop/about").map(({ name, title, role }) => [name, title, role])).toEqual([
+      ["Julieann Thurlow", "President and CEO", "executive"],
+    ]);
   });
 });

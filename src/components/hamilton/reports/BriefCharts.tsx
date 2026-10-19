@@ -5,6 +5,7 @@
 import { Circle, Line, Path, Polyline, Rect, Svg, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import type { LocalCompetitorFee } from "@/lib/hamilton/answer-brief";
+import { ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
 import type { MarketShare, RatePoint } from "@/lib/hamilton/brief-context";
 import type { DependenceChart } from "@/lib/hamilton/workspace/studies";
 import type { InstitutionFinancials, SchedulePosition } from "@/lib/hamilton/workspace/types";
@@ -139,20 +140,32 @@ const BAR = 200;
 
 /** One fee's price at the bank and at its named local competitors, the bank first and highlighted. */
 export function CompetitorBars({ item, institutionName = "Research institution" }: { item: LocalCompetitorFee; institutionName?: string }) {
-  const rows = [{ name: institutionName, amount: item.own, own: true }, ...item.competitors.map((c) => ({ ...c, own: false }))];
-  const max = Math.max(...rows.map((r) => r.amount)) || 1;
+  const rows: { name: string; amount: number; own: boolean; several?: SeveralFees }[] = [
+    { name: institutionName, amount: item.own, own: true },
+    ...item.competitors.map((c) => ({ ...c, own: false })),
+  ];
+  // A competitor stating several different fees is drawn to its highest and labelled with the range (#1931).
+  const reach = (r: (typeof rows)[number]) => r.several?.high ?? r.amount;
+  const max = Math.max(...rows.map(reach)) || 1;
   return (
     <View wrap={false}>
       <Text style={s.chartTitle}>
         {item.displayName}, local competitors
       </Text>
       {rows.map((r, i) => (
-        <View key={`${r.name}-${i}`} style={{ flexDirection: "row", alignItems: "center", marginBottom: 2 }}>
-          <Text style={r.own ? [s.barName, s.barNameOwn] : s.barName}>{r.name}</Text>
-          <Svg width={BAR} height={9}>
-            <Rect x={0} y={0} width={Math.max(1.5, (r.amount / max) * BAR)} height={9} fill={r.own ? C.accent : C.bar} />
-          </Svg>
-          <Text style={s.barValue}>{fee(r.amount)}</Text>
+        <View key={`${r.name}-${i}`} style={{ marginBottom: 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Text style={r.own ? [s.barName, s.barNameOwn] : s.barName}>{r.name}</Text>
+            <Svg width={BAR} height={9}>
+              {r.several ? (
+                <Rect x={(r.several.low / max) * BAR} y={2} width={Math.max(1.5, ((r.several.high - r.several.low) / max) * BAR)} height={5} fill={C.bar} />
+              ) : (
+                <Rect x={0} y={0} width={Math.max(1.5, (r.amount / max) * BAR)} height={9} fill={r.own ? C.accent : C.bar} />
+              )}
+            </Svg>
+            <Text style={s.barValue}>{statedFeeLabel(r.amount, r.several, fee)}</Text>
+          </View>
+          {r.several ? <Text style={s.axisText}>{ownFeeList(r.several, fee)}</Text> : null}
         </View>
       ))}
     </View>

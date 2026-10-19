@@ -168,6 +168,19 @@ function narrateFinished(
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }
+    case "lane-sync": {
+      if (typeof detail.priorities_error === "string") return `Synced every state's lane, but the priority refresh failed, so lanes kept their scores.`;
+      return `Synced every state's lane and rescored ${count(n(detail, "priorities_updated"), "lane")}${joinParts([
+        n(detail, "unchecked_woken") > 0 && `${count(n(detail, "unchecked_woken"), "lane")} woken for unchecked live fees`,
+        n(detail, "second_look_woken") > 0 && `${count(n(detail, "second_look_woken"), "lane")} woken for a pending second look`,
+      ])}.`;
+    }
+    case "publish-sweeps": {
+      const changed = n(detail, "changed");
+      const verb = detail.dry_run === true ? "Would change" : "Changed";
+      if (changed === 0) return detail.dry_run === true ? "Publish sweeps dry run: nothing to change." : "Publish sweeps: nothing to change.";
+      return `${verb} ${count(changed, "live fee row")} across the moved publish sweeps${detail.dry_run === true ? " (dry run, nothing written)" : ""}.`;
+    }
     case "category-guard": {
       const failing = n(detail, "failing_fees");
       if (failing === 0) return `Checked ${count(n(detail, "scanned_fees"), "live fee")}; every one matches its category.`;
@@ -249,10 +262,31 @@ function narrateFinished(
     }
     case "atlas-city-repair": {
       const found = n(detail, "candidates");
-      if (found === 0) return "Atlas found no credit union city cut at 15 characters to restore.";
+      // #2022: hand-checked fee links ride the same step.
+      const links = (detail.hand_links ?? null) as Detail | null;
+      const linkNote = links && n(links, "repaired") > 0 ? ` Pointed ${count(n(links, "repaired"), "institution")} at its own fee page, as checked by hand.` : "";
+      if (found === 0) return `Atlas found no credit union city cut at 15 characters to restore.${linkNote}`;
       return n(detail, "repaired") > 0
-        ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.`
-        : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).`;
+        ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.${linkNote}`
+        : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).${linkNote}`;
+    }
+    case "atlas-storage-retention": {
+      const size = detail.database_mb == null ? "could not read the database size" : `measured the database at ${count(n(detail, "database_mb"), "MB", "MB")}`;
+      const trims = Array.isArray(detail.trims) ? (detail.trims as Detail[]) : [];
+      const uncounted = trims.filter((t) => t.eligible == null).length;
+      const failedCount = uncounted > 0 ? ` ${count(uncounted, "trim")} could not count.` : "";
+      const deleted = trims.reduce((sum, t) => sum + n(t, "deleted"), 0);
+      const eligible = trims.reduce((sum, t) => sum + n(t, "eligible"), 0);
+      const held = Array.isArray(detail.held_sources) ? (detail.held_sources as Detail[]) : [];
+      if (held.length > 0) {
+        const over = [...new Set(held.flatMap((h) => (Array.isArray(h.tables) ? h.tables.map(String) : [])))];
+        return `Atlas ${size}; ${over.join(", ")} ${over.length === 1 ? "is" : "are"} over budget, so ${count(held.length, "registry source")} ${held.length === 1 ? "is" : "are"} held.${failedCount}`;
+      }
+      return deleted > 0
+        ? `Atlas ${size} and trimmed ${count(deleted, "row")} of log history.${failedCount}`
+        : uncounted === trims.length
+          ? `Atlas ${size}; the log trims could not count this run.`
+          : `Atlas ${size}; ${count(eligible, "row")} of log history could be trimmed (trims switched off).${failedCount}`;
     }
     case "schedule-check": {
       const missed = n(detail, "missed") + n(detail, "failed");
@@ -276,6 +310,11 @@ function narrateFinished(
       const failing = Array.isArray(detail.failing) ? detail.failing.length : 0;
       const dollar = (detail.dollar ?? {}) as Record<string, unknown>;
       return `Deming ran the daily data checks on ${count(n(dollar, "live_fees"), "live dollar fee")}: ${failing === 0 ? "no check failed its threshold" : `ALARM: ${count(failing, "check")} failed its threshold`}.`;
+    }
+    case "deming-source-health": {
+      const counts = (detail.counts ?? {}) as Detail;
+      const urgent = n(counts, "failed") + n(counts, "empty");
+      return `Deming checked the public-data sources: ${n(counts, "fresh")} fresh, ${n(counts, "stale")} stale, ${n(counts, "skipped")} skipped, ${urgent === 0 ? "none failed or empty" : `ALARM: ${count(urgent, "source")} failed or empty`}.`;
     }
     case "deming-knox-misses": {
       if (detail.ready === false) return "Deming could not replay Knox's answer-key misses: the case store or the answer key is not there.";
@@ -518,7 +557,11 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
     case "registry-beige-book":
       return detail.empty ? null : `Loaded the ${String(detail.release_date ?? partition)} Beige Book (${count(n(detail, "sections"), "section")}).`;
     case "registry-fred":
-      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from FRED.`;
+      return `Refreshed ${count(n(detail, "refreshed_series"), "economic indicator")} from BLS, BEA and the Fed Board${
+        Array.isArray(detail.still_on_fred_era_values) && detail.still_on_fred_era_values.length > 0
+          ? `; ${detail.still_on_fred_era_values.length} still on FRED-era values`
+          : ""
+      }.`;
     case "registry-reg-news":
       return `Stored ${count(n(detail, "inserted"), "new regulator press release")} of ${n(detail, "fetched")} read.`;
     case "registry-fomc-minutes":
@@ -665,9 +708,11 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "bayes-replay-ledger": "atlas",
   "schedule-check": "atlas",
   "atlas-city-repair": "atlas",
+  "atlas-storage-retention": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
+  "deming-source-health": "atlas",
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
@@ -687,29 +732,29 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   fetch: "magellan",
   "public-discovery": "magellan",
   "public-audit": "magellan",
-  "registry-fdic-universe": "magellan",
-  "registry-fdic-financials": "magellan",
-  "registry-ncua-financials": "magellan",
-  "registry-fdic-sod": "magellan",
-  "registry-ncua-branches": "magellan",
-  "registry-ncua-branch-geocode": "magellan",
-  "registry-cfpb": "magellan",
-  "registry-sec-links": "magellan",
-  "registry-sec-filings": "magellan",
-  "registry-beige-book": "magellan",
-  "registry-fred": "magellan",
-  "registry-reg-news": "magellan",
-  "registry-fomc-minutes": "magellan",
-  "registry-fed-publications": "magellan",
-  "registry-federal-register": "magellan",
-  "registry-federal-bills": "magellan",
-  "registry-state-bills": "magellan",
-  "registry-state-regulators": "magellan",
-  "registry-state-reg-news": "magellan",
-  "registry-state-bill-news": "magellan",
-  "registry-enforcement": "magellan",
-  "registry-state-enforcement": "magellan",
-  "registry-wire-research": "magellan",
+  "registry-fdic-universe": "hoovie",
+  "registry-fdic-financials": "hoovie",
+  "registry-ncua-financials": "hoovie",
+  "registry-fdic-sod": "hoovie",
+  "registry-ncua-branches": "hoovie",
+  "registry-ncua-branch-geocode": "hoovie",
+  "registry-cfpb": "hoovie",
+  "registry-sec-links": "hoovie",
+  "registry-sec-filings": "hoovie",
+  "registry-beige-book": "hoovie",
+  "registry-fred": "hoovie",
+  "registry-reg-news": "hoovie",
+  "registry-fomc-minutes": "hoovie",
+  "registry-fed-publications": "hoovie",
+  "registry-federal-register": "hoovie",
+  "registry-federal-bills": "hoovie",
+  "registry-state-bills": "hoovie",
+  "registry-state-regulators": "hoovie",
+  "registry-state-reg-news": "hoovie",
+  "registry-state-bill-news": "hoovie",
+  "registry-enforcement": "hoovie",
+  "registry-state-enforcement": "hoovie",
+  "registry-wire-research": "hoovie",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",
@@ -720,8 +765,10 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   verify: "darwin",
   "public-cluster": "darwin",
   publish: "gutenberg",
+  "lane-sync": "atlas",
   "publish-index": "gutenberg",
   "publish-context": "gutenberg",
+  "publish-sweeps": "gutenberg",
   "report-render": "hamilton",
   "report-reconcile": "hamilton",
   "report-close": "hamilton",

@@ -34,8 +34,24 @@ describe("getRegistryFeedFreshness", () => {
         failed: 0,
         scheduled: 0,
         lastError: null,
+        blocked: 0,
+        blockedHost: null,
+        succeeded: 0,
+        lastFailedAt: null,
+        lastBlockedAt: null,
       },
     ]);
+  });
+
+  it("reports blocked partitions apart from successes (#1806)", async () => {
+    mock.mockResolvedValueOnce([
+      { source: "fr-y9c", latest_period: null, last_success_at: null, next_attempt_at: null, failed: 0, scheduled: 0, last_error: null, blocked: 3, blocked_host: "www.ffiec.gov" },
+    ]);
+    const [feed] = await getRegistryFeedFreshness();
+    expect(feed).toMatchObject({ lastSuccessAt: null, blocked: 3, blockedHost: "www.ffiec.gov" });
+    const text = (mock.mock.calls[0][0] as string[]).join("?");
+    expect(text).toContain("status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source'))");
+    expect(text).toContain("COUNT(*) FILTER (WHERE status = 'empty' AND detail ? 'missing_source')::int AS blocked");
   });
 });
 

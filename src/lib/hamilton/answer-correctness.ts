@@ -18,11 +18,13 @@
  * yet checked; sentences sourced to other tables (call reports, fee changes, complaints) are out
  * of scope; and the whole-schedule overview's peer medians are accepted as printed, because the
  * overview does not carry its peer members (the bank's own value on each line is re-read live).
+ * The overdraft pricing groups' rules ("$15.01 to $30") are fixed definitions and are skipped.
  */
 
 import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
-import { summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
+import { countedAmounts, summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
 import { extractFigures } from "./figure-check";
+import { ARCHETYPE_RULE_PATTERN } from "./workspace/storyline";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
 
@@ -198,8 +200,13 @@ function around(text: string, index: number): string {
   return `${start > 0 && text[start - 1] !== "\n" ? "…" : ""}${text.slice(start, end).replace(/[()]/g, "")}${end < text.length && text[end] !== "\n" ? "…" : ""}`;
 }
 
+/** The text with the pricing groups' rules blanked (same length, so indices still point into it). */
+function withoutGroupRules(text: string): string {
+  return text.replace(ARCHETYPE_RULE_PATTERN, (rule) => " ".repeat(rule.length));
+}
+
 function tieText(text: string, anchors: number[], singles: number[], failures: string[]): CorrectnessResult {
-  const usd = extractFigures(text).filter((f) => f.kind === "usd");
+  const usd = extractFigures(withoutGroupRules(text)).filter((f) => f.kind === "usd");
   // Each untied figure with the words around it, so the failing sentence can be found (#981).
   const untied = [...new Map(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => [f.raw, `${f.raw} (${around(text, f.index)})`])).values()];
   if (untied.length > 0) {
@@ -244,7 +251,7 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
     for (const group of groupsOf(research)) {
       let missing = 0;
       let differ = 0;
-      const memberRows: StatsInputRow[] = [];
+      const counted: { institutionId: number; amount: number; countedAs?: number }[] = [];
       for (const m of group.members) {
         const value = values.get(m.institutionId);
         if (value === undefined) {
@@ -253,7 +260,7 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
         }
         if (!near(m.amount, value)) differ++;
         singles.push(value);
-        memberRows.push({ institution_id: m.institutionId, amount: value, fee_category: research.feeCategory });
+        counted.push({ institutionId: m.institutionId, amount: value, countedAs: m.countedAs });
       }
       if (missing > 0) failures.push(`${group.label}: ${missing} of ${group.members.length} values have no live catalog row`);
       if (differ > 0) failures.push(`${group.label}: ${differ} of ${group.members.length} values differ from the catalog`);
@@ -263,9 +270,10 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
           failures.push(`${group.label}: counts ${group.members.length} institutions, the catalog has ${liveCount} publishing this fee`);
         }
       }
-      // TODO(#1441): Hamilton's peer band and layers (workspace/research.ts) are raw quantiles
-      // over every member, so this recompute leaves statistics rule 7 (count once) out until
-      // they move onto summarizeFees; then carry each member's schedule keys here.
+      // Statistics rule 7 (count once) as the band applies it: sister charters of one shared
+      // schedule (each member's `countedAs`) are one value. Those values are already collapsed,
+      // so summarizeFees must not collapse again.
+      const memberRows: StatsInputRow[] = countedAmounts(counted).map((amount, index) => ({ institution_id: index + 1, amount, fee_category: research.feeCategory }));
       const stats = summarizeFees(memberRows, { countSharedScheduleOnce: false });
       const recomputed = { p25: stats.p25_amount, median: stats.median_amount, p75: stats.p75_amount };
       if (group.printed) {

@@ -9,6 +9,7 @@ import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { ANSWER_TYPE, dayDate, figureSize, fmtMoney, fmtSignedMoney, SERIF } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
 import { IncomeSplitChart, incomeSplitOf } from "./income-split";
+import { PeerList } from "./peer-list";
 
 const th = ANSWER_TYPE.th;
 
@@ -24,6 +25,14 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     return (
       <div className="break-inside-avoid">
         <ExhibitView exhibit={x} number={number} title={item.actionTitle} />
+        {takeaway}
+      </div>
+    );
+  }
+  if (x.kind === "peer_list") {
+    return (
+      <div className="break-inside-avoid">
+        <PeerList exhibit={x} title={item.actionTitle} number={number} />
         {takeaway}
       </div>
     );
@@ -110,7 +119,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                 {x.columns.map((c, i) => (
                   <div key={c} className="contents">
                     <dt className="text-warm-600">{c}</dt>
-                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not published</span>}</dd>
+                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not listed</span>}</dd>
                   </div>
                 ))}
               </dl>
@@ -137,7 +146,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                   </th>
                   {r.cells.map((c, i) => (
                     <td key={i} className={`px-3 py-2 text-center text-warm-800 ${ANSWER_TYPE.num}`}>
-                      {c ?? <span className="text-warm-600">Not published</span>}
+                      {c ?? <span className="text-warm-600">Not listed</span>}
                     </td>
                   ))}
                 </tr>
@@ -159,9 +168,12 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
       if (level === "working_estimate") return researchInstitutionName ? `Working estimate from ${researchInstitutionName}'s filings` : "Working estimate from institution filings";
       return researchInstitutionName ? `Published figures: ${researchInstitutionName}` : "Published institution figures";
     };
-    // A lone figure is an amount, not a change, so it carries no plus sign.
+    // A lone figure, or a filed figure read straight from the call report, is an amount, not a
+    // change, so it carries no plus sign.
+    const isAmount = (r: (typeof x.rows)[number]) =>
+      r.low === r.high && r.low >= 0 && (x.rows.length === 1 || (publicFilings && r.evidenceLevel === "institution"));
     const amount = (r: (typeof x.rows)[number]) =>
-      r.low === r.high ? (x.rows.length === 1 && r.low >= 0 ? fmtMoney(r.low) : fmtSignedMoney(r.low)) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
+      isAmount(r) ? fmtMoney(r.low) : r.low === r.high ? fmtSignedMoney(r.low) : `${fmtSignedMoney(r.low)} to ${fmtSignedMoney(r.high)}`;
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
         <ul className={`grid gap-3 ${x.rows.length === 3 ? "sm:grid-cols-2 lg:grid-cols-3" : x.rows.length > 1 ? "sm:grid-cols-2" : ""}`}>

@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -26,6 +26,45 @@ function response(body: string, contentType = "text/html", status = 200): Respon
 }
 
 describe("Magellan agentic fetch", () => {
+  // #1881: Texas Capital's row before run 8472 (Oct 18, read-only): its saved link was the new PDF,
+  // its profile still remembered the old services-fees page.
+  const TEXAS_CAPITAL = {
+    id: 69,
+    institution_name: "Texas Capital Bank",
+    fee_schedule_url: "https://texascapitalbank.com/sites/default/files/documents/Disclosures/Personal-Banking-Fee-Schedule.pdf",
+    asset_size: "1000",
+    last_crawl_at: null,
+    consecutive_failures: 0,
+    profile_canonical_source_url: "https://texascapitalbank.com/personal-banking/services-fees",
+  };
+
+  it("fetches the fee link a person's extract asked for, not the remembered page (#1881)", async () => {
+    const db = createDbMock([TEXAS_CAPITAL]);
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response("%PDF", "application/pdf"));
+    const result = await runMagellanFetch({
+      runId: 8472, institutionId: 69, requestedUrl: TEXAS_CAPITAL.fee_schedule_url, db: asFetchDb(db), fetchImpl,
+    });
+    expect(fetchImpl.mock.calls[0][0]).toBe(TEXAS_CAPITAL.fee_schedule_url);
+    expect(result.results[0]).toMatchObject({ sourceUrl: TEXAS_CAPITAL.fee_schedule_url, documentType: "pdf" });
+    // The fetch then remembers the new page: the profile takes the fetched address unless locked.
+    const upsert = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO institution_source_profiles"));
+    expect(upsert?.slice(1)).toContain(TEXAS_CAPITAL.fee_schedule_url);
+  });
+
+  it("keeps the remembered page without a request, or when the request is not the saved link", () => {
+    const row = TEXAS_CAPITAL as Parameters<typeof withRequestedUrl>[0];
+    expect(withRequestedUrl(row)).toBe(row);
+    expect(withRequestedUrl(row, 69, null)).toBe(row);
+    expect(withRequestedUrl(row, 70, TEXAS_CAPITAL.fee_schedule_url)).toBe(row);
+    expect(withRequestedUrl(row, 69, "https://texascapitalbank.com/other.pdf")).toBe(row);
+    expect(withRequestedUrl(row, 69, ` ${TEXAS_CAPITAL.fee_schedule_url} `)).toEqual({ ...row, profile_canonical_source_url: null });
+    // A remembered spelling of the saved page is kept on an extract (navigatorcu's `?print=1`, read-only, Oct 18).
+    const variant = { ...row, id: 7024, fee_schedule_url: "https://navigatorcu.org/checking/free-checking/", profile_canonical_source_url: "https://navigatorcu.org/checking/free-checking/?print=1" };
+    expect(withRequestedUrl(variant, 7024, variant.fee_schedule_url)).toBe(variant);
+    const port = { ...row, id: 4527, fee_schedule_url: "https://www.newcenturyfcu.org:443/images/pdfs/fee-schedule.pdf", profile_canonical_source_url: "https://www.newcenturyfcu.org/images/pdfs/fee-schedule.pdf" };
+    expect(withRequestedUrl(port, 4527, port.fee_schedule_url)).toBe(port);
+  });
+
   it("fetches a source document and writes crawl result plus target health", async () => {
     const body = "monthly maintenance fee overdraft fee";
     const db = createDbMock([
@@ -342,8 +381,72 @@ describe("Magellan agentic fetch", () => {
       expect(attempt).toEqual(expect.arrayContaining([45, 900, "fetch", MAGELLAN_FETCH_STRATEGY.strategy, bodyHash, "unchanged", 201, 7]));
     });
 
+    // saved-link-fetch.ts: a copy fetched beside the bank's own link changes nothing on the bank.
+    const sideContext = {
+      learning: true, vaultSchema: false, vault: { configured: false } as never, vaultOn: false, dryRun: false,
+      runId: 204, stepId: null, strategy: { strategy: "fetch.saved_link", version: 1 }, keepRemembered: true,
+    };
+    const saved = { ...candidate, profile_last_source_hash: null, profile_last_document_id: null, profile_canonical_source_url: null };
+
+    it("stores a side copy's new bytes as a document and leaves the bank's address and health alone", async () => {
+      const db = learningDb(null);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
+      const fetched = await fetchAndRecordLink(asFetchDb(db), saved, fetchImpl, sideContext);
+      expect(fetched).toMatchObject({ sourceDocumentId: 1001, result: { outcome: "success" } });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("INSERT INTO source_documents");
+      expect(sqlText).not.toContain("UPDATE institution_sources");
+      expect(sqlText).not.toMatch(/(INSERT INTO|UPDATE) institution_source_profiles/);
+    });
+
+    it("matches a side copy's bytes the bank already has, and stores nothing for a gone link", async () => {
+      const matched = learningDb(null, { id: 900 });
+      const same = await fetchAndRecordLink(asFetchDb(matched), saved, vi.fn().mockResolvedValueOnce(response(body)), sideContext);
+      expect(same).toMatchObject({ sourceDocumentId: 900, result: { outcome: "unchanged", reusedDocument: true } });
+      const matchedText = matched.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(matchedText).not.toContain("INSERT INTO source_documents");
+      // Matched bytes belong to another page's stream: no copy of it is marked current or superseded.
+      expect(matchedText).not.toContain("superseded_by_id");
+
+      const gone = learningDb(null);
+      const missing = await fetchAndRecordLink(asFetchDb(gone), saved, vi.fn().mockResolvedValueOnce(response("Not found", "text/html", 404)), sideContext);
+      expect(missing).toMatchObject({ sourceDocumentId: null, result: { outcome: "failed", attemptOutcome: "http_404" } });
+      const goneText = gone.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(goneText).not.toContain("INSERT INTO source_documents");
+      expect(goneText).not.toContain("UPDATE institution_sources");
+      expect(goneText).toContain("INSERT INTO pipeline_attempts");
+    });
+
+    it("sends another page's validators to no address, and a 304 without ours is not unchanged (Dupaco)", async () => {
+      const db = learningDb({
+        id: 21715,
+        document_url: "https://learning.example/personal/checking-accounts",
+        content_hash: "checking-page-hash",
+        etag: 'W/"deed"',
+        last_modified: "Mon, 04 May 2026 14:03:41 GMT",
+      });
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body, "application/pdf"));
+
+      const result = await runMagellanFetch({ runId: 203, db: asFetchDb(db), fetchImpl });
+
+      const headers = fetchImpl.mock.calls[0][1].headers as Record<string, string>;
+      expect(headers["If-None-Match"]).toBeUndefined();
+      expect(headers["If-Modified-Since"]).toBeUndefined();
+      expect(result.results[0]).toMatchObject({ outcome: "success", contentHash: bodyHash, previousDocumentId: null });
+    });
+
+    it("sends validators only for the same address, give or take scheme, www. and a trailing slash", () => {
+      const copy = { url: "http://www.bank.example/fees/", contentHash: "h", etag: '"v1"', lastModified: null };
+      expect(sendsValidators(copy, "https://bank.example/fees")).toBe(true);
+      expect(sendsValidators(copy, "https://bank.example/hubfs/fee-schedule.pdf")).toBe(false);
+      expect(sendsValidators({ ...copy, url: null }, "https://bank.example/fees")).toBe(false);
+      expect(sendsValidators({ ...copy, etag: null }, "https://bank.example/fees")).toBe(false);
+      expect(sendsValidators({ ...copy, contentHash: null }, "https://bank.example/fees")).toBe(false);
+      expect(sendsValidators(null, "https://bank.example/fees")).toBe(false);
+    });
+
     it("sends validators and treats a 304 as unchanged", async () => {
-      const db = learningDb({ id: 900, content_hash: bodyHash, etag: '"v1"', last_modified: "Tue, 01 Sep 2026 00:00:00 GMT" });
+      const db = learningDb({ id: 900, document_url: "https://learning.example/fees", content_hash: bodyHash, etag: '"v1"', last_modified: "Tue, 01 Sep 2026 00:00:00 GMT" });
       const fetchImpl = vi.fn().mockResolvedValueOnce(new Response(null, { status: 304 }));
 
       const result = await runMagellanFetch({ runId: 202, db: asFetchDb(db), fetchImpl });

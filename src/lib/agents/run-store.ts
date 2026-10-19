@@ -4,43 +4,16 @@ import { getExecutionBackend } from "@/lib/execution-backend";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
-import { collapseNearNameDuplicates, collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
-import { collapsePageCopies } from "@/lib/agents/hamilton/page-copy-collapse";
-import { retireClosedInstitutionFees } from "@/lib/agents/hamilton/closed-institution";
-import { fillBlankFrequencies, fillFrequenciesInPublish, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
+import { collapsePublishedDuplicates } from "@/lib/agents/hamilton/duplicate-collapse";
+import { fillBlankFrequencies, FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/lib/agents/hamilton/source-link";
-import { restoreFeesNowInTaxonomy, rollBackOffTaxonomyFees } from "@/lib/agents/hamilton/off-taxonomy-rollback";
-import { foldRetiredCategories } from "@/lib/agents/hamilton/taxonomy-fold";
-import { rollBackLimitsPublishedAsFees } from "@/lib/agents/hamilton/limit-guard";
-import { retireBusinessScheduleFees } from "@/lib/agents/hamilton/business-schedule";
-import { retireSameLineDuplicates } from "@/lib/agents/hamilton/same-line-duplicates";
-import { retireOtherBankDocumentFees } from "@/lib/agents/hamilton/other-bank-document";
-import { retireEvalVerdictFees } from "@/lib/agents/hamilton/eval-verdicts";
-import { applyHandAmountCorrections } from "@/lib/agents/hamilton/hand-amount-corrections";
-import { applyCutNameDuplicates } from "@/lib/agents/hamilton/cut-name-duplicates";
-import { applyAccountTypeHold } from "@/lib/agents/hamilton/account-type-hold";
-import { applyHandAudienceFixes, applyHandTakedowns } from "@/lib/agents/hamilton/hand-takedowns";
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
-import { retireArticlePageFees } from "@/lib/agents/hamilton/article-page";
-import { retireProductPageFees } from "@/lib/agents/hamilton/product-page";
-import { retireCrossPageConflicts } from "@/lib/agents/hamilton/cross-page-conflict";
-import { recheckUncheckedRestores } from "@/lib/agents/hamilton/restore-recheck";
-import { restoreLostRecheckTakedowns } from "@/lib/agents/hamilton/lost-recheck-restore";
-import { restoreCrossPageSupersedes } from "@/lib/agents/hamilton/cross-page-restore";
-import { pairFeeChangeRecords } from "@/lib/agents/hamilton/change-pairing";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
-import { restoreOutliersNowInRange, rollBackPublishedOutliers } from "@/lib/agents/hamilton/outlier-rollback";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
-import { syncPipelineFeedback } from "@/lib/agents/learning/feedback-sync";
-import { repairAccountTypeHoldFeedback } from "@/lib/agents/learning/account-type-hold-feedback";
-import { linkImportedFeesToTwins, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
-import { retidyLiveFeeNames } from "@/lib/agents/knox/name-retidy";
-import { moveExtractionNotes } from "@/lib/agents/knox/extraction-note";
-import { nameLiveFeesByAccount } from "@/lib/agents/hamilton/account-names";
-import { correctStoredLineups } from "@/lib/agents/knox/lineup-correct";
+import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
-import { moveRowsToIdenticalCopy, refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
+import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
 import { secondLookFeesNotOnCurrentCopy } from "@/lib/agents/hamilton/current-copy";
 import {
   currentMonth,
@@ -54,6 +27,21 @@ import {
 } from "@/lib/agents/marketing/monthly";
 import { runStateEditions, summarizeStateEditions } from "@/lib/agents/marketing/state-edition";
 import { runHamiltonPublish } from "@/lib/agents/hamilton/publish";
+import {
+  movedSweepCounts,
+  PUBLISH_SWEEPS_SPLIT_LIVE,
+  PUBLISH_SWEEPS_STEP_KEY,
+  publishSweepMode,
+  runPublishSweepsStep,
+  runsMovedSweep,
+  sweepsAfterRows,
+  sweepsBeforeGuardRequeue,
+  sweepsBeforeNewerCopy,
+  sweepsBeforeRefreshCopy,
+  sweepsBeforeRows,
+  timedSweep,
+  type MovedSweepContext,
+} from "@/lib/agents/hamilton/publish-sweeps";
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { consumeRereadRequests, rereadFeedbackDetail } from "@/lib/agents/knox/reread-feedback";
@@ -62,9 +50,9 @@ import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
+import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
-import { retireProductPageConflicts } from "@/lib/agents/hamilton/product-page-conflict";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
 import { runChangeOutcomes, summarizeChangeOutcomes } from "@/lib/agents/deming/change-outcomes";
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
@@ -86,6 +74,8 @@ import { runDarwinAdjudicate } from "@/lib/agents/darwin/adjudicate";
 import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail, recheckLiveFragmentNames } from "@/lib/agents/darwin/live-fragment-check";
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
+import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
+import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
@@ -106,10 +96,14 @@ import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agen
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
 import { playbookContradictionsDetail, runPlaybookContradictions, summarizePlaybookContradictions } from "@/lib/agents/deming/playbook-contradictions";
 import { dataQualityDetail, runDataQuality, summarizeDataQuality } from "@/lib/agents/deming/data-quality";
+import { readSourceHealth, sourceHealthDetail, summarizeSourceHealth } from "@/lib/agents/hoovie/source-health";
 import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agents/deming/knox-misses";
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { handLinkRepairDetail, runHandLinkRepair, summarizeHandLinkRepair } from "@/lib/agents/atlas/hand-link-repair";
+import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
+import { coldTierDetail, runColdTier, summarizeColdTier } from "@/lib/agents/hoovie/storage-tiers";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -337,12 +331,33 @@ async function executeAgenticStep(
   }
 
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
+  // Atlas's hourly nationwide lane sync (state-lane-scheduler.ts), from its own route.
+  if (step.stepKey === "lane-sync") {
+    const { runNationwideLaneSync } = await import("@/lib/agents/state-lane-scheduler");
+    const synced = await runNationwideLaneSync();
+    const seconds = Math.round((synced.ms.profiles + synced.ms.unchecked + synced.ms.second_looks + synced.ms.priorities) / 1000);
+    return {
+      status: "completed",
+      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
+      detail: {
+        lanes_touched: synced.profiles.lanesTouched,
+        profiles_touched: synced.profiles.profilesTouched,
+        profile_sync_failures: synced.profiles.failures,
+        unchecked_woken: synced.uncheckedWoken,
+        second_look_woken: synced.secondLookWoken,
+        priorities_updated: synced.priorities.updated,
+        priorities_error: synced.priorities.error,
+        part_ms: synced.ms,
+      },
+    };
+  }
+
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
     const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
     return {
       status: "completed",
-      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
+      summary: `Answered ${result.answers} questions for ${result.institutions} of ${result.planned} institutions; ${result.passed} met the bar; ${result.correctness.correct} of ${result.correctness.checked} checked tie to the live catalog.${result.pro ? ` Replayed ${result.pro.questions}${result.pro.planned && result.pro.planned > result.pro.questions ? ` of ${result.pro.planned}` : ""} Pro questions: ${result.pro.passed} met the bar, ${result.pro.correctness.correct} of ${result.pro.correctness.checked} checked tie to the catalog, ${result.pro.askedBack} still asked back.` : ""}${result.timedOut ? " Stopped at the time budget." : ""}`,
       detail: { ...result },
     };
   }
@@ -502,6 +517,7 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
         newLinksOnly: params.new_links_only === true,
+        requestedUrl: typeof params.fee_schedule_url === "string" ? params.fee_schedule_url : null,
       });
       // Fee links the plain fetch keeps failing to reach, tried at the bank's other
       // spellings of the address (#1051). Free; a failure here never fails the step.
@@ -519,6 +535,22 @@ async function executeAgenticStep(
           console.error("Address variant fetch failed:", error);
         }
       }
+      // Saved fee links the plain fetch never asked for (it asks for the remembered address
+      // first), stored beside it for the current-copy check (#1881). Free; never fails the step.
+      let savedLinks: RunSavedLinkFetchResult | null = null;
+      if (run.runKind !== "dry_run") {
+        try {
+          savedLinks = await runSavedLinkFetch({
+            db: sql,
+            fetchImpl: fetch,
+            runId: run.id,
+            stepId: step.id,
+            institutionId: numericRunParam(params, ["institution_id"]) ?? null,
+          });
+        } catch (error) {
+          console.error("Saved link fetch failed:", error);
+        }
+      }
       return {
         status: "completed",
         summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
@@ -530,6 +562,18 @@ async function executeAgenticStep(
                 recovered: addressVariants.recovered,
                 failed: addressVariants.failed,
                 results: addressVariants.results.slice(0, 10),
+              }
+            : null,
+          saved_links: savedLinks
+            ? {
+                selected: savedLinks.selected,
+                tried: savedLinks.tried,
+                stored: savedLinks.stored,
+                matched: savedLinks.matched,
+                failed: savedLinks.failed,
+                switch_live: savedLinks.live,
+                results: savedLinks.results.slice(0, 10),
+                would_fetch: savedLinks.wouldFetch,
               }
             : null,
           selected_institutions: fetched.selected,
@@ -914,6 +958,27 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
+      // #1909: fees read from a bank's Spanish copy of a schedule whose English line is live
+      // (translated-copy-check.ts); a report only on a dry run or with its switch off.
+      const translatedCopy = await recheckTranslatedCopies(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      // #2022: fees read from a Canadian bank's document (canadian-document-check.ts), at most hourly.
+      const canadianDocument = await recheckCanadianDocuments(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const canadianDocumentNote = canadianDocument.matched > 0
+        ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
+      const translatedCopyNote = translatedCopy.matched > 0
+        ? ` Spanish copy re-check: ${translatedCopy.matched.toLocaleString()} of ${translatedCopy.checked.toLocaleString()} live fee(s) on Spanish copies of a schedule have an English twin at the same price (${translatedCopy.live && !translatedCopy.dryRun ? `${translatedCopy.flagged.toLocaleString()} flagged, ${translatedCopy.takenDown.length.toLocaleString()} archived` : translatedCopy.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}); ${(translatedCopy.keptSpanishOnly + translatedCopy.keptEnglishName).toLocaleString()} stay.`
+        : "";
       // #1440: one printed line live under two categories or two frequencies; Darwin keeps one
       // reading (line-conflict-check.ts). Every conflicting line each step; a report only while its
       // switch is off.
@@ -951,10 +1016,10 @@ async function executeAgenticStep(
         ? ` Live name re-check: ${liveFragments.matched.toLocaleString()} of ${liveFragments.checked.toLocaleString()} live fee(s) read have a fragment name: ${liveFragments.wouldTakeDown.toLocaleString()} takedown, ${liveFragments.wouldRename.toLocaleString()} rename (${liveFragments.wouldRenameByVia.tail.toLocaleString()} by the fee the line ends on), ${liveFragments.exempt.toLocaleString()} exempt, ${liveFragments.wouldReread.toLocaleString()} kept live to ask Knox to re-read (${liveFragments.live && !liveFragments.dryRun ? `${liveFragments.takenDown.length.toLocaleString()} archived, ${liveFragments.renamed.length.toLocaleString()} renamed, ${liveFragments.rereadRequested.length.toLocaleString()} re-read request(s)` : "switch off: nothing written"}).`
         : "";
       const hourlyNote = hourly.matched > 0
-        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency, ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
+        ? ` Hourly re-check: ${hourly.wouldSet.toLocaleString()} of ${hourly.checked.toLocaleString()} live fee(s) read are priced by the hour with no hourly frequency (${hourly.wouldSetFromLine.toLocaleString()} only on their line${hourly.lineLive ? "" : ", line switch off: not written"}), ${hourly.exempt.toLocaleString()} exempt (${hourly.live && !hourly.dryRun ? `${hourly.set.length.toLocaleString()} set hourly` : "switch off: nothing written"}).`
         : "";
       const hourlyFullNote = hourlyFull
-        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly, ${hourlyFull.exempt.toLocaleString()} exempt.`
+        ? ` Whole live table: ${hourlyFull.wouldSet.toLocaleString()} live fees would be set hourly (${hourlyFull.wouldSetFromLine.toLocaleString()} only on their line), ${hourlyFull.exempt.toLocaleString()} exempt.`
         : "";
       const nonDepositNote = nonDeposit.matched > 0 || nonDeposit.brokerageDocument > 0
         ? ` Non-deposit document re-check: ${nonDeposit.matched.toLocaleString()} of ${nonDeposit.checked.toLocaleString()} live fee(s) read would come down from a brokerage or wealth (${nonDeposit.byKind.brokerage.toLocaleString()}) or loan, card or rate (${nonDeposit.byKind.loan.toLocaleString()}) document (${nonDeposit.byRule.lending_category.toLocaleString()} lending category, ${nonDeposit.byRule.lending_wording_on_loan_document.toLocaleString()} lending wording on a loan document); ${nonDeposit.brokerageDocument.toLocaleString()} deposit-category fee(s) on brokerage documents (own sub-switch${nonDeposit.live && nonDeposit.brokerageLive ? "" : ", off: they stay"}); ${(nonDeposit.keptDepositCategory + nonDeposit.keptGenericOnRatePage).toLocaleString()} fee(s) there stay live. Takedowns: ${nonDeposit.live && !nonDeposit.dryRun ? `${nonDeposit.flagged.toLocaleString()} flagged, ${nonDeposit.takenDown.length.toLocaleString()} archived` : "switch off, none made, nothing written"}.`
@@ -972,7 +1037,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -999,6 +1064,8 @@ async function executeAgenticStep(
           hourly_frequency_check: hourlyDetail(hourly),
           ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
           non_deposit_document_check: nonDepositDetail(nonDeposit),
+          translated_copy_check: translatedCopyDetail(translatedCopy),
+          canadian_document_check: canadianDocumentDetail(canadianDocument),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
@@ -1092,6 +1159,19 @@ async function executeAgenticStep(
         detail,
       };
     }
+    case PUBLISH_SWEEPS_STEP_KEY: {
+      // The 40 sweeps a lane publish no longer runs once PUBLISH_SWEEPS_SPLIT_LIVE is on, over
+      // every state's live fees (hamilton/publish-sweeps.ts). Live, it holds the publish lock as
+      // a publish step does; off, it is a rolled-back dry run and takes no lock.
+      const live = PUBLISH_SWEEPS_SPLIT_LIVE && run.runKind !== "dry_run";
+      if (live) await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
+      return runPublishSweepsStep(tx, {
+        runId: run.id,
+        stepId: step.id,
+        live,
+        categoryGuardLimit: CATEGORY_GUARD_STEP_LIMIT,
+      });
+    }
     case "publish":
     case "publish-index":
     case "publish-context": {
@@ -1099,314 +1179,114 @@ async function executeAgenticStep(
       // state's live rows. One publish step at a time keeps two sweeps from locking the
       // same rows in opposite orders; the lock ends with this step's transaction.
       await tx`SELECT pg_advisory_xact_lock(hashtext('agents.hamilton.publish'))`;
+      // Phase times go on the step's detail (`phase_ms`), so a slow publish names its slow part.
+      const publishStartedAt = Date.now();
+      // Each sweep's milliseconds, keyed by the result it returns (`sweep_ms` on the step detail):
+      // measurement only, to show which sweeps hold the step (2026-10-17 finding).
+      const sweepMs: Record<string, number> = {};
       const institutionId = numericRunParam(params, ["institution_id"]);
-      // A takedown is never final: fees an earlier sweep took down come back once a range
-      // widens or the taxonomy gains their category.
-      const outlierRestores = await restoreOutliersNowInRange(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      const offTaxonomyRestores = await restoreFeesNowInTaxonomy(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // The top-50 fold: fees under the fifteen retired categories move to the one their
-      // wording places them in, before any sweep judges them by category (fee-fold.ts).
-      const taxonomyFold = await foldRetiredCategories(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-        // The research split's exact dry-run count over every row, on request (#1398).
-        researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
-      });
-      const outlierRollbacks = await rollBackPublishedOutliers(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      const offTaxonomyRollbacks = await rollBackOffTaxonomyFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A transfer or deposit limit read as a price ("Zelle® transfer limit | $1,000").
-      const limitRollbacks = await rollBackLimitsPublishedAsFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A business schedule's fee beside the bank's consumer fee in the same category.
-      const businessSchedule = await retireBusinessScheduleFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A fee the same-line re-decide (9 Oct) published beside an older live line of itself.
-      const sameLineDuplicates = await retireSameLineDuplicates(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // Another bank's fee: read from a document on another institution's own website.
-      const otherBank = await retireOtherBankDocumentFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // The complete-record eval's critical rows (down now, James Oct 8) and the two name
-      // shapes they taught: a rebate published as an ATM fee, a "no fee for" sentence as a fee.
-      const evalVerdicts = await retireEvalVerdictFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // #1334: eight live fees read with their cents cut off are corrected in place, and the
-      // unpublished copies of those reads rejected, before this step publishes anything.
-      const handAmounts = await applyHandAmountCorrections(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
-      // #1196: five live cut-name rows that repeat a clean live row come down; the clean row stays.
-      const cutNameDuplicates = await applyCutNameDuplicates(tx, {
-        runId: run.id,
-        stepId: step.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-      });
-      // #1100 gap 1 (James, Oct 16): a non-checking account's monthly fee is held as verified with
-      // its account type and never published as consumer checking monthly maintenance.
-      const accountTypeHold = await applyAccountTypeHold(tx, {
-        runId: run.id,
-        stepId: step.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-      });
-      // Listed live fees confirmed wrong against their bank's own text (James, Oct 16; #1496 first).
-      const handTakedowns = await applyHandTakedowns(tx, {
-        runId: run.id,
-        stepId: step.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-      });
-      // Listed live fees whose audience is wrong against their bank's own text (#1302 first).
-      const handAudience = await applyHandAudienceFixes(tx, { runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run" });
-      // An institution that no longer operates keeps no live fee (#1200).
-      const closedInstitution = await retireClosedInstitutionFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A fee read from an article (a blog post quoting a national average), not a schedule.
-      const articlePage = await retireArticlePageFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A $0 benefit bullet read from a product page, not a schedule (off until James answers).
-      const productPage = await retireProductPageFees(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A product-page fee the bank's own schedule prices differently: the schedule wins
-      // (James, 2026-10-13). Off until a hand check of 10 conflicts finds 9 right; logs first looks.
-      const productPageConflict = await retireProductPageConflicts(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // One product priced differently on two current pages: the older page's price comes down.
-      const crossPage = await retireCrossPageConflicts(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A live fee whose own name contradicts its category (an ATM fee filed as a card's
-      // foreign transaction fee, a rate's figure read as dollars) comes down each step, so
-      // a guard change takes effect without anyone starting the repair run by hand.
-      const categoryGuard = await runHamiltonCategoryGuard({
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        limit: CATEGORY_GUARD_STEP_LIMIT,
-        institutionId,
+      // Moved sweeps (hamilton/publish-sweeps.ts), in today's order: restores, the fold, rollbacks,
+      // the hand lists, the page sweeps and the category guard. A state lane skips them once
+      // PUBLISH_SWEEPS_SPLIT_LIVE is on (the `publish-sweeps` step runs them); off, every step runs them.
+      const sweepMode = publishSweepMode({ stepKey: step.stepKey, stateCode, institutionId });
+      const sweepCtx: MovedSweepContext = {
         db: tx,
-      });
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId,
+        researchSplitFullCount: params.research_split_full_count === true || params.research_split_full_count === "true",
+        categoryGuardLimit: CATEGORY_GUARD_STEP_LIMIT,
+        sweepMs,
+        mode: sweepMode,
+      };
+      const {
+        outlierRestores, offTaxonomyRestores, taxonomyFold, outlierRollbacks, offTaxonomyRollbacks, limitRollbacks,
+        businessSchedule, sameLineDuplicates, otherBank, evalVerdicts, handAmounts, cutNameDuplicates, accountTypeHold,
+        handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
+      } = await sweepsBeforeGuardRequeue(sweepCtx);
       const categoryGuardRollbacks = categoryGuard.dryRun
         ? Math.min(categoryGuard.failingFees, categoryGuard.limit)
         : categoryGuard.rolledBackFees;
       // A verified row the guard rejected at publish and never published is re-read once per
       // guard version under publish's own name; one today's guard passes goes back in the queue.
-      const guardRequeue = await requeueGuardRejectedFees(tx, {
+      const guardRequeue = await timedSweep(sweepMs, "guardRequeue", () => requeueGuardRejectedFees(tx, {
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
         institutionId,
-      });
+      }));
       // Fees read from companion pages Magellan has since retired (a HELOC PDF, a
       // derivatives notice) come down before anything new publishes.
-      const companionRetire = await rollBackRetiredCompanionFees(tx, {
+      const companionRetire = await timedSweep(sweepMs, "companionRetire", () => rollBackRetiredCompanionFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const companionRollbacks = companionRetire.rollbacks;
-      const earlyDuplicateCollapses = await collapsePublishedDuplicates(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // #1302: a live row that repeats another live line of its page under a near name ("Research
-      // fee" / "Account Research fee"), when the page prints one line. Live while
-      // NEAR_NAME_COLLAPSE_LIVE is on; a dry run reports and changes nothing.
-      const nearNameCollapse = await collapseNearNameDuplicates(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // #1439: a live row that repeats a line of a newer copy of its page stored under another
-      // address ("?print=1", "www.", a mirror). Shadow until PAGE_COPY_COLLAPSE_LIVE is on.
-      const pageCopyCollapse = await collapsePageCopies(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // A live fee's frequency follows its own schedule row: a blank gets the one the row states
-      // ("$6.00 each"), and one read from another fee's row is corrected or cleared.
-      // A failed fill write is a warning here, never a failed publish (#1349 review).
-      const frequencyFill = await fillFrequenciesInPublish(tx, {
-        runId: run.id,
-        stepId: step.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
+      const { earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill } =
+        await sweepsBeforeNewerCopy(sweepCtx);
       // A fee line the bank removed from a newer copy of its page comes down (shadow
       // mode until NEWER_COPY_RETIRE_LIVE is turned on: it reports and changes nothing).
-      const newerCopy = await retireFeesDroppedFromNewerCopy(tx, {
+      const newerCopy = await timedSweep(sweepMs, "newerCopy", () => retireFeesDroppedFromNewerCopy(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
       const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
-      // A current copy whose text is identical to the superseded one has no rows of its
-      // own (Knox skips text it has read), so the superseded copy's rows move to it.
-      const identicalCopy = await moveRowsToIdenticalCopy(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
+      const { identicalCopy } = await sweepsBeforeRefreshCopy(sweepCtx);
       // A live fee the current copy of its page still states at the same amount moves to
       // that copy, so it no longer points at a superseded copy and its date is current.
-      const refreshCopy = await refreshFeesFromCurrentCopy(tx, {
+      const refreshCopy = await timedSweep(sweepMs, "refreshCopy", () => refreshFeesFromCurrentCopy(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       // A live fee the current copy does not restate at its price is read against the
       // current copy's text; one it no longer states comes down only on a second look.
-      const currentCopy = await secondLookFeesNotOnCurrentCopy(tx, {
+      const currentCopy = await timedSweep(sweepMs, "currentCopy", () => secondLookFeesNotOnCurrentCopy(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       // State lanes re-check their live Knox fees against today's rules, a batch of
       // documents per step, once per Knox version.
       const rulesRecheck = stateCode || institutionId
-        ? await rollBackUnreproducedFees(tx, {
+        ? await timedSweep(sweepMs, "rulesRecheck", () => rollBackUnreproducedFees(tx, {
             runId: run.id,
             batchId: `agentic-run-${run.id}`,
             dryRun: run.runKind === "dry_run",
             institutionId,
             stateCode,
-          })
+          }))
         : null;
-      // Live names stored before Knox tidied its reads ("Stop Payment | Item", "A dormant fee
-      // of") take their tidy name, a batch of banks per step; the old name stays in
-      // pipeline_feedback and a rename never makes a fee fail the source check.
-      const nameRetidy = await retidyLiveFeeNames(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // #1234 step 2: Knox's note leaves `conditions` for `extraction_note`, a batch per step.
-      const extractionNotes = await moveExtractionNotes(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
-      // A live fee named only "Monthly Service Fee" takes the account heading above it in its
-      // schedule ("Chase Total Checking Monthly Service Fee"); the old name stays in pipeline_feedback.
-      const accountNames = await nameLiveFeesByAccount(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // Lineup values stored before Knox v55 that came from a neighbouring account (a balance,
-      // waiver or name) are corrected from the stored text; old values stay in pipeline_feedback.
-      const lineupCorrect = await correctStoredLineups(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
+      // Moved sweeps (hamilton/publish-sweeps.ts): name and lineup tidies, restore second looks,
+      // change pairing and the cross-page restore, before the rows publish.
+      const { nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore } =
+        await sweepsBeforeRows(sweepCtx);
       const recheckRollbacks = rulesRecheck?.rollbacks.length ?? 0;
-      // Fees an older re-check restored with no check at all get the restore bar on a second look.
-      const restoreRecheck = await recheckUncheckedRestores(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // #1071: fees the re-check took down on Oct 5-11 (before #1022) that are not live again are
-      // judged once by the restore bar against their document's newest text; those that pass return.
-      const lostRestore = await restoreLostRecheckTakedowns(tx, {
-        runId: run.id,
-        batchId: `agentic-run-${run.id}`,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // Recorded fee changes name their two rows and whether they compare one page with
-      // itself, before the restore below reopens any superseded row.
-      const changePairing = await pairFeeChangeRecords(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // Live fees another page's price superseded come back through the restore bar.
-      const crossPageRestore = await restoreCrossPageSupersedes(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
       // #1342: imported fees with no traceable document take a stored document of their own
       // institution that prints them (shared source check); those the source-link repair took
       // down for want of one come back. Off with SOURCE_LINK_RESOURCE_ON.
-      const sourceLinkResource = await resourceSourceLinks(tx, {
+      const sourceLinkResource = await timedSweep(sweepMs, "sourceLinkResource", () => resourceSourceLinks(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const recheckRestores = rulesRecheck?.restores.length ?? 0;
-      const published = await runHamiltonPublish({
+      const publishRowsStartedAt = Date.now();
+      const published = await timedSweep(sweepMs, "published", () => runHamiltonPublish({
         runId: run.id,
         stepId: step.id,
         dryRun: run.runKind === "dry_run",
@@ -1419,19 +1299,24 @@ async function executeAgenticStep(
           "confidence_threshold",
         ]),
         minInstitutionFees: numericRunParam(params, ["publish_min_institution_fees"]),
+        // The row loop stops here (after PUBLISH_MIN_ROWS_PER_STEP rows) so the whole step ends
+        // inside the tick; the rows it leaves publish on the next step (2026-10-17 finding).
+        deadlineAt: publishStartedAt + PUBLISH_ROW_DEADLINE_MS,
+        topUpDeadlineAt: publishStartedAt + PUBLISH_TOP_UP_DEADLINE_MS,
         db: tx,
-      });
+      }));
+      const publishRowsEndedAt = Date.now();
       // #1069: a fee this step just published that repeats a live row (a new read that only
       // fills its frequency or names its audience) is collapsed now, not on the state's next
       // step: until then the catalog listed the fee twice (88 a day, about 40 hours, Oct 13).
       const lateDuplicateCollapses = published.dryRun || published.publishedFees === 0
         ? []
-        : await collapsePublishedDuplicates(tx, {
+        : await timedSweep(sweepMs, "lateDuplicateCollapses", () => collapsePublishedDuplicates(tx, {
             runId: run.id,
             batchId: `agentic-run-${run.id}`,
             dryRun: false,
             institutionId,
-          });
+          }));
       const duplicateCollapses = [
         ...earlyDuplicateCollapses,
         ...(nearNameCollapse.live ? nearNameCollapse.collapses : []),
@@ -1442,29 +1327,19 @@ async function executeAgenticStep(
       // step source-checks a batch of institutions (its state's or institution's when it
       // has one, any state's otherwise) after publishing, so fees published in this step
       // are checked too.
-      const sourceCheck = await takeDownUntraceableFees(tx, {
+      const sourceCheck = await timedSweep(sweepMs, "sourceCheck", () => takeDownUntraceableFees(tx, {
         runId: run.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
         stateCode,
-      });
+      }));
       const sourceTakedowns = sourceCheck?.takedowns.length ?? 0;
-      // Imported fees with no document take their schedule through an identical imported
-      // row the source check could not relink them past.
-      const importedTwins = await linkImportedFeesToTwins(tx, {
-        runId: run.id,
-        dryRun: run.runKind === "dry_run",
-        institutionId,
-      });
-      // Every agent learns from what happened to its output: this step's takedowns and
-      // restores (and a batch of older outcomes) go into the shared learning store.
-      const feedbackSync = await syncPipelineFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
-      // #1100: the sync's old rows for account type holds go to weight 0, behind a switch (off).
-      const holdFeedback = await repairAccountTypeHoldFeedback(tx, { runId: run.id, dryRun: run.runKind === "dry_run" });
+      // The five moved sweeps after the rows (hamilton/publish-sweeps.ts): links and learning feedback.
+      const { importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback } = await sweepsAfterRows(sweepCtx);
       const indexRefresh = published.dryRun
         ? null
-        : await refreshFeeIndexCache(tx, {
+        : await timedSweep(sweepMs, "indexRefresh", () => refreshFeeIndexCache(tx, {
             runId: run.id,
             force:
               published.publishedFees > 0 ||
@@ -1483,7 +1358,9 @@ async function executeAgenticStep(
               sameLineDuplicates.restored > 0 ||
               otherBank.rolledBack.length > 0 ||
               crossPageRestore.restored.length > 0 ||
+              pageCopyRestore.restored.length > 0 ||
               sourceLinkResource.restored > 0 ||
+              (!linkDrift.dryRun && linkDrift.archived.length > 0) ||
               articlePage.rolledBack.length > 0 ||
               closedInstitution.rolledBack.length > 0 ||
               productPage.rolledBack.length > 0 ||
@@ -1504,7 +1381,7 @@ async function executeAgenticStep(
               lostRestore.restored > 0 ||
               sourceTakedowns > 0 ||
               (sourceCheck?.restored ?? 0) > 0,
-          });
+          }));
       const outlierNote =
         outlierRollbacks.length > 0
           ? ` ${published.dryRun ? "Would roll back" : "Rolled back"} ${outlierRollbacks.length.toLocaleString()} live fee(s) outside their category range.`
@@ -1554,6 +1431,10 @@ async function executeAgenticStep(
         lostRestore.candidates > 0
           ? ` Judged ${lostRestore.candidates.toLocaleString()} lost re-check take-down(s) of Oct 5-11: ${lostRestore.passed.length.toLocaleString()} passed the restore bar (${published.dryRun ? "would restore" : `${lostRestore.restored.toLocaleString()} restored`}), ${lostRestore.failed.length.toLocaleString()} failed, ${lostRestore.skipped.length.toLocaleString()} skipped.`
           : "";
+      const pageCopyRestoreNote =
+        pageCopyRestore.restored.length > 0
+          ? ` ${published.dryRun ? "Would restore" : "Restored"} ${pageCopyRestore.restored.length.toLocaleString()} page cop(ies) whose kept copy came down.`
+          : "";
       const crossPageNote =
         crossPageRestore.restored.length > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${crossPageRestore.restored.length.toLocaleString()} live fee(s) another page's price had superseded.`
@@ -1561,6 +1442,14 @@ async function executeAgenticStep(
       const resourceCount = published.dryRun
         ? { linked: sourceLinkResource.resources.filter((fee) => !fee.restore).length, restored: sourceLinkResource.resources.filter((fee) => fee.restore).length }
         : { linked: sourceLinkResource.linked, restored: sourceLinkResource.restored };
+      const linkDriftNote =
+        linkDrift.repoints.length + linkDrift.archived.length + linkDrift.flagged > 0
+          ? ` ${linkDrift.dryRun ? "Would re-point" : "Re-pointed"} ${linkDrift.repoints.length.toLocaleString()} live fee link(s) that opened another page to their own document; ${linkDrift.flagged.toLocaleString()} that do not trace there flagged for a second look, ${linkDrift.archived.length.toLocaleString()} ${linkDrift.dryRun ? "would be archived" : "archived"}.`
+          : "";
+      const sourceLinkFillNote =
+        sourceLinkFill.fills.length > 0
+          ? ` ${published.dryRun ? "Would link" : "Linked"} ${sourceLinkFill.fills.length.toLocaleString()} live fee(s) with no link to their own document.`
+          : "";
       const resourceNote =
         resourceCount.linked + resourceCount.restored > 0
           ? ` ${published.dryRun ? "Would re-source" : "Re-sourced"} ${(resourceCount.linked + resourceCount.restored).toLocaleString()} fee(s) with no traceable document from a stored document of their own institution (${resourceCount.restored.toLocaleString()} ${published.dryRun ? "would be restored" : "restored"}).`
@@ -1649,7 +1538,7 @@ async function executeAgenticStep(
           : "");
       return {
         status: "completed",
-        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${resourceNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
+        summary: `Hamilton published ${published.publishedFees.toLocaleString()} verified fee observations from ${published.processedVerifiedFees.toLocaleString()} selected rows (${published.skippedFees.toLocaleString()} skipped).${published.heldInstitutions.length > 0 ? ` Held ${published.heldFees.toLocaleString()} rows from ${published.heldInstitutions.length.toLocaleString()} institutions with fewer than ${published.minInstitutionFees} fees.` : ""}${outlierNote}${foldNote}${handRefileNote}${offTaxonomyNote}${limitNote}${businessNote}${sameLineNote}${otherBankNote}${evalVerdictNote}${closedNote}${articleNote}${productNote}${productConflictNote}${crossPageConflictNote}${categoryGuardNote}${guardRefileNote}${guardRequeueNote}${companionNote}${newerCopyNote}${refreshNote}${currentCopyNote}${nameRetidy.renames.length > 0 ? ` ${published.dryRun ? "Would tidy" : "Tidied"} ${nameRetidy.renames.length.toLocaleString()} run-on live fee name(s).` : ""}${accountNames.renames.length > 0 ? ` ${published.dryRun ? "Would name" : "Named"} ${accountNames.renames.length.toLocaleString()} generic live monthly fee(s) by their account.` : ""}${recheckNote}${restoreRecheckNote}${lostRestoreNote}${crossPageNote}${pageCopyRestoreNote}${resourceNote}${sourceLinkFillNote}${linkDriftNote}${sourceNote}${duplicateNote}${frequencyNote}${indexRefresh?.refreshed ? ` Index refreshed: ${indexRefresh.categories} categories.` : ""}`,
         detail: {
           selected_verified_fees: published.selectedVerifiedFees,
           processed_verified_fees: published.processedVerifiedFees,
@@ -1725,6 +1614,9 @@ async function executeAgenticStep(
           hand_takedown: {
             taken_down: handTakedowns.takenDown.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             skipped: handTakedowns.skipped.length,
+            waiting_rejected: handTakedowns.waitingRejected.length,
+            returns_live: handTakedowns.returnsLive,
+            returns: handTakedowns.returns.map((item) => ({ fee_published_id: item.feePublishedId, reason: item.reason })),
             error: handTakedowns.error,
           },
           hand_audience_fix: {
@@ -1736,6 +1628,8 @@ async function executeAgenticStep(
             eval_matched: evalVerdicts.evalMatched,
             eval_changed: evalVerdicts.evalChanged,
             rule_failing: evalVerdicts.ruleFailing,
+            deferred: evalVerdicts.deferred,
+            deferred_ids: evalVerdicts.deferredIds,
             flagged: evalVerdicts.flagged,
             waiting: evalVerdicts.waiting,
             rolled_back: evalVerdicts.rolledBack.length,
@@ -1856,6 +1750,9 @@ async function executeAgenticStep(
           category_guard_failing: categoryGuard.failingFees,
           category_guard_live_refiled: categoryGuard.liveRefiledFees,
           category_guard_version: categoryGuard.guardVersion,
+          // v70: live card-product misfiles held live while CARD_PRODUCT_TAKEDOWN_LIVE is off (0 while on).
+          category_guard_card_product_pending: categoryGuard.cardProductPending,
+          category_guard_card_product_samples: categoryGuard.cardProductPendingSamples.slice(0, 10),
           category_guard_samples: categoryGuard.failures.slice(0, 10).map((failure) => ({
             fee_published_id: failure.feePublishedId,
             institution_id: failure.institutionId,
@@ -1876,6 +1773,27 @@ async function executeAgenticStep(
           })),
           imported_twin_checked: importedTwins.checked,
           imported_twin_linked: importedTwins.linked,
+          source_link_fill: {
+            on: sourceLinkFill.on,
+            scanned: sourceLinkFill.scanned,
+            filled: sourceLinkFill.fills.length,
+            untraceable_left_live: sourceLinkFill.untraceable,
+            error: sourceLinkFill.error,
+            fills: sourceLinkFill.fills.map((fee) => ({ fee_published_id: fee.feePublishedId, source_document_id: fee.sourceDocumentId, url: fee.url })),
+          },
+          source_link_drift: {
+            live: linkDrift.live,
+            dry_run: linkDrift.dryRun,
+            scanned: linkDrift.scanned,
+            repointed: linkDrift.repoints.length,
+            flagged_for_second_look: linkDrift.flagged,
+            awaiting_second_look: linkDrift.waiting,
+            archived: linkDrift.archived.length,
+            skipped: linkDrift.skipped,
+            error: linkDrift.error,
+            repoints: linkDrift.repoints.slice(0, 50).map((fee) => ({ fee_published_id: fee.feePublishedId, from: fee.from, to: fee.to })),
+            failing: linkDrift.failing.slice(0, 50).map((fee) => ({ fee_published_id: fee.feePublishedId, link: fee.link, reason: fee.reason })),
+          },
           identical_copy_documents: identicalCopy.documents,
           identical_copy_rows_moved: identicalCopy.rowsMoved,
           extraction_note_move: { moved: extractionNotes.moved, remaining: extractionNotes.remaining },
@@ -2016,6 +1934,13 @@ async function executeAgenticStep(
             error: published.sweepCheck.error,
             samples: published.sweepCheck.samples,
           },
+          // Rows this step was about to publish that the page-copy collapse would close (page-copy-refuse.ts).
+          page_copy_check: {
+            live: published.pageCopyCheck.live,
+            would_refuse: published.pageCopyCheck.wouldRefuse,
+            refused: published.pageCopyCheck.refused,
+            samples: published.pageCopyCheck.samples,
+          },
           near_name_collapse: {
             live: nearNameCollapse.live,
             documents: nearNameCollapse.documents,
@@ -2031,6 +1956,20 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               source_document_id: row.sourceDocumentId,
               amount: row.amount,
+            })),
+          },
+          page_copy_restore: {
+            ...(pageCopyRestore.error ? { error: pageCopyRestore.error } : {}),
+            kept_down: pageCopyRestore.keptDown,
+            carried_on: pageCopyRestore.carriedOn,
+            kept_judged: pageCopyRestore.keptJudged,
+            failing: pageCopyRestore.failing.length,
+            [run.runKind === "dry_run" ? "would_restore" : "restored"]: pageCopyRestore.restored.length,
+            samples: pageCopyRestore.restored.slice(0, 10).map((fee) => ({
+              fee_published_id: fee.feePublishedId,
+              kept_fee_published_id: fee.keptFeePublishedId,
+              fee_name: fee.feeName,
+              amount: fee.amount,
             })),
           },
           page_copy_collapse: {
@@ -2060,6 +1999,13 @@ async function executeAgenticStep(
               kept_fee_name: row.keptFeeName,
               amount: row.amount,
             })),
+            [pageCopyCollapse.live && run.runKind !== "dry_run" ? "kept_names_carried" : "would_carry_kept_name"]: pageCopyCollapse.collapses.filter((row) => row.keptNewName).length,
+            carried_name_samples: pageCopyCollapse.collapses.filter((row) => row.keptNewName).slice(0, 10).map((row) => ({
+              kept_fee_published_id: row.keptFeePublishedId,
+              kept_fee_name: row.keptFeeName,
+              kept_new_name: row.keptNewName,
+              amount: row.amount,
+            })),
           },
           duplicate_collapse_samples: duplicateCollapses.slice(0, 10).map((row) => ({
             fee_published_id: row.feePublishedId,
@@ -2073,6 +2019,33 @@ async function executeAgenticStep(
           outcomes: published.outcomes,
           learning_log: published.learning,
           publish_limit: published.limit,
+          publish_time_box: {
+            deadline_ms: PUBLISH_ROW_DEADLINE_MS,
+            top_up_deadline_ms: PUBLISH_TOP_UP_DEADLINE_MS,
+            stopped: published.timeBox.stopped,
+            rows_left: published.timeBox.rowsLeft,
+            top_up_skipped: published.timeBox.topUpSkipped,
+          },
+          sweep_ms: sweepMs,
+          // Which moved sweeps this step ran (hamilton/publish-sweeps.ts) and what each changed, or
+          // in a dry run would change: set beside the `publish-sweeps` dry run's own `sweep_counts`.
+          sweep_mode: sweepMode,
+          sweep_counts: movedSweepCounts(
+            {
+              outlierRestores, offTaxonomyRestores, taxonomyFold, outlierRollbacks, offTaxonomyRollbacks, limitRollbacks,
+              businessSchedule, sameLineDuplicates, otherBank, evalVerdicts, handAmounts, cutNameDuplicates, accountTypeHold,
+              handTakedowns, handAudience, closedInstitution, articlePage, productPage, productPageConflict, crossPage, categoryGuard,
+              earlyDuplicateCollapses, nearNameCollapse, pageCopyRestore, pageCopyCollapse, frequencyFill, identicalCopy,
+              nameRetidy, extractionNotes, accountNames, lineupCorrect, restoreRecheck, lostRestore, changePairing, crossPageRestore,
+              importedTwins, sourceLinkFill, linkDrift, feedbackSync, holdFeedback,
+            },
+            (key) => runsMovedSweep(sweepMode, key),
+          ),
+          phase_ms: {
+            sweeps_before: publishRowsStartedAt - publishStartedAt,
+            publish_rows: publishRowsEndedAt - publishRowsStartedAt,
+            sweeps_after: Date.now() - publishRowsEndedAt,
+          },
           publish_min_confidence: published.minConfidence,
           publish_min_institution_fees: published.minInstitutionFees,
           held_thin_fees: published.heldFees,
@@ -2130,6 +2103,8 @@ async function executeAgenticStep(
           restored_fees: guard.restoredFees,
           refiled_fees: guard.refiledFees,
           live_refiled_fees: guard.liveRefiledFees,
+          card_product_pending: guard.cardProductPending,
+          card_product_pending_samples: guard.cardProductPendingSamples,
           category_guard_limit: guard.limit,
           rollback_batch_id: guard.rollbackBatchId,
           guard_version: guard.guardVersion,
@@ -2181,7 +2156,7 @@ async function executeAgenticStep(
         status: "completed",
         summary: relabel.mode === "rollback"
           ? `Darwin audience relabel rolled back: ${relabel.restored.toLocaleString()} fees back to their old audience${relabel.dryRun ? " (dry run, nothing written)" : ""}; ${relabel.remaining.toLocaleString()} recorded fees left.`
-          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
+          : `Darwin audience relabel${relabel.dryRun ? " (dry run, nothing written)" : ""}: ${relabel.fees.toLocaleString()} live fees verified as unknown or mixed-schedule both on ${relabel.documents.toLocaleString()} documents; decisions ${counts || "none"}. ${relabel.dryRun ? "" : `${relabel.relabeled.toLocaleString()} written, ${relabel.publishedTouched.toLocaleString()} live rows updated.`} ${relabel.remaining.toLocaleString()} documents left${relabel.mode === "off" ? " outside this sample" : ""}.${totals ? ` Full dry run done: ${Object.entries(totals.shares).map(([audience, share]) => `${audience} ${share}%`).join(", ")} of ${totals.fees.toLocaleString()} fees.` : ""}`.replace(/\s+/g, " ").trim(),
         detail: {
           audience_relabel_version: AUDIENCE_RELABEL_VERSION,
           mode: relabel.mode,
@@ -2190,6 +2165,7 @@ async function executeAgenticStep(
           fees: relabel.fees,
           by_audience: relabel.byAudience,
           by_source: relabel.bySource,
+          by_change: relabel.byChange,
           relabeled: relabel.relabeled,
           published_touched: relabel.publishedTouched,
           restored: relabel.restored,
@@ -2567,6 +2543,11 @@ async function executeAgenticStep(
       const result = await runDataQuality({ db: tx });
       return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
     }
+    case "deming-source-health": {
+      // Read-only (#1866): one SELECT over registry_ingest_partitions and one over Atlas's newest table sizes.
+      const report = await readSourceHealth({ db: tx });
+      return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
+    }
     case "deming-knox-misses": {
       // #1099: writes only eval_cases (new missed-fee cases and each case's replay); never a fee row.
       const result = await runKnoxMisses({ db: tx, runId: run.id, dryRun: run.runKind === "dry_run" });
@@ -2579,7 +2560,30 @@ async function executeAgenticStep(
     }
     case "atlas-city-repair": {
       const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeCityRepair(result), detail: cityRepairDetail(result) };
+      // #2022: registry links checked by hand (Natbank's own U.S. pages), the same guarded kind of repair.
+      // Its own savepoint: a failure leaves the city repairs written and is reported in the detail.
+      let links: Awaited<ReturnType<typeof runHandLinkRepair>> | null = null;
+      let linksError: string | null = null;
+      try {
+        links = await inSavepoint(tx, (scope) => runHandLinkRepair({ db: scope, dryRun: run.runKind === "dry_run" }));
+      } catch (error) {
+        linksError = error instanceof Error ? error.message : String(error);
+      }
+      return {
+        status: "completed",
+        summary: links && links.candidates.length > 0 ? `${summarizeCityRepair(result)} ${summarizeHandLinkRepair(links)}` : summarizeCityRepair(result),
+        detail: { ...cityRepairDetail(result), hand_links: links ? handLinkRepairDetail(links) : { error: linksError } },
+      };
+    }
+    case "atlas-storage-retention": {
+      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
+      // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
+      const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
+      return {
+        status: "completed",
+        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)}`,
+        detail: { ...storageRetentionDetail(result), cold_tier: coldTierDetail(cold) },
+      };
     }
     case "schedule-check": {
       const result = await runScheduleCheck({ db: tx });
@@ -3447,9 +3451,15 @@ async function providerStepGate(
  * discover-paid 2 / 5 / 5, read-paid 60 / 127 / 153, extract 52 / 76 / 153 (23 / 62 before #1291's
  * scans), extract-paid 14 / 50 / 66, classify 15 / 28 / 46, verify-paid 0.4 / 3.5 / 13,
  * publish 78 / 131 / 164. Steps not re-measured keep their 2026-10-07 p99.
+ *
+ * Re-measured 2026-10-17 over 24 hours (`docs/project/findings/2026-10-17-steps-overrun-tick-budget.md`):
+ * eleven steps ran past their setting at p99, and publish, extract, classify and discover-paid
+ * were killed at the tick's 300 s limit (21 reaped steps started inside a tick). Each is now about
+ * its p99, so a step starts only when it can finish inside the 270 s budget.
  */
 const STEP_EXPECTED_MS: Record<string, number> = {
-  "discover-paid": 10_000,
+  // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
+  "discover-paid": 165_000,
   "registry-cfpb": 180_000,
   // Paced to about ten Open States requests a minute; a run ends within about two minutes.
   "registry-state-bills": 120_000,
@@ -3459,36 +3469,117 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   // No new item starts after 100 s; up to three page reads and model calls in flight.
   "registry-wire-research": 150_000,
   "read-paid": 110_000,
-  read: 15_000,
-  discover: 115_000,
+  read: 30_000,
+  discover: 135_000,
   "report-render": 110_000,
   rescue: 110_000,
-  "extract-paid": 40_000,
+  "extract-paid": 80_000,
   "verify-paid": 10_000,
-  fetch: 30_000,
-  extract: 40_000,
-  publish: 105_000,
-  classify: 25_000,
+  fetch: 45_000,
+  // 2026-10-17: Knox lessons' restored-fee read alone averages 53 s (pg_stat_statements).
+  extract: 165_000,
+  // 2026-10-17: p50 38 s, p90 133 s, p99 221 s, max 278 s (TX). The row loop now stops at
+  // PUBLISH_ROW_DEADLINE_MS; re-measure from `phase_ms` before lowering this.
+  publish: 225_000,
+  // The 40 sweeps a lane publish hands off (hamilton/publish-sweeps.ts), unscoped: their sum per
+  // lane publish step over 2026-10-17/18 was p50 about 100 s, p99 201 s. Re-measure from the
+  // dry run's `step_ms` before changing it.
+  "publish-sweeps": 205_000,
+  classify: 160_000,
   // p50 238 s, p90 367 s, max 1,101 s: it never fits a tick, so the tick does not start it
   // (`TICK_EXCLUDED_STEP_KEYS`); its own route runs it.
   "hamilton-answer-eval": 400_000,
   // Up to five memos at once, each up to two 90 s model calls, after the free answers.
   "hamilton-paid-answer-eval": 280_000,
+  // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
+  // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
+  // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
+  "lane-sync": 200_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
+  // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
+  "public-discovery": 60_000,
+  "registry-ncua-extras": 110_000,
+  "registry-cfpb-card-agreements": 50_000,
+  // Not measured yet (2026-10-18): each downloads and inflates a Board SDMX zip, H.15 about 68 MB
+  // and H.8 about 75 MB, before the BLS/BEA or table reads; priced so a tick starts them early.
+  "registry-fred": 150_000,
+  "registry-national-series": 150_000,
 };
 /**
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick
  * always gives its first run a step, and Hamilton's answer eval (200-370 s) started that way
  * killed ticks (runs 6483 and 6552 failed after three tries, Oct 15). They run from their own
- * route (`/api/admin/crew/answer-eval`).
+ * route (`/api/admin/crew/answer-eval`). The hourly lane sync (`lane-sync`) fits a tick but would
+ * spend most of one before any lane work, as it did inside the tick until 2026-10-18; it runs
+ * from `/api/admin/crew/lane-sync`.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval"] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "lane-sync"] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
+/**
+ * Expected runtimes for a direct run, where they differ from a lane's. A Read-now / hand-found run
+ * (`atlas.priority_institution`) reads one institution, so its steps are far shorter than a
+ * state lane's; priced at lane p99s it waited 17-20 minutes per step (runs 8086 and 8104, Oct 17).
+ * Re-measured over the 24 hours to 22:20 UTC 2026-10-17 (about p99, `agent_run_steps`): publish
+ * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. Publish re-priced to its p99, 120 s, on
+ * 2026-10-18 like every other step: over the 24 hours to 23:55 UTC Read-now publishes ran p50 28 s,
+ * p90 64 s, p99 117 s, max 127 s (16 of 89 over 55 s), and the two reaped that day (IA 44517,
+ * WA 44631) took 61 s and 58 s on retry. A state re-search run
+ * (`atlas.priority_state_research`) ran no step in that window, so it keeps the lane's prices.
+ * A step not listed here uses `STEP_EXPECTED_MS`.
+ */
+const RUN_SOURCE_STEP_EXPECTED_MS: Record<string, Record<string, number>> = {
+  "atlas.priority_institution": { publish: 120_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
+};
+/**
+ * A publish step's row loop stops this long after the step began (once it has decided
+ * PUBLISH_MIN_ROWS_PER_STEP rows); the rows left publish on the next step. TX's 278 s publish
+ * (run 8004, Oct 17) ran past the tick's 300 s limit when it started 163 s in.
+ */
+export const PUBLISH_ROW_DEADLINE_MS = 120_000;
+/**
+ * The cross-state top-up read is skipped only when the publish step is already this far in. On
+ * Oct 17 the sweeps before the rows took 96-129 s, so tying the skip to the row deadline (120 s)
+ * skipped it on NC and WI. The rows phase with a top-up took under 8 s (AK, 242 rows) and the
+ * sweeps after up to 31 s, so a step that starts the top-up by 160 s ends well under publish's
+ * 225 s setting.
+ */
+export const PUBLISH_TOP_UP_DEADLINE_MS = 160_000;
 /** Steps measured at a few seconds at most (state-expert, enhance, public-*, registry-*). */
 const QUICK_STEP_EXPECTED_MS = 30_000;
 const QUICK_STEP_PREFIXES = ["registry-", "public-", "state-expert", "enhance", "lead-watch", "indexnow-ping", "category-guard"];
+
+/**
+ * State lanes a tick advances side by side (James, 17 Oct 2026). One at a time, 55 lanes at about
+ * 4 minutes a pass came round every 3-4 hours. Set to 1 to go back to one at a time. The scheduler
+ * keeps at most MAX_ACTIVE_STATE_LANE_RUNS lane runs queued (state-lane-scheduler.ts).
+ */
+export const PARALLEL_STATE_LANES = 3;
+/** The most lanes a tick may run side by side: each holds a database connection (pool of 5). */
+const MAX_PARALLEL_LANES = 3;
+/** Steps that take the publish lock; lanes run side by side take turns at them. */
+const SERIAL_STEP_KEYS = new Set(["publish", "publish-index", "publish-context"]);
+
+export interface StepTurns {
+  /** Waits for this lane's turn; call the returned function when the step is done. */
+  take(): Promise<() => void>;
+}
+
+export function createStepTurns(): StepTurns {
+  let tail: Promise<void> = Promise.resolve();
+  return {
+    async take() {
+      let release!: () => void;
+      const previous = tail;
+      tail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await previous;
+      return release;
+    },
+  };
+}
 
 function isQuickStep(stepKey: string): boolean {
   return !(stepKey in STEP_EXPECTED_MS) && QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix));
@@ -3500,10 +3591,10 @@ function isQuickStep(stepKey: string): boolean {
  * that ran its quick first steps counts as under way and goes ahead of failed-lane
  * retries in the next tick's order.
  */
-export function expectedMsToFirstWork(stepKeys: string[]): number {
+export function expectedMsToFirstWork(stepKeys: string[], runSource: string | null = null): number {
   let total = 0;
   for (const key of stepKeys) {
-    total += expectedStepMs(key);
+    total += expectedStepMs(key, runSource);
     if (!isQuickStep(key)) break;
   }
   return total;
@@ -3517,11 +3608,13 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
 }
 
 /**
- * A state re-search run (`atlas.priority_state_research`) idle this long, with no step finished
- * since it was queued or since its last step, takes one step without leaving lane room: about three
- * 5-minute ticks. Its `discover` (115 s) never fits the ~95 s a fresh lane's first work (~175 s)
- * leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never started (#1421).
- * Read-now runs keep lane room: their steps are short.
+ * A direct run (`LANE_ROOM_SOURCES`: a state re-search or a Read-now / hand-found institution run)
+ * idle this long, with no step finished since it was queued or since its last step, takes one step
+ * without leaving lane room. A state re-search's `discover` never fit the room a fresh lane's
+ * first work leaves of the 270 s tick, so while fresh lanes kept arriving behind it, it never
+ * started (#1421). Since the 2026-10-17 re-measure a fresh lane's first work is ~185 s, so a
+ * Read-now run's publish (225 s) or extract (165 s) no longer fits the ~85 s left either; it now
+ * waits out lane room the same way.
  *
  * The bound is firm only when the re-search run is the tick's first row. Several waiting re-search
  * runs in one tick can each take a step ahead of the lane, so together they can still eat into
@@ -3529,8 +3622,18 @@ export function isLaneRoomRun(source: string | null | undefined): boolean {
  */
 export const LANE_ROOM_MAX_IDLE_MS = 15 * 60_000;
 
+/**
+ * Steps a direct run takes once it has waited out lane room. A state re-search run takes one: its
+ * steps are lane-sized, and several waiting ones could eat a lane's room (#1586). A Read-now run
+ * takes every step that fits the tick: its steps are seconds long, and one per wait-out left run
+ * 8086 queued at publish 47+ minutes after its fetch (Oct 17).
+ */
+export function waitedOutMaxSteps(source: string | null | undefined, maxStepsPerRun: number): number {
+  return source === "atlas.priority_institution" ? maxStepsPerRun : 1;
+}
+
 export function waitedOutLaneRoom(source: string | null | undefined, idleMs: number | null | undefined): boolean {
-  return source === "atlas.priority_state_research" && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
+  return isLaneRoomRun(source) && Number(idleMs ?? 0) >= LANE_ROOM_MAX_IDLE_MS;
 }
 
 /** Expected time to a lane run's first real work, from its queued steps (`expectedMsToFirstWork`). */
@@ -3548,8 +3651,33 @@ async function laneFirstWorkMs(runId: number): Promise<number> {
   }
 }
 
-export function expectedStepMs(stepKey: string | null): number {
+/** Publish sweep timing lives with the sweeps (hamilton/publish-sweeps.ts); re-exported for callers here. */
+export { timedSweep };
+
+/**
+ * A step left queued because it could not finish by the tick's deadline: one `step.deferred`
+ * event on the run ledger, naming the step, its expected time and the time the tick had left.
+ * The step runs in a later tick. A failed write never stops the tick.
+ */
+export async function recordStepDeferral(runId: number, stepKey: string | null, expectedMs: number, msLeft: number): Promise<void> {
+  try {
+    await sql`
+      INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
+      VALUES (
+        ${runId}, 'step.deferred', 'queued',
+        ${`${stepKey ?? "Next step"} left queued: it needs about ${Math.round(expectedMs / 1000)} s and the tick has ${Math.max(0, Math.round(msLeft / 1000))} s left.`},
+        ${JSON.stringify({ step_key: stepKey, expected_ms: expectedMs, ms_left: Math.max(0, Math.round(msLeft)) })}::jsonb
+      )
+    `;
+  } catch (error) {
+    console.error("recordStepDeferral failed:", error);
+  }
+}
+
+export function expectedStepMs(stepKey: string | null, runSource: string | null = null): number {
   if (!stepKey) return DEFAULT_STEP_EXPECTED_MS;
+  const bySource = runSource ? RUN_SOURCE_STEP_EXPECTED_MS[runSource]?.[stepKey] : undefined;
+  if (bySource != null) return bySource;
   if (stepKey in STEP_EXPECTED_MS) return STEP_EXPECTED_MS[stepKey];
   if (QUICK_STEP_PREFIXES.some((prefix) => stepKey.startsWith(prefix))) return QUICK_STEP_EXPECTED_MS;
   return DEFAULT_STEP_EXPECTED_MS;
@@ -3601,6 +3729,8 @@ export async function executeAgentRun(
     alwaysRunFirstStep?: boolean;
     /** Leave a paid step queued for a later tick instead of running or skipping it. */
     deferProviderSteps?: boolean;
+    /** Shared by the lanes a tick runs side by side; see SERIAL_STEP_KEYS. */
+    stepTurns?: StepTurns;
   } = {},
 ): Promise<AgentRunExecutionResult> {
   if (!Number.isInteger(runId) || runId < 1) {
@@ -3636,6 +3766,8 @@ export async function executeAgentRun(
   if (getExecutionBackend() !== "agentic_v1") {
     return blockRunForBackend(runId);
   }
+  // Steps are priced by the run that holds them (`RUN_SOURCE_STEP_EXPECTED_MS`).
+  const runSource = typeof existing.params?.source === "string" ? existing.params.source : null;
 
   // Deterministic work is paused by the pipeline control, growth's marketing steps by the
   // marketing control; each leaves the other's runs going. A paused run stays queued
@@ -3659,7 +3791,8 @@ export async function executeAgentRun(
 
   if (options.alwaysRunFirstStep === false && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
-    if (Date.now() + expectedMsToFirstWork(keys) > options.deadlineAt) {
+    if (Date.now() + expectedMsToFirstWork(keys, runSource) > options.deadlineAt) {
+      await recordStepDeferral(runId, keys[0] ?? null, expectedMsToFirstWork(keys, runSource), options.deadlineAt - Date.now());
       return {
         runId,
         status: existing.status,
@@ -3679,7 +3812,10 @@ export async function executeAgentRun(
     if (index > 0 && nextStepKey && heldByPause(nextStepKey, pipeline, marketing)) break;
     const firstOfTick = index === 0 && (options.alwaysRunFirstStep ?? true);
     if (!firstOfTick && options.deadlineAt != null
-      && Date.now() + expectedStepMs(nextStepKey) > options.deadlineAt) break;
+      && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
+      await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
+      break;
+    }
     // Provider steps (paid model calls) additionally require the global automation
     // stop to be clear and the caller to have provider budget for this tick.
     if (nextStepKey && isProviderStep(nextStepKey)) {
@@ -3717,48 +3853,66 @@ export async function executeAgentRun(
       }
     }
 
-    const prepared = await prepareNextAgenticStep(runId);
-    if (prepared.kind === "missing") {
-      return {
-        runId,
-        status: "missing",
-        terminal: true,
-        executedSteps,
-        message: "Agent run not found.",
-      };
+    // Lanes run side by side take turns at a publish step: they share one database lock
+    // (agents.hamilton.publish), and a step waiting on it would hold a connection and tick time.
+    let releaseTurn: (() => void) | null = null;
+    if (options.stepTurns && nextStepKey && SERIAL_STEP_KEYS.has(nextStepKey)) {
+      releaseTurn = await options.stepTurns.take();
+      // The wait used tick time: start the step only if it still fits.
+      if (options.deadlineAt != null && Date.now() + expectedStepMs(nextStepKey, runSource) > options.deadlineAt) {
+        releaseTurn();
+        await recordStepDeferral(runId, nextStepKey, expectedStepMs(nextStepKey, runSource), options.deadlineAt - Date.now());
+        break;
+      }
     }
-    if (prepared.kind === "terminal" || prepared.kind === "busy") {
-      return {
-        runId,
-        status: prepared.status,
-        terminal: prepared.kind === "terminal",
-        executedSteps,
-        message: prepared.message,
-      };
-    }
-
-    const { run, step } = prepared.prepared;
     try {
-      const outcome =
-        step.stepKey === "discover" ||
-        step.stepKey === "rescue" ||
-        step.stepKey === "fetch" ||
-        step.stepKey === "read" ||
-        isProviderStep(step.stepKey) ||
-        step.stepKey === "public-discovery" ||
-        step.stepKey === "public-audit" ||
-        // A blocked report is marked failed and then the step throws; outside a
-        // transaction, so the job keeps its failed status and recorded findings.
-        step.stepKey === "report-reconcile" ||
-        isRegistryStepKey(step.stepKey)
-          ? await executeAgenticStep(sql, run, step)
-          : await withTransaction((tx) => executeAgenticStep(tx, run, step));
-      lastResult = await finishAgenticStep(runId, step, outcome);
-      executedSteps += 1;
-      if (lastResult.terminal) return { ...lastResult, executedSteps };
-    } catch (error) {
-      const failed = await failAgenticStep(runId, step, error);
-      return { ...failed, executedSteps };
+      const prepared = await prepareNextAgenticStep(runId);
+      if (prepared.kind === "missing") {
+        return {
+          runId,
+          status: "missing",
+          terminal: true,
+          executedSteps,
+          message: "Agent run not found.",
+        };
+      }
+      if (prepared.kind === "terminal" || prepared.kind === "busy") {
+        return {
+          runId,
+          status: prepared.status,
+          terminal: prepared.kind === "terminal",
+          executedSteps,
+          message: prepared.message,
+        };
+      }
+
+      const { run, step } = prepared.prepared;
+      try {
+        const outcome =
+          step.stepKey === "discover" ||
+          step.stepKey === "rescue" ||
+          step.stepKey === "fetch" ||
+          step.stepKey === "read" ||
+          isProviderStep(step.stepKey) ||
+          step.stepKey === "public-discovery" ||
+          step.stepKey === "public-audit" ||
+          // A blocked report is marked failed and then the step throws; outside a
+          // transaction, so the job keeps its failed status and recorded findings.
+          step.stepKey === "report-reconcile" ||
+          // The lane sync writes through its own statements; a step transaction would sit idle.
+          step.stepKey === "lane-sync" ||
+          isRegistryStepKey(step.stepKey)
+            ? await executeAgenticStep(sql, run, step)
+            : await withTransaction((tx) => executeAgenticStep(tx, run, step));
+        lastResult = await finishAgenticStep(runId, step, outcome);
+        executedSteps += 1;
+        if (lastResult.terminal) return { ...lastResult, executedSteps };
+      } catch (error) {
+        const failed = await failAgenticStep(runId, step, error);
+        return { ...failed, executedSteps };
+      }
+    } finally {
+      releaseTurn?.();
     }
   }
 
@@ -3781,7 +3935,10 @@ export async function executeQueuedAgentRuns({
   providerRunLimit = null,
   deadlineAt,
   paused = { pipeline: false, marketing: false },
+  parallelLanes = PARALLEL_STATE_LANES,
 }: {
+  /** State lanes advanced side by side this tick; 1 runs them one after another. */
+  parallelLanes?: number;
   runLimit?: number;
   maxStepsPerRun?: number;
   allowProviderSteps?: boolean;
@@ -3865,7 +4022,9 @@ export async function executeQueuedAgentRuns({
               -- once per version. Behind runs under way it waited 10+ minutes (run 3231, Oct 9).
               -- Growth's stale-outreach withdrawal (growth/withdraw.ts) is one short step, at most
               -- once a day, and ranks with it so the tick that queues it also runs it.
-              COALESCE(r.params_json->>'source' IN ('hamilton.guard_catch_up', 'growth.outreach_withdraw'), false) DESC,
+              -- The publish-sweeps run (hamilton/publish-sweeps.ts) is one step at most once a tick; it ranks
+              -- first so it starts while the tick still has room for its 205 s.
+              COALESCE(r.params_json->>'source' IN ('hamilton.guard_catch_up', 'growth.outreach_withdraw', 'hamilton.publish_sweeps'), false) DESC,
               EXISTS (
                 SELECT 1 FROM agent_run_steps done
                  WHERE done.agent_run_id = r.id AND done.status <> 'queued'
@@ -3901,10 +4060,11 @@ export async function executeQueuedAgentRuns({
               r.started_at ASC, r.id ASC
      LIMIT ${safeRunLimit}
   `;
-  // Runs advance one after another. Running state lanes side by side held several
-  // step transactions open at once (publish steps queue on one advisory lock while
-  // holding theirs), which starved the shared database and slowed the public site and
-  // admin to a crawl. The tick deadline still bounds how much work one tick does.
+  // Other runs advance one after another; up to `parallelLanes` state lanes advance side by side.
+  // Side by side first held several step transactions open at once, publish steps queued on
+  // one advisory lock, and the shared database crawled (Oct 2026). Lanes now take turns at
+  // publish (`createStepTurns`), and the reads that held the database are fast (#1793, #1798).
+  // The tick deadline still bounds how much work one tick does.
   const results: AgentRunExecutionResult[] = [];
   let providerRuns = 0;
   // A direct run (Read now, a state's re-search) ranks ahead of state lanes, and one that ran its
@@ -3922,11 +4082,10 @@ export async function executeQueuedAgentRuns({
   // count as under way and take the next tick ahead of it (Tennessee waited behind WY
   // this way, 2026-10-07). Other runs can still use the rest of the tick.
   let laneHeld = false;
-  for (const [index, row] of rows.entries()) {
-    if (laneHeld && row.run_kind === "workflow_lane") continue;
-    // The first run always gets a step; a later run starts a step only when that step can
-    // finish by the deadline, so a larger run limit fills the tick without running past it.
-    if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
+  const lanesSideBySide = Math.min(Math.max(Math.floor(parallelLanes), 1), MAX_PARALLEL_LANES);
+  const stepTurns = createStepTurns();
+  const done = new Set<number>();
+  const runOne = async (index: number, row: (typeof rows)[number], alwaysRunFirstStep: boolean) => {
     const runId = Number(row.id);
     if (budgetPolicyId !== null || maxProviderCallsPerRun !== null || maxEstimatedCostMicrousd !== null) {
       await sql`
@@ -3946,16 +4105,44 @@ export async function executeQueuedAgentRuns({
     const waitedOut = laneRoomRun && waitedOutLaneRoom(row.source, row.idle_ms);
     const leavesLaneRoom = laneRoomRun && !waitedOut;
     const result = await executeAgentRun(runId, {
-      maxSteps: waitedOut ? 1 : maxStepsPerRun,
+      maxSteps: waitedOut ? waitedOutMaxSteps(row.source, maxStepsPerRun) : maxStepsPerRun,
       allowProviderSteps,
       deadlineAt: leavesLaneRoom && deadlineAt != null ? deadlineAt - laneRoomMs : deadlineAt,
       // The tick's first step always runs, unless it is a direct run that would take the lane's room.
-      alwaysRunFirstStep: firstRunPending && !leavesLaneRoom,
+      alwaysRunFirstStep: alwaysRunFirstStep && !leavesLaneRoom,
       deferProviderSteps: allowProviderSteps && !providerSlot,
+      stepTurns: row.run_kind === "workflow_lane" ? stepTurns : undefined,
     });
-    if (!(leavesLaneRoom && result.executedSteps === 0)) firstRunPending = false;
-    results.push(result);
-    if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
+    return { result, passesFirstStep: leavesLaneRoom && result.executedSteps === 0 };
+  };
+  for (const [index, row] of rows.entries()) {
+    if (done.has(index)) continue;
+    if (laneHeld && row.run_kind === "workflow_lane") continue;
+    // The first run always gets a step; a later run starts a step only when that step can
+    // finish by the deadline, so a larger run limit fills the tick without running past it.
+    if (results.length > 0 && deadlineAt != null && Date.now() + QUICK_STEP_EXPECTED_MS > deadlineAt) break;
+    if (row.run_kind !== "workflow_lane" || lanesSideBySide === 1) {
+      const { result, passesFirstStep } = await runOne(index, row, firstRunPending);
+      if (!passesFirstStep) firstRunPending = false;
+      results.push(result);
+      if (result.heldForDeadline && row.run_kind === "workflow_lane") laneHeld = true;
+      continue;
+    }
+    // This lane and the next lanes in the order, side by side; only the first may take the
+    // tick's always-run step.
+    const group = rows
+      .map((candidate, at) => ({ candidate, at }))
+      .filter(({ candidate, at }) => at >= index && candidate.run_kind === "workflow_lane" && !done.has(at))
+      .slice(0, lanesSideBySide);
+    for (const { at } of group) done.add(at);
+    const outcomes = await Promise.all(
+      group.map(({ candidate, at }, position) => runOne(at, candidate, firstRunPending && position === 0)),
+    );
+    firstRunPending = false;
+    for (const { result } of outcomes) {
+      results.push(result);
+      if (result.heldForDeadline) laneHeld = true;
+    }
   }
   return { selected: rows.length, results };
 }
@@ -4288,3 +4475,76 @@ export async function recordProRequest(input: RecordProRequestInput): Promise<nu
   }
 }
 
+
+export interface InlineAgentRun {
+  runId: number;
+  stepId: number;
+}
+
+/**
+ * Opens a run whose one step a person's request does in place (a hand-supplied document's
+ * load, `magellan/hand-supplied.ts`): the run and its step start `running`, so the tick never
+ * executes them, and `closeInlineAgentRun` settles both. Like `recordProRequest`, but opened
+ * before the work so every row the work writes carries the run id.
+ */
+export async function openInlineAgentRun(input: {
+  db?: SqlTag;
+  agent: AdminAgent;
+  title: string;
+  stepKey: string;
+  stepTitle: string;
+  params: Record<string, unknown>;
+  triggeredBy: string;
+}): Promise<InlineAgentRun> {
+  const db = input.db ?? sql;
+  const [run] = await db`
+    INSERT INTO agent_runs
+      (agent_name, run_kind, title, status, params_json, trigger_source, triggered_by, backend,
+       progress_current, progress_total, current_stage, started_at, updated_at)
+    VALUES
+      (${input.agent}, 'manual_repair', ${input.title}, 'running', ${JSON.stringify(input.params)}::jsonb, 'admin',
+       ${input.triggeredBy}, 'agentic_v1', 0, 1, ${input.stepKey}, NOW(), NOW())
+    RETURNING id
+  `;
+  const runId = Number(run.id);
+  const [step] = await db`
+    INSERT INTO agent_run_steps
+      (agent_run_id, step_key, agent_name, title, status, sequence, input_payload, started_at, updated_at)
+    VALUES
+      (${runId}, ${input.stepKey}, ${input.agent}, ${input.stepTitle}, 'running', 1,
+       ${JSON.stringify(input.params)}::jsonb, NOW(), NOW())
+    RETURNING id
+  `;
+  const stepId = Number(step.id);
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${runId}, ${stepId}, 'step.started', 'running', ${input.stepTitle}, ${JSON.stringify(input.params)}::jsonb)
+  `;
+  return { runId, stepId };
+}
+
+/** Settles a run opened by `openInlineAgentRun`: its step, the run and one closing event. */
+export async function closeInlineAgentRun(
+  handle: InlineAgentRun,
+  input: { db?: SqlTag; status: "completed" | "failed"; summary: string; detail?: Record<string, unknown> },
+): Promise<void> {
+  const db = input.db ?? sql;
+  const error = input.status === "failed" ? input.summary : null;
+  await db`
+    UPDATE agent_run_steps
+       SET status = ${input.status}, summary = ${input.summary}, error_summary = ${error},
+           completed_at = NOW(), updated_at = NOW()
+     WHERE id = ${handle.stepId}
+  `;
+  await db`
+    UPDATE agent_runs
+       SET status = ${input.status}, summary = ${input.summary}, error_summary = ${error},
+           progress_current = 1, completed_at = NOW(), updated_at = NOW()
+     WHERE id = ${handle.runId}
+  `;
+  await db`
+    INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
+    VALUES (${handle.runId}, ${handle.stepId}, ${`run.${input.status}`}, ${input.status}, ${input.summary},
+            ${JSON.stringify(input.detail ?? {})}::jsonb)
+  `;
+}

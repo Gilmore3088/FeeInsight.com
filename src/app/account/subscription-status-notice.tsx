@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { User } from "@/lib/auth";
-import { SITE_NAME } from "@/lib/constants";
 import { ManageBillingButton } from "./manage-billing-button";
 import { isInPaymentGrace } from "@/lib/access";
+import { utilityButton } from "@/components/utility/form-style";
 
 /**
  * Says why Pro is not active when a subscription has lapsed. Without it a past-due or
@@ -14,16 +14,16 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
 
   if (user.subscription_status === "past_due") {
     return (
-      <div role="status" className="mb-8 rounded-xl border border-amber-200 bg-amber-50 p-5 text-amber-900">
-        <p className="text-[14px] font-semibold">Your {SITE_NAME} Pro payment is past due.</p>
+      <div role="status" className="mb-8 rounded-xl border border-brick/30 bg-brick-tint/40 p-5 text-ink shadow-sm">
+        <p className="text-[14px] font-semibold">Your Hamilton payment is past due.</p>
         <p className="mt-1 text-[13px]">
           {isInPaymentGrace(user as User)
-            ? "Your last payment did not go through. Pro stays open while the card is retried; update it to keep Pro running."
-            : "Pro features are paused until the payment goes through. Update your card to pick up where you left off."}
+            ? "Your last payment did not go through. Hamilton stays open while the card is retried; update it to keep Hamilton running."
+            : "Hamilton is paused until the payment goes through. Update your card to pick up where you left off."}
         </p>
         {user.stripe_customer_id && (
           <div className="mt-3">
-            <ManageBillingButton />
+            <ManageBillingButton variant="primary" label="Update payment method" />
           </div>
         )}
       </div>
@@ -32,16 +32,16 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
 
   if (user.subscription_status === "canceled") {
     return (
-      <div role="status" className="mb-8 rounded-xl border border-border bg-white/70 p-5">
-        <p className="text-[14px] font-semibold text-ink">Your {SITE_NAME} Pro subscription has ended.</p>
+      <div role="status" className="mb-8 rounded-xl border border-border bg-surface-0 p-5 shadow-sm">
+        <p className="text-[14px] font-semibold text-ink">Your Hamilton subscription has ended.</p>
         <p className="mt-1 text-[13px] text-ink-muted">
-          Your saved institutions and fee alerts are kept. Restart Pro any time to get the Hamilton workspace back.
+          Your saved institutions and fee alerts are kept. Restart Hamilton any time to get the workspace back.
         </p>
         <Link
           href="/subscribe"
-          className="mt-3 inline-flex items-center rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white hover:bg-brick-ink"
+          className={`mt-3 ${utilityButton("primary")}`}
         >
-          Restart Pro
+          Restart Hamilton
         </Link>
       </div>
     );

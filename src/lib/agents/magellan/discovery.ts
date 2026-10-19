@@ -39,6 +39,7 @@ import {
   ARTICLE_LINK_SQL,
   BUSINESS_PATH_SQL,
   CONSUMER_PATH_SQL,
+  DATED_POST_LINK_SQL,
   FEE_DOCUMENT_NAME_SQL,
   FEE_NAMED_LINK_SQL,
   FEE_SCHEDULE_NAME_SQL,
@@ -1135,7 +1136,8 @@ async function selectUpgradeCandidates(db: SqlTag, limit: number, stateCode: str
      WHERE COALESCE(inst.status, 'active') = 'active'
        AND (
              (lower(inst.fee_schedule_url) ~ ${PRODUCT_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_NAMED_LINK_SQL})
-             OR (lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
+             OR ((lower(inst.fee_schedule_url) ~ ${ARTICLE_LINK_SQL} OR lower(inst.fee_schedule_url) ~ ${DATED_POST_LINK_SQL})
+                 AND lower(inst.fee_schedule_url) !~ ${FEE_DOCUMENT_NAME_SQL})
              OR (lower(inst.fee_schedule_url) ~ ${SINGLE_PRODUCT_SQL}
                  AND lower(inst.fee_schedule_url) ~ ${PRODUCT_DISCLOSURE_SQL}
                  AND lower(inst.fee_schedule_url) !~ ${FEE_SCHEDULE_NAME_SQL})

@@ -3,16 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBranchesForInstitution, getBranchesInArea } from "@/lib/data-store/branches";
 import { logApiUsage } from "@/lib/api-usage";
 import { API_ATTRIBUTION } from "@/lib/constants";
-import { authorizePaidV1 } from "@/lib/api-v1-auth";
-import { ApiParamError, apiError, apiOptions, intParam, stateParam, withApiHeaders } from "@/lib/api-v1";
+import { authorizeV1 } from "@/lib/api-v1-auth";
+import { ApiParamError, apiError, apiOptions, intParam, stateParam, withApiCaching, withApiHeaders } from "@/lib/api-v1";
 
 const NOTE =
   "Banks from the FDIC Summary of Deposits (latest survey year, deposits in whole US dollars) and credit unions from NCUA's branch file (no deposits; map coordinates are added over time, so some may be null). Each row's source says which.";
 
 async function handleGET(request: NextRequest) {
-  const caller = await authorizePaidV1(request, "Branch locations");
+  const caller = await authorizeV1(request, { paidOnly: "Branch locations", usageEvent: "api.v1.branches" });
   if (caller instanceof Response) return caller;
-  const { organizationId, anonymousId, rateLimit } = caller;
+  const { organizationId, keyId, anonymousId, rateLimit } = caller;
 
   const { searchParams } = request.nextUrl;
   let institutionId: number | null;
@@ -39,6 +39,7 @@ async function handleGET(request: NextRequest) {
     limit = intParam(searchParams, "limit", { fallback: 100, min: 1, max: 500 });
   } catch (error) {
     if (error instanceof ApiParamError) {
+      logApiUsage(organizationId, anonymousId, "api.v1.branches", { status: 400 }, keyId).catch(() => {});
       return apiError(400, "invalid_parameter", error.message, { rateLimit });
     }
     throw error;
@@ -57,9 +58,9 @@ async function handleGET(request: NextRequest) {
     city,
     zip,
     status: 200,
-  }).catch(() => {});
+  }, keyId).catch(() => {});
 
-  return withApiHeaders(
+  return withApiCaching(request, withApiHeaders(
     NextResponse.json({
       sod_year: result.sod_year,
       note: NOTE,
@@ -72,7 +73,7 @@ async function handleGET(request: NextRequest) {
       attribution: API_ATTRIBUTION,
     }),
     rateLimit,
-  );
+  ));
 }
 
 export const GET = withApiRoutePolicy("api.v1.branches", "GET", handleGET);

@@ -117,3 +117,32 @@ describe("institution search short names (#1545)", () => {
     expect(institutionSearchPatterns("Navy Federal").aliases).toEqual([]);
   });
 });
+
+describe("institution search bounds (2026-10-18 scrape)", () => {
+  beforeEach(() => {
+    unsafeMock.mockReset();
+  });
+
+  it("never sends a wildcard-only or punctuation-only query to the database", async () => {
+    for (const q of ["%%", "__", "%_%_", "!!", "--", "a%"]) {
+      expect(await autocompleteInstitutions(q)).toEqual([]);
+    }
+    expect(unsafeMock).not.toHaveBeenCalled();
+  });
+
+  it("matches % and _ literally, so a typed wildcard cannot widen the read", () => {
+    expect(institutionSearchPatterns("50% Bank").pattern).toBe("%50\\% Bank%");
+    expect(institutionSearchPatterns("a_b").pattern).toBe("%a\\_b%");
+    // Punctuation squashes away; a term left with under two letters keeps the literal pattern.
+    expect(institutionSearchPatterns("%%ab").squashed).toBe("%ab%");
+    expect(institutionSearchPatterns("é%").squashed).toBe("%é\\%%");
+  });
+
+  it("cuts a long query and caps the row count", async () => {
+    unsafeMock.mockResolvedValueOnce([]);
+    await autocompleteInstitutions("x".repeat(5_000), 100_000);
+    const [, params] = unsafeMock.mock.calls[0];
+    expect(String(params[1])).toHaveLength(100);
+    expect(params[2]).toBe(25);
+  });
+});

@@ -4,6 +4,7 @@ import { updateProfile } from "./actions";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AccountCard } from "./account-card";
+import { UTILITY_INPUT, UTILITY_LABEL, UTILITY_SELECT, utilityButton } from "@/components/utility/form-style";
 
 interface ProfileFormProps {
   user: {
@@ -79,8 +80,8 @@ export function ProfileForm({ user }: ProfileFormProps) {
     }
   }
 
-  const selectClass = "min-h-11 w-full rounded-md border border-border bg-white px-3 py-2 text-[16px] sm:text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent";
-  const inputClass = selectClass;
+  const selectClass = UTILITY_SELECT;
+  const inputClass = UTILITY_INPUT;
 
   if (!editing) {
     const typeLabel = INSTITUTION_TYPES.find((t) => t.value === user.institution_type)?.label;
@@ -116,7 +117,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
           </p>
         )}
         {saved && (
-          <p role="status" className="mt-2 text-[13px] text-emerald-700">Saved.</p>
+          <p role="status" className="mt-2 text-[13px] text-below-market">Saved.</p>
         )}
       </AccountCard>
     );
@@ -127,12 +128,12 @@ export function ProfileForm({ user }: ProfileFormProps) {
     <form onSubmit={handleSubmit}>
       <div className="space-y-3">
         <div>
-          <label htmlFor="profile-institution-name" className="block text-[13px] font-medium text-ink mb-1">Bank, credit union or company</label>
+          <label htmlFor="profile-institution-name" className={UTILITY_LABEL}>Bank, credit union or company</label>
           <input id="profile-institution-name" name="institution_name" defaultValue={user.institution_name || ""} className={inputClass} placeholder="First National Bank" />
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label htmlFor="profile-institution-type" className="block text-[13px] font-medium text-ink mb-1">Type</label>
+            <label htmlFor="profile-institution-type" className={UTILITY_LABEL}>Type</label>
             <select
               id="profile-institution-type"
               name="institution_type"
@@ -146,7 +147,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
             </select>
           </div>
           <div>
-            <label htmlFor="profile-job-role" className="block text-[13px] font-medium text-ink mb-1">Your role</label>
+            <label htmlFor="profile-job-role" className={UTILITY_LABEL}>Your role</label>
             <select id="profile-job-role" name="job_role" defaultValue={user.job_role || ""} className={selectClass}>
               {JOB_ROLES.map((r) => (
                 <option key={r.value} value={r.value}>{r.label}</option>
@@ -157,7 +158,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         {showBankFields && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="profile-asset-tier" className="block text-[13px] font-medium text-ink mb-1">Asset size</label>
+              <label htmlFor="profile-asset-tier" className={UTILITY_LABEL}>Asset size</label>
               <select id="profile-asset-tier" name="asset_tier" defaultValue={user.asset_tier || ""} className={selectClass}>
                 {ASSET_TIERS.map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
@@ -165,7 +166,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
               </select>
             </div>
             <div>
-              <label htmlFor="profile-state-code" className="block text-[13px] font-medium text-ink mb-1">State</label>
+              <label htmlFor="profile-state-code" className={UTILITY_LABEL}>State</label>
               <select id="profile-state-code" name="state_code" defaultValue={user.state_code || ""} className={selectClass}>
                 <option value="">Choose</option>
                 {US_STATES.map((s) => (
@@ -177,7 +178,7 @@ export function ProfileForm({ user }: ProfileFormProps) {
         )}
       </div>
       {error && (
-        <p role="alert" className="mt-3 text-[13px] text-red-700">
+        <p role="alert" className="mt-3 text-[13px] text-brick">
           {error}
         </p>
       )}
@@ -185,14 +186,14 @@ export function ProfileForm({ user }: ProfileFormProps) {
         <button
           type="submit"
           disabled={saving}
-          className="min-h-11 rounded-md bg-brick px-5 text-[14px] font-medium text-white hover:bg-brick-ink disabled:opacity-50 transition-colors"
+          className={utilityButton("primary")}
         >
           {saving ? "Saving..." : "Save"}
         </button>
         <button
           type="button"
           onClick={() => setEditing(false)}
-          className="min-h-11 rounded-md border border-border px-5 text-[14px] font-medium text-ink hover:border-ink transition-colors"
+          className={utilityButton("secondary")}
         >
           Cancel
         </button>

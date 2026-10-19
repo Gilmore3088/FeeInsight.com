@@ -161,3 +161,12 @@ describe("withoutScheduleFields", () => {
     expect(Object.keys(stripped).sort()).toEqual(["amount", "id", "institution_id"]);
   });
 });
+
+describe("computeStats rounding", () => {
+  it("rounds a half cent up on the decimal value, which binary floating point would round down", () => {
+    // The two middles $4.22 and $4.23 average to $4.225; 4.225 * 100 is 422.49999... in floating point.
+    expect(computeStats([4.22, 4.23]).median).toBe(4.23);
+    expect(computeStats([27.49, 27.5]).median).toBe(27.5);
+    expect(computeStats([5.48, 5.49]).median).toBe(5.49);
+  });
+});

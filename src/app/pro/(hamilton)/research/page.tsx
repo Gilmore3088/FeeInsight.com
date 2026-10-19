@@ -32,9 +32,11 @@ import {
 import { buildFeeAnswer } from "@/lib/hamilton/workspace/answer";
 import { AnswerView } from "@/components/hamilton/memo/exhibit-view";
 import { LayerTabs } from "@/components/hamilton/memo/LayerTabs";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import { CheckingLineupPanel } from "@/components/hamilton/memo/checking-lineup";
 import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
+import { ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 
 export const metadata: Metadata = { title: "My fees" };
 
@@ -118,8 +120,8 @@ function FilingExhibits({
             {revenueLine
               ? `${revenueLine.label}: ${fmtFiledThousands(revenueLine.annualIncome / 1000)} over the last four quarters${revenueLine.combinedWith ? `, reported together with ${revenueLine.combinedWith}` : ""}.`
               : credit
-                ? "Overdraft and NSF income (5300 lines IS0048 and IS0049): not reported by NCUA. Its public data carries no figures on those lines for any credit union, so Fee Insight shows none rather than a zero."
-                : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). Fee Insight hasn't loaded that line yet, so it isn't shown."}
+                ? "Overdraft and NSF income (5300 lines IS0048 and IS0049): not on the latest filings, so Fee Insight shows no older year in their place."
+                : "Banks over $1 billion also report consumer overdraft and NSF income (RIAD H032). No current figure is on file, so it isn't shown."}
           </p>
         </Exhibit>
       ) : (
@@ -292,7 +294,9 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           inst
             ? ws.ownAmount != null
               ? `${inst.name}'s published fee is ${fmtMoney(ws.ownAmount)}.`
-              : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
+              : ws.ownSeveral
+                ? `${inst.name}'s schedule lists several ${ws.feeName.toLowerCase()} fees: ${ws.ownSeveral}.`
+                : `No published ${ws.feeName.toLowerCase()} fee for ${inst.name} yet; this shows the market alone.`
             : "Choose your institution in Settings to see your own position."
         }
         actions={
@@ -316,7 +320,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
           label="Fee"
           items={ws.ownFees.slice(0, 10).map((f) => ({
             label: f.name,
-            meta: fmtMoney(f.amount),
+            meta: f.label,
             href: researchHref({ fee: f.category, layer: layerKey }, instId),
             active: f.category === ws.fee,
           }))}
@@ -351,6 +355,7 @@ export default async function ResearchPage({ searchParams }: PageProps) {
             panel: (
               <div className="flex flex-col gap-4">
                 <LayerExhibit layer={l} ownAmount={ws.ownAmount} feeName={ws.feeName} />
+                <DatasetNote className="mt-3" figures={[l.stamp ? { label: l.label, stamp: l.stamp } : null]} />
                 <AuditPanel trail={trailFor(l)} downloadHref={csvHrefFor(l)} />
                 {l.key === "local" && ws.local ? (
         <MemoSection
@@ -382,7 +387,10 @@ export default async function ResearchPage({ searchParams }: PageProps) {
                       <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-700">
                         {b.marketDeposits != null ? fmtFiledThousands(b.marketDeposits / 1000) : <span className="text-warm-600">Not in the Summary of Deposits</span>}
                       </td>
-                      <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">{fmtMoney(b.amount)}</td>
+                      <td className="px-4 py-2 text-right [font-variant-numeric:tabular-nums] text-warm-800">
+                        {statedFeeLabel(b.amount, b.several, fmtMoney)}
+                        {b.several ? <span className="block text-xs text-warm-600">{ownFeeList(b.several, fmtMoney)}</span> : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

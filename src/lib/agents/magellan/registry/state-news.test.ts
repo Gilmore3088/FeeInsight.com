@@ -38,6 +38,12 @@ describe("state regulator news", () => {
     expect(sites.map((s) => s.website)).toEqual(["https://dob.example.gov", "https://cud.example.gov", "https://al.example.gov"]);
   });
 
+  it("never reads New York, North Carolina or Florida (non-commercial site terms; DECISIONS.md 2026-10-18)", () => {
+    const states = new Set(stateAgencySites().map((s) => s.state));
+    for (const struck of ["NY", "NC", "FL"]) expect(states.has(struck), struck).toBe(false);
+    expect(states.has("NJ")).toBe(true);
+  });
+
   it("reads the advertised feed, else the news page, else reports none", async () => {
     const fetchText = fetcher({
       "https://a.example.gov": `<link rel="alternate" type="application/rss+xml" href="/feed.xml">`,

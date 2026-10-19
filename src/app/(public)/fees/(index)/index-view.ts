@@ -1,5 +1,5 @@
 import type { IndexRow } from "@/lib/data-store";
-import { HIGHEST_TIER_CATEGORIES, summarizeFees, valuePerInstitution, type FeeStatistics } from "@/lib/data-store/fee-stats";
+import { HIGHEST_TIER_CATEGORIES, countedRepresentatives, countedValuePerInstitution, summarizeFees, type FeeStatistics } from "@/lib/data-store/fee-stats";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildHistogramBuckets, type HistogramBucket } from "@/lib/fee-histogram-buckets";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -135,11 +135,18 @@ export interface IndexInstitution {
   charter: string;
   value: number;
   row: IndexRow;
+  /** Sibling charters that publish from this institution's schedule and count with it (rule 7). */
+  shared: number;
 }
 
 export function institutionsFor(rows: IndexRow[], fee: string, state: string | null, charter: Charter): IndexInstitution[] {
-  const picked = rows.filter((r) => matches(r, state, charter));
-  const values = valuePerInstitution(picked.map((r) => ({ ...r, fee_category: fee })));
+  const picked = rows.filter((r) => matches(r, state, charter)).map((r) => ({ ...r, fee_category: fee }));
+  // The median's own population (rule 7): sibling charters on one shared schedule count once, as
+  // the lowest id, so the chart, the list and the KPIs always count the same institutions.
+  const values = countedValuePerInstitution(picked);
+  const reps = countedRepresentatives(picked);
+  const shared = new Map<number, number>();
+  if (reps) for (const [id, rep] of reps) if (id !== rep) shared.set(rep, (shared.get(rep) ?? 0) + 1);
   const byId = new Map<number, IndexRow[]>();
   for (const r of picked) {
     const list = byId.get(r.institution_id) ?? [];
@@ -151,7 +158,7 @@ export function institutionsFor(rows: IndexRow[], fee: string, state: string | n
     const list = byId.get(id) ?? [];
     const row = [...list].sort((a, b) => Math.abs(a.amount - value) - Math.abs(b.amount - value) || a.id - b.id)[0];
     if (!row) continue;
-    out.push({ id, name: row.institution_name, state: row.state_code, charter: row.charter_type, value, row });
+    out.push({ id, name: row.institution_name, state: row.state_code, charter: row.charter_type, value, row, shared: shared.get(id) ?? 0 });
   }
   return out.sort((a, b) => a.value - b.value || a.name.localeCompare(b.name));
 }
@@ -160,8 +167,20 @@ export function statsFor(rows: IndexRow[], fee: string, state: string | null, ch
   return summarizeFees(rows.filter((r) => matches(r, state, charter)).map((r) => ({ ...r, fee_category: fee })));
 }
 
+/**
+ * The distribution's bars. A published $0 gets a bar of its own, so a fee an institution states it
+ * doesn't charge never blurs into "Under $14" with low prices. An institution that publishes no
+ * price for the fee isn't in the list at all, so it is never counted as $0.
+ */
 export function histogram(institutions: IndexInstitution[]): HistogramBucket[] {
-  return buildHistogramBuckets(institutions.map((i) => ({ value: i.value, isBank: i.charter === "bank" })));
+  const zero = institutions.filter((i) => i.value === 0);
+  const priced = institutions.filter((i) => i.value !== 0);
+  const buckets = buildHistogramBuckets(priced.map((i) => ({ value: i.value, isBank: i.charter === "bank" })));
+  if (zero.length === 0) return buckets;
+  // The bars after $0 start above it, so no institution sits in two bars.
+  const rest = buckets.map((b, i) => (i === 0 && (b.min === null || b.min === 0) ? { ...b, min: 0.01, label: b.label.replace(/^\$0(?=–|$)/, "$0.01") } : b));
+  const banks = zero.filter((i) => i.charter === "bank").length;
+  return [{ label: "$0", min: 0, max: 0, banks, creditUnions: zero.length - banks, total: zero.length }, ...rest];
 }
 
 export function inBucket(b: HistogramBucket, value: number): boolean {
@@ -236,6 +255,11 @@ export function countedAs(fee: string): {
       };
 }
 
+/** What the histogram's $0 bar counts, in the words the shared definition uses (#1955). */
+export function zeroBarNote(fee: string): string {
+  return `$0 bar: institutions whose ${HIGHEST_TIER_CATEGORIES.has(fee) ? "highest" : "middle"} published price is $0.`;
+}
+
 export function money(n: number): string {
   return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }
@@ -305,4 +329,93 @@ export function findings(rows: IndexRow[], sel: Selection, institutions: IndexIn
     }
   }
   return out.slice(0, 3);
+}
+
+/** A state's median against the U.S.: the 1% rule the state reports use for "about the same". */
+export type StateBand = "above" | "same" | "below" | "thin";
+
+export const ABOUT_THE_SAME = 0.01;
+
+export function stateBand(state: number | null, us: number | null): StateBand {
+  if (state == null || us == null) return "thin";
+  if (us === 0) return state === 0 ? "same" : "above";
+  const gap = (state - us) / us;
+  return Math.abs(gap) < ABOUT_THE_SAME ? "same" : gap > 0 ? "above" : "below";
+}
+
+/** One state on the map: its median for the selection, how many institutions count, and its band. */
+export interface StateCell {
+  code: string;
+  median: number | null;
+  institutions: number;
+  band: StateBand;
+}
+
+/**
+ * Every state's median for the fee and charter, by headquarters, beside the national median.
+ * A state with fewer than MIN_INSTITUTIONS_FOR_MEDIAN institutions has no median and is "thin".
+ */
+export function stateCells(rows: IndexRow[], fee: string, charter: Charter): StateCell[] {
+  const us = statsFor(rows, fee, null, charter).median_amount;
+  const codes = Object.keys(STATE_NAMES).filter((s) => !NOT_STATES.has(s) || s === "DC");
+  return codes.map((code) => {
+    const stats = statsFor(rows, fee, code, charter);
+    const median = stats.institution_count >= MIN_INSTITUTIONS_FOR_MEDIAN ? stats.median_amount : null;
+    return { code, median, institutions: stats.institution_count, band: stateBand(median, us) };
+  });
+}
+
+/** How the state map and ranking show each state: its gap from the U.S. median, or its own median. */
+export type StateView = "gap" | "price";
+
+export function parseStateView(params: Record<string, string | string[] | undefined>): StateView {
+  const v = params.sv;
+  return (Array.isArray(v) ? v[0] : v) === "price" ? "price" : "gap";
+}
+
+/** One row of the state ranking: the state's median, its gap from the U.S. median, and how many count. */
+export interface StateRank extends StateCell {
+  /** Dollars above (+) or below (-) the U.S. median; null without a median. */
+  gap: number | null;
+  /** Price shade from 0 (lowest fifth of state medians) to 4 (highest fifth); null without a median. */
+  step: number | null;
+}
+
+/**
+ * Every state ranked: states with a median first, highest first, then the thin ones by how many
+ * institutions they have. Each carries its gap from the U.S. median and a fifth-of-the-range price
+ * shade, so the map and the ranking can switch between the two views on one ordering.
+ */
+export function stateRanking(cells: StateCell[], us: number | null): StateRank[] {
+  const medians = cells.map((c) => c.median).filter((m): m is number => m != null).sort((a, b) => a - b);
+  const lo = medians[0] ?? 0;
+  const hi = medians[medians.length - 1] ?? 0;
+  const step = (m: number) => (hi > lo ? Math.min(4, Math.floor(((m - lo) / (hi - lo)) * 5)) : 2);
+  return cells
+    .map((c) => ({
+      ...c,
+      gap: c.median != null && us != null ? Math.round((c.median - us) * 100) / 100 : null,
+      step: c.median != null ? step(c.median) : null,
+    }))
+    .sort((a, b) =>
+      a.median != null && b.median != null
+        ? b.median - a.median || b.institutions - a.institutions || a.code.localeCompare(b.code)
+        : a.median != null
+          ? -1
+          : b.median != null
+            ? 1
+            : b.institutions - a.institutions || a.code.localeCompare(b.code),
+    );
+}
+
+/** Who is in one price band: banks against credit unions, and the states with the most of them. */
+export function bandBreakdown(listed: IndexInstitution[], top = 5): { banks: number; creditUnions: number; states: { code: string; count: number }[] } {
+  const banks = listed.filter((i) => i.charter === "bank").length;
+  const byState = new Map<string, number>();
+  for (const i of listed) if (i.state) byState.set(i.state, (byState.get(i.state) ?? 0) + 1);
+  const states = [...byState.entries()]
+    .map(([code, count]) => ({ code, count }))
+    .sort((a, b) => b.count - a.count || a.code.localeCompare(b.code))
+    .slice(0, top);
+  return { banks, creditUnions: listed.length - banks, states };
 }

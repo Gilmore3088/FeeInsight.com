@@ -1,0 +1,21 @@
+Every view in Hamilton starts from it.
+
+SETUP · 1 OF 5
+
+Welcome to Hamilton. Start by confirming your institution.
+==========================================================
+
+Thanks for subscribing. Hamilton measures every comparison against your institution, so check that it's the right one, with the right charter and location, before you build on it.
+
+Confirm your institution: https://feeinsight.com/pro/settings?utm_source=mailerlite&utm_medium=email&utm_campaign=pro&utm_content=confirm-institution
+In Settings, open Research institution.
+
+If your institution isn't listed, or its fee schedule looks out of date, reply to this email and we'll check it.
+
+James Gilmore
+Fee Insight
+
+----
+3522 Southwest Barton Street, Seattle, United States of America
+You're getting this because your team subscribes to Hamilton.
+Unsubscribe: {$unsubscribe}

@@ -87,7 +87,7 @@ async function handlePOST(request: Request) {
       {
         error: "Authentication required",
         code: "public_ai_disabled",
-        message: "Public Hamilton AI is disabled. Sign in with Fee Insight Pro to run provider-backed analysis.",
+        message: "Public Hamilton AI is disabled. Sign in with a Hamilton subscription to run provider-backed analysis.",
       },
       { status: 401 },
     );
@@ -122,7 +122,7 @@ async function handlePOST(request: Request) {
       {
         error: "Active subscription required",
         code: "public_ai_disabled",
-        message: "Public Hamilton AI is disabled. Use deterministic institution evidence publicly or sign in with Fee Insight Pro.",
+        message: "Public Hamilton AI is disabled. Use deterministic institution evidence publicly or sign in with a Hamilton subscription.",
       },
       { status: 403 },
     );
@@ -182,10 +182,11 @@ async function handlePOST(request: Request) {
   contract = enrichedContract;
   institutionId = enrichedContract.institutionId;
   const subject = institutionId === null ? null : await getInstitutionById(institutionId).catch(() => null);
-  // The reader's saved default peer set (the account workspace's, else their own), so "peers"
-  // in the written answer means the group they chose (#1084). A failed read is no peer set.
+  // The reader's saved default peer set for the research subject (its workspace's when they are
+  // a member, else their own), so "peers" in the written answer means the group they chose
+  // (#1084), and the same group Ask, Reports and the workspace bar name. A failed read is no set.
+  const peerSet = await getActivePeerSet({ userId: user.id, institutionId }).catch(() => null);
   const homeId = enrichedContract.serverAccountContext.institution?.id;
-  const peerSet = await getActivePeerSet({ userId: user.id, institutionId: homeId ?? institutionId }).catch(() => null);
   // The saved set is the answer's peer baseline only when a tool call in this answer used it
   // (the peers view with the set's filters); otherwise no current peer selection is substituted.
   const identityFor = (steps: readonly AnswerStep[] | undefined) => accountIdentitySnapshot(institutionId, enrichedContract.serverAccountContext, {

@@ -54,6 +54,7 @@ describe("unknownCrew", () => {
     const crew = unknownCrew(new Date("2026-10-09T12:00:00Z"));
     expect(crew).toHaveLength(CREW.length);
     expect(crew.every((member) => member.state === "unknown" && member.lastSuccessAt === null)).toBe(true);
-    expect(crew.find((member) => member.agent === "atlas")?.nextRunAt).toBe("2026-10-09T12:05:00.000Z");
+    // Atlas's earliest cron after 12:00 is the hourly lane sync at minute 6 (2026-10-18).
+    expect(crew.find((member) => member.agent === "atlas")?.nextRunAt).toBe("2026-10-09T12:06:00.000Z");
   });
 });

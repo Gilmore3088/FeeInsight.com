@@ -1,6 +1,6 @@
 // National Bank Fee Index figures for the monthly Fee Pulse campaign ONLY.
 // Source: fee_index_cache (the table the public National report and National Fee Index read),
-// stats_method_version 3, computed 2026-10-06 00:41 UTC. One value per institution from its own
+// computed 2026-10-17 01:56 UTC (read for the October Pulse). One value per institution from its own
 // published schedule; n = institutions with that fee.
 // The automations (welcome, report, explorer) carry no figures, so they never go stale.
 // Before each Pulse send, re-run and replace the rows:
@@ -8,39 +8,21 @@
 //   FROM fee_index_cache ORDER BY fee_category;
 
 export const SNAPSHOT = {
-  asOf: "October 6, 2026",
+  asOf: "October 17, 2026",
+  month: "October 2026",
 };
 
 // n = institutions with that fee published. p25/median/p75 in dollars.
 export const FEES = {
-  overdraft: { label: "Overdraft (paid item)", all: { n: 1324, p25: 25, med: 30, p75: 32 } },
-  nsf: { label: "NSF (returned item)", all: { n: 1630, p25: 25, med: 30, p75: 31.5 } },
-  monthly_maintenance: { label: "Monthly maintenance", all: { n: 530, p25: 3, med: 5.5, p75: 10 } },
-  stop_payment: { label: "Stop payment", all: { n: 1925, p25: 20, med: 26, p75: 30 } },
-  deposited_item_return: { label: "Deposited item returned", all: { n: 891, p25: 10, med: 15, p75: 25 } },
-  card_replacement: { label: "Debit card replacement", all: { n: 1352, p25: 5, med: 10, p75: 10 } },
-  od_protection_transfer: { label: "Overdraft protection transfer", all: { n: 531, p25: 3, med: 5, p75: 5 } },
-  atm_non_network: { label: "Out-of-network ATM", all: { n: 894, p25: 1, med: 1.83, p75: 2.5 } },
-  cashiers_check: { label: "Cashier's check", all: { n: 1356, p25: 3, med: 5, p75: 5.5 } },
-  paper_statement: { label: "Paper statement", all: { n: 552, p25: 2, med: 3, p75: 5 } },
-  wire_domestic_outgoing: { label: "Domestic wire, outgoing", all: { n: 1223, p25: 20, med: 25, p75: 25 } },
-  wire_domestic_incoming: { label: "Domestic wire, incoming", all: { n: 871, p25: 5, med: 10, p75: 15 } },
-  wire_intl_outgoing: { label: "International wire, outgoing", all: { n: 437, p25: 40, med: 50, p75: 50 } },
+  overdraft: { label: "Overdraft (paid item)", all: { n: 2500, p25: 25, med: 30, p75: 33 } },
+  nsf: { label: "NSF (returned item)", all: { n: 2668, p25: 25, med: 30, p75: 32 } },
+  monthly_maintenance: { label: "Monthly maintenance", all: { n: 1830, p25: 5, med: 6.95, p75: 10 } },
+  stop_payment: { label: "Stop payment", all: { n: 3193, p25: 22, med: 27.5, p75: 30 } },
+  deposited_item_return: { label: "Deposited item returned", all: { n: 1821, p25: 9, med: 15, p75: 25 } },
+  card_replacement: { label: "Debit card replacement", all: { n: 2626, p25: 5, med: 10, p75: 10 } },
+  atm_non_network: { label: "Out-of-network ATM", all: { n: 1647, p25: 1, med: 1.5, p75: 2.5 } },
+  cashiers_check: { label: "Cashier's check", all: { n: 2500, p25: 3, med: 5, p75: 6 } },
+  wire_domestic_outgoing: { label: "Domestic wire, outgoing", all: { n: 2506, p25: 20, med: 25, p75: 25 } },
+  wire_domestic_incoming: { label: "Domestic wire, incoming", all: { n: 1600, p25: 5, med: 10, p75: 15 } },
+  wire_intl_outgoing: { label: "International wire, outgoing", all: { n: 1694, p25: 40, med: 50, p75: 50 } },
 };
-
-// Order used by the benchmark table (most consumer-visible first).
-export const CHEAT_SHEET_ORDER = [
-  "overdraft",
-  "nsf",
-  "monthly_maintenance",
-  "stop_payment",
-  "deposited_item_return",
-  "card_replacement",
-  "od_protection_transfer",
-  "atm_non_network",
-  "cashiers_check",
-  "paper_statement",
-  "wire_domestic_outgoing",
-  "wire_domestic_incoming",
-  "wire_intl_outgoing",
-];

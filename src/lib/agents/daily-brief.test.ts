@@ -2,9 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { briefRecipients, buildDailyBrief } from "./daily-brief";
+import { briefRecipients, buildDailyBrief, storageWarningLines } from "./daily-brief";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
+import type { RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
+import type { HoovieCadence, HoovieSourceContract } from "./hoovie/contract";
+import { buildSourceHealthReport } from "./hoovie/source-health";
+
+function contract(source: string, cadence: HoovieCadence): HoovieSourceContract {
+  return { source, loader: source, publisher: "test", licence: { status: "public-domain" }, connection: "bulk-file", cadence, grain: ["institution"], linkKeys: [], tables: [] };
+}
+
+function feed(source: string, partial: Partial<RegistryFeedFreshness>): RegistryFeedFreshness {
+  return {
+    source, latestPeriod: null, lastSuccessAt: null, nextAttemptAt: null, failed: 0, scheduled: 0, lastError: null,
+    blocked: 0, blockedHost: null, succeeded: 0, lastFailedAt: null, lastBlockedAt: null, ...partial,
+  };
+}
 
 const health: PipelineHealth = {
   pipeline_enabled: true,
@@ -31,8 +45,8 @@ describe("buildDailyBrief", () => {
     const goal = {
       readAt: "2026-10-03T12:00:00Z",
       windowDays: 7,
-      coverageCells: { query: "goal.coverage_cells", readyCells: 64, totalCells: 161, institutionsShort: 524, bySize: [] },
-      liveInstitutions: { query: "goal.live_institutions", live: 3858, addedThisWeek: 12 },
+      coverageCells: { query: "goal.coverage_cells", readyCells: 64, totalCells: 161, institutionsShort: 524, institutionsShortWeekAgo: 480, bySize: [] },
+      liveInstitutions: { query: "goal.live_institutions", live: 3858, addedThisWeek: 12, droppedThisWeek: 20 },
       accuracy: null,
       wrongAfterPublish: { query: "goal.wrong_after_publish_7d", published: 1000, wrong: 20, rate: 0.02, housekeeping: 300, topErrors: [] },
       spend: { query: "goal.provider_spend_7d", weekUsd: 60, costPerNewInstitutionUsd: 5, byAgent: [] },
@@ -46,8 +60,8 @@ describe("buildDailyBrief", () => {
     });
     const text = brief.lines.join("\n");
     expect(text).not.toContain("documents downloaded");
-    expect(text).toContain("Coverage: 64 of 161 state and size groups under $10B meet the target; 524 more covered institutions would close the gap.");
-    expect(text).toContain("Institutions with live fees: 3,858, 12 added in the last 7 days.");
+    expect(text).toContain("Coverage: 64 of 161 state and size groups under $10B meet the target; 524 more covered institutions would close the gap (480 7 days ago).");
+    expect(text).toContain("Institutions with live fees: 3,858, 12 added in the last 7 days and 20 dropped (net -8).");
     expect(text).toContain("Accuracy: could not be read today.");
     expect(text).toContain("Wrong after publish: 2.0% (20 of 1,000");
     expect(text).toContain("$5.00 per institution added");
@@ -142,6 +156,78 @@ describe("morning brief", () => {
     const brief = buildDailyBrief({ ...base, needsYou: [] });
     expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
     expect(brief.lines[0]).toBe("Nothing needs you.");
+  });
+
+  it("says nothing about storage on a day with no storage warning", () => {
+    const brief = buildDailyBrief({ ...base, needsYou: [], storage: { alerts: [], at: "2026-10-05T12:17:00Z" } });
+    expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
+    expect(brief.lines.join("\n")).not.toContain("Storage");
+    expect(storageWarningLines(null)).toEqual([]);
+  });
+
+  it("emails Atlas's storage warnings when there are any (Oct 18)", () => {
+    const storage = { alerts: ["area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held"], at: "2026-10-05T12:17:00Z" };
+    const brief = buildDailyBrief({ ...base, needsYou: [], storage });
+    expect(brief.subject).toBe("Morning brief: storage warning, pipeline running");
+    expect(brief.lines[0]).toBe("Storage warning.\n- Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
+
+    const busy = buildDailyBrief({
+      ...base,
+      needsYou: [{ id: "lead:1", severity: "critical", area: "Customers", title: "Reply overdue", detail: "", href: "/admin/leads", action: "Open lead" }],
+      storage,
+    });
+    expect(busy.subject).toBe("Morning brief: 1 thing needs you, storage warning, pipeline running");
+    expect(busy.lines[0]).toContain("- Storage: area_statistics is 2,100 MB");
+
+    const older = buildDailyBrief({ ...base, storage });
+    expect(older.subject).toContain("storage warning");
+    expect(older.lines).toContain("Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
+    expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
+  });
+
+  it("names a public source that failed or loaded empty, with its reason (#1866)", () => {
+    const report = buildSourceHealthReport({
+      contracts: [contract("fr-y9c", "quarterly"), contract("hmda", "annual"), contract("fdic-financials", "quarterly")],
+      feeds: [
+        feed("fr-y9c", { blocked: 2, blockedHost: "www.ffiec.gov", lastBlockedAt: "2026-10-05T03:00:00.000Z" }),
+        feed("hmda", { lastSuccessAt: "2026-09-01T00:00:00.000Z", succeeded: 3, failed: 1, lastFailedAt: "2026-10-05T02:00:00.000Z", lastError: "HTTP 503 from ffiec.cfpb.gov" }),
+        feed("fdic-financials", { lastSuccessAt: "2026-10-04T00:00:00.000Z", succeeded: 60 }),
+      ],
+      skips: new Map(),
+      now: new Date("2026-10-05T12:00:00Z"),
+    });
+    const brief = buildDailyBrief({ ...base, needsYou: [], sources: report });
+    expect(brief.subject).toBe("Morning brief: public data warning, pipeline running");
+    expect(brief.lines[0]).toBe("Public data warning.");
+    const section = brief.lines.find((line) => line.startsWith("Public data:"));
+    expect(section).toBe([
+      "Public data: 2 of 3 sources not fresh (1 failed, 1 empty).",
+      "- hmda: failed, 1 partition failed: HTTP 503 from ffiec.cfpb.gov; last success 2026-09-01",
+      "- fr-y9c: empty, www.ffiec.gov refused production's request; never succeeded",
+    ].join("\n"));
+
+    const busy = buildDailyBrief({
+      ...base,
+      needsYou: [{ id: "lead:1", severity: "critical", area: "Customers", title: "Reply overdue", detail: "", href: "/admin/leads", action: "Open lead" }],
+      sources: report,
+    });
+    expect(busy.subject).toBe("Morning brief: 1 thing needs you, 2 public sources failed or empty, pipeline running");
+
+    const older = buildDailyBrief({ ...base, sources: report });
+    expect(older.subject).toContain(", 2 public sources failed or empty,");
+    expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
+  });
+
+  it("says nothing about public data when every source is fresh", () => {
+    const report = buildSourceHealthReport({
+      contracts: [contract("fdic-financials", "quarterly")],
+      feeds: [feed("fdic-financials", { lastSuccessAt: "2026-10-04T00:00:00.000Z", succeeded: 60 })],
+      skips: new Map(),
+      now: new Date("2026-10-05T12:00:00Z"),
+    });
+    const brief = buildDailyBrief({ ...base, needsYou: [], sources: report });
+    expect(brief.subject).toBe("Morning brief: nothing needs you, pipeline running");
+    expect(brief.lines.join("\n")).not.toContain("Public data");
   });
 
   it("copies the owner's Gmail unless told otherwise", () => {

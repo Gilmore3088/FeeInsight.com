@@ -49,9 +49,39 @@ branch file (`credit_union_branches`, latest report) when exactly one longer off
 with the cut (case ignored), title-cased where the file writes it in capitals. It writes only rows still holding the cut,
 so a second run changes nothing, and lists every change (id, old city, new city) in the step
 detail; a dry run lists them and writes nothing. Two possible names, or none (College Station, San
-Luis Obispo, and the 5 cuts with no longer office city), stay for a person. On by James's decision
+Luis Obispo, and the cuts with no longer office city), stay for a person; a person's checks go on
+`HAND_CITY_REPAIRS` (3 on Oct 17: North Little Rock, Palm Beach Gardens, Saratoga Springs), written
+by the same guarded update only while the stored city is still the cut. On by James's decision
 (Oct 15). The cut city's public page redirects permanently to the full one once no institution
 keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
+
+Hand-checked fee links (`hand-link-repair.ts`, #2022) ride the same step: each `HAND_LINK_REPAIRS`
+entry (Natbank 2675 on Oct 19: from National Bank of Canada's business accounts page to Natbank's
+own U.S. accounts page) writes the website and fee link only while the fee link is still the listed
+old one, moves the profile's canonical link unless a correction locked it, takes the bank's own
+pages off `rejected_source_urls` and sets the wrong pages aside there. Step detail `hand_links`.
+On by James's decision (Oct 19, "Do all three"). Add later checks to the list, never edit a past one.
+
+## Storage watch and retention (`storage-retention.ts`)
+
+`atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database
+size, the 12 largest tables and the growth since its last run, and warns in its summary above
+13,000 MB or 300 MB a day (raised from 9,000 MB on Oct 18, 2026: the public-data back-fill left
+the database at about 10 GB on an 18 GB disk, so 9,000 warned every day). It also measures every
+table a Hoovie source writes against its size budget (`src/lib/agents/hoovie/size-budgets.ts`),
+records the sizes (`budget_tables`), the tables over budget and the registry sources the
+scheduler holds for them, and warns for each table over budget. The registry scheduler reads the
+newest recorded sizes (`readLatestTableSizes`) and schedules no partition for a source that writes
+a table over its own budget (a table over the unmeasured default is warned about, not held); with no measurement it holds nothing. Nothing is deleted from those tables.
+The morning brief (`daily-brief.ts`) emails James the step's warnings, only on a day with one. Supabase grew the disk from 8 to 12 GB on Oct 17, 2026; that day 2.5 of
+the 6.3 GB was log history nothing trimmed. Three trims count what they would delete every day and
+delete (at most 20,000 rows each a run) only while their `RETENTION_LIVE` switch is true; each
+switch turns on by PR after James's yes naming it (he chose all three on Oct 17, 2026): `legacy_event_log` (retired `agent_events`
+rows over 60 days old), `run_events` (run events over 90 days old, keeping the newest of each kind
+per step and any with a cost) and `attempt_repeats` (attempt-log rows over 30 days old in the
+extract, verify and publish stages that have an identical twin both before and after them; first
+and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
+pause holds it.
 
 ## Direct state re-search (`priority-state-research.ts`)
 
@@ -119,6 +149,11 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   `magellan/website-find.ts` picks), or while any market leader is among them. A state with
   fewer of them due runs a weekly full pass until they are tried. The paid caps still bound
   the spend.
+- The hourly nationwide sync (`runNationwideLaneSync`: every state's lane and profile rows, the
+  unchecked-live-fee and second-look wakes, the priority refresh) is the `lane-sync` step of its own
+  run (`atlas.lane_sync`), started by `/api/admin/crew/lane-sync` at minute 6 of each hour. The tick
+  never runs it: inside the first tick of each hour it held that tick's first step back p50 80 s,
+  max 200 s (2026-10-18 finding, tick loses budget before steps).
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
   banks in the state with open work or a recent error: due a search, a fee link not fetched

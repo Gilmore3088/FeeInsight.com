@@ -240,7 +240,7 @@ const GOAL_CARDS: GoalCardSpec[] = [
     format: n,
     unit: "in published_fee_catalog now",
     detail: (goal) => goal.liveInstitutions
-      ? `${n(goal.liveInstitutions.addedThisWeek)} added: live now, no live fee 7 days ago (refreshes add nothing).`
+      ? `${n(goal.liveInstitutions.addedThisWeek)} added: live now, no live fee 7 days ago (refreshes add nothing).${goal.liveInstitutions.droppedThisWeek == null ? "" : ` ${n(goal.liveInstitutions.droppedThisWeek)} dropped: live 7 days ago, no live fee now.`}`
       : "Could not be read.",
   },
   {

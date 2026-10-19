@@ -10,7 +10,6 @@ import {
   PRO_TIERS,
   annualMonthsFree,
   annualPerMonthLabel,
-  annualSavingsLabel,
   proTier,
   tierAmountLabel,
   type ProPlan,
@@ -26,6 +25,12 @@ export type { ProTierSelection } from "./plan-checkout";
 import { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
 
 export { CHECKOUT_ID, CHOOSER_INPUT_ID, PLANS_ID } from "./plan-ids";
+
+/** "two months free", the one phrasing every page uses for annual billing (site audit #1952). */
+const MONTH_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven"];
+export function monthsFreeWords(months: number): string {
+  return `${MONTH_WORDS[months] ?? months} ${months === 1 ? "month" : "months"} free`;
+}
 
 /** Annual is the plan we point to: same features, two months free on every tier. */
 export const RECOMMENDED_PLAN: ProPlan = "annual";
@@ -186,7 +191,7 @@ export function ProPlanBoard({
         <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">{SAME_WORKSPACE_LINE}</p>
       </div>
 
-      <ul id={PLANS_ID} aria-label="Hamilton Pro price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
+      <ul id={PLANS_ID} aria-label="Hamilton price by institution size" className="mt-5 grid gap-3 sm:grid-cols-3 sm:gap-4">
         {PRO_TIERS.map((tier) => {
           const mine = selection?.tier === tier.key;
           const stepBack = selection !== null && !mine;
@@ -218,7 +223,7 @@ export function ProPlanBoard({
               </p>
               <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
                 {annual
-                  ? `${annualPerMonthLabel(tier.key)} a month, billed yearly · save ${annualSavingsLabel(tier.key)}`
+                  ? `${annualPerMonthLabel(tier.key)} a month, billed yearly: ${monthsFreeWords(annualMonthsFree(tier.key))}`
                   : `Billed monthly · or ${tierAmountLabel(tier.key, "annual")} a year`}
               </p>
               {apiIncludedInTier(tier.key) && (
@@ -254,7 +259,7 @@ export function ProPlanBoard({
       >
         <div className="min-w-0">
           <h2 id="pro-checkout-title" className="text-lg font-semibold tracking-tight text-ink" style={DISPLAY}>
-            {selection ? "Subscribe to Hamilton Pro" : "Find your institution"}
+            {selection ? "Subscribe to Hamilton" : "Find your institution"}
           </h2>
           <div className="mt-3">{chooser}</div>
         </div>

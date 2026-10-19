@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import {
+  UTILITY_CARD,
+  UTILITY_FORM,
+  UTILITY_INPUT,
+  UTILITY_LABEL,
+  UTILITY_SUBMIT,
+  utilityNotice,
+} from "@/components/utility/form-style";
 import { HoneypotField } from "@/components/public/honeypot-field";
-import { AUTH_BUTTON_CLASS, AUTH_FORM_CLASS, AUTH_INPUT_CLASS } from "../auth-card";
 import { requestPasswordReset } from "./actions";
 
 export function ForgotPasswordForm() {
@@ -26,31 +33,31 @@ export function ForgotPasswordForm() {
 
   if (sent) {
     return (
-      <div role="status" className={AUTH_FORM_CLASS}>
-        <p className="text-sm text-ink">
+      <div role="status" className={`${UTILITY_CARD} space-y-4`}>
+        <p className="text-[15px] leading-relaxed text-ink">
           If that email has an account, a reset link is on its way. It works for one hour.
         </p>
-        <p className="text-sm text-ink-muted">Nothing after a few minutes? Check your spam folder, then try again.</p>
+        <p className="text-[14px] leading-relaxed text-ink-muted">Nothing after a few minutes? Check your spam folder, then try again.</p>
       </div>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className={`relative ${AUTH_FORM_CLASS}`}>
+    <form onSubmit={handleSubmit} className={`relative ${UTILITY_FORM}`}>
       <HoneypotField />
-      <p className="text-sm text-ink-muted">Enter the email you signed up with and we&apos;ll send a link to choose a new password.</p>
+      <p className="text-[14px] leading-relaxed text-ink-muted">Enter the email you signed up with and we&apos;ll send a link to choose a new password.</p>
       {error && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div role="alert" className={utilityNotice("error")}>
           {error}
         </div>
       )}
       <div>
-        <label htmlFor="email" className="block text-sm font-medium text-ink mb-1">
+        <label htmlFor="email" className={UTILITY_LABEL}>
           Work email
         </label>
-        <input id="email" name="email" type="email" required autoComplete="email" className={AUTH_INPUT_CLASS} />
+        <input id="email" name="email" type="email" required autoComplete="email" className={UTILITY_INPUT} />
       </div>
-      <button type="submit" disabled={pending} className={AUTH_BUTTON_CLASS}>
+      <button type="submit" disabled={pending} className={UTILITY_SUBMIT}>
         {pending ? "Sending..." : "Send reset link"}
       </button>
     </form>

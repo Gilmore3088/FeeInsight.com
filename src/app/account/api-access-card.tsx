@@ -5,14 +5,44 @@ import { CONTACT_EMAIL, PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL } from "@/lib/api-subscriber-access";
 import { AccountCard } from "./account-card";
 import { createAccountApiKey, revokeAccountApiKey } from "./api-key-actions";
+import type { ApiUsageSummary } from "@/lib/api-usage-summary";
+import { utilityButton } from "@/components/utility/form-style";
 
 /** What the account page knows about the subscriber's API access. */
 export type ApiAccess =
-  | { kind: "included"; key: { prefix: string; createdAt: string; lastUsedAt: string | null } | null }
+  | {
+      kind: "included";
+      key: { prefix: string; createdAt: string; lastUsedAt: string | null } | null;
+      /** The plan's shared monthly allowance and who used it; absent when it could not be read. */
+      usage?: ApiUsageSummary | null;
+    }
   | { kind: "upgrade" };
 
-const BUTTON =
-  "inline-flex min-h-10 items-center rounded-md border border-border bg-surface-0 px-4 text-[14px] font-medium text-ink hover:border-ink disabled:opacity-50";
+const BUTTON = utilityButton("secondary");
+
+function count(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
+/** This month's calls against the plan's shared allowance, split by person when more than one has used it. */
+function UsageLine({ usage }: { usage: ApiUsageSummary }) {
+  return (
+    <div className="mt-3 text-[14px] text-ink">
+      <p>
+        Calls used this month: {count(usage.used)} of {count(usage.allowance)}
+      </p>
+      {usage.people.length > 1 && (
+        <ul className="mt-1 space-y-0.5 text-[13px] text-ink-muted">
+          {usage.people.map((person) => (
+            <li key={person.userId}>
+              {person.label}: {count(person.calls)} {person.calls === 1 ? "call" : "calls"}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function shortDate(value: string): string {
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -112,6 +142,7 @@ export function ApiAccessCard({ access }: { access: ApiAccess }) {
       ) : (
         <p className="text-[14px] text-ink">Make a key to use the data in Claude, Excel or your own code.</p>
       )}
+      {access.usage && <UsageLine usage={access.usage} />}
 
       <div className="mt-4 flex flex-wrap gap-2">
         <button type="button" className={BUTTON} disabled={pending} onClick={create}>

@@ -8,7 +8,11 @@ import {
   STATS_ROW_FILTER,
   businessSourceSql,
   statsRowFilter,
+  safeDepositServiceSql,
   sharedScheduleRepresentatives,
+  countedAmounts,
+  countedInstitutionCount,
+  countedValuePerInstitution,
   scheduleKeysSql,
   scheduleGroupSql,
   summarizeRates,
@@ -16,8 +20,12 @@ import {
   COUNT_SHARED_SCHEDULE_ONCE,
   STATS_SCHEDULE_KEYS,
   STATS_METHOD_VERSION,
+  STATS_POPULATION_FILTERS,
+  statsPopulationFilters,
+  statsCounting,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
+import { SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 
 function rowsFor(amounts: (number | string | null)[], charter = "bank") {
   return amounts.map((amount, index) => ({ institution_id: index + 1, amount, charter_type: charter }));
@@ -184,6 +192,23 @@ it("shares the same audience boundary across SQL aliases without filtering out z
   expect(() => statsRowFilter("c; SELECT 1")).toThrow("Invalid statistics table alias");
 });
 
+it("leaves safe deposit service charges out of every median, on any alias (#1816, rule 8)", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain(`AND NOT ${safeDepositServiceSql("c")}`);
+  expect(safeDepositServiceSql("c")).toContain("c.fee_category = 'safe_deposit_box'");
+  expect(safeDepositServiceSql("c")).toContain(`COALESCE(c.fee_name, '') ~* '${SAFE_DEPOSIT_SERVICE_SQL}'`);
+  expect(STATS_ROW_FILTER).toContain("ef.fee_category = 'safe_deposit_box'");
+});
+
+it("leaves fees charged on a different basis than their category's out of every median, on any alias (#1901, rule 9)", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain(`AND NOT ${basisMismatchSql("c")}`);
+  expect(basisMismatchSql("c")).toBe(
+    "COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))" +
+      " OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time')), false)",
+  );
+});
+
 describe("count once: sibling charters sharing one schedule (#1441, rule 7)", () => {
   // IBC's five charters (one holding company) read the same schedule and charge $30;
   // four unrelated banks charge $10, $12, $14 and $16.
@@ -208,6 +233,35 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(after.bank_count).toBe(5);
     expect(after.median_amount).toBe(14);
     expect(after.maturity_tier).toBe("provisional");
+  });
+
+  it("gives raw-row readers the median's own count and population (17 Oct readers fix)", () => {
+    // The provenance line, the API's institution_count and the outlier list count from raw rows.
+    expect(countedInstitutionCount(rows, { countSharedScheduleOnce: false })).toBe(9);
+    expect(countedInstitutionCount(rows, { countSharedScheduleOnce: true })).toBe(summarizeFees(rows, { countSharedScheduleOnce: true }).institution_count);
+    // A row with no amount still names an institution, as the provenance count reads it.
+    const unpriced = [...rows, { institution_id: 77, amount: null, charter_type: "bank", fee_category: "nsf", schedule_keys: [] as string[], schedule_group: "" }];
+    expect(countedInstitutionCount(unpriced, { countSharedScheduleOnce: true })).toBe(6);
+    const values = countedValuePerInstitution(rows, { countSharedScheduleOnce: true });
+    expect([...values.keys()].sort((a, b) => a - b)).toEqual([160, 9000, 9001, 9002, 9003]);
+    expect(values.get(160)).toBe(30);
+    expect(countedValuePerInstitution(rows, { countSharedScheduleOnce: false }).size).toBe(9);
+  });
+
+  it("counts Hamilton's peers once per shared schedule, at the lower middle (countedAmounts)", () => {
+    const peers = [
+      { institutionId: 160, amount: 30 },
+      { institutionId: 318, amount: 28, countedAs: 160 },
+      { institutionId: 1769, amount: 35, countedAs: 160 },
+      { institutionId: 688, amount: 32, countedAs: 160 },
+      { institutionId: 9000, amount: 10 },
+      { institutionId: 9001, amount: 40 },
+    ];
+    // IBC's four values 28, 30, 32, 35 count once at 30, as collapseSharedSchedules counts them.
+    expect(countedAmounts(peers)).toEqual([10, 30, 40]);
+    expect(countedAmounts(peers.map(({ institutionId, amount }) => ({ institutionId, amount })))).toEqual([10, 28, 30, 32, 35, 40]);
+    const asRows = peers.map((p) => ({ institution_id: p.institutionId, amount: p.amount, schedule_keys: p.institutionId < 9000 ? shared : null, schedule_group: p.institutionId < 9000 ? IBC : null }));
+    expect([...countedValuePerInstitution(asRows, { countSharedScheduleOnce: true }).values()].sort((a, b) => a - b)).toEqual(countedAmounts(peers));
   });
 
   it("keeps every charter's own value for its own page", () => {
@@ -293,11 +347,17 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(summarizeRates(rateRows, { countSharedScheduleOnce: true })).toMatchObject({ institution_count: 5, median_rate: 2 });
   });
 
-  it("is off by default and selects no keys while off", () => {
-    expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(false);
-    expect(summarizeFees(rows).institution_count).toBe(9);
-    expect(STATS_SCHEDULE_KEYS).toBe("NULL::text[] AS schedule_keys, NULL::text AS schedule_group");
-    expect(STATS_METHOD_VERSION).toBe(7);
+  it("is on (James, Oct 17) and selects the schedule keys", () => {
+    expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
+    expect(summarizeFees(rows).institution_count).toBe(5);
+    expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
+    expect(STATS_METHOD_VERSION).toBe(13);
+  });
+
+  it("switched off, selects no keys and counts each charter", () => {
+    expect(summarizeFees(rows, { countSharedScheduleOnce: false }).institution_count).toBe(9);
+    expect(scheduleKeysSql("ef", false)).toBe("NULL::text[]");
+    expect(scheduleGroupSql("ef", false)).toBe("NULL::text");
   });
 
   it("builds the schedule keys and holding company scope when on", () => {
@@ -310,5 +370,74 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(scheduleGroupSql("ef", true)).toContain("hc.holding_company_rssd");
     expect(() => scheduleKeysSql("ef; drop", true)).toThrow();
     expect(() => scheduleGroupSql("ef; drop", true)).toThrow();
+  });
+});
+
+/** Split a SQL boolean expression on its top-level ANDs, ignoring ANDs inside parentheses or quotes. */
+function topLevelPredicates(expr: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (ch === "'") quoted = !quoted; // '' inside a literal toggles twice and stays quoted
+    if (quoted) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && /^\sAND\s/i.test(expr.slice(i, i + 5))) {
+      parts.push(expr.slice(start, i).trim());
+      start = i + 5;
+      i += 4;
+    }
+  }
+  parts.push(expr.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+describe("statistics population descriptions (#1924)", () => {
+  const predicates = topLevelPredicates(statsRowFilter("ef"));
+
+  it("splits the filter into its predicates", () => {
+    expect(predicates.length).toBeGreaterThanOrEqual(5);
+    expect(predicates[0]).toBe("ef.source_document_id IS NOT NULL");
+  });
+
+  it("describes every predicate in the SQL exactly once, and nothing the SQL lacks", () => {
+    for (const predicate of predicates) {
+      const describedBy = STATS_POPULATION_FILTERS.filter((f) => predicate.includes(f.sqlMarker)).map((f) => f.key);
+      expect({ predicate, describedBy: describedBy.length }).toEqual({ predicate, describedBy: 1 });
+    }
+    for (const filter of STATS_POPULATION_FILTERS) {
+      expect(predicates.filter((p) => p.includes(filter.sqlMarker)), filter.key).toHaveLength(1);
+    }
+    expect(STATS_POPULATION_FILTERS).toHaveLength(predicates.length);
+  });
+
+  it("catches a predicate added without words", () => {
+    const drifted = topLevelPredicates(`${statsRowFilter("ef")} AND ef.amount > 0`);
+    const undescribed = drifted.filter((p) => !STATS_POPULATION_FILTERS.some((f) => p.includes(f.sqlMarker)));
+    expect(undescribed).toEqual(["ef.amount > 0"]);
+  });
+
+  it("returns labels as stamp data with stable keys and no em dashes", () => {
+    const filters = statsPopulationFilters();
+    expect(filters.map((f) => f.key)).toEqual([
+      "sourced",
+      "consumer_audience",
+      "no_business_schedule",
+      "safe_deposit_rent_only",
+      "one_charging_basis",
+    ]);
+    for (const f of filters) {
+      expect(Object.keys(f).sort()).toEqual(["key", "label"]);
+      expect(f.label).not.toMatch(/\u2014/);
+    }
+  });
+
+  it("names the counting rule from the count-once switch", () => {
+    expect(statsCounting()).toBe(COUNT_SHARED_SCHEDULE_ONCE ? "counted_once" : "per_charter");
+    expect(statsCounting(true)).toBe("counted_once");
+    expect(statsCounting(false)).toBe("per_charter");
   });
 });

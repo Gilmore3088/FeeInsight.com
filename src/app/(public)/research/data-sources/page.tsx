@@ -1,10 +1,18 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * invalidates the public read cache its reads carry (#1811). The page reads no session,
+ * cookies or search params; the header's signed-in parts are client islands. A render
+ * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicStatsSummary, UNAVAILABLE_LABEL } from "@/lib/public-stats";
 import { getDataCoverageSummaryCached, getStatsCached } from "@/lib/data-store/public-cached-reads";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { DATA_SOURCES, coverageBar, nextAction, sourceMap, type SourceCounts } from "./data-sources-view";
 import { DataSourcesHero, MethodologyLine, NextAction, SourceMap, SourceTable } from "./data-sources-exhibits";
 
@@ -36,6 +44,7 @@ export default async function DataSourcesPage() {
     getDataCoverageSummaryCached().catch(() => null),
     sampleReportAvailable().catch(() => false),
   ]);
+  if (!summary?.complete || !collection || !coverage) await shortenPageLife();
 
   const counts: SourceCounts = {
     observations: summary && summary.observationsLabel !== UNAVAILABLE_LABEL ? summary.observations : null,

@@ -12,6 +12,9 @@
 
 import type { LineupAccount, LineupSummary } from "@/lib/data-store/account-lineup";
 import type { Storyline, StorylineExhibit } from "./storyline-types";
+import type { SeveralFees } from "@/lib/own-fee";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 /** A source behind a fact, named so the reader can check it. */
 export interface SourceRef {
@@ -26,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.18.3";
+export const WORKSPACE_ENGINE_VERSION = "1.19.2";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -51,6 +54,12 @@ export interface Provenance {
   sources: SourceRef[];
   assumptions: string[];
   clientFacts: ClientFactRef[];
+  /**
+   * The dataset stamp of each read behind the medians, percentiles and counts the output quotes
+   * (#1924): peers first, then each market layer. Only stamped reads appear; a figure from a read
+   * with no stamp (the local market, a segment, a rate) has none. Absent on older outputs.
+   */
+  stamps?: StampedFigure[];
 }
 
 export interface Fact {
@@ -119,8 +128,12 @@ export interface LocalMarketInfo {
 /** The bank's largest local competitors (by market deposits) and their published fees. */
 export interface BriefingLocalMarket {
   info: LocalMarketInfo;
-  /** The bank first, then competitors largest first. Values are one per institution, as peers are read. */
-  rows: { institutionId: number; name: string; own: boolean; marketDeposits: number | null; values: Record<string, number> }[];
+  /**
+   * The bank first, then competitors largest first. Values are one per institution, as peers are
+   * read: the stated price, except where `several` has the fee (#1931). There the institution
+   * states several different fees, the value is their median, and a row shows `several` instead.
+   */
+  rows: { institutionId: number; name: string; own: boolean; marketDeposits: number | null; values: Record<string, number>; several?: Record<string, SeveralFees> }[];
 }
 
 export interface IncomeQuarter {
@@ -207,6 +220,8 @@ export interface PeerValue {
   amount: number;
   /** Deposits held in the bank's market counties (FDIC Summary of Deposits), dollars; local competitors only. */
   marketDeposits?: number | null;
+  /** Total assets in thousands of dollars; peers only, absent on older payloads. */
+  totalAssets?: number | null;
   stateCode: string | null;
   sourceDocumentIds: number[];
   /** The published fee rows behind `amount`, so a saved answer records them (H03-T09); absent on older payloads. */
@@ -214,10 +229,22 @@ export interface PeerValue {
   documentUrls: string[];
   publishedAt: string | null;
   /**
+   * Present when the institution's schedule states several different fees in the category
+   * (#1931): `amount` is then their median, which counts toward group statistics but is no price
+   * of its own, so a row naming the institution shows this range and each fee by name.
+   */
+  several?: SeveralFees;
+  /**
    * The published_fee_catalog rows behind `amount` (#981, H06-T04), so the peer median can name its
    * records. Absent on answers saved before them and where a reader does not load them.
    */
   feeRecords?: PeerFeeRecordRef[];
+  /**
+   * Statistics rule 7 (count once): the sister charter whose shared fee schedule this value
+   * counts under in the group's band (`countedAmounts`). Absent when it counts as itself. The
+   * peer is still listed by its own name and value.
+   */
+  countedAs?: number;
 }
 
 /** One published_fee_catalog row behind a peer's value. */
@@ -287,8 +314,13 @@ export interface FeeStructureSet {
   /** e.g. "institutions with $10 billion or more in assets" or "peers (Banks in Texas)". */
   groupLabel: string;
   columns: { category: string; label: string }[];
-  /** The bank first, then the group in its display order. Amounts by fee category. */
-  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number> }[];
+  /**
+   * The bank first, then the group in its display order. Amounts by fee category, one per
+   * institution: the stated price, except where `several` has the fee (#1931). There the
+   * institution states several different fees, the amount is their median (for counts and
+   * medians), and a cell shows `several` instead.
+   */
+  rows: { institutionId: number; name: string; own: boolean; values: Record<string, number>; several?: Record<string, SeveralFees> }[];
   source: SourceRef;
 }
 
@@ -370,6 +402,13 @@ export interface FeeResearch {
   current: number | null;
   peerLabel: string;
   peers: PeerValue[];
+  /** True when `peers` is the bank's own saved peer group; false when Hamilton picked it. Absent on older payloads. */
+  peerGroupSaved?: boolean;
+  /**
+   * Everyone in the chosen peer group, loaded for a list question (#2033), so the list names the
+   * peers with no value for the fee too. Absent when not loaded.
+   */
+  peerGroup?: PeerGroupCoverage | null;
   band: { p25: number; median: number; p75: number; n: number } | null;
   bands: PriceBand[];
   /**
@@ -378,6 +417,10 @@ export interface FeeResearch {
    * null percentiles when too few institutions publish the fee.
    */
   layers: MarketLayer[];
+  /** Each layer's dataset stamp by scope (#1924); none for the local market. Shown on Research and Try a price. */
+  layerStamps?: Partial<Record<MarketLayerScope, DatasetStamp>>;
+  /** The dataset stamp of the read behind `peers` and `band` (#1924); absent without one. */
+  peerStamp?: DatasetStamp;
   /** Named competitors in the bank's local market that publish this fee, largest deposits first; null when no market is on file. */
   localCompetitors: PeerValue[] | null;
   localMarket: LocalMarketInfo | null;
@@ -389,6 +432,12 @@ export interface FeeResearch {
    * `current` (each row's schedule document and the event that verified it).
    */
   ownRows: OwnFeeRow[];
+  /**
+   * When the bank has no row for this fee: its main schedule in the index (the document most of
+   * its fees were read from) and when it was read, so a missing fee reads as "not listed on its
+   * schedule" (#2035). Null when no schedule is on file; absent when not read.
+   */
+  ownSchedule?: { documentUrl: string | null; readAt: string | null } | null;
   /** Industry deposit service charge income, newest quarter first (eight quarters), as on the Briefing. */
   nationalIncomeSeries: MarketIncome[];
   /** The bank's total deposit service charge income, as context for this fee. */
@@ -411,6 +460,24 @@ export interface FeeResearch {
    */
   rates?: RateResearch | null;
   provenance: Provenance;
+}
+
+/** The chosen peer group's institutions that publish no value for the fee, beside those that do. */
+export interface PeerGroupCoverage {
+  /** Institutions the group's filters take in, the asking bank left out. */
+  total: number;
+  /** Those with no value for the fee, largest first, up to the read's limit. */
+  missing: {
+    institutionId: number;
+    institutionName: string;
+    stateCode: string | null;
+    /** Thousands of dollars. */
+    totalAssets: number | null;
+    /** True when the index counts other fees from its schedule (the fee was not found on it); false when it holds no schedule. */
+    hasSchedule: boolean;
+    /** True when the fee is on its schedule but the peer figures do not count it (business-only, unsourced). */
+    uncounted?: boolean;
+  }[];
 }
 
 /** One of the bank's own fees stated as a rate. */
@@ -511,7 +578,8 @@ export type Exhibit =
       own: number | null;
       ownLabel: string;
       /** deposits: the institution's deposits in the bank's market counties (FDIC Summary of Deposits), local competitors only. */
-      items: { name: string; amount: number; url: string | null; deposits?: number | null }[];
+      /** several: the institution states several different fees here; amount is then their median and the row shows this range (#1931). */
+      items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
       sources: SourceRef[];

@@ -47,6 +47,23 @@ Magellan owns institution source discovery and source fetching.
   checked-in list of consumer fee schedules James gave for banks Magellan had not found (Chase,
   Citi). Just before companion fetch, each listed schedule the bank does not hold yet is added
   as a `consumer_supplement` companion, once, with an attempt row. Add a bank by adding a line.
+- Hand-supplied schedules (`hand-supplied.ts`, strategy `supply.hand_supplied`, page
+  `/admin/magellan/hand-supplied`, admins only): a fee schedule PDF a person downloaded from the
+  bank's own site as a normal visitor, for a bank whose site refuses our fetcher (HTTP 403) or
+  where we hold the wrong page. The file is named `<institution_id>__<short-name>__consumer.pdf`;
+  `__business.pdf` files are not loaded. It needs a source address (the browser hunt CSV's
+  `found_url`) on the bank's own site, as a hand-found link does. The PDF is stored as a
+  `consumer_supplement` companion document with who supplied it and when, its bytes go to the
+  document vault, and Rosetta reads them at once (`readHandSuppliedDocument`, the read step's
+  reader and records); the bank's site is never asked for the file, and companion fetch and the
+  paid fetch skip these pages. When the address is already a companion (a hand-found link we
+  could not open) the copy joins that page as its current copy; a page that was ruled out stays
+  ruled out. Like a hand-found link it never sets the fee link, and nothing on file is replaced
+  or deleted. The same bytes twice for one institution (any stored document) is a no-op. Each
+  file is its own run (`openInlineAgentRun`, step `hand-supply`) with an attempt row. The page
+  also takes the browser hunt CSV: each `FOUND_PDF`/`FOUND_PAGE` row with a `found_url` and no
+  loaded file (and not a business file) goes through `addHandFoundLink`, reported per row as
+  added, already on file, another institution's site or invalid, in one run.
 - Companion fetch (`companion-fetch.ts`, strategy `fetch.companion`): at the end of every
   fetch step (60 s budget, 10 pages), companion pages from `institution_additional_sources`
   (not `business`) are downloaded when new and again after 30 days, each as its own source
@@ -218,7 +235,9 @@ and `detail.method_version`).
   and the NCUA sync stores none.
 - A homepage that blocks bots (HTTP 401/403, or a challenge page served with 200) does not end
   the search: the known link and the site map still run (nothing else needs the homepage).
-  Nothing tries to get past the wall: same crawler name, no proxies, no browser. A find is
+  Nothing in Magellan tries to get past the wall: same crawler name, no proxies, no browser. A
+  person may hand-supply a copy they downloaded from the bank's site as a normal visitor
+  (hand-supplied schedules, below). A find is
   code `found_blocked_homepage` (`detail.rescue = 'blocked_homepage'` on the finding attempt),
   every attempt for that bank carries `detail.homepage_blocked = true`, and the step detail
   counts `blocked_homepage_rescues` and `websites_repaired`. A 429 asks us to slow down, so
@@ -511,20 +530,20 @@ items wait.
 | `registry-sec-links` | `current` | `institution_identity_links` (`sec_cik`), `institution_sources.sec_cik` |
 | `registry-sec-filings` | `batch-0`..`batch-7` | `institution_filings`, `holding_company_financials` |
 | `registry-beige-book` | release `YYYYMM` | `fed_beige_book` |
-| `registry-fred` | `current` | `fed_economic_indicators` (FRED-native series only) |
+| `registry-fred` | `current` | `fed_economic_indicators` (each indicator from its original publisher, `PUBLISHER_INDICATORS` in `regulatory/federal-indicators.ts`: BLS for CPI, unemployment and payrolls including each state's LAUS and CES series, BEA NIPA for real GDP, the GDP price index and the saving rate (`BEA_API_KEY`), the Fed Board's H.15 package for fed funds; FRED is no longer read, 2026-10-18. The first publisher run records `publisher_cutover_at` in the partition detail, and each run records `publisher_series`. Readers retire FRED-era rows per series (`fedIndicatorServedSql`): a series shows its FRED-era rows until its first publisher row lands; struck series and series no publisher loads are hidden at once. The step output names series `still_on_fred_era_values`. The H.15 zip (about 68 MB) is downloaded at most daily, daily while the month just ended is missing, otherwise weekly (`frbPackageDue`)) |
 | `registry-fomc-minutes` | `current` | `fed_fomc_minutes` (full text of each FOMC meeting's minutes linked from the Fed's FOMC calendar page; 8 new meetings per run until the backfill is done) |
 | `registry-fed-publications` | `current` (daily) | `fed_publications` (research, regional reports and speeches from the 12 Reserve Banks' RSS feeds, found on the Fed in Print RSS page at fedinprint.org/rss, with a few banks' own feeds as fallback; each bank's count and any failed feed are in the partition detail) |
 | `registry-federal-register` | `current` | `reg_tracker_items` (CFPB, FDIC, OCC, Fed and NCUA proposed and final rules from the Federal Register API, last 400 days; shadow mode, nothing stored, until `FEDERAL_REGISTER_TRACKER_LIVE=true`) |
 | `registry-federal-bills` | `current` (daily) | `reg_tracker_items` (bank and credit union fee bills in the current Congress from the Congress.gov API, found by title, stage from the latest action; scheduled only when `CONGRESS_GOV_API_KEY` is set; shadow mode, nothing stored, until `FEDERAL_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-bills` | `current` (hourly while states are due; each state also gets its own weekly row) | `reg_tracker_items` (12 states a run, bank and credit union fee bills from the Open States API with their stage from the action history, last 400 days; Puerto Rico is searched in Spanish; a state whose searches find nothing is probed once more and, when Open States holds no searchable bill text there in the window, its row and the step detail record `no_source_data`; scheduled only when `OPEN_STATES_API_KEY` is set; shadow mode, nothing stored, until `STATE_BILLS_TRACKER_LIVE=true`) |
 | `registry-state-regulators` | `current` | `state_regulators`, credit-union charter agency |
-| `registry-state-reg-news` | `current` (daily) | `reg_articles` source `state:XX` (each state banking and credit union regulator's press releases: the feed its home page advertises, else its news page read as article links; each agency's mode, count and fee headlines are in the partition detail; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
-| `registry-state-bill-news` | `current` (daily) | `reg_articles` source `news:XX` (Google News RSS coverage of each fee bill in the `state-bills` partition rows, plus fee legislation news for a quarter of the states each day; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
+| `registry-state-reg-news` | `current` (daily) | `reg_articles` source `state:XX` (each state banking and credit union regulator's press releases, except New York, North Carolina and Florida, whose sites allow only non-commercial use: the feed its home page advertises, else its news page read as article links; each agency's mode, count and fee headlines are in the partition detail; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
+| `registry-state-bill-news` | held: nothing scheduled (`HELD_REGISTRY_SOURCES`; Google News RSS terms unconfirmed, 2026-10-18) | `reg_articles` source `news:XX`, which no reader returns (Google News RSS coverage of each fee bill in the `state-bills` partition rows, plus fee legislation news for a quarter of the states each day; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
 | `registry-wire-research` | `current` (every 12 hours) | `reg_wire_research` (Regulatory Wire research notes: the newest federal releases, state regulator banking posts and state fee bills without a note, 20 a run (`REG_WIRE_SUMMARIES_PER_RUN`, at most 30); reads each item's own page with a plain fetch (a PDF's text layer through Rosetta's `layoutDocumentText`, first 8 pages; a scan stays unreadable) and asks `claude-haiku-4-5-20251001` (`REG_WIRE_SUMMARY_MODEL`) for a JSON summary from that text only, through `paidModelCall`; a date the text does not state is dropped in code; press is never summarised. Shadow mode until `REG_WIRE_SUMMARIES_LIVE=true`: picks and reads the items and logs them, no model call, nothing stored) |
 | `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
-- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It merges candidates round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
+- `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It runs the institution-roster sources in `PRIORITY_REGISTRY_SOURCES` (fdic-universe, ncua-financials, ffiec-overdraft) first whenever one is due, so closed-institution and merger checks keep their cadence, then merges the rest round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
 - Identity matching (`registry/identity.ts`) accepts only unambiguous names. Shared names are stored as `needs_review` and never used until a person accepts them. Links with `verified_by` set are never overwritten.
 - Operator view: `/admin/magellan/registry`. Manual queue: `POST /api/admin/registry/run` with `{ source, partition_key?, dry_run? }`.
 - Add a source: write a client in `regulatory/`, a worker in `registry/`, an entry in `REGISTRY_SOURCES` (`registry/index.ts`), a scheduler partition list, and a `narrate.ts` sentence. `run-store.ts` dispatches every `registry-*` key automatically.
@@ -560,21 +579,57 @@ fails a PR that changes one of these constants without updating its line here (#
 | `BUSINESS_SEARCH_VERSION` | — | v1 | `magellan/discovery.ts` |
 | `FRESHNESS_SEARCH_VERSION` | — | v2 | `magellan/discovery.ts` |
 | `MAGELLAN_FETCH_STRATEGY` | `fetch.http` | v2 | `magellan/fetch.ts` |
+| `HAND_SUPPLIED_STRATEGY` | `supply.hand_supplied` | v1 | `magellan/hand-supplied.ts` |
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
+| `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
 | `CENSUS_ACS_PARSER_VERSION` | — | v3 | `magellan/registry/census-acs.ts` |
 | `CFPB_PARSER_VERSION` | — | v5 | `magellan/registry/cfpb.ts` |
+| `FDIC_HISTORY_PARSER_VERSION` | — | v1 | `magellan/registry/fdic-history.ts` |
+| `FFIEC_CALL_DETAIL_PARSER_VERSION` | — | v4 (adds deposit interest expense, cost lines, total deposits and assets; v3 reads RC-O account-size labels as filed; v2 matches the bulk file's abbreviated descriptions; reads split "(1 of 2)" schedules) | `magellan/registry/ffiec-call-detail.ts` |
+| `NCUA_EXTRAS_PARSER_VERSION` | — | v3 (adds dividend expense and share mix; v2 reads AcctDesc.txt, not the trade-names file) | `magellan/registry/ncua-extras.ts` |
+| `FED_INDICATORS_PARSER_VERSION` | — | v2 (each indicator from BLS, BEA or the Fed Board, not FRED; 2026-10-18) | `magellan/registry/fed.ts` (registry-fred) |
+| `ECONOMY_PARSER_VERSION` | — | v1 | `magellan/registry/economy.ts` (14 economy sources; remittances has its own) |
+| `REMITTANCE_PARSER_VERSION` | — | v2 (reads the RPW xlsx workbook found on the World Bank data page, no env var needed; `WORLD_BANK_RPW_CSV_URL` is an optional override; refuses a file over 50 MB as `rpw_file_too_large`) | `magellan/registry/economy.ts` (world-bank-remittance-prices) |
+| `ALLTHEPLACES_PARSER_VERSION` | — | v1 | `magellan/registry/alltheplaces.ts` |
+| `GLEIF_PARSER_VERSION` | — | v1 | `magellan/registry/gleif.ts` |
+| `LEI_MATCH_PARSER_VERSION` | — | v1 | `magellan/registry/gleif-lei-match.ts` |
+| `MAKING_ENDS_MEET_PARSER_VERSION` | — | v1 (questions found by codebook wording; weight named in the codebook) | `magellan/registry/making-ends-meet.ts` |
+| `PAYDAY_REPORTS_PARSER_VERSION` | — | v1 | `magellan/registry/payday-reports.ts` |
+| `STATE_LISTS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` (shared empty-partition record; state-nonbank-lenders) |
+| `STATE_DEPOSITORIES_PARSER_VERSION` | — | v2 (Florida list removed; no state wired) | `magellan/registry/state-lists.ts` |
+| `STATE_NONBANK_LENDERS_PARSER_VERSION` | — | v1 | `magellan/registry/state-lists.ts` |
+| `URBAN_DEBT_PARSER_VERSION` | — | v2 (licence ODC-By 1.0 confirmed; rows written with their attribution) | `magellan/registry/state-lists.ts` |
+| `BANK_MERGER_ORDERS_PARSER_VERSION` | — | v1 | `magellan/registry/bank-merger-orders.ts` |
+| `SEC_MARKET_VALUE_PARSER_VERSION` | — | v1 | `magellan/registry/sec-market-value.ts` |
+| `USCOURTS_BANKRUPTCY_PARSER_VERSION` | — | v1 | `magellan/registry/uscourts-bankruptcy.ts` |
+| `USDA_FARM_PARSER_VERSION` | — | v2 (newest dated "release" zip, not the U.S.-only archive) | `magellan/registry/usda-farm.ts` |
+| `BLS_OEWS_PARSER_VERSION` | — | v1 | `magellan/registry/bls-oews.ts` |
+| `MARKET_GROWTH_PARSER_VERSION` | — | v1 | `magellan/registry/market-growth.ts` (census-permits, census-popest, irs-migration, census-bfs, bls-laus, census-lehd) |
+| `SMALLBIZ_PAYMENTS_PARSER_VERSION` | — | v2 (FedACH read from the Fed Board's page; struck sources removed) | `magellan/registry/smallbiz-payments.ts` (fed-payments) |
+| `NATIONAL_CREDIT_PARSER_VERSION` | — | v4 (national-series read from the Fed Board's H.8 package (Z.1 not read yet), charge-off and delinquency table and SLOOS chart data, not FRED; FDIC national rates dropped; v3 struck Freddie Mac PMMS and the Philadelphia Fed card series) | `magellan/registry/national-credit.ts` (national-series, nyfed-household-debt, nyfed-sce-credit, cfpb-credit-trends) |
+| `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
+| `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
+| `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
+| `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
+| `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
+| `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
+| `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
+| `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
+| `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
+| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v2 (Download control read from the bulk page; an HTML answer names the page's title, messages and form fields, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
+| `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
 | `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |
 | `STATE_BILLS_TAGGING_VERSION` | — | v6 | `magellan/registry/state-bills.ts` |
-| `STATE_ENFORCEMENT_PARSER_VERSION` | — | v6 (stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
-| `STATE_NEWS_PARSER_VERSION` | — | v2 | `magellan/registry/state-reg-news.ts` |
+| `STATE_ENFORCEMENT_PARSER_VERSION` | — | v7 (New York and North Carolina struck; v6 stated subjects, #1428) | `magellan/registry/state-enforcement.ts` |
+| `STATE_NEWS_PARSER_VERSION` | — | v3 (New York, North Carolina and Florida sites no longer read) | `magellan/registry/state-reg-news.ts` |
 | `RESTORE_FEE_PAGE_VERSION` | — | v1 | `magellan/restore-fee-page.ts` |
 | `SCHEDULE_SEARCH_STRATEGY` | `discover.paid_schedule_search` | v3 (top-10 first) | `magellan/schedule-search.ts` |
 | `SITE_SEARCH_STRATEGY` | `discover.site_search` | v1 | `magellan/second-document.ts` |

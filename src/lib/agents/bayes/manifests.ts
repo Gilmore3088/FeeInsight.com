@@ -5,8 +5,8 @@ import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
 import { FREQUENCY_FILL_VERSION } from "@/lib/agents/hamilton/frequency-fill";
 import { countCurrentCopyPairs, CURRENT_COPY_STRATEGY } from "@/lib/agents/hamilton/current-copy";
 import { countRetidyReplay, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
-import { DARWIN_VERIFY_STRATEGY } from "@/lib/agents/darwin/verify";
-import { DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
+import { DARWIN_VERIFY_STRATEGY, darwinDueSql } from "@/lib/agents/darwin/verify";
+import { DARWIN_PEER_GRADED_VERSIONS, DARWIN_PEER_STRATEGY } from "@/lib/agents/darwin/peer-checks";
 import { PUBLISHER_AGENT_NAMES } from "@/lib/agents/gutenberg/names";
 
 type SqlTag = typeof sql;
@@ -156,6 +156,61 @@ export function currentCopyCount(c: { pairs: number; done: number; queued: numbe
 }
 
 /** Name retidy: institutions with a messy live name, due now or tidied at this version. */
+/**
+ * Darwin's peer check (v5, #1112): raw fees whose latest hold came from an older peer version.
+ * A hold counts when Darwin's own selection re-decides it: it recorded `peer_version`, or its
+ * run's peer attempt was a graded version (`DARWIN_PEER_GRADED_VERSIONS`). Queued is what
+ * Darwin's due query picks up now; the ungraded v1/v2 holds are left held on purpose (#1694).
+ */
+async function countPeerRange(db: SqlTag): Promise<ReplayCount> {
+  const version = DARWIN_PEER_STRATEGY.version;
+  const [row] = await db.unsafe<Array<{ affected: number | string; done: number | string; queued: number | string; ungraded: number | string }>>(`
+    WITH old_hold AS (
+      SELECT DISTINCT ON (pa.input_fingerprint)
+             pa.input_fingerprint,
+             substring(pa.input_fingerprint from 5)::bigint AS fee_raw_id,
+             (pa.detail->>'peer_version' IS NOT NULL
+              OR EXISTS (
+                SELECT 1
+                  FROM pipeline_attempts peer
+                 WHERE peer.input_fingerprint = pa.input_fingerprint
+                   AND peer.strategy = '${DARWIN_PEER_STRATEGY.strategy}'
+                   AND peer.strategy_version IN (${DARWIN_PEER_GRADED_VERSIONS.join(", ")})
+                   AND peer.agent_run_id = pa.agent_run_id
+                   AND (peer.detail->>'peer_held')::boolean
+              )) AS graded
+        FROM pipeline_attempts pa
+       WHERE pa.strategy = '${DARWIN_VERIFY_STRATEGY.strategy}'
+         AND pa.strategy_version = ${DARWIN_VERIFY_STRATEGY.version}
+         AND pa.detail->>'reason_code' = 'peer_outlier'
+         AND COALESCE((pa.detail->>'peer_version')::int, 0) < ${version}
+       ORDER BY pa.input_fingerprint, pa.id DESC
+    )
+    SELECT COUNT(*) FILTER (WHERE graded) AS affected,
+           COUNT(*) FILTER (WHERE graded AND EXISTS (
+             SELECT 1 FROM pipeline_attempts done
+              WHERE done.input_fingerprint = old_hold.input_fingerprint
+                AND done.strategy = '${DARWIN_VERIFY_STRATEGY.strategy}'
+                AND COALESCE((done.detail->>'peer_version')::int, 0) >= ${version}
+           )) AS done,
+           COUNT(*) FILTER (WHERE graded AND EXISTS (
+             SELECT 1 FROM raw_fee_observations fr
+              WHERE fr.fee_raw_id = old_hold.fee_raw_id AND ${darwinDueSql(true)}
+           )) AS queued,
+           COUNT(*) FILTER (WHERE NOT graded) AS ungraded
+      FROM old_hold`);
+  return peerRangeCount({ affected: n(row?.affected), done: n(row?.done), queued: n(row?.queued), ungraded: n(row?.ungraded) });
+}
+
+export function peerRangeCount(c: { affected: number; done: number; queued: number; ungraded: number }): ReplayCount {
+  return {
+    affected: c.affected,
+    done: c.done,
+    queued: c.queued,
+    exclusions: c.ungraded > 0 ? { ungraded_peer_version: c.ungraded } : {},
+  };
+}
+
 async function countNameRetidy(db: SqlTag): Promise<ReplayCount> {
   return retidyCount(await countRetidyReplay(db));
 }
@@ -220,6 +275,22 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (#1868): the first LEI match rules. Every institution is checked by the gleif registry's
+  // lei-match partitions in bounded batches; nothing was matched under an earlier version.
+  LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
+  // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
+  // cursor; a few hundred rows), so there is no backlog for a replay to count.
+  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
+  // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
+  CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
+  // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
+  // pass reads every live fee whose name or line matches one of their prefilter clauses
+  // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
+  // backlog for a replay to count.
+  EVAL_VERDICT_VERSION: "Each step re-reads every live fee the eval-verdict prefilter selects (each rule shape has a clause, V8_PREFILTER for v8), and Darwin reads each new row at verify; nothing to replay.",
+  // v1 (Oct 17): a person uploads a copy of a schedule they downloaded. It runs only on an upload,
+  // so there is no backlog of older documents to read again.
+  HAND_SUPPLIED_STRATEGY: "Runs only when a person uploads a file on /admin/magellan/hand-supplied; nothing older to replay.",
   // v6 (Oct 17): an unclassified committee assignment moves a committee bill's stage date. The state
   // bills read treats a state stored under an older version as due, so its next run re-reads them.
   STATE_BILLS_TAGGING_VERSION: "The state bills read re-reads states stored under an older version on its next runs; nothing to replay.",
@@ -227,6 +298,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.
   KNOX_ACCOUNT_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; the knox.rules manifest counts the replay when KNOX_RULES_STRATEGY moves.",
+  // v7 (#1827): a price-first row keeps its own price. It moves with KNOX_RULES_STRATEGY (v79), whose
+  // knox.rules manifest counts the replay.
+  KNOX_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; it moves with KNOX_RULES_STRATEGY, whose knox.rules manifest counts the replay.",
   // v75 (Knox recall, Oct 17): raised from 26 so every current copy read before v75 is read once
   // more. It is one of the extract step's own re-read triggers, which the knox.rules manifest's
   // queue counts with the same query (`countKnoxRereadsDue`), so the replay is counted there.
@@ -262,12 +336,16 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1051): a new fetch route, not a changed rule. Its selector picks every unreachable fee
   // link each fetch step (3 a step, once a week each), so the backlog is worked by the route itself.
   ADDRESS_VARIANT_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the unreachable links it works through, so there is nothing to replay.",
+  // v1 (#1881, Oct 19): a new fetch route. Its selector picks every never-fetched saved fee link
+  // (10 a step, switch off until James says yes), so the backlog is worked by the route itself.
+  SAVED_LINK_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the never-fetched saved links it works through, so there is nothing to replay.",
   // v3 / v2 (#1326): the re-searches no longer accept the link they replace. Their selectors pick
   // every bank not yet searched at the new version, so the discover steps re-search them themselves.
   UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
   FRESHNESS_SEARCH_VERSION: "Its selector re-searches every stale link not yet searched at v2; there is nothing to replay.",
   // v1 (#1342): a new hand-started step that reads every live fee with no source link on each run.
   SOURCE_LINK_VERSION: "Its own step reads every live fee with no source link on each run; nothing to replay.",
+  SOURCE_LINK_DRIFT_VERSION: "Every publish step reads every live fee whose link opens another page than its own document; nothing to replay.",
   // v3 (#1397): the recheck reads every verified row once per version, so each verify step works
   // through the whole verified set under v3 itself (200 a step).
   // v4 (#1571, #1574): the same selector re-reads every verified row once under v4.
@@ -298,7 +376,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // Round 6 (rev12): subject-carrying tail leads, soft if/when clauses and floors, cents figures as "$",
   // a credit guard and NBSP parity in the count SQL; still shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
-  HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
+  // v2 (#1456): a fee whose name is silent on the hour is read on its own stored line too; line-only
+  // fees are written only with HOURLY_LINE_LIVE on (off). Same cursor.
+  HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name and stored line for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address
   // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.
   // v2 (#1518): lending wording on loan documents and brokerage_document (own sub-switch) as their
@@ -309,9 +389,13 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
   // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
   DOCUMENT_OWNER_STRATEGY: "A new shadow pass; its selector reads every shared or vendor-path pair not yet read at v1, and documentOwnerCountSql counts the backlog; nothing to replay.",
-  // v17 (#1646): name words match where a word begins. The version is in each institution's check
-  // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
+  // v18 (#1810): an opening deposit under an account heading is not the heading's price. The version
+  // is in each institution's check fingerprint, so every publish step's batch re-checks institutions
+  // not yet checked at v18.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
+  // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
+  STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
@@ -329,6 +413,25 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       affects: "Fees Knox reads from each current fee schedule. A rules fix reaches a text only when Knox reads it again.",
       count: countKnoxRules,
     },
+    // Counts every CATEGORY_GUARD_VERSION bump. v68 (Oct 17): returned foreign checks leave check
+    // cashing for returned deposited items, and bill pay refuses overdraft and NSF rows (#1304).
+    // v69 (Oct 17): returned foreign items leave NSF, IRA closing charges leave early closure, and
+    // the non-network ATM fee refuses non-customers' surcharges at the institution's own ATMs, ATM
+    // plans and ATM-named lines that price something else.
+    // v70 (Oct 17): card-product fees under the non-network ATM fee and card inactivity under the
+    // dormant account fee fail (takedowns held by CARD_PRODUCT_TAKEDOWN_LIVE), and skipped loan
+    // payments leave late payment and loan origination for other lending.
+    // v71 (Oct 17): the non-network ATM fee refuses another institution's card named in several words
+    // after "non-", and an ATM transaction verification re-files to account research.
+    // v72 (Oct 17, #1788): an international ATM fee re-files to card_foreign_txn, a sustained overdraft
+    // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
+    // v73 (Oct 17, #1837): a bare direction row read under another column's heading ("Check Printing:
+    // Incoming", a wire price) fails outside the categories a direction prices.
+    // v74 (Oct 19, #2018): payment investigations re-file to account research, withdrawal limits and
+    // returned mail leave account research, excess IRA withdrawals leave IRA termination, currency
+    // shipping leaves rush card, loan payments leave returned deposited items, and a withdrawal at
+    // the institution's own named ATM fails the non-network ATM fee.
+    // v75 (Oct 19, #2023, James's "Take down"): a club or holiday account withdrawal fails early closure.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
@@ -388,10 +491,9 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
       stage: "verify",
       strategy: DARWIN_PEER_STRATEGY.strategy,
       version: DARWIN_PEER_STRATEGY.version,
-      unit: "verified fee",
-      affects: "Fees whose peer-range check ran under an older version (state, tier and district peer levels).",
-      count: null,
-      notCounted: "Peer checks run with each verify; there is no shared selection of fees checked under an older peer version yet.",
+      unit: "held raw fee",
+      affects: "Fees Darwin held as peer outliers under an older peer version; v5 re-decides the graded v3/v4 holds once (#1112), and the ungraded v1/v2 holds stay held (#1694).",
+      count: countPeerRange,
     },
     {
       key: "darwin.envelopes",

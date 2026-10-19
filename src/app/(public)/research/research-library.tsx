@@ -22,14 +22,14 @@ const STUDIES: Study[] = [
   {
     href: "/research/fee-revenue-analysis",
     question: "Do institutions that publish higher fees earn more service-charge income?",
-    status: "Published so far: fee levels beside service-charge income, by asset size and by charter.",
+    status: "In Hamilton: fee levels beside service-charge income, by asset size and by charter.",
     data: (asOf) => `Fees as of ${asOf ?? "the latest refresh"}; income from each institution's latest call report.`,
     pro: true,
   },
   {
     href: "/research/market-concentration",
     question: "Are fees higher where fewer banks compete for deposits?",
-    status: "Published so far: deposit concentration (HHI) for U.S. metro areas. The comparison with fees isn't published yet.",
+    status: "In Hamilton: deposit concentration (HHI) for U.S. metro areas. The comparison with fees isn't published yet.",
     data: () => `Deposits from the FDIC Summary of Deposits, ${MARKET_CONCENTRATION_YEAR}.`,
     pro: true,
   },

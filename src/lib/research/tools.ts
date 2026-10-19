@@ -5,7 +5,8 @@ import {
   getFeeCategorySummaries,
   getFeeCategoryDetail,
 } from "@/lib/data-store";
-import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
+import { getNationalIndexStamped, getPeerIndexStamped } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
 import {
   getInstitutionById,
   getFeesByInstitution,
@@ -19,6 +20,7 @@ import {
 import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution";
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
+import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
 
 /**
  * Public tools — wrap the same logic as /api/v1/ routes but call DB directly
@@ -48,9 +50,7 @@ export const searchFees = tool({
         family: getFeeFamily(category),
         tier: getFeeTier(category),
         summary: {
-          institution_count: new Set(
-            detail.fees.map((f) => f.institution_id)
-          ).size,
+          institution_count: countedInstitutionCount(detail.fees),
           observation_count: detail.fees.length,
         },
         by_charter_type: detail.by_charter_type,
@@ -99,8 +99,8 @@ export const searchIndex = tool({
   execute: async ({ state, charter, district }) => {
     const hasFilters = state || charter || district;
 
-    const entries = hasFilters
-      ? await getPeerIndex({
+    const { entries, stamp } = hasFilters
+      ? await getPeerIndexStamped({
           state_code: state?.toUpperCase(),
           charter_type: charter,
           fed_districts: district
@@ -110,11 +110,13 @@ export const searchIndex = tool({
                 .filter((d) => d >= 1 && d <= 12)
             : undefined,
         })
-      : await getNationalIndex();
+      : await getNationalIndexStamped();
 
     return {
       scope: hasFilters ? "filtered" : "national",
       filters: { state: state ?? null, charter: charter ?? null, district: district ?? null },
+      // #1924: which read these figures came from, so an answer can cite the stamp.
+      dataset: datasetCitation(stamp),
       total: entries.length,
       data: entries.map((e) => ({
         category: e.fee_category,

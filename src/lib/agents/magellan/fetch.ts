@@ -27,6 +27,7 @@ import { classifyFetchFailure, countOutcomes, type AttemptOutcome } from "@/lib/
 import { runCompanionFetch, type RunCompanionFetchResult } from "./companion-fetch";
 import { addOperatorSchedules, OPERATOR_SCHEDULE_STRATEGY, OPERATOR_SCHEDULES, type OperatorScheduleResult } from "./operator-schedules";
 import { isErrorPageLink } from "./link-coverage";
+import { normalizeDocumentUrl } from "@/lib/agents/answer-key-score";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -72,6 +73,8 @@ export interface FetchCandidateRow {
 /** The last stored copy of an institution's fee document, for conditional requests. */
 interface PreviousDocument {
   id: number | null;
+  /** The address this copy was stored under; null when unknown (the profile's last hash). */
+  url: string | null;
   contentHash: string | null;
   etag: string | null;
   lastModified: string | null;
@@ -123,6 +126,11 @@ export interface RunMagellanFetchOptions {
    * MAGELLAN_STALE_LINK_REFETCH_DAYS ago (hourly backlog runs).
    */
   newLinksOnly?: boolean;
+  /**
+   * The fee link a person asked for (an admin extract's `fee_schedule_url`, #1881). When it is the
+   * bank's saved link, it is fetched instead of the profile's remembered address.
+   */
+  requestedUrl?: string | null;
   dryRun?: boolean;
   db?: SqlTag;
   fetchImpl?: Fetcher;
@@ -216,6 +224,23 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/**
+ * Validators (ETag, Last-Modified) belong to one address. The previous copy is the bank's latest
+ * stored document, which is often another page: a checking page's May 2026 Last-Modified sent
+ * with a request for a fee PDF dated January 2025 gets a 304, and the PDF is never stored.
+ * Dupaco's new schedule link was logged "unchanged" against its checking page this way
+ * (2026-10-13 and 10-15). Over Oct 3-17, 219 fetches at 219 banks were answered 304 for
+ * another page's copy; 75 of those addresses have no stored copy at all. Pure.
+ */
+export function sendsValidators(
+  previous: { url: string | null; contentHash: string | null; etag: string | null; lastModified: string | null } | null,
+  url: string,
+): boolean {
+  if (!previous?.contentHash || !(previous.etag || previous.lastModified)) return false;
+  const stored = normalizeDocumentUrl(previous.url);
+  return stored != null && stored === normalizeDocumentUrl(url);
+}
+
 async function fetchWithTimeout(
   fetchImpl: Fetcher,
   url: string,
@@ -228,8 +253,10 @@ async function fetchWithTimeout(
     Accept: "text/html,application/pdf;q=0.9,text/plain;q=0.8,*/*;q=0.5",
   };
   // Conditional GET: a 304 means the stored copy is current and costs no download.
-  if (previous?.contentHash && previous.etag) headers["If-None-Match"] = previous.etag;
-  if (previous?.contentHash && previous.lastModified) headers["If-Modified-Since"] = previous.lastModified;
+  if (previous && sendsValidators(previous, url)) {
+    if (previous.etag) headers["If-None-Match"] = previous.etag;
+    if (previous.lastModified) headers["If-Modified-Since"] = previous.lastModified;
+  }
   try {
     return await fetchImpl(url, {
       signal: controller.signal,
@@ -303,7 +330,8 @@ async function fetchCandidate(
     lastModified: response.headers.get("last-modified"),
   };
 
-  if (response.status === 304 && previous?.contentHash) {
+  // Only a 304 to our own validators means "this copy": without them it says nothing about it.
+  if (response.status === 304 && previous?.contentHash && sendsValidators(previous, sourceUrl)) {
     return finish({
       ...headerFields,
       outcome: "unchanged",
@@ -511,6 +539,7 @@ async function loadPreviousDocument(
   const fromProfile: PreviousDocument | null = row.profile_last_source_hash
     ? {
         id: row.profile_last_document_id == null ? null : Number(row.profile_last_document_id),
+        url: null,
         contentHash: row.profile_last_source_hash,
         etag: null,
         lastModified: null,
@@ -520,7 +549,7 @@ async function loadPreviousDocument(
   if (!learning) return fromProfile;
   const [latest] = vaultSchema
     ? await db`
-    SELECT id, content_hash, etag, last_modified, document_r2_key
+    SELECT id, document_url, content_hash, etag, last_modified, document_r2_key
       FROM source_documents
      WHERE institution_id = ${Number(row.id)}
        AND status = 'success'
@@ -529,7 +558,7 @@ async function loadPreviousDocument(
      LIMIT 1
   `
     : await db`
-    SELECT id, content_hash, etag, last_modified
+    SELECT id, document_url, content_hash, etag, last_modified
       FROM source_documents
      WHERE institution_id = ${Number(row.id)}
        AND status = 'success'
@@ -540,6 +569,7 @@ async function loadPreviousDocument(
   if (!latest) return fromProfile;
   return {
     id: Number(latest.id),
+    url: latest.document_url == null ? null : String(latest.document_url),
     contentHash: String(latest.content_hash),
     etag: latest.etag == null ? null : String(latest.etag),
     lastModified: latest.last_modified == null ? null : String(latest.last_modified),
@@ -625,6 +655,26 @@ async function findDocumentWithContent(db: SqlTag, institutionId: number, conten
      LIMIT 1
   `;
   return existing?.id == null ? null : Number(existing.id);
+}
+
+/**
+ * A side copy's fetch result (`FetchLinkContext.keepRemembered`): new bytes are stored as a document
+ * and bytes the bank already has match that document; nothing on the bank itself changes, and a
+ * failed fetch writes no document row.
+ */
+async function recordSideCopy(db: SqlTag, result: FetchResult): Promise<number | null> {
+  if (result.outcome === "unchanged") return result.previousDocumentId;
+  if (result.outcome !== "success" || !result.contentHash) return null;
+  const existingId = await findDocumentWithContent(db, result.institutionId, result.contentHash);
+  if (existingId != null) {
+    await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = ${existingId}`;
+    result.outcome = "unchanged";
+    result.attemptOutcome = "unchanged";
+    result.previousDocumentId = existingId;
+    result.reusedDocument = true;
+    return existingId;
+  }
+  return insertSourceDocument(db, result, true);
 }
 
 /** Writes the fetch result; returns the source document it created or matched. */
@@ -865,6 +915,12 @@ export interface FetchLinkContext {
   costMicrousd?: number;
   /** Extra detail for the attempt log (the paid fetch's own error). */
   note?: string | null;
+  /**
+   * A copy fetched beside the bank's own link (`saved-link-fetch.ts`): a stored document only.
+   * The bank's remembered address, failure count, playbook and saved link are left as they are, a
+   * gone link is not sent back to discovery, and a failed fetch stores no document row.
+   */
+  keepRemembered?: boolean;
 }
 
 /**
@@ -883,12 +939,14 @@ export async function fetchAndRecordLink(
   const previous = await loadPreviousDocument(db, row, learning, vaultSchema);
   const result = await fetchCandidate(row, fetchImpl, previous);
   if (dryRun) return { result, sourceDocumentId: null, supersededCopies };
-  const sourceDocumentId = await recordFetchResult(db, result, learning);
-  // The copy this fetch stored or confirmed is the page's current one.
-  if (result.outcome === "success" || result.outcome === "unchanged") {
+  const sourceDocumentId = ctx.keepRemembered ? await recordSideCopy(db, result) : await recordFetchResult(db, result, learning);
+  // The copy this fetch stored or confirmed is the page's current one. A side copy marks only a
+  // document it stored itself: bytes it matched belong to another page's stream (often an old copy
+  // of the remembered page), and marking that one current would roll its page back.
+  if (ctx.keepRemembered ? result.outcome === "success" : result.outcome === "success" || result.outcome === "unchanged") {
     supersededCopies += await markCurrentCopy(db, sourceDocumentId);
   }
-  if (linkIsGone(result)) {
+  if (!ctx.keepRemembered && linkIsGone(result)) {
     if (isErrorPageLink(result.sourceUrl)) result.reason = "Link is the site's error page, not a fee schedule";
     result.sentBackToDiscovery = await sendGoneLinkToDiscovery(db, result, row.fee_schedule_url);
   }
@@ -911,6 +969,8 @@ export async function fetchAndRecordLink(
       durationMs: result.durationMs,
       runId: ctx.runId,
       stepId: ctx.stepId,
+      // A side copy is not the bank's own fetch: its outcome stays out of the bank's playbook.
+      foldIntoPlaybook: !ctx.keepRemembered,
       detail: {
         url: result.finalUrl ?? result.sourceUrl,
         status_code: result.statusCode,
@@ -924,6 +984,32 @@ export async function fetchAndRecordLink(
     });
   }
   return { result, sourceDocumentId, supersededCopies };
+}
+
+/**
+ * Pure: the candidate as a person's extract asked for it (#1881). The profile's remembered address
+ * wins over the saved link at fetch time, and an admin's new link only changed the saved one, so
+ * Texas Capital's extract on Oct 18 (run 8472, its current PDF) re-read the old page. When the
+ * requested link is the bank's saved link, the remembered address is set aside for this fetch; the
+ * fetch then remembers the new page itself (unless a correction locks the profile).
+ */
+export function withRequestedUrl(row: FetchCandidateRow, institutionId?: number, requestedUrl?: string | null): FetchCandidateRow {
+  if (institutionId == null || Number(row.id) !== institutionId) return row;
+  const requested = normalizeHttpUrl(requestedUrl ?? null);
+  if (!requested || requested !== normalizeHttpUrl(row.fee_schedule_url)) return row;
+  // A remembered spelling of the same page (`?print=1`, no `:443`, https or `www`) is kept.
+  const remembered = normalizeHttpUrl(row.profile_canonical_source_url ?? null);
+  if (!remembered || samePage(remembered, requested)) return row;
+  return { ...row, profile_canonical_source_url: null };
+}
+
+/** Same host (without `www.`) and path (without a trailing slash); scheme, port and query aside. */
+export function samePage(a: string, b: string): boolean {
+  const key = (value: string) => {
+    const url = new URL(value);
+    return `${url.hostname.toLowerCase().replace(/^www\./, "")}${url.pathname.replace(/\/+$/, "")}`;
+  };
+  return key(a) === key(b);
 }
 
 export async function runMagellanFetch(
@@ -941,7 +1027,8 @@ export async function runMagellanFetch(
 
   const results: FetchResult[] = [];
   let supersededCopies = 0;
-  for (const row of rows) {
+  for (const candidate of rows) {
+    const row = withRequestedUrl(candidate, options.institutionId, options.requestedUrl);
     const fetched = await fetchAndRecordLink(db, row, fetchImpl, {
       learning,
       vaultSchema,

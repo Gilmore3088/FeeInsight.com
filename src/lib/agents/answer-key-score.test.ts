@@ -4,6 +4,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
   amountMatches,
+  keyFeesForVersion,
   normalizeDocumentUrl,
   rawCanonicalHint,
   scoreAnswerKey,
@@ -80,7 +81,7 @@ describe("rawCanonicalHint", () => {
 });
 
 describe("scoreAnswerKey", () => {
-  it.each([1, 2, 3, 4] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
+  it.each([1, 2, 3, 4, 5] as const)("scores a perfect pipeline at precision and recall 1 on every stage (v%i)", (version) => {
     const score = scoreAnswerKey([ENTRY], new Map([[7, evidence()]]), version);
     expect(score.scorerVersion).toBe(version);
     expect(score.overall).toMatchObject({ precision: 1, recall: 1, expected: 4 });
@@ -272,5 +273,30 @@ describe("scoreAnswerKey", () => {
       stepKey: "scoreboard-snapshot",
       stateCode: null,
     })).toBe("Recorded the daily scoreboard: coverage 50.0%, accuracy n/a precision.");
+  });
+});
+
+describe("scorer v5: the key read in today's taxonomy (#1398 split)", () => {
+  const key: ConfirmedAnswerKeyEntry = {
+    ...ENTRY,
+    fees: [
+      { canonicalKey: "account_research", amount: 5, amountKind: "fixed", sourceLine: "Return Mail | $5.00/piece" },
+      { canonicalKey: "account_research", amount: 25, amountKind: "fixed", sourceLine: "Account Research (per hour) | $25.00" },
+    ],
+  };
+  const live = [
+    { canonicalKey: "returned_mail", amount: 5, sourceDocumentId: 11 },
+    { canonicalKey: "account_research", amount: 25, sourceDocumentId: 11 },
+  ];
+
+  it("files a key line under the category the live split gives its printed line", () => {
+    expect(keyFeesForVersion(key.fees, 5).map((fee) => fee.canonicalKey)).toEqual(["returned_mail", "account_research"]);
+    expect(keyFeesForVersion(key.fees, 4)).toBe(key.fees);
+  });
+
+  it("scores a re-filed fee right under v5 and wrong under v4", () => {
+    const byId = new Map([[7, evidence({ knox: live, darwin: live, hamilton: live })]]);
+    expect(scoreAnswerKey([key], byId, 4).byStage.hamilton.correct).toBe(1);
+    expect(scoreAnswerKey([key], byId, 5).byStage.hamilton.correct).toBe(2);
   });
 });

@@ -1,5 +1,5 @@
 import { sql } from "./connection";
-import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeFeesBy, valuePerInstitution, type StatsInputRow } from "./fee-stats";
+import { COUNT_SHARED_SCHEDULE_ONCE, STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, countedValuePerInstitution, summarizeFeesBy, type StatsInputRow } from "./fee-stats";
 import { consumerPriceMoveSql } from "./consumer-price-moves";
 import type { FeeReview } from "./types";
 import { institutionDisplayName } from "@/lib/institution-display-name";
@@ -95,6 +95,14 @@ export function computePercentile(sorted: number[], p: number): number {
   return loValue + (idx - lo) * (Number(sorted[hi]) - loValue);
 }
 
+/**
+ * Rounds to cents, half up, on the decimal value: a median of $4.22 and $4.23 is $4.225, which
+ * binary floating point holds as 4.22499..., so plain Math.round(x * 100) / 100 gave $4.22.
+ */
+export function roundCents(x: number): number {
+  return Math.round(Number(`${x.toFixed(6)}e2`)) / 100;
+}
+
 export function computeStats(amounts: number[]): {
   min: number | null;
   max: number | null;
@@ -110,10 +118,10 @@ export function computeStats(amounts: number[]): {
   return {
     min: sorted[0],
     max: sorted[sorted.length - 1],
-    avg: Math.round((sorted.reduce((s, v) => s + v, 0) / sorted.length) * 100) / 100,
-    median: Math.round(computePercentile(sorted, 50) * 100) / 100,
-    p25: Math.round(computePercentile(sorted, 25) * 100) / 100,
-    p75: Math.round(computePercentile(sorted, 75) * 100) / 100,
+    avg: roundCents(sorted.reduce((s, v) => s + v, 0) / sorted.length),
+    median: roundCents(computePercentile(sorted, 50)),
+    p25: roundCents(computePercentile(sorted, 25)),
+    p75: roundCents(computePercentile(sorted, 75)),
   };
 }
 
@@ -405,7 +413,8 @@ export async function getFeeCategoryDetail(category: string): Promise<{
     LIMIT 50
   ` as FeeChangeEvent[];
 
-  const perInstitution = valuePerInstitution(sourcedFees);
+  // The median's own population (summarizeFees): sister charters of one shared schedule count once.
+  const perInstitution = countedValuePerInstitution(sourcedFees);
   const markets = new Map<number, Omit<InstitutionPoint, "value">>();
   for (const f of rawFees) {
     const id = Number(f.institution_id);
@@ -551,6 +560,9 @@ export interface IndexRow {
   amount: number;
   charter_type: string;
   state_code: string | null;
+  /** Rule 7 (fee-stats.ts): the schedule the row was read from, so sibling charters count once. */
+  schedule_keys?: string[] | null;
+  schedule_group?: string | null;
 }
 
 /**
@@ -560,7 +572,8 @@ export interface IndexRow {
  */
 export async function getIndexRows(category: string): Promise<IndexRow[]> {
   const rows = (await sql`
-    SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount, ct.charter_type, ct.state_code
+    SELECT ef.id, ef.institution_id, ct.institution_name, ef.amount, ct.charter_type, ct.state_code,
+           ${sql.unsafe(STATS_SCHEDULE_KEYS)}
       FROM published_fee_catalog ef
       JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ${category} AND ef.review_status = 'approved'
@@ -574,6 +587,8 @@ export async function getIndexRows(category: string): Promise<IndexRow[]> {
     amount: Number(r.amount),
     charter_type: String(r.charter_type),
     state_code: r.state_code == null ? null : String(r.state_code),
+    schedule_keys: Array.isArray(r.schedule_keys) ? (r.schedule_keys as unknown[]).map(String) : null,
+    schedule_group: r.schedule_group == null ? null : String(r.schedule_group),
   }));
 }
 

@@ -4,6 +4,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
+import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
 import { checkFeeAgainstSource, checkRateAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { isPercentFee, ratePercentOf, type RateFields } from "@/lib/percent-fees";
@@ -63,7 +64,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // under "Fee through | Fee as of") is what the fee was, not the fee now (Jeanne D'Arc, Oct 8).
 // Version 17: a fee name's words are matched where a word begins, and a short word ("Star") only
 // as that word or its plural, so "Star Checking" no longer traces to "getting started" (#1646).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 17 } as const;
+// Version 18: an opening deposit printed under an account heading ("Now Checking" / "$1,000.00
+// opening deposit required") is not the heading's price, so a name composed from that heading
+// traces, and a fee whose only price was an opening deposit no longer does (#1810).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 18 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -511,7 +515,7 @@ export async function takeDownUntraceableFees(
   try {
     await inSavepoint(db, async (scope) => {
       if (relinks.length > 0) {
-        await scope`
+        const relinked = await scope<{ fee_raw_id: number | string }[]>`
           UPDATE raw_fee_observations fr
              SET source_document_id = link.source_document_id
             FROM unnest(${relinks.map((link) => link.feeRawId)}::bigint[], ${relinks.map((link) => link.sourceDocumentId)}::bigint[])
@@ -525,7 +529,10 @@ export async function takeDownUntraceableFees(
                   AND other.source_document_id = link.source_document_id
                   AND other.fee_name = fr.fee_name
              )
+          RETURNING fr.fee_raw_id
         `;
+        // #1347: a relinked fee takes its new document's link, never the old document's.
+        await pointFeeLinksAtDocument(scope as SqlTag, relinked.map((row) => Number(row.fee_raw_id)));
       }
       if (restores.length > 0) {
         // A restore never makes an exact second copy of a fee that is live again.

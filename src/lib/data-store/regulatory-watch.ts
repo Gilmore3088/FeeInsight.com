@@ -9,13 +9,15 @@
  */
 import { sql } from "./connection";
 import { getLocalMarketMembers } from "./custom-report-market";
-import { getFeeValuesForInstitutions, getInstitutionFeeValues } from "./fee-index";
+import { STRUCK_ENFORCEMENT_AGENCIES } from "./struck-sources";
+import { getFeeValuesForInstitutions, getInstitutionOwnFees } from "./fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { trackerStage, type TrackerStage } from "@/lib/regulatory/federal-register";
 import { isOpenAction } from "./registry-profile";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
 import { ALL_FEE_TOPICS, TOPIC_CATEGORIES } from "@/lib/regulatory/fee-topics";
+import type { InstitutionOwnFee } from "@/lib/own-fee";
 
 /** Actions that began within this many years are shown. */
 export const WATCH_ACTION_YEARS = 3;
@@ -51,7 +53,11 @@ export interface WatchPeerAction {
 export interface WatchFeeTie {
   fee_category: string;
   display_name: string;
-  amount: number;
+  /** The price the schedule states; null when it states several different fees in the category. */
+  amount: number | null;
+  /** The lowest and highest of its fees in the category (equal when it states one). */
+  amount_low: number;
+  amount_high: number;
   /** Median of sourced consumer competitor fees; null below the shared minimum sample. */
   market_median: number | null;
   market_count: number;
@@ -164,16 +170,58 @@ export const FOCUS_CATEGORIES: readonly string[] = [
 ];
 const FOCUS_SHOWN = 6;
 
-/** The focus fees the institution publishes that the market also prices, in FOCUS_CATEGORIES order. */
+/** An institution's own fee in a category: a stated price, or the reader's own fee with its range. */
+export type OwnFeeInput = number | Pick<InstitutionOwnFee, "price" | "low" | "high">;
+type OwnTie = Pick<InstitutionOwnFee, "price" | "low" | "high">;
+
+function ownTie(fee: OwnFeeInput): OwnTie {
+  return typeof fee === "number" ? { price: fee, low: fee, high: fee } : fee;
+}
+
+function tie(category: string, fee: OwnTie, marketMedians: ReadonlyMap<string, { median: number | null; count: number }>): WatchFeeTie {
+  return {
+    fee_category: category,
+    display_name: getDisplayName(category),
+    amount: fee.price,
+    amount_low: fee.low,
+    amount_high: fee.high,
+    market_median: marketMedians.get(category)?.median ?? null,
+    market_count: marketMedians.get(category)?.count ?? 0,
+  };
+}
+
+/**
+ * The institution's fees in these categories, largest first. A category where it states
+ * several different fees is tied by its range: the item still touches those fees (#1913).
+ */
+function tiesFor(
+  ownFees: ReadonlyMap<string, OwnFeeInput>,
+  keep: (category: string) => boolean,
+  limit: number,
+  marketMedians: ReadonlyMap<string, { median: number | null; count: number }>,
+): WatchFeeTie[] {
+  return [...ownFees.entries()]
+    .map(([category, fee]) => [category, ownTie(fee)] as const)
+    .filter(([category]) => keep(category))
+    .sort((a, b) => b[1].high - a[1].high || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+    .map(([category, fee]) => tie(category, fee, marketMedians));
+}
+
+/**
+ * The focus fees the institution publishes that the market also prices, in FOCUS_CATEGORIES
+ * order. Only a stated price is set against the market median.
+ */
 export function focusFees(
-  ownFees: ReadonlyMap<string, number>,
+  ownFees: ReadonlyMap<string, OwnFeeInput>,
   marketMedians: ReadonlyMap<string, { median: number | null; count: number }>,
 ): WatchFeeTie[] {
   return FOCUS_CATEGORIES.flatMap((category) => {
-    const amount = ownFees.get(category);
+    const fee = ownFees.get(category);
     const market = marketMedians.get(category);
-    if (amount === undefined || !market || market.median === null) return [];
-    return [{ fee_category: category, display_name: getDisplayName(category), amount, market_median: market.median, market_count: market.count }];
+    if (fee === undefined || !market || market.median === null) return [];
+    const own = ownTie(fee);
+    return own.price === null ? [] : [tie(category, own, marketMedians)];
   }).slice(0, FOCUS_SHOWN);
 }
 
@@ -186,48 +234,29 @@ export { TOPIC_CATEGORIES };
  */
 export function feesTouched(
   topics: readonly string[],
-  ownFees: ReadonlyMap<string, number>,
+  ownFees: ReadonlyMap<string, OwnFeeInput>,
   marketMedians: ReadonlyMap<string, { median: number | null; count: number }>,
 ): { fees: WatchFeeTie[]; all_fees: boolean } {
   const allFees = topics.some((topic) => ALL_FEE_TOPICS.has(topic));
   const categories = new Set<string>();
   for (const topic of topics) for (const category of TOPIC_CATEGORIES[topic] ?? []) categories.add(category);
-  const picked = [...ownFees.entries()]
-    .filter(([category]) => allFees || categories.has(category))
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, allFees && categories.size === 0 ? 3 : 6);
   return {
     all_fees: allFees,
-    fees: picked.map(([category, amount]) => ({
-      fee_category: category,
-      display_name: getDisplayName(category),
-      amount,
-      market_median: marketMedians.get(category)?.median ?? null,
-      market_count: marketMedians.get(category)?.count ?? 0,
-    })),
+    fees: tiesFor(ownFees, (category) => allFees || categories.has(category), allFees && categories.size === 0 ? 3 : 6, marketMedians),
   };
 }
 
 /** A state law's fee ties: its named categories, or every fee for disclosure and notice rules. */
 export function stateLawFees(
   law: Pick<StateLawInput, "topic" | "applies_to">,
-  ownFees: ReadonlyMap<string, number>,
+  ownFees: ReadonlyMap<string, OwnFeeInput>,
   marketMedians: ReadonlyMap<string, { median: number | null; count: number }>,
 ): { fees: WatchFeeTie[]; all_fees: boolean } {
   const allFees = law.applies_to.length === 0 && law.topic === "fee_change_notice";
   // A disclosure rule touches every fee alike, so no single fee is named.
-  const picked = allFees
-    ? []
-    : [...ownFees.entries()].filter(([category]) => law.applies_to.includes(category)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 6);
   return {
     all_fees: allFees,
-    fees: picked.map(([category, amount]) => ({
-      fee_category: category,
-      display_name: getDisplayName(category),
-      amount,
-      market_median: marketMedians.get(category)?.median ?? null,
-      market_count: marketMedians.get(category)?.count ?? 0,
-    })),
+    fees: allFees ? [] : tiesFor(ownFees, (category) => law.applies_to.includes(category), 6, marketMedians),
   };
 }
 
@@ -291,7 +320,9 @@ export async function getRegulatoryWatch(
 
   const [loaded, holdings] = await Promise.all([
     sql<{ agency: string; fetched_at: unknown }[]>`
-      SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions GROUP BY agency`,
+      SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions
+       WHERE agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+       GROUP BY agency`,
     peerIds.length > 0
       ? sql<{ id: number; holding_company_name: string }[]>`
           SELECT id, holding_company_name FROM institution_sources
@@ -311,6 +342,8 @@ export async function getRegulatoryWatch(
                  start_date, termination_date, penalty_amount, document_url
             FROM institution_enforcement_actions
            WHERE (institution_id = ANY(${peerIds}) OR holding_company = ANY(${holdingNames}))
+             -- Struck states' orders (DECISIONS.md "No non-commercial data") are never read.
+             AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
              AND start_date >= ${since.toISOString().slice(0, 10)}
            ORDER BY start_date DESC NULLS LAST, id DESC`
       : [];
@@ -365,7 +398,8 @@ export async function getRegulatoryWatch(
     sql<{ n: number }[]>`SELECT COUNT(*)::int AS n FROM reg_tracker_items WHERE source = 'open_states'`,
   ]);
 
-  const ownFees = await getInstitutionFeeValues(institutionId).catch(() => new Map<string, number>());
+  // Each fee category the schedule lists, with its stated price or, for several different fees, its range (#1913).
+  const ownFees = await getInstitutionOwnFees(institutionId).catch(() => new Map<string, InstitutionOwnFee>());
   const peerFees = feePeerIds.length > 0 && ownFees.size > 0
     ? await getFeeValuesForInstitutions(feePeerIds, [...ownFees.keys()]).catch(() => new Map<number, Map<string, number>>())
     : new Map<number, Map<string, number>>();

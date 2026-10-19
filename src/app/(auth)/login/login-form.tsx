@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { resetSessionChrome } from "@/components/use-session-chrome";
 import { loginAction } from "./actions";
 import { useHydrated } from "@/lib/use-hydrated";
+import {
+  UTILITY_FORM,
+  UTILITY_INPUT,
+  UTILITY_LABEL,
+  UTILITY_SUBMIT,
+  utilityNotice,
+} from "@/components/utility/form-style";
 
 interface LoginFormProps {
   redirectTo: string;
@@ -40,15 +47,15 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
   }
 
   return (
-    <form method="post" onSubmit={handleSubmit} className="bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
+    <form method="post" onSubmit={handleSubmit} className={UTILITY_FORM}>
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+        <div role="alert" className={utilityNotice("error")}>
           {error}
         </div>
       )}
 
       <div>
-        <label htmlFor="username" className="block text-sm font-medium text-ink mb-1">
+        <label htmlFor="username" className={UTILITY_LABEL}>
           Work email
         </label>
         <input
@@ -58,18 +65,18 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
           inputMode="email"
           required
           autoComplete="username"
-          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent"
+          className={UTILITY_INPUT}
         />
       </div>
 
       <div>
-        <div className="mb-1 flex items-center justify-between">
-          <label htmlFor="password" className="block text-sm font-medium text-ink">
+        <div className="mb-1.5 flex items-center justify-between">
+          <label htmlFor="password" className="block text-[13px] font-medium text-ink">
             Password
           </label>
           <a
             href={forgotPasswordHref}
-            className="text-xs font-medium text-ink-muted hover:text-ink hover:underline"
+            className="text-[13px] font-medium text-brick underline-offset-2 hover:underline"
           >
             Forgot password?
           </a>
@@ -80,14 +87,14 @@ export function LoginForm({ redirectTo, forgotPasswordHref }: LoginFormProps) {
           type="password"
           required
           autoComplete="current-password"
-          className="w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent"
+          className={UTILITY_INPUT}
         />
       </div>
 
       <button
         type="submit"
         disabled={pending || !hydrated}
-        className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className={UTILITY_SUBMIT}
       >
         {pending ? "Signing in..." : "Sign in"}
       </button>

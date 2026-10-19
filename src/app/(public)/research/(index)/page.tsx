@@ -1,4 +1,11 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown
+ * invalidates the public read cache its reads carry (#1811). The page reads no session,
+ * cookies or search params; the header's signed-in parts are client islands. A render
+ * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { STATE_NAMES, US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
@@ -13,8 +20,8 @@ import type { ArticleSummary } from "@/lib/data-store/articles";
 import type { StateFeeIndexes } from "@/lib/data-store";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { getStatesForDistrict } from "@/lib/us-map-paths";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessAllCategories } from "@/lib/access";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { softRead } from "@/lib/soft-read";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { STATE_FINDING_MIN_INSTITUTIONS } from "@/lib/research-report/state-findings";
 import { ResearchHero, ResearchSectionNav } from "../research-hero";
@@ -44,15 +51,6 @@ const DISTRICT_IDS = Array.from({ length: 12 }, (_, i) => i + 1);
 /** Alaska, Hawaii and the territories sit in insets or off the map, so they don't place a district's label. */
 const OFF_MAINLAND = new Set(["AK", "HI", "PR", "VI", "GU", "AS", "MP"]);
 
-async function loadArticles(): Promise<ArticleSummary[]> {
-  try {
-    return await getPublishedArticleSummariesCached(ARTICLE_LIMIT);
-  } catch {
-    // The article list is optional; a failed read hides it rather than failing the page.
-    return [];
-  }
-}
-
 /**
  * District 7's size-weighted center falls on Lake Michigan, so its number sits on Illinois's
  * label point instead.
@@ -80,22 +78,29 @@ function sentenceStart(key: string): string {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-export default async function ResearchHubPage({ searchParams }: { searchParams: Promise<{ fee?: string | string[] }> }) {
-  const params = await searchParams;
-  const user = await getCurrentUser();
-  // The districts exhibit prints each district page's opening line for the same reader.
-  const showAllCategories = canAccessAllCategories(user);
+export default async function ResearchHubPage() {
+  // The page renders what a signed-out reader sees, so it can be cached for everyone.
+  const showAllCategories = false;
 
   // All reads are served from the public cache between publishes. Counts and benchmarks
   // come from one shared snapshot, so they match the homepage and fee index.
-  const [{ summary, categories: summaries }, coverage, articles, nationalIndex, districtIndexes, sampleLive] = await Promise.all([
+  // The coverage read is required: without it the page would state a wrong state count, so a
+  // failure goes to the error boundary. A failed optional read hides its part, and the render
+  // is cached for a minute, not an hour.
+  const [{ summary, categories: summaries }, coverage, articlesRead, nationalIndex, districtReads, sampleRead] = await Promise.all([
     getPublicSnapshot(),
     getResearchCoverageCached(),
-    loadArticles(),
+    softRead(getPublishedArticleSummariesCached(ARTICLE_LIMIT), [] as ArticleSummary[]),
     getPublicNationalIndex(),
-    Promise.all(DISTRICT_IDS.map((id) => getDistrictFeeIndexesCached(id).catch((): StateFeeIndexes | null => null))),
-    sampleReportAvailable().catch(() => false),
+    Promise.all(DISTRICT_IDS.map((id) => softRead(getDistrictFeeIndexesCached(id), null as StateFeeIndexes | null))),
+    softRead(sampleReportAvailable(), false),
   ]);
+  const articles = articlesRead.value;
+  const districtIndexes = districtReads.map((r) => r.value);
+  const sampleLive = sampleRead.value;
+  if (!summary.complete || summaries.length === 0 || articlesRead.failed || sampleRead.failed || districtReads.some((r) => r.failed)) {
+    await shortenPageLife();
+  }
 
   const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
   const placeStates = statesWithFees
@@ -124,8 +129,7 @@ export default async function ResearchHubPage({ searchParams }: { searchParams: 
   const mapFees: MapFee[] = hubFeeKeys(showAllCategories)
     .filter((key) => openings.filter((o) => o.opening && feeSide(o.opening, key) !== null).length >= DISTRICT_IDS.length / 2)
     .map((key) => ({ key, name: sentenceStart(key) }));
-  const requestedFee = Array.isArray(params.fee) ? params.fee[0] : params.fee;
-  const initialFee = mapFees.find((f) => f.key === requestedFee)?.key ?? mapFees[0]?.key ?? "overdraft";
+  const initialFee = mapFees[0]?.key ?? "overdraft";
   const districts: DistrictCard[] = openings.map(({ id, name, indexes, opening }) => ({
     id,
     name,

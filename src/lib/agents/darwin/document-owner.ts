@@ -53,8 +53,10 @@ type SqlTag = typeof sql;
  * banks' names.
  *
  * Each pair is read once per version, mode and text hash (`documentOwnerFingerprint`), and a
- * step skips the scoped read when the last one selected no pair and no text or live fee has
- * arrived since. With the takedown on, `other_bank` pairs are re-read under their own cap for the
+ * step skips the scoped read when the last one selected no pair and no text, verified row or live
+ * fee has arrived since. Pairs whose recently verified rows are not live yet are read too, and
+ * first (`DOCUMENT_OWNER_PENDING_DAYS`), so publish refuses their rows before they are live
+ * (`documentOwnerRefusalsSql`; takedowns at the source, 2026-10-17). With the takedown on, `other_bank` pairs are re-read under their own cap for the
  * second look, and pairs that pass clear their pending flags.
  *
  * Shadow first (CLAUDE.md standing rule, DECISIONS 2026-10-15): with
@@ -70,12 +72,13 @@ export const DOCUMENT_OWNER_REASON = "document_owner";
 export const DOCUMENT_OWNER_FLAG = "document_owner";
 export const DOCUMENT_OWNER_PAIR_LIMIT = 25;
 /**
- * Default-off switch. Off: shadow, as above. On: an `other_bank` fee goes through the shared
- * 12-hour second look (`darwin.document_owner`) and is archived (rolled back with the reason,
- * the verified row rejected with the `document_owner` flag), never deleted. It turns on by PR
- * once James has seen the count from `documentOwnerCountSql` and a sample.
+ * Takedown switch, on (James's yes, 2026-10-17, after the dry count: 228 live fees on 19
+ * document/bank pairs at 10 institutions, 19 of 19 pairs right by hand). On: an `other_bank` fee
+ * goes through the shared 12-hour second look (`darwin.document_owner`) and is archived (rolled
+ * back with the reason, the verified row rejected with the `document_owner` flag), never deleted.
+ * Off (set it to false): shadow, as above.
  */
-export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = false;
+export const DARWIN_DOCUMENT_OWNER_TAKEDOWN = true;
 
 /**
  * Website-vendor download paths that serve one institution's file on many member domains
@@ -523,12 +526,41 @@ export function documentOwnerVerdict(
 }
 
 /**
- * The live (institution, document) pairs in doubt: linked to another institution (the
- * document's host is its stored website, it has live fees from the same address, or one of its
- * documents has the same text hash), or on a vendor download path. Read-only. Hosts, addresses
- * and hashes are worked out once per table and joined by equality; every CTE is materialized.
+ * Rows Darwin verified within this many days that are not live are read too (takedowns at the
+ * source, 2026-10-17). Until then a pair was judged only once one of its fees was live, so every
+ * fee from another bank's schedule went live first and came down 12 hours or more later (prod,
+ * Oct 17: 246 fees on the 20 pairs judged `other_bank`, every one published in the 14 days before).
+ * The bound keeps the read to new rows, not the whole verified history.
  */
-function scopedPairsSql(): string {
+export const DOCUMENT_OWNER_PENDING_DAYS = 14;
+
+/**
+ * The (institution, document) pairs in doubt: linked to another institution (the document's host
+ * is its stored website, it has live fees from the same address, or one of its documents has the
+ * same text hash), or on a vendor download path. Read-only. Hosts, addresses and hashes are worked
+ * out once per table and joined by equality; every CTE is materialized.
+ *
+ * `pending`: also the pairs of rows Darwin verified in the last `DOCUMENT_OWNER_PENDING_DAYS` days
+ * that are not live (`pending_rows`), so a pair is judged before Hamilton publishes its fees and
+ * publish refuses them (`documentOwnerRefusalsSql`). The read-only count leaves it off: it counts
+ * live fees.
+ */
+function scopedPairsSql(options: { pending?: boolean } = {}): string {
+  const pending = options.pending
+    ? `
+      UNION ALL
+      SELECT NULL::bigint, fv.institution_id, fr.source_document_id
+        FROM verified_fee_observations fv
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+       WHERE fv.review_status IN ('verified', 'approved')
+         AND fv.created_at >= NOW() - INTERVAL '${DOCUMENT_OWNER_PENDING_DAYS} days'
+         AND fr.source_document_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM published_fee_records pub
+            WHERE pub.lineage_ref = fv.fee_verified_id
+              AND pub.rolled_back_at IS NULL
+         )`
+    : "";
   return `
     WITH live AS MATERIALIZED (
       SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id
@@ -537,10 +569,11 @@ function scopedPairsSql(): string {
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
        WHERE fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
-         AND fr.source_document_id IS NOT NULL
+         AND fr.source_document_id IS NOT NULL${pending}
     ),
     pairs AS MATERIALIZED (
-      SELECT institution_id, source_document_id, count(DISTINCT fee_published_id)::int AS live_fees
+      SELECT institution_id, source_document_id, count(DISTINCT fee_published_id)::int AS live_fees,
+             count(*) FILTER (WHERE fee_published_id IS NULL)::int AS pending_rows
         FROM live
        GROUP BY institution_id, source_document_id
     ),
@@ -589,7 +622,7 @@ function scopedPairsSql(): string {
        WHERE g.other_id <> p.institution_id
     ),
     shared AS MATERIALIZED (
-      SELECT p.institution_id, p.source_document_id, p.document_url, p.host AS document_host, p.live_fees,
+      SELECT p.institution_id, p.source_document_id, p.document_url, p.host AS document_host, p.live_fees, p.pending_rows,
              COALESCE(h.text_hash, 'none') AS text_hash,
              (p.document_url ~* '${VENDOR_DOCUMENT_PATH}') AS vendor_path,
              COALESCE(array_agg(DISTINCT l.other_id ORDER BY l.other_id) FILTER (WHERE l.other_id IS NOT NULL), '{}'::bigint[]) AS other_ids,
@@ -598,7 +631,7 @@ function scopedPairsSql(): string {
         FROM placed p
         LEFT JOIN hashes h ON h.source_document_id = p.source_document_id
         LEFT JOIN links l ON l.institution_id = p.institution_id AND l.source_document_id = p.source_document_id
-       GROUP BY p.institution_id, p.source_document_id, p.document_url, p.host, p.live_fees, h.text_hash
+       GROUP BY p.institution_id, p.source_document_id, p.document_url, p.host, p.live_fees, p.pending_rows, h.text_hash
       HAVING count(l.other_id) > 0 OR p.document_url ~* '${VENDOR_DOCUMENT_PATH}'
     )`;
 }
@@ -620,6 +653,10 @@ export function documentOwnerFingerprintPrefix(live: boolean): string {
  * pairs not yet read under this version, mode and text hash (`$4`), and, with the takedown on,
  * pairs last read as `other_bank` and never passed, read again so the second look can confirm
  * them (`$5`, 0 in shadow). `$1` fingerprint prefix, `$2` strategy, `$3` version.
+ *
+ * Pairs with verified rows not yet live (`pending_rows`) are read first, so their verdict is on
+ * record before Hamilton's publish step decides them. A re-read is only for a pair with live fees:
+ * a second look confirms a takedown, and a pair with nothing live has nothing to take down.
  */
 export function documentOwnerPairsSql(): string {
   const fingerprint = "$1 || s.institution_id::text || ':' || s.source_document_id::text || ':' || s.text_hash";
@@ -628,18 +665,19 @@ export function documentOwnerPairsSql(): string {
           AND pa.strategy = $2
           AND pa.strategy_version = $3${extra}`;
   const columns = "s.institution_id, s.source_document_id, s.document_url, s.document_host, s.vendor_path, s.live_fees, s.other_ids, s.host_ids, s.hash_ids, s.text_hash";
-  return `${scopedPairsSql()},
+  return `${scopedPairsSql({ pending: true })},
     fresh AS (
       SELECT ${columns}, false AS reread
         FROM shared s
        WHERE NOT EXISTS (${attempts("")})
-       ORDER BY s.live_fees DESC, s.institution_id, s.source_document_id
+       ORDER BY (s.pending_rows > 0) DESC, s.live_fees DESC, s.institution_id, s.source_document_id
        LIMIT $4
     ),
     rereads AS (
       SELECT ${columns}, true AS reread
         FROM shared s
-       WHERE EXISTS (${attempts("\n          AND pa.outcome = 'evidence_mismatch'")})
+       WHERE s.live_fees > 0
+         AND EXISTS (${attempts("\n          AND pa.outcome = 'evidence_mismatch'")})
          AND NOT EXISTS (${attempts("\n          AND pa.outcome = 'ok'")})
        ORDER BY s.live_fees DESC, s.institution_id, s.source_document_id
        LIMIT $5
@@ -647,6 +685,43 @@ export function documentOwnerPairsSql(): string {
     SELECT * FROM fresh
     UNION ALL
     SELECT * FROM rereads`;
+}
+
+/**
+ * Read-only: the verified rows (`$1`, an id array) whose (institution, document) pair Darwin's
+ * latest read judged `other_bank` at the document's current text, the text the step reads
+ * (`hashes`: newest completed row with text). Either mode counts, since shadow and live run the
+ * same verdict. Hamilton's publish step refuses these rows (`publish-sweep-rules.ts`), so a fee
+ * from another bank's schedule is held before it is live instead of taken down 12 hours after.
+ * A pair never read, or whose latest read passed, is not refused; the live re-check above is
+ * unchanged and still takes down what is live.
+ */
+export function documentOwnerRefusalsSql(): string {
+  const fingerprint = (live: boolean) =>
+    `'${documentOwnerFingerprintPrefix(live)}' || fv.institution_id::text || ':' || fr.source_document_id::text || ':' || COALESCE(cur.text_hash, 'none')`;
+  return `
+    SELECT fv.fee_verified_id, owner.named_other_id
+      FROM verified_fee_observations fv
+      JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+      LEFT JOIN LATERAL (
+        SELECT t.text_hash
+          FROM agent_source_texts t
+         WHERE t.source_document_id = fr.source_document_id
+           AND t.status = 'completed' AND t.normalized_text IS NOT NULL
+         ORDER BY t.id DESC
+         LIMIT 1
+      ) cur ON TRUE
+      JOIN LATERAL (
+        SELECT pa.outcome, pa.detail->>'named_other_id' AS named_other_id
+          FROM pipeline_attempts pa
+         WHERE pa.input_fingerprint IN (${fingerprint(true)}, ${fingerprint(false)})
+           AND pa.strategy = '${DOCUMENT_OWNER_STRATEGY.strategy}'
+           AND pa.strategy_version = ${DOCUMENT_OWNER_STRATEGY.version}
+         ORDER BY pa.created_at DESC, pa.id DESC
+         LIMIT 1
+      ) owner ON owner.outcome = 'evidence_mismatch'
+     WHERE fv.fee_verified_id = ANY($1::bigint[])
+       AND fr.source_document_id IS NOT NULL`;
 }
 
 /** SQL form of `ownerWords`. */
@@ -1036,6 +1111,8 @@ export interface DocumentOwnerResult {
   /** Pending second-look flags cleared because the fee's pair passes now (takedown on only). */
   cleared: number;
   takenDown: number[];
+  /** Institutions whose fee link was another institution's document and came off (`releaseOwnerLinks`). */
+  linksReleased: number[];
 }
 
 /** Re-reads per step with the takedown on, apart from the new-pair cap, so they never starve new pairs. */
@@ -1067,6 +1144,7 @@ export function documentOwnerDetail(result: DocumentOwnerResult | null) {
     waiting: result.waiting,
     cleared: result.cleared,
     taken_down: result.takenDown.length,
+    links_released: result.linksReleased,
     samples: result.wouldTakeDown.slice(0, 20).map((fee) => ({
       fee_published_id: fee.feePublishedId,
       institution_id: fee.institutionId,
@@ -1079,6 +1157,8 @@ export function documentOwnerDetail(result: DocumentOwnerResult | null) {
 interface Watermark {
   textId: number | null;
   feeId: number | null;
+  /** Newest verified row: a pair is read before its fees publish, so a new verified row is news too. */
+  verifiedId: number | null;
 }
 
 function eventType(live: boolean): string {
@@ -1086,18 +1166,25 @@ function eventType(live: boolean): string {
 }
 
 /**
- * Skip the scoped-pairs read when the last read of this mode found no pair and no stored text or
- * live fee has arrived since (newest `agent_source_texts.id` and `published_fee_records` id
- * unchanged). Both are primary-key maxima, so the test is cheap. A failed read never skips.
+ * Skip the scoped-pairs read when the last read of this mode found no pair and no stored text,
+ * verified row or live fee has arrived since (newest `agent_source_texts.id`,
+ * `verified_fee_observations` id and `published_fee_records` id unchanged). All are primary-key
+ * maxima, so the test is cheap. A failed read never skips. An event written before the verified
+ * watermark existed has none, and is compared on the other two.
  */
 async function readWatermark(db: SqlTag, live: boolean, at: Date): Promise<{ now: Watermark; skip: boolean }> {
-  const none = { now: { textId: null, feeId: null }, skip: false };
+  const none = { now: { textId: null, feeId: null, verifiedId: null }, skip: false };
   try {
-    const [current] = await inSavepoint(db, (scope) => scope<Array<{ text_id: number | string | null; fee_id: number | string | null }>>`
+    const [current] = await inSavepoint(db, (scope) => scope<Array<{ text_id: number | string | null; fee_id: number | string | null; verified_id?: number | string | null }>>`
       SELECT (SELECT max(id) FROM agent_source_texts) AS text_id,
-             (SELECT max(fee_published_id) FROM published_fee_records) AS fee_id
+             (SELECT max(fee_published_id) FROM published_fee_records) AS fee_id,
+             (SELECT max(fee_verified_id) FROM verified_fee_observations) AS verified_id
     `);
-    const now = { textId: current?.text_id == null ? null : Number(current.text_id), feeId: current?.fee_id == null ? null : Number(current.fee_id) };
+    const now = {
+      textId: current?.text_id == null ? null : Number(current.text_id),
+      feeId: current?.fee_id == null ? null : Number(current.fee_id),
+      verifiedId: current?.verified_id == null ? null : Number(current.verified_id),
+    };
     const [last] = await inSavepoint(db, (scope) => scope<Array<{ detail: Record<string, unknown> | null; created_at: Date | string | null }>>`
       SELECT detail, created_at FROM agent_run_events
        WHERE event_type = ${eventType(live)}
@@ -1108,7 +1195,8 @@ async function readWatermark(db: SqlTag, live: boolean, at: Date): Promise<{ now
     const unchanged = detail != null
       && Number(detail.selected) === 0
       && now.textId != null && Number(detail.max_text_id) === now.textId
-      && now.feeId != null && Number(detail.max_fee_id) === now.feeId;
+      && now.feeId != null && Number(detail.max_fee_id) === now.feeId
+      && (now.verifiedId == null || detail.max_verified_id == null || Number(detail.max_verified_id) === now.verifiedId);
     // A scan that read nothing (skipped) does not restart the clock: only an event of a real read counts.
     const lastAt = last?.created_at == null || detail?.skipped === true ? null : new Date(last.created_at).getTime();
     const recent = lastAt != null && Number.isFinite(lastAt) && at.getTime() - lastAt < DOCUMENT_OWNER_SCAN_INTERVAL_HOURS * 3_600_000;
@@ -1132,7 +1220,7 @@ export async function recheckDocumentOwners(
   const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
     live, skipped: false, selected: 0, pairs: 0, rereads: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [],
-    flagged: 0, waiting: 0, cleared: 0, takenDown: [],
+    flagged: 0, waiting: 0, cleared: 0, takenDown: [], linksReleased: [],
   };
   const watermark = await readWatermark(db, live, options.now ?? new Date());
   if (watermark.skip) {
@@ -1169,6 +1257,7 @@ export async function recheckDocumentOwners(
   if (pairs.length > 0) {
     await judgePairs(db, options, live, pairs, result);
   }
+  if (live) result.linksReleased = await releaseOwnerLinks(db);
   await recordStepEvent(db, options, live, watermark.now, result);
   return result;
 }
@@ -1353,6 +1442,7 @@ async function recordStepEvent(
           ...documentOwnerDetail(result),
           max_text_id: watermark.textId,
           max_fee_id: watermark.feeId,
+          max_verified_id: watermark.verifiedId,
           samples: result.wouldTakeDown.slice(0, 50).map((fee) => ({
             fee_published_id: fee.feePublishedId,
             institution_id: fee.institutionId,
@@ -1402,6 +1492,104 @@ async function archive(db: SqlTag, runId: number, fees: DocumentOwnerFee[]): Pro
     return closed;
   } catch (error) {
     console.error("[darwin] document owner takedown failed", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+export const DOCUMENT_OWNER_LINK_FAILURE = "darwin_document_owner";
+
+/**
+ * The fee links a document-owner takedown leaves behind (James's 20-defect register, #2018, item 13).
+ * An institution whose fee link is a document whose fees for it all came down as another
+ * institution's (`document_owner: names institution N`) would read the same schedule again:
+ * Bluegrass Community FCU kept UK FCU's PDF as its link after its 25 fees came down, and 5Star Bank
+ * kept Horizons North's. The link goes back to discovery the way `other_bank_document` sends it:
+ * rejected for this institution, off its fee link and canonical source, and the record marked
+ * pending with the reason, unless a person's correction locked it. No fee changes. It runs with
+ * the takedown on, on each step that reads pairs (at most hourly), after the takedowns. Pure SQL so the
+ * read-only dry count is the same statement (`documentOwnerLinksSql`).
+ */
+export function documentOwnerLinksSql(): string {
+  return `
+    WITH down AS (
+      SELECT DISTINCT fp.institution_id, sd.id AS source_document_id, btrim(sd.document_url) AS document_url,
+             substring(fp.rolled_back_reason from 'names institution ([0-9]+)') AS other_institution_id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN source_documents sd ON sd.id = fr.source_document_id
+       WHERE fp.rolled_back_reason LIKE '${DOCUMENT_OWNER_REASON}:%'
+    )
+    SELECT d.institution_id, d.source_document_id, d.document_url, d.other_institution_id
+      FROM down d
+      JOIN institution_sources inst ON inst.id = d.institution_id
+     WHERE btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+       )
+       AND NOT EXISTS (
+         SELECT 1
+           FROM published_fee_records live
+           JOIN verified_fee_observations lv ON lv.fee_verified_id = live.lineage_ref
+           JOIN raw_fee_observations lr ON lr.fee_raw_id = lv.fee_raw_id
+          WHERE live.institution_id = d.institution_id
+            AND lr.source_document_id = d.source_document_id
+            AND live.rolled_back_at IS NULL
+            AND live.quarantined_at IS NULL
+       )
+     ORDER BY d.institution_id
+  `;
+}
+
+interface OwnerLinkRow {
+  institution_id: number | string;
+  source_document_id: number | string;
+  document_url: string;
+  other_institution_id: string | null;
+}
+
+/** Release each left-behind link (`documentOwnerLinksSql`); the institutions released, or none on a failed write. */
+export async function releaseOwnerLinks(db: SqlTag): Promise<number[]> {
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const rows = await scope.unsafe<OwnerLinkRow[]>(documentOwnerLinksSql());
+      const released: number[] = [];
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const institutionId = Number(row.institution_id);
+        const note = `${row.document_url} is institution ${row.other_institution_id ?? "?"}'s schedule (its fees here came down as ${DOCUMENT_OWNER_REASON})`;
+        const rejected = JSON.stringify([{ url: row.document_url, reason: DOCUMENT_OWNER_REASON, at: new Date().toISOString() }]);
+        await scope`
+          UPDATE institution_source_profiles
+             SET rejected_source_urls = (
+                   SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+                     FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+                    WHERE entry->>'url' IS DISTINCT FROM ${row.document_url}
+                 ) || ${rejected}::jsonb,
+                 canonical_source_url = CASE
+                   WHEN locked_by_correction OR btrim(COALESCE(canonical_source_url, '')) IS DISTINCT FROM ${row.document_url} THEN canonical_source_url
+                   ELSE NULL
+                 END,
+                 updated_at = NOW()
+           WHERE institution_id = ${institutionId}
+        `;
+        const updated = await scope`
+          UPDATE institution_sources inst
+             SET fee_schedule_url = NULL,
+                 rescue_status = 'pending',
+                 failure_reason = ${DOCUMENT_OWNER_LINK_FAILURE},
+                 failure_reason_note = ${note},
+                 failure_reason_updated_at = NOW()
+           WHERE inst.id = ${institutionId}
+             AND btrim(COALESCE(inst.fee_schedule_url, '')) = ${row.document_url}
+          RETURNING inst.id
+        `;
+        if (updated.length > 0 && !released.includes(institutionId)) released.push(institutionId);
+      }
+      return released;
+    });
+  } catch (error) {
+    console.warn("[darwin] document owner link release failed", error instanceof Error ? error.message : error);
     return [];
   }
 }

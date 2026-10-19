@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
+import { heldByCardProductSwitch, movesExcessActivityFee, restoreTarget, runHamiltonCategoryGuard, tracesOnOwnText, uniqueRefiles } from "./category-guard";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 
 function templateText(strings: unknown): string {
@@ -62,6 +62,8 @@ describe("Hamilton category guard repair", () => {
     });
     // Row 3 names its category; its implausible amount is the outlier rollback's job.
     expect(result.failures.map((failure) => failure.feePublishedId)).toEqual([2, 4]);
+    // Both failed an earlier look too, so a live run would take both down.
+    expect(result.confirmedFeeIds).toEqual([2, 4]);
     const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(statements).not.toContain("UPDATE");
     expect(statements).not.toContain("INSERT");
@@ -86,6 +88,8 @@ describe("Hamilton category guard repair", () => {
     const result = await runHamiltonCategoryGuard({ runId: 12, db: db as unknown as GuardDb });
 
     expect(result).toMatchObject({ failingFees: 0, rolledBackFees: 0, flaggedFees: 2 });
+    // First looks are not takedowns (publish-sweeps window check).
+    expect(result.confirmedFeeIds).toEqual([]);
     const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(statements).toContain("INSERT INTO pipeline_feedback");
     expect(statements).not.toContain("SET rolled_back_at = NOW()");
@@ -330,6 +334,7 @@ describe("Hamilton category guard repair", () => {
     const result = await runHamiltonCategoryGuard({ runId: 11, limit: 1, db: db as unknown as GuardDb });
 
     expect(result).toMatchObject({ failingFees: 2, rolledBackFees: 1 });
+    expect(result.confirmedFeeIds).toHaveLength(1);
   });
 
   it("flags a small returned check filed as NSF beside the schedule's own NSF fee", async () => {
@@ -345,5 +350,56 @@ describe("Hamilton category guard repair", () => {
 
     // First failure: logged for a second look, still live.
     expect(result).toMatchObject({ scannedFees: 1, flaggedFees: 1, rolledBackFees: 0, byCode: { schedule_contradicts: 1 } });
+  });
+});
+
+describe("guard v70: card-product takedowns wait on CARD_PRODUCT_TAKEDOWN_LIVE", () => {
+  const base = { conditions: null, document_nsf_amount: null };
+  const cardRows = [
+    { fee_published_id: 123627, lineage_ref: 1, institution_id: 6044, source_document_id: 34975, canonical_fee_key: "atm_non_network", fee_name: "ATM/Debit Card - Monthly Fee", amount: "1.00", ...base },
+    { fee_published_id: 20339, lineage_ref: 2, institution_id: 6945, source_document_id: 1, canonical_fee_key: "dormant_account", fee_name: "Inactive Debit Card Per month", amount: "5.00", ...base },
+    { fee_published_id: 147703, lineage_ref: 3, institution_id: 6056, source_document_id: 35395, canonical_fee_key: "atm_non_network", fee_name: "e-Pay (Bill Payer Service) without Checking and Debit/ATM Card", amount: "6.95", ...base },
+  ];
+  function cardDb() {
+    return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
+      if (text.includes("FROM pipeline_feedback")) return Promise.resolve([]);
+      if (text.includes("rolled_back_at IS NOT NULL")) return Promise.resolve([]);
+      if (text.includes("FROM published_fee_records")) return Promise.resolve(cardRows);
+      if (text.includes("UPDATE published_fee_records")) return Promise.resolve((values[1] as number[] ?? []).map((id) => ({ fee_published_id: id })));
+      return Promise.resolve([]);
+    });
+  }
+
+  it("holds a fee failing only the card-product rule while the switch is off, and not once it is on", () => {
+    expect(heldByCardProductSwitch(cardRows[0], false)).toBe(true);
+    expect(heldByCardProductSwitch(cardRows[1], false)).toBe(true);
+    expect(heldByCardProductSwitch(cardRows[0], true)).toBe(false);
+    // A fee another rule fails is never held by this switch.
+    expect(heldByCardProductSwitch({ ...base, canonical_fee_key: "atm_non_network", fee_name: "ATM Dispute Fee", amount: "10.00" }, false)).toBe(false);
+  });
+
+  it("counts the held fees on a dry run, flags none of them and still re-files the bill payer service", async () => {
+    const db = cardDb();
+    const result = await runHamiltonCategoryGuard({ runId: 70, dryRun: true, db: db as unknown as GuardDb, cardProductTakedownLive: false });
+    expect(result.cardProductPending).toBe(2);
+    expect(result.cardProductPendingSamples.map((fee) => fee.feePublishedId)).toEqual([123627, 20339]);
+    expect(result.failingFees).toBe(0);
+    expect(result.flaggedFees).toBe(0);
+    expect(restoreTarget(cardRows[2])).toBe("bill_pay");
+  });
+
+  it("flags them for the second look once the switch is on", async () => {
+    const db = cardDb();
+    const result = await runHamiltonCategoryGuard({ runId: 71, dryRun: true, db: db as unknown as GuardDb, cardProductTakedownLive: true });
+    expect(result.cardProductPending).toBe(0);
+    expect(result.flaggedFees).toBe(2);
+  });
+
+  it("re-files skipped loan payments and the early-closure card charge to their checked types", () => {
+    expect(restoreTarget({ ...base, canonical_fee_key: "late_payment", fee_name: "Skip-A-Pay Fee", amount: "25.00" })).toBe("other_lending_fee");
+    expect(restoreTarget({ ...base, canonical_fee_key: "loan_origination", fee_name: "Loan Extension (Skip-A-Pay)", amount: "25.00" })).toBe("other_lending_fee");
+    expect(restoreTarget({ ...base, canonical_fee_key: "atm_non_network", fee_name: "Account Closure ATM/Debit Card - if account closed within 12 months", amount: "10.00" })).toBe("early_closure");
   });
 });

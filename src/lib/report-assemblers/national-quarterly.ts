@@ -132,7 +132,6 @@ export interface NationalQuarterlyPayload {
     fed_funds_rate: number | null;
     unemployment_rate: number | null;
     cpi_yoy_pct: number | null;
-    consumer_sentiment: number | null;
     gdp_growth_yoy_pct: number | null;
     personal_savings_rate: number | null;
     bank_lending_standards: number | null;
@@ -265,7 +264,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     });
   }
 
-  // Query 5: FRED economic indicators (graceful degradation)
+  // Query 5: economic indicators from BLS, BEA and the Fed Board (graceful degradation)
   let fred: NationalQuarterlyPayload["fred"] = null;
   try {
     const fredData = await getFredSummary();
@@ -273,7 +272,6 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       fed_funds_rate: fredData.fed_funds_rate,
       unemployment_rate: fredData.unemployment_rate,
       cpi_yoy_pct: fredData.cpi_yoy_pct,
-      consumer_sentiment: fredData.consumer_sentiment,
       gdp_growth_yoy_pct: fredData.gdp_growth_yoy_pct,
       personal_savings_rate: fredData.personal_savings_rate,
       bank_lending_standards: fredData.bank_lending_standards,
@@ -285,7 +283,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       executed_at: assembled_at,
     });
   } catch (e) {
-    console.warn("[assembler] FRED query failed, skipping:", e);
+    console.warn("[assembler] economic indicator query failed, skipping:", e);
     manifestEntries.push({
       sql: "getFredSummary()",
       row_count: 0,
@@ -639,7 +637,6 @@ export function buildThesisSummary(
         fed_funds_rate: payload.fred.fed_funds_rate,
         unemployment_rate: payload.fred.unemployment_rate,
         cpi_yoy_pct: payload.fred.cpi_yoy_pct,
-        consumer_sentiment: payload.fred.consumer_sentiment,
         as_of: payload.fred.as_of,
       }
     : null;

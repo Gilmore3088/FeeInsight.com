@@ -49,7 +49,7 @@ async function currentPath(): Promise<string | null> {
   }
 }
 
-/** Hamilton is the workspace, Pro the plan (site v3 brief 03 §4); never "Fee Insight Pro" alone. */
+/** Hamilton is the paid product; never "Hamilton Pro" or "Fee Insight Pro" (James, 2026-10-17). */
 const PRO_LABEL = hamiltonFullName(SITE_NAME);
 
 /**

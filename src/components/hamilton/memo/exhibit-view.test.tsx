@@ -106,3 +106,28 @@ describe("phone readings (Space Coast review, 2026-10-15)", () => {
     expect(html).not.toContain("Charges less");
   });
 });
+
+describe("competitor range with several fees (#1931)", () => {
+  it("shows a competitor's one fee as its price and several fees as their range with names", () => {
+    const html = renderToStaticMarkup(
+      <ExhibitView
+        exhibit={{
+          kind: "competitor_range",
+          title: "Local",
+          unit: "dollars",
+          own: 160,
+          ownLabel: "Subject",
+          items: [
+            { name: "A", amount: 120, url: null },
+            { name: "B", amount: 162.5, url: null, several: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
+          ],
+          sources: [],
+        }}
+      />,
+    );
+    expect(html).toContain("$120");
+    expect(html).toContain("$150 to $175");
+    expect(html).toContain("Levy $150; Garnishment $175");
+    expect(html).not.toContain("$162.50");
+  });
+});

@@ -9,6 +9,7 @@ import {
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
+import { schedulePublishSweepsRun } from "@/lib/agents/hamilton/publish-sweeps-schedule";
 import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel-schedule";
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
@@ -28,13 +29,13 @@ export const maxDuration = 300;
  */
 const DEFAULT_MAX_STEPS_PER_RUN = 10;
 /**
- * Runs advanced per tick, strictly one after another (see executeQueuedAgentRuns),
+ * Runs advanced per tick, one after another except up to PARALLEL_STATE_LANES state lanes side by side (see executeQueuedAgentRuns),
  * until the step-start deadline. No run starts past the deadline except the first.
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
  * Started steps should finish this long after the tick began: a step starts only when its
- * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 5 minutes and a
+ * expected runtime (run-store STEP_EXPECTED_MS) fits. Ticks fire every 10 minutes and a
  * killed tick leaves its query running on the database, so a tick must end inside its
  * interval and maxDuration. Until 2026-10-07 no step started after 150 s, which left
  * ticks idle for 10 to 150 s and lane passes spread over three ticks.
@@ -167,6 +168,9 @@ async function handleGET(request: NextRequest) {
   let priorityStateResearch: Awaited<ReturnType<typeof schedulePriorityStateResearchRuns>> | { error: string } | null = null;
   // A deployed guard or frequency fix re-checks every live fee now, not at the next publish step.
   let guardCatchUp: Awaited<ReturnType<typeof scheduleGuardCatchUpRun>> | { error: string } | null = null;
+  // The sweeps a state lane's publish hands off (hamilton/publish-sweeps.ts): one run at a time,
+  // after a lane publish; a dry run at most hourly while PUBLISH_SWEEPS_SPLIT_LIVE is off.
+  let publishSweeps: Awaited<ReturnType<typeof schedulePublishSweepsRun>> | { error: string } | null = null;
   // Darwin's audience relabel (#1059): a daily dry run while off, once when switched on.
   let audienceRelabel: Awaited<ReturnType<typeof scheduleAudienceRelabelRun>> | { error: string } | null = null;
   if (pipeline.enabled) {
@@ -175,6 +179,12 @@ async function handleGET(request: NextRequest) {
     } catch (error) {
       console.error("Guard catch-up scheduling failed:", error);
       guardCatchUp = { error: error instanceof Error ? error.message : String(error) };
+    }
+    try {
+      publishSweeps = await schedulePublishSweepsRun();
+    } catch (error) {
+      console.error("Publish sweeps scheduling failed:", error);
+      publishSweeps = { error: error instanceof Error ? error.message : String(error) };
     }
     try {
       audienceRelabel = await scheduleAudienceRelabelRun();
@@ -231,6 +241,7 @@ async function handleGET(request: NextRequest) {
     priorityInstitutions,
     priorityStateResearch,
     guardCatchUp,
+    publishSweeps,
     audienceRelabel,
     staleOutreachWithdraw,
     ...result,

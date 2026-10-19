@@ -26,7 +26,7 @@ const overdraft = {
 } as Parameters<typeof insertCandidate>[1]["candidate"];
 
 describe.skipIf(!connection)("Knox re-read in isolated PostgreSQL", () => {
-  let db: ReturnType<typeof postgres>;
+  let db: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
       throw new Error("Knox re-read tests require a loopback E2E database; production connections are forbidden");

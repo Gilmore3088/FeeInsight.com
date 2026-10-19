@@ -123,7 +123,7 @@ export async function listSavedAnalyses(limit = 10): Promise<RecentQuestion[]> {
   // Callable server actions must not permit an unbounded history query.
   const boundedLimit = Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 50) : 10;
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
 
   try {
     // Read a few extra so repeats of the same answer don't leave the list short.
@@ -149,7 +149,7 @@ function savedAtIso(value: Date | string | null | undefined): string | null {
 
 export async function loadAnalysisRecord(id: string): Promise<LoadedAnalysisRecord | null> {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
 
   try {
     const rows = await sql<Array<{ id: string; response_json: string; institution_id: string | null; analysis_focus: string | null; prompt: string | null; created_at?: Date | string | null }>>`
