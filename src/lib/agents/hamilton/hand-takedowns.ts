@@ -824,6 +824,12 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 99795, institutionId: 96, canonicalFeeKey: "legal_process", amount: 20, feeName: "Extended Service Fee Document Request / Subpoena / Research",
     reason: "source_mismatch: #2032", issue: 2032, kind: "not_on_schedule",
     evidence: "Beacon's consumer fee schedule (doc 37581) prices \"Legal Process Fee, per occurrence ... $125.00\" and \"Subpoena Research Fee, per hour ... $75.00\"; the $20 is a loan-servicing document request from consumer-loan-servicing-fee-schedule." },
+  // #2133 (W43, Oct 19): a nonfee independently checked against its own completed stored
+  // text and fresh official sources. No replacement: New Valley's genuine $34/$5 NSF prices
+  // remain a separate extraction gap; a missing fee is never a free fee.
+  { feePublishedId: 138326, institutionId: 2191, canonicalFeeKey: "nsf", amount: 20, feeName: "Your account has already been charged a total of 4 NSF fees",
+    reason: "source_mismatch: #2133", issue: 2133, kind: "not_a_fee",
+    evidence: "New Valley (doc 30445, text 28058 line 267; text SHA256 87f273f9620df562a917346a2adae223d42e8b665126837a9fe6c3cb30630543): $20 is the cumulative four-fee exception for the 18/65 product, not an item price; line 263 prices each item at $5. Fresh consumer-fees HTML and Consumer-Schedule-of-Fees.pdf p3 agree." },
 ];
 
 /**

@@ -257,8 +257,8 @@ const LIVE: LiveTakedownRow[] = [
 const CONDITIONAL_ZERO = [43512, 54014, 61335, 68893, 70121, 73737, 77121, 77122, 77618, 84553, 87079, 87461, 88213, 91505, 120559];
 const IDS = [80423, 102440, 83118, 45619, 116720, 134129, 48113, 87307, 134962, ...CONDITIONAL_ZERO, 142965, 13188, 144352, 114273, 114270, 5827, 84637, 104565, 104566, 102973, 15727, 67859, 138829, 131129, 70319, 140689, 138828, 138832, 138833, 138839, 138827, 138834, 138841, 148352, 138831, 138830, 138848, 138849, 138850, 138851, 42961, 86536, 66721, 66722, 83125, 97335, 97904, 58414, 106021, 33705, 149143, 149806, 137241, 68335, 79402, 74149, 49817, 125584, 109893, 130622, 147193, 133860, 119352, 143826, 97434, 49606, 148620, 107546, 81215, 20420, 102296, 147811, 125359, 146800, 74560, 125809, 102758, 13031, 11722, 11427, 141821, 232, 101170, 64716, 65870, 122350, 81615, 16733, 142748, 152166, 107315, 152973, 152366, 152591, 152306, 45157, 145735, 122351, 129718, 19884, 15730, 104597, 104598, 104599, 104600, 104602, 104603, 104604, 104605, 104606, 60838, 61840, 61841, 61842, 97256, 137275, 59691, 154182, 154134, 152985, 154075, 154076, 154101, 152916, 152612, 127400, 127468, 127469, 127470, 127401, 127402, 127403, 127404, 127405, 127406, 127407, 127408, 99795];
 
-// The standing list without the #1772/#1773 ATM rows and #1880's Texas Capital rows, which have their own tests below.
-const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880].includes(entry.issue));
+// These batches have their own source-specific tests below.
+const STANDING = HAND_TAKEDOWNS.filter((entry) => ![1772, 1773, 1880, 2133].includes(entry.issue));
 
 function fakeDb(live: LiveTakedownRow[], failOn?: string, pending: Array<{ fee_verified_id: number; institution_id: number }> = []) {
   const writes: Array<{ text: string; values: unknown[] }> = [];
@@ -1023,6 +1023,61 @@ const NOT_RE_READS: LiveTakedownRow[] = [
   lineRow(153602, 69, "overdraft", "Paid Overdraft Fee", "15.00"), // #1880 was the old document's fault; this is from the current PDF (doc 37594)
   lineRow(41001, 4956, "dormant_account", "Inactivity Fee", "10.00"), // another price
 ];
+
+describe("#2133: New Valley's W43 cap misread as an NSF item charge", () => {
+  const entries = HAND_TAKEDOWNS.filter((entry) => entry.issue === 2133);
+  // Exact identities and verified lineage from the read-only October 19 production receipt.
+  const live: LiveTakedownRow[] = [
+    lineRow(138326, 2191, "nsf", "Your account has already been charged a total of 4 NSF fees", "20.00", 161794),
+  ];
+
+  it("takes down only the confirmed cap, without replacing it or affecting deferred Fremont", () => {
+    expect(entries.map((entry) => [entry.feePublishedId, entry.kind, entry.requiresLive]))
+      .toEqual([[138326, "not_a_fee", undefined]]);
+    expect(handTakedownBatchSizes(entries)).toEqual([{ issue: 2133, entries: 1 }]);
+    expect(HAND_TAKEDOWNS.some((entry) => entry.feePublishedId === 36519)).toBe(false);
+    // Source-correct prices are independent fixture rows, not replacements for the cap.
+    const otherRows = [
+      lineRow(9000001, 2191, "nsf", "NSF fee standard", "34.00"), lineRow(9000002, 2191, "nsf", "NSF fee 18/65", "5.00"),
+      // Its removal would leave Fremont below the catalog's three-category minimum.
+      lineRow(36519, 247, "bill_pay", "2 Earn", "50.00", 32331),
+    ];
+    expect(planHandTakedowns([...live, ...otherRows], entries)).toEqual({
+      takenDown: [
+        { feePublishedId: 138326, feeVerifiedId: 161794, reason: "source_mismatch: #2133" },
+      ], skipped: [],
+    });
+  });
+
+  it("leaves a listed row alone after its institution, category, name or amount changes", () => {
+    for (const [index, row] of live.entries()) {
+      for (const change of [
+        { institution_id: Number(row.institution_id) + 1 }, { canonical_fee_key: "account_research" },
+        { fee_name: `${row.fee_name} corrected` }, { amount: "5.00" }, { amount: null },
+      ]) {
+        expect(planHandTakedowns([{ ...row, ...change }], [entries[index]]))
+          .toEqual({ takenDown: [], skipped: [{ feePublishedId: Number(row.fee_published_id), reason: "changed since listed" }] });
+      }
+    }
+  });
+
+  it("previews without writes, archives and rejects the exact rows, and writes nothing once they are absent", async () => {
+    const dry = fakeDb(live);
+    expect((await applyHandTakedowns(dry.db as never, { runId: 2133, batchId: "w43", dryRun: true, list: entries, waiting: [] })).takenDown).toHaveLength(1);
+    expect(dry.writes).toEqual([]);
+
+    const applied = fakeDb(live);
+    const result = await applyHandTakedowns(applied.db as never, { runId: 2133, batchId: "w43", dryRun: false, list: entries, waiting: [] });
+    expect(result.takenDown.map((entry) => entry.feePublishedId)).toEqual([138326]);
+    expect(applied.writes.filter((write) => write.text.includes("UPDATE published_fee_records"))).toHaveLength(1);
+    expect(applied.writes.filter((write) => write.text.includes("UPDATE verified_fee_observations"))).toHaveLength(1);
+    expect(applied.writes.some((write) => /INSERT INTO published_fee_records|\bDELETE\b/i.test(write.text))).toBe(false);
+
+    const again = fakeDb([]);
+    expect((await applyHandTakedowns(again.db as never, { runId: 2134, batchId: "w43-again", dryRun: false, list: entries, waiting: [] })).takenDown).toEqual([]);
+    expect(again.writes).toEqual([]);
+  });
+});
 
 describe("re-reads of a listed line (#1905 triage, Oct 19)", () => {
   it("names the six live re-reads on prod, each with its entry's reason", () => {
