@@ -124,4 +124,20 @@ describe("API documentation", () => {
     expect(within(table).getByText("burst_limited").closest("tr")).toHaveTextContent("Retry-After");
     expect(within(table).getByText("rate_limited").closest("tr")).toHaveTextContent("X-RateLimit-Reset");
   });
+
+  it("gives Claude Desktop configs that are valid JSON and point at the connector", async () => {
+    render(await ApiDocsPage());
+    for (const label of ["Claude Desktop config for Mac or Linux", "Claude Desktop config for Windows"]) {
+      const button = screen.getByRole("button", { name: `Copy ${label}` });
+      const code = document.getElementById(button.getAttribute("aria-controls")!)!;
+      const config = JSON.parse(code.textContent!);
+      const args: string[] = config.mcpServers["bank-fee-index"].args;
+      expect(args).toContain("mcp-remote");
+      expect(args.at(-1)).toMatch(/\/api\/v1\/mcp\?api_key=YOUR_API_KEY$/);
+    }
+    const command = screen.getByRole("button", { name: "Copy Claude Code command" });
+    expect(document.getElementById(command.getAttribute("aria-controls")!)).toHaveTextContent(
+      /\/api\/v1\/mcp --header "Authorization: Bearer YOUR_API_KEY"$/,
+    );
+  });
 });

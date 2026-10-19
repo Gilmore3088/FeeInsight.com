@@ -238,6 +238,19 @@ function TierCard({
 
 const BASE = `${SITE_URL}/api/v1`;
 
+/** Claude Desktop runs the connector through the open-source mcp-remote bridge when custom connectors are off. */
+const DESKTOP_SERVER_NAME = "bank-fee-index";
+function desktopConfig(command: string, args: string[]): string {
+  return JSON.stringify(
+    { mcpServers: { [DESKTOP_SERVER_NAME]: { command, args } } },
+    null,
+    2,
+  );
+}
+const DESKTOP_CONFIG_MAC = desktopConfig("npx", ["-y", "mcp-remote", `${BASE}/mcp?api_key=YOUR_API_KEY`]);
+const DESKTOP_CONFIG_WINDOWS = desktopConfig("cmd", ["/c", "npx", "-y", "mcp-remote", `${BASE}/mcp?api_key=YOUR_API_KEY`]);
+const CLAUDE_CODE_COMMAND = `claude mcp add --transport http ${DESKTOP_SERVER_NAME} ${BASE}/mcp --header "Authorization: Bearer YOUR_API_KEY"`;
+
 export default async function ApiDocsPage() {
   const summary = await getPublicStatsSummary();
   const categoriesLabel = summary.categoriesLabel;
@@ -386,6 +399,12 @@ export default async function ApiDocsPage() {
 
         <CodeBlock title="Query parameter authentication">{`curl "${BASE}/fees?api_key=YOUR_API_KEY"`}</CodeBlock>
 
+        <p className="mt-3 text-[13px] text-ink-muted">
+          In Windows PowerShell, type <code className="rounded bg-border/40 px-1 text-[12px]">curl.exe</code>.
+          Plain <code className="rounded bg-border/40 px-1 text-[12px]">curl</code> there runs a different command
+          and fails with &ldquo;Cannot bind parameter &lsquo;Headers&rsquo;&rdquo;.
+        </p>
+
         <p className="mt-4 text-[13px] text-ink-muted">
           A key keeps working while your subscription is active, and for {PAST_DUE_GRACE_DAYS} days after a failed payment
           while the card is retried. It stops when the subscription ends. Keep it private.
@@ -405,6 +424,49 @@ export default async function ApiDocsPage() {
         <p className="mt-3 text-[13px] text-ink-muted">
           Each question Claude answers uses a few calls from your team&apos;s {API_MONTHLY_CALLS_LABEL}-a-month allowance.
         </p>
+
+        <p className="mt-4 text-[13px] font-semibold text-ink">If Claude has no custom connector option</p>
+        <p className="mt-1 text-[13px] text-ink-muted">
+          Some company Claude accounts turn custom connectors off. Claude Desktop can still reach the
+          connector through mcp-remote, an open-source bridge that needs Node.js (check that{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">npx -v</code> works in a terminal). In Claude
+          Desktop, open Settings, then Developer, then Edit Config, and add this entry to{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">claude_desktop_config.json</code>. If the file
+          already has <code className="rounded bg-border/40 px-1 text-[12px]">mcpServers</code>, add only the{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">{DESKTOP_SERVER_NAME}</code> entry inside it.
+          Save, quit Claude Desktop fully (on Windows, from the system tray as well) and reopen it.
+        </p>
+        <CodeBlock title="Claude Desktop on Mac or Linux" copyLabel="Claude Desktop config for Mac or Linux">{DESKTOP_CONFIG_MAC}</CodeBlock>
+        <CodeBlock title="Claude Desktop on Windows" copyLabel="Claude Desktop config for Windows">{DESKTOP_CONFIG_WINDOWS}</CodeBlock>
+        <p className="mt-3 text-[13px] text-ink-muted">
+          In Claude Code, add it with one command, then type{" "}
+          <code className="rounded bg-border/40 px-1 text-[12px]">/mcp</code> in a session to see it connected.
+        </p>
+        <CodeBlock title="Claude Code" copyLabel="Claude Code command">{CLAUDE_CODE_COMMAND}</CodeBlock>
+
+        <p className="mt-4 text-[13px] font-semibold text-ink">If the connector stops working</p>
+        <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] text-ink-muted">
+          <li>
+            Replacing or turning off a key stops the old one at once. Put the new key in the connector link or
+            config, then quit and reopen Claude.
+          </li>
+          <li>
+            Claude Desktop ignores a config file that is not valid JSON. Check that every brace and comma is in
+            place, especially between two entries in{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">mcpServers</code>.
+          </li>
+          <li>
+            &ldquo;Unexpected token &lsquo;&lt;&rsquo;&rdquo; in the Claude Desktop log usually means the server turned
+            the key away. Check that the link ends with your real key, with no spaces or quotes.
+          </li>
+          <li>
+            To test the key on its own, run the header example above. Fee data back means the key works;{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">api_key_required</code> or{" "}
+            <code className="rounded bg-border/40 px-1 text-[12px]">invalid_api_key</code> means it is missing or
+            mistyped.
+          </li>
+        </ul>
+
         <p className="mt-4 text-[13px] font-semibold text-ink">What Claude can look up</p>
         <ul className="mt-2 space-y-1.5 text-[13px] text-ink-muted">
           {MCP_TOOLS.map((tool) => (
