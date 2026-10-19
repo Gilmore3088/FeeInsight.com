@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { InstitutionSearchResult } from "@/lib/data-store/search";
-import { getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
+import { getPublicCategorySummaries, getPublicStatsSummary, UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
@@ -105,7 +105,9 @@ export async function InstitutionsDirectory({ params }: { params: DirectoryParam
   const shouldShowResults = hasQuery || hasState;
   const budget = createReadBudget(DIRECTORY_READ_BUDGET_MS, "Directory");
   const [stats, stateSummaries, results, summaries] = await Promise.all([
-    budget.required(getPublicStatsSummary(), "public stats"),
+    // Optional like the state summaries: a slow count at build time must not fail the whole
+    // deploy (#1988). The stats bar shows the unavailable label and the page lives one minute.
+    budget.optional(getPublicStatsSummary(), "public stats", UNAVAILABLE_PUBLIC_STATS),
     // The cached directory is also rendered at build time: a failed read draws the map without
     // its counts for a minute (shortenPageLife below) instead of failing the build or the page.
     budget.optional(getInstitutionStateDirectorySummariesCached({ charter_type: charterType || undefined }), "state summaries", []),
