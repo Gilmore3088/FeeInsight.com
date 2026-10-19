@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { coversOwnFees } from "../peer-index";
 import { briefingLocalMarket, choosePeers, ownScheduleFrom, peerGroupIndex, feeLayerStamps, feePeerStamp, localMarketView, marketLayerSets, peerAmounts } from "./research";
 
 const peer = (amount: number, id: number) => ({ institution_id: id, institution_name: `Bank ${id}`, state_code: "TX", amount, source_document_ids: [id], document_urls: [], published_at: null });
@@ -21,6 +22,27 @@ describe("choosePeers", () => {
     expect(chosen.get("night_deposit")).toMatchObject({ label: `${group}; none of them publish this fee`, filters: candidates[1], values: [] });
     expect(chosen.get("rare_fee")).toMatchObject({ label: `${group}; only 1 of them publish this fee`, filters: candidates[1] });
     expect(new Set([...chosen.values()].map((c) => JSON.stringify(c.filters))).size).toBe(1);
+  });
+
+  it("takes the narrowest group the shared rule passes, not the overdraft test, when coverage is known (#2098)", () => {
+    const candidates = [{ state_code: "CA", charter_type: "credit_union" }, { charter_type: "credit_union" }, {}];
+    const narrow = new Map([["overdraft", [1, 2, 3, 4, 5].map((i) => peer(30, i))]]);
+    expect(peerGroupIndex([narrow, new Map(), new Map()], 3)).toBe(0);
+    expect(peerGroupIndex([narrow, new Map(), new Map()], 3, { covers: [false, true, false] })).toBe(1);
+    expect(peerGroupIndex([narrow, new Map(), new Map()], 3, { covers: [false, false, false] })).toBe(2);
+    expect(choosePeers(candidates, [narrow, new Map(), new Map()], ["overdraft"], { covers: [false, true, false] }).get("overdraft")?.filters).toEqual(candidates[1]);
+  });
+
+  it("covers a bank's fees when 5 others publish 80% of them; the bank counts itself in the index", () => {
+    const entries = (n: number) => ["a", "b", "c", "d", "e"].map((c) => ({ fee_category: c, institution_count: n }));
+    const own = new Set(["a", "b", "c", "d", "e"]);
+    expect(coversOwnFees(entries(6), own)).toBe(true);
+    expect(coversOwnFees(entries(5), own)).toBe(false);
+    // Four of five is 80%.
+    expect(coversOwnFees([...entries(6).slice(0, 4), { fee_category: "e", institution_count: 2 }], own)).toBe(true);
+    expect(coversOwnFees([...entries(6).slice(0, 3), ...entries(2).slice(3)], own)).toBe(false);
+    // No published fees: the overdraft test.
+    expect(coversOwnFees([{ fee_category: "overdraft", institution_count: 5 }], new Set())).toBe(true);
   });
 
   it("picks the same group whichever fee is asked about", () => {
