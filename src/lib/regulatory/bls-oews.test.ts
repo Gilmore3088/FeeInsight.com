@@ -108,6 +108,26 @@ describe("OEWS download failures", () => {
 });
 
 describe("OEWS archive bounds", () => {
+  it("ignores AppleDouble metadata and selects the real workbook before parsing rows", async () => {
+    const state = xlsx([HEADER, row("06", "California", "2", "CA", "43-3071", "Tellers", "20000", "20", "41600", "19", "39520")]);
+    const archive = zipSync({
+      "__MACOSX/oesm22st/._state_M2022_dl.xlsx": strToU8("AppleDouble metadata, not an XLSX"),
+      "oesm22st/state_M2022_dl.xlsx": state,
+    });
+    const fetchImpl = vi.fn(async (url: string) => url === oewsUrl(2022, "st")
+      ? new Response(archive) : new Response("missing", { status: 404 })) as unknown as typeof fetch;
+    const result = await fetchOews(2022, { fetchImpl, retries: 0 });
+    expect(result.rows.find(r => r.series_key === "oews_tellers_annual_median")).toMatchObject({ period: "2022", geo_code: "CA", value: 39520 });
+    expect(result.info.st).toMatchObject({ workbook: "oesm22st/state_M2022_dl.xlsx" });
+  });
+  it("matches an exact workbook basename and requested year, without guessing between genuine duplicates", () => {
+    const workbook = xlsx([HEADER]);
+    const archive = zipSync({ "state_M2021_dl.xlsx": workbook, "data/state_M2022_dl.xlsx": workbook });
+    expect(oewsWorkbookFromZip(archive, "st", 2022).name).toBe("data/state_M2022_dl.xlsx");
+    expect(oewsWorkbookFromZip(zipSync({ "backup_state_M2022_dl.xlsx": workbook }), "st", 2022).bytes).toBeNull();
+    const ambiguous = zipSync({ "a/state_M2022_dl.xlsx": workbook, "b/state_M2022_dl.xlsx": workbook });
+    expect(() => oewsWorkbookFromZip(ambiguous, "st", 2022)).toThrow(/multiple st workbooks.*a\/state_M2022_dl.xlsx.*b\/state_M2022_dl.xlsx/);
+  });
   it("cancels before reading a declared oversized response", async () => {
     let cancelled=false;
     const response=new Response(new ReadableStream({cancel(){cancelled=true;}}),{headers:{"content-length":"100"}});
