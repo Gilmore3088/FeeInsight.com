@@ -31,10 +31,10 @@ describe.skipIf(!connection)("Ancillary account ownership in actual SQL (#1911 c
       throw new Error("Ancillary tests require a disposable loopback database; production is forbidden");
     }
     vi.stubEnv("DATABASE_URL", connection);
-    const module = await import("@/lib/data-store/connection");
-    appSql = module.sql;
+    const connectionModule = await import("@/lib/data-store/connection");
+    appSql = connectionModule.sql;
     db = postgres(connection, { max: 1, ssl: "require", types: {
-      numeric: module.NUMERIC_AS_NUMBER, json: module.JSON_TEXT_PASSTHROUGH, text: module.TEXT_WITHOUT_NUL,
+      numeric: connectionModule.NUMERIC_AS_NUMBER, json: connectionModule.JSON_TEXT_PASSTHROUGH, text: connectionModule.TEXT_WITHOUT_NUL,
     } }) as unknown as postgres.Sql;
     extract = await import("./extract");
     verify = await import("../darwin/verify");
