@@ -3260,3 +3260,6 @@ BEGIN
   RETURN affected_count;
 END;
 $$;
+
+REVOKE ALL ON FUNCTION public.upsert_institution_fee_alert_subscription(BIGINT, BIGINT, TEXT[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.deactivate_institution_fee_alert_subscription(BIGINT, BIGINT) FROM PUBLIC, anon, authenticated;

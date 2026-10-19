@@ -15,9 +15,11 @@ import type { FixtureDb } from "./fixtures";
 export const MIGRATIONS_DIR = path.resolve(__dirname, "../../../supabase/migrations");
 
 /**
- * Migrations the 2026-10-04 snapshot already carries in a later form: replaying them fails
- * (an older catalog view drops columns, or a constraint or column already exists). They are
- * recorded as applied without running.
+ * Migrations whose replay fails on the snapshot because it already carries their columns and a
+ * later form of their catalog views (an older view would drop columns, or a constraint or column
+ * already exists). They are recorded as applied without running. One piece is lost with them:
+ * the pipeline_feedback_takedown_pending_idx index from 20270110000032, which no journey needs.
+ * Re-check this list whenever the snapshot is refreshed.
  */
 export const CARRIED_BY_SNAPSHOT = [
   "20270110000000_catalog_hides_thin_institutions.sql",
@@ -53,7 +55,7 @@ export async function applyPendingMigrations(db: FixtureDb, dir = MIGRATIONS_DIR
       }
       applied.push(file);
     }
-    await db`INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES (${version}, ${file.replace(/\.sql$/, "")})`;
+    await db`INSERT INTO supabase_migrations.schema_migrations (version, name) VALUES (${version}, ${file.replace(/^\d+_/, "").replace(/\.sql$/, "")})`;
   }
   return applied;
 }
