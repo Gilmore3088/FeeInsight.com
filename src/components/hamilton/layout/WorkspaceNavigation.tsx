@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
-import { HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive } from "@/lib/hamilton/navigation";
+import { Activity, Calculator, ChartNoAxesColumnIncreasing, FileText, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
+import { HAMILTON_ALERTS_NAV, HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive, workspaceSubnav } from "@/lib/hamilton/navigation";
 import { NavAccount } from "@/components/nav-account";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
 import { marketSwitchHref, subjectSwitchHref } from "@/lib/hamilton/navigation-context";
@@ -12,7 +12,7 @@ import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
 import { useHamiltonNavigationHref } from "./hamilton-navigation-context";
 
-const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, MessageCircle, Search, Settings };
+const icons = { Activity, Calculator, ChartNoAxesColumnIncreasing, FileText, MessageCircle, Search, Settings };
 
 /**
  * The workspace's left navigation and institution bar, from #1011 (James's Oct 11 unified
@@ -58,11 +58,12 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
       <nav aria-label="Hamilton workspace">
         {HAMILTON_WORKSPACE_NAV.filter(item => isAdmin || item.label !== "Admin").map(item => {
           const Icon = icons[item.icon];
-          return <Link key={item.href} href={hrefFor(item.href)} aria-current={isWorkspaceNavActive(pathname, item) ? "page" : undefined} className={item.label === "Saved analyses" ? "workspace-saved-link" : undefined} onClick={() => setOpen(false)}>
+          return <Link key={item.href} href={hrefFor(item.href)} aria-current={isWorkspaceNavActive(pathname, item) ? "page" : undefined} onClick={() => setOpen(false)}>
             <Icon size={21} aria-hidden /><span>{item.label}</span>
           </Link>;
         })}
       </nav>
+      <Link href={hrefFor(HAMILTON_ALERTS_NAV.href)} className="workspace-settings workspace-alerts" aria-current={isWorkspaceNavActive(pathname, HAMILTON_ALERTS_NAV) ? "page" : undefined} onClick={() => setOpen(false)}><Activity size={18} aria-hidden />{HAMILTON_ALERTS_NAV.label}</Link>
       <Link href={hrefFor("/pro/settings")} className="workspace-settings" onClick={() => setOpen(false)}><Settings size={18} aria-hidden />Settings & account</Link>
     </aside>
     <section aria-label="Institution context">
@@ -89,8 +90,20 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
         </span>}
         <SubjectSwitch pathname={pathname} showMarket={!(researchIsMarket && researchLabel === "U.S. market")} />
       </div> : null}
+      <WorkspaceSubnav pathname={pathname} institutionName={researchIsMarket ? null : researchLabel} />
     </section>
   </>;
+}
+
+/** The two pages of Research, or of Try a price, as tabs above the content (#2044). */
+function WorkspaceSubnav({ pathname, institutionName }: { pathname: string; institutionName: string | null }) {
+  const hrefFor = useHamiltonNavigationHref();
+  const params = useSearchParams();
+  const subnav = workspaceSubnav(pathname, institutionName, params?.get("view") ?? null);
+  if (!subnav) return null;
+  return <nav aria-label={subnav.ariaLabel} className="workspace-subnav print:hidden">
+    {subnav.tabs.map(tab => <Link key={tab.href} href={hrefFor(tab.href)} aria-current={tab.current ? "page" : undefined}>{tab.label}</Link>)}
+  </nav>;
 }
 
 const NATIONAL_RESEARCH = encodeLandingResearch({ version: 1, task: "compare", scope: { kind: "national" }, charter: "all", categories: [...MARKET_BRIEF_CATEGORIES] });

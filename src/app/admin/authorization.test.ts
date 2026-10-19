@@ -160,6 +160,8 @@ function pageFiles(directory: string): string[] {
 const redirectOnly = new Set([
   "login/page.tsx", "hamilton/page.tsx", "hamilton/scout/page.tsx", "scout/page.tsx",
   "research/page.tsx", "research/articles/page.tsx", "research/usage/page.tsx", "research/[agentId]/page.tsx",
+  // Duplicates of the fee catalog, retired in #1122.
+  "index/page.tsx", "peers/page.tsx",
 ]);
 
 describe("admin page authorization inventory", () => {

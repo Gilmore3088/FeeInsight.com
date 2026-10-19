@@ -417,6 +417,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
   // From reader-versions.ts, which imports nothing: the readers themselves load PDF and OCR code.
   const rosetta = await loadRosettaVersions();
   const manifests: ReplayManifest[] = [
+    // v83 (#2151): faithful wrapped bullets use the existing due-text selection.
+    // No stale-floor increase or historical rejection replay accompanies this fix.
     {
       key: "knox.rules",
       owner: "knox",

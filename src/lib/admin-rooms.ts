@@ -100,12 +100,17 @@ export const ROOMS: Room[] = [
     pages: [
       { href: "/admin/data", label: "Published data", role: "What is live", exact: true },
       { href: "/admin/institutions", label: "Institutions", role: "Every bank and CU", activePrefixes: ["/admin/institution/"] },
-      { href: "/admin/fees/catalog", label: "Fee catalog", role: "Fees by category and segment", activePrefixes: ["/admin/fees"] },
+      {
+        href: "/admin/fees/catalog",
+        label: "Fee catalog",
+        role: "Fees by category and segment",
+        // The old National Index and Peers screens redirect here (#1122); peer groups open from it.
+        activePrefixes: ["/admin/fees", "/admin/peers"],
+        aliases: ["index", "national index", "peers", "peer groups", "benchmarks"],
+      },
       { href: "/admin/market", label: "Local market", role: "One bank's competitors and fees" },
       { href: "/admin/corrections", label: "Corrections", role: "Holds and corrections, with history", more: true, aliases: ["audit", "holds", "reversal"] },
-      { href: "/admin/peers", label: "Peers", role: "Peer groups", more: true },
       { href: "/admin/districts", label: "Districts", role: "Fed districts", more: true },
-      { href: "/admin/index", label: "Index", role: "National index", more: true },
       { href: "/admin/query", label: "Query", role: "Ask the database", more: true },
     ],
   },

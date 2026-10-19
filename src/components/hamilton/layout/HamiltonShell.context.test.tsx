@@ -35,11 +35,13 @@ describe("H01 retained Hamilton shell navigation", () => {
     render(<HamiltonShell {...seed}>Research body</HamiltonShell>);
     const nav = within(screen.getByRole("navigation", { name: "Hamilton workspace" }));
     expect(nav.getByRole("link", { name: "Reports" })).toHaveAttribute("href", "/pro/reports?instId=8109");
-    // My fees (/pro/research) is the "Your institution" entry, not a Research lens.
-    expect(nav.getByRole("link", { name: "Your institution" })).toHaveAttribute("aria-current", "page");
-    expect(nav.getByRole("link", { name: "Your institution" })).toHaveAttribute("href", "/pro/research?instId=8109");
-    expect(nav.getByRole("link", { name: "Research" })).not.toHaveAttribute("aria-current");
-    expect(nav.getByRole("link", { name: "Saved analyses" })).toHaveAttribute("href", "/pro/saved?instId=8109");
+    // The institution's fees (/pro/research) are a Research sub-tab named for it (#2044).
+    expect(nav.getByRole("link", { name: "Research" })).toHaveAttribute("aria-current", "page");
+    const section = within(screen.getByRole("navigation", { name: "Research pages" }));
+    expect(section.getByRole("link", { name: `${homeName} fees` })).toHaveAttribute("aria-current", "page");
+    expect(section.getByRole("link", { name: `${homeName} fees` })).toHaveAttribute("href", "/pro/research?instId=8109");
+    expect(section.getByRole("link", { name: "Market" })).toHaveAttribute("href", "/pro/intelligence?instId=8109");
+    expect(screen.getByRole("link", { name: "Alerts and watches" })).toHaveAttribute("href", "/pro/monitor?instId=8109");
   });
 
   it("carries the same research subject through mobile tabs and account links", async () => {

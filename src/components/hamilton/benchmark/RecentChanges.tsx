@@ -76,7 +76,7 @@ export function RecentChanges({ alerts, signals, selectedInstitutionId = null }:
           What changed
         </h2>
         <Link href={monitorHref} className="text-sm text-terra-text underline">
-          All changes
+          Alerts and watches
         </Link>
       </div>
       {items.length === 0 ? (
