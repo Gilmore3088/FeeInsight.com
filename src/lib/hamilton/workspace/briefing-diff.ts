@@ -177,7 +177,7 @@ function incomeChange(previous: Briefing, current: Briefing): BriefingChange[] {
   return [{
     kind: "income",
     feeCategory: null,
-    text: `New filing: deposit service charge income for the quarter ending ${after.quarterEnd} was ${money(newest.amount)}.${yoy}`,
+    text: `New filing: ${after.source === "ncua" ? "broad credit-union fee income" : "deposit service charge income"} for the quarter ending ${after.quarterEnd} was ${money(newest.amount)}.${yoy}`,
   }];
 }
 

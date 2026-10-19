@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
 import { STATS_ROW_FILTER } from "./fee-stats";
+import type { FinancialSource } from "./financial-sources";
 
 /**
  * #1245: each institution's financial rows with service-charge income for the quarter itself.
@@ -12,7 +13,14 @@ import { STATS_ROW_FILTER } from "./fee-stats";
 const QUARTERLY_FINANCIALS = `(
     SELECT inf.institution_id, inf.report_date, inf.source, inf.total_assets,
            ${QUARTER_SC} AS service_charge_income
-      FROM institution_financial_records inf
+      FROM (
+        SELECT i2.institution_id, i2.report_date, i2.source, i2.total_assets, i2.service_charge_income
+        FROM institution_financial_records i2
+        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
+          AND ((ct.charter_type = 'bank' AND i2.source = 'fdic')
+            OR (ct.charter_type = 'credit_union' AND i2.source = 'ncua'))
+        ORDER BY i2.report_date DESC LIMIT 1
+      ) inf
       ${PRIOR_QUARTER_JOIN}
      WHERE inf.source IN ('fdic', 'ncua')
   )`;
@@ -37,8 +45,25 @@ export interface FeeRevenueCorrelation {
   median_overdraft: number | null;
 }
 
-export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
+export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRevenueCorrelation[]> {
   const rows = await sql`
+    -- Scope the semantic catalog through canonical institution IDs before category
+    -- aggregation, retaining every catalog and fee eligibility predicate.
+    WITH eligible_fee_rows AS MATERIALIZED (
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
+        AND ef.institution_id = ANY (ARRAY (
+          SELECT fee_identity.id
+          FROM institution_sources fee_identity
+          WHERE fee_identity.charter_type IN ('bank', 'credit_union')
+            AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+              OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+        ))
+    )
     SELECT
       ct.id as institution_id,
       ct.institution_name,
@@ -65,23 +90,21 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
         SELECT ef.institution_id, ef.canonical_fee_key,
                CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
                     ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
-        FROM published_fee_catalog ef
-        WHERE ef.review_status = 'approved'
-          AND ef.amount IS NOT NULL
-          AND ef.amount >= 0
-          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        FROM eligible_fee_rows ef
+        JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
+          AND fee_identity.charter_type IN ('bank', 'credit_union')
+          AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+            OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
         GROUP BY ef.institution_id, ef.canonical_fee_key
       ) category_values
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef ON ct.id = ef.institution_id
-    JOIN ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+      AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
+        OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
+      AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
     WHERE 1 = 1
-      AND ifin.report_date = (
-        SELECT MAX(report_date)
-        FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
-      )
       AND ifin.service_charge_income IS NOT NULL
     GROUP BY ct.id, ct.institution_name, ct.charter_type, ct.state_code,
              ct.asset_size_tier, ct.fed_district, ifin.report_date, ifin.source,
@@ -101,6 +124,8 @@ export async function getFeeRevenueData(): Promise<FeeRevenueCorrelation[]> {
 }
 
 export interface TierFeeRevenueSummary {
+  financial_source?: FinancialSource;
+  report_date?: string;
   asset_size_tier: string;
   institution_count: number;
   avg_service_charge_income: number;
@@ -108,10 +133,27 @@ export interface TierFeeRevenueSummary {
   avg_fee_income_ratio: number;
 }
 
-export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[]> {
+export async function getTierFeeRevenueSummary(source?: FinancialSource): Promise<TierFeeRevenueSummary[]> {
   const rows = await sql`
+    -- Scope the semantic catalog through canonical institution IDs before category
+    -- aggregation, retaining every catalog and fee eligibility predicate.
+    WITH eligible_fee_rows AS MATERIALIZED (
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
+        AND ef.institution_id = ANY (ARRAY (
+          SELECT fee_identity.id
+          FROM institution_sources fee_identity
+          WHERE fee_identity.charter_type IN ('bank', 'credit_union')
+            AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+              OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+        ))
+    )
     SELECT
-      ct.asset_size_tier,
+      ct.asset_size_tier, ifin.source AS financial_source, ifin.report_date,
       COUNT(DISTINCT ct.id) as institution_count,
       ROUND(AVG(ifin.service_charge_income)::numeric, 0) as avg_service_charge_income,
       ROUND(AVG(ef_avg.avg_fee)::numeric, 2) as avg_fee_amount,
@@ -127,25 +169,23 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
         SELECT ef.institution_id, ef.canonical_fee_key,
                CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
                     ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
-        FROM published_fee_catalog ef
-        WHERE ef.review_status = 'approved'
-          AND ef.amount IS NOT NULL
-          AND ef.amount >= 0
-          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        FROM eligible_fee_rows ef
+        JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
+          AND fee_identity.charter_type IN ('bank', 'credit_union')
+          AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+            OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
         GROUP BY ef.institution_id, ef.canonical_fee_key
       ) category_values
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+      AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
+        OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
+      AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
     WHERE ct.asset_size_tier IS NOT NULL
       AND ifin.service_charge_income IS NOT NULL
-      AND ifin.report_date = (
-        SELECT MAX(report_date)
-        FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
-      )
-    GROUP BY ct.asset_size_tier
+    GROUP BY ct.asset_size_tier, ifin.source, ifin.report_date
     ORDER BY AVG(ifin.total_assets) ASC
   ` as TierFeeRevenueSummary[];
 
@@ -159,6 +199,8 @@ export async function getTierFeeRevenueSummary(): Promise<TierFeeRevenueSummary[
 }
 
 export interface CharterFeeRevenueSummary {
+  financial_source?: FinancialSource;
+  report_date?: string;
   charter_type: string;
   institution_count: number;
   avg_service_charge_income: number;
@@ -166,10 +208,27 @@ export interface CharterFeeRevenueSummary {
   avg_fee_income_ratio: number;
 }
 
-export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSummary[]> {
+export async function getCharterFeeRevenueSummary(source?: FinancialSource): Promise<CharterFeeRevenueSummary[]> {
   const rows = await sql`
+    -- Scope the semantic catalog through canonical institution IDs before category
+    -- aggregation, retaining every catalog and fee eligibility predicate.
+    WITH eligible_fee_rows AS MATERIALIZED (
+      SELECT ef.institution_id, ef.canonical_fee_key, ef.amount
+      FROM published_fee_catalog ef
+      WHERE ef.review_status = 'approved'
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
+        AND ${sql.unsafe(STATS_ROW_FILTER)}
+        AND ef.institution_id = ANY (ARRAY (
+          SELECT fee_identity.id
+          FROM institution_sources fee_identity
+          WHERE fee_identity.charter_type IN ('bank', 'credit_union')
+            AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+              OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
+        ))
+    )
     SELECT
-      ct.charter_type,
+      ct.charter_type, ifin.source AS financial_source, ifin.report_date,
       COUNT(DISTINCT ct.id) as institution_count,
       ROUND(AVG(ifin.service_charge_income)::numeric, 0) as avg_service_charge_income,
       ROUND(AVG(ef_avg.avg_fee)::numeric, 2) as avg_fee_amount,
@@ -185,24 +244,22 @@ export async function getCharterFeeRevenueSummary(): Promise<CharterFeeRevenueSu
         SELECT ef.institution_id, ef.canonical_fee_key,
                CASE WHEN ef.canonical_fee_key = 'overdraft' THEN MAX(ef.amount)
                     ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
-        FROM published_fee_catalog ef
-        WHERE ef.review_status = 'approved'
-          AND ef.amount IS NOT NULL
-          AND ef.amount >= 0
-          AND ${sql.unsafe(STATS_ROW_FILTER)}
+        FROM eligible_fee_rows ef
+        JOIN institution_sources fee_identity ON fee_identity.id = ef.institution_id
+          AND fee_identity.charter_type IN ('bank', 'credit_union')
+          AND (${source ? (source === "ncua" ? "credit_union" : "bank") : null}::text IS NULL
+            OR fee_identity.charter_type = ${source ? (source === "ncua" ? "credit_union" : "bank") : null})
         GROUP BY ef.institution_id, ef.canonical_fee_key
       ) category_values
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+      AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
+        OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
+      AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
     WHERE ifin.service_charge_income IS NOT NULL
-      AND ifin.report_date = (
-        SELECT MAX(report_date)
-        FROM institution_financial_records i2
-        WHERE i2.institution_id = ct.id AND i2.source IN ('fdic', 'ncua')
-      )
-    GROUP BY ct.charter_type
+    GROUP BY ct.charter_type, ifin.source, ifin.report_date
   ` as CharterFeeRevenueSummary[];
 
   return rows.map((r) => ({

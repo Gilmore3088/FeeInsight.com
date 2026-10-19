@@ -29,9 +29,13 @@ describe.skipIf(!connection)("NCUA discovery and Hamilton query in isolated Post
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
       throw new Error("NCUA discovery tests require a loopback E2E database; production connections are forbidden");
     }
-    db = postgres(connection, { max: 1, ssl: "require", onnotice: () => {} });
+    db = postgres(connection, { max: 1, onnotice: () => {} });
     context.db = db;
     resetNcuaCallSeriesRetry();
+    await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, charter_type text)`;
+    await db`INSERT INTO institution_sources VALUES
+      (1, 'credit_union'), (2, 'credit_union'), (3, 'credit_union'), (4, 'credit_union'), (5, 'credit_union'),
+      (100, 'bank'), (101, 'credit_union'), (102, 'credit_union'), (103, 'credit_union'), (104, 'credit_union')`;
     await db`CREATE TEMP TABLE institution_call_report_items (
       institution_id bigint, source text, report_date date, item_code text, item_key text,
       item_description text, schedule text, value numeric, unit text, period_basis text,
@@ -78,7 +82,7 @@ describe.skipIf(!connection)("NCUA discovery and Hamilton query in isolated Post
     const discovered = catalog.call_measures!.find((m) => m.measure === "call:acct_452")!;
     const answer = await queryData({ measure: discovered.measure, scope: { kind: "national" } });
     expect(answer).toMatchObject({ ok: true, unit: "count", rows: [
-      { period: "2026-06-30", median: 20, institution_count: 5, period_basis: "point_in_time", sources: "ncua", scope_label: "NCUA credit union filers" },
+      { period: "2026-06-30", median: 20, institution_count: 5, period_basis: "point_in_time", sources: "ncua", scope_label: "NCUA credit union filers — NCUA filers only" },
       { period: "2024-03-31", median: 20, institution_count: 5 },
     ], citation: { publisher: expect.stringContaining("NCUA"), source_url: url },
       measure_metadata: { item_code: "ACCT_452", caveat: expect.stringContaining("not members") } });

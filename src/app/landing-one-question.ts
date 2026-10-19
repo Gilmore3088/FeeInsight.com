@@ -66,6 +66,7 @@ export interface OneQuestionFee {
 }
 
 export interface OneQuestionIncome {
+  measureLabel: RevenueContext["measureLabel"];
   filing: string;
   /** Oldest first, for the sparkline. */
   quarters: { label: string; thousands: number; valueLabel: string }[];
@@ -224,7 +225,7 @@ export function buildAsks(report: MarketReport, first: ReportLine | null, fee: O
   if (income?.change) {
     asks.push({
       key: "monitor:income",
-      question: `What changed in our deposit service charges in ${income.change.to}?`,
+      question: `What changed in our ${income.measureLabel.toLowerCase()} in ${income.change.to}?`,
       output: "monitor",
       evidence: ["financial"],
       fee: null,
@@ -303,6 +304,7 @@ function incomeView(revenue: RevenueContext, financial: ReportPeerFinancial | nu
     };
   }
   return {
+    measureLabel: revenue.measureLabel,
     filing,
     quarters: [...revenue.quarters].reverse().map((q) => ({ label: quarterLabel(q.quarter), thousands: q.thousands, valueLabel: incomeLabel(q.thousands) })),
     latestQuarter: quarterLabel(newest.quarter),

@@ -21,7 +21,7 @@ export interface NarrativeFigure {
   /** Where the figure starts in the text. */
   index: number;
   /** A dollar/account figure is a different quantity from a total dollar figure. */
-  denominatorUnit?: "account" | "employee";
+  denominatorUnit?: "account" | "employee" | "ten_thousand_assets";
 }
 
 export interface FigureCheckOptions {
@@ -49,10 +49,12 @@ function toleranceFor(decimals: string | undefined, scale: number): number {
 }
 
 function figureDenominator(text: string, start: number, end: number): NarrativeFigure["denominatorUnit"] {
-  const after = text.slice(end, end + 70).replace(/[*_`]/g, "");
+  const after = text.slice(end, end + 100).replace(/[*_`]/g, "");
+  if (/^\s*(?:per\s+|\/\s*)(?:\$\s*10,?000|ten thousand dollars)\s+(?:of\s+)?(?:total\s+)?assets\b/i.test(after)) return "ten_thousand_assets";
   const suffix = /^\s*(?:per\s+|\/\s*)(?:(?:share[- ]draft|checking)\s+)?(account|employee)s?\b/i.exec(after);
   if (suffix) return suffix[1].toLowerCase() as NarrativeFigure["denominatorUnit"];
-  const before = text.slice(Math.max(0, start - 70), start).replace(/[*_`]/g, "");
+  const before = text.slice(Math.max(0, start - 120), start).replace(/[*_`]/g, "");
+  if (/\bper\s+(?:\$\s*10,?000|ten thousand dollars)\s+(?:of\s+)?(?:total\s+)?assets\s*(?:(?:was|is|of|at|equals?|:)\s*){0,3}$/i.test(before)) return "ten_thousand_assets";
   const prefix = /\bper[- ]+(?:(?:share[- ]draft|checking)[- ]+)?(account|employee)s?\s*(?:(?:balance|ratio|figure|amount|was|is|of|at|equals?|averages?|:)\s*){0,5}$/i.exec(before);
   return prefix ? prefix[1].toLowerCase() as NarrativeFigure["denominatorUnit"] : undefined;
 }
@@ -62,6 +64,12 @@ export function extractFigures(text: string): NarrativeFigure[] {
   for (const match of text.matchAll(USD_PATTERN)) {
     const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
     const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
+    const previous = figures.at(-1);
+    // In a typed "$7.49 per $10,000 of assets" quantity, the fixed denominator
+    // is part of the unit, not a second reported dollar total.
+    if (value === 10000 && previous?.denominatorUnit === "ten_thousand_assets"
+      && /^\s*(?:per\s+|\/\s*)$/i.test(text.slice(previous.index + previous.raw.length, match.index))
+      && /^\s*(?:of\s+)?(?:total\s+)?assets\b/i.test(text.slice((match.index ?? 0) + match[0].length))) continue;
     const denominatorUnit = figureDenominator(text, match.index ?? 0, (match.index ?? 0) + match[0].length);
     figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0,
       ...(denominatorUnit ? { denominatorUnit } : {}) });
@@ -76,6 +84,7 @@ export function extractFigures(text: string): NarrativeFigure[] {
 const MONEY_KEY = /amount|median|mean|avg|average|p\d\d|min|max|fee|price|cost|charge|income|revenue|deposit|asset|delta|cap|total|value/i;
 const RATE_KEY = /pct|percent|ratio|rate|share|roa|roe|margin|yield|change|growth|delta/i;
 const NOT_A_FIGURE = /(^|_)(id|ids|count|counts|year|quarter|district|rank|version|step|limit)$/i;
+const assetIntensityUnit = (unit: unknown) => typeof unit === "string" && /^USD income per 10,?000 USD assets$/i.test(unit.trim());
 
 interface PayloadNumber {
   key: string;
@@ -88,27 +97,31 @@ interface PayloadNumber {
   ncuaFinancial?: boolean;
   implicitArithmeticAllowed?: boolean;
   denominatorUnit?: NarrativeFigure["denominatorUnit"];
+  /** An explicit per-field currency unit supports fields such as health's `absolute`. */
+  explicitDollarField?: boolean;
 }
 
 /** Every finite number in the payload with the key it sits under (numeric strings included). */
 export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
   const found: PayloadNumber[] = [];
   const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0,
-    ncuaFinancial = false, implicitArithmeticAllowed = true, denominatorUnit?: NarrativeFigure["denominatorUnit"]) => {
+    ncuaFinancial = false, implicitArithmeticAllowed = true, denominatorUnit?: NarrativeFigure["denominatorUnit"], explicitDollarField = false) => {
     if (found.length >= MAX_PAYLOAD_NUMBERS || depth > 12) return;
     const number = numericPayloadValue(value);
     if (number !== null) {
-      const scale = unit === undefined ? undefined : dollarUnitScale(unit);
+      const assetIntensity = assetIntensityUnit(unit);
+      const scale = assetIntensity ? 1 : unit === undefined ? undefined : dollarUnitScale(unit);
       // A container's financial caption describes its dollar fields, not its named ratios.
       const rateField = typeof unit === "string" && /dollar amounts/i.test(unit) && RATE_KEY.test(key);
       if (typeof value === "string" && value.includes("$") && scale === null) return;
       found.push({
         key, value: number,
-        ...(unit !== undefined ? { dollars: dollarsFromUnit(number, unit), rateMultiplier: percentageUnitScale(unit) } : {}),
+        ...(unit !== undefined ? { dollars: assetIntensity ? number : dollarsFromUnit(number, unit), rateMultiplier: percentageUnitScale(unit) } : {}),
         ...(rateField && scale !== null ? { dollars: null, rateMultiplier: undefined } : {}),
         ...(ncuaFinancial ? { ncuaFinancial: true } : {}),
         ...(!implicitArithmeticAllowed ? { implicitArithmeticAllowed: false } : {}),
-        ...(denominatorUnit ? { denominatorUnit } : {}),
+        ...(assetIntensity ? { denominatorUnit: "ten_thousand_assets" as const } : denominatorUnit ? { denominatorUnit } : {}),
+        ...(explicitDollarField ? { explicitDollarField: true } : {}),
       });
     } else if (typeof value === "string") {
       const text = value.trim();
@@ -131,11 +144,15 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
       const ownNcua = !feeRecord && (ncuaFinancial || source === "ncua" || source === "ncua-extras"
         || (typeof record.measure === "string" && /^call:acct_/.test(record.measure)));
       const ownArithmetic = implicitArithmeticAllowed && record.numeric_arithmetic_allowed !== false;
-      const ownDenominator = record.denominator_unit === "account" || record.denominator_unit === "employee"
+      const ownDenominator = record.denominator_unit === "account" || record.denominator_unit === "employee" || record.denominator_unit === "ten_thousand_assets"
         ? record.denominator_unit : denominatorUnit;
+      const fieldUnits = record.field_units && typeof record.field_units === "object" && !Array.isArray(record.field_units)
+        ? record.field_units as Record<string, unknown> : {};
       for (const [childKey, child] of Object.entries(record)) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
-        visit(child, childKey, own, depth + 1, ownNcua, ownArithmetic, ownDenominator);
+        const fieldUnit = typeof fieldUnits[childKey] === "string" ? fieldUnits[childKey] : undefined;
+        visit(child, childKey, fieldUnit ?? own, depth + 1, ownNcua, ownArithmetic, ownDenominator,
+          fieldUnit !== undefined && (dollarUnitScale(fieldUnit) !== null || assetIntensityUnit(fieldUnit)));
       }
     }
   };
@@ -154,8 +171,8 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
   const sameQuantity = (n: PayloadNumber) => n.denominatorUnit === denominatorUnit
     // Existing fee prices can be described "per account" without being a calculated
     // balance/account ratio. Preserve legacy sources; NCUA totals require the typed ratio.
-    || (denominatorUnit !== undefined && n.denominatorUnit === undefined && !(options.explicitFinancialDerivations && n.ncuaFinancial));
-  const money = usable.filter((n) => MONEY_KEY.test(n.key) && n.dollars !== null && sameQuantity(n));
+    || ((denominatorUnit === "account" || denominatorUnit === "employee") && n.denominatorUnit === undefined && !(options.explicitFinancialDerivations && n.ncuaFinancial));
+  const money = usable.filter((n) => (MONEY_KEY.test(n.key) || n.explicitDollarField) && n.dollars !== null && sameQuantity(n));
   const arithmetic = money.filter((n) => !n.denominatorUnit && n.implicitArithmeticAllowed !== false && !(options.explicitFinancialDerivations && n.ncuaFinancial));
   const candidates = new Set<number>();
   if (kind === "usd") {
@@ -199,6 +216,9 @@ const SIZE_AFTER = /^\s*(?:in\s+(?:total\s+)?assets?\b|of\s+(?:total\s+)?assets\
 const THRESHOLD_BEFORE = /\b(?:under|over|above|below|more\s+than|less\s+than|at\s+least|up\s+to|exceeding)\s*$/i;
 const ASSETS_THRESHOLD_BEFORE = /\bassets?\s+(?:of\s+)?(?:under|over|above|below|more\s+than|less\s+than|at\s+least|up\s+to|exceeding)\s*$/i;
 const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
+const EXCLUSIVE_UPPER_JOIN = /^\s*(?:to|and)\s+under\s*$/i;
+const EXCLUSIVE_RANGE_JOIN = /^\s*up to\s*,?\s*but not including\s*,?\s*$/i;
+const ASSETS_RANGE_BEFORE = /\bassets?\s+(?:(?:ranging\s+)?from|(?:of\s+)?at least)\s*$/i;
 
 /**
  * An asset-tier bound stated as a size, not as money: two bounds as a range followed by a size
@@ -206,7 +226,7 @@ const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
  * threshold ("under $1 billion in assets", "assets above $10 billion"). A bound that only shares
  * a sentence with the word "assets" ("earned $1 billion in fees, with assets of ...") still traces.
  */
-function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
+export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
   const accepted = new Set<NarrativeFigure>();
   const definedRanges = new Set<string>();
   const references: Array<{ a: NarrativeFigure; b: NarrativeFigure; range: string }> = [];
@@ -216,10 +236,13 @@ function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<Narrati
     if (!isTierBound(a)) continue;
     const aEnd = a.index + a.raw.length;
     const b = ordered[i + 1];
-    if (b && isTierBound(b) && RANGE_JOIN.test(text.slice(aEnd, b.index))) {
+    const assetsRange = ASSETS_RANGE_BEFORE.test(text.slice(Math.max(0, a.index - 50), a.index));
+    if (b && isTierBound(b) && (RANGE_JOIN.test(text.slice(aEnd, b.index))
+      || (a.value < b.value && EXCLUSIVE_UPPER_JOIN.test(text.slice(aEnd, b.index)))
+      || (assetsRange && a.value < b.value && EXCLUSIVE_RANGE_JOIN.test(text.slice(aEnd, b.index))))) {
       const after = text.slice(b.index + b.raw.length, b.index + b.raw.length + 30);
       const range = `${a.value}:${b.value}`;
-      if (SIZE_AFTER.test(after)) {
+      if (SIZE_AFTER.test(after) || assetsRange) {
         accepted.add(a);
         accepted.add(b);
         definedRanges.add(range);

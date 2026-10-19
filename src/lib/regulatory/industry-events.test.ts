@@ -116,6 +116,16 @@ describe("tables", () => {
     ]);
   });
 
+  it("downloads at most maxFiles data files from a page", async () => {
+    const page = '<a href="/a/insurance-report-activity-mar-2026.zip">March 2026</a><a href="/a/insurance-report-activity-dec-2025.zip">December 2025</a>';
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).endsWith(".zip") ? new Response(zipSync({ "notes.pdf": new Uint8Array([1]) }), { status: 200 }) : new Response(page, { status: 200 }),
+    ) as unknown as typeof fetch;
+    const list = await fetchPublishedList(["https://ncua.gov/x"], /insurance-report-activity/i, NCUA_LIQUIDATION_SPEC, ["name", "date"], { fetchImpl, backoffMs: 0 }, 1);
+    expect(list.candidates).toHaveLength(2);
+    expect(vi.mocked(fetchImpl).mock.calls.map((c) => String(c[0]))).toEqual(["https://ncua.gov/x", "https://ncua.gov/a/insurance-report-activity-mar-2026.zip"]);
+  });
+
   it("falls back to an HTML table on the page and reports PDF-only pages", async () => {
     const page = "<table><tr><th>Credit Union</th><th>Date</th></tr><tr><td>Acme FCU</td><td>2025-01-05</td></tr></table>";
     const fetchImpl = vi.fn(async () => new Response(page, { status: 200 })) as unknown as typeof fetch;

@@ -19,7 +19,7 @@ export interface PublicStats {
   total_states: number;
 }
 
-export async function getPublicStats(): Promise<PublicStats> {
+export async function getPublicStats(options: { strict?: boolean } = {}): Promise<PublicStats> {
   try {
     const validCodes = [...VALID_US_CODES];
     const [row] = await sql<PublicStats[]>`
@@ -40,7 +40,9 @@ export async function getPublicStats(): Promise<PublicStats> {
       total_categories: Number(row.total_categories),
       total_states: Number(row.total_states),
     };
-  } catch {
+  } catch (error) {
+    // Analytical prompts must distinguish an unavailable count from a measured zero.
+    if (options.strict) throw error;
     return { total_observations: 0, total_institutions: 0, total_categories: 0, total_states: 0 };
   }
 }
@@ -256,7 +258,8 @@ export async function getInstitutionById(id: number): Promise<InstitutionDetail 
         AND NOT EXISTS (
           SELECT 1
           FROM published_fee_catalog pfc
-          WHERE pfc.fee_verified_id = fv.fee_verified_id
+          WHERE pfc.institution_id = fv.institution_id
+            AND pfc.fee_verified_id = fv.fee_verified_id
             AND pfc.review_status <> 'rejected'
         )
       GROUP BY fv.institution_id

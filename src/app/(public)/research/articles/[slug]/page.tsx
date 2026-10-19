@@ -10,7 +10,6 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getArticleBySlug, getPublishedArticles } from "@/lib/data-store/articles";
-import { ensureResearchTables } from "@/lib/research/history";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
@@ -29,7 +28,6 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  await ensureResearchTables();
   const article = await getArticleBySlug(slug);
   if (!article || article.status !== "published") {
     return { title: "Article Not Found" };
@@ -51,7 +49,6 @@ export default async function ArticlePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  await ensureResearchTables();
   const article = await getArticleBySlug(slug);
 
   if (!article || article.status !== "published") {

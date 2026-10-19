@@ -51,7 +51,7 @@ describe("buildFeeIncomeTrend", () => {
     expect(buildFeeIncomeTrend({ institutionName: "X", records, gdpPriceIndex: [], industryServiceCharges })).toBeNull();
   });
 
-  it("de-cumulates credit union year-to-date income and says the industry line is banks", () => {
+  it("de-cumulates credit-union income and excludes an incompatible bank industry comparison", () => {
     const ytd = Array.from({ length: QUARTERS }, (_, i) => {
       const q = i % 4;
       const base = 500 * 1.01 ** (i - q);
@@ -60,6 +60,11 @@ describe("buildFeeIncomeTrend", () => {
     const result = buildFeeIncomeTrend({ institutionName: "Prairie CU", records: ytd, gdpPriceIndex, industryServiceCharges })!;
     expect(result.data.source).toBe("ncua");
     expect(result.data.income_label).toBe("fee income");
-    expect(result.exhibits[0].note).toContain("The industry line covers banks");
+    expect(result.exhibits[0].note).toContain("bank deposit service charges are excluded");
+    expect(result.data.industry_real_cagr_pct).toBeNull();
+    expect(result.data.years.every((year) => year.industry_real_change_pct === null)).toBe(true);
+    expect(result.exhibits[0].columns).not.toContain("Bank industry real change");
+    expect(result.exhibits[0].rows.every((row) => row.length === result.exhibits[0].columns.length)).toBe(true);
+    expect(result.sources.some((source) => source.label.startsWith("Industry service charges"))).toBe(false);
   });
 });

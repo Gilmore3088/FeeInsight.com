@@ -729,6 +729,8 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
         FROM institution_sources s
         JOIN institution_financial_records f ON f.institution_id = s.id
        WHERE s.id = ${targetId} AND f.source IN ('fdic', 'ncua')
+         AND ((s.charter_type = 'bank' AND f.source = 'fdic')
+           OR (s.charter_type = 'credit_union' AND f.source = 'ncua'))
        ORDER BY f.report_date DESC
        LIMIT 1
     )
@@ -770,7 +772,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
     tier1_capital_ratio: capitalRatioPct(row.tier1_capital_ratio, row.source),
     leverage_ratio: numOrNull(row.leverage_ratio),
     total_capital_ratio: numOrNull(row.total_capital_ratio),
-    fee_income_ratio: numOrNull(row.fee_income_ratio),
+    fee_income_ratio: Number(row.fee_income_peer_count) >= 5 ? numOrNull(row.fee_income_ratio) : null,
     fee_income_peer_count: Number(row.fee_income_peer_count ?? 0),
   };
 }
@@ -826,6 +828,8 @@ export async function getPeerPercentiles(targetId: number): Promise<PeerPercenti
         FROM institution_sources s
         JOIN institution_financial_records f ON f.institution_id = s.id
        WHERE s.id = $1 AND f.source IN ('fdic', 'ncua')
+         AND ((s.charter_type = 'bank' AND f.source = 'fdic')
+           OR (s.charter_type = 'credit_union' AND f.source = 'ncua'))
        ORDER BY f.report_date DESC
        LIMIT 1
     ),

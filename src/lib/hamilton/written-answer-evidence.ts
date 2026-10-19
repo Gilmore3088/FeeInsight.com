@@ -1,5 +1,6 @@
 import { deriveNcuaAnswerEvidence, type NcuaAnswerDerivation, type NcuaDerivationInput } from "./answer-derivations";
 import type { HamiltonBriefingEvidence } from "./institution-briefing";
+import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
 
 /** Server-observed tool reads, never calculations supplied by a model or browser. */
 export interface AnswerToolEvidence {
@@ -40,8 +41,14 @@ function calculationLedger(reads: readonly AnswerToolEvidence[]) {
     projected.push(candidate);
   }
   const limitations = [...all.limitations];
+  const profiles: ProfileQuarterCalculation[] = [];
+  for (const calculation of profileQuarterCalculations(reads)) {
+    if (retained.length + profiles.length >= WRITTEN_CALCULATION_MAX_FACTS
+      || JSON.stringify({ input_facts: Object.fromEntries(facts), derivations: [...projected, ...profiles, calculation], limitations }).length > WRITTEN_CALCULATION_MAX_CHARS - 400) break;
+    profiles.push(calculation);
+  }
   if (retained.length < all.derivations.length) limitations.push("The calculation ledger was bounded. State only calculations included here; request a narrower filing window for other calculations.");
-  return { retained, prompt: { input_facts: Object.fromEntries(facts), derivations: projected, limitations } };
+  return { retained: [...retained, ...profiles], prompt: { input_facts: Object.fromEntries(facts), derivations: [...projected, ...profiles], limitations } };
 }
 
 /** Repeated derivation inputs are provenance, not additional numerical candidates. */

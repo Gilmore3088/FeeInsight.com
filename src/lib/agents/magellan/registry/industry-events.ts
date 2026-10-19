@@ -14,6 +14,7 @@ import {
   fetchFhlbMembers,
   fetchNcuaLiquidations,
   fetchNcuaMergers,
+  fetchNcuaProposedMergers,
   fetchOccBulletins,
   fetchRuleComments,
   fetchSbaResources,
@@ -51,6 +52,8 @@ import { cikBatch, SEC_FILING_BATCHES } from "./sec";
  *   fed-h2, occ-bulletin           early warning: merger, branch and charter applications
  *   fdic-failures                  BankFind /failures             -> institution_structure_events
  *   ncua-mergers, ncua-liquidations NCUA published lists          -> institution_structure_events
+ *   ncua-proposed-mergers          NCUA member-vote list          -> institution_structure_events
+ *                                  (merging CU as institution, continuing CU's charter in acquirer_cert)
  *   fhlb-members                   FHFA quarterly membership XLSX -> fhlb_members
  *   cdfi-awards                    CDFI Fund award list           -> cdfi_awards
  *   sba:<file>                     SBA 7(a)/504 FOIA CSV          -> sba_lender_lending (per lender)
@@ -80,6 +83,7 @@ export function industryEventsPartitions(now: Date): string[] {
     "occ-bulletin",
     "fdic-failures",
     "ncua-mergers",
+    "ncua-proposed-mergers",
     "ncua-liquidations",
     "fhlb-members",
     "cdfi-awards",
@@ -254,6 +258,64 @@ function prepareListEvents(fetched: FetchedEvents, index: InstitutionIndex, sour
     refreshHours,
     extra: { ...fetched.extra, total: fetched.total, duplicate_records: fetched.events.length - unique.length },
     write: writeStructureEvents(source, rows),
+  };
+}
+
+/**
+ * NCUA's proposed-merger list names both credit unions but gives no charter or state, so each
+ * name is matched exactly against credit union records only (a name two credit unions share stays
+ * unmatched). The merging credit union is the row's institution; the continuing one's charter goes
+ * in acquirer_cert, as the other NCUA lists do, so its own profile can find the deal.
+ */
+export function prepareProposedMergers(fetched: FetchedEvents, creditUnions: InstitutionIndexRow[]): Prepared {
+  const ncua = creditUnions.filter((r) => r.source === "ncua");
+  const index = buildInstitutionIndex(ncua);
+  const charterById = new Map(ncua.map((r) => [Number(r.id), idValue(r.cert_number)]));
+  const unique = [...new Map(fetched.events.map((e) => [e.eventKey, e])).values()];
+  const cleaning: CleaningInput[] = [];
+  let acquirersMatched = 0;
+  let acquirersAmbiguous = 0;
+  const rows: StructurePayload[] = unique.map((e) => {
+    const merging = matchInstitution(index, { name: e.institutionName, nameWithoutState: true });
+    const continuing = matchInstitution(index, { name: e.acquirerName, nameWithoutState: true });
+    const acquirerCert = continuing.institutionId !== null ? charterById.get(continuing.institutionId) ?? null : null;
+    if (acquirerCert) acquirersMatched += 1;
+    if (continuing.ambiguous) acquirersAmbiguous += 1;
+    cleaning.push({
+      key: e.eventKey,
+      institutionId: merging.institutionId,
+      ambiguous: merging.ambiguous,
+      fields: { name: e.institutionName, acquirer_name: e.acquirerName, effective_date: e.effectiveDate },
+      dates: { effective_date: e.effectiveDate },
+    });
+    return {
+      event_key: e.eventKey,
+      cert: merging.institutionId !== null ? charterById.get(merging.institutionId) ?? null : null,
+      institution_id: merging.institutionId,
+      institution_name: e.institutionName,
+      change_code: e.changeCode,
+      change_description: e.changeDescription,
+      effective_date: e.effectiveDate,
+      acquirer_cert: acquirerCert,
+      acquirer_name: e.acquirerName,
+      office_city: null,
+      office_state: null,
+      raw_json: e.raw,
+      source_url: fetched.sourceUrl,
+    };
+  });
+  return {
+    sourceUrl: fetched.sourceUrl,
+    rows: rows.length,
+    matched: rows.filter((r) => r.institution_id !== null).length,
+    missingFields: fetched.missingFields,
+    unexpectedFields: fetched.unexpectedFields,
+    truncated: fetched.truncated,
+    cleaning,
+    reason: rows.length === 0 ? fetched.reason ?? "no records" : null,
+    refreshHours: HOURS.week,
+    extra: { ...fetched.extra, total: fetched.total, duplicate_records: fetched.events.length - unique.length, acquirers_matched: acquirersMatched, acquirers_ambiguous: acquirersAmbiguous },
+    write: writeStructureEvents("ncua-proposed-mergers", rows),
   };
 }
 
@@ -753,6 +815,12 @@ async function prepare(options: RegistryIndustryEventsOptions, db: RegistryDb, n
     const m = /^batch-(\d+)$/.exec(arg ?? "");
     if (!m || Number(m[1]) >= SEC_FILING_BATCHES) throw new Error(`Invalid industry-events SEC partition: ${key}`);
     return prepareSec(Number(m[1]), db, fo, options.pauseMs ?? SEC_PAUSE_MS);
+  }
+  if (family === "ncua-proposed-mergers") {
+    const creditUnions = await db<InstitutionIndexRow[]>`
+      SELECT id, source, cert_number, rssd_id, institution_name, state_code FROM institution_sources WHERE source = 'ncua'
+    `;
+    return prepareProposedMergers(await fetchNcuaProposedMergers(fo), [...creditUnions]);
   }
   const index = await loadIndex(db);
   switch (family) {

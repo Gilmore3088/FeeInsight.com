@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { buildNationalTrends } from "./national-trends";
+import { describe, expect, it, vi } from "vitest";
+import { buildFinancialIncomeGroup } from "./financial-income";
+vi.mock("@/lib/data-store/call-reports", () => ({ getRevenueTrend: vi.fn(), getDistrictIncomeTrend: vi.fn() }));
+vi.mock("@/lib/data-store/fee-index", () => ({ getSegmentFeeRows: vi.fn().mockResolvedValue([]) }));
+import { getRevenueTrend, getDistrictIncomeTrend } from "@/lib/data-store/call-reports";
+import { assembleNationalTrends, buildNationalTrends } from "./national-trends";
 import type { SegmentFeeRow } from "@/lib/data-store/fee-index";
 import { renderNationalTrendsSection, thousandsShort } from "@/lib/report-templates/templates/national-trends-section";
 
@@ -50,14 +54,22 @@ const districtIncome = [
 ];
 
 describe("national trends", () => {
-  const trends = buildNationalTrends({ feeRows: rows, nationalIncome: income, districtIncome });
+  const financialIncomeGroups = ["fdic", "ncua"].map((source) => buildFinancialIncomeGroup(source as "fdic" | "ncua", income.map((q) => ({
+    ...q, total_service_charges: source === "fdic" ? q.bank_service_charges : q.cu_service_charges,
+    bank_service_charges: source === "fdic" ? q.bank_service_charges : 0,
+    cu_service_charges: source === "ncua" ? q.cu_service_charges : 0,
+  })), 16));
+  const trends = buildNationalTrends({ feeRows: rows, financialIncomeGroups, districtIncomeGroups: [{ source: "fdic", rows: districtIncome }] });
 
   it("gives every district a row, with a median only where five or more institutions publish", () => {
     expect(trends.districts).toHaveLength(12);
     const dallas = trends.districts.find((d) => d.district === 11)!;
     expect(dallas).toMatchObject({ name: "Dallas", institutions: 6 });
     expect(dallas.fees.overdraft).toEqual({ median: 31, institutions: 6 });
-    expect(dallas.income).toEqual({ quarter: income[0].quarter, thousands: 900_000, yoyPct: 12.5, institutions: 600 });
+    expect(dallas.income).toBeNull();
+    expect(dallas.financialIncome?.[0]).toMatchObject({ source: "fdic", charter_type: "bank", quarters: [
+      expect.objectContaining({ quarter: income[0].quarter, total_thousands: 900_000, yoy_change_pct: 12.5, reported_count: 600 }), expect.anything(),
+    ] });
     const boston = trends.districts.find((d) => d.district === 1)!;
     expect(boston.fees.overdraft).toEqual({ median: null, institutions: 2 });
     expect(trends.districts.find((d) => d.district === 2)!.institutions).toBe(0);
@@ -94,8 +106,12 @@ describe("national trends", () => {
   });
 
   it("keeps sixteen quarters of income, newest first", () => {
-    expect(trends.income).toHaveLength(16);
-    expect(trends.income[0]).toMatchObject({ quarter: income[0].quarter, yoyPct: 4 });
+    expect(trends.income).toEqual([]);
+    expect(trends.financialIncomeGroups).toHaveLength(2);
+    for (const g of trends.financialIncomeGroups ?? []) {
+      expect(g.quarters).toHaveLength(16);
+      expect(g.quarters[0]).toMatchObject({ quarter: income[0].quarter, yoy_change_pct: 4 });
+    }
   });
 
   it("names institutions above the outlier fence, highest first", () => {
@@ -119,10 +135,39 @@ describe("national trends", () => {
   it("leaves out district fee medians and size tiers when another chapter shows them", () => {
     const html = renderNationalTrendsSection(trends, { number: "09", title: "Rankings, Income Trend and Outliers", districtFees: false, tiers: false });
     expect(html).toContain("Rankings, Income Trend and Outliers");
-    expect(html).toContain("Service-charge income by Federal Reserve district");
+    expect(html).toContain("Separate financial measures by Federal Reserve district");
     expect(html).not.toContain("Median published fee by Federal Reserve district");
     expect(html).not.toContain("Median published fee by asset size");
     expect(html).toContain("State ranking");
+  });
+
+  it("renders separate definitions and suppresses all pooled income cards", () => {
+    const html = renderNationalTrendsSection(trends, { number: "06" });
+    expect(html).toContain("Bank deposit service charges");
+    expect(html).toContain("Broad credit-union fee income");
+    expect(html).toContain("standalone quarters");
+    expect(html).toContain("2026-06-30");
+    expect(html).not.toContain("Credit union share");
+    expect(html).not.toContain("Change since");
+    const legacy = buildNationalTrends({ feeRows: rows, nationalIncome: income, districtIncome });
+    expect(legacy.financialIncomeGroups).toEqual([]);
+    expect(legacy.districts.every((d) => d.income === null && d.financialIncome?.length === 0)).toBe(true);
+  });
+
+  it("reads every financial series and district with an explicit canonical source", async () => {
+    vi.mocked(getRevenueTrend).mockImplementation(async (_n, source) => ({ latest: null, quarters: income.map((q) => ({ ...q,
+      total_service_charges: source === "fdic" ? q.bank_service_charges : q.cu_service_charges,
+      bank_service_charges: source === "fdic" ? q.bank_service_charges : 0,
+      cu_service_charges: source === "ncua" ? q.cu_service_charges : 0,
+    })) }));
+    vi.mocked(getDistrictIncomeTrend).mockResolvedValue([]);
+    const assembled = await assembleNationalTrends();
+    expect(getRevenueTrend).toHaveBeenCalledWith(20, "fdic");
+    expect(getRevenueTrend).toHaveBeenCalledWith(20, "ncua");
+    expect(getDistrictIncomeTrend).toHaveBeenCalledWith(20, "fdic");
+    expect(getDistrictIncomeTrend).toHaveBeenCalledWith(20, "ncua");
+    expect(assembled.financialIncomeGroups?.map((g) => g.source)).toEqual(["fdic", "ncua"]);
+    expect(assembled.income).toEqual([]);
   });
 
   it("formats thousands as billions and millions", () => {

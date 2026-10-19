@@ -136,6 +136,10 @@ export async function assembleAndRender(
           ? `GLOBAL THESIS (reference this in your analysis — your section is one argument in a unified report):\n${thesis.narrative_summary}\n\n`
           : '';
 
+        // Old payloads may still carry retired mixed-denominator metrics.
+        const priceDerived = Object.fromEntries(Object.entries(payload.derived).filter(([key]) =>
+          !["revenue_per_institution", "bank_revenue_share_pct", "cu_revenue_share_pct"].includes(key)));
+
         // V3: Run 6 Hamilton calls in parallel — strategic framing
         const [
           execResult,
@@ -149,7 +153,8 @@ export async function assembleAndRender(
             type: 'executive_summary',
             title: 'The Quarter in Figures — Executive Summary',
             data: {
-              ...payload.derived,
+              ...priceDerived,
+              financial_income_groups: payload.financial_income_groups ?? [],
               total_institutions: payload.total_institutions,
               fred_snapshot: payload.fred
                 ? {
@@ -195,10 +200,7 @@ export async function assembleAndRender(
             type: 'trend_analysis',
             title: 'Fee Income in Call Reports',
             data: {
-              revenue: payload.revenue ?? null,
-              revenue_per_institution: payload.derived.revenue_per_institution,
-              bank_revenue_share_pct: payload.derived.bank_revenue_share_pct,
-              cu_revenue_share_pct: payload.derived.cu_revenue_share_pct,
+              financial_income_groups: payload.financial_income_groups ?? [],
               fred_snapshot: payload.fred
                 ? {
                     fed_funds_rate: payload.fred.fed_funds_rate,
@@ -207,7 +209,7 @@ export async function assembleAndRender(
                   }
                 : null,
             },
-            context: `${thesisContext}Describe the national service-charge income figures given (dollar amounts are in thousands of dollars), the year-over-year change and the bank and credit union shares. 2-3 sentences. Call reports do not split fee income by fee category, so do not attribute income to any category. Where fred_snapshot is present, you may compare the change with CPI. Say only what the DATA block shows. Do not tell any institution what to do.`,
+            context: `${thesisContext}Describe each source group separately: FDIC bank deposit service charges and NCUA broad credit-union fee income are different measures. Amounts are in thousands of dollars. Retain report date, period basis, reporting count and changing-population limitations. Never combine totals, means, shares or growth across sources. 2-3 sentences. These aggregate income groups do not provide a category breakdown; do not attribute their income to a fee category. Where fred_snapshot is present, you may compare the change with CPI. Say only what the DATA block shows. Do not tell any institution what to do.`,
           }),
           generateSection({
             type: 'findings',
@@ -258,7 +260,7 @@ export async function assembleAndRender(
             : fallbackNarrative('Spread and coverage figures for this quarter are shown below.');
 
         // D-07: Validate numerics on key sections
-        const derivedData = payload.derived as unknown as Record<string, unknown>;
+        const derivedData = priceDerived;
         validateAndWarn('executive_summary', executive_summary, derivedData);
         validateAndWarn('fee_differentiation', fee_differentiation, derivedData);
         validateAndWarn('banks_vs_credit_unions', banks_vs_credit_unions, derivedData);
@@ -269,7 +271,7 @@ export async function assembleAndRender(
         const passedValidation = { passed: true, inventedNumbers: [] as string[], checkedCount: 0, sourceValues: [] as number[] };
         const editorSections: ValidatedSection[] = [];
         if (execResult.status === 'fulfilled') {
-          editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: 'The Quarter in Figures — Executive Summary', data: { ...(payload.derived as unknown as Record<string, unknown>), total_institutions: payload.total_institutions } } });
+          editorSections.push({ ...executive_summary, validation: passedValidation, input: { type: 'executive_summary' as const, title: 'The Quarter in Figures — Executive Summary', data: { ...priceDerived, financial_income_groups: payload.financial_income_groups ?? [], total_institutions: payload.total_institutions } } });
         }
         if (diffResult.status === 'fulfilled') {
           editorSections.push({ ...fee_differentiation, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Where Prices Cluster and Where They Spread', data: { median_iqr_spread_pct: payload.derived.median_iqr_spread_pct, commoditized_count: payload.derived.commoditized_count } } });
@@ -278,7 +280,7 @@ export async function assembleAndRender(
           editorSections.push({ ...banks_vs_credit_unions, validation: passedValidation, input: { type: 'peer_comparison' as const, title: 'Banks and Credit Unions', data: { bank_higher_count: payload.derived.bank_higher_count, cu_higher_count: payload.derived.cu_higher_count } } });
         }
         if (revenueResult.status === 'fulfilled') {
-          editorSections.push({ ...revenue_reality, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Fee Income in Call Reports', data: { revenue: payload.revenue ?? null, revenue_per_institution: payload.derived.revenue_per_institution } } });
+          editorSections.push({ ...revenue_reality, validation: passedValidation, input: { type: 'trend_analysis' as const, title: 'Fee Income in Call Reports', data: { financial_income_groups: payload.financial_income_groups ?? [] } } });
         }
         if (blindSpotResult.status === 'fulfilled') {
           editorSections.push({ ...industry_blind_spot, validation: passedValidation, input: { type: 'findings' as const, title: 'Data Coverage', data: { categories_with_data_count: payload.derived.categories_with_data_count, total_categories: payload.categories.length } } });
