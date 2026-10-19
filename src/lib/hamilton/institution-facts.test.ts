@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { institutionFacts } from "./institution-facts";
-import { subjectSwitchHref } from "./navigation-context";
+import { marketSwitchHref, subjectSwitchHref } from "./navigation-context";
 
 describe("institutionFacts (#2043)", () => {
   it("names the state, charter and size from a raw tier or its label", () => {
@@ -24,5 +24,15 @@ describe("subjectSwitchHref (#2043)", () => {
     expect(subjectSwitchHref("/pro/reports", 2945)).toBe("/pro/reports?instId=2945");
     expect(subjectSwitchHref("/pro/intelligence", "2945")).toBe("/pro/research?instId=2945");
     expect(subjectSwitchHref("/pro/simulate", "x")).toBe("/pro/research");
+  });
+
+  it("keeps the fee in view and the briefing as the briefing, and drops saved records", () => {
+    expect(subjectSwitchHref("/pro/simulate", 2945, new URLSearchParams("instId=1535&category=overdraft&scenario_id=9"))).toBe("/pro/simulate?instId=2945&category=overdraft");
+    expect(subjectSwitchHref("/pro/intelligence", 2945, new URLSearchParams("view=institution&instId=1535"))).toBe("/pro/intelligence?view=institution&instId=2945");
+  });
+
+  it("answers for the U.S. market in Ask and opens Research elsewhere", () => {
+    expect(marketSwitchHref("/pro/analyze", "abc")).toBe("/pro/analyze?research=abc");
+    expect(marketSwitchHref("/pro/simulate", "abc")).toBe("/pro/intelligence");
   });
 });

@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, Menu, MessageCircle, Search, Settings, X } from "lucide-react";
 import { HAMILTON_WORKSPACE_NAV, isWorkspaceNavActive } from "@/lib/hamilton/navigation";
 import { NavAccount } from "@/components/nav-account";
 import { InstitutionPicker } from "@/components/hamilton/InstitutionPicker";
-import { subjectSwitchHref } from "@/lib/hamilton/navigation-context";
+import { marketSwitchHref, subjectSwitchHref } from "@/lib/hamilton/navigation-context";
+import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
+import { MARKET_BRIEF_CATEGORIES } from "@/lib/hamilton/market-question";
 import { useHamiltonNavigationHref } from "./hamilton-navigation-context";
 
 const icons = { Activity, Bookmark, Calculator, ChartNoAxesColumnIncreasing, FileText, Landmark, MessageCircle, Search, Settings };
@@ -78,7 +80,7 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
       </header>
       {researchLabel ? <div className="workspace-research-context print:hidden">
         {peerLabel === undefined ? null : peerLabel
-          ? <span>Compared with: <strong>{peerLabel}</strong>, your saved peer group</span>
+          ? <span>Compared with: <strong>{peerLabel}</strong>, a saved peer group</span>
           : <span>Compared with: peers Hamilton picks for this institution · <Link href="/pro/settings#peer-sets">Save your own</Link></span>}
         {researchIsHome ? null : <span>
           Your institution: {homeName ? <Link href={homeHref}>{homeName}</Link> : <strong>{accountLabel}</strong>}
@@ -91,16 +93,19 @@ export function WorkspaceNavigation({ pathname, isAdmin, accountLabel, researchL
   </>;
 }
 
+const NATIONAL_RESEARCH = encodeLandingResearch({ version: 1, task: "compare", scope: { kind: "national" }, charter: "all", categories: [...MARKET_BRIEF_CATEGORIES] });
+
 /** Research another institution on the same screen, or open the U.S. market view (#2043). */
 function SubjectSwitch({ pathname, showMarket }: { pathname: string; showMarket: boolean }) {
   const router = useRouter();
+  const params = useSearchParams();
   const [open, setOpen] = useState(false);
-  return <span className="workspace-switch">
-    <button type="button" aria-expanded={open} aria-controls="workspace-switch-picker" onClick={() => setOpen(!open)}>Research another institution</button>
-    {showMarket ? <Link href="/pro/intelligence">U.S. market</Link> : null}
-    {open ? <span id="workspace-switch-picker" className="workspace-switch-picker">
-      <InstitutionPicker inputId="workspace-switch-institution" label="Institution" help="Pick a match to open it on this screen."
-        onSelect={(result) => { if (result) { setOpen(false); router.push(subjectSwitchHref(pathname, result.id)); } }} />
-    </span> : null}
-  </span>;
+  return <div className="workspace-switch">
+    <button type="button" aria-expanded={open} aria-controls={open ? "workspace-switch-picker" : undefined} onClick={() => setOpen(!open)}>Research another institution</button>
+    {showMarket ? <Link href={marketSwitchHref(pathname, NATIONAL_RESEARCH)}>U.S. market</Link> : null}
+    {open ? <div id="workspace-switch-picker" className="workspace-switch-picker">
+      <InstitutionPicker inputId="workspace-switch-institution" label="Institution" help="Pick a match to open it on this screen." autoFocus onEscape={() => setOpen(false)}
+        onSelect={(result) => { if (result) { setOpen(false); router.push(subjectSwitchHref(pathname, result.id, new URLSearchParams(params?.toString() ?? ""))); } }} />
+    </div> : null}
+  </div>;
 }

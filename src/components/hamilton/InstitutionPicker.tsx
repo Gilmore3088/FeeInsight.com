@@ -28,6 +28,10 @@ interface InstitutionPickerProps {
   labelStyle?: CSSProperties;
   inputClassName?: string;
   inputStyle?: CSSProperties;
+  /** Focus the search box on mount, when the picker opens from a button. */
+  autoFocus?: boolean;
+  /** Escape in the search box, so a picker opened from a button can close. */
+  onEscape?: () => void;
 }
 
 export function institutionLocation(result: Pick<InstitutionSearchResult, "city" | "state_code">): string {
@@ -55,6 +59,8 @@ export function InstitutionPicker({
     borderColor: "var(--hamilton-border)",
     color: "var(--hamilton-text-primary)",
   },
+  autoFocus = false,
+  onEscape,
 }: InstitutionPickerProps) {
   const [query, setQuery] = useState(initialName ?? "");
   const [selectedId, setSelectedId] = useState<number | null>(initialId);
@@ -129,7 +135,15 @@ export function InstitutionPicker({
   const helpId = `${inputId}_help`;
 
   return (
-    <div className="relative flex flex-col gap-1.5">
+    <div
+      className="relative flex flex-col gap-1.5"
+      // Tabbing from the box to a match keeps the list open; leaving the picker closes it.
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          window.setTimeout(() => setShowSuggestions(false), 160);
+        }
+      }}
+    >
       <input type="hidden" name={name} value={selectedId ?? ""} />
       <label htmlFor={inputId} className={labelClassName} style={labelStyle}>
         {label}
@@ -142,7 +156,17 @@ export function InstitutionPicker({
         value={query}
         onChange={(event) => handleQueryChange(event.target.value)}
         onFocus={() => query.trim().length >= 2 && setShowSuggestions(true)}
-        onBlur={() => window.setTimeout(() => setShowSuggestions(false), 160)}
+        autoFocus={autoFocus}
+        onKeyDown={(event) => {
+          // Enter picks the first match; Escape hides the list, then closes the picker.
+          if (event.key === "Enter" && suggestions.length > 0 && !isSearching) {
+            event.preventDefault();
+            selectInstitution(suggestions[0]);
+          } else if (event.key === "Escape") {
+            if (showSuggestions && suggestions.length > 0) setShowSuggestions(false);
+            else onEscape?.();
+          }
+        }}
         placeholder="Search by bank or credit union name"
         className={inputClassName}
         style={inputStyle}
@@ -171,6 +195,8 @@ export function InstitutionPicker({
               key={result.id}
               type="button"
               onMouseDown={() => selectInstitution(result)}
+              // Enter or Space on a focused match (a mouse already chose it on mousedown).
+              onClick={(event) => { if (event.detail === 0) selectInstitution(result); }}
               className="block w-full border-b border-warm-200 px-3 py-2 text-left text-sm text-warm-900 last:border-b-0 hover:bg-warm-50 focus-visible:bg-warm-50 focus-visible:outline-none"
             >
               <span className="block truncate font-semibold">{result.institution_name}</span>

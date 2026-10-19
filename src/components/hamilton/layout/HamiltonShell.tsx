@@ -165,7 +165,7 @@ export function HamiltonShell({
           researchLabel={marketScope ?? researchLabel}
           researchFacts={marketScope || !researchLabel ? null : currentInstitution?.facts ?? null}
           researchIsMarket={Boolean(marketScope)}
-          subjectNotLinked={!marketScope && Boolean(researchLabel) && !isHome && (accountContext?.status === "identified" || ((!accountContext || accountContext.status === "unlinked") && !pendingInstitution))}
+          subjectNotLinked={!marketScope && Boolean(researchLabel) && !isHome && accountContext?.status === "identified"}
           researchIsHome={!marketScope && isHome}
           peerLabel={peerContext}
         />

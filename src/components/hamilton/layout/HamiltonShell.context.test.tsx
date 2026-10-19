@@ -179,7 +179,8 @@ describe("H01 retained Hamilton shell navigation", () => {
     expect(bar).toContain("Your institution: Not linked");
     expect(bar).toContain(`Researching: ${homeName}`);
     expect(bar).not.toContain("(your institution)");
-    expect(bar).toContain("Not linked to your account");
+    // An unlinked account says so once, beside the link to fix it.
+    expect(bar).not.toContain("Not linked to your account");
     expect(bar).toContain("Compared with: peers Hamilton picks for this institution");
     expect(screen.getByRole("link", { name: "Link your institution" })).toHaveAttribute("href", "/pro/settings#account-institution");
     expect(screen.getByRole("link", { name: "Save your own" })).toHaveAttribute("href", "/pro/settings#peer-sets");
@@ -187,7 +188,7 @@ describe("H01 retained Hamilton shell navigation", () => {
 
   it("names the saved peer group for the subject", () => {
     render(<HamiltonShell {...seed} peerLabel="Florida credit unions">Research</HamiltonShell>);
-    expect(screen.getByLabelText("Institution context").textContent).toContain("Compared with: Florida credit unions, your saved peer group");
+    expect(screen.getByLabelText("Institution context").textContent).toContain("Compared with: Florida credit unions, a saved peer group");
   });
 
   it("offers linking only when no membership exists, not for several memberships", () => {
@@ -242,7 +243,10 @@ describe("H01 retained Hamilton shell navigation", () => {
       render(<HamiltonShell {...other}>Try a price</HamiltonShell>);
       fireEvent.click(screen.getByRole("button", { name: "Research another institution" }));
       fireEvent.change(screen.getByLabelText("Institution"), { target: { value: "Capital" } });
-      fireEvent.mouseDown(await screen.findByText("Capital City Bank", {}, { timeout: 2000 }));
+      expect(screen.getByLabelText("Institution")).toHaveFocus();
+      await screen.findByText("Capital City Bank", {}, { timeout: 2000 });
+      // From the keyboard: Enter in the box picks the first match.
+      fireEvent.keyDown(screen.getByLabelText("Institution"), { key: "Enter" });
       expect(route.push).toHaveBeenCalledWith("/pro/simulate?instId=2945");
       vi.unstubAllGlobals();
     });
