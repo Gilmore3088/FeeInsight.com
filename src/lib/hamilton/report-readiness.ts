@@ -10,6 +10,7 @@ export interface InsufficientEvidenceReportParams {
   assetSize: number | null;
   latestSourceStatus: string | null;
   latestFinancial: {
+    source?: string | null;
     report_date: string;
     total_assets: number | null;
     service_charge_income: number | null;
@@ -24,8 +25,9 @@ function fromThousands(amount: number | null): number | null {
 export function buildInsufficientEvidenceReport(
   params: InsufficientEvidenceReportParams,
 ): ReportSummaryResponse {
-  const financialSummary = params.latestFinancial
-    ? `Financial context is available through ${params.latestFinancial.report_date}: assets are ${formatCompactDollars(fromThousands(params.latestFinancial.total_assets))} and reported service charge income is ${formatCompactDollars(fromThousands(params.latestFinancial.service_charge_income))}.`
+  const financial = params.latestFinancial;
+  const financialSummary = financial && (financial.source === "fdic" || financial.source === "ncua")
+    ? `Financial context is available through ${financial.report_date}: assets are ${formatCompactDollars(fromThousands(financial.total_assets))} and reported ${financial.source === "ncua" ? "year-to-date broad credit-union fee income" : "quarterly deposit service charge income"} is ${formatCompactDollars(fromThousands(financial.service_charge_income))}.`
     : "Financial context is not available in the current dataset.";
 
   return {

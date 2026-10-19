@@ -25,6 +25,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
   trackAnthropicRequest: async (_context: unknown, request: () => Promise<unknown>) => request(),
 }));
 
+import { buildFinancialIncomeGroup } from "@/lib/report-assemblers/financial-income";
 import { generateGlobalThesis, generateSection } from "./generate";
 import type { ThesisInput } from "./types";
 
@@ -147,6 +148,24 @@ describe("generateGlobalThesis", () => {
     expect(result.model).toBeTruthy();
     expect(result.usage.inputTokens).toBe(800);
     expect(result.usage.outputTokens).toBe(420);
+  });
+
+  it("grounds financial narration only in separate dated source groups, ignoring legacy totals", async () => {
+    mockSuccessResponse(makeQuarterlyResponse());
+    const input = makeThesisInput();
+    input.data.financial_income_groups = ["fdic", "ncua"].map((source) => buildFinancialIncomeGroup(source as "fdic" | "ncua", [{
+      quarter: "2026-Q2", total_service_charges: source === "fdic" ? 100 : 10,
+      bank_service_charges: source === "fdic" ? 100 : 0, cu_service_charges: source === "ncua" ? 10 : 0,
+      total_institutions: source === "fdic" ? 50 : 5, yoy_change_pct: null,
+    }]));
+    await generateGlobalThesis(input);
+    const prompt = JSON.stringify(mockCreate.mock.calls[0][0].messages);
+    expect(prompt).toContain("deposit_service_charge_income");
+    expect(prompt).toContain("broad_credit_union_fee_income");
+    expect(prompt).toContain("2026-06-30");
+    expect(prompt).toContain("reported_count");
+    expect(prompt).toContain("Never combine their totals");
+    expect(prompt).not.toContain("48,000,000,000");
   });
 
   it("sets contrarian_insight to null for non-quarterly scope", async () => {

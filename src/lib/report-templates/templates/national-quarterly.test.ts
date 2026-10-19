@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildFinancialIncomeGroup } from "@/lib/report-assemblers/financial-income";
 import { renderNationalQuarterlyReport } from "./national-quarterly";
 import type { NationalQuarterlyPayload } from "@/lib/report-assemblers/national-quarterly";
 
@@ -36,6 +37,14 @@ const payload: NationalQuarterlyPayload = {
     bank_service_charges: 9_330_000,
     cu_service_charges: 2_640_000,
   },
+  financial_income_groups: ["fdic", "ncua"].map((source) => buildFinancialIncomeGroup(source as "fdic" | "ncua", [
+    { quarter: "2026-Q2", total_service_charges: source === "fdic" ? 9_330_000 : 2_640_000,
+      bank_service_charges: source === "fdic" ? 9_330_000 : 0, cu_service_charges: source === "ncua" ? 2_640_000 : 0,
+      total_institutions: source === "fdic" ? 4000 : 3760, yoy_change_pct: 8.2 },
+    { quarter: "2026-Q1", total_service_charges: source === "fdic" ? 9_000_000 : 2_500_000,
+      bank_service_charges: source === "fdic" ? 9_000_000 : 0, cu_service_charges: source === "ncua" ? 2_500_000 : 0,
+      total_institutions: source === "fdic" ? 4020 : 3780, yoy_change_pct: null },
+  ])),
   fred: null,
   district_headlines: [],
   beige_themes: [],
@@ -100,7 +109,10 @@ describe("renderNationalQuarterlyReport", () => {
   });
 
   it("states call-report income from thousands of dollars", () => {
-    expect(html).toContain("$12.0B");
+    expect(html).toContain("$9.3B");
+    expect(html).toContain("$2.6B");
+    expect(html).not.toContain("$12.0B");
+    expect(html).not.toContain("77.9%");
     expect(html).not.toContain("$0.0B");
   });
 
@@ -114,11 +126,15 @@ describe("renderNationalQuarterlyReport", () => {
     expect(html).toContain("District, Size and State");
   });
 
-  it("charts eight-quarter income oldest first, split by charter", () => {
-    expect(html).toContain("Service-charge income by quarter");
+  it("charts each distinct income measure oldest first without a pooled total", () => {
+    expect(html).toContain("Bank deposit service charges by quarter");
     expect(html.indexOf("Q1 '26")).toBeGreaterThan(-1);
     expect(html.indexOf("Q1 '26")).toBeLessThan(html.indexOf("Q2 '26"));
-    expect(html).toContain("Credit unions (NCUA)");
+    expect(html).toContain("Broad credit-union fee income by quarter");
+    expect(html).toContain("2026-06-30");
+    expect(html).toContain("4,000");
+    expect(html).toContain("3,760");
+    expect(html).toContain("not constant-cohort or merger-adjusted");
     expect(html).toContain("+8.2% YoY");
   });
 

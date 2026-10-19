@@ -162,6 +162,8 @@ export interface ThesisSummaryPayload {
     institution_count: number;
     maturity_tier: string;
   }>;
+  financial_income_groups?: import("@/lib/report-assemblers/financial-income").FinancialIncomeGroup[];
+  /** Legacy pooled snapshot is ignored by Hamilton generation. */
   revenue_snapshot: {
     latest_quarter: string;
     total_service_charges: number;
@@ -273,7 +275,7 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "statistical_appendix" | "evidence_records";
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records";
   title: string;
   subtitle: string;
   columns: string[];

@@ -351,6 +351,7 @@ export async function assembleReportInputs(input: {
       latestSourceStatus: selectedInstitution.latest_source_status ?? null,
       latestFinancial: latestFinancial
         ? {
+            source: latestFinancial.source,
             report_date: latestFinancial.report_date,
             total_assets: latestFinancial.total_assets,
             service_charge_income: latestFinancial.service_charge_income,

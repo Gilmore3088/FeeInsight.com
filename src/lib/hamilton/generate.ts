@@ -141,11 +141,11 @@ function buildThesisPrompt(input: ThesisInput): string {
     ? `  "contrarian_insight": "<one non-obvious finding the reader does not expect>",\n`
     : '';
 
-  const revenueLine = input.data.revenue_snapshot
-    ? `REVENUE DATA (this leads):
-Total service charges: $${input.data.revenue_snapshot.total_service_charges.toLocaleString()} (${input.data.revenue_snapshot.latest_quarter})
-YoY change: ${input.data.revenue_snapshot.yoy_change_pct !== null ? `${input.data.revenue_snapshot.yoy_change_pct.toFixed(1)}%` : 'unavailable'}
-Banks: $${input.data.revenue_snapshot.bank_service_charges.toLocaleString()} | Credit unions: $${input.data.revenue_snapshot.cu_service_charges.toLocaleString()}
+  const financialGroups = input.data.financial_income_groups ?? [];
+  const revenueLine = financialGroups.length
+    ? `SEPARATE FINANCIAL MEASURES (amounts in thousands of dollars):
+${JSON.stringify(financialGroups)}
+Bank deposit service charges and broad credit-union fee income are different measures. Never combine their totals, means, revenue shares or growth rates. Retain source, definition, period basis, report date, reporting count and changing-population limitations.
 
 `
     : '';
