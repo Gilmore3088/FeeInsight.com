@@ -145,6 +145,11 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string | null })
  * One Product menu card: a title link with its line, a small drawing and the card's links. The
  * drawings carry no figures; they only show what each part of the product looks like.
  */
+/** Inside a card only the link to this exact page is current: /research must not light up on its sub-pages. */
+function isCurrentPage(pathname: string | null, href: string): boolean {
+  return pathname === href.split("#")[0];
+}
+
 function MenuCard({ group, pathname, onNavigate }: { group: NavGroup; pathname: string | null; onNavigate: () => void }) {
   const title = group.title;
   if (!title) return null;
@@ -157,7 +162,7 @@ function MenuCard({ group, pathname, onNavigate }: { group: NavGroup; pathname: 
       <Link
         href={title.href}
         onClick={onNavigate}
-        aria-current={isActivePath(pathname, title.href) ? "page" : undefined}
+        aria-current={isCurrentPage(pathname, title.href) ? "page" : undefined}
         className="group block"
       >
         <span
@@ -178,13 +183,20 @@ function MenuCard({ group, pathname, onNavigate }: { group: NavGroup; pathname: 
             <Link
               href={primary.href}
               onClick={onNavigate}
+              aria-current={isCurrentPage(pathname, primary.href) ? "page" : undefined}
               className="rounded-md bg-brick px-3.5 py-2 font-semibold text-on-brick hover:opacity-90"
             >
               {primary.label}
             </Link>
           ) : null}
           {rest.map((link) => (
-            <Link key={link.href} href={link.href} onClick={onNavigate} className="text-on-ink underline underline-offset-4">
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={onNavigate}
+              aria-current={isCurrentPage(pathname, link.href) ? "page" : undefined}
+              className="text-on-ink underline underline-offset-4"
+            >
               {link.label}
             </Link>
           ))}
@@ -196,7 +208,7 @@ function MenuCard({ group, pathname, onNavigate }: { group: NavGroup; pathname: 
               <Link
                 href={link.href}
                 onClick={onNavigate}
-                aria-current={isActivePath(pathname, link.href) ? "page" : undefined}
+                aria-current={isCurrentPage(pathname, link.href) ? "page" : undefined}
                 className="block py-1 text-[13px] font-semibold text-ink hover:underline"
               >
                 {link.label} <span aria-hidden="true" className="text-ink-muted">→</span>

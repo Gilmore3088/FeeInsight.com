@@ -22,5 +22,6 @@ describe("NavLinks Product menu", () => {
     expect(m.getByRole("link", { name: "See plans" })).toHaveAttribute("href", "/subscribe");
     expect(m.getByRole("link", { name: "Ask for a demo" })).toHaveAttribute("href", "/for-institutions#demo");
     expect(menu.textContent).not.toMatch(/every fee/i);
+    expect(menu.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
   });
 });

@@ -64,7 +64,7 @@ describe("navItemsFor", () => {
 
   it("gives the phone drawer the short grouped list", () => {
     expect(MOBILE_NAV_SECTIONS.map((s) => [s.heading ?? null, s.items.map((i) => i.label)])).toEqual([
-      ["Product", ["Find your institution", "Bank Fee Index", "Market benchmarks", "Hamilton"]],
+      ["Product", ["Find your institution", "Bank Fee Index", "Market Benchmarks", "Hamilton"]],
       [null, ["Reports", "Pricing"]],
       ["Resources", ["Guides", "Methodology", "API"]],
     ]);

@@ -28,10 +28,10 @@ export const FIND_INSTITUTION_NAV = { label: "Find your institution", href: "/in
 export const INDEX_NAV = {
   label: PRODUCT_NAME,
   href: "/fees",
-  description: "Every fee by category, with its median and range",
+  description: "Medians and ranges by fee category",
 } as const;
 export const MARKET_DATA_NAV = {
-  label: "Market benchmarks",
+  label: "Market Benchmarks",
   href: "/research",
   description: "Your state, your Fed district and the nation",
 } as const;
@@ -45,7 +45,7 @@ export const STATE_DISTRICT_NAV = { label: "State and district data", href: "/re
 export const HAMILTON_PAGE_NAV = {
   label: "Hamilton",
   href: "/for-institutions#hamilton",
-  description: "Your fees against your peers, with every figure linked to its source.",
+  description: "Your fees against your peers, with a source for every figure.",
 } as const;
 
 /** The Pro button everywhere outside the workspace: Hamilton is the workspace, Pro is the plan. */
@@ -85,7 +85,7 @@ export const PRODUCT_NAV_GROUPS: readonly NavGroup[] = [
     items: [FIND_INSTITUTION_NAV, { label: "National index", href: NATIONAL_INDEX_NAV.href }],
   },
   {
-    title: { label: "Market Benchmarks", href: "/research", description: "Your state, your Fed district and the nation, side by side." },
+    title: { label: "Market Benchmarks", href: "/research", description: "Your state, your Fed district and the nation." },
     exhibit: "layers",
     items: [STATE_DISTRICT_NAV, REPORTS_NAV],
   },
