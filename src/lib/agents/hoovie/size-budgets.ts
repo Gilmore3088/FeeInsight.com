@@ -29,6 +29,11 @@ export const TABLE_BUDGET_MB: Readonly<Record<string, number>> = {
   institution_call_report_items: 7_000,
   // About double the Oct 17 size (about 1 GB, written by 29 sources).
   area_statistics: 2_000,
+  // Oct 19: 1,167.45 MiB / 768,334 rows, 66 quarters per FDIC/NCUA source.
+  // Eight more quarters at the current 8,612 filers add ~104.7 MiB; 25% headroom
+  // brings that to ~1,590 MiB, rounded to 1,600. All retained history stays hot.
+  // Measurement and writer/hold effects: docs/plans/financial-records-budget-2026-10-19.md.
+  institution_financial_records: 1_600,
 };
 
 /** Every table some contract writes, with its budget in MB. */
