@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { trainCategoryModel } from "@/lib/agents/darwin/category-model";
+import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 
 import { knoxFreeSignature, reproducibleFees, rollBackUnreproducedFees, RULES_RECHECK_CHECK, RULES_RECHECK_REASON, RULES_RECHECK_TAKEDOWN_LIVE, RULES_RECHECK_RESTORED_FLAG, RULES_RECHECK_STRATEGY } from "./rules-recheck";
 
@@ -82,7 +83,7 @@ describe("Hamilton rules re-check", () => {
     expect(flagged.flagged).toBe(1);
     expect(flagged.rollbacks).toEqual([]);
     expect(JSON.stringify(first.mock.calls)).not.toContain("UPDATE published_fee_records");
-    expect(first.unsafe.mock.calls[0][1][3]).toContain("extract.rules@85");
+    expect(first.unsafe.mock.calls[0][1][3]).toContain(`extract.rules@${KNOX_RULES_STRATEGY.version}`);
     const second = createDbMock([row], source);
     const confirmed = await rollBackUnreproducedFees(asDb(second), { runId: 22402, batchId: "confirmed-own-price-look", dryRun: false, takedownLive: true });
     expect(confirmed.rollbacks).toContainEqual(expect.objectContaining({ feePublishedId: 2240, secondLook: "source_trace:amount_not_the_fee" }));
@@ -101,7 +102,7 @@ describe("Hamilton rules re-check", () => {
     expect(JSON.stringify(first.mock.calls)).not.toContain("UPDATE published_fee_records");
     const [query, params] = first.unsafe.mock.calls[0] as [string, unknown[]];
     expect(params[3]).toBe(knoxFreeSignature());
-    expect(String(params[3])).toContain("extract.rules@85");
+    expect(String(params[3])).toContain(`extract.rules@${KNOX_RULES_STRATEGY.version}`);
     expect(query).toContain("pending.unchecked OR pending.second_look_due");
     const second = createDbMock([row], source);
     const confirmed = await rollBackUnreproducedFees(asDb(second), { runId: 22092, batchId: "confirmed-policy-look", dryRun: false, takedownLive: true });
