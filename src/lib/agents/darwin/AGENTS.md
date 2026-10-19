@@ -1,5 +1,16 @@
 # Darwin Agent Guide
 
+## Current cap applicability hold (#2304)
+
+The existing current-raw row lock also refuses verification when both
+`knox_review:eligibility` and source-derived `knox_eligibility:cap_first` are present,
+irrespective of a stale selected category or a legacy unrepresented product. The common
+Knox writer derives that provenance from hash-bound source, and takes over only an exact
+unverified pending identity in a transaction followed by a fresh judgment check. Whichever
+lock wins is respected. Judged histories and nonpending holds remain byte-identical; normal
+flagless rejudges remain eligible. This is prospective applicability admission, not a new
+price refusal or historical takedown predicate. Verification/source-check versions stay fixed.
+
 ## Literal charging units (#2248)
 
 Fresh raw rows with a bounded own name/price/unit witness retain their hourly, page, document,

@@ -2,6 +2,40 @@
 
 Knox owns conservative raw fee extraction.
 
+## Source-owned cap-first eligibility (#2304, prospective admission)
+
+The existing literal `NSF Fee` / `Overdraft Fee` cap-first price grammar can prove an item
+price while retaining a youth, senior, student, account or business section. Price support
+is not general applicability. Both common candidate writers re-read this bounded scope from
+the full source, and route a uniquely owned restricted item price to eligibility review with
+`knox_eligibility:cap_first`. Unknown or indistinguishable repeated ownership declines the
+write. The actual heading and complete cap/item clause are retained; model conditions,
+product guesses and supplied flags cannot create this provenance. No new price/category
+authority or source-check refusal is added.
+
+Every possible literal cap-item caller needs hash-bound full source, including an otherwise
+ordinary NSF/OD candidate. A minimal legacy caller may load only its exact completed artifact
+ID/document/institution/hash, then check the content digest. Missing or mismatched source
+declines; it does not establish an unrestricted fee. This fail-closed caller change extends
+beyond the restricted cap class, and is tested separately from ordinary source-bound controls.
+Supplied full text trusts the internal source-row query's identity relations, then checks its
+actual digest. Free/paid rows select those fields together. Feedback's exact document lookup
+also requires the source institution to equal the stored request institution; a malformed
+foreign-document request settles without text rather than supplying another bank's row.
+
+Only the exact unverified pending raw identity carrying `needs_darwin_verification` can be
+taken over by this hold. Insert, raw lock and a fresh judgment check share a transaction.
+Every judged identity and unrelated nonpending hold keeps its complete old row. Darwin's
+current-raw lock respects this provenance despite a stale chosen category, without adding a
+global needs-flag requirement. Original overwritten source witnesses and historical recovery
+remain separate (#2220). Paid providers, selectors, priorities, floors and versions are unchanged.
+
+The 2026-10-19 17:12 UTC read-only frame had 8,580 hash-verified completed texts containing the
+required `max` token, including historical documents, and zero exact cap-first matches. The
+separate raw lexical frame had 32 rows (31 current source hashes equal original, one unjudged
+row without a document); its 18 active public catalog rows use ordinary maximum wording.
+These dated observations do not certify unavailable original witnesses or future text.
+
 ## Literal own charging units (#2248, prospective raw lineage)
 
 The same unreleased v87 outcome also closes #2283: after admission, one exact bounded own
@@ -1544,6 +1578,19 @@ only on what the free team could not read.
   fee for Darwin. When a row is kept, the rows from the document's older text are retired first. A
   budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
   stays eligible; any other call error records its outcome. Each attempt records its cost.
+
+## Printed generic account boundaries (#2269)
+
+Lineup source context stops at the nearer explicitly printed account kind, including generic
+Savings/Checking headings, and at the next account below the fee. The correction fallback uses
+that owner before an older heading. Display-name rejection alone cannot replace a specific
+retained product with a newly preferred generic kind. Fee captions, link/tagline labels and
+genuinely borrowed generic owners can still be corrected from the fee's own source context.
+The RNB tagline fixture now resolves to its printed Personal Savings owner rather than NULL.
+`LINEUP_CORRECT_STRATEGY` stays v2; no rules/epoch bump or settled-attempt replay is authorized.
+The dated published-monthly proposal frame omits stored opening deposits and held/unpublished
+rows, so it is not a full correction-population count or historical recovery authority.
+
 
 ## Boundaries
 

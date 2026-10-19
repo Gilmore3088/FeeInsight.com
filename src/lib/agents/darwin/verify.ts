@@ -1,6 +1,7 @@
 import { ANCILLARY_PRODUCT_FLAG, primaryAncillaryProduct } from "../knox/ancillary-product";
 import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
+import { CAP_FIRST_ELIGIBILITY_FLAG } from "../knox/cap-first-eligibility";
 import { darwinAudience, type DarwinAudience } from "./audience";
 import { tierPerkZero } from "./tier-perk";
 import { createHash } from "crypto";
@@ -1244,7 +1245,8 @@ export async function insertVerifiedFee(
         -- The current raw proof owns this decision, including a stale different category.
         -- Do not require a needs flag: legitimate historical rejudges may lack it.
         AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
-          AND COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'canonical_hint:monthly_maintenance')
+          AND (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'canonical_hint:monthly_maintenance'
+            OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${CAP_FIRST_ELIGIBILITY_FLAG}))
       FOR UPDATE OF fr`;
     if (current.length === 0) return null;
   }

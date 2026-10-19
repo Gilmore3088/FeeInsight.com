@@ -80,6 +80,8 @@ export const DELETE_BATCH = 20_000;
  */
 export const STORAGE_ALERT_MB = 13_000;
 export const STORAGE_ALERT_GROWTH_MB = 300;
+/** Warning only (#2220): prospective witnesses have no automatic deletion or writer hold. */
+export const NORMALIZED_WITNESS_ALERT_MB = 256;
 const LISTED_TABLES = 12;
 
 export interface TableSize {
@@ -379,6 +381,10 @@ export function storageAlerts(databaseMb: number | null, growthMb: number | null
   if (databaseMb != null && databaseMb > STORAGE_ALERT_MB) alerts.push(`database is ${databaseMb.toLocaleString("en-US")} MB, above ${STORAGE_ALERT_MB.toLocaleString("en-US")} MB`);
   if (growthMb != null && growthMb > STORAGE_ALERT_GROWTH_MB) alerts.push(`grew ${growthMb.toLocaleString("en-US")} MB since the last run, above ${STORAGE_ALERT_GROWTH_MB} MB`);
   for (const entry of overBudget) {
+    if (entry.table === "agent_source_text_witnesses") {
+      alerts.push(`Normalized witnesses are ${entry.totalMb.toLocaleString("en-US")} MB, above the ${entry.budgetMb} MB review budget; evidence is retained, review storage headroom`);
+      continue;
+    }
     alerts.push(entry.table in TABLE_BUDGET_MB
       ? `${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above its ${entry.budgetMb.toLocaleString("en-US")} MB budget; the sources that write it are held`
       : `${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above the ${entry.budgetMb.toLocaleString("en-US")} MB default; nothing is held until a PR gives it a budget`);
@@ -401,7 +407,8 @@ export async function runStorageRetention(
     SELECT current_setting('statement_timeout') AS value, set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true) AS applied
   `).catch(() => [] as Array<{ value: string | null }>);
   const sized = await inSavepoint(db, measure).catch(() => ({ databaseMb: null, tables: [] as TableSize[] }));
-  const budgets = hoovieTableBudgets();
+  const sourceBudgets = hoovieTableBudgets();
+  const budgets: Record<string, number> = { ...sourceBudgets, agent_source_text_witnesses: NORMALIZED_WITNESS_ALERT_MB };
   const budgetSizes = await inSavepoint(db, (scope) => measureBudgetTables(scope, Object.keys(budgets).sort())).catch(() => null);
   const budgetTables = budgetSizes
     ? Object.entries(budgetSizes)
@@ -409,7 +416,7 @@ export async function runStorageRetention(
       .sort((a, b) => b.totalMb - a.totalMb)
     : null;
   const overBudget = budgetSizes ? overBudgetTables(budgetSizes, budgets) : [];
-  const heldSources = [...sourcesHeldForSize(budgetSizes, budgets)].map(([source, tables]) => ({ source, tables }));
+  const heldSources = [...sourcesHeldForSize(budgetSizes, sourceBudgets)].map(([source, tables]) => ({ source, tables }));
   const previous = await inSavepoint(db, previousRun).catch(() => ({ databaseMb: null, at: null, nextAfterId: 0 }));
   const growthMb = sized.databaseMb != null && previous.databaseMb != null
     ? Math.round((sized.databaseMb - previous.databaseMb) * 10) / 10
@@ -482,12 +489,12 @@ export function summarizeStorageRetention(result: StorageResult): string {
     : `Database ${result.databaseMb.toLocaleString("en-US")} MB${result.growthMb == null ? "" : ` (${result.growthMb >= 0 ? "+" : ""}${result.growthMb.toLocaleString("en-US")} MB since the last run)`}.`;
   const alert = result.alerts.length > 0 ? ` Warning: ${result.alerts.join("; ")}.` : "";
   const budgets = result.budgetTables == null
-    ? " Could not measure the public-data tables against their budgets."
+    ? " Could not measure the tracked tables against their budgets."
     : result.heldSources.length > 0
       ? ` Registry sources held for size: ${result.heldSources.map((h) => `${h.source} (${h.tables.join(", ")})`).join("; ")}.`
       : result.overBudget.length > 0
         ? " No registry source is held; the tables over the default are warnings only."
-        : ` All ${result.budgetTables.length} public-data tables are within budget.`;
+        : ` All ${result.budgetTables.length} tracked tables are within budget.`;
   const trims = result.trims.map((t) => {
     if (t.eligible == null) return `${TRIM_NAMES[t.policy]}: could not count`;
     const n = t.eligible.toLocaleString("en-US");
