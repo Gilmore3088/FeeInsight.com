@@ -302,15 +302,15 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     }
   }));
 
-  it.each(["normal", "held", "paid_review", "recorded", "zero"] as const)("keeps unmarked source uncertainty nonsettling before the %s ordinary negative path", async path => rollback(async tx => {
-    const name = "International Wire Transfer Fee";
+  it.each(["normal", "normal_price_miss", "held", "paid_review", "recorded", "zero"] as const)("keeps unmarked source uncertainty nonsettling before the %s ordinary negative path", async path => rollback(async tx => {
+    const name = path === "normal_price_miss" ? "International Wire Outgoing" : "International Wire Transfer Fee";
     const zeroText = `${name} | FREE`;
     const source: Source = path === "zero" ? { sourceURL: "https://example.invalid/synthetic-international-zero-fees",
       normalizedText: zeroText, normalizedTextSHA256: createHash("sha256").update(zeroText).digest("hex"),
-      sourceBytesSHA256: createHash("sha256").update("synthetic zero source bytes").digest("hex") } : html;
+      sourceBytesSHA256: createHash("sha256").update("synthetic zero source bytes").digest("hex") } : path === "normal_price_miss" ? pdf : html;
     const f = await seed(tx, source);
-    const amount = path === "zero" ? 0 : 35;
-    const line = `${name} | ${path === "zero" ? "FREE" : "$35.00"}`;
+    const amount = path === "zero" ? 0 : path === "normal_price_miss" ? 12 : 35;
+    const line = `${name} | ${path === "zero" ? "FREE" : `$${amount}.00`}`;
     const note = `Knox deterministic extraction from Rosetta artifact #${f.textId}. canonical_hint=wire_intl_outgoing; text_hash=${f.hash}; excerpt="${line}"`;
     const [{ fee_raw_id: rawId }] = await tx`INSERT INTO raw_fee_observations
       (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,
@@ -320,7 +320,8 @@ describe.skipIf(!connection)("International wire source applicability, real norm
     const held = await import("../darwin/release-held");
     const review = await import("../darwin/release-review");
     const { recordAttempt } = await import("../learning/attempts");
-    if (path !== "normal") {
+    const normal = path === "normal" || path === "normal_price_miss";
+    if (!normal) {
       const strategy = path === "paid_review" ? held.DARWIN_RELEASE_STRATEGY : path === "recorded" ? review.DARWIN_RELEASE_REVIEW_STRATEGY : darwin.DARWIN_VERIFY_STRATEGY;
       await recordAttempt(tx, { institutionId: f.institutionId, stage: "verify", strategy: strategy.strategy, version: strategy.version,
         fingerprint: `raw:${rawId}`, outcome: "ok", yieldCount: 0, costMicrousd: 0, runId: f.runId, foldIntoPlaybook: false,
@@ -337,12 +338,12 @@ describe.skipIf(!connection)("International wire source applicability, real norm
       message: { content: [{ type: "text", text: JSON.stringify({ verdicts: [{ id: Number(rawId), is_fee: false,
         category_fits: false, amount_is_price: false, reason: "Synthetic accepted negative; no provider request" }] }) }] } } as never);
     try {
-      const result = path === "normal" ? await darwin.runDarwinVerify({ db: tx, runId: f.runId, institutionId: f.institutionId })
+      const result = normal ? await darwin.runDarwinVerify({ db: tx, runId: f.runId, institutionId: f.institutionId })
         : path === "held" ? await held.runDarwinReleaseHeld({ db: tx, runId: f.runId, institutionId: f.institutionId })
           : path === "paid_review" ? await review.runDarwinReleaseReview({ db: tx, runId: f.runId, calls: 1, acts: false })
             : path === "recorded" ? await review.releaseRecordedPasses(tx, { runId: f.runId, acts: true })
               : await (await import("../darwin/conditional-zero-resolve")).runDarwinConditionalZeroResolve({ db: tx, runId: f.runId, institutionId: f.institutionId });
-      expect(result).toMatchObject(path === "normal" ? { deferredRawFees: 1, results: [] } : { deferred: 1 });
+      expect(result).toMatchObject(normal ? { deferredRawFees: 1, results: [] } : { deferred: 1 });
       expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`)[0]).toEqual(before);
       expect(await tx`SELECT * FROM pipeline_attempts WHERE institution_id=${f.institutionId} ORDER BY id`).toEqual(attempts);
       expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${rawId}`).toHaveLength(0);
