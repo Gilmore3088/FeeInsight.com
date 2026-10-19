@@ -6,6 +6,7 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { FREE_READ_PREFIX } from "@/lib/agents/hamilton/product-page";
 import { publishSourceLink } from "@/lib/agents/hamilton/source-link";
 import { pointFeeLinksAtDocument } from "@/lib/agents/hamilton/document-link";
+import type { FeeAudience } from "@/lib/fee-audience";
 import {
   HAMILTON_PUBLISH_DEFAULT_MIN_CONFIDENCE,
   coverageTier,
@@ -23,6 +24,7 @@ type SqlTag = typeof sql;
 // current-copy row to move to; at 300 a step the pass moved about 1,200 an hour.
 export const REFRESH_COPY_FEE_LIMIT = 1_000;
 export const REFRESH_COPY_REASON_PREFIX = "refreshed by #";
+// #2109 tightens the audience identity without a bump: no prior decision needs replaying.
 export const REFRESH_COPY_STRATEGY = { strategy: "hamilton.refresh_copy", version: 2 } as const;
 
 /** One check per (live fee, current-copy row) pair. */
@@ -38,9 +40,10 @@ export interface RefreshCopyCandidate extends VerifiedFeeRow {
   prior_amount_kind?: string | null;
   prior_rate_percent?: number | string | null;
   prior_source_document_id: number | string;
+  prior_fee_audience?: FeeAudience | null;
 }
 
-export type RefreshCopySkip = "name_differs" | "value_differs" | "category_guard" | "publish_rule" | "pair_taken";
+export type RefreshCopySkip = "audience_differs" | "name_differs" | "value_differs" | "category_guard" | "publish_rule" | "pair_taken";
 
 export interface RefreshCopyPlan {
   refresh: RefreshCopyCandidate[];
@@ -49,7 +52,7 @@ export interface RefreshCopyPlan {
 
 /**
  * Pure: which pairs move. A live fee moves to the current copy's row only when that row
- * is the same line (same name as Knox now tidies it, same amount or rate) and would
+ * is the same line (same audience, name as Knox now tidies it, and amount or rate) and would
  * publish under every publish rule today. Each live fee and each current-copy row is used
  * once; the rest are recorded so they are not re-checked until either side changes.
  */
@@ -58,6 +61,12 @@ export function planRefreshes(candidates: RefreshCopyCandidate[], minConfidence 
   const usedPrior = new Set<string>();
   const usedVerified = new Set<string>();
   for (const candidate of candidates) {
+    // Missing legacy audience means unknown, as in the publisher. Unknown is its own
+    // identity, not permission to replace a consumer, business or both-audiences line.
+    if ((candidate.fee_audience ?? "unknown") !== (candidate.prior_fee_audience ?? "unknown")) {
+      plan.skipped.push({ candidate, reason: "audience_differs" });
+      continue;
+    }
     const prior = {
       amount: candidate.prior_amount,
       amount_kind: candidate.prior_amount_kind ?? null,
@@ -134,6 +143,7 @@ export async function refreshFeesFromCurrentCopy(
         SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key,
                COALESCE(fp.variant_type, '') AS variant_type, COALESCE(fp.frequency, '') AS frequency,
                fp.amount, fp.amount_kind, fp.rate_percent, fp.fee_name,
+               COALESCE(fp.fee_audience, 'unknown') AS fee_audience,
                fr.source_document_id, sd.superseded_by_id AS current_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -153,6 +163,7 @@ export async function refreshFeesFromCurrentCopy(
              nv.extraction_confidence, nv.canonical_fee_key, nv.variant_type, nv.outlier_flags,
              nv.verified_by_agent_event_id, nv.fee_name, nv.amount, nv.frequency, nv.amount_kind,
              nv.rate_percent, nv.rate_min_amount, nv.rate_max_amount, nv.rate_basis,
+             COALESCE(nv.fee_audience, 'unknown') AS fee_audience,
              nr.agent_event_id AS raw_agent_event_id, nr.source_document_id,
              -- The product-page rule (publishSkipReason) needs both: without them a product
              -- page's $0 benefit moved to its page's new copy unflagged (55986 -> 103663, Oct 9).
@@ -160,7 +171,8 @@ export async function refreshFeesFromCurrentCopy(
              (SELECT cd.document_url FROM source_documents cd WHERE cd.id = nr.source_document_id) AS document_url,
              stale.fee_published_id AS prior_fee_published_id, stale.fee_name AS prior_fee_name,
              stale.amount AS prior_amount, stale.amount_kind AS prior_amount_kind,
-             stale.rate_percent AS prior_rate_percent, stale.source_document_id AS prior_source_document_id
+             stale.rate_percent AS prior_rate_percent, stale.source_document_id AS prior_source_document_id,
+             stale.fee_audience AS prior_fee_audience
         FROM stale
         JOIN raw_fee_observations nr ON nr.source_document_id = stale.current_document_id
         JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
@@ -170,6 +182,7 @@ export async function refreshFeesFromCurrentCopy(
          AND COALESCE(nv.frequency, '') = stale.frequency
          AND nv.amount IS NOT DISTINCT FROM stale.amount
          AND nv.rate_percent IS NOT DISTINCT FROM stale.rate_percent
+         AND COALESCE(nv.fee_audience, 'unknown') = stale.fee_audience
          AND nv.review_status IN ('verified', 'approved')
          AND nv.outlier_flags ? 'agentic_darwin_verified'
          -- A current-copy row that was ever published (live, superseded or taken down) is
@@ -214,7 +227,8 @@ export async function refreshFeesFromCurrentCopy(
       for (const candidate of plan.refresh) {
         const priorId = Number(candidate.prior_fee_published_id);
         // The live row moves to the current copy in place (v2, #1068). The audience trigger
-        // takes the new lineage's audience; a row it refuses stays where it was.
+        // takes the new lineage's audience, so both audiences must still match the pair
+        // selected above. A correction between selection and this write leaves it alone.
         const confidence = normalizedConfidence(candidate.extraction_confidence);
         const feePublishedId = await inSavepoint(scope, async (move) => {
           const moved = await move`
@@ -230,9 +244,15 @@ export async function refreshFeesFromCurrentCopy(
              WHERE fee_published_id = ${priorId}
                AND rolled_back_at IS NULL
                AND quarantined_at IS NULL
+               AND COALESCE(fee_audience, 'unknown') = ${candidate.prior_fee_audience ?? "unknown"}
+               AND EXISTS (
+                 SELECT 1 FROM verified_fee_observations current_verified
+                  WHERE current_verified.fee_verified_id = ${Number(candidate.fee_verified_id)}
+                    AND COALESCE(current_verified.fee_audience, 'unknown') = ${candidate.fee_audience ?? "unknown"}
+               )
             RETURNING fee_published_id
           `;
-          if (moved.length === 0) throw new Error(`live fee #${priorId} was already closed or held`);
+          if (moved.length === 0) throw new Error(`live fee #${priorId} was closed, held or changed audience`);
           return priorId;
         }).catch((error) => {
           console.error("refreshFeesFromCurrentCopy pair failed:", error);

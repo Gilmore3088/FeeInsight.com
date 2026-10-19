@@ -33,7 +33,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export default async function AdminGuidesPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   let guides: StoredGuide[] = [];
   let loadError: string | null = null;

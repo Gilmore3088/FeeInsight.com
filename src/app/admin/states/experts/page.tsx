@@ -8,7 +8,7 @@ import { sql } from "@/lib/data-store/connection";
 import { loadStateExpertIndex, STATE_EXPERT_QUERIES, type StateExpertIndex } from "@/lib/agents/state-expert/admin-view";
 
 export default async function StateExpertsPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   let index: StateExpertIndex = { rows: [], gapsRead: false, memoryError: null };
   let loadError: string | null = null;

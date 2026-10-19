@@ -36,7 +36,7 @@ function dateTime(value: string | null): string {
 
 /** The Controls room: spend against caps, the stop switches, and the launch checklist. */
 export default async function ControlsRoomPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [center, spend, markets, reports] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getSpendSummary().catch((error) => {

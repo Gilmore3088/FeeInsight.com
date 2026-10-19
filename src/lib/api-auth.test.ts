@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sqlMock, seatStillCovered } = vi.hoisted(() => ({
+const { sqlMock, seatStillCovered, afterMock } = vi.hoisted(() => ({
   sqlMock: vi.fn(),
   seatStillCovered: vi.fn(),
+  afterMock: vi.fn(),
 }));
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: sqlMock }));
 vi.mock("@/lib/api-subscriber-keys", () => ({ seatStillCovered }));
+vi.mock("next/server", () => ({ after: afterMock }));
 
 import { validateApiKey } from "./api-auth";
 
@@ -28,7 +30,10 @@ const KEY = { id: 1, organization_id: 9, tier: "pro", revoked_at: null };
 const ACTIVE = { subscription_status: "active", past_due_since: null };
 
 describe("validateApiKey on subscriber keys", () => {
-  beforeEach(() => seatStillCovered.mockReset());
+  beforeEach(() => {
+    seatStillCovered.mockReset();
+    afterMock.mockReset();
+  });
 
   it("accepts the payer's own key while Pro is active", async () => {
     queue({ ...KEY, slug: "pro-user-7", name: "Pro user 7" }, ACTIVE);
@@ -80,5 +85,46 @@ describe("validateApiKey on subscriber keys", () => {
     queue({ ...KEY, tier: "enterprise", slug: "api-betteranalyst", name: "Default" });
     const result = await validateApiKey(request());
     expect(result).toMatchObject({ valid: true, tier: "enterprise" });
+  });
+
+  it("returns the authorized caller while its single last-used write remains pending", async () => {
+    let finish!: () => void;
+    sqlMock.mockReset();
+    sqlMock.mockResolvedValueOnce([{ ...KEY, tier: "enterprise", slug: "api-partner", name: "Default" }]);
+    sqlMock.mockReturnValueOnce(new Promise<void>((resolve) => { finish = resolve; }));
+
+    expect(await validateApiKey(request())).toMatchObject({ valid: true, keyId: 1 });
+    expect(afterMock).toHaveBeenCalledTimes(1);
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+    finish();
+    await afterMock.mock.calls[0][0];
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("silently handles the last-used failure even outside a Next request", async () => {
+    afterMock.mockImplementation(() => { throw new Error("No request context"); });
+    sqlMock.mockReset();
+    sqlMock.mockResolvedValueOnce([{ ...KEY, slug: "api-partner", name: "Default" }]);
+    sqlMock.mockRejectedValueOnce(new Error("CONNECT_TIMEOUT"));
+
+    expect(await validateApiKey(request())).toMatchObject({ valid: true, keyId: 1 });
+    await expect(afterMock.mock.calls[0][0]).resolves.toBeUndefined();
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not add a v1 background task for rejected keys", async () => {
+    queue({ ...KEY, revoked_at: "2026-10-01T00:00:00Z" });
+    expect(await validateApiKey(request())).toMatchObject({ valid: false, code: "key_revoked" });
+    expect(afterMock).not.toHaveBeenCalled();
+    expect(sqlMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves key-validation callers outside v1 unchanged", async () => {
+    queue({ ...KEY, slug: "api-partner", name: "Default" });
+    const outside = new Request("https://feeinsight.com/api/v10/fees", { headers: { authorization: "Bearer bfi_test_key" } });
+
+    expect(await validateApiKey(outside)).toMatchObject({ valid: true, keyId: 1 });
+    expect(sqlMock).toHaveBeenCalledTimes(2);
+    expect(afterMock).not.toHaveBeenCalled();
   });
 });

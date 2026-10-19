@@ -126,7 +126,7 @@ export default async function ScoreboardPage({
 }: {
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await scoreboardSchemaReady().catch(() => false);
   const [rows, accuracyHistory]: [ScoreboardSnapshotRow[], AccuracyHistory | null] = ready ? await Promise.all([

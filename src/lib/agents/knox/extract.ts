@@ -770,7 +770,8 @@ export async function insertCandidate(
   `;
   if (inserted.length === 0 && lineup) {
     // The same fee read again from the same document: fill lineup fields an earlier read
-    // left empty, and change nothing else about the row.
+    // left empty, within its audience. The raw identity includes audience: a business fee
+    // with the same label and price must not take a consumer account's product or waiver.
     await db`
       UPDATE raw_fee_observations
          SET product_name = CASE WHEN ${lineup.productName}::text IS NOT NULL AND (
@@ -788,6 +789,7 @@ export async function insertCandidate(
          AND source_document_id = ${sourceDocumentId}
          AND lower(fee_name) = lower(${options.candidate.feeName})
          AND amount = ${options.candidate.amount}
+         AND fee_audience = ${applicability.feeAudience}
     `;
   }
   return inserted.length > 0;

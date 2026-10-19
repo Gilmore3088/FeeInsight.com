@@ -64,7 +64,7 @@ export default async function FeeCatalogPage({
     state?: string;
   }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const params = await searchParams;
   const searchTerm = params.search ?? "";

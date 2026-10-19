@@ -43,7 +43,7 @@ function byMonth(campaigns: AgentCampaign[]) {
 
 /** Growth's monthly marketing: this month's drafts to approve, and how past campaigns scored. */
 export default async function MarketingPage({ searchParams }: { searchParams: Promise<{ sent?: string }> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const params = await searchParams;
   const data = await load();
   const address = mailingAddress();

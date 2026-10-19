@@ -5,7 +5,7 @@ import { getHamilton } from "@/lib/research/agents";
 import { ensureResearchTables, getUsageStats } from "@/lib/research/history";
 
 export default async function ResearchHubPage() {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   await ensureResearchTables();
 
   const hamilton = await getHamilton("admin");
