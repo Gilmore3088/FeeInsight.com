@@ -57,6 +57,7 @@ const TOPIC_DOTS: Record<string, string> = {
   consumer_lending: "bg-amber-500",
   mergers_acquisitions: "bg-cyan-600",
   rulemaking_compliance: "bg-violet-500",
+  enforcement: "bg-rose-700",
   fees_pricing: "bg-emerald-600",
   general: "bg-warm-400",
 };

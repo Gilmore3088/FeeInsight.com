@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   peerWorkspace: vi.fn(),
   peerSets: vi.fn(),
   peerCounts: vi.fn(),
+  accessManager: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); }, useRouter: () => ({ replace: mocks.replace }) }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
@@ -48,7 +49,7 @@ vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
 vi.mock("@/lib/pro-institution-link", () => ({ getPendingInstitutionLink: mocks.pendingLink }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: {} }));
 vi.mock("@/lib/hamilton/report-cap", () => ({ isCappedConsultant: async () => false }));
-vi.mock("./WorkspaceAccessManager", () => ({ WorkspaceAccessManager: () => null }));
+vi.mock("./WorkspaceAccessManager", () => ({ WorkspaceAccessManager: mocks.accessManager }));
 vi.mock("@/components/hamilton/settings/FeeFiguresUpload", () => ({ FeeFiguresUpload: () => null }));
 vi.mock("@/components/hamilton/settings/ManageBillingButton", () => ({ ManageBillingButton: () => null }));
 
@@ -344,5 +345,24 @@ describe("Settings research identity", () => {
     expect(screen.getByRole("button", { name: "Use for research" })).toBeDisabled();
     expect(screen.queryByText(/your bank/i)).not.toBeInTheDocument();
     expect(mocks.membership).not.toHaveBeenCalled();
+  });
+
+  it("shows owner seat management when users.id arrives as text (#1970)", async () => {
+    // The real row conversion getCurrentUser uses: the driver returns the bigint id as "26".
+    const { userFromRow } = await vi.importActual<typeof import("@/lib/auth")>("@/lib/auth");
+    mocks.user.mockResolvedValue(userFromRow({
+      id: "26", username: "owner@example.com", role: "premium", display_name: "Owner", email: "owner@example.com",
+      institution_name: null, institution_type: null, asset_tier: null, state_code: null, fed_district: null,
+      job_role: null, interests: null, stripe_customer_id: "cus_owner", subscription_status: "active",
+    }));
+    mocks.membership.mockResolvedValue({
+      id: 4, userId: 26, institutionId: 2945, institutionName: institution.name, city: null, stateCode: null,
+      userDisplayName: null, userEmail: null, status: "active", role: "owner", source: "manual_admin",
+      claimId: null, grantedByUserId: null, grantedAt: "2026-10-10", notes: null,
+    });
+    mocks.accessManager.mockReturnValue(null);
+    render(await SettingsPage({ searchParams: Promise.resolve({ instId: "2945" }) }));
+    expect(mocks.membership).toHaveBeenCalledWith({ userId: 26, institutionId: 2945 });
+    expect(mocks.accessManager).toHaveBeenCalledWith(expect.objectContaining({ canManage: true }), undefined);
   });
 });

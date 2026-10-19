@@ -22,6 +22,7 @@ import { isLocalMarketQuestion } from "@/lib/hamilton/local-market-question";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { readStampedFigures } from "@/lib/dataset-note";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -448,6 +449,12 @@ function StructuredAskConversation({
       if (res?.answer?.storyline) {
         onStoryline?.();
         onLead?.(res.answer.storyline.governingThought);
+        // A list is the answer itself; no memo is written over it (#2033).
+        if (res.answer.storyline.kind === "list") {
+          memoFor.current = null;
+          setMemo(undefined);
+          return;
+        }
         memoFor.current = asked;
         setMemo({ state: "writing" });
         void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
@@ -617,6 +624,7 @@ function StructuredAskConversation({
         <StorylineView
           story={storyline}
           identityContext={response.identityContext}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           memo={memo}
           nextSteps={
             researchHrefFor ? (
@@ -633,6 +641,7 @@ function StructuredAskConversation({
       ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           nextSteps={
             researchHrefFor ? (
               <>

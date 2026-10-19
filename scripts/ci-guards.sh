@@ -823,6 +823,36 @@ financial_source_kill() {
   echo "financial-source-kill: OK (every institution_financial_records read filters by source)"
 }
 
+api_docs_kill() {
+  # James 2026-10-17: any change to the API updates its docs. src/lib/api-docs-sync.test.ts checks
+  # that every route, query parameter and connector tool is in the OpenAPI spec and on /api-docs;
+  # this guard makes each PR that changes the API also bump API_VERSION (src/lib/api-v1.ts), the
+  # version the spec and the connector report, so callers can tell the docs moved. Compares the PR
+  # with its base, like bayes-manifest-kill.
+  local base_ref="" changed version_file="src/lib/api-v1.ts"
+  if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
+    git fetch --no-tags --quiet --depth=1 origin "$GITHUB_BASE_REF" 2>/dev/null && base_ref="FETCH_HEAD"
+  elif git rev-parse --quiet --verify origin/main >/dev/null; then
+    base_ref=$(git merge-base origin/main HEAD 2>/dev/null) || base_ref="origin/main"
+  fi
+  if [[ -z "$base_ref" ]]; then
+    echo "api-docs-kill: OK (no base branch to compare with; skipped)"
+    return 0
+  fi
+  changed=$(git diff --name-only "$base_ref" -- 'src/app/api/v1' 'src/lib/api-v1*.ts' \
+      'src/lib/peer-set-dimensions.ts' ':(exclude)*.test.ts' 2>/dev/null || true)
+  if [[ -z "$changed" ]]; then
+    echo "api-docs-kill: OK (no API change)"
+    return 0
+  fi
+  if ! git diff "$base_ref" -- "$version_file" 2>/dev/null | grep -qE '^\+export const API_VERSION = "'; then
+    echo "api-docs-kill: this PR changes the API; update the spec and /api-docs, then bump API_VERSION in ${version_file}:" >&2
+    echo "$changed" >&2
+    exit 1
+  fi
+  echo "api-docs-kill: OK (API changed and API_VERSION moved)"
+}
+
 case "$SUBCOMMAND" in
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
@@ -851,13 +881,14 @@ case "$SUBCOMMAND" in
   migration-version-kill) migration_version_kill ;;
   guide-version-kill) guide_version_kill ;;
   bayes-manifest-kill) bayes_manifest_kill ;;
+  api-docs-kill) api_docs_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill>" >&2
     exit 2
     ;;
 esac

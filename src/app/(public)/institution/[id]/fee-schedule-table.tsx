@@ -1,9 +1,8 @@
 import { countsAsPersonal, isAudienceUnstated, type FeeAudience, type FeeTreatment } from "@/lib/fee-audience";
-import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
-import Link from "next/link";
 import { UnstatedAudienceFootnote, UnstatedAudienceMark } from "@/components/unstated-audience";
-import { ExternalLink } from "lucide-react";
 import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
+import { notComparableReason } from "@/lib/fee-comparability";
+import { countsInMarketComparison } from "@/lib/market-eligibility";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
 import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
@@ -21,29 +20,52 @@ export interface DisplayFee {
   sourceUrl: string | null;
   /** A fee stated as a rate: "1.1%" and "of the transaction". Its amount is null. */
   rate?: { rate: string; detail: string | null } | null;
+  /** The account product the schedule ties the fee to, when it names one. */
+  accountProduct?: string | null;
+  /** The schedule line the fee was read from; never shown, read only by the comparability rule. */
+  sourceLine?: string | null;
+  /** The name as the schedule states it, before display cleanup; the comparability rule reads this, as the medians do. */
+  rawFeeName?: string | null;
+  /** The fee traces to a fetched source document (statistics rule 1); unsourced fees are not benchmarked. */
+  sourced?: boolean;
 }
 
 /**
- * Scope stays visible on every row. A fee with no stated audience is treated as personal
- * and carries the asterisk (#1058); business fees are labeled and never meet a personal median.
+ * Uncertainty in one quiet form: a fee with no stated audience carries the asterisk the list's
+ * one footnote explains (#1058), and the tabs carry personal versus business. No per-row scope
+ * line repeats it. An eliminated fee says so.
  */
 function AudienceLabel({ fee }: { fee: DisplayFee }) {
-  const unstated = isAudienceUnstated(fee.feeAudience);
-  const label = fee.feeAudience === "consumer" ? "Consumer accounts"
-    : fee.feeAudience === "business" ? "Business accounts"
-    : fee.feeAudience === "both" ? "Consumer and business accounts" : "Audience not stated";
-  return (
-    <span className="block text-xs font-normal text-ink-muted">
-      {label}
-      <UnstatedAudienceMark show={unstated} />
-      {fee.feeTreatment === "eliminated" ? " · Fee eliminated" : ""}
-    </span>
-  );
+  if (fee.feeTreatment !== "eliminated") return null;
+  return <span className="block text-xs font-normal text-ink-muted">Fee eliminated</span>;
 }
 
-/** Same boundary as the statistics (statsRowFilter): not business, not from a business-only schedule. */
-function comparesToPersonal(fee: DisplayFee): boolean {
-  return countsAsPersonal(fee.feeAudience) && !(fee.sourceUrl && isBusinessOnlyLink(fee.sourceUrl));
+function AudienceMark({ fee }: { fee: DisplayFee }) {
+  return <UnstatedAudienceMark show={isAudienceUnstated(fee.feeAudience)} />;
+}
+
+/** "CD/IRA fee", "Card inactivity fee" or a charging-basis reason when the row prices something other than its category's median measures. */
+function notComparable(fee: DisplayFee): string | null {
+  return notComparableReason(fee.feeCategory, fee.rawFeeName ?? fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null, fee.frequency);
+}
+
+function NotCompared({ reason }: { reason: string }) {
+  return <span className="mt-1 block font-sans text-[12px] font-normal text-ink-muted">Not compared: {reason}</span>;
+}
+
+/** The one eligibility test the benchmark's own rows passed (market-eligibility), run on this fee. */
+function countsAgainstMarket(fee: DisplayFee): boolean {
+  return countsInMarketComparison({
+    category: fee.feeCategory,
+    amount: fee.amount,
+    audience: fee.feeAudience ?? null,
+    sourced: fee.sourced ?? false,
+    sourceUrl: fee.sourceUrl,
+    feeName: fee.rawFeeName ?? fee.feeName,
+    accountProduct: fee.accountProduct ?? null,
+    sourceLine: fee.sourceLine ?? null,
+    frequency: fee.frequency,
+  });
 }
 
 /** National 25th / 50th / 75th percentile for one fee category. */
@@ -57,25 +79,25 @@ export type FeeBenchmarks = Record<string, FeeBenchmark>;
 
 export type Position = "below" | "within" | "above";
 
-/** The design system's market-position colours: brick, slate and sage, never good or bad. */
+/** Fee Insight colours, as in the comparison table: brick above, ink below, ink-soft inside. */
 const POSITION_DOT: Record<Position, string> = {
-  below: "bg-below-market",
-  within: "bg-in-range",
-  above: "bg-above-market",
+  below: "bg-ink",
+  within: "bg-ink-soft",
+  above: "bg-brick",
 };
 
 const POSITION_TEXT: Record<Position, string> = {
-  below: "Below the U.S. middle half",
-  within: "Inside the U.S. middle half",
-  above: "Above the U.S. middle half",
+  below: "Below the U.S. middle 50%",
+  within: "Inside the U.S. middle 50%",
+  above: "Above the U.S. middle 50%",
 };
 
 function benchmarkFor(fee: DisplayFee, benchmarks: FeeBenchmarks | undefined): FeeBenchmark | null {
-  if (!comparesToPersonal(fee) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
+  if (!countsAgainstMarket(fee) || !benchmarks || fee.status !== "verified" || fee.amount === null || !fee.feeCategory) return null;
   return benchmarks[fee.feeCategory] ?? null;
 }
 
-/** How many benchmarked fees sit below, inside and above the national middle half. */
+/** How many benchmarked fees sit below, inside and above the national middle 50%. */
 export function countPositions(fees: DisplayFee[], benchmarks: FeeBenchmarks): Record<Position, number> {
   const counts: Record<Position, number> = { below: 0, within: 0, above: 0 };
   const seen = new Set<string>();
@@ -99,7 +121,7 @@ function FeePosition({ amount, benchmark, wide = false }: { amount: number; benc
     amount < benchmark.p25 ? "below" : amount > benchmark.p75 ? "above" : "within";
   const scaleMax = Math.max(benchmark.p75 * 1.5, amount * 1.1, 1);
   const pct = (n: number) => `${Math.min(100, Math.max(0, (n / scaleMax) * 100))}%`;
-  const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)}–${formatFeeAmount(benchmark.p75)} nationally)`;
+  const description = `${POSITION_TEXT[position]} (${formatFeeAmount(benchmark.p25)} to ${formatFeeAmount(benchmark.p75)} nationally)`;
 
   return (
     <span className={`mt-1.5 flex flex-col ${wide ? "w-full" : "w-36"}`} title={description}>
@@ -126,7 +148,7 @@ function FeePosition({ amount, benchmark, wide = false }: { amount: number; benc
 function PositionLegend() {
   return (
     <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-surface-200 px-4 py-2 text-[11px] text-ink-muted">
-      <span>vs. the U.S. middle half:</span>
+      <span>vs. the U.S. middle 50%:</span>
       {(["below", "within", "above"] as const).map((position) => (
         <span key={position} className="inline-flex items-center gap-1">
           <span aria-hidden="true" className={`h-2 w-2 rounded-full ${POSITION_DOT[position]}`} />
@@ -146,74 +168,6 @@ interface FeeGroup {
 
 const OTHER_FAMILY = "Other fees";
 
-export interface MedianDelta {
-  text: string;
-  tone: "above" | "below" | "at";
-}
-
-/**
- * How a verified amount sits against the national median, in words. Null when either
- * side is missing: no comparison is better than a misleading one.
- */
-export function describeMedianDelta(
-  amount: number | null,
-  median: number | null | undefined,
-  place = "national",
-): MedianDelta | null {
-  if (amount === null || median === null || median === undefined) return null;
-  if (!Number.isFinite(amount) || !Number.isFinite(median)) return null;
-  const diff = Math.round((amount - median) * 100) / 100;
-  if (Math.abs(diff) < 0.01) return { text: `At the ${place} median`, tone: "at" };
-  const money = formatFeeAmount(Math.abs(diff)) ?? `$${Math.abs(diff).toFixed(2)}`;
-  return diff > 0
-    ? { text: `${money} above the ${place} median`, tone: "above" }
-    : { text: `${money} below the ${place} median`, tone: "below" };
-}
-
-/** Home-state medians by fee category, with the state's name for the sentence. */
-export interface StateMedians {
-  place: string;
-  medians: Map<string, number | null>;
-}
-
-const DELTA_TONE: Record<MedianDelta["tone"], string> = {
-  above: "text-above-market",
-  below: "text-below-market",
-  at: "text-ink-muted",
-};
-
-/** Verified rows with a known category link to the national picture for that fee. */
-function MedianCell({
-  fee,
-  medians,
-  stateMedians,
-}: {
-  fee: DisplayFee;
-  medians: Map<string, number | null>;
-  stateMedians?: StateMedians;
-}) {
-  if (!comparesToPersonal(fee) || fee.status !== "verified" || !fee.feeCategory) return <span className="text-xs text-ink-muted">&mdash;</span>;
-  const delta = describeMedianDelta(fee.amount, medians.get(fee.feeCategory));
-  const stateDelta = stateMedians
-    ? describeMedianDelta(fee.amount, stateMedians.medians.get(fee.feeCategory), stateMedians.place)
-    : null;
-  if (!delta && !stateDelta) return <span className="text-xs text-ink-muted">&mdash;</span>;
-  return (
-    <>
-      {delta && (
-        <Link
-          href={`/fees/${fee.feeCategory}`}
-          className={`text-xs font-medium underline-offset-2 hover:underline ${DELTA_TONE[delta.tone]}`}
-        >
-          {delta.text}
-        </Link>
-      )}
-      {stateDelta && (
-        <span className={`block text-xs ${DELTA_TONE[stateDelta.tone]}`}>{stateDelta.text}</span>
-      )}
-    </>
-  );
-}
 /** A rate in the amount column, with what it is a share of beneath it. */
 function RateValue({ rate }: { rate: NonNullable<DisplayFee["rate"]> }) {
   return (
@@ -274,9 +228,7 @@ export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
 
 function GroupBadge({ group }: { group: FeeGroup }) {
   const verified = group.verifiedCount > 0;
-  const className = verified
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : "border-amber-200 bg-amber-50 text-amber-900";
+  const className = verified ? "border-border bg-surface-0 text-ink-soft" : "border-brick/30 bg-brick-tint text-ink";
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${className}`}>
@@ -290,12 +242,17 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 }
 
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted";
-const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
+/** Figures in the site sans with even digits, as James's design file sets them. */
+const FIGURE = { fontFamily: "var(--fi-font-sans)", fontVariantNumeric: "tabular-nums" } as const;
 
 const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";
 
-/** Rows a phone shows before "Show more". */
-const STACK_ROWS_SHOWN = 8;
+/**
+ * Rows past the list's limit carry this class: hidden until the ShowAll wrapper around the
+ * table sets data-all, so the first rows show and the rest open on one tap.
+ */
+const EXTRA_ROW = "hidden group-data-[all=true]/fees:table-row";
+const EXTRA_ITEM = "hidden group-data-[all=true]/fees:block";
 
 /** The fee list split for the Personal / Business tabs (#1062). */
 export interface AudienceSplit {
@@ -324,19 +281,16 @@ export function FeeScheduleTable({
   fees,
   disclosureUrl,
   focusCategory = null,
-  medians = new Map(),
-  stateMedians,
   benchmarks,
+  limit = Number.POSITIVE_INFINITY,
 }: {
   fees: DisplayFee[];
   disclosureUrl: string | null;
   focusCategory?: string | null;
-  /** National medians by fee category, for the "vs national median" column. */
-  medians?: Map<string, number | null>;
-  /** The institution's home-state medians, shown as a second line under the national one. */
-  stateMedians?: StateMedians;
   /** National percentiles by fee category; verified fees with a match get a position bar. */
   benchmarks?: FeeBenchmarks;
+  /** Rows each list shows before the rest wait for a ShowAll wrapper's "Show all". */
+  limit?: number;
 }) {
   const split = splitFeesByAudience(fees);
   const listFor = (list: DisplayFee[], rowIds = true) => (
@@ -345,9 +299,8 @@ export function FeeScheduleTable({
       rowIds={rowIds}
       disclosureUrl={disclosureUrl}
       focusCategory={focusCategory}
-      medians={medians}
-      stateMedians={stateMedians}
       benchmarks={benchmarks}
+      limit={limit}
     />
   );
   // A reader sent to a fee the bank lists only for business lands on the Business tab.
@@ -376,20 +329,21 @@ function FeeList({
   rowIds,
   disclosureUrl,
   focusCategory,
-  medians,
-  stateMedians,
   benchmarks,
+  limit,
 }: {
   fees: DisplayFee[];
   /** Whether the focused table row carries its `#fee-` id. */
   rowIds: boolean;
   disclosureUrl: string | null;
   focusCategory: string | null;
-  medians: Map<string, number | null>;
-  stateMedians?: StateMedians;
   benchmarks?: FeeBenchmarks;
+  limit: number;
 }) {
   const groups = groupFeesByFamily(fees);
+  // The first rows in list order show; the rest are marked extra.
+  const extra = new Set(groups.flatMap((g) => g.rows).slice(limit).map((fee) => fee.id));
+  const groupExtra = (group: FeeGroup) => group.rows.every((fee) => extra.has(fee.id));
   const isFocused = (fee: DisplayFee) => focusCategory !== null && fee.feeCategory === focusCategory;
   const anyBenchmarked = fees.some((fee) => benchmarkFor(fee, benchmarks) !== null);
 
@@ -401,27 +355,23 @@ function FeeList({
         disclosureUrl={disclosureUrl}
         isFocused={isFocused}
         benchmarks={benchmarks}
+        extra={extra}
       />
       <div className="hidden sm:block">
-        <p className="border-b border-surface-200 px-4 py-1.5 text-xs text-ink-muted lg:hidden">
-          Swipe for source and notes &rarr;
-        </p>
         <div className="table-scroll">
-          <table className="w-full min-w-[720px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[640px] border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-0">
                 <th scope="col" className={HEADER_CELL}>Fee</th>
                 <th scope="col" className={`${HEADER_CELL} text-right`}>Amount</th>
-                <th scope="col" className={HEADER_CELL}>{stateMedians ? "vs medians" : "vs national median"}</th>
                 <th scope="col" className={HEADER_CELL}>Basis</th>
                 <th scope="col" className={HEADER_CELL}>Note</th>
-                <th scope="col" className={`${HEADER_CELL} text-right`}>Source</th>
               </tr>
             </thead>
             {groups.map((group) => (
               <tbody key={group.family} className="border-t border-border">
-                <tr className="bg-paper">
-                  <th scope="rowgroup" colSpan={6} className="px-4 py-2.5 text-left">
+                <tr className={`bg-paper ${groupExtra(group) ? EXTRA_ROW : ""}`}>
+                  <th scope="rowgroup" colSpan={4} className="px-4 py-2.5 text-left">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm font-semibold text-ink">{group.family}</span>
                       <GroupBadge group={group} />
@@ -436,8 +386,7 @@ function FeeList({
                     mixedGroup={group.verifiedCount > 0}
                     focused={isFocused(fee)}
                     rowId={rowIds}
-                    medians={medians}
-                    stateMedians={stateMedians}
+                    extra={extra.has(fee.id)}
                     benchmark={benchmarkFor(fee, benchmarks)}
                   />
                 ))}
@@ -453,27 +402,27 @@ function FeeList({
 
 function UnderReviewChip() {
   return (
-    <span className="ml-2 inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-900">
+    <span className="ml-2 inline-flex items-center rounded-md border border-brick/30 bg-brick-tint px-1.5 py-0.5 text-[10px] font-semibold text-ink">
       Under review
     </span>
   );
 }
 
 /**
- * A fee's own source document, or, when the fee has none of its own, the institution's
- * general schedule, labelled as such so it never reads as the fee's exact source.
+ * The amount, linked to the fee's own source document, or, when the fee has none of its own,
+ * to the institution's general schedule, titled as such so it never reads as the exact source.
  */
-function SourceLink({ href, fallback = false }: { href: string | null; fallback?: boolean }) {
-  if (!href) return <span className="text-xs text-ink-muted">&mdash;</span>;
+function AmountLink({ href, fallback = false, children }: { href: string | null; fallback?: boolean; children: React.ReactNode }) {
+  if (!href) return <>{children}</>;
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-xs font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink"
+      title={fallback ? "Open the institution\u2019s fee schedule" : "Open the fee schedule it was read from"}
+      className="underline decoration-border underline-offset-2 hover:decoration-brick"
     >
-      {fallback ? "Institution\u2019s schedule" : "Source"}
-      <ExternalLink className="h-3 w-3" />
+      {children}
     </a>
   );
 }
@@ -484,8 +433,7 @@ function FeeRow({
   mixedGroup,
   focused = false,
   rowId = true,
-  medians,
-  stateMedians,
+  extra = false,
   benchmark,
 }: {
   fee: DisplayFee;
@@ -493,8 +441,8 @@ function FeeRow({
   mixedGroup: boolean;
   focused?: boolean;
   rowId?: boolean;
-  medians: Map<string, number | null>;
-  stateMedians?: StateMedians;
+  /** Past the list's limit: hidden until "Show all". */
+  extra?: boolean;
   benchmark: FeeBenchmark | null;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
@@ -506,115 +454,99 @@ function FeeRow({
     <tr
       id={focused && rowId && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
       data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
-      className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
+      className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""} ${extra ? EXTRA_ROW : ""}`}
     >
       <td className="max-w-[320px] px-4 py-2.5 align-top">
-        <span className="break-words font-medium text-ink">{fee.feeName}</span>
+        <span className="break-words font-medium text-ink">
+          {fee.feeName}
+          <AudienceMark fee={fee} />
+        </span>
         <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
-      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-ink" style={MONO_FIGURE}>
-        {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "\u2014"}
+      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base text-ink" style={FIGURE}>
+        <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
+          {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "Not stated"}
+        </AmountLink>
         {benchmark && fee.amount !== null && (
           <span className="flex justify-end">
             <FeePosition amount={fee.amount} benchmark={benchmark} />
           </span>
         )}
+        {!benchmark && fee.amount !== null && notComparable(fee) && <NotCompared reason={notComparable(fee) as string} />}
       </td>
-      <td className="px-4 py-2.5 align-top">
-        <MedianCell fee={fee} medians={medians} stateMedians={stateMedians} />
-      </td>
-      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || "\u2014"}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="text-ink-muted">Not stated</span>}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
-        {fee.conditions ? <span className="break-words">{fee.conditions}</span> : "\u2014"}
-      </td>
-      <td className="whitespace-nowrap px-4 py-2.5 text-right align-top">
-        <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />
+        {fee.conditions ? <span className="break-words">{fee.conditions}</span> : <span className="sr-only">None</span>}
       </td>
     </tr>
   );
 }
 
-/** Below 640px: stacked rows: fee and amount, its position bar, then basis, note and source. */
+/** Below 640px: stacked rows: fee and amount, its position bar, then basis and note. */
 function FeeScheduleStack({
   groups,
   disclosureUrl,
   isFocused,
   benchmarks,
+  extra,
 }: {
   groups: FeeGroup[];
   disclosureUrl: string | null;
   isFocused: (fee: DisplayFee) => boolean;
   benchmarks?: FeeBenchmarks;
+  /** Rows past the list's limit, hidden until "Show all". */
+  extra: Set<string>;
 }) {
-  // The first few rows show; the rest open on a tap, so a long schedule doesn't bury the page.
-  let shown = 0;
-  const visible: FeeGroup[] = [];
-  const rest: FeeGroup[] = [];
-  for (const group of groups) {
-    const room = Math.max(0, STACK_ROWS_SHOWN - shown);
-    if (room >= group.rows.length) visible.push(group);
-    else if (room > 0) {
-      visible.push({ ...group, rows: group.rows.slice(0, room) });
-      rest.push({ ...group, rows: group.rows.slice(room) });
-    } else rest.push(group);
-    shown += Math.min(room, group.rows.length);
-  }
-  const hiddenCount = rest.reduce((n, g) => n + g.rows.length, 0);
-  const renderGroups = (list: FeeGroup[]) =>
-    list.map((group) => (
-      <section key={group.family} className="border-t border-border">
-        <div className="flex flex-wrap items-center justify-between gap-2 bg-paper px-4 py-2.5">
-          <span className="text-sm font-semibold text-ink">{group.family}</span>
-          <GroupBadge group={group} />
-        </div>
-        <ul>
-          {group.rows.map((fee) => {
-            const sourceUrl = fee.sourceUrl ?? disclosureUrl;
-            const basis = getFrequencyLabel(fee.frequency);
-            const showUnderReview = group.verifiedCount > 0 && fee.status === "provisional";
-            const focused = isFocused(fee);
-            const benchmark = benchmarkFor(fee, benchmarks);
-            return (
-              <li
-                key={fee.id}
-                data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
-                className={`scroll-mt-24 border-b border-surface-200 px-4 py-3 last:border-0 ${focused ? FOCUSED_ROW : ""}`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <span className="min-w-0 break-words text-sm font-medium text-ink">
-                    {fee.feeName}
-                    <AudienceLabel fee={fee} />
-                    {showUnderReview && <UnderReviewChip />}
-                  </span>
-                  <span className="shrink-0 font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
-                    {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "\u2014"}
-                  </span>
-                </div>
-                {benchmark && fee.amount !== null && <FeePosition amount={fee.amount} benchmark={benchmark} wide />}
-                <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
-                  {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
-                  {(basis || fee.conditions) && sourceUrl ? " \u00b7 " : null}
-                  {sourceUrl && <SourceLink href={sourceUrl} fallback={!fee.sourceUrl} />}
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-    ));
-
   return (
     <div className="sm:hidden">
-      {renderGroups(visible)}
-      {hiddenCount > 0 && (
-        <details className="group border-t border-border" open={rest.some((g) => g.rows.some(isFocused))}>
-          <summary className="cursor-pointer list-none px-4 py-3 text-center text-sm font-semibold text-ink group-open:hidden">
-            Show {hiddenCount} more {hiddenCount === 1 ? "fee" : "fees"}
-          </summary>
-          {renderGroups(rest)}
-        </details>
-      )}
+      {groups.map((group) => (
+        <section key={group.family} className={`border-t border-border ${group.rows.every((fee) => extra.has(fee.id)) ? EXTRA_ITEM : ""}`}>
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-paper px-4 py-2.5">
+            <span className="text-sm font-semibold text-ink">{group.family}</span>
+            <GroupBadge group={group} />
+          </div>
+          <ul>
+            {group.rows.map((fee) => {
+              const sourceUrl = fee.sourceUrl ?? disclosureUrl;
+              const basis = getFrequencyLabel(fee.frequency);
+              const showUnderReview = group.verifiedCount > 0 && fee.status === "provisional";
+              const focused = isFocused(fee);
+              const benchmark = benchmarkFor(fee, benchmarks);
+              return (
+                <li
+                  key={fee.id}
+                  data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
+                  className={`scroll-mt-24 border-b border-surface-200 px-4 py-3 last:border-0 ${focused ? FOCUSED_ROW : ""} ${
+                    extra.has(fee.id) ? EXTRA_ITEM : ""
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <span className="min-w-0 break-words text-sm font-medium text-ink">
+                      {fee.feeName}
+                      <AudienceMark fee={fee} />
+                      <AudienceLabel fee={fee} />
+                      {showUnderReview && <UnderReviewChip />}
+                    </span>
+                    <span className="shrink-0 font-semibold text-base text-ink" style={FIGURE}>
+                      <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
+                        {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "Not stated"}
+                      </AmountLink>
+                    </span>
+                  </div>
+                  {benchmark && fee.amount !== null && <FeePosition amount={fee.amount} benchmark={benchmark} wide />}
+                  {!benchmark && fee.amount !== null && notComparable(fee) && <NotCompared reason={notComparable(fee) as string} />}
+                  {(basis || fee.conditions) && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
+                      {[basis || null, fee.conditions].filter(Boolean).join(" \u00b7 ")}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }

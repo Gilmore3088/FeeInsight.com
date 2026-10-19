@@ -1089,6 +1089,29 @@ and nothing else (`footnoteMarkFreeName`). A name that opens on a mark is a foot
 (#1443), and one in lower case, with "No", a condition or a verb is left for a re-read. Other
 categories' marked names (about 120 live on Oct 17) are not in v21. New Knox reads still keep the
 marks (that is a Knox rules change); the retidy tidies them once they are live.
+v22 (Oct 17, #1810): an all-caps live name reads in title case ("OVERDRAFT FEE" -> "Overdraft Fee",
+`capsCasedName`): 770 of 81,775 live names at 113 institutions on Oct 17. Short letter groups that
+are not plain words keep their capitals ("ATM", "NSF", "IRA", "NCB"), and so do credit union
+initials ("HLEFCU"); joining words go lower case; an ordinal after its number too ("2nd"). A name
+with another flaw (a ":" cell, a glued footnote) is left for the rest of the tidy. A case-only
+rename is checked against the institution's other live rows, not its own.
+v23 (Oct 18, #1596, James's live-fee check): footnote marks leave every category's live names, not
+only maintenance and minimum balance (`footnoteMarkFreeName`): "^", "*" and "∞" count as marks
+beside "†", "‡", "§" and superscripts, a number glued to a word before ":" or ")" is a mark
+("Wire Transfer1: Domestic – Outgoing", "ATM3:", "(all items4)") unless the word numbers the name
+("Tier3:", "Level", "Plan", "Step", "Age55)", "Months12)", "Page1)", "COVID19:"), and a colon left
+doubled closes up ("Domestic Wires**: :"). "^" or "*" between numbers or standing alone between words
+is arithmetic and the name is left ("2^3", "$25 * hours"). Product codes ("(MT103)"), plain words'
+glued numbers and quotes still come off only maintenance and minimum balance names. A
+mark standing alone before words ("^^ If your account ...") or glued to the next word mid-name
+("Withdrawals§ §Non-TEFCU owned ATMs only") opens a footnote's sentence and is left; a web page's
+footnote link ("Fee[4](#disclaimer4)") goes, and so does a comma left dangling ("OD Charge‡, ‡‡").
+The guards: the category guard; no other live row of the institution's category may have the new
+name at any price, and two rows whose marks come off to the same name ("Wire (MT103)", "Wire (MT202)",
+"Treasurer’s Checks†^" $7 beside "Treasurer’s Checks" $8) are both left; and the fee must still trace.
+Dry run Oct 18 over the 266 live rows of every institution and category with a marked name (186
+marked): 148 renames before the trace guard, 11 left as twins, 105 with no better name, 2 keeping a
+condition.
 
 `isCutoffName` (publish's `cutoff_name` hold) has a narrow live twin beside it, `liveFragmentName`
 (#1443), built from the same regex pieces: a dangling joining word (lower-case "a/an/the" only;
@@ -1211,6 +1234,12 @@ only on what the free team could not read.
     borrowed only by a bare direction or unit ("Wire Transfers" + "Incoming Domestic").
     `tableRowsFromText` is the only adapter over Rosetta's output (today the " | " cell
     lines in `normalized_text`); re-point it when Rosetta stores structured rows.
+    A price-first row keeps its own price (v7, #1827): a cell row that opens with its price
+    ("$10 | Replacement Debit Card") is the name after it, never a wrapped chain from the name
+    line above, and a name that says its price varies gives a price-first line below it to the
+    name after that price. A bare price still goes to the name above, and so does any price under
+    a name that runs on ("Inactivity Fee - Savings Account per"). The family experts' price
+    windows (`priceWindows`) follow the same rule (`nameAfterPrice`, `runsOn` in `layout.ts`).
   - `extract.account_table` (`account-table.ts`, #1100 gap 3): an account comparison table's
     monthly fee row, one fee per product column ("Monthly Service Fees | $0 | $5 | $10" under
     "Account | Great Checking | Better Checking | Best Checking"). Each read is named by its
@@ -1244,6 +1273,19 @@ only on what the free team could not read.
   - have no `extract.paid` attempt for the same text hash, except attempts that failed for a
     temporary reason (`timeout`, `network_error`, `http_429`, `http_5xx`, `budget_blocked`), which
     a later run tries again.
+
+  Before any call, `planPaidReads` skips a selected text that would yield nothing (zero-yield
+  reads, 2026-10-17):
+  - `page_read_before_no_fees`: an earlier paid read of the same page address (lowercased, query
+    and fragment dropped) returned no fee at all (`no_candidates`), and no paid read of that
+    address found one. The skip writes a `rejected` attempt for this text at $0, so it is not
+    selected again. A read that returned rows the text did not ground (`evidence_mismatch`) is
+    not a reason to skip: a later text of the page can ground them.
+  - A bank's same text under two documents in one run is still read twice. Skipping the second
+    copy would have lost 6 live fees in 14 days, and a skip may lose none.
+
+  Each run's skips are logged as one `knox.paid_read_skipped` event on the step, with every text,
+  its reason and the earlier attempt, and appear in the step's results (`skip_reason`).
 
   It makes one `paidModelCall` per document and keeps a returned row only when (`groundPaidRow`):
   - it has a name, a canonical key that exists and an amount from $0 to $2,500;
@@ -1310,9 +1352,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v21 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v78 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v80 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v6 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |

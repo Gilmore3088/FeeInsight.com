@@ -13,6 +13,12 @@ import type { RateLimitResult } from "@/lib/api-rate-limit";
 export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
 
 /** Every stable machine code a v1 error carries; openapi.json lists the same set. */
+/**
+ * The API's version, shown in /api/v1/openapi.json and the connector's serverInfo. Bump it in any PR
+ * that changes the API; scripts/ci-guards.sh api-docs-kill enforces that (James, 2026-10-17).
+ */
+export const API_VERSION = "1.11.0";
+
 export const API_ERROR_CODES = [
   "api_key_required",
   "burst_limited",
@@ -232,4 +238,46 @@ export function assetTierParam(params: URLSearchParams): string[] | null {
     throw new ApiParamError(`asset_tier must be one or more of ${ASSET_TIERS.join(", ")}`);
   }
   return [...new Set(parts)];
+}
+
+const ISO_DATE_TIME_RE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?(Z|[+-]\d{2}:\d{2})?)?$/;
+
+/**
+ * An ISO 8601 date (2026-10-01) or date-time (2026-10-01T12:00:00Z, or with an offset), or
+ * null when absent. A date, or a time with no zone, is read as UTC. Calendar-impossible dates
+ * such as 2026-02-30 are refused rather than rolled into the next month.
+ */
+export function dateTimeParam(params: URLSearchParams, name: string): Date | null {
+  const raw = params.get(name)?.trim();
+  if (raw === undefined || raw === "") return null;
+  const message = `${name} must be an ISO 8601 date or date-time, e.g. 2026-10-01 or 2026-10-01T00:00:00Z`;
+  const match = ISO_DATE_TIME_RE.exec(raw);
+  if (!match) throw new ApiParamError(message);
+  const [, year, month, day, hour, minute, second, zone] = match;
+  const calendar = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (
+    calendar.getUTCFullYear() !== Number(year) ||
+    calendar.getUTCMonth() !== Number(month) - 1 ||
+    calendar.getUTCDate() !== Number(day) ||
+    (hour !== undefined && (Number(hour) > 23 || Number(minute) > 59 || Number(second ?? 0) > 59))
+  ) {
+    throw new ApiParamError(message);
+  }
+  const value = new Date(hour === undefined ? `${raw}T00:00:00Z` : zone ? raw : `${raw}Z`);
+  if (Number.isNaN(value.getTime())) throw new ApiParamError(message);
+  return value;
+}
+
+/** Comma-separated institution ids (positive whole numbers), at most `max` distinct, or null when absent. */
+export function idListParam(params: URLSearchParams, name: string, max: number): number[] | null {
+  const raw = params.get(name);
+  if (raw === null || raw.trim() === "") return null;
+  const parts = raw.split(",").map((part) => part.trim()).filter((part) => part !== "");
+  if (parts.length === 0 || parts.some((part) => !/^\d{1,10}$/.test(part) || Number(part) < 1)) {
+    throw new ApiParamError(`${name} must be institution ids, comma-separated, e.g. 12,48,301`);
+  }
+  const ids = [...new Set(parts.map(Number))];
+  if (ids.length > max) throw new ApiParamError(`${name} takes at most ${max} institutions`);
+  return ids;
 }

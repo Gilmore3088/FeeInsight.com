@@ -46,7 +46,8 @@ import {
   getOfrData,
 } from "@/lib/data-store/financial";
 import { getDistrictComplaintSummary, getNationalComplaintSummary } from "@/lib/data-store/complaints";
-import { getContractFeeRows, getIndexSnapshot, getPeerIndex } from "@/lib/data-store/fee-index";
+import { getContractFeeRows, getNationalIndexStamped, getPeerIndexStamped } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
 import { institutionPositions } from "@/lib/data-store/fee-stats";
 import {
   getRevenueConcentration,
@@ -65,7 +66,7 @@ import {
 
 export const queryDistrictData = tool({
   description:
-    "Returns institution count, fee count, coverage stats, and Beige Book commentary for a Fed district. When: district-level analysis, regional benchmarking. Combine with: queryNationalData, queryNationalData(complaints, district:N) for CFPB signals, queryNationalData(economic, district:N) for FRED labor/inflation data.",
+    "Returns institution count, fee count, coverage stats, and Beige Book commentary for a Fed district. When: district-level analysis, regional benchmarking. Combine with: queryNationalData, queryNationalData(complaints, district:N) for CFPB signals, queryNationalData(economic, district:N) for BLS labor/inflation data.",
   inputSchema: z.object({
     districtId: z.number().min(1).max(12).describe("Fed district number (1-12)"),
   }),
@@ -515,7 +516,7 @@ const VALID_SOURCES = ["call_reports", "economic", "health", "complaints", "fee_
 
 export const queryNationalData = tool({
   description:
-    "Query national summary data across all 12 source domains. Sources: call_reports (FDIC/NCUA revenue trends), economic (FRED rates, Beige Book themes), health (ROA, efficiency, deposits, loans), complaints (CFPB district summaries), fee_index (national/peer fee medians), derived (concentration, fee dependency), fed_content (Fed speeches/papers by district), labor (BLS unemployment, payroll, bank-fee CPI), demographics (Census ACS income/poverty by state), research (NY Fed + OFR financial stability data), deposits (FDIC SOD market share), external (admin-curated research, surveys, reports -- use 'query' param for full-text search). When: any macroeconomic, regional, or financial context question. Combine with: district analysis → economic+complaints+fed_content; compliance question → complaints+fee_index+fed_content; consumer impact → demographics+labor+fee_index; external context → external+fee_index for industry research alongside fee data.",
+    "Query national summary data across all 12 source domains. Sources: call_reports (FDIC/NCUA revenue trends), economic (Fed Board and BLS rates, Beige Book themes), health (ROA, efficiency, deposits, loans), complaints (CFPB district summaries), fee_index (national/peer fee medians), derived (concentration, fee dependency), fed_content (Fed speeches/papers by district), labor (BLS unemployment, payroll, bank-fee CPI), demographics (Census ACS income/poverty by state), research (NY Fed + OFR financial stability data), deposits (FDIC SOD market share), external (admin-curated research, surveys, reports -- use 'query' param for full-text search). When: any macroeconomic, regional, or financial context question. Combine with: district analysis → economic+complaints+fed_content; compliance question → complaints+fee_index+fed_content; consumer impact → demographics+labor+fee_index; external context → external+fee_index for industry research alongside fee data.",
   inputSchema: z.object({
     source: z.enum(["call_reports", "economic", "health", "complaints", "fee_index", "derived", "fed_content", "labor", "demographics", "research", "deposits", "external"])
       .describe("Data source category to query"),
@@ -661,13 +662,16 @@ async function handleFeeIndex(
   tiers: string[] | undefined,
   limit: number
 ) {
+  // #1924: each read's stamp travels with its figures, so an answer can cite it.
   if (charter || tiers) {
     const filters: { charter_type?: string; asset_tiers?: string[] } = {};
     if (charter) filters.charter_type = charter;
     if (tiers) filters.asset_tiers = tiers;
-    return { index: await getPeerIndex(filters) };
+    const { entries, stamp } = await getPeerIndexStamped(filters);
+    return { index: entries, dataset: datasetCitation(stamp) };
   }
-  return { index: await getIndexSnapshot(undefined, limit) };
+  const { entries, stamp } = await getNationalIndexStamped();
+  return { index: entries.slice(0, limit), dataset: datasetCitation(stamp) };
 }
 
 async function handleDerived(

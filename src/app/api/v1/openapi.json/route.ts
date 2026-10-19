@@ -1,8 +1,10 @@
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
-import { API_ERROR_CODES } from "@/lib/api-v1";
-import { BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
+import { API_ERROR_CODES, API_VERSION } from "@/lib/api-v1";
+import { API_MONTHLY_CALLS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
+import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
 // The fee name pair (#1482, #1583), shared by fees[] and rate_fees[]. A completed name
 // ("3 X 10" shown as "Safe Deposit Box 3 X 10") is the schedule's own name, so its flag is false.
@@ -15,7 +17,7 @@ const spec = {
   openapi: "3.0.3",
   info: {
     title: "Bank Fee Index API",
-    version: "1.8.0",
+    version: API_VERSION,
     description:
       "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Every request needs an API key. Hamilton subscribers on the $300 and $500 plans make theirs on their account page; partner keys are issued by hand.",
     contact: {
@@ -38,14 +40,14 @@ const spec = {
         type: "http",
         scheme: "bearer",
         description:
-          "Pass a manually issued API key as a Bearer token in the Authorization header.",
+          "Pass your API key as a Bearer token in the Authorization header. Subscribers on the $300 and $500 plans make theirs on the account page; partner keys are issued by hand.",
       },
       ApiKeyQuery: {
         type: "apiKey",
         in: "query",
         name: "api_key",
         description:
-          "Pass a manually issued API key as a query parameter. Prefer the Authorization header: keys in URLs end up in logs and browser history.",
+          "Pass your API key as a query parameter. Prefer the Authorization header: keys in URLs end up in logs and browser history.",
       },
     },
     schemas: {
@@ -88,7 +90,7 @@ const spec = {
           },
           display_name: {
             type: "string",
-            example: "Overdraft Fee",
+            example: "Overdraft (OD)",
           },
           family: {
             type: "string",
@@ -148,7 +150,7 @@ const spec = {
           category: { type: "string", example: "monthly_maintenance" },
           display_name: {
             type: "string",
-            example: "Monthly Maintenance Fee",
+            example: "Monthly Maintenance",
           },
           family: { type: "string", example: "Account Maintenance" },
           tier: { type: "string" },
@@ -185,10 +187,11 @@ const spec = {
             type: "string",
             enum: ["bank", "credit_union"],
           },
-          asset_size: { type: "number", example: 1200000000 },
-          asset_tier: { type: "string", example: "1B-10B" },
+          asset_size: { type: "number", nullable: true, example: 1200000, description: "Total assets in thousands of US dollars (1200000 = $1.2B)" },
+          asset_tier: { type: "string", nullable: true, example: "community_large", description: "community_small, community_mid, community_large, regional, large_regional or super_regional" },
           fed_district: { type: "integer", example: 2 },
           fee_count: { type: "integer", example: 18 },
+          fee_amount: { type: "number", nullable: true, description: "With fee_category only: the institution's lowest published amount for that fee, or null" },
         },
       },
       InstitutionDetail: {
@@ -202,6 +205,11 @@ const spec = {
           asset_size: { type: "number" },
           asset_tier: { type: "string" },
           fed_district: { type: "integer" },
+          updated_since: {
+            type: "string",
+            format: "date-time",
+            description: "Present when updated_since was sent: fees and rate_fees then hold only fees published at or after it, and fee_count counts those.",
+          },
           fee_count: { type: "integer" },
           fees: {
             type: "array",
@@ -223,7 +231,8 @@ const spec = {
                 },
                 review_status: {
                   type: "string",
-                  enum: ["pending", "staged", "approved"],
+                  enum: ["approved"],
+                  description: "Always approved: the API returns published fees only.",
                 },
                 category: { type: "string", nullable: true, example: "overdraft" },
                 confidence: { type: "number", example: 0.97 },
@@ -245,7 +254,7 @@ const spec = {
               properties: {
                 fee_name: { type: "string", example: "Foreign Transaction Fee", description: FEE_NAME },
                 name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
-                category: { type: "string", nullable: true, example: "foreign_transaction" },
+                category: { type: "string", nullable: true, example: "card_foreign_txn" },
                 rate_percent: { type: "number", example: 3 },
                 rate_min_amount: { type: "number", nullable: true, description: "Dollar floor, when the schedule states one." },
                 rate_max_amount: { type: "number", nullable: true, description: "Dollar cap, when the schedule states one." },
@@ -254,13 +263,14 @@ const spec = {
                 frequency: { type: "string", nullable: true },
                 conditions: { type: "string", nullable: true },
                 source_url: { type: "string", nullable: true },
+                published_at: { type: "string", format: "date-time", nullable: true },
               },
             },
           },
           call_reports: {
             type: "array",
             description:
-              "Latest 8 quarters of FDIC (banks) or NCUA (credit unions) call report figures, newest first. Dollar amounts are whole dollars.",
+              "The latest quarters (8 by default; set quarters, up to 66) of FDIC (banks) or NCUA (credit unions) call report figures, newest first. Dollar amounts are whole dollars.",
             items: {
               type: "object",
               properties: {
@@ -306,6 +316,61 @@ const spec = {
           },
         },
       },
+      FeeRow: {
+        type: "object",
+        description: "One published dollar fee, as returned by view=fees.",
+        properties: {
+          fee_id: { type: "integer", description: "Stable id of the published fee. Match on it when the same row comes back again." },
+          institution_id: { type: "integer" },
+          institution_name: { type: "string" },
+          state: { type: "string", nullable: true },
+          charter_type: { type: "string", nullable: true },
+          fee_name: { type: "string", description: FEE_NAME },
+          name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
+          category: { type: "string", nullable: true, example: "overdraft" },
+          amount: { type: "number", nullable: true, example: 35.0 },
+          frequency: { type: "string", nullable: true },
+          conditions: { type: "string", nullable: true },
+          source_url: { type: "string", nullable: true },
+          published_at: { type: "string", format: "date-time", nullable: true },
+        },
+      },
+      PeerCategory: {
+        type: "object",
+        description: `One fee category: the institution's dollar amount next to its peers. Median, percentiles and placement are null when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee.`,
+        properties: {
+          category: { type: "string", example: "overdraft" },
+          display_name: { type: "string" },
+          family: { type: "string", nullable: true },
+          amount: {
+            type: "number",
+            nullable: true,
+            description: "The price the institution's schedule states for the category, in dollars (the highest tier for overdraft). Null when it states several different fees in the category; amount_low, amount_high and fees then give them, and peers_lower, peers_same, peers_higher and percentile are null.",
+          },
+          amount_low: { type: "number", description: "The lowest of the institution's fees in the category, in dollars." },
+          amount_high: { type: "number", description: "The highest of the institution's fees in the category, in dollars." },
+          fees: {
+            type: "array",
+            description: "Each of the institution's fees in the category, lowest first.",
+            items: { type: "object", properties: { name: { type: "string" }, amount: { type: "number" } } },
+          },
+          peer_count: { type: "integer", description: "Peers with a published dollar amount for this fee." },
+          peer_median: { type: "number", nullable: true },
+          peer_p25: { type: "number", nullable: true },
+          peer_p75: { type: "number", nullable: true },
+          peers_lower: { type: "integer", nullable: true, description: "Peers whose amount is below the institution's." },
+          peers_same: { type: "integer", nullable: true, description: "Peers whose amount is the same, to the cent." },
+          peers_higher: { type: "integer", nullable: true, description: "Peers whose amount is above the institution's." },
+          percentile: {
+            type: "integer",
+            nullable: true,
+            minimum: 0,
+            maximum: 100,
+            description: "The share of peers whose amount is lower, counting half of those with the same amount, from 0 to 100.",
+          },
+          maturity_tier: { type: "string", enum: ["strong", "provisional", "insufficient"] },
+        },
+      },
     },
     responses: {
       BadRequest: {
@@ -340,7 +405,7 @@ const spec = {
         },
       },
       Unavailable: {
-        description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable)",
+        description: "Usage tracking is temporarily down; retry after the Retry-After seconds (code rate_limit_unavailable). On /revenue, also when call report figures cannot be read (code data_unavailable)",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
     },
@@ -356,8 +421,8 @@ const spec = {
       FormatParam: {
         name: "format",
         in: "query",
-        schema: { type: "string", enum: ["csv"] },
-        description: 'Set to "csv" for CSV download. Requires a pro or enterprise API key, or a signed-in Pro export session.',
+        schema: { type: "string", enum: ["json", "csv"], default: "json" },
+        description: 'Set to "csv" for CSV download. Requires a Pro or Enterprise API key, or a signed-in Pro export session. On /institutions, CSV is offered for view=benchmark.',
       },
     },
   },
@@ -367,7 +432,7 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Free-tier keys are limited to 6 spotlight categories. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
+          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
         tags: ["Fees"],
         parameters: [
           {
@@ -429,7 +494,7 @@ const spec = {
         operationId: "getFeeIndex",
         summary: "National & peer fee index",
         description:
-          "Returns the national fee index. The free tier gets the spotlight categories; Pro and Enterprise keys get every category. Apply filters for peer benchmarking by state, charter type, or Fed district. Includes maturity indicators and bank/CU counts.",
+          "Returns the national fee index. Covers the top 50 public fee types. Apply filters for peer benchmarking by state, charter type, Fed district or asset-size tier. Includes maturity indicators and bank/CU counts.",
         tags: ["Index"],
         parameters: [
           {
@@ -521,7 +586,7 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions with fee data. Filter by state and charter type. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only).",
+          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for its enforcement actions and complaint counts (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
         tags: ["Institutions"],
         parameters: [
           {
@@ -590,6 +655,21 @@ const spec = {
             description: "With id: how many call report quarters to return, newest first (back to 2010)",
           },
           {
+            name: "view",
+            in: "query",
+            schema: { type: "string", enum: ["detail", "benchmark", "regulatory_watch", "fees"], default: "detail" },
+            description:
+              "detail (default), benchmark and regulatory_watch need id. fees (Pro and Enterprise only) lists published dollar fees one row each, oldest publish first and then by fee_id, optionally for one id, state or charter, and takes updated_since.",
+          },
+          {
+            name: "updated_since",
+            in: "query",
+            schema: { type: "string", format: "date-time" },
+            description:
+              "ISO 8601 date or date-time (a date, or a time with no zone, is read as UTC). With view=fees, only fees published at or after it. With id on the detail view, fees and rate_fees keep only those published at or after it. Rows published at exactly that time come back again, so match on fee_id. A fee taken down drops out rather than appearing as a change.",
+            example: "2026-10-01T00:00:00Z",
+          },
+          {
             name: "page",
             in: "query",
             schema: {
@@ -610,11 +690,13 @@ const spec = {
             },
             description: "Results per page",
           },
+          { $ref: "#/components/parameters/FormatParam" },
         ],
         responses: {
           "200": {
             description: "Paginated institution list, or one institution's detail when `id` is set",
             content: {
+              "text/csv": { schema: { type: "string" }, description: "view=benchmark with format=csv" },
               "application/json": {
                 schema: {
                   oneOf: [
@@ -635,6 +717,22 @@ const spec = {
                       },
                     },
                     { $ref: "#/components/schemas/InstitutionDetail" },
+                    {
+                      type: "object",
+                      description: "view=fees: published dollar fees, oldest publish first, then by fee_id",
+                      properties: {
+                        view: { type: "string", enum: ["fees"] },
+                        updated_since: { type: "string", format: "date-time", nullable: true },
+                        note: { type: "string" },
+                        total: { type: "integer" },
+                        page: { type: "integer" },
+                        page_size: { type: "integer" },
+                        pages: { type: "integer" },
+                        has_more: { type: "boolean" },
+                        data: { type: "array", items: { $ref: "#/components/schemas/FeeRow" } },
+                        attribution: { $ref: "#/components/schemas/Attribution" },
+                      },
+                    },
                   ],
                 },
               },
@@ -906,6 +1004,180 @@ const spec = {
         },
       },
     },
+    "/peers": {
+      get: {
+        operationId: "getPeerComparison",
+        summary: "Fees against peers",
+        description:
+          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. Peers default to the institution's charter type, asset-size tier and Fed district. Any of the peer-group parameters define the group instead (only those given apply; same means the institution's own value), or peer_ids names the institutions. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. Pro and Enterprise only.`,
+        tags: ["Institutions"],
+        parameters: [
+          { name: "institution_id", in: "query", required: true, schema: { type: "integer", minimum: 1 } },
+          {
+            name: "peer_ids",
+            in: "query",
+            schema: { type: "string", pattern: "^\\d+(,\\d+)*$" },
+            description: "Up to 25 institution ids, comma-separated, to compare against instead of the default peers.",
+            example: "12,48,301",
+          },
+          ...PEER_GROUP_PARAMS.map((p) => ({ name: p.name, in: "query", schema: { type: "string" }, description: p.description, example: p.example })),
+        ],
+        responses: {
+          "200": {
+            description: "The institution's fees against its peers",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    institution: {
+                      type: "object",
+                      properties: {
+                        id: { type: "integer" },
+                        name: { type: "string" },
+                        state: { type: "string", nullable: true },
+                        charter_type: { type: "string", nullable: true },
+                        asset_tier: { type: "string", nullable: true },
+                        fed_district: { type: "integer", nullable: true },
+                      },
+                    },
+                    peer_group: {
+                      type: "object",
+                      properties: {
+                        basis: { type: "string", enum: ["default", "chosen", "defined"] },
+                        label: { type: "string", example: "Banks with $300M to $1B in assets in the Dallas Fed district" },
+                        definition: {
+                          type: "object",
+                          nullable: true,
+                          description: "The dimensions the group was built from, with same filled in. Null when peer_ids named the group.",
+                          additionalProperties: true,
+                        },
+                        market: {
+                          type: "object",
+                          nullable: true,
+                          properties: { code: { type: "integer" }, name: { type: "string" } },
+                        },
+                        peer_ids: { type: "array", nullable: true, items: { type: "integer" } },
+                        peers_with_fees: { type: "integer", description: "Peers with at least one published dollar fee in the compared categories." },
+                      },
+                    },
+                    min_peers: { type: "integer", example: MIN_INSTITUTIONS_FOR_MEDIAN },
+                    categories: { type: "array", items: { $ref: "#/components/schemas/PeerCategory" } },
+                    rate_fees: {
+                      type: "array",
+                      description: "The institution's fees stated as a rate, listed apart and not compared.",
+                      items: {
+                        type: "object",
+                        properties: {
+                          category: { type: "string", nullable: true },
+                          display_name: { type: "string", nullable: true },
+                          fee_name: { type: "string" },
+                          rate_percent: { type: "number" },
+                          rate_min_amount: { type: "number", nullable: true },
+                          rate_max_amount: { type: "number", nullable: true },
+                          rate_basis: { type: "string", nullable: true },
+                          rate_terms: { type: "string" },
+                          source_url: { type: "string", nullable: true },
+                        },
+                      },
+                    },
+                    note: { type: "string" },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "304": { $ref: "#/components/responses/NotModified" },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "404": {
+            description: "Institution not found (code not_found)",
+            content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+          },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
+    "/rate-fees": {
+      get: {
+        operationId: "listRateFees",
+        summary: "Fees stated as a rate",
+        description:
+          "Published fees each institution states as a percentage (for example 3% of the transaction), from its own fee schedule, with any dollar minimum or maximum. Kept apart from dollar fees and never included in dollar medians. Ordered by publish date, then id. Pro and Enterprise only.",
+        tags: ["Fees"],
+        parameters: [
+          { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 } },
+          { name: "state", in: "query", schema: { type: "string", pattern: "^[A-Za-z]{2}$" } },
+          { name: "category", in: "query", schema: { type: "string" }, example: "card_foreign_txn" },
+          { name: "charter", in: "query", schema: { type: "string", enum: ["bank", "credit_union"] } },
+          {
+            name: "updated_since",
+            in: "query",
+            schema: { type: "string", format: "date-time" },
+            description: "ISO 8601 date or date-time; only fees published at or after it.",
+          },
+          { name: "page", in: "query", schema: { type: "integer", default: 1, minimum: 1 } },
+          { name: "limit", in: "query", schema: { type: "integer", default: 100, minimum: 1, maximum: 500 } },
+        ],
+        responses: {
+          "200": {
+            description: "Rate fees, oldest publish first",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    note: { type: "string" },
+                    updated_since: { type: "string", format: "date-time", nullable: true },
+                    total: { type: "integer" },
+                    page: { type: "integer" },
+                    page_size: { type: "integer" },
+                    pages: { type: "integer" },
+                    has_more: { type: "boolean" },
+                    data: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          id: { type: "integer" },
+                          institution_id: { type: "integer" },
+                          institution_name: { type: "string" },
+                          state: { type: "string", nullable: true },
+                          charter_type: { type: "string", nullable: true },
+                          fee_name: { type: "string", description: FEE_NAME },
+                          name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
+                          category: { type: "string", nullable: true },
+                          display_name: { type: "string", nullable: true },
+                          rate_percent: { type: "number", example: 3, description: "The rate in percent: 3 means 3%." },
+                          rate_min_amount: { type: "number", nullable: true, description: "Dollar floor, when the schedule states one." },
+                          rate_max_amount: { type: "number", nullable: true, description: "Dollar cap, when the schedule states one." },
+                          rate_basis: { type: "string", nullable: true, example: "transaction" },
+                          rate_terms: { type: "string", example: "3% of the transaction" },
+                          frequency: { type: "string", nullable: true },
+                          conditions: { type: "string", nullable: true },
+                          source_url: { type: "string", nullable: true },
+                          published_at: { type: "string", format: "date-time", nullable: true },
+                        },
+                      },
+                    },
+                    attribution: { $ref: "#/components/schemas/Attribution" },
+                  },
+                },
+              },
+            },
+          },
+          "304": { $ref: "#/components/responses/NotModified" },
+          "400": { $ref: "#/components/responses/BadRequest" },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/PlanRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/Unavailable" },
+        },
+      },
+    },
   },
   tags: [
     {
@@ -933,7 +1205,7 @@ const spec = {
     },
   ],
   "x-rateLimit": {
-    description: `One monthly allowance per API key, shared across all endpoints. Free keys: 100 requests/month. Pro keys: 10,000 requests/month. Enterprise: unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (Enterprise exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
+    description: `One monthly allowance per plan, shared by every key on it and across all endpoints: subscriber keys on the $300 and $500 plans get ${API_MONTHLY_CALLS_LABEL} calls a month. Partner (Enterprise) keys are issued by hand and are unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted. There are no free keys. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (Enterprise exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
     headers: {
       "X-RateLimit-Limit": "Maximum requests allowed in the current monthly window",
       "X-RateLimit-Remaining": "Requests remaining in the current monthly window",

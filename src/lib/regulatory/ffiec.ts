@@ -65,6 +65,98 @@ export function periodOptionValue(html: string, q: Quarter): string | null {
   return null;
 }
 
+/** What an FFIEC bulk page says and asks for, so a failed download can name it. */
+export interface FfiecPageDescription {
+  title: string | null;
+  /** Visible message text: validation summaries, error or message labels, script alerts. */
+  messages: string[];
+  /**
+   * Form fields: a bare name for hidden and typed-value inputs (text, email, number, search...; no values), "name[type=value]" for
+   * radios, checkboxes and buttons, "name[select N options, label*]" for selects; "*" marks the
+   * checked or selected one.
+   */
+  fields: string[];
+}
+
+const MAX_PAGE_MESSAGES = 6;
+const MAX_PAGE_FIELDS = 40;
+
+function pageText(fragment: string): string {
+  return decodeHtml(fragment.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function attr(tag: string, name: string): string | null {
+  const match = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+  return match ? decodeHtml(match[1] ?? match[2] ?? match[3] ?? "") : null;
+}
+
+/**
+ * Title, visible messages and form fields of an FFIEC bulk page. Hidden ASP.NET state fields are
+ * named without their values. Pure; used when a download step answers with HTML instead of a file.
+ */
+export function describeFfiecPage(html: string): FfiecPageDescription {
+  const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const title = titleMatch ? pageText(titleMatch[1]) || null : null;
+
+  const messages: string[] = [];
+  const pushMessage = (text: string) => {
+    const clean = text.slice(0, 240);
+    if (clean && !messages.includes(clean) && messages.length < MAX_PAGE_MESSAGES) messages.push(clean);
+  };
+  for (const m of html.matchAll(/<(span|div|p|td|li|label|font)\b([^>]*)>([\s\S]*?)<\/\1>/gi)) {
+    const marker = `${attr(m[2], "id") ?? ""} ${attr(m[2], "class") ?? ""}`;
+    if (!/error|message|msg|warn|valid|alert|notice|status/i.test(marker)) continue;
+    pushMessage(pageText(m[3]));
+  }
+  for (const m of html.matchAll(/alert\(\s*(['"])([\s\S]*?)\1\s*\)/g)) pushMessage(pageText(m[2]));
+
+  const fields: string[] = [];
+  const addField = (field: string) => {
+    if (!fields.includes(field) && fields.length < MAX_PAGE_FIELDS) fields.push(field);
+  };
+  for (const m of html.matchAll(/<input\b[^>]*>/gi)) {
+    const name = attr(m[0], "name");
+    if (!name) continue;
+    const type = (attr(m[0], "type") ?? "text").toLowerCase();
+    if (["hidden", "text", "password", "email", "number", "search", "tel", "url"].includes(type)) addField(name);
+    else addField(`${name}[${type}=${attr(m[0], "value") ?? ""}${/\schecked\b/i.test(m[0]) ? "*" : ""}]`);
+  }
+  for (const m of html.matchAll(/<select\b([^>]*)>([\s\S]*?)<\/select>/gi)) {
+    const name = attr(m[1], "name");
+    if (!name) continue;
+    const selected = /<option\b[^>]*\sselected\b[^>]*>([^<]*)/i.exec(m[2]);
+    const count = [...m[2].matchAll(/<option\b/gi)].length;
+    addField(`${name}[select ${count} options${selected ? `, ${pageText(selected[1])}*` : ""}]`);
+  }
+  for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/gi)) {
+    const name = attr(m[1], "name");
+    if (name) addField(`${name}[button=${pageText(m[2])}]`);
+  }
+  return { title, messages, fields };
+}
+
+/** One line for an error message: `title "..."; messages: ...; fields: ...`. */
+export function formatFfiecPage(page: FfiecPageDescription): string {
+  return [
+    `title ${page.title ? `"${page.title}"` : "none"}`,
+    `messages: ${page.messages.length > 0 ? page.messages.map((m) => `"${m}"`).join(" | ") : "none"}`,
+    `fields: ${page.fields.join(", ") || "none"}`,
+  ].join("; ");
+}
+
+/** Name of the page's submit control labelled "Download", when there is one. */
+export function downloadButtonName(html: string): string | null {
+  for (const m of html.matchAll(/<input\b[^>]*>/gi)) {
+    const type = (attr(m[0], "type") ?? "").toLowerCase();
+    if ((type === "submit" || type === "image" || type === "button") && /^\s*download\s*$/i.test(attr(m[0], "value") ?? "")) {
+      return attr(m[0], "name");
+    }
+  }
+  return null;
+}
+
 function absorbCookies(response: Response, cookies: Map<string, string>): void {
   const headers = response.headers as Headers & { getSetCookie?: () => string[] };
   const list = headers.getSetCookie?.() ?? (response.headers.get("set-cookie") ? [response.headers.get("set-cookie") as string] : []);
@@ -119,8 +211,15 @@ export interface FfiecBulkDownload {
   fileName: string | null;
 }
 
-/** Download one quarter's "Call Reports -- Single Period" tab-delimited bulk zip. */
-export async function fetchFfiecCallBulk(q: Quarter, options: RegistryFetchOptions = {}): Promise<FfiecBulkDownload> {
+/**
+ * Download one quarter's "Call Reports -- Single Period" tab-delimited bulk zip, keeping the
+ * schedule files whose names match `schedules` (Schedule RI alone by default).
+ */
+export async function fetchFfiecCallBulk(
+  q: Quarter,
+  options: RegistryFetchOptions = {},
+  schedules: RegExp = SCHEDULE_RI,
+): Promise<FfiecBulkDownload> {
   const cookies = new Map<string, string>();
   const first = await request(options, cookies);
   let state = readFormState(await first.text(), cookies);
@@ -148,13 +247,21 @@ export async function fetchFfiecCallBulk(q: Quarter, options: RegistryFetchOptio
   }
   const name = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null;
   if (!download.body) throw new RegistryHttpError("FFIEC sent an empty bulk download", FFIEC_BULK_URL, download.status);
-  return { files: await unzipScheduleRi(download.body), fileName: name };
+  return { files: await unzipSchedules(download.body, schedules), fileName: name };
 }
 
 /** Schedule RI files only ("Schedule RI 06302026.txt", or "Schedule RI(1 of 2) ..."), not RIA, RIB... */
 const SCHEDULE_RI = /Schedule RI\s*(\(\d of \d\))?\s*\d{8}\.txt$/i;
 
-function cells(line: string): string[] {
+/**
+ * Bulk-zip file names for the given schedule codes, e.g. ["RI", "RIBI", "RCN"]. Wide schedules
+ * come in parts, and the part marker follows the date ("Schedule RCO 03312026(1 of 2).txt").
+ */
+export function schedulePattern(codes: readonly string[]): RegExp {
+  return new RegExp(`Schedule (${codes.join("|")})\\s*(\\(\\d of \\d\\))?\\s*\\d{8}\\s*(\\(\\d of \\d\\))?\\.txt$`, "i");
+}
+
+export function cells(line: string): string[] {
   return line.split("\t").map((cell) => cell.trim().replace(/^"(.*)"$/, "$1").trim());
 }
 
@@ -181,11 +288,19 @@ const MAX_SCHEDULE_BYTES = 256 * 1024 * 1024;
  * prod with "Array buffer allocation failed" (Oct 2026).
  */
 export async function unzipScheduleRi(source: Uint8Array | ReadableStream<Uint8Array>): Promise<Record<string, Uint8Array>> {
+  return unzipSchedules(source, SCHEDULE_RI);
+}
+
+/** Same streaming read as unzipScheduleRi, for any set of schedule files. */
+export async function unzipSchedules(
+  source: Uint8Array | ReadableStream<Uint8Array>,
+  pattern: RegExp,
+): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   const pending: Array<Promise<void>> = [];
   let failure: Error | null = null;
   const unzip = new Unzip((file) => {
-    if (!SCHEDULE_RI.test(file.name)) return;
+    if (!pattern.test(file.name)) return;
     const parts: Uint8Array[] = [];
     let size = 0;
     pending.push(

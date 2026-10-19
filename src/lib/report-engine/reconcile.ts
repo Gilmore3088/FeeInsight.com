@@ -15,7 +15,7 @@
  * "institutions added this month" is a 30-day window count, not a total, so it keeps the
  * one-institution rule. A figure printed where the live data has none, or none printed where
  * it has one, is also a finding. Any finding blocks
- * the report. Figures that come from other sources (Call Reports, FRED, the Beige Book,
+ * the report. Figures that come from other sources (Call Reports, BLS, BEA, the Fed Board, the Beige Book,
  * agency releases) or are computed from the checked figures are listed as not checked, with
  * the reason, so the record never reads as more than it is.
  *
@@ -274,7 +274,7 @@ export function nationalPrintedFigures(payload: NationalQuarterlyPayload): Print
     { section: "Institutions covered (headline count)", reason: "Read from the public stats snapshot, not recomputed here." },
     { section: "Overdraft price bands", reason: "Not recomputed yet." },
     { section: "Service-charge income", reason: "From FDIC Call Reports and NCUA 5300 filings, not the fee catalog." },
-    { section: "Economic indicators and Beige Book", reason: "From FRED and the Federal Reserve, not the fee catalog." },
+    { section: "Economic indicators and Beige Book", reason: "From BLS, BEA and the Federal Reserve, not the fee catalog." },
     { section: "Agency releases", reason: "From reg_articles, not the fee catalog." },
     { section: "Written sections", reason: "Model-written; their numbers are checked against the data block by validateNumerics." },
   ];

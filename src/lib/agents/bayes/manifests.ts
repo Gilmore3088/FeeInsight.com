@@ -275,6 +275,14 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  // v1 (#1868): the first LEI match rules. Every institution is checked by the gleif registry's
+  // lei-match partitions in bounded batches; nothing was matched under an earlier version.
+  LEI_MATCH_PARSER_VERSION: "First version: the gleif lei-match partitions check every institution in bounded batches; nothing older to replay.",
+  // v1 (#1909): Darwin re-reads every live fee on a Spanish copy of a schedule each verify step (no
+  // cursor; a few hundred rows), so there is no backlog for a replay to count.
+  TRANSLATED_COPY_CHECK_VERSION: "Each verify step re-reads every live fee on a Spanish-copy document (no cursor); nothing to replay.",
+  // v1 (#2022): Canadian bank documents. A full verify step re-reads every live document's text at most hourly.
+  CANADIAN_DOCUMENT_CHECK_VERSION: "First version: a verify step re-reads every live fee's document text (no cursor, at most hourly); nothing older to replay.",
   // v8 (#1112): new no-fee, discount, allowance and loan-amount name rules. Each step's eval-verdict
   // pass reads every live fee whose name or line matches one of their prefilter clauses
   // (`V8_PREFILTER`), then the second look; Darwin reads each new row under them. There is no
@@ -290,6 +298,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // Old texts are read again only when KNOX_RULES_STRATEGY moves, and the knox.rules manifest
   // counts that replay.
   KNOX_ACCOUNT_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; the knox.rules manifest counts the replay when KNOX_RULES_STRATEGY moves.",
+  // v7 (#1827): a price-first row keeps its own price. It moves with KNOX_RULES_STRATEGY (v79), whose
+  // knox.rules manifest counts the replay.
+  KNOX_TABLE_STRATEGY: "A pass 2 specialist under extract.rules; it moves with KNOX_RULES_STRATEGY, whose knox.rules manifest counts the replay.",
   // v75 (Knox recall, Oct 17): raised from 26 so every current copy read before v75 is read once
   // more. It is one of the extract step's own re-read triggers, which the knox.rules manifest's
   // queue counts with the same query (`countKnoxRereadsDue`), so the replay is counted there.
@@ -325,6 +336,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1051): a new fetch route, not a changed rule. Its selector picks every unreachable fee
   // link each fetch step (3 a step, once a week each), so the backlog is worked by the route itself.
   ADDRESS_VARIANT_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the unreachable links it works through, so there is nothing to replay.",
+  // v1 (#1881, Oct 19): a new fetch route. Its selector picks every never-fetched saved fee link
+  // (10 a step, switch off until James says yes), so the backlog is worked by the route itself.
+  SAVED_LINK_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the never-fetched saved links it works through, so there is nothing to replay.",
   // v3 / v2 (#1326): the re-searches no longer accept the link they replace. Their selectors pick
   // every bank not yet searched at the new version, so the discover steps re-search them themselves.
   UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
@@ -362,7 +376,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // Round 6 (rev12): subject-carrying tail leads, soft if/when clauses and floors, cents figures as "$",
   // a credit guard and NBSP parity in the count SQL; still shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
-  HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
+  // v2 (#1456): a fee whose name is silent on the hour is read on its own stored line too; line-only
+  // fees are written only with HOURLY_LINE_LIVE on (off). Same cursor.
+  HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name and stored line for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address
   // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.
   // v2 (#1518): lending wording on loan documents and brokerage_document (own sub-switch) as their
@@ -373,9 +389,13 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1455): a new shadow pass. Its selector reads every shared or vendor-path document pair not
   // yet read at v1 (25 a verify step), and documentOwnerCountSql counts the whole backlog read-only.
   DOCUMENT_OWNER_STRATEGY: "A new shadow pass; its selector reads every shared or vendor-path pair not yet read at v1, and documentOwnerCountSql counts the backlog; nothing to replay.",
-  // v17 (#1646): name words match where a word begins. The version is in each institution's check
-  // fingerprint, so every publish step's batch re-checks institutions not yet checked at v17.
+  // v18 (#1810): an opening deposit under an account heading is not the heading's price. The version
+  // is in each institution's check fingerprint, so every publish step's batch re-checks institutions
+  // not yet checked at v18.
   SOURCE_CHECK_STRATEGY: "Its fingerprint carries the version, so each publish step's batch re-checks every institution not yet checked at the new version; nothing to replay.",
+  // v3 (#1810): headings over an opening deposit, "Interest Checking" and numbered accounts name a fee.
+  ACCOUNT_NAME_STRATEGY: "Its fingerprint carries the version, so each publish step's batch (40 institutions) re-reads every institution with a generic monthly name not yet read at v3; nothing to replay.",
+  STATE_LISTS_PARSER_VERSION: "New sources (depositories, non-bank lenders, Urban debt held until its license is confirmed); no older rows to replay.",
 };
 
 export async function loadManifests(): Promise<ReplayManifest[]> {
@@ -401,6 +421,17 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v70 (Oct 17): card-product fees under the non-network ATM fee and card inactivity under the
     // dormant account fee fail (takedowns held by CARD_PRODUCT_TAKEDOWN_LIVE), and skipped loan
     // payments leave late payment and loan origination for other lending.
+    // v71 (Oct 17): the non-network ATM fee refuses another institution's card named in several words
+    // after "non-", and an ATM transaction verification re-files to account research.
+    // v72 (Oct 17, #1788): an international ATM fee re-files to card_foreign_txn, a sustained overdraft
+    // to continuous_od and an incoming wire to its incoming key; an optional add-on fails monthly maintenance.
+    // v73 (Oct 17, #1837): a bare direction row read under another column's heading ("Check Printing:
+    // Incoming", a wire price) fails outside the categories a direction prices.
+    // v74 (Oct 19, #2018): payment investigations re-file to account research, withdrawal limits and
+    // returned mail leave account research, excess IRA withdrawals leave IRA termination, currency
+    // shipping leaves rush card, loan payments leave returned deposited items, and a withdrawal at
+    // the institution's own named ATM fails the non-network ATM fee.
+    // v75 (Oct 19, #2023, James's "Take down"): a club or holiday account withdrawal fails early closure.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

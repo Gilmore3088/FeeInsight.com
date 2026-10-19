@@ -54,7 +54,7 @@ describe("getNationalEconomicSummary", () => {
     expect(result).toHaveProperty("fed_funds_rate");
     expect(result).toHaveProperty("unemployment_rate");
     expect(result).toHaveProperty("cpi_yoy_pct");
-    expect(result).toHaveProperty("consumer_sentiment");
+    expect(result).not.toHaveProperty("consumer_sentiment");
   });
 
   it("returns null indicators when DB is empty", async () => {
@@ -64,20 +64,6 @@ describe("getNationalEconomicSummary", () => {
     expect(result.fed_funds_rate).toBeNull();
     expect(result.unemployment_rate).toBeNull();
     expect(result.cpi_yoy_pct).toBeNull();
-    expect(result.consumer_sentiment).toBeNull();
-  });
-
-  it("returns non-null consumer_sentiment when UMCSENT rows exist", async () => {
-    // All buildRichIndicator calls share the same mock; return rows for every call
-    getMock().mockResolvedValue([
-      { observation_date: "2025-01-01", value: "74.5" },
-      { observation_date: "2024-12-01", value: "72.0" },
-      { observation_date: "2024-11-01", value: "71.8" },
-    ]);
-
-    const result = await getNationalEconomicSummary();
-    expect(result.consumer_sentiment).not.toBeNull();
-    expect(result.consumer_sentiment!.current).toBeCloseTo(74.5, 1);
   });
 });
 
@@ -384,21 +370,20 @@ describe("getDistrictBeigeBookSummaries audit", () => {
   });
 });
 
-// ── getFredSummary — 7 indicator fields ─────────────────────────────────────
+// ── getFredSummary — 6 indicator fields ─────────────────────────────────────
 
 describe("getFredSummary", () => {
   beforeEach(() => {
     resetMock(getMock());
   });
 
-  it("returns all 7 indicator fields plus as_of (8 total fields)", async () => {
-    // Mock: DISTINCT ON query returns rows for all 7 series
+  it("returns all 6 indicator fields plus as_of (7 total fields)", async () => {
+    // Mock: DISTINCT ON query returns rows for all 6 series
     getMock()
       .mockResolvedValueOnce([
         { series_id: "FEDFUNDS", value: 5.33, observation_date: "2025-01-01" },
         { series_id: "UNRATE", value: 4.1, observation_date: "2025-01-01" },
         { series_id: "CPIAUCSL", value: 315.6, observation_date: "2025-01-01" },
-        { series_id: "UMCSENT", value: 72.5, observation_date: "2025-01-01" },
         { series_id: "GDPC1", value: 22000, observation_date: "2024-10-01" },
         { series_id: "PSAVERT", value: 4.6, observation_date: "2025-01-01" },
         { series_id: "DRCBLACBS", value: 14.5, observation_date: "2024-10-01" },
@@ -413,7 +398,7 @@ describe("getFredSummary", () => {
     expect(result).toHaveProperty("fed_funds_rate");
     expect(result).toHaveProperty("unemployment_rate");
     expect(result).toHaveProperty("cpi_yoy_pct");
-    expect(result).toHaveProperty("consumer_sentiment");
+    expect(result).not.toHaveProperty("consumer_sentiment");
     expect(result).toHaveProperty("gdp_growth_yoy_pct");
     expect(result).toHaveProperty("personal_savings_rate");
     expect(result).toHaveProperty("bank_lending_standards");
@@ -436,7 +421,6 @@ describe("getFredSummary", () => {
     expect(result.fed_funds_rate).toBeNull();
     expect(result.unemployment_rate).toBeNull();
     expect(result.cpi_yoy_pct).toBeNull();
-    expect(result.consumer_sentiment).toBeNull();
     expect(result.gdp_growth_yoy_pct).toBeNull();
     expect(result.personal_savings_rate).toBeNull();
     expect(result.bank_lending_standards).toBeNull();

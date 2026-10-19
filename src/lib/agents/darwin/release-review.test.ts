@@ -449,9 +449,11 @@ describe("releasing the recorded v17 passes", () => {
       "Per Each ACH Debit $ .25\nPer Each POS Withdrawal $ .25\nPer Each ATM Withdrawal $ .25\nThe monthly average collected balance may earn an Earnings Allowance"), "business_activity_row"],
     [recorded("Vacation Club Excessive Withdrawals (Over 3 per Year)", "account_research", "annual", "Vacation Club Excessive Withdrawals (Over 3 per Year) | $5.00"), "frequency_word_disagrees"],
     [recorded("Monthly Service Charge, Minimum Bal", "monthly_maintenance", "per_item", "Monthly Service Charge, $1000 Minimum Bal. $25.00 Check Copy Fee, Each Check $7.50"), "frequency_word_disagrees"],
-    [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "glued_or_cut_name"],
-    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "glued_or_cut_name"],
-    [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "glued_or_cut_name"],
+    // Guard v74 (#2018): an excess withdrawal or returned mail filed as account research moves to its own type first.
+    [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "refiles_to:excess_withdrawal"],
+    // Guard v73 (#1837): a bare direction row under a heading it did not sit under fails the guard first.
+    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "category_guard"],
+    [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "refiles_to:excess_withdrawal"],
     // Released: the allowance's period agrees with a per-item price, and a real qualifier stays.
     [recorded("Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle", "account_research", "per_item", "$3 Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle4"), null],
     [recorded("Cashier's Checks: Non-Customer", "cashiers_check", null, "Cashier's Checks | Non-Customer $8.00"), null],
@@ -471,7 +473,7 @@ describe("releasing the recorded v17 passes", () => {
     [recorded("Courtesy Pay Overdraft Fee", "overdraft", null, "Courtesy Pay Overdraft Fee | $5.00", null, { amount: "5" }), "overdraft_nsf_for_person"],
     // Not footnotes: a price ending in 5, or one of several prices on the line; a price at its band is not the band.
     [recorded("Subpoena", "legal_process", null, "Subpoena | $25 per instance", null, { amount: "25" }), null],
-    [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), null],
+    [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), "refiles_to:returned_mail"],
     // The third hand check (Oct 15, 18 of 20): two good fees the glue check held now release, and its two misses hold.
     [recorded("Monthly service fee", "monthly_maintenance", "monthly", "| You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more.",
       "Ways to Avoid the Monthly Service Fee | You can avoid the $10.00 monthly service fee by maintaining a minimum daily balance of $500 or more. | You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more. | Not Applicable",

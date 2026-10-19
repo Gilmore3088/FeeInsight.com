@@ -1,14 +1,27 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly (#1811); publishing, editing or
+ * unpublishing an article from admin revalidates it at once. The page reads no session,
+ * cookies or search params. Views are counted from the browser (view-count.tsx), since the
+ * server render no longer runs once per reader.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getArticleBySlug, incrementViewCount, getPublishedArticles } from "@/lib/data-store/articles";
+import { getArticleBySlug, getPublishedArticles } from "@/lib/data-store/articles";
 import { ensureResearchTables } from "@/lib/research/history";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { ArticleViewCount } from "./view-count";
+
+/** Nothing is rendered at build time; each article renders on its first visit, then from cache. */
+export function generateStaticParams() {
+  return [];
+}
 
 export async function generateMetadata({
   params,
@@ -45,8 +58,6 @@ export default async function ArticlePage({
     notFound();
   }
 
-  await incrementViewCount(slug);
-
   const relatedArticles = (await getPublishedArticles(4)).filter((a) => a.slug !== slug).slice(0, 3);
 
   const publishedDate = article.published_at
@@ -59,6 +70,7 @@ export default async function ArticlePage({
 
   return (
     <div className="mx-auto max-w-page px-6 py-14">
+      <ArticleViewCount slug={slug} />
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },

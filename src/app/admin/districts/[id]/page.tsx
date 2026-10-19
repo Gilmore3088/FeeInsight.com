@@ -156,12 +156,12 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
                 </div>
               )}
 
-              {/* Economic Indicators (FRED) */}
+              {/* Economic Indicators (BLS, BEA, Fed Board) */}
               {indicatorsBySeries.size > 0 && (
                 <div className="rounded-lg border bg-white dark:bg-white/[0.02]">
                   <div className="px-5 py-3 border-b bg-gray-50/80 dark:bg-white/[0.03]">
                     <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                      Economic Indicators (FRED)
+                      Economic Indicators (BLS, BEA, Fed Board)
                     </h2>
                   </div>
                   <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">

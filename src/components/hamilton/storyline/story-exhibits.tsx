@@ -9,6 +9,7 @@ import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
 import { ANSWER_TYPE, dayDate, figureSize, fmtMoney, fmtSignedMoney, SERIF } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
 import { IncomeSplitChart, incomeSplitOf } from "./income-split";
+import { PeerList } from "./peer-list";
 
 const th = ANSWER_TYPE.th;
 
@@ -24,6 +25,14 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     return (
       <div className="break-inside-avoid">
         <ExhibitView exhibit={x} number={number} title={item.actionTitle} />
+        {takeaway}
+      </div>
+    );
+  }
+  if (x.kind === "peer_list") {
+    return (
+      <div className="break-inside-avoid">
+        <PeerList exhibit={x} title={item.actionTitle} number={number} />
         {takeaway}
       </div>
     );
@@ -110,7 +119,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                 {x.columns.map((c, i) => (
                   <div key={c} className="contents">
                     <dt className="text-warm-600">{c}</dt>
-                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not published</span>}</dd>
+                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not listed</span>}</dd>
                   </div>
                 ))}
               </dl>
@@ -137,7 +146,7 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
                   </th>
                   {r.cells.map((c, i) => (
                     <td key={i} className={`px-3 py-2 text-center text-warm-800 ${ANSWER_TYPE.num}`}>
-                      {c ?? <span className="text-warm-600">Not published</span>}
+                      {c ?? <span className="text-warm-600">Not listed</span>}
                     </td>
                   ))}
                 </tr>

@@ -16,15 +16,28 @@ function outcomeForStatus(status: number): ApiAuditOutcome {
   return "success";
 }
 
+export interface ApiRoutePolicyOptions {
+  /**
+   * An answer that needs no database at all (a signed-out visitor's session check), or null to
+   * run the route as usual. Such an answer skips the rate-limit count and the audit row: those
+   * are a read and a write per request, and the site chrome asks for the session on every page
+   * view, so a crawler's page views each cost the pool a connection for nothing.
+   */
+  answerWithoutDatabase?: (request: Request | undefined) => Response | null;
+}
+
 export function withApiRoutePolicy<TArgs extends unknown[]>(
   routeId: string,
   method: string,
   handler: RouteHandler<TArgs>,
+  options: ApiRoutePolicyOptions = {},
 ): RouteHandler<TArgs> {
   const policy = getApiRoutePolicy(routeId);
   const wrapped = async (...args: TArgs): Promise<Response> => {
     const startedAt = Date.now();
     const request = findRequest(args);
+    const early = options.answerWithoutDatabase?.(request) ?? null;
+    if (early) return early;
     const subjectKey = getRequestSubjectKey(request);
 
     if (await isRateLimited(policy, subjectKey)) {

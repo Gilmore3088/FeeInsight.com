@@ -10,7 +10,12 @@ import {
   LEGACY_HIGH_CONFIDENCE_LIMITATION,
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
+  EVENT_FEE_CATEGORIES,
+  chargedPerEvent,
+  peerComparisonCoverage,
+  readPeerCoverage,
 } from "./evidence-contract";
+import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import type { FeeResearch } from "./workspace/types";
 
 function fact(overrides: Partial<HamiltonEvidenceFact> = {}): HamiltonEvidenceFact {
@@ -125,11 +130,90 @@ describe("explicit derivations", () => {
     const a = fact({ id: "a" });
     const variants: Array<[HamiltonEvidenceFact, string]> = [
       [fact({ frequency: "monthly" }), "fee_frequency_mismatch"],
-      [fact({ frequency: null }), "fee_frequency_unknown"],
       [fact({ scope: { ...a.scope, accountApplicability: "business" } }), "consumer_audience_unverified"],
       [fact({ scope: { ...a.scope, accountApplicability: "unknown" } }), "consumer_audience_unverified"],
     ];
     for (const [other, reason] of variants) expect(deriveDifference("bad", a, other).problems).toContain(reason);
+    // A recurring fee with no stated frequency is still not compared (#1717).
+    const monthlyScope = { ...a.scope, feeCategory: "monthly_maintenance", product: "Checking" };
+    expect(deriveDifference("bad", fact({ id: "m", scope: monthlyScope, frequency: "monthly" }), fact({ scope: monthlyScope, frequency: null })).problems)
+      .toEqual(["fee_frequency_unknown"]);
+    // So is a category not on the event list.
+    const unlisted = { ...a.scope, feeCategory: "safe_deposit_box", product: "Box" };
+    expect(deriveDifference("bad", fact({ id: "s", scope: unlisted }), fact({ scope: unlisted, frequency: null })).problems).toEqual(["fee_frequency_unknown"]);
+  });
+
+  it("counts an event fee with no stated frequency as per item (#1717)", () => {
+    const a = fact({ id: "a" });
+    expect(deriveDifference("ok", a, fact({ frequency: null, value: 35 })).fact?.value).toBe(-25);
+    expect(deriveDifference("ok", fact({ id: "a", frequency: null }), fact({ frequency: null, value: 35 })).fact?.value).toBe(-25);
+    expect(deriveDifference("ok", fact({ id: "a", frequency: "per_item" }), fact({ frequency: null, value: 35 })).problems).toEqual([]);
+    expect(deriveDifference("bad", fact({ id: "a", frequency: "monthly" }), fact({ frequency: null })).problems).toEqual(["fee_frequency_mismatch"]);
+    expect(deriveDifference("ok", fact({ id: "a", frequency: "Per-Transaction" }), fact({ frequency: null, value: 35 })).problems).toEqual([]);
+  });
+
+  it("compares two stated frequencies by meaning, not spelling (#1975)", () => {
+    // Underscores, hyphens, extra spaces and case are spelling, not a different frequency.
+    for (const [left, right] of [
+      ["per_item", "per item"],
+      ["Per Item", "per-item"],
+      ["  per   item ", "PER_ITEM"],
+      ["per_transaction", "per transaction"],
+      ["Monthly", "monthly "],
+    ]) {
+      const result = deriveDifference("ok", fact({ id: "a", frequency: left }), fact({ frequency: right, value: 35 }));
+      expect(result.problems, `${left} vs ${right}`).toEqual([]);
+      expect(result.fact?.value).toBe(-25);
+    }
+    // Different words are still different frequencies.
+    for (const [left, right] of [
+      ["monthly", "per item"],
+      ["per_item", "per_transaction"],
+      ["per item", "per month"],
+      ["annual", "monthly"],
+    ]) {
+      expect(deriveDifference("bad", fact({ id: "a", frequency: left }), fact({ frequency: right })).problems, `${left} vs ${right}`)
+        .toEqual(["fee_frequency_mismatch"]);
+    }
+  });
+
+  it("lists only event categories the taxonomy knows, and no recurring one", () => {
+    for (const category of EVENT_FEE_CATEGORIES) expect(CANONICAL_KEY_MAP[category], category).toBe(category);
+    for (const recurring of ["monthly_maintenance", "minimum_balance", "dormant_account", "paper_statement", "continuous_od", "safe_deposit_box", "ira_administration"]) {
+      expect(chargedPerEvent(recurring)).toBe(false);
+    }
+    for (const event of ["overdraft", "nsf", "wire_domestic_outgoing", "wire_domestic_incoming", "wire_intl_outgoing", "wire_intl_incoming", "stop_payment", "deposited_item_return", "atm_non_network"]) {
+      expect(chargedPerEvent(event)).toBe(true);
+    }
+    expect(chargedPerEvent(null)).toBe(false);
+  });
+
+  it("never binds or compares a fee from a discontinued account's table as the current fee", () => {
+    const old = fact({ scope: { ...fact().scope, productStatus: "discontinued" } });
+    expect(claimBindingMatches(old, { institutionId: 1, value: 10 })).toBe(false);
+    expect(claimBindingMatches(old, { institutionId: 1, value: 10, productStatus: "current" })).toBe(false);
+    expect(claimBindingMatches(old, { institutionId: 1, value: 10, productStatus: "discontinued" })).toBe(true);
+    expect(claimBindingMatches(fact(), { institutionId: 1, value: 10, productStatus: "discontinued" })).toBe(false);
+    expect(claimBindingMatches(fact({ scope: { ...fact().scope, productStatus: "current" } }), { institutionId: 1, value: 10 })).toBe(true);
+    expect(deriveDifference("bad", fact({ id: "a" }), old).problems).toEqual(["product_discontinued"]);
+  });
+
+  it("counts the peers a comparison leaves out, by reason, and never reads 0 left out", () => {
+    const own = fact({ id: "own" });
+    const peer = (id: number, overrides: Partial<HamiltonEvidenceFact> = {}) => fact({ id: `p${id}`, scope: { ...fact().scope, institutionId: 10 + id }, ...overrides });
+    const coverage = peerComparisonCoverage(own, [
+      peer(1), peer(2, { status: "provisional" }), peer(3, { status: "provisional" }),
+      peer(4, { scope: { ...fact().scope, institutionId: 14, accountApplicability: "unknown" } }),
+      peer(5, { scope: { ...fact().scope, institutionId: 15, reportingDate: "2024-06-30" } }),
+    ]);
+    expect(coverage).toEqual({ context: "peer_comparison", total: 5, leftOut: 4, byReason: { not_verified: 2, audience_unknown: 1, not_comparable: 1 } });
+    expect(readPeerCoverage(coverage)).toBe("4 of 5 peers left out: 2 not yet verified, 1 audience unknown, 1 not the same fee, unit or date.");
+    expect(peerComparisonCoverage(own, [peer(1), peer(2, { frequency: null })])).toBeNull();
+    expect(readPeerCoverage({ context: "peer_comparison", total: 14, leftOut: 0, byReason: {} })).toBeNull();
+    expect(readPeerCoverage(null)).toBeNull();
+    expect(readPeerCoverage({ context: "peer_comparison", total: 1, leftOut: 1, byReason: { frequency_unknown: 1 } })).toBe("1 of 1 peer left out: no stated frequency.");
+    // The bank's own fee not comparable is the bank's problem, not the peers'.
+    expect(peerComparisonCoverage(fact({ id: "own", status: "provisional" }), [peer(1)])).toBeNull();
   });
 
   it("rejects missing published row lineage and provisional observations", () => {

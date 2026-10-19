@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
@@ -103,6 +103,23 @@ const priorPublishedFee = {
 };
 
 describe("Hamilton agentic publish", () => {
+  it("stops the row loop at its deadline after the minimum rows, and leaves the rest undecided (2026-10-17)", async () => {
+    // 70 distinct rows at 70 banks; a deadline already past.
+    const rows = Array.from({ length: 70 }, (_, index) => ({
+      ...verifiedFee, fee_verified_id: 5000 + index, fee_raw_id: 6000 + index, institution_id: 7000 + index, source_document_id: 8000 + index,
+    }));
+    const boxed = await runHamiltonPublish({ runId: 1700, db: asPublishDb(createDbMock(rows)), deadlineAt: Date.now() - 1, stateCode: "TX" });
+    expect(boxed.processedVerifiedFees).toBe(PUBLISH_MIN_ROWS_PER_STEP);
+    expect(boxed.timeBox).toEqual({ stopped: true, rowsLeft: 70 - PUBLISH_MIN_ROWS_PER_STEP, topUpSkipped: true });
+    // The top-up has its own, later deadline: a step past the row deadline still tops up.
+    const toppedUp = await runHamiltonPublish({ runId: 1702, db: asPublishDb(createDbMock(rows)), deadlineAt: Date.now() - 1, topUpDeadlineAt: Date.now() + 60_000, stateCode: "TX" });
+    expect(toppedUp.timeBox.topUpSkipped).toBe(false);
+    // The rows it did not reach get no attempt: the next step selects them again.
+    const free = await runHamiltonPublish({ runId: 1701, db: asPublishDb(createDbMock(rows)) });
+    expect(free.processedVerifiedFees).toBe(70);
+    expect(free.timeBox).toEqual({ stopped: false, rowsLeft: 0, topUpSkipped: false });
+  });
+
   it("rejects verified rows filed under the wrong category instead of publishing them", async () => {
     const db = createDbMock([
       { ...verifiedFee, fee_name: "Continuous Overdraft Fee (per day)", amount: "3.00" },
@@ -143,6 +160,15 @@ describe("Hamilton agentic publish", () => {
     expect(publishNameHold("GUASFCU charges a", "check_image", 2)?.code).toBe("cutoff_name");
     expect(publishNameHold("Our overdraft fee of", "overdraft", 35)).toBeNull(); // repairs to "Overdraft fee"
     expect(publishNameHold("Fax Fee (incoming and outgoing)", "account_research", 2)).toBeNull();
+    // #2032: a clause saying what the fee covers, or the legal cap, comes off; the fee publishes (Beacon).
+    expect(publishNameHold("Stop Payment, all items including ACH and bill pay", "stop_payment", 30)).toBeNull();
+    expect(publishedFeeName("Stop Payment, all items including ACH and bill pay", "stop_payment")).toBe("Stop Payment");
+    expect(publishNameHold("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process", 125)).toBeNull();
+    expect(publishedFeeName("Legal Process Fee, per occurrence, or such lesser rate as may be set by law", "legal_process")).toBe("Legal Process Fee, per occurrence");
+    // Any other clause may be the fee's condition, and a line cut mid-sentence has no name: both stay held.
+    expect(publishNameHold("ATM Withdrawal Fees, out of Network (Surcharge Fees, fees accessed by other ATM proprietors, may still apply.)", "atm_non_network", 0)?.code).toBe("cutoff_name");
+    expect(publishNameHold("Any replacement cards whether lost, stolen, or damaged will be charged a", "card_replacement", 5)?.code).toBe("cutoff_name");
+    expect(publishedFeeName("Wire Transfer Outgoing, including international", "wire_domestic_outgoing")).not.toBe("Wire Transfer Outgoing");
     // The same price in the name as the amount is only glue: the name is cut before it and the fee publishes.
     expect(publishNameHold("Courtesy Pay Fee…..$35.005", "overdraft", 35)).toBeNull();
     expect(publishedFeeName("Courtesy Pay (Paid Overdraft) Fee…..…….…….….$35.005 | 3x10…………………………………", "overdraft")).toBe("Courtesy Pay (Paid Overdraft) Fee");
@@ -232,6 +258,19 @@ describe("Hamilton agentic publish", () => {
 
     expect(result.publishedFees).toBe(0);
     expect(result.results[0]).toMatchObject({ status: "skipped", reason: "Read from an article page, not a fee schedule" });
+  });
+
+  it("never publishes a row whose document is a learning article, whatever its own link (#1774)", async () => {
+    const db = createDbMock([{
+      ...verifiedFee,
+      source_url: null,
+      document_url: "https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts",
+    }]);
+
+    const result = await runHamiltonPublish({ runId: 118, db: asPublishDb(db) });
+
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({ status: "skipped", reason: ARTICLE_PAGE_SKIP_REASON });
   });
 
   it("only reports category rejections on a dry run", async () => {
@@ -589,6 +628,24 @@ describe("Hamilton agentic publish", () => {
     expect(unsafeSql).toContain("upper(btrim(inst.state_code))");
   });
 
+  it("counts each institution's fees once, in one grouped read scoped like the selection", async () => {
+    const db = createDbMock([]);
+    await runHamiltonPublish({ runId: 120, stateCode: "CA", limit: 10, db: asPublishDb(db) });
+
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH deep AS MATERIALIZED"));
+    expect(selects).toHaveLength(2);
+    const [state, national] = selects.map((call) => String(call[0]));
+    // Correlated per verified row, the count ran 164k times in the national fill (17 Oct 2026).
+    for (const text of [state, national]) {
+      expect(text).toContain("GROUP BY depth.institution_id");
+      expect(text).toContain("AND fv.institution_id IN (SELECT deep.institution_id FROM deep)");
+      expect(text).not.toContain("WHERE fp.institution_id = fv.institution_id");
+    }
+    expect(state).toContain("AND fp.institution_id IN (SELECT scope.id FROM institution_sources scope");
+    expect(state).toContain("AND pv.institution_id IN (SELECT scope.id FROM institution_sources scope");
+    expect(national).not.toContain("institution_sources scope");
+  });
+
   it("fills a state lane's short publish batch with the oldest eligible rows from any state", async () => {
     const other = { ...verifiedFee, fee_verified_id: 802, fee_raw_id: 702, institution_id: 43 };
     const db = createDbMock([]);
@@ -601,7 +658,7 @@ describe("Hamilton agentic publish", () => {
 
     const result = await runHamiltonPublish({ runId: 118, stateCode: "CA", limit: 10, db: asPublishDb(db) });
 
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
     expect(selects).toHaveLength(2);
     expect(selects[0][1]).toContain("CA");
     expect(selects[1][1]).not.toContain("CA");
@@ -612,7 +669,7 @@ describe("Hamilton agentic publish", () => {
   it("keeps a single bank's read scoped to that bank", async () => {
     const db = createDbMock([]);
     await runHamiltonPublish({ runId: 119, stateCode: "CA", institutionId: 42, db: asPublishDb(db) });
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes("WITH eligible AS"));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
     expect(selects).toHaveLength(1);
   });
 
@@ -842,9 +899,12 @@ describe("Hamilton agentic publish", () => {
       const result = await runHamiltonPublish({ runId: 501, stepId: 7, db: asPublishDb(db) });
 
       expect(result).toMatchObject({ learning: true, outcomes: { ok: 1, rejected: 1 } });
+      // The two rows share a collapse line, so the step may decide them in either order (#1069).
       const attempts = attemptValues(db);
-      expect(attempts[0]).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
-      expect(attempts[1]).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
+      const attemptFor = (fingerprint: string) => attempts.find((values) => values.includes(fingerprint));
+      expect(attempts).toHaveLength(2);
+      expect(attemptFor("verified:801")).toEqual(expect.arrayContaining([42, "publish", HAMILTON_PUBLISH_STRATEGY.strategy, "verified:801", "ok", 501, 7]));
+      expect(attemptFor("verified:803")).toEqual(expect.arrayContaining(["publish", "verified:803", "rejected"]));
 
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
@@ -895,6 +955,16 @@ describe("Hamilton agentic publish", () => {
       expect(query).toContain("pa.outcome = 'unchanged'");
       expect(query).toContain("NULLIF(pa.detail->>'previous_fee_published_id', '')::bigint");
       expect(query).toContain("prev.rolled_back_reason = 'rules_recheck_unreproduced'");
+    });
+
+    it("selects again a row skipped as identical to a live fee the article-page check took down (#1774)", async () => {
+      const db = learningDb([verifiedFee]);
+
+      await runHamiltonPublish({ runId: 506, db: asPublishDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      expect(query).toContain(ARTICLE_PAGE_RESELECT_SQL);
+      expect(query).toContain("art_prev.rolled_back_reason LIKE 'article_page:%'");
     });
 
     it("does not log held rows, so they publish once the institution has enough fees", async () => {

@@ -5,12 +5,13 @@
  */
 import { sql } from "./connection";
 import { getLocalMarketMembers } from "./custom-report-market";
-import { getFeeValuesForInstitutions, getInstitutionFeeValues, getPeerIndexes, type IndexEntry } from "./fee-index";
+import { getFeeValuesForInstitutions, getInstitutionOwnFees, getPeerIndexes, type IndexEntry } from "./fee-index";
 import { marketMediansFrom } from "./regulatory-watch";
 import { getNationalRateStats, getRateFeesByInstitution } from "./rate-fees";
 import { STATS_ROW_FILTER, MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { ownFeeList, type OwnFeeLine } from "@/lib/own-fee";
 
 export const BENCHMARK_MIN_INSTITUTIONS = MIN_INSTITUTIONS_FOR_MEDIAN;
 const MARKET_PEER_LIMIT = 40;
@@ -26,12 +27,21 @@ export interface BenchmarkRow {
   fee_category: string;
   display_name: string;
   family: string | null;
-  amount: number;
+  /** The price the schedule states; null when it states several different fees in the category. */
+  amount: number | null;
+  /** The lowest and highest of the institution's fees in the category (equal when it states one). */
+  amount_low: number;
+  amount_high: number;
+  /** Each of the institution's fees in the category, lowest first. */
+  fees: OwnFeeLine[];
   national: BenchmarkGroup;
   state: BenchmarkGroup;
   asset_peers: BenchmarkGroup;
   local_market: { median: number | null; institutions: number };
-  /** Against the asset-size peers: below their 25th percentile, above their 75th, or between. */
+  /**
+   * Against the asset-size peers: below their 25th percentile, above their 75th, or between.
+   * Null when the institution states several different fees in the category.
+   */
   position: "lower" | "typical" | "higher" | null;
   source_url: string | null;
 }
@@ -83,7 +93,7 @@ export async function getInstitutionBenchmark(institutionId: number): Promise<In
   const [inst] = await sql<{ id: number; institution_name: string; state_code: string | null; charter_type: string | null; asset_size_tier: string | null }[]>`
     SELECT id, institution_name, state_code, charter_type, asset_size_tier FROM institution_sources WHERE id = ${institutionId}`;
   if (!inst) return null;
-  const own = await getInstitutionFeeValues(institutionId);
+  const own = await getInstitutionOwnFees(institutionId);
   const charter = inst.charter_type ?? undefined;
   const [indexes, sources, market] = await Promise.all([
     getPeerIndexes([
@@ -110,19 +120,22 @@ export async function getInstitutionBenchmark(institutionId: number): Promise<In
   const charterLabel = CHARTER_LABEL[inst.charter_type ?? ""] ?? "institutions";
 
   const rows: BenchmarkRow[] = [...own.entries()]
-    .map(([category, amount]) => {
+    .map(([category, fee]) => {
       const peers = group(assetPeers, category);
       const local = marketMedians.get(category);
       return {
         fee_category: category,
         display_name: getDisplayName(category),
         family: getFeeFamily(category),
-        amount,
+        amount: fee.price,
+        amount_low: fee.low,
+        amount_high: fee.high,
+        fees: fee.fees,
         national: group(national, category),
         state: group(state, category),
         asset_peers: peers,
         local_market: { median: local && local.count >= BENCHMARK_MIN_INSTITUTIONS ? local.median : null, institutions: local?.count ?? 0 },
-        position: positionAgainst(amount, peers),
+        position: fee.price === null ? null : positionAgainst(fee.price, peers),
         source_url: sourceBy.get(category) ?? null,
       };
     })
@@ -188,6 +201,8 @@ export const BENCHMARK_CSV_HEADER = [
   "unit", "rate_percent", "rate_terms",
   "national_rate_median", "national_rate_p25", "national_rate_p75", "national_rate_institutions",
   "position_vs_national_rate",
+  // A dollar category with several different fees has no single amount: its range and each fee.
+  "amount_low", "amount_high", "fees",
 ];
 
 export function benchmarkCsvRows(benchmark: InstitutionBenchmark): unknown[][] {
@@ -199,6 +214,7 @@ export function benchmarkCsvRows(benchmark: InstitutionBenchmark): unknown[][] {
     r.local_market.median, r.local_market.institutions,
     r.position, r.source_url,
     "dollars", null, null, null, null, null, null, null,
+    r.amount_low, r.amount_high, ownFeeList(r),
   ]).concat((benchmark.rate_rows ?? []).map((r) => [
     r.fee_category, r.display_name, r.family, null,
     null, null, null, null,
@@ -209,5 +225,6 @@ export function benchmarkCsvRows(benchmark: InstitutionBenchmark): unknown[][] {
     "percent", r.rate_percent, r.rate_terms,
     r.national.median, r.national.p25, r.national.p75, r.national.institutions,
     r.position,
+    null, null, null,
   ]));
 }

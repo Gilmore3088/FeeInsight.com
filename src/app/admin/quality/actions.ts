@@ -39,7 +39,6 @@ function refreshTrustPaths(institutionId: number | null): void {
   clearSourceSubmissionCountsCache();
   revalidatePath("/admin");
   revalidatePath("/admin/quality");
-  revalidatePath("/admin/data-quality");
   if (institutionId) {
     revalidatePath(`/admin/institution/${institutionId}`);
     revalidatePath(`/institution/${institutionId}`);

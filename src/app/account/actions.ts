@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { sql } from "@/lib/data-store/connection";
 import { canAccessPremium } from "@/lib/access";
 import { adoptInstitution } from "@/lib/hamilton/adopt-institution";
+import { PRE_CHECKOUT_INTENT } from "@/lib/pro-checkout-institution";
 
 export async function updateProfile(formData: FormData): Promise<{
   success: boolean;
@@ -34,13 +35,15 @@ export async function updateProfile(formData: FormData): Promise<{
 
 /**
  * Onboarding step 1: the user's role, plus either a real institution picked from search
- * (which fills the profile and, for Pro, anchors the Hamilton workspace) or, for people
- * outside banks and credit unions, a free-text organization.
+ * (which fills the profile and saves it as the Hamilton bank) or, for people outside banks
+ * and credit unions, a free-text organization. Before paying, the saved bank is what
+ * /subscribe prices, so it isn't asked for twice (#1958); checkout's own pick replaces it.
  */
 export async function saveOnboardingProfile(formData: FormData): Promise<{
   success: boolean;
   error?: string;
   institutionName?: string;
+  institutionId?: number;
 }> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Not authenticated" };
@@ -55,12 +58,12 @@ export async function saveOnboardingProfile(formData: FormData): Promise<{
       const institution = await adoptInstitution({
         userId: user.id,
         institutionId,
-        setWorkspace: canAccessPremium(user),
+        setWorkspace: true,
         source: "profile",
-        intent: "onboarding",
+        intent: canAccessPremium(user) ? "onboarding" : PRE_CHECKOUT_INTENT,
       });
       if (!institution) return { success: false, error: "That institution could not be found. Search again." };
-      return { success: true, institutionName: institution.name };
+      return { success: true, institutionName: institution.name, institutionId: institution.id };
     }
 
     const organization = (formData.get("institution_name") as string | null)?.trim() || null;

@@ -7,12 +7,12 @@ const mocks = vi.hoisted(() => ({
   completeHamiltonRefreshJobsForInstitution: vi.fn(),
   resolveHamiltonPeerIndex: vi.fn(),
   getInstitutionById: vi.fn(),
-  getInstitutionFeeValues: vi.fn(),
+  getInstitutionOwnFees: vi.fn(),
 }));
 
 vi.mock("@/lib/data-store/fee-index", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/data-store/fee-index")>()),
-  getInstitutionFeeValues: mocks.getInstitutionFeeValues,
+  getInstitutionOwnFees: mocks.getInstitutionOwnFees,
 }));
 
 vi.mock("@/lib/hamilton/peer-index", () => ({
@@ -79,17 +79,17 @@ describe("Simulate actions institution identity", () => {
     const result = await getInstitutionFee("first-national-bank", "wire_transfer");
 
     expect(result).toBeNull();
-    expect(mocks.getInstitutionFeeValues).not.toHaveBeenCalled();
+    expect(mocks.getInstitutionOwnFees).not.toHaveBeenCalled();
   });
 
   it("looks up institution fees by canonical numeric ID only", async () => {
     const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
-    mocks.getInstitutionFeeValues.mockResolvedValue(new Map([["wire_transfer", 35]]));
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map([["wire_transfer", { price: 35, low: 35, high: 35, fees: [] }]]));
 
     const result = await getInstitutionFee(" 2945 ", "wire_transfer");
 
     expect(result).toEqual({ amount: 35 });
-    expect(mocks.getInstitutionFeeValues).toHaveBeenCalledWith(2945, ["wire_transfer"]);
+    expect(mocks.getInstitutionOwnFees).toHaveBeenCalledWith(2945, ["wire_transfer"]);
   });
 
   it("persists canonical scenario institution IDs and completes matching refresh jobs", async () => {
@@ -143,7 +143,7 @@ describe("Simulate actions institution identity", () => {
 
   it("returns null when the institution has no published fee in the category", async () => {
     const { getInstitutionFee } = await import("@/app/pro/(hamilton)/simulate/actions");
-    mocks.getInstitutionFeeValues.mockResolvedValue(new Map());
+    mocks.getInstitutionOwnFees.mockResolvedValue(new Map());
 
     expect(await getInstitutionFee("2945", "wire_transfer")).toBeNull();
   });

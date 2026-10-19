@@ -135,3 +135,17 @@ describe("annualServiceCharges", () => {
     expect(annualServiceCharges([{ report_date: "2026-06-30", source: "fdic", service_charge_income: 10 }])).toBeNull();
   });
 });
+
+describe("named local competitors with several fees (#1931)", () => {
+  it("names a competitor's stated price, or its range with each fee, and keeps the local median per institution", () => {
+    const m = market([{ garnishment: 100 }, { garnishment: 162.5 }, { garnishment: 120 }]);
+    m.competitors[1].several = { garnishment: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } };
+    const [row] = buildLocalComparisons([delta("garnishment", 125, 110)], m);
+    // Group statistics: one value per institution, unchanged.
+    expect(row.local_median).toBe(120);
+    expect(row.local_amounts).toEqual([100, 120, 162.5]);
+    const { exhibits } = buildReportExhibits({ institutionName: "Subject", deltas: [delta("garnishment", 125, 110)], peerLabel: "peers", market: m, serviceCharges: null });
+    const cell = exhibits.find((e) => e.id === "local_market")!.rows[0][4];
+    expect(cell).toBe("Bank 1 $100.00; Bank 2 $150.00 to $175.00 (Levy $150.00; Garnishment $175.00); Bank 3 $120.00");
+  });
+});

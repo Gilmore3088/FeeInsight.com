@@ -17,7 +17,7 @@ describe("ConsumerMobileNav", () => {
     expect(dialog).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Guides" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /Search banks, fees and guides/ })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Workspace" })).toHaveAttribute("href", "/for-institutions#hamilton");
+    expect(screen.getByRole("link", { name: "Hamilton" })).toHaveAttribute("href", "/for-institutions#hamilton");
     expect(screen.getByRole("link", { name: "See plans" })).toHaveAttribute("href", "/subscribe");
     expect(screen.queryByRole("link", { name: "See Pro plans" })).toBeNull();
 

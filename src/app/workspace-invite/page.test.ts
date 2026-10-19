@@ -19,9 +19,6 @@ vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
   acceptSignedWorkspaceInvite: mocks.acceptSigned,
   signedInviteMessage: () => "message",
 }));
-vi.mock("@/components/customer-footer", () => ({ CustomerFooter: () => null }));
-vi.mock("@/components/consumer-nav", () => ({ ConsumerNav: () => null }));
-vi.mock("@/components/public/search-modal", () => ({ SearchModal: () => null }));
 
 import WorkspaceInvitePage from "./page";
 

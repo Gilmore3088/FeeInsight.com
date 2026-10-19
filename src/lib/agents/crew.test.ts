@@ -67,6 +67,16 @@ describe("feedItemFromRow", () => {
     });
   });
 
+  it("files a registry step under Hoovie, whichever name the row carries (#1865)", () => {
+    const row = (stepAgent: string) => feedItemFromRow({
+      id: 10, created_at: "2026-10-18T10:00:00Z", event_type: "step.failed", status: "failed",
+      message: "FDIC API timed out", detail: {}, step_key: "registry-fdic-financials", step_agent: stepAgent,
+      run_agent: stepAgent, state_code: null, run_id: 301,
+    });
+    expect(row("magellan")?.agent).toBe("hoovie");
+    expect(row("hoovie")?.agent).toBe("hoovie");
+  });
+
   it("drops events that have nothing to say", () => {
     expect(feedItemFromRow({
       id: 1, created_at: "2026-10-02T10:00:00Z", event_type: "step.finished", status: "completed",

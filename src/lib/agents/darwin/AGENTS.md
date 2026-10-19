@@ -17,6 +17,10 @@ Darwin owns verification and classification.
   re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every
   live `monthly_maintenance` fee each step and holds a typed one as verified; see Hamilton
   `AGENTS.md` item 10b.
+  The article-page refusal (publish never puts a fee read from an article, blog, learning or
+  advice page live; #1774 widened it on Oct 17 to Magellan's article rule) has its live re-check
+  in Hamilton's publish step too (`hamilton/article-page.ts`, check `hamilton.article_page`,
+  through the shared second look). Dry run, Oct 17: 7 live fees at 6 institutions.
   The Oct 15 re-file of excess withdrawals and returned mail out of account research (#1398) has
   no Darwin-only live pass yet: its live re-check is Hamilton's fold step (`taxonomy-fold.ts`,
   every publish step), which reads up to 2,000 live and verified account research fees whose name
@@ -226,7 +230,14 @@ Darwin owns verification and classification.
   `document_owner`); on, `other_bank` pairs are
   re-read under their own cap of 25, a failing fee goes through the shared second look
   (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
-  archived with reason `document_owner: names institution <id>`, never deleted.
+  archived with reason `document_owner: names institution <id>`, never deleted. After the
+  takedowns, on each live step that reads pairs, `releaseOwnerLinks` (#2018 item 13) lets go of the
+  fee link such a takedown leaves behind: when an institution's `fee_schedule_url` is still the
+  document whose fees came down as `document_owner` and no fee from it is still live there (and no
+  correction locked the profile), the URL joins `rejected_source_urls`, the canonical link clears,
+  and `institution_sources` goes back to `rescue_status = 'pending'` with failure reason
+  `darwin_document_owner`. Step detail `links_released`. Read-only count Oct 19: 3 (Bluegrass 5756
+  on UK FCU's PDF, 5Star Bank 2092, First National Bank 1903).
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
@@ -691,6 +702,15 @@ Darwin owns verification and classification.
   `darwin.hourly_frequency_set` event lists them. Whole-table dry run: a verify run with
   `hourly_full_count: true` (step detail `hourly_frequency_full_count`), or `hourlyCountSql()` /
   `hourlySamplesSql()` for someone with prod access.
+  v2 (James's live-fee check, Oct 18: per-hour fees shown as flat charges at 7 of 15 institutions):
+  a fee whose name is silent on the hour but whose own stored line prices it by the hour
+  ("Account Research Fee $20 per hour") is read too, by `hourlyFromLine` on Knox's `excerpt="..."`,
+  which must print the fee's price; the same exemptions apply and matches carry `basis` (`name` or
+  `line`); a line-only fee is also exempt for a period word anywhere on its line. Line-only fees are written only with `HOURLY_LINE_LIVE` on (off until James sees the
+  count); step detail `would_set_from_line` counts them, and the whole-table count reads any fee
+  whose name or line mentions the hour. Prod read Oct 18: 1,894 live fees at 1,433 institutions
+  print "$X per/an hour" on their line with a silent name and a non-hourly frequency (a regex
+  estimate; the step's count is the exact one). `hourlyCountSql()` still mirrors the name rule only.
 - Live non-deposit document re-check (`non-deposit-document-check.ts`, #1442). James's catalog
   review (Oct 15, URL heuristics) found live deposit-fee rows read from brokerage and wealth pages
   (33 rows: Northern Trust wealth, U.S. Bank self-directed investing "Research" $20) and from
@@ -764,6 +784,60 @@ Darwin owns verification and classification.
   the fee fixtures in `darwin/non-deposit-document-check.fixtures.ts` crossed with the URL fixtures
   on a local Postgres 16 (UTF8). The `documents` and `judged` CTEs are `MATERIALIZED` (the
   reviewer's prod-size run went from over 5 minutes to about 1 second with the same output).
+  v3 (#1908, James's live-fee check, Oct 18): the classifier's third kind, `card_program`, is a
+  prepaid, payroll, gift, travel or TravelMoney card's own document, named by the address's last
+  segment (`CARD_PROGRAM_LAST_SEGMENT`: SchoolsFirst's `payroll-card-statement-of-fees-disclosure`,
+  Acadia's `/checking/cards/prepaid-travel-card/`, "Gift_Card_Terms_and_Conditions.pdf"). It is
+  asked only where the v2 classifier said null: after the brokerage and loan tests (so
+  `/credit-cards/travel-card/` stays a loan page) and in place of the deposit-word null, since such
+  pages often sit under a checking section. A deposit word in the last segment itself
+  ("prepaid-checking-account") still wins, business documents still pass, a general schedule that
+  names the card only after its own fee words ("fee-schedule-including-gift-cards",
+  `GENERAL_SCHEDULE_BEFORE_CARD`) stays, a bare "pay card" is not a card, and a loan's "prepaid
+  finance charge" or a mortgage's "prepaid items" is not a card. `card_program_document` takes
+  every fee on such a document except the card's purchase and reload price (`CARD_PROGRAM_KEEP_KEYS`:
+  gift_card_purchase, prepaid_card_reload; `kept_card_purchase`). Its own sub-switch,
+  `CARD_PROGRAM_TAKEDOWN_LIVE`, is on since 2026-10-18 (James, "Take them down", 11:34 UTC) on the
+  count: on Oct 18 (prod, read-only) 44 live fees on 12 documents at 12 institutions, 4 purchase or
+  reload fees kept; 35 at switch-on after SchoolsFirst's 9 hand takedowns. Step detail adds
+  `card_program_document`, `card_program_documents`, `card_program_institutions`,
+  `kept_card_purchase`, `card_program_switch_live` and `samples_card_program_document`. Magellan's
+  companion filter skips these documents too. A card program's section inside one fee page (Navy
+  Federal's "GO Prepaid Cards", #1905) has no address of its own and is not caught here.
+- Spanish copies of an English schedule (`translated-copy-check.ts`, #1909, James's live-fee check
+  Oct 18). M&T publishes its checking fee guide in English and Spanish, both were read, and "Cargo
+  por sobregiro" $15 sat beside "Overdraft Fee" $15. A live fee comes down only when its document's
+  address names a Spanish copy (`spanishCopyDocument`: "spanish", "español", a "/es/" path or an
+  "-es."/"_ES-" token), its name reads as Spanish (`readsSpanish`: an accented letter or two Spanish
+  words; East West's `/es/` page was stored with English names and stays), and the institution has a
+  live fee in the same category at the same amount from a document that is not a Spanish copy (the
+  English twin). A Spanish-only fee stays until its English line is live (M&T's non-network ATM and
+  outgoing wires, Express CU and Travis CU, whose English schedules are not on file, Puerto Rico).
+  Every verify step reads every live fee on a Spanish-copy document (no cursor).
+  `TRANSLATED_COPY_TAKEDOWN_LIVE` is on (James, "Turn it on", 2026-10-18 11:28 UTC, on the count
+  below); a match goes through the
+  12-hour second look (check `darwin.translated_copy`) and is archived on its second failure (rolled
+  back with `translated_copy: #<doc> twin #<fee>`, batch `darwin-translated-copy-<run>`, the verified
+  row rejected with the `translated_copy` flag, never deleted; event `darwin.translated_copy_takedown`).
+  Step detail `translated_copy_check`. Dry run Oct 18 (prod, read-only, `translatedCopyRowsSql`): 127
+  live fees on 12 Spanish-copy documents at 11 institutions; 35 would come down (Sound 22, OnPoint 6,
+  M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
+  never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
+  its twin is not read again if the twin later comes down under another check; restore it by hand.
+- Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
+  Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
+  parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
+  so a live fee's document is Canadian when its stored text names two of Interac, e-Transfer,
+  chequing and CDIC/Canada Deposit Insurance as whole words and names neither FDIC nor NCUA (one
+  alone is not enough: a border credit union may price Interac ATMs in Canada; the address is not
+  used: Natbank's own U.S. pages are on nbc.ca too and name only "chequing"). It reads every live
+  document's text (8,722; 1.3 to 3.9 s), so at most hourly; an institution-scoped run always reads
+  and does not restart the clock. On (`CANADIAN_DOCUMENT_TAKEDOWN_LIVE`), a match goes through
+  the 12-hour second look (`darwin.canadian_document`) and is archived with `canadian_document:
+  #<doc>` (batch `darwin-canadian-document-<run>`, verified row rejected with the
+  `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail
+  `canadian_document_check`. Dry run Oct 19: 12 fees on docs 26833 and 26834, all Natbank; the same
+  12 are #2022 hand takedowns, and Atlas points Natbank's registry at its U.S. accounts page.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1198,15 +1272,65 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v70 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v70 (Oct 17,
+- The guard is at v75 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v75 (Oct 19,
+  #2023, James chose "Take down"): `CLUB_WITHDRAWAL_LIVE` is on, so a club or holiday account
+  withdrawal ("Christmas Club early withdrawal | $20 per w/d") fails early closure; a read-only check
+  of 25 of the 313 live found every one a per-withdrawal charge. Closing a club early still passes.
+  v74 (Oct 19,
+  #2018, James's 20-defect register): a bill pay investigation or research request re-files to
+  account research; a withdrawal limit ("withdrawal over 6 per month") or returned mail leaves
+  account research for its own type (a rule marked `onlyIfRefiles` fails a fee only when the other
+  type accepts it, so "Excess withdrawal research" stays); an excess IRA withdrawal leaves IRA
+  termination for IRA administration; foreign currency shipping leaves rush card for courier
+  delivery; a loan payment line that names no deposit leaves returned deposited items for other
+  lending; and a withdrawal at the institution's own named ATM ("at JSFCU ATM", `NAMED_OWN_ATM`;
+  never "at other/non-network/Allpoint/our ATMs") fails the non-network ATM fee. A club or holiday
+  account withdrawal (`CLUB_WITHDRAWAL`) would fail early closure, but `CLUB_WITHDRAWAL_LIVE` was off
+  until v75. Dry run on 606 live candidates: 38 re-files, 2 to
+  the second look. v73 (Oct 17,
+  #1837, James's yes): `borrowedDirection` is on. A name whose part after its last colon is only a
+  direction ("Check Printing: Incoming", a wire row read under the other column's heading) fails
+  outside the categories a direction prices (`DIRECTION_KEYS`, any `wire_` key; a stop payment or
+  research row naming a wire); 48 live fees go to the second look. v72 (Oct 17,
+  #1788, James's sample-report review): an ATM used in another country, outside the U.S. or
+  internationally (`INTERNATIONAL_ATM` in `fee-fold.ts`; never "foreign ATM", and a row that also names
+  domestic or in-the-U.S. ATMs stays) leaves the non-network ATM fee for `card_foreign_txn`; an
+  optional add-on (a named add-on, "add ID Protect to your account", "each additional Elite
+  membership", on its name or its own line) is not the monthly maintenance fee and fails, since none of
+  the 50 types holds it; a sustained overdraft filed as the per-item fee (`SUSTAINED_OVERDRAFT`: "Cont
+  OD", "7 Day Overdraft", "6th business day overdrawn", or a price whose own line says it is charged
+  when the balance stays negative for N days) re-files to `continuous_od` (never to NSF); an incoming
+  wire filed under an outgoing wire key (`INCOMING_WIRE`: in coming, in-bound, wire-in, ": In",
+  "Domestic-In", wire deposit; one price for both directions stays) re-files to the matching incoming
+  key. Each moves by guard, re-file rule and fold split. Its live re-check is the publish step's fold
+  split and the guard's live sweep: the dry run (Oct 17, SELECT-only) re-files 14 live fees in place (4
+  international ATM fees, 3 sustained overdrafts, 7 incoming wires) and fails 7 more, flagged for the
+  second look and then taken down: 5 add-ons, and 2 re-files a live twin at the same bank, type and
+  amount blocks (14348, 98702). 5 rows no name rule can place are hand takedowns (#1788: 2 repeat
+  international ATM reads, 3 add-ons), and ServisFirst's "Domestic Wire Transfer Fees" $10 (66594, the
+  incoming price on its line) is a hand re-file (`HAND_REFILES` in `taxonomy-fold.ts`). Hancock
+  Whitney's "Overdraft Charge/Overdraft Fee (each item)" $36 (66419) stays: it is the per-item fee, and
+  the $36 Sustained Overdraft Fee is live as continuous_od 66411. No batch reaches 20, so no switch
+  holds them. v71 (Oct 17,
+  #1772, #1773): the non-network ATM fee also refuses another institution's card named in more than
+  one word after "non-" (`OUTSIDER_CARD_WORDS` in `OUTSIDER_ATM`: "ATM Non-STAR Financial Credit Union
+  card Surcharge", "Non Co-Op Card ATM Withdrawals at TLC"); words that reach "ATM" or "machine" first
+  are a non-network ATM and stay. An ATM transaction verification re-files to account research
+  (`NOT_ATM_USE`, 96092). Its live re-check is the guard's live sweep: the dry run (Oct 17,
+  SELECT-only) counts 8 live fees newly failing, 8 of 8 non-customer surcharges on their stored line,
+  flagged for the second look and then taken down, and 1 re-filed in place. The bare "ATM Surcharge"
+  lines a name cannot place (13 non-customer surcharges by their heading or line) and 15 lines that
+  are not the fee (in-network $0s, a refund cap, a waived price) are hand takedowns held by
+  `ATM_SURCHARGE_TAKEDOWN_LIVE` (on since James's yes, Oct 17 11:28 UTC). v70 (Oct 17,
   #1765): a card-product fee filed as the non-network ATM fee (`CARD_PRODUCT_FEE`: the card's monthly,
   annual, holder or maintenance fee, its issue, activation or origination, a reinstatement or limit
   increase, the card's inactivity, a point-of-sale purchase fee) and a card's inactivity filed as a
   dormant account (`CARD_INACTIVITY`) fail the guard; none of the 50 types holds them. Darwin and
   publish refuse new reads at once. Their live re-check is the guard's live sweep (catch-up, then every
-  publish step), which holds the takedowns while `CARD_PRODUCT_TAKEDOWN_LIVE` is off: it counts and
-  samples the live fees failing only this rule (`category_guard_card_product_pending` in the publish
-  step's detail) and flags none. The dry run (Oct 17, SELECT-only) counts 61: 39 non-network ATM fees
+  publish step). `CARD_PRODUCT_TAKEDOWN_LIVE` is on since James's yes (Oct 17, 10:47 UTC), so they are
+  flagged and taken down through the second look; switched off, the sweep counts and samples the live
+  fees failing only this rule (`category_guard_card_product_pending` in the publish step's detail)
+  and flags none. The dry run (Oct 17, SELECT-only) counts 61: 39 non-network ATM fees
   and 22 dormant account fees; 59 trace on their stored line and 2 do not (25037, 57456). Navy
   Federal's gift card "Inactivity Fee" (122350) names no card, so it is a hand takedown under the same
   switch (62 in all). An ATM-named bill payer service (147703) re-files to bill pay and a card charge
@@ -1245,7 +1369,7 @@ Darwin owns verification and classification.
   the night depository key is a key charge, not the service, so `night_deposit` refuses it; a lost or
   replaced key stays. Its live re-check is the category guard's live sweep (Hamilton's guard
   catch-up on the first tick after the deploy, then every publish step): 10 live key deposits fail
-  it, each flagged for the second look and then taken down. The notes for v43 to v70 are the version
+  it, each flagged for the second look and then taken down. The notes for v43 to v72 are the version
   comments above that constant, not this guide; v58 is the bond-return lesson above. v65 (James, Oct 15, #1398) adds guard rules for `excess_withdrawal` and
   `returned_mail` (amount envelopes $1 to $50 in `envelopes.ts`), re-files research filed under
   either back to account research. Once `RESEARCH_SPLIT_LIVE` is on, an over-limit activity charge
@@ -1329,9 +1453,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
-| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v1 | `darwin/hourly-frequency-check.ts` |
-| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v2 | `darwin/non-deposit-document-check.ts` |
+| `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |
+| `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
+| `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
+| `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |

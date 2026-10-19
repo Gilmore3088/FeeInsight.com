@@ -19,8 +19,9 @@ async function isAuthorized(request: NextRequest): Promise<boolean> {
 /**
  * Atlas's daily measurement, as a visible run (cron, once a day): score the
  * pipeline against the hand-checked answer key, let Deming turn confirmed takedowns into
- * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065), then snapshot the six scoreboard numbers (which include
- * that score), then restore cut credit union cities (#1213). Deterministic; no model calls.
+ * regression cases and replay them, audit a fresh seeded sample of live fees, run the daily data-quality checks (#1065) and the public-data source health report (#1866), then snapshot the six scoreboard numbers (which include
+ * that score), then restore cut credit union cities (#1213), then measure the database and count
+ * (or, once switched on, trim) old log history. Deterministic; no model calls.
  */
 async function handleGET(request: NextRequest) {
   if (!(await isAuthorized(request))) {
@@ -44,11 +45,14 @@ async function handleGET(request: NextRequest) {
       { key: "deming-benchmark-health", agent: "atlas", title: "Deming: check benchmark sample sizes, ranges and coverage, and alarm on a collapse" },
       { key: "deming-playbook-check", agent: "atlas", title: "Deming: check each institution's playbook for contradictions (read-only)" },
       { key: "deming-data-quality", agent: "atlas", title: "Deming: check live fees for duplicates, stale evidence, missing categories and sources, and category shares (read-only)" },
+      { key: "deming-source-health", agent: "atlas", title: "Deming: report each public-data source as fresh, stale, empty, failed or skipped (read-only)" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
       // Last: a data repair, so a pipeline pause holds it without holding the measurements above.
-      { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213)" },
+      { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213) and hand-checked fee links (#2022)" },
+      // Measures the database every day; its log trims delete only once James switches each on.
+      { key: "atlas-storage-retention", agent: "atlas", title: "Atlas: measure the database and trim old log history" },
     ],
   });
   if (started.reused) {

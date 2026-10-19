@@ -98,6 +98,27 @@ describe("persisted subscription checkout",()=>{
     mocks.create.mockImplementation(async()=>session({customer:"cus_someone_else"}));
     expect(await createGuardedCheckout(7,"cus_7",params())).toHaveProperty("error");expect(current!.state).toBe("review");
   });
+  it("retires an intent for a replaced customer and reserves a fresh one (#1974)",async()=>{
+    await createGuardedCheckout(7,"cus_7",params());const old=current!;expect(old.customer_id).toBe("cus_7");
+    mocks.create.mockImplementation(async()=>session({id:"cs_new",customer:"cus_7b",url:"https://checkout.stripe.invalid/new"}));
+    const result=await createGuardedCheckout(7,"cus_7b",{...params(),customer:"cus_7b"});
+    expect(result).toEqual({url:"https://checkout.stripe.invalid/new"});
+    expect(retired.map((x)=>x.id)).toEqual([old.id]);expect(current!.customer_id).toBe("cus_7b");expect(current!.id).not.toBe(old.id);
+    expect(current!.state).toBe("open");expect(mocks.create).toHaveBeenCalledTimes(2);
+    expect(mocks.create.mock.calls[1][1].idempotencyKey).toBe(`pro-checkout/${current!.id}`);
+    expect(mocks.state).toHaveBeenLastCalledWith("cus_7b",expect.anything());
+  });
+  it("keeps a review intent in review even when the customer changed",async()=>{
+    await createGuardedCheckout(7,"cus_7",params());current!.state="review";
+    expect(await createGuardedCheckout(7,"cus_7b",{...params(),customer:"cus_7b"})).toHaveProperty("error");
+    expect(retired).toHaveLength(0);expect(current!.state).toBe("review");expect(current!.customer_id).toBe("cus_7");
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+  it("still sends a session owned by another customer to review when the intent's customer matches",async()=>{
+    await createGuardedCheckout(7,"cus_7",params());mocks.retrieve.mockImplementationOnce(async()=>session({customer:"cus_other"}));
+    expect(await createGuardedCheckout(7,"cus_7",params())).toHaveProperty("error");
+    expect(current!.state).toBe("review");expect(retired).toHaveLength(0);
+  });
   it("fails closed on an incomplete checkout inventory",async()=>{
     mocks.list.mockResolvedValue({data:[],has_more:true});await expect(createGuardedCheckout(7,"cus_7",params())).rejects.toThrow("incomplete");expect(mocks.create).not.toHaveBeenCalled();
   });

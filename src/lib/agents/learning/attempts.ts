@@ -23,23 +23,63 @@ export interface AttemptRecord extends AttemptFacts {
    * pass 2), so their per-specialist yields do not reset the expected fee count.
    */
   foldIntoPlaybook?: boolean;
+  /**
+   * True writes no row when the log already holds this attempt word for word: the same document,
+   * strategy, version and input fingerprint, with the same outcome, yield, cost and detail. Knox's
+   * pass 2 specialists run again on every Knox rules bump with nothing changed for them (about
+   * 3,400 documents read 4.8 times each in 3 days to Oct 17, a third of all extract rows; #1808).
+   */
+  skipRepeat?: boolean;
 }
 
 export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise<void> {
-  await db`
-    INSERT INTO pipeline_attempts (
-      institution_id, source_document_id, stage, strategy, strategy_version,
-      input_fingerprint, outcome, yield_count, cost_microusd, duration_ms,
-      agent_run_id, agent_run_step_id, detail
-    )
-    VALUES (
-      ${attempt.institutionId}, ${attempt.sourceDocumentId ?? null}, ${attempt.stage},
-      ${attempt.strategy}, ${attempt.version}, ${attempt.fingerprint}, ${attempt.outcome},
-      ${Math.max(0, Math.floor(attempt.yieldCount))}, ${Math.max(0, Math.floor(attempt.costMicrousd))},
-      ${attempt.durationMs == null ? null : Math.max(0, Math.round(attempt.durationMs))},
-      ${attempt.runId ?? null}, ${attempt.stepId ?? null}, ${JSON.stringify(attempt.detail ?? {})}::jsonb
-    )
-  `;
+  const yieldCount = Math.max(0, Math.floor(attempt.yieldCount));
+  const costMicrousd = Math.max(0, Math.floor(attempt.costMicrousd));
+  const detail = JSON.stringify(attempt.detail ?? {});
+  if (attempt.skipRepeat) {
+    // Found through pipeline_attempts_input_idx (input_fingerprint, strategy, strategy_version).
+    await db`
+      INSERT INTO pipeline_attempts (
+        institution_id, source_document_id, stage, strategy, strategy_version,
+        input_fingerprint, outcome, yield_count, cost_microusd, duration_ms,
+        agent_run_id, agent_run_step_id, detail
+      )
+      SELECT
+        ${attempt.institutionId}, ${attempt.sourceDocumentId ?? null}, ${attempt.stage},
+        ${attempt.strategy}, ${attempt.version}, ${attempt.fingerprint}, ${attempt.outcome},
+        ${yieldCount}, ${costMicrousd},
+        ${attempt.durationMs == null ? null : Math.max(0, Math.round(attempt.durationMs))},
+        ${attempt.runId ?? null}, ${attempt.stepId ?? null}, ${detail}::jsonb
+      WHERE NOT EXISTS (
+        SELECT 1 FROM pipeline_attempts pa
+         WHERE pa.input_fingerprint = ${attempt.fingerprint}
+           AND pa.strategy = ${attempt.strategy}
+           AND pa.strategy_version = ${attempt.version}
+           AND pa.stage = ${attempt.stage}
+           AND pa.institution_id IS NOT DISTINCT FROM ${attempt.institutionId}
+           AND pa.source_document_id IS NOT DISTINCT FROM ${attempt.sourceDocumentId ?? null}
+           AND pa.outcome = ${attempt.outcome}
+           AND pa.yield_count = ${yieldCount}
+           AND pa.cost_microusd = ${costMicrousd}
+           AND pa.detail = ${detail}::jsonb
+      )
+    `;
+  } else {
+    await db`
+      INSERT INTO pipeline_attempts (
+        institution_id, source_document_id, stage, strategy, strategy_version,
+        input_fingerprint, outcome, yield_count, cost_microusd, duration_ms,
+        agent_run_id, agent_run_step_id, detail
+      )
+      VALUES (
+        ${attempt.institutionId}, ${attempt.sourceDocumentId ?? null}, ${attempt.stage},
+        ${attempt.strategy}, ${attempt.version}, ${attempt.fingerprint}, ${attempt.outcome},
+        ${yieldCount}, ${costMicrousd},
+        ${attempt.durationMs == null ? null : Math.max(0, Math.round(attempt.durationMs))},
+        ${attempt.runId ?? null}, ${attempt.stepId ?? null}, ${detail}::jsonb
+      )
+    `;
+  }
   if (attempt.foldIntoPlaybook === false || attempt.institutionId == null) return;
   const playbook = await loadPlaybook(db, attempt.institutionId);
   await persistPlaybook(db, attempt.institutionId, applyAttempt(playbook, attempt));

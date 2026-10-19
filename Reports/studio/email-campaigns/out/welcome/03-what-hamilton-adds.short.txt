@@ -7,7 +7,7 @@ The free reports show the market. Hamilton, the Fee Insight workspace, shows whe
 
 - Peers you pick by charter, asset size, district or county, instead of an anonymous average.
 
-- The source behind every figure: the competitor's published schedule and the date we read it.
+- A source for each compared fee: the competitor's published schedule and the date we read it.
 
 - Committee reports built from your peer set.
 
@@ -20,5 +20,6 @@ From here you'll get the monthly Fee Pulse: one finding and one thing to check. 
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

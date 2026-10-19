@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isOtherSiteLink, OTHER_SITE_LINK_SQL, isSingleProductDisclosureLink, isStaleDatedLink, looksForeignSchedule, refersElsewhere } from "./link-coverage";
+import { ARTICLE_LINK_SQL, articleLinkSql, DATED_POST_LINK_SQL, FEE_DOCUMENT_NAME_SQL, hasOverdraftPrice, isArticleLink, isBusinessOnlyLink, isBusinessOnlyText, isErrorPageLink, isForeignHostLink, isNonFeeDocumentLink, isOtherSiteLink, OTHER_SITE_LINK_SQL, isSingleProductDisclosureLink, isStaleDatedLink, looksForeignSchedule, refersElsewhere } from "./link-coverage";
 
 describe("is the stored page the consumer fee schedule?", () => {
   it("spots a business-only schedule by its address", () => {
@@ -79,6 +79,33 @@ describe("isArticleLink", () => {
     expect(isArticleLink("https://www.axosbank.com/personal/insights/finance/digital-banking/understanding-overdraft-fees-protection-and-more")).toBe(true);
     expect(isArticleLink("https://www.jpmorganchase.com/ir/news/2021/chase-helps-more-than-two-million-customers-avoid-overdraft-service-fees")).toBe(true);
     expect(isArticleLink("https://www.ally.com/stories/spend/what-is-overdraft-protection/")).toBe(true);
+  });
+
+  it("flags the learning, advice, post and dated blog pages that put fees live (#1774)", () => {
+    expect(isArticleLink("https://www.td.com/us/en/personal-banking/learning/money-management/types-of-checking-accounts")).toBe(true);
+    expect(isArticleLink("https://www.kfcu.org/resources/advice/3-apps-to-scare-up-savings")).toBe(true);
+    expect(isArticleLink("https://www.schoolsfirstfcu.org/advice/financial-wellness/saving/dont-get-stung-by-banking-fees/")).toBe(true);
+    expect(isArticleLink("https://www.citynational.com/post/overdraft-protection-how-to-prevent-fees-and-stay-financially-secure")).toBe(true);
+    expect(isArticleLink("https://security1stbank.com/2022/01/how-to-choose-between-a-time-deposit-or-money-market-account/?_rt=M3wx")).toBe(true);
+  });
+
+  it("leaves a bank's own fee pages under learn, learning, resources and dated upload folders alone (#1774)", () => {
+    expect(isArticleLink("https://www.example.org/learning/helpful-tools/fee-schedule-personal")).toBe(false);
+    expect(isArticleLink("https://www.nstarcu.org/learn/fees")).toBe(false);
+    expect(isArticleLink("https://www.snbt.com/learn/overdraft-services")).toBe(false);
+    expect(isArticleLink("https://www.mcclainbank.com/what-is-bounce-protection-")).toBe(false);
+    expect(isArticleLink("https://www.unitedone.org/learn/resources/avoid-fees")).toBe(false);
+    expect(isArticleLink("https://www.firstbankonline.com/wp-content/uploads/2026/04/FB-Consumer-Schedule-of-Fees-4.29.2026.pdf")).toBe(false);
+    expect(isArticleLink("https://bank.example/wp-content/uploads/2025/01/fees.pdf")).toBe(false);
+  });
+
+  it("matches the same addresses in SQL as in code", () => {
+    const sql = articleLinkSql("sd.document_url");
+    expect(sql).toContain(ARTICLE_LINK_SQL);
+    expect(sql).toContain(DATED_POST_LINK_SQL);
+    expect(sql).toContain(FEE_DOCUMENT_NAME_SQL);
+    expect(new RegExp(DATED_POST_LINK_SQL).test("/2022/01/how-to-choose/?x=1")).toBe(true);
+    expect(new RegExp(DATED_POST_LINK_SQL).test("/wp-content/uploads/2025/01/fees.pdf")).toBe(false);
   });
 
   it("leaves fee documents filed in those folders alone", () => {

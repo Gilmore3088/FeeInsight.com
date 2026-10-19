@@ -1,7 +1,7 @@
 The page you're following
 =========================
 
-You asked to follow {$follow_name|default('a state or an institution')}. The figures on that page come from published schedules and update as new schedules are read.
+You asked to follow {$follow_name|default('a state or an institution')}. Fee benchmarks come from published schedules and update as new schedules are read.
 
 Open the page: {$follow_url|default('https://feeinsight.com/research')}
 
@@ -15,5 +15,6 @@ Reply any time with a question about a number.
 James Gilmore, Fee Insight
 
 --
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

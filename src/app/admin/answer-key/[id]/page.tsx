@@ -11,11 +11,13 @@ import {
   ANSWER_KEY_DOCUMENT_TYPES,
   answerKeySchemaReady,
   banksToCheck,
+  feeCheckedBy,
   getAnswerKeyInstitution,
   isPersonChecked,
   listAnswerKeyInstitutions,
   VALID_ANSWER_KEY_CANONICAL_KEYS,
   type AnswerKeyFee,
+  type AnswerKeyInstitution,
 } from "@/lib/data-store/answer-key";
 import {
   addAnswerKeyFeeAction,
@@ -33,7 +35,7 @@ function pct(value: number | null | undefined): string {
   return value == null ? "—" : `${(value * 100).toFixed(0)}%`;
 }
 
-function FeeRow({ fee, answerKeyId }: { fee: AnswerKeyFee; answerKeyId: number }) {
+function FeeRow({ fee, answerKeyId, institution }: { fee: AnswerKeyFee; answerKeyId: number; institution: Pick<AnswerKeyInstitution, "status" | "confirmed_by"> }) {
   const formId = `fee-${fee.id}`;
   const tone = fee.status === "confirmed"
     ? ""
@@ -77,7 +79,7 @@ function FeeRow({ fee, answerKeyId }: { fee: AnswerKeyFee; answerKeyId: number }
           <button type="submit" className="rounded px-1.5 py-1 text-gray-400 hover:text-red-600" aria-label="Delete fee row">✕</button>
         </form>
         <span className="mt-0.5 block text-[10px] text-gray-400">
-          {fee.status === "confirmed" ? `ok ${fee.confirmed_by ?? ""}` : fee.uncertain ? "unsure" : "prefilled"}
+          {fee.status === "confirmed" ? `ok ${feeCheckedBy(fee.confirmed_by, institution) ?? ""}` : fee.uncertain ? "unsure" : "prefilled"}
         </span>
       </td>
     </tr>
@@ -203,7 +205,7 @@ export default async function AnswerKeyDetailPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
-            {fees.map((fee) => <FeeRow key={fee.id} fee={fee} answerKeyId={answerKeyId} />)}
+            {fees.map((fee) => <FeeRow key={fee.id} fee={fee} answerKeyId={answerKeyId} institution={institution} />)}
             <tr>
               <td className="px-2 py-1.5">
                 <form id="fee-new" action={addAnswerKeyFeeAction}>

@@ -9,14 +9,14 @@ The Competitive Fee Position Report puts one institution's fee schedule next to 
 
 
 [ WHAT'S IN IT ]
-- Each of your fees marked below, inside or above the middle 50% of your competitors' fees.
+- Each fee marked below, inside or above your competitors' middle 50%.
 - The competitors you name, side by side with you.
-- A source for every figure: the competitor's published schedule and the date we read it.
+- The competitor's published schedule and its read date behind each compared fee.
 
 Request your institution report: https://feeinsight.com/reports?report=institution&src=email_report&utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution#request
-Quoted from $300. We check your market has enough published schedules, then reply within one business day with scope and price. See a sample report (https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution).
+Quoted from $300. We check your market has enough published schedules and reply within one business day. See a sample report (https://feeinsight.com/reports/sample-competitive-fee-position?utm_source=mailerlite&utm_medium=email&utm_campaign=report&utm_content=your-institution).
 
-Or reply with your institution's name and the competitors you watch.
+Or reply with your institution and the competitors you watch.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
@@ -25,5 +25,6 @@ Founder, Fee Insight · publisher of the Bank Fee Index
 Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

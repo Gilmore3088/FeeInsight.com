@@ -1,4 +1,11 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * the public read cache its read carries (#1811). The page reads no session, cookies or search
+ * params; the explorer reads `?city=` in the browser. A render whose city list came back empty
+ * is cached for a minute instead (`shortenPageLife`, as the homepage), so a failed read is retried.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,16 +14,19 @@ import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER, PAGE_LEDE } from "@/components/public/page-header";
 import { SITE_URL } from "@/lib/constants";
 import { getStateMarketCitiesCached } from "@/lib/data-store/public-cached-reads";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { stateMarketMap } from "@/lib/geo/state-market-map";
 import { StateExplorer, type ExplorerCity } from "./state-explorer";
 import { titleCase } from "../[city]/city-lookup";
 
 interface PageProps {
   params: Promise<{ state: string }>;
-  searchParams: Promise<{ city?: string | string[]; q?: string | string[]; all?: string | string[] }>;
 }
 
-const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+/** Nothing is rendered at build time; each state renders on its first visit, then from cache. */
+export function generateStaticParams() {
+  return [];
+}
 
 const COUNT = new Intl.NumberFormat("en-US");
 
@@ -35,15 +45,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   };
 }
 
-export default async function StateCityDirectory({ params, searchParams }: PageProps) {
+export default async function StateCityDirectory({ params }: PageProps) {
   const { state } = await params;
-  const query = await searchParams;
   const stateCode = state.toUpperCase();
   const stateName = STATE_NAMES[stateCode];
 
   if (!stateName) notFound();
 
   const cities = await getStateMarketCitiesCached(stateCode);
+  if (cities.length === 0) await shortenPageLife();
   // getStateMarketCities ranks by institutions with a branch in the city, most first.
   const links: ExplorerCity[] = cities.map((c) => ({
     key: c.city.toLowerCase(),
@@ -59,8 +69,7 @@ export default async function StateCityDirectory({ params, searchParams }: PageP
         cities.flatMap((c) => (c.lat != null && c.lon != null ? [{ key: c.city.toLowerCase(), lat: c.lat, lon: c.lon }] : [])),
       )
     : null;
-  const asked = first(query.city).toLowerCase();
-  const initialCity = links.some((l) => l.key === asked) ? asked : (links[0]?.key ?? "");
+  const initialCity = links[0]?.key ?? "";
 
   return (
     <>
@@ -94,8 +103,8 @@ export default async function StateCityDirectory({ params, searchParams }: PageP
               map={map}
               cities={links}
               initialCity={initialCity}
-              initialQuery={first(query.q)}
-              initialAll={first(query.all) === "1"}
+              initialQuery=""
+              initialAll={false}
               stateName={stateName}
               stateCode={stateCode}
             />

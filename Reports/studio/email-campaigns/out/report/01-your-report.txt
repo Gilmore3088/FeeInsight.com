@@ -10,7 +10,7 @@ Thanks for confirming. The report is live, so the link always shows the current 
 Open your report: {$report_url|default('https://feeinsight.com/reports')}
 Free, no login. Bookmark it.
 
-Start at the top. The findings come first, and every table names the institutions and the published schedules behind it.
+Start at the top. The findings come first. The report shows coverage counts and explains its sources.
 
 James Gilmore
 Founder, Fee Insight · publisher of the Bank Fee Index
@@ -19,5 +19,6 @@ Founder, Fee Insight · publisher of the Bank Fee Index
 Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.
 Methodology: https://feeinsight.com/methodology
 Questions? Just reply.
+3522 Southwest Barton Street, Seattle, United States of America
 You're getting this because you signed up at feeinsight.com.
 Unsubscribe: {$unsubscribe}

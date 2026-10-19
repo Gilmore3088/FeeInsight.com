@@ -19,6 +19,13 @@ require their own authorization/evidence. A green branch that is stacked on an u
 or release dependency is not merge-ready. Record the merge receipt and continue; do not ask James
 again merely because a routine code PR reached a clean merge-ready state.
 
+Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
+first fix the pipeline step that caused it (Magellan discovery and document capture, Rosetta text
+conversion, Knox extraction or categorisation, Darwin verification or classification) so the
+whole class of error is fixed, then re-run the affected institutions and validate the output. A
+one-off data fix (an admin correction, hold or re-file) comes only as the last step after that
+process fix, never instead of it.
+
 ## Current Runtime
 
 - Agent runs start in `agent_runs`, advance through `agent_run_steps`, and write `agent_run_events`.
@@ -58,6 +65,17 @@ Magellan owns institution source discovery and source fetching.
 - Writes discovery attempts and source-document collection results.
 - Should rotate batches with claim/backoff behavior and avoid repeatedly selecting the same failed institutions.
 - Must not call provider extraction directly. If automation is stopped, mark accepted sources as queued/manual-validation-ready.
+
+### Hoovie
+
+Hoovie owns public data: the regulator, government and survey datasets the registry loads
+(`src/lib/agents/hoovie/AGENTS.md`). James created the agent on 2026-10-17.
+
+- Every registry source has one contract in `src/lib/agents/hoovie/sources.ts`, covering publisher, licence,
+  connection, cadence, grain, link keys and tables. A source without a contract fails its test.
+- The loaders still run under the run-ledger name `magellan` until the `hoovie` agent row exists
+  (a migration that needs James's yes). Magellan's own job is bank fee schedules.
+- Never fills a gap or guesses a value; a missing file or field is recorded as missing.
 
 ### Rosetta
 

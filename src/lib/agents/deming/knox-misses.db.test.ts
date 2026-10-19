@@ -10,7 +10,7 @@ type Db = NonNullable<Parameters<typeof runKnoxMisses>[0]>["db"];
 const TEXT = ["Fee Schedule", "Overdraft Fee | $35.00 per item"].join("\n");
 
 describe.skipIf(!connection)("Deming Knox miss replay in isolated PostgreSQL", () => {
-  let db: ReturnType<typeof postgres>;
+  let db: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
       throw new Error("Knox miss tests require a loopback E2E database; production connections are forbidden");

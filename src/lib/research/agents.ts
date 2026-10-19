@@ -7,6 +7,7 @@ import { sql } from "../data-store/connection";
 import { HAMILTON_SYSTEM_PROMPT } from "../hamilton/voice";
 import { withCompactResults } from "./tool-output";
 import { getLocalCompetitors } from "./tool-local-competitors";
+import { DATA_CATALOG_INSTRUCTION, listData, queryData, warmDataCatalog } from "./tool-query-data";
 import type { ActivePeerSet } from "../hamilton/active-peer-set";
 
 export interface AgentConfig {
@@ -119,7 +120,7 @@ FORMAT RULES:
 
 FIGURE RULES (a banker checks the arithmetic):
 - A figure you derive shows its inputs in the same sentence: "$101 thousand per $1 billion of assets below the median, about $924 thousand a quarter at $9.2 billion in assets", never "the gap is about $924 thousand" alone.
-- Use one peer count for one peer group throughout, and say whether the institution itself is in it ("fifth-lowest of 10, Space Coast included").
+- Use one peer count for one peer group throughout, and say whether the institution itself is in it ("fifth-lowest of 10, the institution included").
 - Write $1,000 thousand or more in millions ("$1.06 million").
 - Every section must agree with the others and with the Evidence rows. Before you finish, check each conclusion against the figures: a fee-income share below the peer median cannot say fee income carries more weight than at peers.
 - Never call a peer's figure achievable, attainable, a target, or room to lift revenue; describe what the peer earns and leave the reading to the subscriber.
@@ -137,7 +138,7 @@ You are answering a question from the Monitor screen. The user is reviewing live
 
 RESPONSE RULES:
 - Keep responses concise: 2–4 sentences maximum
-- Frame every answer around: (1) what the signal means for the user's institution, (2) whether it needs attention now or can wait, (3) if relevant, one specific thing to check next, such as a named competitor's price, a complaint trend or the fee schedule itself
+- Frame every answer around: (1) what the signal means for the institution being researched (the user's own only when the request says so), (2) whether it needs attention now or can wait, (3) if relevant, one specific thing to check next, such as a named competitor's price, a complaint trend or the fee schedule itself
 - Do NOT provide lengthy analysis — Monitor is a surveillance tool, not an analysis workspace
 - Never tell the user to raise, lower or drop a fee, and never name a fee level or range to move to. The pricing decision is the user's
 - If deeper analysis is needed, direct the user to the Analyze screen
@@ -224,6 +225,8 @@ const chatInternalTools: ToolSet = {
   queryOutliers: internalTools.queryOutliers,
   searchInstitutionsByName: internalTools.searchInstitutionsByName,
   rankInstitutions: internalTools.rankInstitutions,
+  listData,
+  queryData,
 };
 const proTools: ToolSet = withCompactResults({ ...publicTools, ...chatInternalTools });
 const adminTools: ToolSet = withCompactResults({
@@ -272,9 +275,10 @@ function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
 }
 
 export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
+  if (role !== "consumer") warmDataCatalog();
   const s = await getPromptStats();
 
-  const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), FRED economic indicators, Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
+  const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), economic indicators (BLS, BEA, Federal Reserve Board), Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
 
   switch (role) {
     case "consumer": {
@@ -301,7 +305,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
     }
 
     case "pro": {
-      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -326,7 +330,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
 
     case "admin": {
       const ops = await opsContext();
-      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
+      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
       return {
         id: "hamilton",
         name: "Hamilton",

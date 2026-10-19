@@ -33,6 +33,16 @@
  *    download paths (VENDOR_DOWNLOAD_PATH_SEGMENTS) never link anyone. Each charter keeps its
  *    own rows and its own value (valuePerInstitution is unchanged), so every charter's page
  *    still shows its fees.
+ * 8. Safe deposit rent only (#1816): a safe deposit row named as drilling, a key, a lockout or
+ *    paying late is a service charge, not the box's rent, and stays out of the rent's medians,
+ *    ranges and counts (safeDepositServiceSql). It stays on the bank's own page, marked as not
+ *    compared, by the same name rule (fee-comparability.ts).
+ * 9. One charging basis per category (#1901): a dormant, minimum balance or monthly maintenance
+ *    row stated as quarterly, annual, daily, hourly or one-time, and a safe deposit box or IRA
+ *    administration row stated as monthly, quarterly, daily, hourly or one-time, prices a
+ *    different period than the category's median and stays out of its medians, ranges and
+ *    counts (basisMismatchSql). Per item, other and blank frequencies stay. The bank's own page
+ *    keeps the row, marked as not compared (fee-comparability.ts basisMismatchReason).
  */
 import { computePercentile, computeStats } from "./fees";
 import { countedAmounts } from "./counted-amounts";
@@ -41,13 +51,15 @@ import { countedAmounts } from "./counted-amounts";
 // database imports, because client components reach it through hamilton/workspace/segment.ts.
 export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
+import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
+import type { CountingRule, PopulationFilter } from "@/lib/dataset-stamp";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
 
 export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier };
 /**
- * Rule 7 switch. Off until the read's cost and the affected counts are checked on prod (#1441).
- * Readers select STATS_SCHEDULE_KEYS; while this is false it selects NULL and nothing changes.
+ * Rule 7 switch. On since James's yes (Oct 17, 10:47 UTC; dry count 126 statistic values, 285 rows,
+ * #1441, #1764). Readers select STATS_SCHEDULE_KEYS; set false and it selects NULL and nothing changes.
  *
  * Readers that count institutions or rank values outside summarizeFees use the same rule
  * (#1441, 17 Oct): countedInstitutionCount (national-trends counts and provenance, the API's
@@ -60,10 +72,15 @@ export { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, ty
  * 2.0 to 3.6 MB without them (safe_deposit_box 6,687 rows), and the fields add about 30%, so
  * those entries miss Next's 2 MB per-entry cache with or without this switch.
  */
-export const COUNT_SHARED_SCHEDULE_ONCE: boolean = false;
+export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
 
-/** Bump when these rules change; fee_index_cache rows carry it and older ones are ignored. */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 8 : 7;
+/**
+ * Bump when these rules change; fee_index_cache rows carry it and older ones are ignored.
+ * 9/10 (#1816): safe deposit drilling, key, lock and late charges leave every median.
+ * 11/12 (#1901): a fee whose stated frequency contradicts its category's basis leaves every median.
+ * 13/14 (#1879): medians and quartiles round half a cent up on the decimal value (roundCents).
+ */
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 13 : 14;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -71,14 +88,66 @@ export function businessSourceSql(alias: string): string {
   return `(${path} ~ '${BUSINESS_PATH_SQL}' AND ${path} !~ '${CONSUMER_PATH_SQL}')`;
 }
 
+/**
+ * SQL predicate: a safe deposit row that is a service charge (drilling, a key, a lockout, paying
+ * late), not the box's rent (rule 8, #1816). The same rule the institution page applies
+ * (fee-comparability.ts notComparableReason), so a $250 drilling fee never sits in the rent median.
+ */
+export function safeDepositServiceSql(alias: string): string {
+  return `(${alias}.fee_category = '${SAFE_DEPOSIT_CATEGORY}' AND COALESCE(${alias}.fee_name, '') ~* '${SAFE_DEPOSIT_SERVICE_SQL}')`;
+}
+
 /** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */
 export function statsRowFilter(alias = "ef"): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
-  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)}`;
+  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)} AND NOT ${safeDepositServiceSql(alias)} AND NOT ${basisMismatchSql(alias)}`;
 }
 
 /** Compatibility predicate for readers using the conventional ef alias. */
 export const STATS_ROW_FILTER = statsRowFilter();
+
+/**
+ * One plain-language description per predicate in statsRowFilter, in the same order (#1924).
+ * `sqlMarker` is text only that predicate contains; fee-stats.test.ts splits the SQL into its
+ * top-level predicates and fails when one has no description here, so words and SQL can't drift.
+ */
+export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMarker: string }> = [
+  {
+    key: "sourced",
+    label: "Only fees traced to a stored copy of the institution's own fee schedule",
+    sqlMarker: ".source_document_id IS NOT NULL",
+  },
+  {
+    key: "consumer_audience",
+    label: "Consumer fees, fees for both consumers and businesses, and fees whose schedule names no audience; business-only fees and fees we have not yet sorted by audience left out",
+    sqlMarker: ".fee_audience IN (",
+  },
+  {
+    key: "no_business_schedule",
+    label: "Fees from schedules whose web address names a business, commercial, corporate or treasury page left out, unless it also names a personal, consumer or retail page",
+    sqlMarker: ".source_url",
+  },
+  {
+    key: "safe_deposit_rent_only",
+    label: "Safe deposit box charges for drilling, keys, lockouts or late payment left out of box rent",
+    sqlMarker: ".fee_name",
+  },
+  {
+    key: "one_charging_basis",
+    label: "Where a fee is usually charged on one schedule (for example monthly), the same fee charged over a different period left out",
+    sqlMarker: ".frequency",
+  },
+];
+
+/** The statistics population filters as stamp data (dataset-stamp.ts). */
+export function statsPopulationFilters(): PopulationFilter[] {
+  return STATS_POPULATION_FILTERS.map(({ key, label }) => ({ key, label }));
+}
+
+/** The counting rule in force (rule 7). */
+export function statsCounting(enabled: boolean = COUNT_SHARED_SCHEDULE_ONCE): CountingRule {
+  return enabled ? "counted_once" : "per_charter";
+}
 
 /**
  * Path segments of vendor download services that host many unrelated institutions' files

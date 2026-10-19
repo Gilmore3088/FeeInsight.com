@@ -20,24 +20,31 @@ export const revalidate = 900;
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
+import { getReportPeerFinancialCached, type ReportPeerFinancial } from "@/lib/custom-report/peer-context";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
-import { getFeeCategoryDetailCached } from "@/lib/data-store/public-cached-reads";
+import type { IndexRow } from "@/lib/data-store";
+import { getIndexRowsCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-import { LandingHero } from "./landing-hero";
-import { LandingProducts } from "./landing-products";
+import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
+import { LandingHero, LandingProof } from "./landing-hero";
+import { LandingHamilton } from "./landing-hamilton";
+import { LandingResearch } from "./landing-research-section";
+import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
-import { LandingFaq } from "./landing-faq";
-import { buildHomeData, buildSampleView, homeReadsCacheable } from "./landing-shared";
-import { buildScenario } from "./subscribe/scenario";
+import { buildIndexCard } from "./landing-index";
+import { homeReadsCacheable } from "./landing-shared";
+import { homeSerif } from "./landing-serif";
+import "./landing-motion.css";
 
-// The promise (James, Oct 16); no counts, so nothing goes stale.
-const HOME_TITLE = `Your next fee review doesn't need to take weeks | ${SITE_NAME}`;
+// The title follows the hero h1 (conversion headlines, Oct 17); neither line carries a count, so nothing goes stale.
+const HOME_TITLE = `Your next fee review doesn’t need to take weeks | ${SITE_NAME}`;
 const HOME_DESCRIPTION =
-  `Compare your fees with competitors using the ${PRODUCT_NAME}, then turn the evidence into analysis and ` +
-  "board reports with Hamilton. Every figure traces to the institution's own published fee schedule.";
+  `Compare your fees with competitors using the ${PRODUCT_NAME}. ` +
+  "Turn the evidence into analysis and board reports with Hamilton.";
 
 export const metadata: Metadata = {
   title: { absolute: HOME_TITLE },
@@ -78,46 +85,72 @@ const WEBSITE_JSON_LD = {
 };
 
 export default async function LandingPage() {
-  // Counts and the national ranges come from one shared snapshot, so they match the fee
-  // index, research hub and directory to the number. The district medians are the cached
-  // read /fees/overdraft already makes; a failed read only hides the district rows. The
-  // live sample report (the same one /for-institutions and the sample page show) gives the
-  // named bank, its competitors and its report for the workflow section; a failed read hides it.
-  // The sample is read once: it is null both when none passes the bar today and on error.
-  const [{ summary, categories }, sampleRead, overdraftRead] = await Promise.all([
-    getPublicSnapshot(),
+  // Counts come from the one shared snapshot, so they match the fee index, research hub and
+  // directory to the number. The hero card reads each free fee's published rows, the same cached
+  // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
+  // report (the one /for-institutions and the sample page show) gives the Hamilton examples
+  // their figures; a failed read shows the examples without figures. It is null both when none
+  // passes the bar today and on error. The sample bank's reported service-charge income (the
+  // read the sample report page shows) gives Prioritize its context; without it, no figures.
+  // The same report and income draw the deliverable before the plans.
+  const { summary, categories } = await getPublicSnapshot();
+  // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
+  const listed = publicFeeTypes(categories);
+  const publicKeys = new Set(categories.filter((c) => listed.has(c.fee_category) && Number(c.institution_count ?? 0) > 0).map((c) => c.fee_category));
+  const cardFees = getSpotlightCategories().filter((fee) => publicKeys.has(fee));
+  const [sampleRead, indexReads] = await Promise.all([
     loadSampleReport().then(
-      (report) => ({ report, failed: false }),
+      async (report) => {
+        if (!report) return { report, revenue: null, financial: null, failed: false };
+        const id = report.data.subject.institution_id;
+        const [revenue, financial] = await Promise.all([
+          getRevenueContextCached(id).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank revenue read failed; Prioritize shown without income figures", error);
+              return { value: null as RevenueContext | null, failed: true };
+            },
+          ),
+          getReportPeerFinancialCached(id).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank peer financial read failed; share of revenue left out", error);
+              return { value: null as ReportPeerFinancial | null, failed: true };
+            },
+          ),
+        ]);
+        return { report, revenue: revenue.value, financial: financial.value, failed: revenue.failed || financial.failed };
+      },
       (error: unknown) => {
-        console.error("[home] sample report read failed; sample exhibits hidden", error);
-        return { report: null, failed: true };
+        console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
+        return { report: null, revenue: null, financial: null, failed: true };
       },
     ),
-    getFeeCategoryDetailCached("overdraft").then(
-      // The overdraft category always has fees; an empty detail is a read that went wrong.
-      (detail) => ({ detail, failed: detail.fees.length === 0 }),
-      (error: unknown) => {
-        console.error("[home] overdraft district read failed; district rows hidden", error);
-        return { detail: null, failed: true };
-      },
+    Promise.all(
+      cardFees.map((fee) =>
+        getIndexRowsCached(fee).then(
+          (rows) => ({ fee, rows, failed: false }),
+          (error: unknown) => {
+            console.error(`[home] index rows for ${fee} failed; left out of the hero card`, error);
+            return { fee, rows: [] as IndexRow[], failed: true };
+          },
+        ),
+      ),
     ),
   ]);
-  const liveSample = sampleRead.report;
   const cacheable = homeReadsCacheable({
     summary,
     categories,
     sampleFailed: sampleRead.failed,
-    overdraftFailed: overdraftRead.failed,
+    indexFailed: indexReads.some((r) => r.failed),
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
-  const data = buildHomeData(summary, categories, overdraftRead.detail?.by_fed_district, {
-    sample: buildSampleView(liveSample),
-    scenario: buildScenario("Overdraft", categories.find((c) => c.fee_category === "overdraft")),
-  });
+  // The demo bank's own fees come from the same rows, so the card can mark it with no extra read.
+  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])), [DEMO_SAMPLE_INSTITUTION_ID]);
 
   return (
-    <div className="min-h-screen overflow-x-clip bg-paper consumer-brand">
+    <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper consumer-brand`}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -128,12 +161,14 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        {/* James's order (Oct 16): the promise, the Index and Hamilton with a useful answer
-            and the report, the subscription, then the questions buyers ask. */}
-        <LandingHero />
-        <LandingProducts data={data} summary={summary} report={liveSample} />
+        {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
+            and the proof strip), the Hamilton investigation, the evidence, the deliverable, the plans. */}
+        <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
+        <LandingProof summary={summary} feeTypes={publicKeys.size} />
+        <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} financial={sampleRead.financial} />
+        <LandingResearch />
+        <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} sizePeers={sampleRead.financial !== null} preparedOn={new Date()} />
         <LandingPricing />
-        <LandingFaq summary={summary} />
       </main>
       <CustomerFooter />
       <SearchModal />

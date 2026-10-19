@@ -10,6 +10,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PROGRAM, BRAND } from "./content.mjs";
 
+// MailerLite appends its own footer, with the account's postal address, to the HTML of every
+// send but not to the plain-text part. The plain text carries the same address so both parts
+// comply (James, 2026-10-17 11:10 UTC). Exactly as the MailerLite account footer prints it;
+// MARKETING_MAILING_ADDRESS replaces it in both parts once the registration comes through.
+const PLAIN_TEXT_ADDRESS = BRAND.mailingAddress || "3522 Southwest Barton Street, Seattle, United States of America";
+
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "out");
 
@@ -27,8 +33,10 @@ const SERIF = SANS;
 // The site header logo (public/brand), served from the live site; mail clients block SVG, so PNG at 2x.
 // The email logo is the wordmark in brick on a transparent background: Gmail dark mode inverts
 // the parchment header but leaves images alone, and brick stays readable on both.
-const LOGO_URL = "https://feeinsight.com/brand/png/fee-insight-oneline-email@2x.png";
+const LOGO_URL = "https://feeinsight.com/brand/png/fee-insight-oneline@2x.png";
 const MONO = "'Geist Mono','SFMono-Regular',Menlo,Consolas,monospace";
+// The brand label (src/brand/tokens typography.label), as on report eyebrows: sans, bold, tracked capitals.
+const LABEL = `font-family:${SANS};font-size:12px;line-height:16px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;`;
 
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 // Inline markup in copy: **bold** and [text](url).
@@ -52,15 +60,15 @@ const P = `margin:0 0 16px;font-family:${SERIF};font-size:17px;line-height:1.6;c
 
 const R = {
   kicker: (b) => [
-    `<p style="margin:0 0 8px;font-family:${MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${C.terra};">${esc(b.text)}</p>`,
+    `<p style="margin:0 0 10px;${LABEL}color:${C.terra};">${esc(b.text)}</p>`,
     b.text.toUpperCase(),
   ],
   h1: (b) => [
-    `<h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:1.18;font-weight:normal;color:${C.ink};text-wrap:balance;overflow-wrap:anywhere;">${inline(b.text)}</h1>`,
+    `<h1 style="margin:0 0 14px;font-family:${SERIF};font-size:30px;line-height:36px;font-weight:800;letter-spacing:-0.025em;color:${C.ink};text-wrap:balance;overflow-wrap:anywhere;">${inline(b.text)}</h1>`,
     `${plain(b.text)}\n${"=".repeat(Math.min(plain(b.text).length, 60))}`,
   ],
   h2: (b) => [
-    `<h2 style="margin:28px 0 10px;font-family:${SERIF};font-size:21px;line-height:1.3;font-weight:normal;color:${C.ink};">${inline(b.text)}</h2>`,
+    `<h2 style="margin:28px 0 10px;font-family:${SERIF};font-size:20px;line-height:28px;font-weight:700;letter-spacing:-0.01em;color:${C.ink};text-wrap:balance;">${inline(b.text)}</h2>`,
     `\n${plain(b.text).toUpperCase()}`,
   ],
   p: (b) => [`<p style="${P}">${inline(b.text)}</p>`, plain(b.text)],
@@ -68,7 +76,7 @@ const R = {
     `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 16px;">${b.items
       .map(
         (it, i) =>
-          `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${MONO};font-size:${b.ordered ? 13 : 16}px;line-height:1.55;color:${C.terra};">${b.ordered ? `${i + 1}.` : "&bull;"}</td><td style="padding:0 0 10px;font-family:${SERIF};font-size:16px;line-height:1.55;color:${C.ink2};">${inline(it)}</td></tr>`,
+          `<tr><td valign="top" style="width:28px;padding:0 0 10px;font-family:${SANS};font-size:16px;line-height:1.55;font-weight:700;color:${C.terra};">${b.ordered ? `${i + 1}.` : "&bull;"}</td><td style="padding:0 0 10px;font-family:${SERIF};font-size:16px;line-height:1.55;color:${C.ink2};">${inline(it)}</td></tr>`,
       )
       .join("")}</table>`,
     b.items.map((it, i) => `${b.ordered ? `${i + 1}.` : "-"} ${plain(it)}`).join("\n"),
@@ -85,7 +93,7 @@ const R = {
   // Benchmark table: rows = fee entries from data.mjs.
   bench: (b) => {
     const head = (t, a = "left") =>
-      `<th align="${a}" style="padding:8px 6px;font-family:${MONO};font-size:10px;letter-spacing:1px;text-transform:uppercase;color:${C.text2};border-bottom:2px solid ${C.ink};font-weight:normal;">${t}</th>`;
+      `<th align="${a}" style="padding:8px 6px;${LABEL}font-size:11px;color:${C.text2};border-bottom:2px solid ${C.ink};">${t}</th>`;
     const cell = (t, a = "right", strong = false) =>
       `<td align="${a}" style="padding:9px 6px;font-family:${a === "left" ? SANS : MONO};font-size:13px;color:${strong ? C.ink : C.ink2};border-bottom:1px solid ${C.line};${strong ? "font-weight:bold;" : ""}">${t}</td>`;
     const rows = b.rows
@@ -131,19 +139,19 @@ const R = {
     const tone = { action: [C.goodSoft, C.good], rule: [C.sand, C.ink], term: [C.cream, C.terra], warn: [C.terraSoft, C.terra] }[b.tone || "action"];
     const body = (b.paras || []).map((t) => `<p style="margin:0 0 10px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${C.ink2};">${inline(t)}</p>`).join("");
     const items = b.items
-      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${b.items.map((it, i) => `<tr><td valign="top" style="width:24px;padding:0 0 8px;font-family:${MONO};font-size:12px;color:${tone[1]};">${b.ordered ? `${i + 1}.` : "&#9633;"}</td><td style="padding:0 0 8px;font-family:${SERIF};font-size:15px;line-height:1.5;color:${C.ink2};">${inline(it)}</td></tr>`).join("")}</table>`
+      ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">${b.items.map((it, i) => `<tr><td valign="top" style="width:24px;padding:0 0 8px;font-family:${SANS};font-size:15px;line-height:1.5;font-weight:700;color:${tone[1]};">${b.ordered ? `${i + 1}.` : "&#9633;"}</td><td style="padding:0 0 8px;font-family:${SERIF};font-size:15px;line-height:1.5;color:${C.ink2};">${inline(it)}</td></tr>`).join("")}</table>`
       : "";
-    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 22px;"><tr><td style="background:${tone[0]};border-left:4px solid ${tone[1]};padding:16px 18px 8px;"><p style="margin:0 0 10px;font-family:${MONO};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${tone[1]};">${esc(b.title)}</p>${body}${items}</td></tr></table>`;
+    const html = `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:8px 0 22px;"><tr><td style="background:${tone[0]};border-left:3px solid ${tone[1]};padding:16px 18px 8px;"><p style="margin:0 0 10px;${LABEL}color:${tone[1]};">${esc(b.title)}</p>${body}${items}</td></tr></table>`;
     const text = [`\n[ ${b.title.toUpperCase()} ]`, ...(b.paras || []).map(plain), ...(b.items || []).map((it, i) => `${b.ordered ? `${i + 1}.` : (b.tone || "action") === "action" ? "[ ]" : "-"} ${plain(it)}`)].join("\n");
     return [html, text];
   },
   cta: (b) => [
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 24px;"><tr><td style="background:${C.terra};border-radius:3px;"><a href="${b.href}" style="display:inline-block;padding:13px 22px;font-family:${SANS};font-size:15px;font-weight:bold;color:#FFFFFF;text-decoration:none;"><span style="color:#FFFFFF;">${esc(b.text)} &rarr;</span></a></td></tr></table>${b.sub ? `<p style="margin:-14px 0 22px;font-family:${SANS};font-size:12px;color:${C.muted};">${inline(b.sub)}</p>` : ""}`,
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 24px;"><tr><td style="background:${C.terra};border-radius:8px;"><a href="${b.href}" style="display:inline-block;padding:13px 22px;font-family:${SANS};font-size:15px;line-height:20px;font-weight:600;color:#FFFFFF;text-decoration:none;"><span style="color:#FFFFFF;">${esc(b.text)} &rarr;</span></a></td></tr></table>${b.sub ? `<p style="margin:-14px 0 22px;font-family:${SANS};font-size:12px;color:${C.muted};">${inline(b.sub)}</p>` : ""}`,
     `${b.text}: ${b.href}${b.sub ? `\n${plain(b.sub)}` : ""}`,
   ],
   rule: () => [`<hr style="border:none;border-top:1px solid ${C.line};margin:26px 0;">`, "\n----"],
   sign: (b, short) => [
-    `<p style="${P}margin-top:22px;">${inline(b.text || "James Gilmore")}<br><span style="display:block;font-family:${SANS};font-size:13px;line-height:1.4;color:${C.text2};">${short ? "Fee Insight" : "Founder, Fee Insight &middot; publisher of the Bank Fee Index"}</span></p>`,
+    `<p style="${P}margin-top:22px;"><strong style="font-weight:600;color:${C.ink};">${inline(b.text || "James Gilmore")}</strong><br><span style="display:block;font-family:${SANS};font-size:13px;line-height:1.4;color:${C.text2};">${short ? "Fee Insight" : "Founder, Fee Insight &middot; publisher of the Bank Fee Index"}</span></p>`,
     `${plain(b.text || "James Gilmore")}\n${short ? "Fee Insight" : "Founder, Fee Insight · publisher of the Bank Fee Index"}`,
   ],
 };
@@ -176,7 +184,7 @@ function renderEmail(automation, email) {
 <div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${C.sand};">${esc(email.preheader)}&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;&#8199;&#65279;&#847;</div>
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${C.sand};"><tr><td align="center" style="padding:24px 12px;">
 <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background:${C.paper};">
-<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="white-space:nowrap;"><a href="https://feeinsight.com" style="text-decoration:none;"><img src="${LOGO_URL}" width="124" height="22" alt="Fee Insight" style="display:block;border:0;width:124px;height:22px;font-family:${SANS};font-size:18px;color:${C.ink};"></a></td><td align="right" style="font-family:${MONO};font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:${C.text2};">${esc(email.masthead || automation.masthead)}</td></tr></table></td></tr>
+<tr><td style="padding:22px 32px 16px;border-bottom:2px solid ${C.ink};"><table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="white-space:nowrap;"><a href="https://feeinsight.com" style="text-decoration:none;"><img src="${LOGO_URL}" width="124" height="22" alt="Fee Insight" style="display:block;border:0;width:124px;height:22px;font-family:${SANS};font-size:18px;color:${C.ink};"></a></td><td align="right" style="${LABEL}font-size:11px;color:${C.text2};">${esc(email.masthead || automation.masthead)}</td></tr></table></td></tr>
 <tr><td style="padding:30px 32px 10px;">
 ${bodyHtml}
 </td></tr>
@@ -184,7 +192,7 @@ ${bodyHtml}
 </table></td></tr></table></body></html>
 `;
   const textIntro = automation.footer === "short" ? "" : `Fee Insight publishes the Bank Fee Index, built from U.S. banks' and credit unions' own published fee schedules.\nMethodology: ${BRAND.siteUrl}/methodology\nQuestions? Just reply.\n`;
-  const text = `${email.preheader}\n\n${bodyText}\n\n----\n${textIntro}${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}${automation.footerReason || "You're getting this because you signed up at feeinsight.com."}\nUnsubscribe: {$unsubscribe}\n`;
+  const text = `${email.preheader}\n\n${bodyText}\n\n----\n${textIntro}${PLAIN_TEXT_ADDRESS}\n${automation.footerReason || "You're getting this because you signed up at feeinsight.com."}\nUnsubscribe: {$unsubscribe}\n`;
   return { html, text, short: condense(automation, email, parts) };
 }
 
@@ -196,7 +204,7 @@ const VISUAL_BLOCKS = new Set(["stats", "bench", "bars", "range"]);
 function condense(automation, email, parts) {
   const visual = email.blocks.some((b) => VISUAL_BLOCKS.has(b.type));
   const reason = automation.footerReason || "You're getting this because you signed up at feeinsight.com.";
-  const tail = `\n\n${visual ? "The chart is in the full email: {$url}\n\n" : ""}--\n${BRAND.mailingAddress ? `${BRAND.mailingAddress}\n` : ""}${reason}\nUnsubscribe: {$unsubscribe}\n`;
+  const tail = `\n\n${visual ? "The chart is in the full email: {$url}\n\n" : ""}--\n${PLAIN_TEXT_ADDRESS}\n${reason}\nUnsubscribe: {$unsubscribe}\n`;
   // UTM tags would eat the character cap; MailerLite tracks plain-text clicks on its own.
   const bare = (t) => t.replace(/https?:\/\/[^\s)]+/g, (u) => u.replace(/([?&])utm_[a-z]+=[^&#]*/g, "$1").replace(/&{2,}/g, "&").replace(/\?&+/, "?").replace(/[?&]+(?=#|$)/, ""));
   const chunks = [];
@@ -247,6 +255,6 @@ writeFileSync(
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fee Insight Email Program</title><style>body{margin:0;background:${C.sand};font:15px/1.5 ${SANS};color:${C.ink};padding:24px 16px}h1{font-weight:600}h2{font-weight:600;margin-top:40px;border-bottom:2px solid ${C.ink}}.meta{font-size:13px;margin:18px 0 6px}section{max-width:640px}iframe{width:100%;max-width:640px;height:900px;border:1px solid ${C.line};background:${C.paper}}</style></head><body><h1>Fee Insight email program</h1><p>${index.length} emails across ${PROGRAM.length} automations. Each file: <code>.html</code> for MailerLite custom HTML, <code>.txt</code> for the plain-text version.</p>${PROGRAM.map((a) => `<h2>${esc(a.name)}</h2><p>Trigger: ${esc(a.trigger)}</p>${rows(a)}`).join("")}</body></html>`,
 );
 
-if (!BRAND.mailingAddress) console.warn("Note: no address in the template; MailerLite's appended footer carries the account address (MARKETING_MAILING_ADDRESS adds one).");
+if (!BRAND.mailingAddress) console.warn("Note: no address in the HTML template (MailerLite's appended footer carries the account address); plain text carries the account footer address.");
 console.log(`Built ${index.length} emails into ${outDir}`);
 for (const x of index) console.log(`  ${x.path}  (day ${x.e.day}, ${x.chars} chars plain text)  ${x.e.subject}`);

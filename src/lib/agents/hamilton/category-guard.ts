@@ -85,6 +85,11 @@ export interface RunHamiltonCategoryGuardResult {
   rolledBackFees: number;
   rejectedVerifiedFees: number;
   /** Failed for the first time: logged for a second look, still live. */
+  /**
+   * The live fees this step took down, or in a dry run would take down: failures confirmed by a
+   * second look, up to `limit`. `failures` also holds first looks and fees still waiting.
+   */
+  confirmedFeeIds: number[];
   flaggedFees: number;
   /** Failed again before their second look was due: still live. */
   awaitingSecondLook: number;
@@ -331,6 +336,7 @@ export async function runHamiltonCategoryGuard(
     failingFees: confirmed.length,
     rolledBackFees,
     rejectedVerifiedFees,
+    confirmedFeeIds: confirmed.slice(0, limit).map((failure) => failure.feePublishedId),
     flaggedFees: look.flagged,
     awaitingSecondLook: look.waiting,
     restoredFees: restore.restored,
@@ -409,7 +415,9 @@ const RESTORE_REFILES: ReadonlyMap<string, RegExp> = new Map([
   // v69 (#1753): a replaced, lost or stolen card, and an ATM dispute or a copy of a card sale, filed
   // as a non-network ATM fee (5/5 on source, Oct 17).
   ["atm_non_network>card_replacement", /replac|\blost\b|\bstolen\b/i],
-  ["atm_non_network>account_research", /\bdisput|\bcop(?:y|ies) of\b/i],
+  // v71 (#1773): verifying an ATM transaction (96092, "Verification of ATM Transaction (Plus fee
+  // charged by ATM owner/operator) | $3 each", Arrowhead, doc 21667) is research.
+  ["atm_non_network>account_research", /\bdisput|\bcop(?:y|ies) of\b|\bverification of\b/i],
   // v70 (Oct 17, each on its bank's stored line): an ATM-named bill payer service (147703, "e-Pay
   // (Bill Payer Service) without Checking and Debit/ATM Card | $6.95 per month") and a card charge on
   // early account closure (117628, "Account Closure ATM/Debit Card - if account closed within 12
@@ -479,7 +487,8 @@ interface LiveRefile extends Restore {
 /** Pure: whether a refile moves an excess activity fee. */
 export function movesExcessActivityFee(restore: Restore): boolean {
   return EXCESS_ACTIVITY_NAME.test(restore.row.fee_name) ||
-    refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to;
+    (restore.row.canonical_fee_key === "monthly_maintenance" &&
+      refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to);
 }
 
 /**

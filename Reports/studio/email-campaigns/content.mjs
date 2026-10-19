@@ -98,7 +98,7 @@ const welcome = {
         { type: "list", items: [
           "**Your schedule, fee by fee,** next to your peers' median and middle 50%.",
           "**Peers you pick** by charter, asset size, district or county, instead of an anonymous average.",
-          "**The source behind every figure:** the competitor's published schedule and the date we read it.",
+          "**A source for each compared fee:** the competitor's published schedule and the date we read it.",
           "**Committee reports** built from your peer set.",
         ] },
         { type: "cta", text: "See Hamilton plans", href: `${S}/subscribe`, sub: `Prefer a walkthrough first? [Ask for a demo](${S}/contact?source=demo).` },
@@ -136,7 +136,7 @@ const report = {
         { type: "cta", text: "Open your report", href: FIELD.reportUrl, sub: "Free, no login. Bookmark it." },
         // One line that holds for the benchmark reports and the sample Competitive Fee Position
         // Report alike (report_name covers both); section names differ between them.
-        { type: "p", text: "Start at the top. The findings come first, and every table names the institutions and the published schedules behind it." },
+        { type: "p", text: "Start at the top. The findings come first. The report shows coverage counts and explains its sources." },
         { type: "sign" },
       ],
     },
@@ -164,12 +164,12 @@ const report = {
         { type: "h1", text: "Your institution against the competitors you name" },
         { type: "p", text: "The Competitive Fee Position Report puts one institution's fee schedule next to the local competitors you list, fee by fee." },
         { type: "box", tone: "rule", title: "What's in it", items: [
-          "Each of your fees marked below, inside or above the middle 50% of your competitors' fees.",
+          "Each fee marked below, inside or above your competitors' middle 50%.",
           "The competitors you name, side by side with you.",
-          "A source for every figure: the competitor's published schedule and the date we read it.",
+          "The competitor's published schedule and its read date behind each compared fee.",
         ] },
-        { type: "cta", text: "Request your institution report", href: INSTITUTION_REPORT, sub: `Quoted ${REPORT_PRICE}. We check your market has enough published schedules, then reply within one business day with scope and price. [See a sample report](${SAMPLE_REPORT}).` },
-        { type: "p", text: "Or reply with your institution's name and the competitors you watch." },
+        { type: "cta", text: "Request your institution report", href: INSTITUTION_REPORT, sub: `Quoted ${REPORT_PRICE}. We check your market has enough published schedules and reply within one business day. [See a sample report](${SAMPLE_REPORT}).` },
+        { type: "p", text: "Or reply with your institution and the competitors you watch." },
         { type: "sign" },
       ],
     },
@@ -197,7 +197,7 @@ const explorer = {
       blocks: [
         { type: "kicker", text: "Following" },
         { type: "h1", text: "The page you're following" },
-        { type: "p", text: `You asked to follow ${FIELD.followName}. The figures on that page come from published schedules and update as new schedules are read.` },
+        { type: "p", text: `You asked to follow ${FIELD.followName}. Fee benchmarks come from published schedules and update as new schedules are read.` },
         { type: "cta", text: "Open the page", href: FIELD.followUrl, sub: "Free, no login." },
         { type: "box", tone: "term", title: "What you'll get", items: [
           "**Once a month:** your state's fee snapshot (the national one if you follow an institution), with how many institutions stand behind each number.",
@@ -253,12 +253,12 @@ const pro = {
     {
       key: "inspect-evidence",
       day: 4,
-      subject: "Check the source behind any figure",
+      subject: "Check the source behind a figure",
       preheader: "Trace a competitor's fee to the schedule it came from.",
       blocks: [
         { type: "kicker", text: "Setup · 3 of 5" },
-        { type: "h1", text: "Check the source behind any figure" },
-        { type: "p", text: "Before a number goes in front of your committee, you should be able to show where it came from. Each institution's public profile names the published fee schedule we read and the date we read it." },
+        { type: "h1", text: "Check the source behind a figure" },
+        { type: "p", text: "Before a number goes in front of your committee, you should be able to show where it came from. Each fee on an institution's public profile links to the schedule page it was read from, and the profile shows the date we last read that institution." },
         { type: "box", tone: "action", title: "Try it once", ordered: true, items: [
           "Open Hamilton and pick a fee where you and your peers differ.",
           "Find the competitor whose fee is furthest from yours, open its public profile on feeinsight.com, and follow the fee schedule link.",

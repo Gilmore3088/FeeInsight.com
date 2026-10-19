@@ -66,6 +66,21 @@ export function parseSuppliedFileName(fileName: string): SuppliedFileName | null
   };
 }
 
+/**
+ * The stored name for a PDF uploaded from an institution's own admin page, where the person never
+ * renames the file: a name that already follows the rule for this institution is kept, any other
+ * becomes `<id>__<short-name>__consumer.pdf` from the original name. Pure.
+ */
+export function suppliedFileNameFor(institutionId: number, originalName: string): string {
+  const parsed = parseSuppliedFileName(originalName);
+  if (parsed && parsed.institutionId === institutionId && parsed.audience === "consumer") {
+    return originalName.trim().split(/[\\/]/).pop() ?? originalName;
+  }
+  const base = (originalName.trim().split(/[\\/]/).pop() ?? "").replace(/\.pdf$/i, "");
+  const shortName = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "schedule";
+  return `${institutionId}__${shortName}__consumer.pdf`;
+}
+
 export interface HuntRow {
   /** 1-based line in the CSV, header included, so a report can name the line. */
   line: number;

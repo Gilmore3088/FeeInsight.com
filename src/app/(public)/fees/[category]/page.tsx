@@ -46,6 +46,7 @@ import { ExplorerChart, ExplorerMarkets, FeeExplorer } from "./fee-explorer";
 import { DotLegend, HeroRange, LockedRows, MarketDots, RelatedRanges } from "./exhibits";
 import { countedAs } from "../(index)/index-view";
 import { PAGE_CRUMBS, PAGE_HEADER } from "@/components/public/page-header";
+import { COUNT_DEFINITIONS } from "@/lib/headline-counts";
 
 interface PageProps {
   params: Promise<{ category: string }>;
@@ -343,6 +344,7 @@ export default async function FeeCategoryPage({ params }: PageProps) {
                 {tiers.length > 0 && (
                   <div className="space-y-2">
                     <h3 className="text-[15px] font-semibold text-ink">By asset size</h3>
+                    <p className="text-[12px] text-ink-muted">{COUNT_DEFINITIONS.groupSums}</p>
                     <div className="rounded-2xl border border-border bg-surface-0 px-4 py-2 sm:px-6">
                       {interactive ? (
                   <ExplorerMarkets dots={tiers} band={band} dim="tier" ariaLabel={`${plainName} median by asset size`} />
