@@ -379,7 +379,7 @@ describe("Hamilton answer quality (#1079)", () => {
     const goal = await readGoalScorecard(db);
     expect(queries.find((text) => text.includes("hamilton-paid-answer-eval"))).toContain("@.answers > 0");
     expect(goalBriefLines(goal).at(-1)).toBe(
-      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report.",
+      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report. Paid paths with fewer than 10 answers are small samples, not reliability estimates.",
     );
   });
 
@@ -422,4 +422,21 @@ describe("Deming's daily data checks on the scorecard (#1065)", () => {
     expect(goal.dataQuality?.lines[0]).toEqual({ catalog: "dollar", check: "duplicates", query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" });
     expect(goalBriefLines(goal).at(-1)).toBe("Data checks (2026-10-16): ALARM, 1 failed their threshold (dollar.duplicates).");
   });
+});
+
+describe("answer evaluation completeness", () => {
+  it("preserves completed/planned counts on a time-limited run and unknown counts on legacy runs", () => {
+    const measured = answerQualityFrom("2026-10-19T06:50:00Z",{institutions:17,planned:90,answers:51,passed:51,timedOut:true,
+      pro:{questions:24,planned:40,passed:21}});
+    expect(measured).toMatchObject({institutionsAsked:17,institutionsPlanned:90,proQuestionsAsked:24,proQuestionsPlanned:40,timedOut:true});
+    expect(answerQualityFrom("2026-10-19T06:50:00Z",{answers:51})).toMatchObject({institutionsAsked:null,institutionsPlanned:null});
+  });
+});
+
+it("prints the completed and planned samples without filling missing legacy counts", async () => {
+  const {db}=fakeDb([[/hamilton-answer-eval/,[{created_at:new Date("2026-10-19T06:50:00Z"),
+    detail:{institutions:17,planned:90,answers:51,passed:51,timedOut:true,pro:{questions:24,planned:40,passed:21}}}]]]);
+  const line=goalBriefLines(await readGoalScorecard(db)).find(line=>line.startsWith("Hamilton answers"));
+  expect(line).toContain("17 of 90 planned institutions asked, 24 of 40 Pro questions replayed");
+  expect(line).toContain("stopped at its time budget");
 });

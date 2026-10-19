@@ -18,7 +18,12 @@ export interface RegistryFeedFreshness {
   source: string;
   /** Newest partition that loaded rows (e.g. 2026Q2, 2026, 202608, current). */
   latestPeriod: string | null;
+  /** Last successful check, including a nonblocked empty response. */
   lastSuccessAt: string | null;
+  /** Latest recorded attempt (including claims and failures); absent on historical snapshots. */
+  lastAttemptAt?: string | null;
+  /** Latest retained receipt that actually loaded rows; absent on historical snapshots. */
+  lastLoadedAt?: string | null;
   nextAttemptAt: string | null;
   failed: number;
   scheduled: number;
@@ -84,6 +89,8 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
            MAX(fetched_at) FILTER (
              WHERE status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source'))
            ) AS last_success_at,
+           MAX(updated_at) AS last_attempt_at,
+           MAX(fetched_at) FILTER (WHERE status = 'succeeded' AND row_count > 0) AS last_loaded_at,
            MIN(next_attempt_after) FILTER (WHERE status IN ('scheduled', 'failed')) AS next_attempt_at,
            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
            COUNT(*) FILTER (WHERE status = 'scheduled')::int AS scheduled,
@@ -101,6 +108,8 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
     source: String(r.source),
     latestPeriod: r.latest_period ? String(r.latest_period) : null,
     lastSuccessAt: iso(r.last_success_at),
+    lastAttemptAt: iso(r.last_attempt_at),
+    lastLoadedAt: iso(r.last_loaded_at),
     nextAttemptAt: iso(r.next_attempt_at),
     failed: Number(r.failed),
     scheduled: Number(r.scheduled),

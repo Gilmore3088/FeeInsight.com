@@ -151,10 +151,10 @@ describe("buildSourceHealthReport", () => {
   it("gives the brief only the sources that are not fresh", () => {
     expect(sourceHealthLines(report)).toEqual([
       "Public data: 4 of 5 sources not fresh (1 failed, 1 empty, 1 stale, 1 skipped).",
-      "- failing: failed, 1 partition failed: timeout; never succeeded",
-      "- never: empty, nothing loaded yet; never succeeded",
+      "- failing: failed, 1 partition failed: timeout; no nonempty load recorded",
+      "- never: empty, nothing loaded yet; no nonempty load recorded",
       "- old: stale, last success 290 days ago; a monthly source is stale after 45",
-      "- held: skipped, held until James confirms the data terms; last success 2026-10-17",
+      "- held: skipped, held until James confirms the data terms; last nonempty load 2026-10-17; last successful check 2026-10-17",
     ]);
     expect(sourceHealthLines(null)).toEqual([]);
   });
@@ -162,8 +162,8 @@ describe("buildSourceHealthReport", () => {
   it("always names failed and empty sources, and caps the rest", () => {
     const lines = sourceHealthLines(report, 2);
     expect(lines.slice(1)).toEqual([
-      "- failing: failed, 1 partition failed: timeout; never succeeded",
-      "- never: empty, nothing loaded yet; never succeeded",
+      "- failing: failed, 1 partition failed: timeout; no nonempty load recorded",
+      "- never: empty, nothing loaded yet; no nonempty load recorded",
       "- and 2 more on /admin/data",
     ]);
     expect(BRIEF_SOURCE_LINES).toBeGreaterThan(0);
@@ -176,7 +176,7 @@ describe("buildSourceHealthReport", () => {
     const detail = sourceHealthDetail(report) as { sources: Array<Record<string, unknown>>; counts: unknown };
     expect(detail.counts).toEqual(report.counts);
     expect(detail.sources[0]).toEqual({
-      source: "failing", status: "failed", reason: "1 partition failed: timeout", cadence: "quarterly", last_success_at: null, latest_period: null,
+      source: "failing", status: "failed", reason: "1 partition failed: timeout", cadence: "quarterly", last_success_at: null, last_attempt_at: null, last_loaded_at: null, latest_period: null,
     });
   });
 });

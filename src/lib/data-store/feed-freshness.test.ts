@@ -30,6 +30,8 @@ describe("getRegistryFeedFreshness", () => {
         source: "fdic-financials",
         latestPeriod: "2026Q2",
         lastSuccessAt: "2026-10-05T11:17:43.000Z",
+        lastAttemptAt: null,
+        lastLoadedAt: null,
         nextAttemptAt: null,
         failed: 0,
         scheduled: 0,

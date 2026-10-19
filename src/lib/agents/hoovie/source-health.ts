@@ -55,6 +55,8 @@ export interface SourceHealth {
   cadence: HoovieCadence;
   /** The registry's last success (rows loaded, or a check that found nothing new). */
   lastSuccessAt: string | null;
+  lastAttemptAt?: string | null;
+  lastLoadedAt?: string | null;
   /** Newest partition that loaded rows. */
   latestPeriod: string | null;
 }
@@ -105,7 +107,10 @@ export function sourceHealth(
   now: Date,
 ): SourceHealth {
   const lastSuccessAt = feed?.lastSuccessAt ?? null;
-  const base = { source: contract.source, cadence: contract.cadence, lastSuccessAt, latestPeriod: feed?.latestPeriod ?? null };
+  const base = { source: contract.source, cadence: contract.cadence, lastSuccessAt, latestPeriod: feed?.latestPeriod ?? null,
+    lastAttemptAt: feed?.lastAttemptAt ?? null,
+    // Older snapshots did not separate check/load dates. Do not infer a load from an empty check.
+    lastLoadedAt: feed?.lastLoadedAt === undefined ? (feed?.succeeded ? lastSuccessAt : null) : feed.lastLoadedAt };
   const result = (status: SourceHealthStatus, reason: string): SourceHealth => ({ ...base, status, reason });
 
   if (skip) return result("skipped", skip);
@@ -198,7 +203,8 @@ function line(entry: SourceHealth): string {
   const text = `${entry.source}: ${entry.status}, ${entry.reason}`;
   // A stale or fresh reason already dates the last success.
   if (entry.status === "stale" || entry.status === "fresh") return text;
-  return `${text}; ${entry.lastSuccessAt ? `last success ${day(entry.lastSuccessAt)}` : "never succeeded"}`;
+  const loaded = entry.lastLoadedAt === undefined ? (entry.latestPeriod ? entry.lastSuccessAt : null) : entry.lastLoadedAt;
+  return `${text}; ${entry.lastAttemptAt ? `last attempt ${day(entry.lastAttemptAt)}; ` : ""}${loaded ? `last nonempty load ${day(loaded)}` : "no nonempty load recorded"}${entry.lastSuccessAt ? `; last successful check ${day(entry.lastSuccessAt)}` : ""}`;
 }
 
 /**
@@ -254,6 +260,8 @@ export function sourceHealthDetail(report: SourceHealthReport): Record<string, u
       reason: entry.reason,
       cadence: entry.cadence,
       last_success_at: entry.lastSuccessAt,
+      last_attempt_at: entry.lastAttemptAt ?? null,
+      last_loaded_at: entry.lastLoadedAt ?? null,
       latest_period: entry.latestPeriod,
     })),
   };
