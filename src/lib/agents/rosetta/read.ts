@@ -1,3 +1,4 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { createHash } from "crypto";
 import { feesSentToDarwinSql, THIN_DOCUMENT_MAX_FEES, thinRereadKindSql } from "@/lib/agents/thin-document";
 
@@ -2236,7 +2237,7 @@ export async function runRosettaRead(
   options: RunRosettaReadOptions,
 ): Promise<RunRosettaReadResult> {
   const db = options.db ?? sql;
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const pdfTextExtractor = options.pdfTextExtractor ?? extractPdfText;
   const limit = boundedLimit(options.limit);
   const dryRun = Boolean(options.dryRun);

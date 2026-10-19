@@ -1,4 +1,5 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
@@ -526,7 +527,7 @@ async function executeAgenticStep(
         try {
           addressVariants = await runAddressVariantFetch({
             db: sql,
-            fetchImpl: fetch,
+            fetchImpl: feeSourceFetch,
             runId: run.id,
             stepId: step.id,
             institutionId: numericRunParam(params, ["institution_id"]) ?? null,
@@ -542,7 +543,7 @@ async function executeAgenticStep(
         try {
           savedLinks = await runSavedLinkFetch({
             db: sql,
-            fetchImpl: fetch,
+            fetchImpl: feeSourceFetch,
             runId: run.id,
             stepId: step.id,
             institutionId: numericRunParam(params, ["institution_id"]) ?? null,
