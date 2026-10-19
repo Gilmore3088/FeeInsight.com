@@ -98,7 +98,8 @@ describe.skipIf(!connection)("canonical public fee applicability in PostgreSQL (
     const detail = (await getFeeRowDetails([11])).get(11)!;
     expect(detail).toMatchObject({ amount:5, frequency, account:"Alpha", conditions:"Available only to existing account holders." });
     expect(detail.context?.stamp).not.toBe(old.context?.stamp);
-    expect(chargedWhen(detail.frequency)).toBe(UNIT_LABELS[frequency]);
+    // Preserve the explorer's existing hourly wording over the shared fallback label.
+    expect(chargedWhen(detail.frequency)).toBe(frequency === "hourly" ? "an hour" : UNIT_LABELS[frequency]);
     await getFeeEvidence([11]);
     expect((await getIndexRows("money_order")).sort((a,b) => a.id-b.id)).toEqual(compared);
   });
