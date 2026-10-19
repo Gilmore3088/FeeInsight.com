@@ -6,7 +6,7 @@ export function LiveSourceAuditPanel({current,history}:{current:LiveAuditCompone
   const validated=validateLiveAuditComponent(current),s=validated?.summary;
   const retained=history.map(row=>({date:row.date,component:readHistoricalLiveSourceAudit(row.detail),unavailable:readHistoricalLiveAuditUnavailable(row.detail)}));
   return <section className="admin-card space-y-3 p-4" aria-labelledby="live-source-title">
-    <h2 id="live-source-title" className="text-sm font-semibold">Live-source diagnostic</h2>
+    <h3 id="live-source-title" className="text-sm font-semibold">Live-source support</h3>
     <p className="text-xs text-gray-500">Automated checks of freshly observed official schedules using the shared source validator. Missing-fee recall is unmeasured. Launch accuracy remains James’s weekly 50 whole institutions.</p>
     <p className="text-sm" role="status">{s?`${s.state.replaceAll("_"," ")}: ${s.supported} supported, ${s.mismatch} positively contradicted, ${s.unknown} unknown and ${s.unattempted} unattempted of ${s.selected} selected fees (${s.institutions} institutions).`:"Unavailable: no validated current draw."}</p>
     {s?<p className="text-xs">Draw {s.day}; read as of {s.componentAsOf}; observations belong to the frozen window starting {s.asOf}; window ends {s.deadline}. {s.capture.pending} captures pending, {s.capture.captured} captured, {s.capture.failed+s.capture.blocked} failed or blocked. Current receipts are read live; retained archives are listed below. {s.reason??""}</p>:null}

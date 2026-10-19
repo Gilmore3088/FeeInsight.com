@@ -29,13 +29,22 @@ history control. A copied, instrumented control with 200ms per-bootstrap admissi
 completed all 70 pairs and final history assertions in 39.2 seconds; no operation approached its
 existing receipt deadline. Only that aggregate integration-case cap is now 60 seconds; the full
 history and every assertion remain. This controlled evidence does not establish the CI timing cause.
+Final acceptance review also caught a reader gap: the primary goal and execution headline still
+showed the stored-copy score while live evidence appeared only in a separate panel. Actual page
+and headline regressions reproduced the old high score and the hidden no-snapshot goal. The
+primary goal now consumes the current validated live draw, including unknown/unavailable states
+and absent snapshots, without a stored or historical fallback. Stored-copy support and its
+unchanged weekly series are explicitly secondary diagnostics; live daily cohorts have no generic
+week delta, 99.5% qualification or launch-certification claim.
 The archive's ordered immutable origin IDs/manifest digest does not reconstruct full origin bytes
 after retention. Missing/over-cap/expired evidence stays unknown or explicitly unavailable.
 
 **Guard:** `src/lib/agents/deming/live-source-audit.test.ts`, `live-source-audit-records.test.ts`,
 `live-source-observer.test.ts`; `src/lib/data-store/live-source-audit.db.test.ts`,
 `live-source-sql.test.ts`; `src/lib/agents/scoreboard-execution.db.test.ts` and
-`src/app/admin/scoreboard/live-source-audit-panel.test.tsx`. The actual SQL suite belongs to CI's
+`src/app/admin/scoreboard/live-source-audit-panel.test.tsx`,
+`page.live-source-goal.test.tsx`; `src/lib/agents/goal-scorecard.test.ts` and
+`daily-brief.test.ts`. The actual SQL suite belongs to CI's
 `E2E_TESTS` inventory. Required broad checks/build and exact-head review are recorded with the PR.
 
 This is a bounded shared-validator diagnostic and consumed capture/history path, not an executed

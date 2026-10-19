@@ -89,8 +89,8 @@ describe("accuracy target (James, Oct 15)", () => {
     expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("insufficient sample");
     expect(goalBriefLines(goalWith(3383, 3400)).join("\n")).toContain("not met on the 95% lower bound");
     expect(goalBriefLines(goalWith(3400, 3400)).join("\n")).toContain("met on the 95% lower bound");
-    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Automated stored-copy audit: 99.49% over the last 7 days");
-    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Automated stored-copy audit: 99.50% over the last 7 days");
+    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Stored-copy support (secondary): 99.49% over the last 7 days");
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Stored-copy support (secondary): 99.50% over the last 7 days");
   });
 });
 
@@ -289,7 +289,7 @@ describe("readGoalScorecard", () => {
     expect(weekAgo).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
     expect(weekAgo).toContain("quarantined_at IS NULL OR fp.quarantined_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
-    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, stored-copy support 95.0% (7 days), wrong after publish 1.0%");
+    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, live-source support unavailable, wrong after publish 1.0%");
   });
 
   it("leaves a failed read null and keeps the rest", async () => {
@@ -299,7 +299,7 @@ describe("readGoalScorecard", () => {
     errors.mockRestore();
     expect(goal.accuracy).toBeNull();
     expect(goal.liveInstitutions?.live).toBe(3900);
-    expect(goalBriefLines(goal)).toContain("Automated stored-copy audit: could not be read today.");
+    expect(goalBriefLines(goal)).toContain("Stored-copy support (secondary): could not be read today.");
   });
 });
 

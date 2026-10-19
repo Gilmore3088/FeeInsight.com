@@ -6,7 +6,7 @@ export { poolFreshAudits, wilsonRange } from "@/lib/agents/deming/accuracy-measu
 import { poolFreshAudits } from "@/lib/agents/deming/accuracy-measure";
 import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
-import { liveAuditBrief,type LiveAuditComponent } from "./deming/live-source-audit-records";
+import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -957,9 +957,13 @@ const signedCount = (value: number) => `${value > 0 ? "+" : ""}${count(value)}`;
 /** One clause for the step summary: the three numbers the goal turns on. */
 export function goalHeadline(goal: GoalScorecard): string {
   const c = goal.coverageCells;
+  const live = validateLiveAuditComponent(goal.liveSourceAudit)?.summary;
+  const sourceSupport = live
+    ? `live-source support ${live.support == null ? "unmeasured" : `${pct(live.support)} conditional`} (${live.state.replaceAll("_", " ")}; ${count(live.supported + live.mismatch)} scorable of ${count(live.selected)}, ${count(live.unknown)} unknown, ${count(live.unattempted)} unattempted)`
+    : "live-source support unavailable";
   return [
     c ? `${c.readyCells} of ${c.totalCells} groups covered` : "coverage n/a",
-    `stored-copy support ${pct(goal.accuracy?.accuracy)} (7 days)`,
+    sourceSupport,
     `wrong after publish ${pct(goal.wrongAfterPublish?.rate)}`,
   ].join(", ");
 }
@@ -981,10 +985,10 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
     ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days${live.droppedThisWeek == null ? "" : ` and ${count(live.droppedThisWeek)} dropped (net ${signedCount(live.addedThisWeek - live.droppedThisWeek)})`}.`
     : "Institutions with live fees: could not be read today.");
   const a = goal.accuracy;
-  lines.push(!a ? "Automated stored-copy audit: could not be read today."
+  lines.push(!a ? "Stored-copy support (secondary): could not be read today."
     : a.accuracy == null
-      ? `Automated stored-copy audit: not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
-      : `Automated stored-copy audit: ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${formatAccuracyBound(a.range.low, "low")}–${formatAccuracyBound(a.range.high, "high")})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees supported, ${a.audits} Deming audits; diagnostic target ${ACCURACY_TARGET_LABEL}, ${accuracyStatusLabel(a)}.`);
+      ? `Stored-copy support (secondary): not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
+      : `Stored-copy support (secondary): ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${formatAccuracyBound(a.range.low, "low")}–${formatAccuracyBound(a.range.high, "high")})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees supported, ${a.audits} Deming audits; diagnostic target ${ACCURACY_TARGET_LABEL}, ${accuracyStatusLabel(a)}.`);
   const w = goal.wrongAfterPublish;
   lines.push(w
     ? `Wrong after publish: ${pct(w.rate)} (${count(w.wrong)} of ${count(w.published)} fees published in the last 7 days taken down as errors).`
