@@ -5,6 +5,7 @@ import { KNOX_RULES_STRATEGY } from "./knox/specialists";
 import { SOURCE_CHECK_REASON, SOURCE_CHECK_RESTORE_PREFIX, SOURCE_CHECK_STRATEGY } from "./hamilton/source-check";
 import { GUTENBERG_AGENT, PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "@/lib/agents/gutenberg/names";
 import { HOOVIE_AGENT, registryLedgerNames } from "@/lib/agents/hoovie/names";
+import { pdfStackedRepairSchemaReady } from "./rosetta/pdf-stacked-repair";
 
 /**
  * Agent health check: the same numbers for every agent every day, stored with the daily
@@ -394,6 +395,7 @@ export function hoovieRules(n: HealthNumbers): HealthRule[] {
 // ---------------------------------------------------------------- Rosetta
 
 export async function readRosettaNumbers(db: SqlTag): Promise<HealthNumbers> {
+  const { countPdfStackedRepairsDue } = await import("./rosetta/read");
   const common = await readCommon(db, "rosetta");
   const [row] = await db`
     SELECT COUNT(*) FILTER (WHERE outcome IN ('ok', 'ok_partial'))::int AS read_ok,
@@ -409,6 +411,7 @@ export async function readRosettaNumbers(db: SqlTag): Promise<HealthNumbers> {
     wrongDocument: num(row?.wrong_document),
     readFailed: num(row?.read_failed),
     repeatFailures: await repeatFailures(db, "read"),
+    stackedPdfRepairsDue: await pdfStackedRepairSchemaReady(db) ? await countPdfStackedRepairsDue(db) : null,
   };
 }
 

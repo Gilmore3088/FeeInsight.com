@@ -71,6 +71,8 @@ import {
 } from "@/lib/agents/rosetta/ocr";
 import { PDF_LAYOUT_VERSION } from "@/lib/agents/rosetta/pdf-layout";
 import { extractPdfDocumentText as extractPdfText, type PdfTextExtraction } from "./pdf-document-text";
+import { PDF_PROSE_REREAD_VERSION, PDF_STACKED_REPAIR_VERSION } from "./reader-versions";
+import { pdfStackedRepairDueSql, PDF_STACKED_REPAIR_MAX_PER_RUN, PDF_STACKED_REPAIR_STRATEGY } from "./pdf-stacked-repair";
 import {
   documentKindColumnsReady,
   ROSETTA_TABLE_ROWS_VERSION,
@@ -107,6 +109,8 @@ interface ReadCandidateRow {
   do_not_retry?: unknown;
   /** True when an older reader version already produced a text for these bytes. */
   is_reread?: boolean | null;
+  /** A one-time, free current-copy check for interleaved stacked price columns. */
+  pdf_stacked_repair_due?: boolean | null;
   /**
    * True when these bytes were reopened (see `reopenScriptLoadedFeePages`) and not read
    * since: the failure recorded in the playbook before the reopen no longer stands.
@@ -324,7 +328,8 @@ export async function fetchWithTimeout(fetchImpl: Fetcher, url: string): Promise
 }
 
 /**
- * Read strategies by detected format. Bump ROSETTA_READ_VERSION when any of them changes.
+ * Primary read strategies. Global reader changes bump ROSETTA_READ_VERSION;
+ * scoped layout5 repairs use PDF_STACKED_REPAIR_VERSION without a global retry wave.
  * Version 2: HTML through a parsed DOM (one line per table row) and PDF lines rebuilt
  * from item positions. Completed texts from an older version that Knox found nothing
  * in are read again once.
@@ -351,6 +356,7 @@ export const ROSETTA_REOPEN_LIMIT = 100;
 export const AUXILIARY_READ_STRATEGIES = [
   PAGE_CHECK_STRATEGY,
   REOPEN_STRATEGY,
+  PDF_STACKED_REPAIR_STRATEGY,
   TABLE_ROWS_STRATEGY,
   OCR_STRATEGY,
   JS_FALLBACK_STRATEGY,
@@ -704,7 +710,10 @@ async function readCandidate(
     normalizedText: string | null = null,
   ) => ({
     normalizedText,
-    result: { ...base, ...fields, durationMs: Date.now() - startedAt },
+    result: { ...base, ...fields,
+      ...(row.pdf_stacked_repair_due && fields.status !== "completed" && fields.attemptOutcome
+        ? { strategy: PDF_STACKED_REPAIR_STRATEGY } : {}),
+      durationMs: Date.now() - startedAt },
   });
 
   if (!sourceUrl) {
@@ -716,9 +725,15 @@ async function readCandidate(
     });
   }
 
+  if (row.pdf_stacked_repair_due && (!ctx.vault?.configured || !isVaultKey(row.document_r2_key))) {
+    return finish({ status: "failed", error: "Stacked-column repair requires configured stored vault access", attemptOutcome: "evidence_mismatch" });
+  }
+
   const loaded = await loadDocumentBytes(
     { sourceUrl, vaultKey: row.document_r2_key, storedContentType: row.stored_content_type },
-    ctx.fetchImpl,
+    row.pdf_stacked_repair_due
+      ? async () => new Response("Stored PDF required for column repair", { status: 503 })
+      : ctx.fetchImpl,
     ctx.vault,
   );
   base.contentType = loaded.contentType;
@@ -728,6 +743,10 @@ async function readCandidate(
   }
   const { bytes, finalUrl } = loaded;
   base.fromVault = loaded.fromVault;
+  if (row.pdf_stacked_repair_due && (!loaded.fromVault
+    || createHash("sha256").update(bytes).digest("hex") !== row.content_hash)) {
+    return finish({ status: "failed", error: "Stacked-column repair vault bytes do not match the selected source hash", attemptOutcome: "parse_error", strategy: DOCUMENT_ACCESS_STRATEGY });
+  }
 
   // The bytes, not the URL or the declared type, decide how to read the document.
   const format = detectFormat(bytes, base.contentType, finalUrl);
@@ -822,7 +841,7 @@ async function readCandidate(
         { status: "needs_ocr", charCount: normalizedText.length, error, attemptOutcome: "scanned_pdf", format: "pdf_scanned" },
         normalizedText,
       );
-    if (!ctx.ocr) return needsOcr(scanError);
+    if (!ctx.ocr || row.pdf_stacked_repair_due) return needsOcr(scanError);
     if (ctx.ocrBudget.left <= 0 && extracted.totalPages <= OCR_MAX_PAGES) {
       // Nothing is written: the scan is selected again next run, when OCR has room.
       return finish({ status: "deferred", error: "OCR allowance for this run used up", attemptOutcome: null, format: "pdf_scanned" });
@@ -925,8 +944,7 @@ async function readCandidate(
 }
 
 
-async function selectCandidates(
-  db: SqlTag,
+export function rosettaReadCandidatesQuery(
   limit: number,
   learning: boolean,
   institutionId?: number,
@@ -935,7 +953,8 @@ async function selectCandidates(
   companionStreams = false,
   textSurvival = false,
   currentCopy = false,
-): Promise<ReadCandidateRow[]> {
+  stackedRepair: "include" | "only" | "exclude" = "include",
+): { query: string; params: Array<number | string | string[]> } {
   const params: Array<number | string | string[]> = [limit];
   const filters: string[] = [];
   if (institutionId) {
@@ -958,7 +977,18 @@ async function selectCandidates(
   // A scan that an older OCR version gave up on, waiting for its one read with the current one.
   let ocrRereadable = "FALSE";
   let ocrRetryDocument = "FALSE";
+  let stackedRepairDue = "FALSE";
   if (learning) {
+    // This repair reads existing vault bytes only. It cannot discover a new source
+    // or create a paid-reader retry wave.
+    if (vaultSchema && currentCopy && companionStreams) stackedRepairDue = `EXISTS (
+      SELECT 1 FROM agent_source_texts stacked_text
+       WHERE stacked_text.source_document_id = cr.id
+         AND stacked_text.source_hash IS NOT DISTINCT FROM cr.content_hash
+         AND cr.superseded_by_id IS NULL AND cr.duplicate_of_id IS NULL
+         AND cr.document_r2_key = left(cr.content_hash, 2) || '/' || cr.content_hash
+         AND ${pdfStackedRepairDueSql("stacked_text")}
+    )`;
     // Skip inputs that already failed permanently with the current reader version.
     // Capture each placeholder as it is pushed: later pushes must not shift earlier ones.
     params.push(ROSETTA_READ_VERSION);
@@ -987,7 +1017,7 @@ async function selectCandidates(
     // column-aware layout (pdf-layout.ts, layout version 2).
     params.push(PRIMARY_READERS.pdf);
     const pdfLayoutParam = `$${params.length}`;
-    params.push(PDF_LAYOUT_VERSION);
+    params.push(PDF_PROSE_REREAD_VERSION);
     const pdfLayoutVersionParam = `$${params.length}`;
     params.push(INTERLEAVED_PROSE_CELL_PATTERN);
     const interleavedPatternParam = `$${params.length}`;
@@ -1172,6 +1202,12 @@ async function selectCandidates(
              ) AS reader_record`;
     }
     rereadable = `(
+              ${vaultSchema && currentCopy && companionStreams ? `(${pdfStackedRepairDueSql("adt")}
+                AND adt.source_document_id = cr.id
+                AND adt.source_hash IS NOT DISTINCT FROM cr.content_hash
+                AND cr.superseded_by_id IS NULL AND cr.duplicate_of_id IS NULL
+                AND cr.document_r2_key = left(cr.content_hash, 2) || '/' || cr.content_hash)` : "FALSE"}
+              OR
               ${lostTextRereadable}
               OR ${ocrRereadable}
               OR (
@@ -1302,13 +1338,16 @@ async function selectCandidates(
              cr.companion_source_id` : "";
   const sameStream = companionStreams ? "AND newer.companion_source_id IS NOT DISTINCT FROM cr.companion_source_id" : "";
   const companionPage = companionStreams ? "cr.companion_source_id IS NOT NULL" : "FALSE";
-  return db.unsafe<ReadCandidateRow[]>(
-    `
+  if (stackedRepair === "only") filters.push(`AND ${stackedRepairDue}`);
+  if (stackedRepair === "exclude") filters.push(`AND NOT ${stackedRepairDue}`);
+  return {
+    query: `
       SELECT cr.id AS source_document_id,
              cr.institution_id,
              ct.institution_name,
              cr.document_url,
-             cr.content_hash${playbookColumns}${survivalColumns}${vaultColumns}${companionColumns}
+             cr.content_hash,
+             ${stackedRepairDue} AS pdf_stacked_repair_due${playbookColumns}${survivalColumns}${vaultColumns}${companionColumns}
         FROM source_documents cr
         JOIN institution_sources ct ON ct.id = cr.institution_id
         LEFT JOIN institution_source_profiles profile
@@ -1355,7 +1394,30 @@ async function selectCandidates(
        LIMIT $1
     `,
     params,
-  );
+  };
+}
+
+async function selectCandidates(db: SqlTag, ...args: Parameters<typeof rosettaReadCandidatesQuery>): Promise<ReadCandidateRow[]> {
+  const { query, params } = rosettaReadCandidatesQuery(...args);
+  return db.unsafe<ReadCandidateRow[]>(query, params);
+}
+
+/** Read-only, full owner selection shared with state readiness and Bayes's ledger. */
+export function pdfStackedRepairsDueQuery(stateCode?: string): { query: string; params: Array<number | string | string[]> } {
+  const selection = rosettaReadCandidatesQuery(2_147_483_647, true, undefined, stateCode, true, true, true, true, "only");
+  return { query: `SELECT COUNT(*) AS due FROM (${selection.query}) stacked_repairs`, params: selection.params };
+}
+
+/** Same due predicate, with one-row existence semantics for the lane scheduler. */
+export function pdfStackedRepairsPendingQuery(stateCode: string): { query: string; params: Array<number | string | string[]> } {
+  const selection = rosettaReadCandidatesQuery(1, true, undefined, stateCode, true, true, true, true, "only");
+  return { query: `SELECT EXISTS (${selection.query}) AS repair_due`, params: selection.params };
+}
+
+export async function countPdfStackedRepairsDue(db: SqlTag): Promise<number> {
+  const { query, params } = pdfStackedRepairsDueQuery();
+  const [row] = await db.unsafe<Array<{ due: number | string }>>(query, params);
+  return Number(row?.due ?? 0);
 }
 
 function readStrategyForResult(result: ReadResult): "pdf_text" | "html_dom" | "browser_render" | "ocr" | "manual_review" | null {
@@ -1960,7 +2022,7 @@ async function settleRead(
 ): Promise<"sent_back" | "handed_to_magellan" | null> {
   const { learning, vaultSchema, textColumns } = env;
   // A companion page's reads stay out of the bank's playbook (its main fee link's).
-  const foldIntoPlaybook = row.companion_source_id == null;
+  const foldIntoPlaybook = row.companion_source_id == null && !(row.pdf_stacked_repair_due && result.status !== "completed");
   let settled: "sent_back" | "handed_to_magellan" | null = null;
   // A re-read replaces the earlier text only with a better answer; otherwise the old
   // text stays and only the attempt is logged. A text whose fees did not hold up still
@@ -1970,11 +2032,12 @@ async function settleRead(
     row.last_lost_text != null &&
     !(result.status === "completed" && normalizedText != null && rungTextNotWorse(normalizedText, row.last_lost_text));
   const keepEarlierText =
-    keepLostText || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
+    keepLostText || (row.pdf_stacked_repair_due && result.status !== "completed")
+    || (result.reread && result.status !== "completed" && result.status !== "wrong_document");
   if (!keepEarlierText) await recordReadResult(db, env.runId, result, normalizedText, textColumns);
   if (keepLostText) {
     // Only the attempt below is logged.
-  } else if (result.status === "wrong_document" || (result.handoff && !keepEarlierText)) {
+  } else if (!keepEarlierText && (result.status === "wrong_document" || result.handoff)) {
     if (
       await sendBackToMagellan(db, {
         institutionId: result.institutionId,
@@ -1986,7 +2049,7 @@ async function settleRead(
     ) {
       settled = result.handoff ? "handed_to_magellan" : "sent_back";
     }
-  } else if (await isUnreachableLink(db, result)) {
+  } else if (!row.pdf_stacked_repair_due && await isUnreachableLink(db, result)) {
     if (
       await sendBackToMagellan(db, {
         institutionId: result.institutionId,
@@ -2006,7 +2069,8 @@ async function settleRead(
       sourceDocumentId: result.sourceDocumentId,
       stage: "read",
       strategy: result.strategy ?? `read.${result.documentType ?? "unknown"}`,
-      version: result.strategy === DOCUMENT_ACCESS_STRATEGY ? ROSETTA_DOCUMENT_ACCESS_VERSION : ROSETTA_READ_VERSION,
+      version: result.strategy === PDF_STACKED_REPAIR_STRATEGY ? PDF_STACKED_REPAIR_VERSION
+        : result.strategy === DOCUMENT_ACCESS_STRATEGY ? ROSETTA_DOCUMENT_ACCESS_VERSION : ROSETTA_READ_VERSION,
       fingerprint: result.sourceHash,
       outcome: result.attemptOutcome,
       yieldCount: result.charCount,
@@ -2026,6 +2090,8 @@ async function settleRead(
         reader: result.reader,
         reader_version: ROSETTA_READ_VERSION,
         pdf_layout: result.reader === PRIMARY_READERS.pdf ? PDF_LAYOUT_VERSION : undefined,
+        pdf_stacked_requested: row.pdf_stacked_repair_due ? PDF_STACKED_REPAIR_VERSION : undefined,
+        pdf_stacked: row.pdf_stacked_repair_due && result.reader === PRIMARY_READERS.pdf && result.status === "completed" ? PDF_STACKED_REPAIR_VERSION : undefined,
         reread: result.reread,
         escalation: result.escalation ?? null,
         page_check: result.pageCheck,
@@ -2222,17 +2288,18 @@ export async function runRosettaRead(
         return { ready: false, batches: [], written: 0 } as BatchReviewResult;
       })
     : { ready: false, batches: [], written: 0 };
-  const rows = await selectCandidates(
-    db,
-    limit,
-    learning,
-    options.institutionId,
-    options.stateCode,
-    vaultSchema,
-    companionStreams,
-    textSurvivalReady,
-    currentCopy,
-  );
+  const selectionArgs = [
+    learning, options.institutionId, options.stateCode, vaultSchema,
+    companionStreams, textSurvivalReady, currentCopy,
+  ] as const;
+  const repairs = learning && vaultSchema && companionStreams && currentCopy
+    ? (await selectCandidates(db, Math.min(limit, PDF_STACKED_REPAIR_MAX_PER_RUN), ...selectionArgs, "only"))
+      .filter((row) => row.pdf_stacked_repair_due === true)
+    : [];
+  const ordinary = repairs.length < limit
+    ? await selectCandidates(db, limit - repairs.length, ...selectionArgs, "exclude")
+    : [];
+  const rows = [...ordinary, ...repairs];
 
   // Free OCR is local work, so a dry run skips it. The worker starts on the first scan.
   const ownsOcr = !options.scannedPdfReader;

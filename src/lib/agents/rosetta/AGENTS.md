@@ -37,16 +37,38 @@ Rosetta owns source text normalization.
   sentence took its price from the next column's sentence. A gutter is found by how many
   lines cross it (layout version 3), so a PDF that draws each letter as its own item, with
   a full-width form below its columns, is read column by column too. Fee tables, and fee lists set
-  side by side, keep the row-by-row reading. A PDF text an older layout read across its
+  side by side, keep the row-by-row reading. Layout 5 additionally reads two independent
+  stacked label/next-line bullet-price lists as columns: each band needs repeated own
+  pairs, sufficient width and a gutter. Mixed label/amount table rows, monetary or waiver
+  gutter crossings and nested cell columns refuse that detector and retain the earlier
+  baseline reading. A PDF text an older layout read across its
   columns (`INTERLEAVED_PROSE_CELLS` prose cell breaks or more) is read once more. Word files (.docx) are unzipped and read the same way (`read.docx_text`,
   `docx.ts`): a paragraph per line, a tab as a cell break, a table row per line. A
   legacy binary .doc stays `unsupported_format`. Knox pairs fees and amounts per line,
   so keep that contract.
-- Bump `ROSETTA_READ_VERSION` when a reader changes. Completed texts from an older
+- Global reader changes bump `ROSETTA_READ_VERSION`. Completed texts from an older
   version with fewer than `REREAD_MAX_KNOX_FEES` (5) Knox fees are read once more with
   the current reader, so an institution whose flattened table gave up one fee gets its
   whole schedule. Texts with more Knox fees are left alone, and a failed re-read keeps
   the earlier text.
+- Scoped layout 5 repairs (#2219) keep the global reader 3 and prose-layout 4 replay floors
+  settled (`PDF_PROSE_REREAD_VERSION`). `PDF_STACKED_REPAIR_VERSION` v1 makes only current
+  completed PDF-layout texts with at least three crossed bullet-price cells and three
+  standalone bullet-price lines due for a free geometry check. The complete owner query
+  also keeps current-copy, companion-stream, source/profile/access and prior-attempt
+  guards. It requires a content-addressed vault key matching the selected source hash.
+  At most four repair checks run per read step; they reserve part of the existing step
+  limit, never expand it. Unavailable vault configuration, missing bytes or mismatched hashes keep the earlier
+  text, make no outside request and leave one explicit failed request for review rather
+  than retrying every lane run. Failed requests use `read.pdf_stacked_repair` v1 and do
+  not enter the ordinary reader's playbook or settle its retries.
+  Each requested check records `detail.pdf_stacked_requested`; only a completed PDF
+  check records `detail.pdf_stacked`. The same source/version settles once, including
+  unchanged geometry. Bayes counts successful checks and failed-review exclusions
+  separately. State readiness first checks the repair capability schema, preserving ordinary backlog
+  on older schemas, then uses the owner's exact query with LIMIT 1/EXISTS; Bayes
+  and daily health (`stackedPdfRepairsDue`) use its full count. Reading a better text
+  does not itself retire previously verified or published wrong fees.
 - No bank is lost to its document's format. Readers escalate within the same document,
   free first, and every try is a `pipeline_attempts` row (stage `read`, own strategy,
   version, outcome, cost):
@@ -249,7 +271,8 @@ Change this table and `agent-health.ts` in the same PR.
 | Steps do not fail | `stepsFailed` (24 h) | 0 |
 | No document fails the same way 3+ times a day | `repeatFailures` (read: 404, 403, 410, network, timeout, 5xx, 429) | 0 |
 
-Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`.
+Also recorded, without a rule: `stepsCompleted`, `spendUsd`, `readOk`, `wrongDocument`, `readFailed`,
+`stackedPdfRepairsDue` (the same complete owner selection Bayes counts).
 
 ## Current versions
 
@@ -262,7 +285,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_JS_FALLBACK_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_OCR_VERSION` | — | v2 | `rosetta/reader-versions.ts` |
 | `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
-| `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
+| `PDF_LAYOUT_VERSION` | — | v5 | `rosetta/reader-versions.ts` |
+| `PDF_PROSE_REREAD_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
+| `PDF_STACKED_REPAIR_VERSION` | `read.pdf_layout` scoped check | v1 | `rosetta/reader-versions.ts` |
 | `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
 | `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |

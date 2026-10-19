@@ -62,6 +62,7 @@ import {
   readColdCallRows,
   type ColdCallRow,
 } from "./cold-reads";
+import { ncuaCallMeasure } from "./ncua-call-measures";
 
 /**
  * One safe query over the data catalog, for Hamilton's tools and the site. The caller names a
@@ -190,6 +191,16 @@ export type QueryDataResult =
       note?: string;
       /** Which index read the fee figures came from (#1924), so an answer can cite it; only where the read is stamped. */
       dataset?: ReturnType<typeof datasetCitation>;
+      /** Curated call-report semantics to preserve when Hamilton explains or compares figures. */
+      measure_metadata?: {
+        item_code: string;
+        name: string;
+        source: string;
+        publisher: string;
+        unit: string;
+        period_basis: string;
+        caveat: string;
+      };
     }
   | { ok: false; measure: string; reason: string };
 
@@ -568,7 +579,8 @@ async function queryFee(input: QueryDataInput, category: string): Promise<QueryD
  * institutions, or every filer. Dollar lines come back in dollars whichever regulator filed them.
  */
 async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryDataResult> {
-  const entries = callReportEntries();
+  const measure = ncuaCallMeasure(itemKey);
+  const entries = callReportEntries().filter((entry) => !measure || entry.id === CALL_REPORT_ROW_SOURCES.ncua);
   const servable = entries.filter((e) => e.servable);
   if (servable.length === 0) return refuse(input.measure, entries[0]?.notServableReason ?? "Call-report lines may not be shown to customers.");
   const rowSources = Object.entries(CALL_REPORT_ROW_SOURCES)
@@ -578,6 +590,17 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
   const to = input.period?.to ? periodMonths(input.period.to).end : null;
   const limit = Math.min(input.limit ?? QUERY_DATA_DEFAULT_LIMIT, QUERY_DATA_MAX_LIMIT);
   const { scope } = input;
+  const metadata = measure ? {
+    measure_metadata: {
+      item_code: measure.code,
+      name: measure.name,
+      source: CALL_REPORT_ROW_SOURCES.ncua,
+      publisher: servable[0].publisher,
+      unit: measure.unit,
+      period_basis: measure.periodBasis,
+      caveat: measure.caveat,
+    },
+  } : {};
   const citation = (
     rows: Array<{ source_url: string | null; fetched_at: string | Date | null; period: string }>,
     rowSourcesSeen: string[],
@@ -602,6 +625,7 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
       ok: true,
       measure: input.measure,
       scope: scope.kind,
+      ...metadata,
       rows: rows.map((r) => ({
         period: r.period,
         value: r.value,
@@ -610,11 +634,12 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
         item_code: r.item_code,
         item_description: r.item_description,
         schedule: r.schedule,
+        source: r.source,
       })),
       unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
       citation: citation(rows, [...new Set(rows.map((r) => r.source))]),
       ...(rows.length === 0
-        ? { note: `This institution has no filed figures for this line in the loaded quarters.${coldNote ? ` ${coldNote}` : ""}` }
+        ? { note: `${measure ? `This institution has no comparable loaded figures for this line with unit ${measure.unit} and period basis ${measure.periodBasis}.` : "This institution has no filed figures for this line in the loaded quarters."}${coldNote ? ` ${coldNote}` : ""}` }
         : coldNote ? { note: coldNote } : {}),
     };
   }
@@ -624,7 +649,7 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
   let label: string;
   let memberIds: number[] | null;
   if (scope.kind === "national") {
-    label = "All filers";
+    label = measure ? "NCUA credit union filers" : "All filers";
     memberIds = null;
   } else {
     let resolved: ResolvedPeerSet;
@@ -648,7 +673,7 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     label = resolved.label;
     memberIds = await peerSetMemberIds(resolved);
     if (memberIds.length === 0) {
-      return { ok: true, measure: input.measure, scope: scope.kind, rows: [], unit: null, citation: citation([], []), note: `No institutions match the group (${label}).` };
+      return { ok: true, measure: input.measure, scope: scope.kind, ...metadata, rows: [], unit: null, citation: citation([], []), note: `No institutions match the group (${label}).` };
     }
   }
 
@@ -663,10 +688,11 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     ok: true,
     measure: input.measure,
     scope: scope.kind,
-    rows: rows.map((r) => ({ ...rollupRow(r, label, memberCount), period_basis: r.period_basis })),
+    ...metadata,
+    rows: rows.map((r) => ({ ...rollupRow(r, label, memberCount), period_basis: r.period_basis, sources: (r.sources ?? []).join(", ") })),
     unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
     citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
-    note: `${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
+    note: `${measure && rows.length === 0 ? `No comparable loaded figures for this line with unit ${measure.unit} and period basis ${measure.periodBasis}. ` : ""}${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
   };
 }
 

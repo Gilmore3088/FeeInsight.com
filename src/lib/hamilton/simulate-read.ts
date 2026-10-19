@@ -11,7 +11,7 @@
 import { withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 
 import { getAnthropicMessagesClient, extractAnthropicText, getHamiltonModel, hasAnthropicApiKey, isProviderLimitError } from "@/lib/ai-provider";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { checkAnswerEvidence, type AnswerEvidenceCheck } from "./answer-gate";
 import type { MemoClient, MemoTracking } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
@@ -123,6 +123,8 @@ export async function writeSimulateRead(
   try {
     text = (await client.create({ system: prompts.system, user: prompts.user, model })).trim();
   } catch (error) {
+    const incomplete = incompleteProviderResponse(error);
+    if (incomplete) return { status: "unavailable", reason: incomplete.message };
     if (isProviderLimitError(error)) return { status: "unavailable", reason: HAMILTON_PAUSED_MESSAGE };
     const message = error instanceof Error ? error.message : String(error);
     return { status: "unavailable", reason: /budget|usage limit/i.test(message) ? "Hamilton's writing budget for today is used up." : "Hamilton's writer could not be reached." };
@@ -149,7 +151,7 @@ function anthropicSimulateClient(institutionId: number | null, tracking?: MemoTr
             { model, max_tokens: SIMULATE_MAX_TOKENS, system, messages: [{ role: "user", content: user }] },
             { ...attempt, timeout: REQUEST_TIMEOUT_MS },
           );
-        }),
+        }).then((response) => assertCompletedAnthropicTextResponse(response)),
       );
       return extractAnthropicText(response);
     },

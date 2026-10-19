@@ -9,6 +9,7 @@ import { z } from "zod";
 import { getFeesByInstitution, getInstitutionById } from "@/lib/data-store";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
 import { selectMarketStated } from "@/lib/hamilton/local-market-request";
+import { isSpecialUnitFrequency } from "@/lib/fee-unit";
 
 export const getLocalCompetitors = tool({
   description:
@@ -20,7 +21,7 @@ export const getLocalCompetitors = tool({
     const institution = await getInstitutionById(institution_id);
     if (!institution) return { error: "Institution not found." };
     const own = (await getFeesByInstitution(institution_id)).filter(
-      (fee) => fee.review_status === "approved" && fee.fee_category && fee.amount !== null,
+      (fee) => fee.review_status === "approved" && fee.fee_category && fee.amount !== null && !isSpecialUnitFrequency(fee.frequency),
     );
     const yourFees: Record<string, number> = {};
     for (const fee of own) yourFees[fee.fee_category as string] ??= Number(fee.amount);
