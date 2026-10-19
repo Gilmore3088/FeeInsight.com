@@ -1,3 +1,5 @@
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -33,7 +35,9 @@ export function refreshCopyFingerprint(feePublishedId: number | string, feeVerif
 }
 
 /** A live fee read from a superseded copy, paired with the same fee read from the current copy. */
-export interface RefreshCopyCandidate extends VerifiedFeeRow {
+export interface RefreshCopyCandidate extends VerifiedFeeRow, Partial<Omit<PublishedIdentity, "fee_published_id">> {
+  prior_product_name?: string | null;
+  prior_lineage_ref?: number | string;
   prior_fee_published_id: number | string;
   prior_fee_name: string;
   prior_amount: number | string | null;
@@ -43,7 +47,7 @@ export interface RefreshCopyCandidate extends VerifiedFeeRow {
   prior_fee_audience?: FeeAudience | null;
 }
 
-export type RefreshCopySkip = "audience_differs" | "name_differs" | "value_differs" | "category_guard" | "publish_rule" | "pair_taken";
+export type RefreshCopySkip = "product_differs" | "audience_differs" | "name_differs" | "value_differs" | "category_guard" | "publish_rule" | "pair_taken";
 
 export interface RefreshCopyPlan {
   refresh: RefreshCopyCandidate[];
@@ -61,6 +65,10 @@ export function planRefreshes(candidates: RefreshCopyCandidate[], minConfidence 
   const usedPrior = new Set<string>();
   const usedVerified = new Set<string>();
   for (const candidate of candidates) {
+    if (!sameProduct(candidate.product_name, candidate.prior_product_name)) {
+      plan.skipped.push({ candidate, reason: "product_differs" });
+      continue;
+    }
     // Missing legacy audience means unknown, as in the publisher. Unknown is its own
     // identity, not permission to replace a consumer, business or both-audiences line.
     if ((candidate.fee_audience ?? "unknown") !== (candidate.prior_fee_audience ?? "unknown")) {
@@ -144,7 +152,7 @@ export async function refreshFeesFromCurrentCopy(
                COALESCE(fp.variant_type, '') AS variant_type, COALESCE(fp.frequency, '') AS frequency,
                fp.amount, fp.amount_kind, fp.rate_percent, fp.fee_name,
                COALESCE(fp.fee_audience, 'unknown') AS fee_audience,
-               fr.source_document_id, sd.superseded_by_id AS current_document_id
+               fr.source_document_id, fr.product_name, fp.lineage_ref, ${scope.unsafe(PUBLISHED_IDENTITY_COLUMNS)}, sd.superseded_by_id AS current_document_id
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -164,7 +172,7 @@ export async function refreshFeesFromCurrentCopy(
              nv.verified_by_agent_event_id, nv.fee_name, nv.amount, nv.frequency, nv.amount_kind,
              nv.rate_percent, nv.rate_min_amount, nv.rate_max_amount, nv.rate_basis,
              COALESCE(nv.fee_audience, 'unknown') AS fee_audience,
-             nr.agent_event_id AS raw_agent_event_id, nr.source_document_id,
+             nr.agent_event_id AS raw_agent_event_id, nr.source_document_id, nr.product_name,
              -- The product-page rule (publishSkipReason) needs both: without them a product
              -- page's $0 benefit moved to its page's new copy unflagged (55986 -> 103663, Oct 9).
              COALESCE(COALESCE(nr.extraction_note, nr.conditions) LIKE ${`${FREE_READ_PREFIX}%`}, false) AS free_read,
@@ -172,7 +180,8 @@ export async function refreshFeesFromCurrentCopy(
              stale.fee_published_id AS prior_fee_published_id, stale.fee_name AS prior_fee_name,
              stale.amount AS prior_amount, stale.amount_kind AS prior_amount_kind,
              stale.rate_percent AS prior_rate_percent, stale.source_document_id AS prior_source_document_id,
-             stale.fee_audience AS prior_fee_audience
+             stale.fee_audience AS prior_fee_audience, stale.product_name AS prior_product_name, stale.lineage_ref AS prior_lineage_ref,
+             stale.published_state, stale.identity_raw_id, stale.identity_product
         FROM stale
         JOIN raw_fee_observations nr ON nr.source_document_id = stale.current_document_id
         JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
@@ -183,6 +192,7 @@ export async function refreshFeesFromCurrentCopy(
          AND nv.amount IS NOT DISTINCT FROM stale.amount
          AND nv.rate_percent IS NOT DISTINCT FROM stale.rate_percent
          AND COALESCE(nv.fee_audience, 'unknown') = stale.fee_audience
+         AND ${scope.unsafe(productKeySql("nr.product_name"))} = ${scope.unsafe(productKeySql("stale.product_name"))}
          AND nv.review_status IN ('verified', 'approved')
          AND nv.outlier_flags ? 'agentic_darwin_verified'
          -- A current-copy row that was ever published (live, superseded or taken down) is
@@ -230,7 +240,9 @@ export async function refreshFeesFromCurrentCopy(
         // takes the new lineage's audience, so both audiences must still match the pair
         // selected above. A correction between selection and this write leaves it alone.
         const confidence = normalizedConfidence(candidate.extraction_confidence);
-        const feePublishedId = await inSavepoint(scope, async (move) => {
+        const feePublishedId = await withPublishedIdentityWrite(scope, async (move) => {
+          const unchanged = await unchangedPublishedIdentities(move, [{ ...candidate, fee_published_id: priorId } as PublishedIdentity], [Number(candidate.fee_verified_id)]);
+          if (!unchanged.has(priorId)) return null;
           const moved = await move`
             UPDATE published_fee_records
                SET lineage_ref = ${Number(candidate.fee_verified_id)},
@@ -244,10 +256,27 @@ export async function refreshFeesFromCurrentCopy(
              WHERE fee_published_id = ${priorId}
                AND rolled_back_at IS NULL
                AND quarantined_at IS NULL
+               AND lineage_ref = ${Number(candidate.prior_lineage_ref)}
                AND COALESCE(fee_audience, 'unknown') = ${candidate.prior_fee_audience ?? "unknown"}
                AND EXISTS (
                  SELECT 1 FROM verified_fee_observations current_verified
+                  JOIN raw_fee_observations current_raw ON current_raw.fee_raw_id = current_verified.fee_raw_id
                   WHERE current_verified.fee_verified_id = ${Number(candidate.fee_verified_id)}
+                    AND current_verified.fee_raw_id = ${Number(candidate.fee_raw_id)}
+                    AND current_verified.review_status IN ('verified','approved')
+                    AND current_verified.outlier_flags ? 'agentic_darwin_verified'
+                    AND current_verified.institution_id = ${Number(candidate.institution_id)}
+                    AND current_verified.canonical_fee_key = ${candidate.canonical_fee_key}
+                    AND current_verified.fee_name = ${candidate.fee_name}
+                    AND COALESCE(current_verified.variant_type,'') = COALESCE(${candidate.variant_type},'')
+                    AND COALESCE(current_verified.frequency,'') = COALESCE(${candidate.frequency},'')
+                    AND COALESCE(current_verified.amount_kind,'flat') = ${candidate.amount_kind ?? 'flat'}
+                    AND current_verified.amount IS NOT DISTINCT FROM ${candidate.amount}::numeric
+                    AND current_verified.rate_percent IS NOT DISTINCT FROM ${candidate.rate_percent ?? null}::numeric
+                    AND current_verified.rate_min_amount IS NOT DISTINCT FROM ${candidate.rate_min_amount ?? null}::numeric
+                    AND current_verified.rate_max_amount IS NOT DISTINCT FROM ${candidate.rate_max_amount ?? null}::numeric
+                    AND COALESCE(current_verified.rate_basis,'') = COALESCE(${candidate.rate_basis ?? null},'')
+                    AND ${move.unsafe(productKeySql("current_raw.product_name"))} = ${productKey(candidate.product_name)}
                     AND COALESCE(current_verified.fee_audience, 'unknown') = ${candidate.fee_audience ?? "unknown"}
                )
             RETURNING fee_published_id

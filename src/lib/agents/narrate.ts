@@ -164,7 +164,8 @@ function narrateFinished(
         n(detail, "duplicate_collapses") > 0 && `${n(detail, "duplicate_collapses")} duplicate copies closed`,
         n(detail, "rules_recheck_rollbacks") > 0 &&
           `${n(detail, "rules_recheck_rollbacks")} older fees today's rules no longer read rolled back`,
-        n(detail, "skipped_verified_fees") > 0 && `${n(detail, "skipped_verified_fees")} already published or not eligible`,
+        n(detail, "identity_deferred_verified_fees") > 0 && `${n(detail, "identity_deferred_verified_fees")} deferred after selected verification or identity changed (still pending)`,
+        n(detail, "skipped_verified_fees") > n(detail, "identity_deferred_verified_fees") && `${n(detail, "skipped_verified_fees") - n(detail, "identity_deferred_verified_fees")} already published or not eligible`,
         detail.index_refreshed === true && `index refreshed (${count(n(detail, "index_categories"), "category", "categories")})`,
       ])}.`;
     }

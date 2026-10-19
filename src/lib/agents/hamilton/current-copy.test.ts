@@ -78,7 +78,7 @@ function createDb(pendingFlag: { flag_run_id: number; flagged_at: string } | nul
     if (text.includes("SET rolled_back_at = NOW()")) return Promise.resolve([{ fee_published_id: 2 }, { fee_published_id: 4 }]);
     return Promise.resolve([]);
   };
-  return vi.fn(query) as unknown as Parameters<typeof secondLookFeesNotOnCurrentCopy>[0] & ReturnType<typeof vi.fn>;
+  return Object.assign(vi.fn(query),{unsafe:(text:string)=>text}) as unknown as Parameters<typeof secondLookFeesNotOnCurrentCopy>[0] & ReturnType<typeof vi.fn>;
 }
 const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => templateText(call[0]));
 const options = { runId: 9, batchId: "agentic-run-9", dryRun: false };

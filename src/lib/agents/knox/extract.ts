@@ -12,6 +12,7 @@ import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { ownCells } from "@/lib/agents/knox/own-cells";
+import { ANCILLARY_PRODUCT_FLAG } from "./ancillary-product";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
@@ -695,6 +696,8 @@ export async function insertCandidate(
   flags.push(...(options.extraFlags ?? []));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
+  const owner = options.candidate.ancillaryProduct;
+  if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${options.candidate.canonicalHint}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -705,13 +708,17 @@ export async function insertCandidate(
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
     `excerpt="${options.candidate.ownedBullet ? options.candidate.excerpt : ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
   // The catalog's conditions are the bank's own text, distinct from audit metadata.
-  const sourceConditions = options.candidate.ownedBullet
-    ? [options.candidate.excerpt, options.candidate.linkedConditions].filter(Boolean).join(" ")
-    : null;
+  const sourceConditions = owner
+    ? [owner.title, owner.applicability, options.candidate.ownedBullet ? options.candidate.excerpt : owner.ownLine,
+      options.candidate.linkedConditions].filter(Boolean).join("\n")
+    : options.candidate.ownedBullet
+      ? [options.candidate.excerpt, options.candidate.linkedConditions].filter(Boolean).join(" ")
+      : null;
   // A checking account's lineup facts, already grounded in the text (`lineup.ts`): a monthly
   // maintenance fee carries them all, a minimum balance fee only its account (v73).
   const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
-  const read = ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) ? (options.candidate.lineup ?? null) : null;
+  const read = ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) ? (options.candidate.lineup ?? null)
+    : owner ? { productName: owner.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null;
   const lineup = read && options.candidate.canonicalHint !== LINEUP_CATEGORY
     ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
     : read;
@@ -784,7 +791,7 @@ export async function insertCandidate(
       -- v73: a product an older Knox wrote, or one that names no account, gives way to this read's.
       product_name = CASE WHEN EXCLUDED.product_name IS NOT NULL AND (
                             fr.product_name IS NULL
-                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${ACCOUNT_PRODUCT_FLAG})
+                            OR NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ?| array[${ACCOUNT_PRODUCT_FLAG},${ANCILLARY_PRODUCT_FLAG}])
                             OR fr.product_name ~* ${NON_ACCOUNT_PRODUCT_SQL})
                           THEN EXCLUDED.product_name ELSE fr.product_name END,
       min_balance_to_avoid = COALESCE(fr.min_balance_to_avoid, EXCLUDED.min_balance_to_avoid),
@@ -819,6 +826,9 @@ export async function insertCandidate(
                               AND old_hint.hint IS DISTINCT FROM ${options.candidate.canonicalHint}::text
                          ), '[]'::jsonb)
      WHERE fr.source = 'knox'
+       -- v1 ancillary ownership is for new raw lineage only. A conflict keeps the
+       -- existing observation, including held/verified history, for explicit recovery.
+       AND ${!owner}
        AND NOT fr.outlier_flags ? 'needs_darwin_verification'
        AND (
          -- A line held because the self-check could not trace it, now read and traced, is that fee.
@@ -829,7 +839,7 @@ export async function insertCandidate(
        )
     RETURNING fee_raw_id
   `;
-  if (inserted.length === 0 && lineup) {
+  if (inserted.length === 0 && lineup && !owner) {
     // The same fee read again from the same document: fill lineup fields an earlier read
     // left empty, within its audience. The raw identity includes audience: a business fee
     // with the same label and price must not take a consumer account's product or waiver.
@@ -1194,8 +1204,8 @@ export async function runKnoxExtract(
     // The learning reader: a name the category guards keep rejecting under the rules'
     // category, and verify under another, is filed under the verified one.
     const lessoned = free.candidates.map((candidate) => applyKnoxLesson(candidate, lessons, Number(row.institution_id)));
-    const candidates = lessoned.map((entry) => entry.candidate);
-    const lessonFlags = new Map(lessoned.filter((entry) => entry.lessonFlag).map((entry) => [entry.candidate, entry.lessonFlag!]));
+    const candidates = lessoned.map((entry) => withLineupFromText(entry.candidate, row.normalized_text, { institutionName: row.institution_name }));
+    const lessonFlags = new Map(lessoned.flatMap((entry, index) => entry.lessonFlag ? [[candidates[index], entry.lessonFlag] as const] : []));
     for (const flag of lessonFlags.values()) lessonRefiles[flag] = (lessonRefiles[flag] ?? 0) + 1;
     let inserted = 0;
     let heldInserted = 0;
@@ -1211,7 +1221,7 @@ export async function runKnoxExtract(
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
         const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
         if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
-        const named = withLineupFromText(candidate, row.normalized_text, { institutionName: row.institution_name });
+        const named = candidate;
         if (
           await insertCandidate(db, {
             runId: options.runId,

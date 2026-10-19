@@ -2,6 +2,40 @@
 
 Darwin owns verification and classification.
 
+## Ancillary product ownership (#1911 code phase, 2026-10-19)
+
+A bounded single-primary-deposit-product document can assign its own ancillary priced fee
+rows to the literal product. `ANCILLARY_PRODUCT_VERSION` is v1 (Knox's evidence format,
+`ancillary_product:v1`); this is not a re-read selector or permission to repair old metadata.
+The title and printed applicability clause stay with the bank's own fee conditions; frequency
+comes only from the fee's own price line. Mixed sections/columns, generic guides, unsupported
+headings and exceeded budgets remain unassigned. The general U.S. Bank $3 ATM/$5 money-order
+rows keep their existing unassigned scope; the Safe Debit exceptions belong to Safe Debit.
+
+Only newly inserted ancillary raw rows receive v1 ownership. A same-document raw insert
+conflict, including an ordinary due read or held takeover, keeps the existing row unchanged.
+Monthly-maintenance/minimum-balance lineup behavior is unchanged. Therefore simply re-running
+existing rows cannot recover missing ownership. Existing NULL metadata, numeric pooling policy
+and any exact metadata/rejudge recovery remain separate unchecked work in #1911.
+
+Shared `fee-product.ts` identity folds ASCII case and explicit transport whitespace (including
+NBSP). Unsupported Unicode case/separators stay distinct. Null/blank is one unassigned identity,
+never every product. Represented distinct products and represented/unassigned pairs cannot
+supply one another's duplicate, refresh or source-applicability witness. Holds and admin
+correction blockers keep their conservative broader overlap rules.
+
+Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
+refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
+policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
+records the exception; old settled decisions need a separately designed and authorized path.
+
+Darwin's v4 batch key and second-source comparison include the represented normalized product.
+New v1-owned rows must still have the matching primary-product title and their own price inside
+its bounded fee block; generic neighbouring prices are insufficient. The verifier locks and
+rechecks the selected raw product before writing its new verified lineage inside the run-ledger
+transaction. That transaction is a precondition of exported insertVerifiedFee; inSavepoint
+alone does not start one, and standalone autocommit is not supported. Existing peer/category/source/zero policies and settled decisions remain intact.
 ## Reference eligibility (2026-10-19, #1862)
 
 Current answer-key feedback is admitted only through the shared durable eligibility snapshot

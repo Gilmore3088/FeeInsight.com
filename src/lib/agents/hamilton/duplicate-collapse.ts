@@ -1,3 +1,5 @@
+import { productKey, productKeySql } from "@/lib/fee-product";
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, recordIdentitySkips, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -25,7 +27,7 @@ export interface DuplicateCollapse {
   amount: number | null;
 }
 
-interface DuplicateRow {
+interface DuplicateRow extends PublishedIdentity {
   fee_published_id: number | string;
   kept_fee_published_id: number | string;
   institution_id: number | string;
@@ -70,6 +72,8 @@ export async function collapsePublishedDuplicates(
                    min(${FREQUENCY_CLASS}) OVER part AS min_class,
                    max(${FREQUENCY_CLASS}) OVER part AS max_class
               FROM published_fee_records fp
+              LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+              LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
              WHERE fp.rolled_back_at IS NULL
                AND fp.quarantined_at IS NULL
                ${institutionFilter}
@@ -77,6 +81,7 @@ export async function collapsePublishedDuplicates(
               PARTITION BY fp.institution_id,
                            fp.canonical_fee_key,
                            COALESCE(fp.variant_type, ''),
+                           ${productKeySql("fr.product_name")},
                            COALESCE(fp.fee_audience, 'unknown'),
                            COALESCE(fp.amount_kind, 'flat'),
                            fp.amount,
@@ -95,55 +100,37 @@ export async function collapsePublishedDuplicates(
 
   let rows: DuplicateRow[];
   try {
-    rows = await inSavepoint(db, (scope) => {
-      if (options.dryRun) {
-        return scope.unsafe<DuplicateRow[]>(
-          `SELECT fp.fee_published_id, dup.kept_fee_published_id, fp.institution_id,
-                  fp.canonical_fee_key, fp.fee_name, fp.amount
-             FROM published_fee_records fp
-             JOIN (${duplicates}) dup ON dup.fee_published_id = fp.fee_published_id`,
-          params,
-        );
-      }
-      return scope.unsafe<DuplicateRow[]>(
-        // Candidate selection uses this statement's snapshot. A concurrent correction or
-        // operator action can commit while we wait for its row lock, so freeze both selected
-        // row states, lock every pair member in ID order, then compare the locked current
-        // states. JSON stays inside Postgres (including timestamp precision and lineage).
-        // A changed pair waits for a later sweep rather than being retargeted mid-decision.
-        `WITH selected_pairs AS MATERIALIZED (
-           SELECT dup.*, to_jsonb(target) AS target_state, to_jsonb(keeper) AS keeper_state
-             FROM (${duplicates}) dup
-             JOIN published_fee_records target ON target.fee_published_id = dup.fee_published_id
-             JOIN published_fee_records keeper ON keeper.fee_published_id = dup.kept_fee_published_id
-         ), locked AS MATERIALIZED (
-           SELECT current.*
-             FROM published_fee_records current
-             JOIN (
-               SELECT fee_published_id FROM selected_pairs
-               UNION
-               SELECT kept_fee_published_id FROM selected_pairs
-             ) members ON members.fee_published_id = current.fee_published_id
-            ORDER BY current.fee_published_id
-              FOR UPDATE OF current
-         )
-         UPDATE published_fee_records fp
-            SET rolled_back_at = NOW(),
-                rolled_back_by_batch_id = $${params.length + 1},
-                rolled_back_reason = '${DUPLICATE_COLLAPSE_REASON_PREFIX}' || dup.kept_fee_published_id::text
-           FROM selected_pairs dup
-           JOIN locked target ON target.fee_published_id = dup.fee_published_id
-           JOIN locked keeper ON keeper.fee_published_id = dup.kept_fee_published_id
-          WHERE fp.fee_published_id = dup.fee_published_id
-            AND fp.rolled_back_at IS NULL
-            AND fp.quarantined_at IS NULL
-            AND to_jsonb(target) = dup.target_state
-            AND to_jsonb(keeper) = dup.keeper_state
-            AND to_jsonb(fp) = dup.target_state
-        RETURNING fp.fee_published_id, dup.kept_fee_published_id, fp.institution_id,
-                  fp.canonical_fee_key, fp.fee_name, fp.amount`,
-        [...params, options.batchId],
-      );
+    rows = await withPublishedIdentityWrite(db, async (scope) => {
+      // Select pair and raw ownership together, before any concurrent lock wait.
+      const pairs = await scope.unsafe<Array<DuplicateRow & { keeper: PublishedIdentity }>>(
+        `SELECT fp.fee_published_id, dup.kept_fee_published_id, fp.institution_id,
+                fp.canonical_fee_key, fp.fee_name, fp.amount, ${PUBLISHED_IDENTITY_COLUMNS},
+                jsonb_build_object('fee_published_id', keep.fee_published_id,
+                  'published_state', to_jsonb(keep)::text, 'identity_raw_id', kr.fee_raw_id,
+                  'identity_product', ${productKeySql("kr.product_name")}) AS keeper
+           FROM (${duplicates}) dup
+           JOIN published_fee_records fp ON fp.fee_published_id = dup.fee_published_id
+           JOIN published_fee_records keep ON keep.fee_published_id = dup.kept_fee_published_id
+           LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+           LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+           LEFT JOIN verified_fee_observations kv ON kv.fee_verified_id = keep.lineage_ref
+           LEFT JOIN raw_fee_observations kr ON kr.fee_raw_id = kv.fee_raw_id`, params);
+      if (options.dryRun || pairs.length === 0) return pairs;
+      // JSON may be returned as text by this application's connection codec.
+      const keepers = pairs.map((r) => typeof r.keeper === "string" ? JSON.parse(r.keeper) as PublishedIdentity : r.keeper);
+      const unchanged = await unchangedPublishedIdentities(scope, [...pairs, ...keepers]);
+      const eligible = pairs.filter((r) => unchanged.has(Number(r.fee_published_id)) && unchanged.has(Number(r.kept_fee_published_id)));
+      await recordIdentitySkips(scope, options.runId, "exact-collapse", pairs.length - eligible.length);
+      if (eligible.length === 0) return [];
+      const closed = await scope<{ fee_published_id: number | string }[]>`
+        UPDATE published_fee_records fp SET rolled_back_at = NOW(), rolled_back_by_batch_id = ${options.batchId},
+          rolled_back_reason = ${DUPLICATE_COLLAPSE_REASON_PREFIX} || pick.kept::text
+        FROM unnest(${eligible.map((r) => Number(r.fee_published_id))}::bigint[],
+                    ${eligible.map((r) => Number(r.kept_fee_published_id))}::bigint[]) AS pick(id, kept)
+        WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL
+        RETURNING fp.fee_published_id`;
+      const ids = new Set(closed.map((r) => Number(r.fee_published_id)));
+      return pairs.filter((r) => ids.has(Number(r.fee_published_id)));
     });
   } catch (error) {
     // A failed sweep must never block publishing new verified rows.
@@ -199,7 +186,8 @@ export const NEAR_NAME_COLLAPSE_LIVE = true;
 export const NEAR_NAME_COLLAPSE_DOCUMENTS = 25;
 export const NEAR_NAME_COLLAPSE_REASON_SUFFIX = " (near name)";
 
-export interface NearNameRow {
+export interface NearNameRow extends Partial<PublishedIdentity> {
+  product_name?: string | null;
   fee_published_id: number | string;
   institution_id: number | string;
   source_document_id: number | string;
@@ -246,7 +234,7 @@ export function nearNameRepeats(rows: NearNameRow[], texts: Map<string, string>)
   const result = { pairs: 0, apartOnPage: 0, notPrinted: 0, noText: 0, collapses: [] as NearNameCollapse[] };
   const groups = new Map<string, NearNameRow[]>();
   for (const row of rows) {
-    const key = [row.institution_id, row.source_document_id, row.canonical_fee_key, row.variant_type ?? "", Number(row.amount).toFixed(2)].join("|");
+    const key = [row.institution_id, row.source_document_id, row.canonical_fee_key, row.variant_type ?? "", productKey(row.product_name), Number(row.amount).toFixed(2)].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   for (const group of groups.values()) {
@@ -333,7 +321,7 @@ export async function collapseNearNameDuplicates(
       const found = await scope.unsafe<NearNameRow[]>(
         `WITH live AS (
            SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, fp.canonical_fee_key,
-                  fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fp.published_at
+                  fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fp.published_at, fr.product_name, ${PUBLISHED_IDENTITY_COLUMNS}
              FROM published_fee_records fp
              JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
              JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -383,15 +371,21 @@ export async function collapseNearNameDuplicates(
   if (!live || options.dryRun || found.collapses.length === 0) return result;
 
   try {
-    const closed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+    const closed = await withPublishedIdentityWrite(db, async (scope) => {
+      const pairIds = new Set(found.collapses.flatMap((r) => [r.feePublishedId, r.keptFeePublishedId]));
+      const unchanged = await unchangedPublishedIdentities(scope, rows.filter((r) => pairIds.has(Number(r.fee_published_id))) as PublishedIdentity[]);
+      const eligible = found.collapses.filter((r) => unchanged.has(r.feePublishedId) && unchanged.has(r.keptFeePublishedId));
+      await recordIdentitySkips(scope, options.runId, "near-name-collapse", found.collapses.length - eligible.length);
+      if (eligible.length === 0) return [];
+      return scope<{ fee_published_id: number | string }[]>`
       UPDATE published_fee_records fp
          SET rolled_back_at = NOW(),
              rolled_back_by_batch_id = ${options.batchId},
              rolled_back_reason = ${DUPLICATE_COLLAPSE_REASON_PREFIX} || pick.kept::text || ${NEAR_NAME_COLLAPSE_REASON_SUFFIX}
-        FROM unnest(${found.collapses.map((row) => row.feePublishedId)}::bigint[], ${found.collapses.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
-       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL
+        FROM unnest(${eligible.map((row) => row.feePublishedId)}::bigint[], ${eligible.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
+       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL
       RETURNING fp.fee_published_id
-    `);
+    `; });
     const ids = new Set(closed.map((row) => Number(row.fee_published_id)));
     result.collapses = found.collapses.filter((row) => ids.has(row.feePublishedId));
   } catch (error) {
