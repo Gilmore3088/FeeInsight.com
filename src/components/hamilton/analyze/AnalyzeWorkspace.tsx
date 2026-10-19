@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { LocalDate } from "@/components/hamilton/common/LocalDate";
 import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
@@ -31,6 +32,7 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { isPeerListContinuationQuestion } from "@/lib/hamilton/peer-list";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
+import { AnswerFollowThrough } from "./AnswerFollowThrough";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
@@ -1276,19 +1278,6 @@ function AnalyzeConversationWorkspace({
                 >
                   {isExporting ? "Preparing the PDF…" : "Download PDF"}
                 </button>
-                <AddToReportButton
-                  variant="link"
-                  item={{
-                    id: basketItemId("Ask", instId, view.lead),
-                    source: "Ask",
-                    title: view.lead,
-                    detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
-                    feeCategory,
-                    institutionId: instId,
-                    savedAnalysisId,
-                    ...(answerIdentity ? { identityContext: answerIdentity } : {}),
-                  }}
-                />
               </aside>
             ) : null}
           </div>
@@ -1296,6 +1285,30 @@ function AnalyzeConversationWorkspace({
 
           {complete ? (
             <>
+              {readOnlyReason ? null : (
+                <AnswerFollowThrough
+                  analysisId={savedAnalysisId}
+                  institutionId={instId}
+                  institutionName={instName}
+                  feeCategory={feeCategory}
+                  report={<>
+                    <AddToReportButton
+                      variant="link"
+                      item={{
+                        id: basketItemId("Ask", instId, view.lead),
+                        source: "Ask",
+                        title: view.lead,
+                        detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
+                        feeCategory,
+                        institutionId: instId,
+                        savedAnalysisId,
+                        ...(answerIdentity ? { identityContext: answerIdentity } : {}),
+                      }}
+                    />
+                    {savedAnalysisId ? <Link href={hrefWithInstitutionContext(`/pro/reports?from_analysis=${encodeURIComponent(savedAnalysisId)}`, instId)} className="text-sm font-medium text-terra-text underline-offset-2 hover:underline">Build board brief</Link> : null}
+                  </>}
+                />
+              )}
               {exportError ? (
                 <p role="alert" className="text-sm text-terra-text">
                   {exportError}
