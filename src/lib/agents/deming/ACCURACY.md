@@ -3,7 +3,8 @@
 This series measures support for **published dollar fees in stored documents**, using the
 deployed source, category and name checks. It is not an independent live-site assessment, a
 measure of missed fees, rate-fee accuracy, or evidence that a stored schedule is current.
-Live-site validation and answer-key eligibility remain #2061 and #1862. The
+Live-site validation remains #2061; the separate [answer-key reference guard](REFERENCE-ELIGIBILITY.md)
+(#1862) controls current-key diagnostic inputs and teaching without certifying live correctness. The
 [weekly live fee accuracy plan](../../../../docs/plans/weekly-live-fee-accuracy-plan.md) (#1923)
 defines the separate 50-institution draw, current-source decisions, missing-fee denominators,
 institution-cluster confidence bound and correction/retest protocol. It is a written method,

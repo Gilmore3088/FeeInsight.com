@@ -1,0 +1,745 @@
+{
+  "protocol": 1,
+  "purpose": "Frozen fixture provenance inventory; separate from current answer-key eligibility. Missing original document mapping remains unbound.",
+  "artifacts": [
+    {
+      "path": "../knox/__fixtures__/state-answer-keys.json.gz",
+      "sha256": "575488d5b8d71b4a9ff1855e44a4d2710e42028c7adf0ee2042a134034b336a6"
+    },
+    {
+      "path": "../knox/__fixtures__/texas-answer-keys.json.gz",
+      "sha256": "78a5dd6317933079ea08a953f0952eccffb41aad4612aec3996764c77973300d"
+    }
+  ],
+  "references": [
+    {
+      "textId": 3981,
+      "institutionName": "Central State Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "0f617d16c999595d74696bbd18e99559ab36be7a64fc3802b8034cee36b6b29b",
+      "compactFeesSha256": "70a086e1500d4d844d89752cc24e3aa9742a4606491571b25ca9c4b4e77267fc",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 5608,
+      "institutionName": "River City Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "f709a09a13da55acd9798c89bc2dbffa890211a42efba570b702018c40c20a11",
+      "compactFeesSha256": "e10e3824f8a54da9549711ab04a8c4aa650ddacf36e7256c0f85231d21330f0c",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 6730,
+      "institutionName": "Utility District Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "4cdfcb47c4f0f17b28153ebc49e21d55e7d1a17ad3c1a17c2406712ea4c68e8b",
+      "compactFeesSha256": "810d5bf034c28103d82d8b943e110e2ba94f0181562f0b8dcd57267ef443d0c8",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 7450,
+      "institutionName": "Schools Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "3dfb175890bfe1c24e9dca4db0ea2bb16e0d2aad684eab14b9c6ef2d3385a629",
+      "compactFeesSha256": "d4242cb11aa4d74cae6db2926da1304362239e643e6e43e4d8afb945b2210a0a",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 8034,
+      "institutionName": "Pacific Service Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "1449c110c234361a4fe6d819bd8eda3aa999e83f7fea2dc5d5e0da4a4f8b6771",
+      "compactFeesSha256": "209f7c96e726ea4cf922b7ef51cf1bdc003c05ca407ba65c7fe8df9d90f826ab",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 8036,
+      "institutionName": "San Francisco Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "497fb9dbbdf98d2a46456a3ea5faf636246d8b7006ec5e20f590430afd19e4c6",
+      "compactFeesSha256": "6adfc65ca584be9ba2d97b20ab24d7e889023ba1dda4d329cf7da28d2e320cf7",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 13303,
+      "institutionName": "Sun Pacific Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "3360a0a4932dacded6c73bbe092f24cc52703f56513a5d1c7c18816735a318cd",
+      "compactFeesSha256": "15f5ed414d521cebb8930f1619f5c0cf589fac938d90c1ae1aa5c36a871d053e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 5703,
+      "institutionName": "Metro North Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "d45fcf029c3dd5217adaff68586831815c2e3bc0bc9963f4b37cd7d162cdd96c",
+      "compactFeesSha256": "51a22660a859c365f9a49f51bae3c99dc793cc9983ae78ecac81ceaab6ee2709",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 6820,
+      "institutionName": "Ithink Financial Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "e02f08d3ebed9f29540bde193bc366e9139e60635985b89eeaeef4cab2db4b90",
+      "compactFeesSha256": "c8f3c4e5d8dc76532a175271f406047c10aa0235d06b07704a3c7e642380d000",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 7517,
+      "institutionName": "DLP Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "847e485735e4d3c82580dea29caefaddc1472de38441c82c7df2921eb44dcf4f",
+      "compactFeesSha256": "6b54bf70330e4da5b9b780dddcc841eae1647fc40c1af5ac1509c85cb8ba99ce",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 8085,
+      "institutionName": "Seacoast National Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "4d8eaaafc2701eb9fd58e06b96a4a086cd3698e0dcb6bf5a806c36eacae554ba",
+      "compactFeesSha256": "d1af75a9704cde199a29e2c6432a8721f6adee7600cad92140684354f9072cc9",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 10193,
+      "institutionName": "U. S. Century Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "6cf2ef10e4119032ecc5ee2fc159e224500546519fee4b72fed82b8bca33e9a6",
+      "compactFeesSha256": "cd60229fec60c7c1c3d1b5c0b91d92a02ec1a69f322bbd582554c4d86614f488",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 60,
+      "institutionName": "Georgia United Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "b7c293b597fba6a1f9697c06657ba002ddd4bd8d43e709a96767510e75151e1d",
+      "compactFeesSha256": "0cc35f8ff6c125088c396ba5517c215d2d986ad573c0b897b873e4dbf989d422",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 1338,
+      "institutionName": "Ameris Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "aae09ae794e6a8891859f1b39970264de822ab71dfc4bea5363c38c25ac5ac54",
+      "compactFeesSha256": "d30603446fea0772126fcebbe74880047bd75dbc96ca880b86281df555140080",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 3141,
+      "institutionName": "Family First Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "626ba1655f666f8d9549789768db08e5d7833e9c7bef51c1d10c7c3d260e5617",
+      "compactFeesSha256": "18533e2d2bff73ed183f140bdb0c13678692a16a7b831ab47d7447636d2e83b4",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 3148,
+      "institutionName": "Geovista Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "f15a689d13356bb0e78d7aecda5d3e8b7cef3c23995a25750162e96a0d4c22ae",
+      "compactFeesSha256": "f7191c4d34e28b27ce35ae1b2bb299141c60e7d954c19ef8186a994cb4152317",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 10358,
+      "institutionName": "Peach State Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "ad9ee2aa2ac612f56f2e27aee6a4f202229cfd890ebea449be8b899ea605863e",
+      "compactFeesSha256": "e6b47477f28818031d6d843d6d1fd7f7ba9eee540deb6cbf19c5a48339d71957",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 11362,
+      "institutionName": "Southeastern Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "c386904917809d613efce28fb2d0b8e2ec3f46fa43688797f64ba67e0445e23d",
+      "compactFeesSha256": "c9aca83c97db07064161a21c15368a582d069b1f54f94131cf42ba79d3e6b77e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 12752,
+      "institutionName": "Rabun County Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "a562110c6874aa730885d3233b9d6e0ab2a244ff4481c92fc7dd36e9ab817444",
+      "compactFeesSha256": "15a1b2100cbc3049863769044ca37b6caed6a5ac74be4a60cd818795f1a5c83a",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 3515,
+      "institutionName": "Liberty Bank for Savings",
+      "set": "holdout",
+      "fixtureTextSha256": "5a46a9120f6ee5945d51f5de249ae775718f047e65a8c4ec22efd725ff681aa5",
+      "compactFeesSha256": "d9355e6fa987bb31dc9e736140076349423478d250c982230904feeb5bedf5c7",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 3554,
+      "institutionName": "Empeople Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "70a8bd7da47322b61141995852cd35b400c6af6e9b929f0e8e3e9ca50fc50c41",
+      "compactFeesSha256": "2635a09152ef1d7bcc9eebd27a994e67aaf95b3b7484baa86e5da2138805916d",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 5918,
+      "institutionName": "Springfield City Employees Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "47a117b8cc66e3bde98ebd7527eb28165f462953d4270e0047f41ce0c5f3d24f",
+      "compactFeesSha256": "8c99d09071bf2dee01f5c02a5e04194a6b514043d4d8ead973713b2e14c3d01e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 7623,
+      "institutionName": "Dieterich Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "07b83fc235d65824b6ce4cc47b1609cb970227badf525268d0155fbd903ecbb2",
+      "compactFeesSha256": "627451ea1035d75bc4abb41e1325befd505c46de5ee5f3ea4773b82c5c21e4b3",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 10500,
+      "institutionName": "Sterling Federal Bank, F.S.B.",
+      "set": "holdout",
+      "fixtureTextSha256": "e077a30f2df188b6dcf2e38500cb44ceccb9758673db9f68854dd9283733cc77",
+      "compactFeesSha256": "7631f599d1d7b37d5b1de0f9b06fbcc6a8ab9d3e97743b5d0b224f04be7af38e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2001,
+      "institutionName": "Tandem Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "a2de7d7cb9ff5f2575462c34fd28f0c4e748d84e03807be4ff11981835c47a05",
+      "compactFeesSha256": "d334dfed785f83fa7744d3edbeb116dbed320147666c7c53ed95e8114fd38ba7",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 4677,
+      "institutionName": "Traverse Catholic Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "cb1731820594d7bafdfe2e89b667f27363f80c2c00a604149887b43fa7851c5c",
+      "compactFeesSha256": "f073206f3c416284de6cc9f0c269361291649455a15a87daec103bc1b3ca422c",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 11470,
+      "institutionName": "Advia Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "2c7898e4101d9fd33909c5175f5c0ae807088cc555265e37750ef733bac744ae",
+      "compactFeesSha256": "d9772c0a20e8e0f847982fe54cb7a494f31e97dc5622f6c9f8d44baeb79778c1",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 11477,
+      "institutionName": "4Front Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "920c59ab1295cb7a1822c3bd87d4fcb04633c0479c644f8bfb379a85e5759f3c",
+      "compactFeesSha256": "930dd04531c70734c69228bd1b6f6b36303b655a27ce05a7b2b60e92da5fe44d",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 12816,
+      "institutionName": "Marquette Community Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "84e3bd02dba736fa8625b6c44e4b3a6a37e82fe20b0e63f6769035f82f9e23e0",
+      "compactFeesSha256": "f9066e17999512694d4c6ae841d805ed2f652462b99a020bbb468c14dc3a6102",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 12821,
+      "institutionName": "Lenco Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "11ff47dca8af5c8e45f06462c774ae4cf2d45c97f11a4077fa16923d8a95119c",
+      "compactFeesSha256": "5dc697fcccfd78c450402ca75e247fa5b2236564fb048f6ad813daa6a3a6ee4b",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2017,
+      "institutionName": "First State Bank and Trust",
+      "set": "holdout",
+      "fixtureTextSha256": "d7504462cc4ab348c7045c47e7fb63ea28571cc98afb81d6c91c54a7d34fc523",
+      "compactFeesSha256": "0499f5224d73f058147454afcd8fc97f0f34db306cc9e4bf2aab974157f39d24",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 8741,
+      "institutionName": "Expedition Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "1fad2bc438bf143fcdb105755db112a521d3dc061dbd57c7a5dc774a92039abf",
+      "compactFeesSha256": "8a8e4efd5378a8eca0561b1f25a89762b73b950abda260535b2ea48aecb5114e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 9308,
+      "institutionName": "St. Cloud Financial Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "ae6a201c2f7ed7f1e3945cef574e1ac33a93b3c6c3fe6a08a246e71eb25f0eb2",
+      "compactFeesSha256": "a58847218c5263a5d314e3dc0a4e1a98b786a8d0c3d11e865bf7ab7f0ba1b387",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 10272,
+      "institutionName": "Crow Wing Power Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "d75cbc0437a755c1a17c66b082563c3cb34e2282b561869dfd96ad07a2e40859",
+      "compactFeesSha256": "2f04e831b9b0cf7cf5594fbcd042fdac1a0c83f092d60d30c2c53f58ebb65809",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 10279,
+      "institutionName": "Harbor Pointe Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "3507d67a4188003f778806438b36ba4bf3d2885481a2d38efd340b6f6a2b4dcf",
+      "compactFeesSha256": "83f74772dca215cbd2e0dc89aae1e8213ea1409a27883e59f45bb664bd7f25b4",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 12030,
+      "institutionName": "Northern Communities Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "6b945e6a8cb6e89bd4d74ab0dbcfe94e4936019265e457840216f0e354ce8f2c",
+      "compactFeesSha256": "4741faa83c274e766ad0f11cc1f83453223560f9436b7dbd9fd102464cbc5536",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 7114,
+      "institutionName": "Buffalo Metropolitan Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "28655b68a830f52ba4a9df58760f0627033932e62184416c480df6c655e039fe",
+      "compactFeesSha256": "79e313e99e5db6130dc671a37fedec3751646fb7f462db54fddad3e4331e0ec2",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 8240,
+      "institutionName": "The Summit Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "e71d63b5ee9393bc760c3a1d06324f77076d31a173931f8bb24d1581bdc537b9",
+      "compactFeesSha256": "e308b4cb16e6b88fc058c91da652a42e74184f3e53582222ba04996f71ed83e2",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2,
+      "institutionName": "4U Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "6d524f414b0388acb17c234bc7be115547338388b8fc8c29771a77c323adf1ac",
+      "compactFeesSha256": "7587b724ef619352b0f5ed1f75b89b203ce83162cb17f96425e4d96c8ff5d10b",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2204,
+      "institutionName": "Worthington Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "b3fa41420218938bdbdd279de25b3ad164bfbbd53d86c4478c38e0dfdb0d0b7e",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2205,
+      "institutionName": "Capital Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "3d43d830d43515eba603e4fd5460678fca7d6864b5c92e4981157882c04dbc69",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2206,
+      "institutionName": "The First National Bank of Sonora",
+      "set": "holdout",
+      "fixtureTextSha256": "d1dd0f1dfeddbb62e7872617248059f005d2c197daa13005cd8694a6469c036a",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2417,
+      "institutionName": "Monet Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "be63e2ea48c88946bdf00ba6fac03842102e955386ac22e11c61a21a59c001b6",
+      "compactFeesSha256": "e879a9070f33c63fb938571069560aaf7cf4aa810eff0031c7ed9dc4085e2780",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2421,
+      "institutionName": "The American National Bank of Texas",
+      "set": "holdout",
+      "fixtureTextSha256": "6f8fb4449ed3438aaf4769e7d0ff110d2f4c125a6f83b6de4f38b55f3e7f801d",
+      "compactFeesSha256": "c04101a18737c206808fbeca0fddde9d9cc65c52aa87e6012416f862d752d5bb",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2427,
+      "institutionName": "Extraco Banks",
+      "set": "holdout",
+      "fixtureTextSha256": "b9b7e450443e7d0c022fce0ec2cd8d8998921e7284ea61ffae8fefefb6ea2053",
+      "compactFeesSha256": "fd09d343b91649079b8544c5dfcd84d743c51a839f32e9259c8af416cead3d3f",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2429,
+      "institutionName": "Texhillco School Employees FCU",
+      "set": "holdout",
+      "fixtureTextSha256": "2e5cd8325f595ddb887aea3a8d01b7de097fa5b77e08de8aa8097cd6a47746cc",
+      "compactFeesSha256": "35853e2e2120c49eaf324ec8894f58be75f0afb2c8d021a78a87d7f7373e6bd3",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2430,
+      "institutionName": "Kress National Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "afe93234be63ace93adbd1a68452d45c5a65eadead97d7bde8767902f4ae2500",
+      "compactFeesSha256": "cee8afe59973004a4763fdc1c087b324a4378171e28a98f04f04ea6c6ec21358",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2438,
+      "institutionName": "Gilmer National Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "5f9bc32d5a52346fdcacd213b7c016fe92c17ca0bcaae0fbd83a7d45e249b1c5",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2447,
+      "institutionName": "Schertz Bank & Trust",
+      "set": "holdout",
+      "fixtureTextSha256": "3b8aaee631565c9fe7e1aef84336c3fafca508d923f828de82c864a812134f3e",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2449,
+      "institutionName": "GECU Federal Credit Union",
+      "set": "holdout",
+      "fixtureTextSha256": "52c1b54611003f1e7fd2b43e19554219cb712d63db53ce86267cefae307ae4bb",
+      "compactFeesSha256": "beac4c6d2e8157928fa515cfb790b28d1d5b4bb96f7ba8fb653623f81829b9dc",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2451,
+      "institutionName": "Prosperity Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "fcdca0d4857a15c55b7b1da964231298f22b36b1507c0a150de932c0d1fbf348",
+      "compactFeesSha256": "a03c6c4633d3909f35da8c13ed7c39f5f016bcef381b1207eeb6f53bd24b3f59",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2452,
+      "institutionName": "United Texas Bank",
+      "set": "holdout",
+      "fixtureTextSha256": "a71e66277a126f09190c9e1155775a0e5a5f466b1cfe517899be406b623a1cc9",
+      "compactFeesSha256": "8489a20f9fd89efcd2f65a5cc763eac6918602d75efa4faafa49c9cfcdcaa8dc",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 832,
+      "institutionName": "City Public Service/IBEW FCU",
+      "set": "holdout",
+      "fixtureTextSha256": "98d90681782053a98724f054f5b16f20d3b519f2fb7c0529d1c5592f5013e3f3",
+      "compactFeesSha256": "8fba120177fae0bff031b45d054da26ce43b6945a08a4669643efc20f49b81cc",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 841,
+      "institutionName": "First State Bank of Livingston",
+      "set": "holdout",
+      "fixtureTextSha256": "cd9a26a51a19fa28e483ee76eb4e92e57132a15651a4471b0b4a0e1945522654",
+      "compactFeesSha256": "655452a27d695532d7b7df276f0cdaf9f05bc132496549ba3fd546b1d935bab8",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 845,
+      "institutionName": "Houston Police FCU",
+      "set": "holdout",
+      "fixtureTextSha256": "468d3409cc89606df83b8f3b45a482abfb73918bc035276d417587e69d2041c5",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2409,
+      "institutionName": "Credit Union of Texas",
+      "set": "tuning",
+      "fixtureTextSha256": "86804726b5d4d85d1e8144ec89a44d58f358a3022b9b11e9c7e312232b72267b",
+      "compactFeesSha256": "a412839376b04536131d1b47c7f9d7afb807220d1d77e87dcc23e1b1ea36b0b0",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2410,
+      "institutionName": "First Community FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "493d1382151914478a0d4f079ebec3022ced77debfa8cec81b9d348bf8fba8e4",
+      "compactFeesSha256": "13beb42f3ecc7ad6495f9183cb73e3f09513bf693f3d1d5f6c4ba2990fe57440",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2411,
+      "institutionName": "WestStar Bank",
+      "set": "tuning",
+      "fixtureTextSha256": "16a64257dd0e5db67a327efd01d87df698989bc41fb2b47e0b23348a3c126ae8",
+      "compactFeesSha256": "dcd9335c998466a9f16f4306a77338f8ad64ec162c104353984a9a9276ab27f5",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2412,
+      "institutionName": "Austin Bank, Texas N.A.",
+      "set": "tuning",
+      "fixtureTextSha256": "4e76f4f69c96247a5f064661f454f1b7a80d7e3cba3d841e0cc06996bd0297cb",
+      "compactFeesSha256": "74bdd5f3cd87aac981ba3acf9aa981b88e25013a61cde188a89fb29bb533be2e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2413,
+      "institutionName": "Wells Fargo Bank South Central",
+      "set": "tuning",
+      "fixtureTextSha256": "fc242dcaa616e0865a22a60ad9c61db34a85aad09ea595647f34d04871dac285",
+      "compactFeesSha256": "ae2684d0659cc3c8560bd5d378f525e312474ccff9ecba98c58904911ac91802",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2414,
+      "institutionName": "VeraBank, National Association",
+      "set": "tuning",
+      "fixtureTextSha256": "f6e1f74a107dd676ac65c0ab2a5c75810fb579f30e1df8ab130b83ae712e1435",
+      "compactFeesSha256": "7cc6c14b68cb5245202390ce41165c3b18158279d045030c30f5fa920f24a67e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2416,
+      "institutionName": "Texas Bank and Trust Company",
+      "set": "tuning",
+      "fixtureTextSha256": "8f1f74da574733a2c9cc9a0d4de5c0ca063b2590a8b5c3778865b39da2e46a30",
+      "compactFeesSha256": "36e220151a9646dce3af4e45858713ad07ad9e79fa19a7c39f521b72bf9c48b7",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2418,
+      "institutionName": "Texas Exchange Bank",
+      "set": "tuning",
+      "fixtureTextSha256": "fd0529a392dd94ef9300d06ac53900a36ac1d0f1977d1eba4b2f20740086bd3c",
+      "compactFeesSha256": "05837bdf7983c53a699df6fcb90e228cd9bbf5c27040b4ae7b587f4bf3402d80",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2419,
+      "institutionName": "Rally FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "c627dc30388125263d3dbe176b5c1f950313115e233e47c812833276c54d24f6",
+      "compactFeesSha256": "3b3d8e111cbd1932f4c362ab3aa3e38dc55c480c61017e916360c57fa2ca3d99",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2420,
+      "institutionName": "Texas Dow Employees FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "890fbfcfd0e23b3bd11d1797c7018d9ae40d1ac6fe805a393afeec6e42a0512c",
+      "compactFeesSha256": "5fd2fb3d7cf22feaffb30209dedc6c694991e1fe6cf3ae2ab99b59a9500491d9",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2422,
+      "institutionName": "Woodforest National Bank",
+      "set": "tuning",
+      "fixtureTextSha256": "b4e37cb5d92a719082cf9308e84d684336d35ff08dba68639a257474f0e0be76",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2423,
+      "institutionName": "International Bank of Commerce",
+      "set": "tuning",
+      "fixtureTextSha256": "c87af70251e71cf8e1bcdac11cc896d52528e2907695799101d762abd8327e92",
+      "compactFeesSha256": "bfc7cf5c6b1f8807d6da3dcd48db2ccf18f4c31026ac60c089c642d240a695b3",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2424,
+      "institutionName": "Amarillo National Bank",
+      "set": "tuning",
+      "fixtureTextSha256": "65649bfca2bc828d31d0da9b3ed0c0b050328ad525c4bb686dc55137893bd5bf",
+      "compactFeesSha256": "ced80bb94560c7412bd274dc6d172b0d725556e7c271ba2becb919dd5cc2189b",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2425,
+      "institutionName": "Security Service FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "f8ca9ef29821dce9cec170a43ce836dc3cb608dab9d3e698605977292a652d87",
+      "compactFeesSha256": "02f7d898fdcf7d657d344e4953e8fe5b67b4d2d9e059c8a996540c042c6c192c",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2426,
+      "institutionName": "Texas Capital Bank",
+      "set": "tuning",
+      "fixtureTextSha256": "82d16ab0d75e5130b9d59d03d84ae9ac2cdc545b9312152e7ccb7ebbf7cdb710",
+      "compactFeesSha256": "deb5f111674c7a5447958b4a95b2c871fdda29508a9719cced8d62df181b0dc8",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2428,
+      "institutionName": "Refugio County FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "e482d0e195a4ab89ec3ee776489fba0495ac06c3a9816d016f675660326e5c86",
+      "compactFeesSha256": "30347e8ee0b4706d6d2ad78a851c45f891d5c60f9fffadfd9578bddbb1cdc225",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2431,
+      "institutionName": "First Watch FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "3211f2a3071a0a36096fec7183c63a6cf61b9a08c31f6727212dd22ba037a612",
+      "compactFeesSha256": "4db836b14924529c8d552a7fd18f5e46545560a1772c613842a60d7b1fe1570a",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2434,
+      "institutionName": "Texas Community FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "9d268327699f914b63ac71f1ed5824e2b91460d83bf47bda40610dfb486c4c97",
+      "compactFeesSha256": "94f776f07de348947029f5549bed632220b73622425b8368360169477289d09e",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2435,
+      "institutionName": "Government Employees FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "d05c3f0723fb16ed16209533835c2456e8ba0312f28fbdda05fa737e6696f367",
+      "compactFeesSha256": "c5e9abff29ecbb7adfbb313351eee5b28edf8212dfdf3c85645ad8ff64b7fa97",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2436,
+      "institutionName": "Capitol FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "05cbe4d458b3ef48d6b757758e94b92091e7182b9a16fe21ffedc21d9b085556",
+      "compactFeesSha256": "38614d7125596b2a33919f5723c95deae7836e7ddb76f5dcf8dfcb2118726a21",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2437,
+      "institutionName": "America's FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "20489e3a084314547c5d4b07ef74fdc9466b745cc80ebaacae9c0da1e54ca451",
+      "compactFeesSha256": "fe6ba63502f156558a74021c621aa59f0f2ef65a4d6f90932326797a597712ad",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2445,
+      "institutionName": "Velocity FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "7c0aee372e8669e4e467d5a3d333ec56e7477d9fb7a0db2ee24b92af723aaa2e",
+      "compactFeesSha256": "dda3225ecfddfcfff7610f717d864b2f1bae9125a5ce716dc2175322ddad7435",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 2448,
+      "institutionName": "Golden Bank, N.A.",
+      "set": "tuning",
+      "fixtureTextSha256": "4bce99f74ae1f764a740fff0b8dd9038dd618ae53a08b971ec055369354f67d3",
+      "compactFeesSha256": "31666d2cda18917f05b20dec54317beddfbb900f5c6a69985ab671207856a1c6",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 38,
+      "institutionName": "Brazos National Bank",
+      "set": "tuning",
+      "fixtureTextSha256": "fbaf0cdd9e0dddcea688200c36858baef37a5643386706cd3e55b5dd91950081",
+      "compactFeesSha256": "7093754d03887573a78357cd5dc2c1d4f5a7d25383f4e5ed95d6e68bee8ce670",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 835,
+      "institutionName": "Hereford Texas FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "8efe22bb28261e47a95351d8b7792ba9e8f3273f3de646abcb8d32ccd83ee072",
+      "compactFeesSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    },
+    {
+      "textId": 847,
+      "institutionName": "Dallas U.P. Employees FCU",
+      "set": "tuning",
+      "fixtureTextSha256": "87644d8fb4dd5c450942291cd626d6637e99ec54527b62f3bbd711dece54d4ef",
+      "compactFeesSha256": "943e813ea6b94378cfe50120c7140dbe3669bcbfba197061d399c88cf5abf688",
+      "originalDocument": null,
+      "bindingState": "unbound_original_document_mapping_absent"
+    }
+  ]
+}

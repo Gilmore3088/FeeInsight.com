@@ -2444,7 +2444,7 @@ async function executeAgenticStep(
       const relabel = await inSavepoint(tx, (scope) => runAnswerKeyRelabels({ db: scope, dryRun: run.runKind === "dry_run" }))
         .then((value) => ({ value, error: null as string | null }))
         .catch((error: unknown) => ({ value: null, error: error instanceof Error ? error.message : String(error) }));
-      const result = await runAnswerKeyScore({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const result = await runAnswerKeyScore({ runId: run.id, stepId: step.id, dryRun: run.runKind === "dry_run", db: tx });
       const score = result.score;
       const relabelLine = relabel.value ? summarizeAnswerKeyRelabels(relabel.value) : `Atlas's answer-key relabel failed: ${relabel.error}.`;
       return {
@@ -2453,6 +2453,8 @@ async function executeAgenticStep(
         detail: {
           answer_key_relabel: relabel.value ? answerKeyRelabelDetail(relabel.value) : { error: relabel.error },
           schema_ready: result.schemaReady,
+          reference_eligibility: result.reference ?? null,
+          reference_checks: result.referenceChecks ?? null,
           score_run_id: result.scoreRunId,
           scorer_version: score?.scorerVersion ?? null,
           series: (result.series ?? []).map((entry) => ({
@@ -3459,6 +3461,8 @@ async function providerStepGate(
  * its p99, so a step starts only when it can finish inside the 270 s budget.
  */
 const STEP_EXPECTED_MS: Record<string, number> = {
+  // Reference observation stops at120s, leaving30s for scorer/ledger queries.
+  "score-answer-key": 150_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,

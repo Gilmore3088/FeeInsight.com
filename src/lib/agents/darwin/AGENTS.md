@@ -2,6 +2,19 @@
 
 Darwin owns verification and classification.
 
+## Reference eligibility (2026-10-19, #1862)
+
+Current answer-key feedback is admitted only through the shared durable eligibility snapshot
+and its original real-run receipt. Matching IDs/fingerprints alone do not authorize old labels.
+The category-model cache rechecks the snapshot revision before reuse; all historical unbound
+answer-key rows remain stored and excluded. Missing/unknown is never a right/wrong lesson.
+
+Frozen `answer-key-fees.json` is a separate dataset. Its provenance manifest hashes the original
+fixture text and compact fees but records the absent original document mapping for all 81 texts.
+Runtime verdict scoring v2 therefore reports no measurement, and unbound old chunks/lessons
+cannot teach or authorize promotion. Offline fixture history remains intact. Holdout weight is
+always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILITY.md`.
+
 ## Authority
 
 - Darwin reads `raw_fee_observations`.
@@ -1450,7 +1463,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `DARWIN_RECORDED_RELEASE_STRATEGY` | `verify.release_recorded` | v1 | `darwin/release-review.ts` |
 | `DARWIN_RELEASE_REVIEW_STRATEGY` | `verify.release_review` | v17 | `darwin/release-review.ts` |
 | `DARWIN_SCHEDULE_REFILE_STRATEGY` | `verify.schedule_refile` | v1 | `darwin/schedule-refile.ts` |
-| `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v1 | `darwin/verdict-score.ts` |
+| `DARWIN_VERDICT_SCORE_STRATEGY` | `verify.verdict_score` | v2 | `darwin/verdict-score.ts` |
 | `DARWIN_RECHECK_STRATEGY` | `verify.recheck` | v5 | `darwin/verified-recheck.ts` |
 | `LIVE_FRAGMENT_STRATEGY` | `darwin.live_fragment_check` | v6 | `darwin/live-fragment-check.ts` |
 | `HOURLY_CHECK_VERSION` | `darwin.hourly_frequency_check` | v2 | `darwin/hourly-frequency-check.ts` |

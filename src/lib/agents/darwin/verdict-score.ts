@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { sql } from "@/lib/data-store/connection";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { feedbackSchemaReady, recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
@@ -5,6 +6,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { researchSplitCategory } from "@/lib/fee-fold";
 
 import answerKeyTexts from "./answer-key-fees.json";
+import referenceManifest from "./answer-key-reference-manifest.json";
 
 type SqlTag = typeof sql;
 
@@ -18,11 +20,12 @@ type SqlTag = typeof sql;
  *
  * The keys are the 81 hand-keyed schedules in `src/lib/agents/knox/__fixtures__/`,
  * compacted to `answer-key-fees.json` (fee key, amount, first 100 characters of the line;
- * `verdict-score.test.ts` keeps the two in step). They are matched by institution: a
- * verdict on any fee of an institution whose schedule was keyed is scored.
+ * `verdict-score.test.ts` keeps the two in step). Runtime use additionally requires
+ * an original immutable document mapping. The available fixtures lack that mapping;
+ * their offline history remains intact, while runtime judgments and teaching are excluded.
  */
 
-export const DARWIN_VERDICT_SCORE_STRATEGY = { strategy: "verify.verdict_score", version: 1 } as const;
+export const DARWIN_VERDICT_SCORE_STRATEGY = { strategy: "verify.verdict_score", version: 2 } as const;
 /** Decided verdicts per scored chunk, so a chunk reads like the 20-fee hand checks. */
 export const SCORE_CHUNK = 20;
 export const REVIEW_MISS_KIND = "review_wrong";
@@ -48,7 +51,26 @@ interface KeyText {
   tid: number;
   set: string;
   fees: KeyFee[];
+  binding?: FrozenDocumentBinding;
 }
+
+interface FrozenDocumentBinding { institutionId: number; sourceDocumentId: number; contentHash: string; textHash: string }
+interface FrozenReference {
+  textId: number; set: string; fixtureTextSha256: string; compactFeesSha256: string;
+  originalDocument: FrozenDocumentBinding | null;
+}
+export const FROZEN_REFERENCE_MANIFEST_ID = digestManifest();
+function digestManifest() { return createHash("sha256").update(JSON.stringify(referenceManifest)).digest("hex"); }
+const frozenReferences = referenceManifest.references as FrozenReference[];
+const digest = (text: string) => createHash("sha256").update(text).digest("hex");
+const boundReferences = frozenReferences.filter((reference) => reference.originalDocument != null
+  && answerKeyTexts.some((key) => key.tid === reference.textId && key.set === reference.set
+    && digest(JSON.stringify(key.fees)) === reference.compactFeesSha256));
+export const FROZEN_REFERENCE_STATE = {
+  protocol: referenceManifest.protocol, manifestId: FROZEN_REFERENCE_MANIFEST_ID, total: frozenReferences.length,
+  bound: boundReferences.length, unbound: frozenReferences.length - boundReferences.length,
+  state: boundReferences.length ? "bound_frozen_dataset" : "no_measurement_unbound_fixtures",
+} as const;
 
 export const ANSWER_KEY_TEXTS = answerKeyTexts as KeyText[];
 
@@ -196,7 +218,7 @@ export interface ChunkScore {
   knoxRight: number;
   holdoutRight: number;
   holdoutWrong: number;
-  misses: Array<{ verdict: StoredVerdict; scored: ScoredClaim; set: string }>;
+  misses: Array<{ verdict: StoredVerdict; scored: ScoredClaim; set: string; reference?: KeyText }>;
   /** Closed short because its review version was retired; `right + wrong` is under `size`. */
   partial?: boolean;
 }
@@ -217,7 +239,7 @@ export function scoreChunks(
   const chunks: ChunkScore[] = [];
   let current: ChunkScore | null = null;
   for (const verdict of verdicts) {
-    const texts = keysByInstitution.get(verdict.institutionId);
+    const texts = keysByInstitution.get(verdict.institutionId)?.filter((key) => !key.binding || key.binding.sourceDocumentId === verdict.sourceDocumentId);
     if (!texts || texts.length === 0) continue;
     const fees = texts.flatMap((text) => text.fees);
     const set = texts.some((text) => text.set === "holdout") ? "holdout" : "tuning";
@@ -234,7 +256,7 @@ export function scoreChunks(
     } else {
       current.wrong += 1;
       if (set === "holdout") current.holdoutWrong += 1;
-      current.misses.push({ verdict, scored, set });
+      current.misses.push({ verdict, scored, set, reference: texts[0] });
     }
     if (verdict.knoxKey) {
       const knox = scoreClaim({ feeName: verdict.feeName, amount: verdict.amount, isFee: true, category: verdict.knoxKey }, fees);
@@ -249,30 +271,32 @@ export function scoreChunks(
   return chunks;
 }
 
-let institutionKeys: { at: number; map: Map<number, KeyText[]> } | null = null;
-
-/** The keyed texts by institution, read once an hour from `agent_source_texts`. */
+/** Only original immutable document mappings may bind a frozen fixture at runtime. */
 async function loadKeysByInstitution(db: SqlTag): Promise<Map<number, KeyText[]>> {
-  if (institutionKeys && Date.now() - institutionKeys.at < 60 * 60 * 1000) return institutionKeys.map;
-  const byTid = new Map(ANSWER_KEY_TEXTS.map((text) => [text.tid, text]));
-  const rows = await db<{ id: number | string; institution_id: number | string }[]>`
-    SELECT id, institution_id FROM agent_source_texts WHERE id = ANY(${[...byTid.keys()]}::bigint[])
-  `;
   const map = new Map<number, KeyText[]>();
-  for (const row of rows) {
-    const text = byTid.get(Number(row.id));
-    if (!text || row.institution_id == null) continue;
-    const list = map.get(Number(row.institution_id)) ?? [];
-    list.push(text);
-    map.set(Number(row.institution_id), list);
+  if (boundReferences.length === 0) return map;
+  const rows = await db<Array<{ id: number | string; institution_id: number | string; source_document_id: number | string;
+    text_hash: string; normalized_text: string; content_hash: string }>>`
+    SELECT t.id,t.institution_id,t.source_document_id,t.text_hash,t.normalized_text,d.content_hash
+    FROM agent_source_texts t JOIN source_documents d ON d.id=t.source_document_id
+    WHERE t.id=ANY(${boundReferences.map((reference) => reference.textId)}::bigint[]) AND t.status='completed'
+  `;
+  for (const reference of boundReferences) {
+    const binding = reference.originalDocument!, key = ANSWER_KEY_TEXTS.find((key) => key.tid === reference.textId);
+    const row = rows.find((row) => Number(row.id) === reference.textId);
+    if (!key || !row || Number(row.institution_id) !== binding.institutionId || Number(row.source_document_id) !== binding.sourceDocumentId
+      || row.content_hash !== binding.contentHash || row.text_hash !== binding.textHash
+      || digest(row.normalized_text) !== reference.fixtureTextSha256) continue;
+    const list = map.get(binding.institutionId) ?? [];
+    list.push({ ...key, binding }); map.set(binding.institutionId, list);
   }
-  institutionKeys = { at: Date.now(), map };
   return map;
 }
 
 export interface VerdictScoreResult {
   chunks: Array<{ review: string; version: number; right: number; wrong: number; unclear: number; knox_right: number; to_attempt_id: number; partial: boolean }>;
   lessons: number;
+  reference: typeof FROZEN_REFERENCE_STATE;
 }
 
 /**
@@ -284,7 +308,7 @@ export async function runDarwinVerdictScore(
   db: SqlTag,
   options: { runId: number; stepId?: number | null },
 ): Promise<VerdictScoreResult> {
-  const result: VerdictScoreResult = { chunks: [], lessons: 0 };
+  const result: VerdictScoreResult = { chunks: [], lessons: 0, reference: FROZEN_REFERENCE_STATE };
   try {
     const keys = await loadKeysByInstitution(db);
     const institutions = [...keys.keys()];
@@ -361,6 +385,7 @@ async function recordChunk(
     costMicrousd: 0,
     durationMs: 0,
     detail: {
+      frozen_reference: FROZEN_REFERENCE_STATE,
       review,
       review_version: version,
       from_attempt_id: chunk.fromAttemptId,
@@ -400,7 +425,7 @@ async function recordChunk(
  * `loadReviewMisses` never reads it back into a prompt.
  */
 export function missRows(chunk: ChunkScore, runId: number): FeedbackRow[] {
-  return chunk.misses.map(({ verdict, scored, set }) => ({
+  return chunk.misses.map(({ verdict, scored, set, reference }) => ({
     aboutStage: "verify",
     aboutStrategy: verdict.strategy,
     aboutVersion: verdict.version,
@@ -414,14 +439,18 @@ export function missRows(chunk: ChunkScore, runId: number): FeedbackRow[] {
     feeRawId: verdict.feeRawId,
     canonicalFeeKey: verdict.knoxKey,
     amount: verdict.amount,
-    weight: set === HOLDOUT_SET ? 0 : 1,
+    weight: set === HOLDOUT_SET || !reference?.binding ? 0 : 1,
     evidence: {
       fee_name: verdict.feeName.slice(0, 160),
       said: verdict.claim.isFee ? verdict.claim.category ?? "none fits" : "not a fee",
       key_says: scored.keySays,
       key_line: scored.keyLine,
       answer_key_set: set,
-      lesson: set !== HOLDOUT_SET,
+      lesson: set !== HOLDOUT_SET && reference?.binding != null,
+      frozen_reference_protocol: referenceManifest.protocol,
+      frozen_reference_text_id: reference?.tid ?? null,
+      frozen_reference_binding: reference?.binding ? digest(JSON.stringify(reference.binding)) : null,
+      frozen_reference_state: reference?.binding ? "bound" : "unbound",
     },
     runId,
     dedupeKey: `${REVIEW_MISS_CHECK}:attempt:${verdict.attemptId}`,
@@ -451,7 +480,8 @@ export interface ReviewMiss {
  */
 export async function loadReviewMisses(db: SqlTag, review: ScoredReview, keys: string[]): Promise<ReviewMiss[]> {
   const unique = [...new Set(keys.filter(Boolean))];
-  if (unique.length === 0) return [];
+  const tuning = boundReferences.filter((reference) => reference.set !== HOLDOUT_SET);
+  if (unique.length === 0 || tuning.length === 0) return [];
   try {
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return [];
     const rows = await inSavepoint(db, (scope) => scope<{
@@ -468,6 +498,17 @@ export async function loadReviewMisses(db: SqlTag, review: ScoredReview, keys: s
              AND pf.check_name = ${REVIEW_MISS_CHECK}
              AND pf.about_strategy = ${review}
              AND pf.canonical_fee_key = ANY(${unique}::text[])
+             AND pf.evidence->'frozen_reference_protocol' = '1'::jsonb
+             AND pf.evidence->>'frozen_reference_state' = 'bound'
+             AND pf.evidence->'lesson' = 'true'::jsonb AND pf.weight > 0
+             AND EXISTS (SELECT 1 FROM jsonb_to_recordset(${JSON.stringify(tuning.map((reference) => ({
+               tid: reference.textId, institution_id: reference.originalDocument!.institutionId,
+               source_document_id: reference.originalDocument!.sourceDocumentId,
+               binding: digest(JSON.stringify(reference.originalDocument)),
+             })))}::jsonb) AS frozen(tid bigint, institution_id bigint, source_document_id bigint, binding text)
+               WHERE pf.institution_id=frozen.institution_id AND pf.source_document_id=frozen.source_document_id
+                 AND pf.evidence->>'frozen_reference_text_id'=frozen.tid::text
+                 AND pf.evidence->>'frozen_reference_binding'=frozen.binding)
              AND COALESCE(pf.evidence->>'answer_key_set', 'tuning') <> ${HOLDOUT_SET}
         ) ranked
        WHERE rank <= ${MISSES_PER_KEY}::int

@@ -1,4 +1,6 @@
 import { sql } from "./connection";
+import referenceManifest from "@/lib/agents/darwin/answer-key-reference-manifest.json";
+import { createHash } from "node:crypto";
 
 /** Reporting categories only; the attempt log and agents' retry rules stay unchanged. */
 export const METHOD_OUTCOME_GROUPS = ["worked", "nothing", "held", "nextStep", "failed"] as const;
@@ -51,6 +53,9 @@ export interface MethodRow {
   outcomes: Record<string, number>;
   costUsd: number;
   score: VerdictScoreSummary | null;
+  legacyScore?: VerdictScoreSummary | null;
+  referenceState?: "legacy_unbound_no_measurement";
+  referenceManifestId?: string;
 }
 
 export interface MethodGroup {
@@ -111,7 +116,10 @@ export async function getMethodScorecard(days = 7): Promise<{ readAt: string; ro
       method = {
         stage, strategy, version, attempts: 0, ok: 0, nothing: 0, held: 0, nextStep: 0, failed: 0,
         outcomes: {}, costUsd: 0,
-        score: strategy === "verify.verdict_score"
+        score: null,
+        referenceState: strategy === "verify.verdict_score" ? "legacy_unbound_no_measurement" : undefined,
+        referenceManifestId: strategy === "verify.verdict_score" ? createHash("sha256").update(JSON.stringify(referenceManifest)).digest("hex") : undefined,
+        legacyScore: strategy === "verify.verdict_score"
           ? { correct: 0, decided: 0, holdoutCorrect: 0, holdoutDecided: 0, chunks: 0, passedChunks: 0 }
           : null,
       };
@@ -125,13 +133,13 @@ export async function getMethodScorecard(days = 7): Promise<{ readAt: string; ro
     if (group === "worked") method.ok += count;
     else method[group] += count;
     method.costUsd += Number(row.cost) / 1_000_000;
-    if (method.score) {
-      method.score.correct += Number(row.scored_right);
-      method.score.decided += Number(row.scored_decided);
-      method.score.holdoutCorrect += Number(row.holdout_right);
-      method.score.holdoutDecided += Number(row.holdout_right) + Number(row.holdout_wrong);
-      method.score.chunks += count;
-      if (outcome === "ok") method.score.passedChunks += count;
+    if (method.legacyScore) {
+      method.legacyScore.correct += Number(row.scored_right);
+      method.legacyScore.decided += Number(row.scored_decided);
+      method.legacyScore.holdoutCorrect += Number(row.holdout_right);
+      method.legacyScore.holdoutDecided += Number(row.holdout_right) + Number(row.holdout_wrong);
+      method.legacyScore.chunks += count;
+      if (outcome === "ok") method.legacyScore.passedChunks += count;
     }
   }
   return { readAt: new Date().toISOString(), rows: [...methods.values()] };
