@@ -33,9 +33,10 @@ vi.mock("@/lib/api-hardening/budget", async (original) => ({
 
 import { sql, JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
 import { runRosettaPaidRead, PAID_READ_STRATEGY, ROSETTA_PAID_READ_VERSION } from "./paid-read";
-import { hashText } from "./read";
+import { hashText, recordReadResult, type ReadResult } from "./read";
 import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { normalizedWitnessSchemaReady } from "./normalized-witness";
+import { tableRowsFromText, tableRowsPayload } from "./table-rows";
 
 const url = process.env.E2E_DATABASE_URL;
 const schema = `rosetta_policy_${randomBytes(8).toString("hex")}`;
@@ -252,6 +253,214 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
       create: laterCreate, fetchImpl: laterFetch });
     expect(later).toMatchObject({ selected: 1, processed: 0, dryRun: true });
     expect(laterCreate).not.toHaveBeenCalled(); expect(laterFetch).not.toHaveBeenCalled();
+  });
+
+  it.each(["table_rows", "profile"].flatMap((phase) => [
+    { label: "known", usage: known, cost: 220, observation: "observed" },
+    { label: "unknown", usage: { input_tokens: "invalid", output_tokens: 20 }, cost: null, observation: "unknown" },
+  ].map((fixture) => ({ ...fixture, phase }))))("rolls back later $phase failure without witness schema and preserves the $label returned receipt", async (fixture) => {
+    expect(await normalizedWitnessSchemaReady(sql)).toBe(false);
+    const selected = await seed(text);
+    const priorRows = tableRowsPayload(tableRowsFromText(text, "pdf_layout"));
+    await sql`UPDATE agent_source_texts SET table_rows = ${JSON.stringify(priorRows)}::jsonb,
+      document_kind = 'fee_schedule', document_kind_version = 1 WHERE id = ${selected.artifact}`;
+    const [beforeArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    const create = vi.fn(async () => ({ content: [{ type: "text", text: improved }],
+      stop_reason: "end_turn", usage: fixture.usage }) as never);
+    const target = fixture.phase === "table_rows" ? "agent_source_texts" : "institution_source_profiles";
+    const event = fixture.phase === "table_rows" ? "UPDATE OF table_rows" : "INSERT OR UPDATE";
+    const error = `owned later ${fixture.phase} persistence failure`;
+    // The failing statement sees the prior text UPSERT; the profile seam also sees new rows.
+    await state.client.unsafe(`CREATE FUNCTION "${schema}".fail_paid_later_write() RETURNS trigger LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF (SELECT text_hash FROM "${schema}".agent_source_texts WHERE id = ${selected.artifact})
+          IS DISTINCT FROM '${hashText(improved)}' THEN
+          RAISE EXCEPTION 'owned later-write text precondition not reached';
+        END IF;
+        ${fixture.phase === "profile" ? `IF COALESCE((SELECT jsonb_array_length(table_rows->'rows')
+          FROM "${schema}".agent_source_texts WHERE id = ${selected.artifact}), -1) <> 4 THEN
+          RAISE EXCEPTION 'owned later-write table precondition not reached';
+        END IF;` : ""}
+        RAISE EXCEPTION '${error}' USING ERRCODE = 'P0001';
+      END $fn$`);
+    try {
+      await state.client.unsafe(`CREATE TRIGGER fail_paid_later_write BEFORE ${event} ON "${schema}".${target}
+        FOR EACH ROW EXECUTE FUNCTION "${schema}".fail_paid_later_write()`);
+      await expect(runRosettaPaidRead({ db: sql, runId: 900, stepId: 4, create, stateCode: "ZX",
+        fetchImpl: async () => new Response(pdf, { headers: { "content-type": "application/pdf" } }), pageCounter: async () => 2 }))
+        .rejects.toMatchObject({ code: "P0001", message: error });
+    } finally {
+      await state.client.unsafe(`DROP TRIGGER IF EXISTS fail_paid_later_write ON "${schema}".${target}`);
+      await state.client.unsafe(`DROP FUNCTION "${schema}".fail_paid_later_write()`);
+    }
+    expect(create).toHaveBeenCalledTimes(1);
+    const events = await sql`SELECT status, estimated_cost_microusd, metadata FROM ai_api_usage_events`;
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ status: "completed", metadata: {
+      usage_observation: fixture.observation, source_document_id: selected.document,
+      token_counts_are_placeholders: fixture.observation === "unknown",
+    } });
+    expect(events[0].estimated_cost_microusd === null ? null : Number(events[0].estimated_cost_microusd)).toBe(fixture.cost);
+    const [runRow] = await sql`SELECT actual_provider_calls, actual_estimated_cost_microusd FROM agent_runs WHERE id = 900`;
+    expect(runRow.actual_provider_calls).toBe(1);
+    expect(Number(runRow.actual_estimated_cost_microusd)).toBe(fixture.cost ?? 0);
+    expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy IN (${PAID_READ_STRATEGY}, 'read.page_check', 'read.table_rows')`).toHaveLength(0);
+    const [afterArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    expect(afterArtifact.normalized_text).toBe(text);
+    expect(afterArtifact).toEqual(beforeArtifact);
+    expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+  });
+
+  // Preserve real begin/savepoint primitives while keeping the capability probe in this
+  // suite's random namespace, even if another suite has installed public migration 67.
+  function privateScope(client: typeof state.client): typeof sql {
+    return new Proxy(client, {
+      apply(target, receiver, args) {
+        const parts = args[0] as TemplateStringsArray;
+        const qualify = (value: string) => value.replace(/public\.agent_source_text_witnesses/g, `"${schema}".agent_source_text_witnesses`);
+        return Reflect.apply(target, receiver, [Object.assign(parts.map(qualify), { raw: parts.raw.map(qualify) }), ...args.slice(1)]);
+      },
+      get(target, key) {
+        const value = Reflect.get(target, key, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }) as unknown as typeof sql;
+  }
+  function ordinaryResult(selected: Awaited<ReturnType<typeof seed>>, output: string | null, status: ReadResult["status"] = "completed"): ReadResult {
+    const rows = output ? tableRowsFromText(output, "pdf_layout") : [];
+    return { sourceDocumentId: selected.document, institutionId: selected.institution, institutionName: "Owned Rosetta Policy Bank",
+      sourceUrl: "https://fixture.invalid/fees.pdf", status, documentType: "pdf", contentType: "application/pdf", sourceHash,
+      textHash: output == null ? null : hashText(output), charCount: output?.length ?? 0,
+      error: status === "failed" ? "Owned ordinary read failure" : null, attemptOutcome: status === "failed" ? "network_error" : "ok",
+      strategy: "read.pdf_layout", format: "pdf_text", routerReason: null, fromVault: true, pageCheck: null,
+      tableRows: rows.length, rows, reader: "read.pdf_layout", followUps: [], handoff: null, reread: false, durationMs: 0 };
+  }
+  async function failOrdinaryProfile(selected: Awaited<ReturnType<typeof seed>>, improved: string) {
+    await state.client.unsafe(`CREATE FUNCTION "${schema}".fail_ordinary_profile() RETURNS trigger LANGUAGE plpgsql AS $fn$
+      BEGIN
+        IF (SELECT text_hash FROM "${schema}".agent_source_texts WHERE id = ${selected.artifact})
+          IS DISTINCT FROM '${hashText(improved)}' OR
+          (SELECT jsonb_array_length(table_rows->'rows') FROM "${schema}".agent_source_texts WHERE id = ${selected.artifact}) IS DISTINCT FROM 4 THEN
+          RAISE EXCEPTION 'owned ordinary later-write precondition not reached';
+        END IF;
+        RAISE EXCEPTION 'owned ordinary profile failure' USING ERRCODE = 'P0001';
+      END $fn$`);
+    await state.client.unsafe(`CREATE TRIGGER fail_ordinary_profile BEFORE INSERT OR UPDATE ON "${schema}".institution_source_profiles
+      FOR EACH ROW EXECUTE FUNCTION "${schema}".fail_ordinary_profile()`);
+  }
+  async function removeOrdinaryFailure() {
+    await state.client.unsafe(`DROP TRIGGER IF EXISTS fail_ordinary_profile ON "${schema}".institution_source_profiles`);
+    await state.client.unsafe(`DROP FUNCTION IF EXISTS "${schema}".fail_ordinary_profile()`);
+  }
+
+  it("ordinary root writes roll back together, and an explicit subsequent invocation can succeed", async () => {
+    expect(await normalizedWitnessSchemaReady(sql)).toBe(false);
+    const selected = await seed(text);
+    const [beforeArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    await failOrdinaryProfile(selected, improved);
+    try {
+      await expect(recordReadResult(sql, 900, ordinaryResult(selected, improved), improved, true))
+        .rejects.toMatchObject({ code: "P0001", message: "owned ordinary profile failure" });
+      expect((await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
+      expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+    } finally { await removeOrdinaryFailure(); }
+    const result = ordinaryResult(selected, improved);
+    // This is an explicit test invocation after fixing storage, not a new runtime retry.
+    await recordReadResult(sql, 900, result, improved, true);
+    expect(result.witnessRetention).toEqual({ status: "unavailable_schema" });
+    const [stored] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    expect(stored).toMatchObject({ normalized_text: improved, text_hash: hashText(improved), document_kind: "fee_schedule", reader: "read.pdf_layout" });
+    expect(stored.table_rows.rows).toHaveLength(4);
+    expect(Number((await sql`SELECT last_successful_text_id FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0].last_successful_text_id)).toBe(selected.artifact);
+    expect(await sql`SELECT * FROM ai_api_usage_events`).toHaveLength(0);
+    expect(await sql`SELECT * FROM pipeline_attempts`).toHaveLength(1);
+  });
+
+  it("a failed inner savepoint preserves unrelated caller work without committing partial artifacts", async () => {
+    const selected = await seed(text);
+    const [beforeArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    await failOrdinaryProfile(selected, improved);
+    try {
+      await state.client.begin(async (tx) => {
+        const scope = privateScope(tx as unknown as typeof state.client);
+        expect(typeof (scope as unknown as { savepoint?: unknown }).savepoint).toBe("function");
+        await tx`UPDATE institution_sources SET institution_name = 'Unrelated caller work kept' WHERE id = ${selected.institution}`;
+        await expect(recordReadResult(scope, 900, ordinaryResult(selected, improved), improved, true))
+          .rejects.toMatchObject({ code: "P0001", message: "owned ordinary profile failure" });
+        expect((await tx`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
+        expect((await tx`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+        expect((await tx`SELECT institution_name FROM institution_sources WHERE id = ${selected.institution}`)[0].institution_name).toBe("Unrelated caller work kept");
+      });
+    } finally { await removeOrdinaryFailure(); }
+    expect((await sql`SELECT institution_name FROM institution_sources WHERE id = ${selected.institution}`)[0].institution_name).toBe("Unrelated caller work kept");
+    expect((await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
+    expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+  });
+
+  it("successful inner writes remain subject to the caller's outer rollback", async () => {
+    const selected = await seed(text);
+    const [beforeArtifact] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    await expect(state.client.begin(async (tx) => {
+      const scope = privateScope(tx as unknown as typeof state.client);
+      await recordReadResult(scope, 900, ordinaryResult(selected, improved), improved, true);
+      expect((await tx`SELECT normalized_text FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].normalized_text).toBe(improved);
+      expect((await tx`SELECT table_rows FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].table_rows.rows).toHaveLength(4);
+      throw new Error("owned caller outer rollback");
+    })).rejects.toThrow("owned caller outer rollback");
+    expect((await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(beforeArtifact);
+    expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+  });
+
+  it("companion reads keep the main profile while storing their own complete artifact group", async () => {
+    const selected = await seed(text);
+    await sql`UPDATE source_documents SET companion_source_id = 789 WHERE id = ${selected.document}`;
+    const [beforeProfile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    const result = ordinaryResult(selected, improved);
+    await recordReadResult(sql, 900, result, improved, true);
+    const [stored] = await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    expect(stored).toMatchObject({ normalized_text: improved, document_kind: "fee_schedule", reader: "read.pdf_layout" });
+    expect(stored.table_rows.rows).toHaveLength(4);
+    expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`)[0]).toEqual(beforeProfile);
+    expect(result.witnessRetention).toEqual({ status: "unavailable_schema" });
+  });
+
+  it("legacy column mode still preserves existing kind/table/reader columns", async () => {
+    const selected = await seed(text);
+    const priorRows = tableRowsPayload(tableRowsFromText(text, "pdf_layout"));
+    await sql`UPDATE agent_source_texts SET table_rows = ${JSON.stringify(priorRows)}::jsonb,
+      document_kind = 'fee_schedule', document_kind_version = 1, reader = 'legacy_fixture' WHERE id = ${selected.artifact}`;
+    const [before] = await sql`SELECT document_kind, document_kind_version, table_rows, reader FROM agent_source_texts WHERE id = ${selected.artifact}`;
+    const improved = `${text}\nWire transfer fee | $25.00`;
+    await recordReadResult(sql, 900, ordinaryResult(selected, improved), improved, false);
+    expect((await sql`SELECT document_kind, document_kind_version, table_rows, reader FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toEqual(before);
+    expect((await sql`SELECT normalized_text FROM agent_source_texts WHERE id = ${selected.artifact}`)[0].normalized_text).toBe(improved);
+  });
+
+  it("failed null-text writes still clear derived text fields and retain the prior successful profile pointer", async () => {
+    const selected = await seed(text);
+    const priorRows = tableRowsPayload(tableRowsFromText(text, "pdf_layout"));
+    await sql`UPDATE agent_source_texts SET table_rows = ${JSON.stringify(priorRows)}::jsonb,
+      document_kind = 'fee_schedule', document_kind_version = 1 WHERE id = ${selected.artifact}`;
+    const result = ordinaryResult(selected, null, "failed");
+    await recordReadResult(sql, 900, result, null, true);
+    expect((await sql`SELECT * FROM agent_source_texts WHERE id = ${selected.artifact}`)[0]).toMatchObject({
+      status: "failed", normalized_text: null, text_hash: null, char_count: 0,
+      document_kind: null, document_kind_version: null, table_rows: null, error_message: "Owned ordinary read failure",
+    });
+    const [profile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id = ${selected.institution}`;
+    expect(Number(profile.last_successful_text_id)).toBe(selected.artifact);
+    expect(profile.last_failure_reason).toBe("Owned ordinary read failure");
+    expect(profile.consecutive_failures).toBe(1);
+    expect(result.witnessRetention).toEqual({ status: "unavailable_schema" });
   });
 
   it("stores an unknown-cost usable partial with active main witness retention and matching produced/retained provenance", async () => {
