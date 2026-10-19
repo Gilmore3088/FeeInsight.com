@@ -147,9 +147,13 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
 
   it("does not apply the income-period rule to an explicitly sourced published fee-price median", () => {
     const priceRead = { toolName: "queryData", input: { measure: "fee:atm_non_network" }, output: {
-      measure: "fee:atm_non_network", period_basis: "fee_schedule", source: "published_fee_catalog", unit: "USD", median: 1, institution_count: 25,
+      measure: "fee:atm_non_network", period_basis: "fee_schedule", source: "published_fee_catalog", unit: "USD", median: 1, institution_count: 25, review_status: "approved", evidence_policy: "verified_only",
     } };
     expect(writtenAnswerCheck(`${result} The cohort median published ATM fee price was $1.`, [...outputs, priceRead.output], operandRetained.question, { ...context, toolResults: [...context.toolResults!, priceRead] })).toMatchObject({ passed: true, problems: [] });
+    const priceContext = { ...context, toolResults: [...context.toolResults!, priceRead] };
+    expect(writtenAnswerCheck("All 25 institutions reported published fee prices, giving the fee-price sample strong benchmark maturity.", [...outputs, priceRead.output], "", priceContext)).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("All 25 institutions reported published fee prices, giving the fee-price sample a strong financial benchmark.", [...outputs, priceRead.output], "", priceContext).passed).toBe(false);
+    expect(writtenAnswerCheck("All 25 institutions reported published fee prices, giving the fee-price sample strong benchmark maturity, and the financial benchmark is strong.", [...outputs, priceRead.output], "", priceContext).passed).toBe(false);
   });
 
   it.each([
@@ -166,12 +170,17 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
   it.each([
     "All 25 reported a usable figure for this date; coverage for this cohort is complete.",
     "All 25 reported, but coverage alone cannot establish a strong benchmark.",
+    "All 25 reported, but this is not a strong benchmark.",
+    "All 25 reported, but that does not make this a reliable benchmark.",
     "All 25 reported. Benchmark strength has not been established from coverage.",
     "Broad NCUA fee income includes overdraft fees but does not isolate their amount.",
     "This is not overdraft-only income or bank deposit service charges.",
     "This is not overdraft income alone.",
     "Separate overdraft income is not reported in the available evidence.",
     "Overdraft income cannot be determined from this broad total.",
+    "Broad NCUA fee income does not exclude overdraft fees.",
+    "Broad NCUA fee income doesn't exclude overdraft fees.",
+    "A published fee price is not overdraft income.",
   ])("preserves precise coverage and overdraft limitations: %s", (answer) => {
     expect(check(answer, "")).toMatchObject({ passed: true, problems: [] });
   });
@@ -179,9 +188,14 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
   it.each([
     "All 25 reported a usable figure, so the benchmark is strong.",
     "All 25 reported, making this a reliable benchmark.",
+    "All 25 reported, but coverage alone cannot establish a strong benchmark; nevertheless the financial benchmark is reliable.",
+    "All 25 financial filers reported, so the financial benchmark is strong; published prices are separate.",
     "This is not overdraft income or bank deposit service charges.",
     "Broad fee income excludes overdraft fees.",
     "Overdraft income is excluded from broad NCUA fee income.",
+    "Broad income does not exclude overdraft fees, but the broad total excludes overdraft income.",
+    "Broad income does not exclude overdraft fees and this is not overdraft income.",
+    "Broad fee income excludes overdraft fees, while published fee prices are separate.",
   ])("holds unsupported quality or exclusion claims: %s", (answer) => {
     const checked = check(answer, "");
     expect(checked.passed).toBe(false);

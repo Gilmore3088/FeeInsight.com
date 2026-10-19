@@ -453,10 +453,20 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
   if (evidence.ncua && evidence.incomplete) problems.add("The NCUA interpretation check could not inspect all structured evidence within its limits. Narrow the evidence before presenting this answer.");
   if (evidence.ncua) for (const problem of quarterQuestionProblems(text, question, evidence)) problems.add(problem);
   if (evidence.financialPeerComparison) for (const sentence of text.split(/\r?\n+|(?<=[.!?])\s+/)) {
-    const completeness = /\ball\s+(?:\d+\s+)?(?:(?:eligible\s+)?(?:credit unions?|banks?|institutions?|peers?|filers?)\s+)?(?:reported|filed)\b|\b(?:complete|full)\s+(?:filing\s+)?coverage\b/i;
-    const quality = sentence.match(/\b(?:benchmark|comparison|cohort|sample)\s+(?:is|was|looks?|seems?|remains?)\s+(?:strong|reliable|robust|representative)\b|\b(?:strong|reliable|robust|representative)\s+(?:financial\s+)?(?:benchmark|comparison|cohort|sample)\b/i);
-    if (completeness.test(sentence) && quality && !explicitlyWithdrawn(sentence, quality)) {
-      problems.add("Complete reporting for the stated financial cohort establishes coverage, not benchmark strength, reliability or representativeness. State the counts and limitations without inferring quality from completeness.");
+    const completeness = /\ball\s+(?:\d+\s+)?(?:(?:(?:eligible|financial)\s+){0,2}(?:credit unions?|banks?|institutions?|peers?|filers?)\s+)?(?:reported|filed)\b|\b(?:complete|full)\s+(?:filing\s+)?coverage\b/i;
+    if (!completeness.test(sentence)) continue;
+    const qualities = sentence.matchAll(/\b(?:benchmark|comparison|cohort|sample)\s+(?:is|was|looks?|seems?|remains?)\s+(?:strong|reliable|robust|representative)\b|\b(?:strong|reliable|robust|representative)\s+(?:financial\s+)?(?:benchmark|comparison|cohort|sample)\b/gi);
+    for (const quality of qualities) {
+      const prefix = sentence.slice(0, quality.index);
+      const local = prefix.split(/[;,]|\b(?:and|but|yet|however|while|nevertheless)\b/i).at(-1) ?? "";
+      const feePrice = /\b(?:fee[ -]price|published fee prices?|fee[ -]schedule prices?)\b/i;
+      const financial = /\b(?:financial|filers?|filings?|call reports?|fee income|service[ -]charge income|revenue)\b/i;
+      const domain = feePrice.test(local) || financial.test(local) ? local : prefix;
+      const priceMaturity = feePrice.test(domain) && !financial.test(`${domain} ${quality[0]}`);
+      const negated = /\b(?:is|was|are|were)\s+not\s+(?:an?\s+)?$|\b(?:does not|doesn't|do not|don't|cannot|can't|did not|didn't)\s+(?:make|establish|prove|show|imply|ensure|guarantee)\s+(?:(?:this|that|it)\s+)?(?:an?\s+)?$/i.test(prefix);
+      if (!priceMaturity && !negated && !explicitlyWithdrawn(sentence, quality)) {
+        problems.add("Complete reporting for the stated financial cohort establishes coverage, not benchmark strength, reliability or representativeness. State the counts and limitations without inferring quality from completeness.");
+      }
     }
   }
   if (!evidence.ncua) return [...problems];
@@ -465,11 +475,17 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
   for (const raw of clauses) {
     const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
     if (!clause || (/^(?:how|what|which|could|can|would|does|do)\b/i.test(clause) && clause.endsWith("?"))) continue;
-    if (broadIncome && !/\b(?:schedule|published price|fee price)\b/i.test(clause)) {
-      const exclusion = clause.match(/\b(?:is|was)\s+not\s+(?:an?\s+)?overdraft\s+(?:income|revenue)\b|\b(?:excludes?|excluding|does not include|doesn't include|contains? no)\s+(?:any\s+)?overdraft(?:\s+(?:fees?|income|revenue))?\b|\boverdraft(?:\s+(?:fees?|income|revenue))?\s+(?:(?:is|are|was|were)\s+)?excluded\s+from\s+(?:broad\s+)?(?:NCUA\s+)?fee income\b/i);
-      const qualified = exclusion && /^\s*(?:only|alone)\b/i.test(clause.slice((exclusion.index ?? 0) + exclusion[0].length));
-      if (exclusion && !qualified && !explicitlyWithdrawn(clause, exclusion)) {
-        problems.add("Broad NCUA fee income includes overdraft fees; it does not isolate them. Say not overdraft-only income or that a separate overdraft amount is unavailable, rather than excluding overdraft from the broad total.");
+    if (broadIncome) {
+      const exclusions = clause.matchAll(/\b(?:is|was)\s+not\s+(?:an?\s+)?overdraft\s+(?:income|revenue)\b|\b(?:excludes?|excluding|does not include|doesn't include|contains? no)\s+(?:any\s+)?overdraft(?:\s+(?:fees?|income|revenue))?\b|\boverdraft(?:\s+(?:fees?|income|revenue))?\s+(?:(?:is|are|was|were)\s+)?excluded\s+from\s+(?:broad\s+)?(?:NCUA\s+)?fee income\b/gi);
+      for (const exclusion of exclusions) {
+        const prefix = clause.slice(0, exclusion.index);
+        const local = prefix.split(/[;,]|\b(?:and|but|yet|however|while|nevertheless)\b/i).at(-1) ?? "";
+        const priceSubject = /\b(?:schedule|published price|fee price)\b/i.test(local) && !/\b(?:broad|NCUA|total|fee income)\b/i.test(local);
+        const qualified = /^\s*(?:only|alone)\b/i.test(clause.slice(exclusion.index + exclusion[0].length));
+        const negated = /\b(?:does not|doesn't|do not|don't|cannot|can't|did not|didn't)\s*$/i.test(prefix);
+        if (!priceSubject && !qualified && !negated && !explicitlyWithdrawn(clause, exclusion)) {
+          problems.add("Broad NCUA fee income includes overdraft fees; it does not isolate them. Say not overdraft-only income or that a separate overdraft amount is unavailable, rather than excluding overdraft from the broad total.");
+        }
       }
     }
     const memberTopic = /\b(?:members?(?:hip)?|customers?)\b/i;
