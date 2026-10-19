@@ -951,6 +951,18 @@ describe("agentic run store", () => {
     expect(message).toContain("Recheck producer report: 3 checked");
   });
 
+  it.each(["classify", "verify"] as const)("saves a v2 producer-event reference through %s with no new raw rows",async alias=>{
+    const {detail,message}=await savedRecheckRun(alias,{...recheckZero,secondLookOtherCode:1,checked:3,restored:[9],flagged:1,waiting:1,execution:{
+      protocol:"darwin.recheck.execution.v1",scope:"selected_batch",state:"partial",runId:runRow.id,stepId:queuedStepRows[0].id,eventId:700,
+      batchKey:"fixture-batch",selected:5,assessed:4,settled:3,unresolved:1,reasonCode:null,samples:[{feeVerifiedId:10,code:"identity_changed"}],
+      phases:{primary:"complete",due:"complete",source:"complete",olderShadow:"cadence_skip",dueShadow:"reported_unknown"},
+    }},{processed:0});
+    expect(detail.recheck).toMatchObject({protocol:"darwin.recheck.receipt.v2",state:"referenced",producerEventId:700,assessmentCompleteness:"partial",effects:{restored:1}});
+    expect(message).toContain("witness #700");expect(message).toContain("whole backlog unknown");
+    expect(message).toContain("1 flagged/pending, 1 waiting, 1 other-code pending");
+    expect(message).toContain("do not finalize a fee decision");
+  });
+
   it("runs Darwin verification through the agentic worker instead of measuring only", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const verifyStepRows = [
