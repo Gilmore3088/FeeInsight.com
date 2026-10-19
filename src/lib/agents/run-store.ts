@@ -2,6 +2,13 @@ import { sql, withTransaction } from "@/lib/data-store/connection";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
 import { getExecutionBackend } from "@/lib/execution-backend";
+import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, positiveId } from "./deming/live-source-audit";
+import { createLiveAuditDraw } from "@/lib/data-store/live-source-audit";
+import { runLiveAuditChunk } from "./deming/live-source-audit-run";
+import { runLiveSourceCapture } from "./magellan/live-audit-capture";
+import { expireLiveCaptureEpisodes } from "@/lib/data-store/live-source-capture";
+import { withLiveAuditReceiptPhase } from "@/lib/data-store/live-source-sql";
+import { archiveLiveSourceAudit,finalizeDueLiveAudits } from "@/lib/data-store/live-source-audit-read";
 import { reportReviewStates } from "@/lib/agents/atlas/report-review-states";
 import { runDarwinVerify } from "@/lib/agents/darwin/verify";
 import { runHamiltonCategoryGuard } from "@/lib/agents/hamilton/category-guard";
@@ -2594,7 +2601,7 @@ async function executeAgenticStep(
       };
     }
     case "atlas-storage-retention": {
-      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
+      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
       return {
@@ -2648,6 +2655,33 @@ async function executeAgenticStep(
           agent_health: result.agentHealth ?? null,
         },
       };
+    }
+    case "deming-live-source-draw": {
+      if(run.runKind!=="workflow")return {status:"completed",summary:"Live-source draw skipped outside a real workflow.",detail:{skipped:true}};
+      const receipt=await createLiveAuditDraw({db:tx,context:{runId:run.id,stepId:step.id,stepKey:step.stepKey}});
+      return {status:"completed",summary:`Live-source diagnostic draw ${receipt.id}: ${receipt.detail?.state??"unavailable"}; ${receipt.detail?.rows.length??0} frozen fees. Separate from the weekly live 50-institution launch review.`,detail:{drawId:receipt.id,state:receipt.detail?.state??"unavailable",reason:receipt.reason??receipt.detail?.reason??null}};
+    }
+    case "deming-live-source-audit": {
+      if(run.runKind!=="workflow"||!positiveId(run.params.drawId))throw new Error("Invalid live-source diagnostic draw");
+      const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
+      const result=await runLiveAuditChunk({db:tx,context,drawId:run.params.drawId});
+      const captures=result.captureRequestIds??[];
+      return {status:"completed",summary:`Live-source diagnostic: ${result.groups} groups attempted; ${result.persisted?"receipt persisted":"no new receipt"}; ${captures.length} exact-document capture requests.`,detail:{...result,captureRequestIds:captures}};
+    }
+    case "magellan-live-audit-capture": {
+      if(run.runKind!=="workflow"||!positiveId(run.params.requestId))throw new Error("Invalid live-source capture request");
+      const result=await runLiveSourceCapture({db:tx,context:{runId:run.id,stepId:step.id,stepKey:step.stepKey},requestId:run.params.requestId});
+      return {status:"completed",summary:`Magellan diagnostic side-copy: ${result.reason}; ${result.persisted?"disposition persisted":"no new disposition"}.`,detail:result};
+    }
+    case "deming-live-source-archive": {
+      if(run.runKind!=="workflow"||run.params.source!==LIVE_AUDIT_SOURCE)throw new Error("Invalid live-source archival workflow");
+      const context={runId:run.id,stepId:step.id,stepKey:step.stepKey};
+      const {expiredCaptures,archived,finalized}=await withLiveAuditReceiptPhase(tx,Date.now()+10_000,async scope=>({
+        expiredCaptures:await expireLiveCaptureEpisodes(scope,context),
+        archived:positiveId(run.params.drawId)?await archiveLiveSourceAudit(scope,context,run.params.drawId):false,
+        finalized:await finalizeDueLiveAudits(scope,context),
+      }));
+      return {status:"completed",summary:`Live-source diagnostic history: ${archived?"current draw archived":"current draw still partial or unarchived"}; ${finalized} older finalizations, ${expiredCaptures} capture expirations.`,detail:{archived,finalized,expiredCaptures}};
     }
     case "content-market-spread": {
       // The brief: the drafting agent's lessons from skipped drafts, read before it drafts; a
@@ -3501,6 +3535,10 @@ async function providerStepGate(
 const STEP_EXPECTED_MS: Record<string, number> = {
   // Reference observation stops at120s, leaving30s for scorer/ledger queries.
   "score-answer-key": 150_000,
+  "deming-live-source-audit":150_000,
+  "magellan-live-audit-capture":150_000,
+  "deming-live-source-draw":30_000,
+  "deming-live-source-archive":30_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
@@ -3836,8 +3874,8 @@ export async function executeAgentRun(
 
   // The daily route only queues this workflow: even a tick's first run must leave
   // its 150-second reference score queued when it cannot fit the explicit deadline.
-  const scoreboardDeadline = existing.agent === "atlas" && existing.runKind === "workflow"
-    && runSource === "atlas.scoreboard" && options.deadlineAt != null;
+  const scoreboardDeadline = existing.runKind === "workflow" && options.deadlineAt != null
+    && ((existing.agent === "atlas" && runSource === "atlas.scoreboard")||runSource===LIVE_AUDIT_SOURCE);
   if ((options.alwaysRunFirstStep === false || scoreboardDeadline) && options.deadlineAt != null) {
     const keys = await peekQueuedStepKeys(runId, maxSteps);
     if (Date.now() + expectedMsToFirstWork(keys, runSource) > options.deadlineAt) {
@@ -3958,6 +3996,7 @@ export async function executeAgentRun(
           step.stepKey === "report-reconcile" ||
           // The lane sync writes through its own statements; a step transaction would sit idle.
           step.stepKey === "lane-sync" ||
+          Object.values(LIVE_AUDIT_STEPS).includes(step.stepKey as never) ||
           isRegistryStepKey(step.stepKey)
             ? await executeAgenticStep(sql, run, step)
             : await withTransaction((tx) => executeAgenticStep(tx, run, step));
@@ -4402,7 +4441,12 @@ export async function cancelAllActiveAgentRuns(
   return result;
 }
 
-export async function startAgentRun(input: StartAgentRunInput): Promise<StartAgentRunResult> {
+export async function startAgentRun(input: StartAgentRunInput, transaction?: typeof sql): Promise<StartAgentRunResult> {
+  // The live diagnostic scheduler serializes admission+creation in one short transaction.
+  // No execution/HTTP/provider work is allowed in this opt-in deterministic creation seam.
+  if(transaction&&(!input.reuseTerminal||input.params?.source!=="deming.live_source_audit"||input.kind!=="workflow"
+    ||!["atlas","magellan"].includes(input.agent)||input.steps.some(s=>!["deming-live-source-audit","magellan-live-audit-capture","deming-live-source-archive"].includes(s.key))
+    ||getExecutionBackend()!=="agentic_v1"))throw new Error("Invalid live diagnostic transaction scope");
   const normalizedStateCode = normalizeStateCode(input.stateCode ?? input.params?.state_code);
   const params = normalizedStateCode
     ? { ...(input.params ?? {}), state_code: normalizedStateCode }
@@ -4429,7 +4473,7 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
     }
   }
 
-  const created = await withTransaction(async (tx) => {
+  const create = async (tx: typeof sql) => {
     if (input.idempotencyKey && input.reuseTerminal) {
       // One short transaction, no step/HTTP work or nested connection: concurrent
       // daily requests reuse the same original run, including failed/cancelled ones.
@@ -4509,7 +4553,8 @@ export async function startAgentRun(input: StartAgentRunInput): Promise<StartAge
       steps: stepRows.map(mapStep),
       reused: false,
     };
-  });
+  };
+  const created = transaction ? await create(transaction) : await withTransaction(create);
 
   if (created.reused) return created;
   if (getExecutionBackend() !== "agentic_v1") {

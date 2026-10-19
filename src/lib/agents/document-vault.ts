@@ -23,7 +23,7 @@ export type VaultStoreStatus = "stored" | "already_stored" | "not_configured" | 
 
 export interface DocumentVault {
   configured: boolean;
-  store(bytes: Uint8Array, contentHash: string, contentType: string | null): Promise<{ status: VaultStoreStatus; key: string | null; error?: string }>;
+  store(bytes: Uint8Array, contentHash: string, contentType: string | null, options?: { signal?: AbortSignal }): Promise<{ status: VaultStoreStatus; key: string | null; error?: string }>;
   read(key: string): Promise<Uint8Array>;
   presign(key: string): Promise<string>;
 }
@@ -67,24 +67,27 @@ function isNotFound(error: unknown): boolean {
 export function createDocumentVault(client: S3Client | null, bucket: string = documentsBucket()): DocumentVault {
   return {
     configured: client != null,
-    async store(bytes, contentHash, contentType) {
+    async store(bytes, contentHash, contentType, options) {
       if (!client) return { status: "not_configured", key: null };
+      if(options?.signal?.aborted)return {status:"failed",key:null,error:"Document vault operation cancelled"};
       const key = documentKey(contentHash);
       try {
         try {
-          await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+          const command=new HeadObjectCommand({ Bucket: bucket, Key: key });
+          await vaultAbortable(options?.signal ? client.send(command,{abortSignal:options.signal}) : client.send(command),options?.signal);
+          if(options?.signal?.aborted)throw new Error("Document vault operation cancelled");
           return { status: "already_stored", key };
         } catch (error) {
           if (!isNotFound(error)) throw error;
         }
-        await client.send(
-          new PutObjectCommand({
+        if(options?.signal?.aborted)throw new Error("Document vault operation cancelled");
+        const command=new PutObjectCommand({
             Bucket: bucket,
             Key: key,
             Body: bytes,
             ContentType: contentType ?? "application/octet-stream",
-          }),
-        );
+          });
+        await vaultAbortable(options?.signal ? client.send(command,{abortSignal:options.signal}) : client.send(command),options?.signal);
         return { status: "stored", key };
       } catch (error) {
         return { status: "failed", key: null, error: error instanceof Error ? error.message : String(error) };
@@ -101,6 +104,15 @@ export function createDocumentVault(client: S3Client | null, bucket: string = do
       return getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn: PRESIGN_TTL_SECONDS });
     },
   };
+}
+
+/** SDK cancellation plus a finite await even for an injected client ignoring abortSignal. */
+async function vaultAbortable<T>(work:Promise<T>,signal?:AbortSignal):Promise<T>{
+  if(!signal)return work;
+  if(signal.aborted)throw new Error("Document vault operation cancelled");
+  let abort:()=>void=()=>undefined;
+  const cancelled=new Promise<never>((_,reject)=>{abort=()=>reject(new Error("Document vault operation cancelled"));signal.addEventListener("abort",abort,{once:true});});
+  try{return await Promise.race([work,cancelled]);}finally{signal.removeEventListener("abort",abort);}
 }
 
 export function getDocumentVault(): DocumentVault {
