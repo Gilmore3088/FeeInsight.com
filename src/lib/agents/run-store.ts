@@ -2596,7 +2596,8 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
     }
     case "deming-source-health": {
-      // Read-only (#1866): one SELECT over registry_ingest_partitions and one over Atlas's newest table sizes.
+      // Read-only (#1866): two SELECTs over registry_ingest_partitions (fetch health; period
+      // completeness, #2228) and one over Atlas's newest table sizes.
       const report = await readSourceHealth({ db: tx });
       return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
     }

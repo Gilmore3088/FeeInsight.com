@@ -1,5 +1,8 @@
-import { blockedHost, RegistryHttpError, redactRegistrySecrets } from "@/lib/regulatory/http";
+import { blockedHost, RegistryHttpError, RegistryUnreachableError, redactRegistrySecrets } from "@/lib/regulatory/http";
 import type { RegistryDb } from "./partitions";
+
+/** `detail.failure_kind` of a partition whose every landing page failed (#2306). */
+export const REGISTRY_UNREACHABLE_FAILURE_KIND = "landing_pages_unreachable";
 
 /** Finish only this run's outstanding claim; a late worker cannot overwrite a newer owner. */
 export async function recordRegistryFailure(db: RegistryDb, input: {
@@ -14,11 +17,17 @@ export async function recordRegistryFailure(db: RegistryDb, input: {
   const hours = refused ? 168 : permanent ? 24 : 6;
   const message = redactRegistrySecrets(input.error instanceof Error ? input.error.message : String(input.error)).slice(0, 2000);
   const sourceUrl = input.error instanceof RegistryHttpError ? redactRegistrySecrets(input.error.url) : null;
+  // No landing page answered (#2306): its own kind, with every page tried, so source health names
+  // the partition however many other partitions of the source still succeed.
+  const unreachable = input.error instanceof RegistryUnreachableError ? input.error : null;
   const detail = {
     failure_receipt_version: 1,
-    failure_kind: refused ? "publisher_refused" : permanent ? "invalid_request_or_missing_file" : "transport_or_parser",
+    failure_kind: refused ? "publisher_refused"
+      : unreachable ? REGISTRY_UNREACHABLE_FAILURE_KIND
+        : permanent ? "invalid_request_or_missing_file" : "transport_or_parser",
     http_status: status,
     ...(refused ? { missing_source: { ...refused, url: sourceUrl, second_host: null } } : {}),
+    ...(unreachable ? { pages_tried: unreachable.pagesTried.map((page) => ({ ...page, url: redactRegistrySecrets(page.url) })) } : {}),
   };
   const rows = await db`
     INSERT INTO registry_ingest_partitions

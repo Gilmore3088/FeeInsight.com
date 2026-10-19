@@ -85,19 +85,33 @@ export interface ColdCallRow {
   fetched_at: string | null;
 }
 
-/** Reads one line item from the given files. A file that fails its checks is reported, not used. */
+/** Pure: an archived value that is absent, not a reported figure (null, blank or not a number). */
+export function missingColdValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  if (typeof value !== "number" && typeof value !== "string") return true;
+  return !Number.isFinite(Number(value));
+}
+
+/**
+ * Reads one line item from the given files. A file that fails its checks is reported, not used.
+ * A row whose value is missing (null, blank or not a number) is never read as zero (#2315); it is
+ * left out and its file is named in `incomplete`, since production call-report values are never null.
+ */
 export async function readColdCallRows(
   files: readonly ColdFileRef[],
   filter: { itemKey: string; institutionIds: readonly number[] | null },
   store: ColdStore = getColdStore(),
-): Promise<{ rows: ColdCallRow[]; failed: string[] }> {
+): Promise<{ rows: ColdCallRow[]; failed: string[]; incomplete?: string[] }> {
   const rows: ColdCallRow[] = [];
   const failed: string[] = [];
+  const incomplete: string[] = [];
   const members = filter.institutionIds ? new Set(filter.institutionIds.map(String)) : null;
   const measure = ncuaCallMeasure(filter.itemKey);
   // Item keys are [a-z0-9_] (queryData's schema), so the quoted key is a safe substring test.
   const needle = JSON.stringify(filter.itemKey);
   for (const file of files) {
+    let missing = 0;
     try {
       const decoded = decodeColdFile(await store.get(file.objectKey), {
         expected: { sha256: file.sha256, rowCount: file.rowCount },
@@ -109,11 +123,13 @@ export async function readColdCallRows(
         // not that the file contains the indexed publisher and quarter.
         if (row.source !== file.source || row.report_date !== file.period) continue;
         if (measure && (row.source !== "ncua" || row.item_code !== measure.code || row.unit !== measure.storedUnit || row.period_basis !== measure.periodBasis)) continue;
-        // A missing curated figure is not a reported zero. Keep generic/manual decoding unchanged.
-        if (measure && (row.value == null || (typeof row.value === "string" && row.value.trim() === ""))) continue;
         if (members && !members.has(String(row.institution_id))) continue;
+        // A missing figure is not a reported zero, for every line item, curated or generic (#2315).
+        if (missingColdValue(row.value)) {
+          missing += 1;
+          continue;
+        }
         const value = Number(row.value);
-        if (!Number.isFinite(value)) continue;
         rows.push({
           institution_id: Number(row.institution_id),
           source: String(row.source),
@@ -131,9 +147,11 @@ export async function readColdCallRows(
       }
     } catch {
       failed.push(`${file.source} ${file.period}`);
+      continue;
     }
+    if (missing > 0) incomplete.push(`${file.source} ${file.period} (${missing} row${missing === 1 ? "" : "s"} missing a value)`);
   }
-  return { rows, failed };
+  return { rows, failed, incomplete };
 }
 
 /**

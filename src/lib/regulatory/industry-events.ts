@@ -5,7 +5,15 @@ import { checkValues, flaggedOnly, type KeyValueReport } from "./data-checks";
 import { FDIC_API_BASE } from "./fdic";
 import { eventKeyOf, historyDate } from "./fdic-history";
 import { htmlToText } from "./fed";
-import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
+import {
+  blockedHost,
+  registryFetch,
+  registryFetchJson,
+  RegistryHttpError,
+  RegistryUnreachableError,
+  type RegistryFetchOptions,
+  type RegistryPageTried,
+} from "./http";
 
 /**
  * Industry events from public lists: bank and credit union failures, credit union mergers and
@@ -474,7 +482,7 @@ const READABLE: readonly FileKind[] = ["csv", "xlsx", "zip"];
 export interface PublishedList<F extends string> {
   /** The page or file the rows came from. */
   sourceUrl: string | null;
-  pagesTried: Array<{ url: string; status: "ok" | "not_found" | "error"; error?: string }>;
+  pagesTried: RegistryPageTried[];
   /** Every matching data link seen, so a person can check the choice. */
   candidates: DataLink[];
   fileUrl: string | null;
@@ -487,6 +495,11 @@ export interface PublishedList<F extends string> {
 /**
  * A published list behind a landing page: the first readable data file the page links to
  * (matching `accept`), else the best-matching HTML table on the page itself.
+ *
+ * When no landing page answers at all (each one 404 or an error), it throws
+ * `RegistryUnreachableError` naming every page, so the partition is recorded failed with that
+ * reason instead of as an empty check (#2306). A page that refused the request (401/403) is
+ * thrown as itself, so it is recorded as the publisher's named block (#1806).
  */
 export async function fetchPublishedList<F extends string>(
   pages: readonly string[],
@@ -499,6 +512,7 @@ export async function fetchPublishedList<F extends string>(
 ): Promise<PublishedList<F>> {
   const result: PublishedList<F> = { sourceUrl: null, pagesTried: [], candidates: [], fileUrl: null, innerFile: null, table: null, reason: null };
   const reasons: string[] = [];
+  const errors: unknown[] = [];
   for (const page of pages) {
     let html: string;
     try {
@@ -513,6 +527,7 @@ export async function fetchPublishedList<F extends string>(
     } catch (error) {
       const notFound = error instanceof RegistryHttpError && error.status === 404;
       result.pagesTried.push({ url: page, status: notFound ? "not_found" : "error", error: notFound ? undefined : String(error) });
+      errors.push(error);
       continue;
     }
     const links = html ? findDataLinks(html, page, accept) : result.candidates.filter((c) => c.url === page);
@@ -542,7 +557,16 @@ export async function fetchPublishedList<F extends string>(
     if (unread.length > 0) reasons.push(`${page}: only ${[...new Set(unread.map((l) => l.kind.toUpperCase()))].join("/")} files linked, which are not read`);
     else reasons.push(`${page}: no matching data file or table`);
   }
-  result.reason = reasons.join("; ") || "no landing page could be fetched";
+  if (!result.pagesTried.some((page) => page.status === "ok")) {
+    const refused = errors.find((error) => blockedHost(error));
+    if (refused) throw refused;
+    const statuses = errors.map((error) => (error instanceof RegistryHttpError ? error.status : null));
+    // Every page 404: the addresses are wrong (retried daily). Otherwise the first other error's
+    // status, or none for a transport error (retried within hours).
+    const status = statuses.length === 0 ? null : statuses.every((s) => s === 404) ? 404 : statuses.find((s) => s !== 404) ?? null;
+    throw new RegistryUnreachableError(result.pagesTried, status);
+  }
+  result.reason = reasons.join("; ") || "no matching data file or table";
   return result;
 }
 

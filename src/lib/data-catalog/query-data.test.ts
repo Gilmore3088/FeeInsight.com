@@ -423,6 +423,20 @@ describe("queryData: call-report lines", () => {
     });
   });
 
+  it("says when archived rows with no reported value were left out rather than read as zero (#2315)", async () => {
+    nextIdentities = [{ id: 12, charter_type: "bank" }];
+    nextRows = [];
+    const file = { source: "ffiec", period: "2019-06-30", objectKey: "k", rowCount: 2, sha256: "a".repeat(64) };
+    vi.mocked(prunedCallFiles).mockResolvedValueOnce([file]);
+    vi.mocked(readColdCallRows).mockResolvedValueOnce({
+      rows: [{ institution_id: 12, source: "ffiec", report_date: "2019-06-30", item_code: "RIAD4080", item_key: "service_charges_deposits_ytd", item_description: "SERVICE CHARGES", schedule: "RI", value: 900, unit: "thousands", period_basis: "ytd", source_url: "https://cdr.ffiec.gov/old", fetched_at: null }],
+      failed: [],
+      incomplete: ["ffiec 2019-06-30 (1 row missing a value)"],
+    });
+    const result = await queryData({ measure: CALL, scope: { kind: "institution", id: "12" } });
+    expect(result).toMatchObject({ ok: true, note: expect.stringContaining("not counted as zero: ffiec 2019-06-30 (1 row missing a value)") });
+  });
+
   it.each([
     { hot: "ffiec", cold: "ncua", charter: "credit_union" },
     { hot: "ncua", cold: "ffiec", charter: "bank" },

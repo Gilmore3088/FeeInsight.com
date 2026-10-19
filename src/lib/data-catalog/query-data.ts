@@ -986,5 +986,6 @@ async function withColdQuarters<T extends { period: string; source?: string; sou
   if (comparableRows.length < cold.rows.length) notes.push("Archived rows with unknown or mismatched canonical institution identity are excluded.");
   if (files.length > read.length) notes.push(`Older quarters are archived; at most ${MAX_COLD_FILES_PER_QUERY} archived quarter files are read per question, so ask with a narrower period to read the rest.`);
   if (cold.failed.length > 0) notes.push(`Archived quarters that could not be read are left out: ${cold.failed.join(", ")}.`);
+  if (cold.incomplete?.length) notes.push(`Archived rows with no reported value are left out, not counted as zero: ${cold.incomplete.join(", ")}.`);
   return { rows, note: notes.length > 0 ? notes.join(" ") : null };
 }
