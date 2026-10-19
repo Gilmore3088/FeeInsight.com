@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { sql as AppSql } from "./data-store/connection";
 
-const state = vi.hoisted(() => ({ client: null as unknown as ReturnType<typeof postgres>, schema: "", stop: vi.fn() }));
+const state = vi.hoisted(() => ({ client: null as unknown as postgres.Sql<{ json: unknown; numeric: number; text: string }>, schema: "", stop: vi.fn() }));
 vi.mock("./data-store/connection", async (original) => {
   const actual = await original<typeof import("./data-store/connection")>();
   // Qualify only the five fixture tables. Every WHERE fragment/window/scope and
