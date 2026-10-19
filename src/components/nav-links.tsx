@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
-import { isActivePath, menuLinks, navItemsFor, type NavItem } from "./nav-items";
+import { isActivePath, menuLinks, navItemsFor, type NavGroup, type NavItem } from "./nav-items";
 import { useSessionChrome } from "./use-session-chrome";
 import { useHamiltonNavigationHref } from "./hamilton/layout/hamilton-navigation-context";
 
@@ -55,6 +55,7 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string | null })
   const groups = item.groups ?? [];
   const inSection = menuLinks(item).some((link) => isActivePath(pathname, link.href));
   const columns = groups.length;
+  const cards = groups.some((group) => group.title);
 
   useEffect(() => {
     if (!open) return;
@@ -95,36 +96,232 @@ function NavMenu({ item, pathname }: { item: NavItem; pathname: string | null })
       <div
         id={menuId}
         hidden={!open}
-        className={`absolute left-0 top-full z-50 mt-3 rounded-lg border border-border bg-surface-0 shadow-lg shadow-[#132338]/10 ${
-          columns > 1 ? "w-[640px] p-4" : "w-60 p-1.5"
+        className={`absolute top-full z-50 mt-3 rounded-lg border border-border bg-surface-0 shadow-lg shadow-[#132338]/10 ${
+          cards
+            ? `-left-36 p-4 ${columns > 2 ? "w-[min(960px,calc(100vw-2rem))]" : "w-[min(720px,calc(100vw-2rem))]"}`
+            : columns > 1 ? "left-0 w-[640px] p-4" : "left-0 w-60 p-1.5"
         }`}
       >
-        <div className={columns > 1 ? "grid grid-cols-3 gap-4" : ""}>
-          {groups.map((group, index) => (
-            <div key={group.heading ?? index}>
-              {group.heading ? (
-                <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
-                  {group.heading}
-                </p>
+        {cards ? (
+          <div className={`grid gap-3 ${columns > 2 ? "grid-cols-3" : "grid-cols-[1.25fr_1fr]"}`}>
+            {groups.map((group, index) =>
+              group.title ? (
+                <MenuCard key={group.title.href} group={group} pathname={pathname} onNavigate={() => setOpen(false)} />
+              ) : (
+                <MenuList key={group.heading ?? index} group={group} pathname={pathname} onNavigate={() => setOpen(false)} />
+              ),
+            )}
+          </div>
+        ) : (
+          <div className={columns > 1 ? "grid grid-cols-3 gap-4" : ""}>
+            {groups.map((group, index) => (
+              <div key={group.heading ?? index}>
+                {group.heading ? (
+                  <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">
+                    {group.heading}
+                  </p>
+                ) : null}
+                <ul>
+                  {group.items.map((link) => (
+                    <li key={`${link.href}:${link.label}`}>
+                      <Link
+                        href={link.href}
+                        aria-current={isActivePath(pathname, link.href) ? "page" : undefined}
+                        onClick={() => setOpen(false)}
+                        className="block rounded-md px-3 py-2 hover:bg-paper aria-[current=page]:bg-paper"
+                      >
+                        <span className="block text-[13px] font-medium text-ink">{link.label}</span>
+                        {link.description ? (
+                          <span className="mt-0.5 block text-[12px] leading-snug text-ink-muted">{link.description}</span>
+                        ) : null}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One Product menu card: a title link with its line, a small drawing and the card's links. The
+ * drawings carry no figures; they only show what each part of the product looks like.
+ */
+/** Inside a card only the link to this exact page is current: /research must not light up on its sub-pages. */
+function isCurrentPage(pathname: string | null, href: string): boolean {
+  return pathname === href.split("#")[0];
+}
+
+function MenuCard({ group, pathname, onNavigate }: { group: NavGroup; pathname: string | null; onNavigate: () => void }) {
+  const title = group.title;
+  if (!title) return null;
+  const dark = group.feature === true;
+  const [primary, ...rest] = group.items;
+  return (
+    <div
+      className={`flex flex-col gap-3 rounded-lg p-4 ${dark ? "bg-ink text-on-ink" : "border border-border bg-paper"}`}
+    >
+      <Link
+        href={title.href}
+        onClick={onNavigate}
+        aria-current={isCurrentPage(pathname, title.href) ? "page" : undefined}
+        className="group block"
+      >
+        <span
+          className={`block text-[17px] font-semibold leading-tight group-hover:underline ${dark ? "text-on-ink" : "text-ink"}`}
+        >
+          {title.label}
+        </span>
+        {title.description ? (
+          <span className={`mt-1.5 block text-[12.5px] leading-snug ${dark ? "text-on-ink/75" : "text-ink-muted"}`}>
+            {title.description}
+          </span>
+        ) : null}
+      </Link>
+      {group.exhibit ? <MenuExhibit kind={group.exhibit} /> : null}
+      {dark ? (
+        <div className="mt-auto flex flex-wrap items-center gap-3 text-[13px]">
+          {primary ? (
+            <Link
+              href={primary.href}
+              onClick={onNavigate}
+              aria-current={isCurrentPage(pathname, primary.href) ? "page" : undefined}
+              className="rounded-md bg-brick px-3.5 py-2 font-semibold text-on-brick hover:opacity-90"
+            >
+              {primary.label}
+            </Link>
+          ) : null}
+          {rest.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={onNavigate}
+              aria-current={isCurrentPage(pathname, link.href) ? "page" : undefined}
+              className="text-on-ink underline underline-offset-4"
+            >
+              {link.label}
+            </Link>
+          ))}
+        </div>
+      ) : (
+        <ul className="mt-auto">
+          {group.items.map((link) => (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                onClick={onNavigate}
+                aria-current={isCurrentPage(pathname, link.href) ? "page" : undefined}
+                className="block py-1 text-[13px] font-semibold text-ink hover:underline"
+              >
+                {link.label} <span aria-hidden="true" className="text-ink-muted">→</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** A plain column beside a card (the Resources menu's "More" list). */
+function MenuList({ group, pathname, onNavigate }: { group: NavGroup; pathname: string | null; onNavigate: () => void }) {
+  return (
+    <div className="pt-1">
+      {group.heading ? (
+        <p className="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted">{group.heading}</p>
+      ) : null}
+      <ul>
+        {group.items.map((link) => (
+          <li key={link.href}>
+            <Link
+              href={link.href}
+              aria-current={isCurrentPage(pathname, link.href) ? "page" : undefined}
+              onClick={onNavigate}
+              className="block rounded-md px-3 py-2 hover:bg-paper aria-[current=page]:bg-paper"
+            >
+              <span className="block text-[13px] font-semibold text-ink">{link.label}</span>
+              {link.description ? (
+                <span className="mt-0.5 block text-[12px] leading-snug text-ink-muted">{link.description}</span>
               ) : null}
-              <ul>
-                {group.items.map((link) => (
-                  <li key={`${link.href}:${link.label}`}>
-                    <Link
-                      href={link.href}
-                      aria-current={isActivePath(pathname, link.href) ? "page" : undefined}
-                      onClick={() => setOpen(false)}
-                      className="block rounded-md px-3 py-2 hover:bg-paper aria-[current=page]:bg-paper"
-                    >
-                      <span className="block text-[13px] font-medium text-ink">{link.label}</span>
-                      {link.description ? (
-                        <span className="mt-0.5 block text-[12px] leading-snug text-ink-muted">{link.description}</span>
-                      ) : null}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+const RANGE_ROWS = [
+  { label: "Overdraft", band: [22, 70], mark: 48 },
+  { label: "Wire, out", band: [30, 82], mark: 55 },
+  { label: "Maintenance", band: [12, 58], mark: 32 },
+] as const;
+
+/** Decorative drawings (no data): fee ranges, the three market layers, a question to Hamilton, the build steps. */
+function MenuExhibit({ kind }: { kind: NonNullable<NavGroup["exhibit"]> }) {
+  if (kind === "flow") {
+    return (
+      <div aria-hidden="true" className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted">
+        {["Schedule", "Read", "Checked", "Index"].map((step, index) => (
+          <span key={step} className="flex items-center gap-1.5">
+            {index > 0 ? <span className="text-brick">→</span> : null}
+            <span className="rounded-md border border-border bg-surface-0 px-2 py-1">{step}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
+  if (kind === "ranges") {
+    return (
+      <div aria-hidden="true" className="space-y-2 rounded-md border border-border bg-surface-0 p-3">
+        {RANGE_ROWS.map((row) => (
+          <div key={row.label} className="grid grid-cols-[72px_1fr] items-center gap-2 text-[11px] text-ink-muted">
+            {row.label}
+            <div className="relative h-1.5 rounded-full bg-surface-200">
+              <div
+                className="absolute inset-y-0 rounded-full bg-ink/25"
+                style={{ left: `${row.band[0]}%`, right: `${100 - row.band[1]}%` }}
+              />
+              <div className="absolute -top-1 h-3.5 w-0.5 rounded bg-brick" style={{ left: `${row.mark}%` }} />
             </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  if (kind === "layers") {
+    return (
+      <div aria-hidden="true" className="flex h-[78px] items-end gap-2 rounded-md border border-border bg-surface-0 px-3 pb-2 pt-3">
+        {[
+          { label: "State", height: 30, accent: true },
+          { label: "District", height: 42, accent: false },
+          { label: "Nation", height: 36, accent: false },
+        ].map((bar) => (
+          <div key={bar.label} className="flex flex-1 flex-col items-center gap-1 text-[10.5px] text-ink-muted">
+            <div className={`w-full rounded-t-sm ${bar.accent ? "bg-brick" : "bg-ink/25"}`} style={{ height: bar.height }} />
+            {bar.label}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div aria-hidden="true" className="flex flex-col gap-2">
+      <div className="self-end rounded-xl rounded-br-sm bg-on-ink/15 px-3 py-2 text-[12px] leading-snug text-on-ink">
+        How does our overdraft fee compare with our peers?
+      </div>
+      <div className="flex flex-col gap-1.5 rounded-xl rounded-bl-sm bg-on-ink/10 p-2.5">
+        <div className="h-1.5 w-[92%] rounded-full bg-on-ink/25" />
+        <div className="h-1.5 w-[78%] rounded-full bg-on-ink/25" />
+        <div className="mt-1 flex gap-1">
+          {["Fee schedule", "Call report", "Peer group"].map((chip) => (
+            <span key={chip} className="whitespace-nowrap rounded-full border border-brick-on-navy/50 px-1.5 py-0.5 text-[10px] text-brick-on-navy">
+              {chip}
+            </span>
           ))}
         </div>
       </div>
