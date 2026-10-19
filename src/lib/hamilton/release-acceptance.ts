@@ -230,7 +230,7 @@ export const HAMILTON_ACCEPTANCE_CHECKS: readonly HamiltonAcceptanceCheck[] = [
   {
     caseId: "H04-AC1", summary: "One free-text field in every state, from a non-Analyze page",
     automated: [RESEARCH_JOURNEY, "src/components/hamilton/analyze/AnalyzeWorkspace.test.tsx"],
-    manual: manual("H04-AC1", "Live: from Monitor and Reports, start a question and count the text inputs through clarification, answer and follow-up"),
+    manual: manual("H04-AC1", "Live: from Alerts and watches and Reports, start a question and count the text inputs through clarification, answer and follow-up"),
   },
   {
     caseId: "H04-AC2", summary: "Peers, Florida, NSF, \"with us\": coherent across turns",

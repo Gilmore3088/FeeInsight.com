@@ -153,7 +153,7 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
     const params = new URLSearchParams({
       source: "monitor",
       submitterRole: "institution_employee",
-      notes: "Follow up from Hamilton Monitor extraction-review signal.",
+      notes: "Follow up from an Alerts and watches extraction-review signal.",
     });
     const institutionName = titlePrefixInstitutionName(signal.title);
     if (hasInstitutionId) params.set("institutionId", institutionId);
@@ -172,7 +172,7 @@ function actionForSignal(signal: SignalEntry): { href: string; label: string } {
     const params = new URLSearchParams({
       source: "monitor",
       submitterRole: "institution_employee",
-      notes: "Follow up from Hamilton Monitor source-status signal.",
+      notes: "Follow up from an Alerts and watches source-status signal.",
     });
     const institutionName = titlePrefixInstitutionName(signal.title);
     if (hasInstitutionId) params.set("institutionId", institutionId);
