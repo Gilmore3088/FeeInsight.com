@@ -55,6 +55,30 @@ describe("explicit field units in mixed financial rows (#2358)", () => {
   });
 });
 
+describe("explicit asset-intensity quantities (#2361)", () => {
+  const data = { source: "ncua", income_per_10k_assets: 7.49, field_units: { income_per_10k_assets: "USD income per 10,000 USD assets" } };
+  const options = { explicitFinancialDerivations: true };
+  it.each([
+    "Fee income was $7.49 per $10,000 of total assets.",
+    "Fee income per ten thousand dollars of assets was $7.49.",
+    "Fee income was $7.49 per ten thousand dollars of assets.",
+  ])("accepts exactly the typed dollar-per-asset quantity: %s", (text) => {
+    expect(checkNarrativeFigures(text, data, options)).toEqual({ checked: 1, unmatched: [] });
+  });
+  it.each([
+    "Fee income was $7.49.", "Fee income was 7.49% of revenue.",
+    "Fee income was $7.49 per account.", "Fee income was $7.49 per $1,000 of total assets.",
+    "Fee income was $7.49 per $10,000 of revenue.",
+  ])("holds a different quantity: %s", (text) => {
+    expect(checkNarrativeFigures(text, data, options).unmatched.length).toBeGreaterThan(0);
+  });
+  it("cannot convert an ordinary dollar total to asset intensity, including legacy bank figures", () => {
+    for (const source of ["ncua", "fdic"]) {
+      expect(checkNarrativeFigures("Income was $7.49 per $10,000 of assets.", { source, amount: 7.49, unit: "USD" }, options).unmatched).toEqual(["$7.49"]);
+    }
+  });
+});
+
 describe("figures that are not the data's to trace (#1425)", () => {
   const data = { institution_amount: 35, peer_median: 30 };
 

@@ -51,6 +51,7 @@ interface Evidence {
   peerCoverage: PeerCoverage[];
   quarterIncomes: { institutionId: string | null; period: string; value: number; role: "subject" | "peer_median" }[];
   peerMultipliers: { period: string; value: number }[];
+  quarterCalculations: { institutionId: string; period: string; value: number; inputs: [number, number] }[];
 }
 
 const record = (v: unknown): RecordValue | null => v !== null && typeof v === "object" && !Array.isArray(v) ? v as RecordValue : null;
@@ -59,7 +60,7 @@ const textValue = (v: unknown): string | null => typeof v === "string" && v.trim
 const ncuaSource = (r: RecordValue): boolean => /\bncua\b/i.test(String(r.source ?? "")) || /\bNCUA\b/i.test(String(r.publisher ?? ""));
 
 function evidenceFrom(data: unknown): Evidence {
-  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [], quarterIncomes: [], peerMultipliers: [] };
+  const result: Evidence = { ncua: false, incomplete: false, observations: [], accountDates: new Map(), dividendExpense: false, selectedIds: new Set(), selectedId: null, peerCoverage: [], quarterIncomes: [], peerMultipliers: [], quarterCalculations: [] };
   const root = record(data);
   // Only server-computed candidates, never a tool's arbitrary ratio-like numeric fields.
   if (Array.isArray(root?.validated_calculations)) for (const value of root.validated_calculations.slice(0, 40)) {
@@ -67,6 +68,15 @@ function evidenceFrom(data: unknown): Evidence {
     if (calculation?.source === "ncua" && calculation.metric === "fee_income_peer_multiple" && calculation.operation === "ratio"
       && calculation.unit === "multiple" && typeof calculation.report_date === "string" && finite(calculation.value) !== null) {
       result.peerMultipliers.push({ period: calculation.report_date, value: Number(calculation.value) });
+    }
+    if (calculation?.source === "ncua" && calculation.operation === "ytd_to_quarter" && calculation.measure === "call:acct_131"
+      && calculation.period_basis === "standalone_quarter" && calculation.unit === "USD" && typeof calculation.report_date === "string"
+      && finite(calculation.institution_id) !== null && finite(calculation.value) !== null && typeof calculation.expression === "string") {
+      const subtraction = /^\((\d+(?:\.\d+)?) - (\d+(?:\.\d+)?)\)$/.exec(calculation.expression);
+      if (subtraction && Number(subtraction[1]) - Number(subtraction[2]) === Number(calculation.value)) {
+        result.quarterCalculations.push({ institutionId: String(calculation.institution_id), period: calculation.report_date,
+          value: Number(calculation.value), inputs: [Number(subtraction[1]), Number(subtraction[2])] });
+      }
     }
   }
   let visited = 0;
@@ -316,11 +326,28 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
     // Size criteria exempt only their actual bounds, never income claims in the same sentence.
     const quoted = allFigures.filter((figure) => figure.kind === "usd" && !figure.denominatorUnit && !assetBounds.has(figure));
     if (quoted.length === 0) continue;
-    // A calculation's first amount is its result; source inputs remain checked by the numeric gate.
-    const figures = /[=−]|\b(?:minus|less|subtract\w*)\b/i.test(clause) ? quoted.slice(0, 1) : quoted;
     const periods = claimedPeriods(clause).filter((period) => /^20\d{2}-(?:03|06|09|12)(?:-\d{2})?$/.test(period))
       .map((period) => period.length === 7 ? `${period}-${["03", "12"].includes(period.slice(5)) ? "31" : "30"}` : period);
     const dates = periods.length ? periods : [requested.period];
+    const calculationInputs = new Set<(typeof quoted)[number]>();
+    for (let index = 0; index + 2 < quoted.length; index++) {
+      const [value, first, second] = quoted.slice(index, index + 3);
+      const introduction = clause.slice(value.index + value.raw.length, first.index);
+      const subtraction = clause.slice(first.index + first.raw.length, second.index);
+      const finalInputLabel = clause.slice(second.index + second.raw.length);
+      if (!/^\s*,?\s*(?:=|(?:calculated|computed) as)\s*\(?\s*$/i.test(introduction)
+        || !/^\s*(?:YTD|year[ -]to[ -]date)\s*(?:minus|−|-)\s*$/i.test(subtraction)
+        || !/^\s*(?:YTD|year[ -]to[ -]date)\s*\)?\s*[.!]?\s*$/i.test(finalInputLabel)) continue;
+      const supported = evidence.quarterCalculations.some((calculation) => dates.includes(calculation.period)
+        && (!evidence.selectedId || calculation.institutionId === evidence.selectedId)
+        && Math.abs(calculation.value - value.value) <= value.tolerance
+        && Math.abs(calculation.inputs[0] - first.value) <= first.tolerance
+        && Math.abs(calculation.inputs[1] - second.value) <= second.tolerance);
+      if (supported) { calculationInputs.add(first); calculationInputs.add(second); }
+    }
+    // Only operands of the server's exact YTD subtraction are contextual input figures.
+    // Comparative wording such as "less than" never exempts another quarter assertion.
+    const figures = quoted.filter((figure) => !calculationInputs.has(figure));
     for (const [index, figure] of figures.entries()) {
       const previous = figures[index - 1];
       // A peer label governs its own amount. It cannot cross an earlier figure or

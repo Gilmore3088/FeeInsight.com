@@ -75,12 +75,17 @@ describe("feeIncomeAgainstPeers", () => {
   });
 
   it("passes the full answer gate for dollar totals without treating asset intensity as a dollar total or revenue share (#2358)", () => {
-    const cus = rows.map((r) => ({ ...r, financial_source: "ncua", charter_type: "credit_union" }));
+    const cus = rows.map((r) => ({ ...r, fee_income_ratio: r.institution_id === 1 ? 7.49 : r.fee_income_ratio, financial_source: "ncua", charter_type: "credit_union" }));
     const result = feeIncomeAgainstPeers(cus, 1, {});
     expect(writtenAnswerCheck("The credit union reported $100,000 in quarterly broad fee income, against a peer median of $450,000.", [result])).toMatchObject({ passed: true, problems: [] });
     expect(writtenAnswerCheck("The peer median was $450.", [result]).passed).toBe(false);
     expect(writtenAnswerCheck("The peer median share of revenue was 4.5%.", [result]).passed).toBe(false);
     expect(writtenAnswerCheck("The peer median income was $4,500.", [result]).passed).toBe(false);
+    expect(writtenAnswerCheck("Fee income was $7.49 per $10,000 of total assets.", [result])).toMatchObject({ passed: true, figureCheck: { checked: 1, unmatched: [] } });
+    expect(writtenAnswerCheck("Fee income per ten thousand dollars of assets was $7.49.", [result]).passed).toBe(true);
+    for (const text of ["Fee income was $7.49.", "Fee income was 7.49% of revenue.", "Fee income was $7.49 per account.", "Fee income was $7.49 per $1,000 of total assets."]) {
+      expect(writtenAnswerCheck(text, [result]).passed, text).toBe(false);
+    }
   });
 });
 

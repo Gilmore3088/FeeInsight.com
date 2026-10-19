@@ -226,8 +226,36 @@ describe("actual Navy peer-answer failures (#2355)", () => {
     expect(checkAnswerInterpretations("Q2 2026 Navy fee income was $153.08 million. The peer median was $22.44 million for credit unions with $10 billion to $250 billion in assets.", mixed, question).join(" ")).toContain("standalone-quarter");
   });
 
+  it.each([
+    "Q2 2026 Navy Federal broad fee income was $153.08 million, less a peer median of $22.44 million.",
+    "Q2 2026 Navy Federal broad fee income was $153.08 million and the Q2 peer median was $22.44 million, less than Navy’s amount.",
+  ])("validates every quarter assertion despite comparative wording (#2362): %s", (answer) => {
+    const comparable = { ...quarterEvidence.tool_evidence[0], output: { peer_ranking: { ...quarterEvidence.tool_evidence[0].output.peer_ranking, source: "ncua", units: "thousands of dollars" } } };
+    const reads = [comparable, ...actualReads];
+    const result = writtenAnswerCheck(answer, reads.map((read) => read.output), question, { institutionId: 4956, toolResults: reads });
+    expect(result.figureCheck.unmatched).toEqual([]); // Both figures exist, but the median is YTD.
+    expect(result.passed).toBe(false);
+    expect(result.problems.join(" ")).toContain("standalone-quarter");
+  });
+
+  it("accepts the exact server-derived quarter subtraction without exempting an appended false median (#2362)", () => {
+    const original = actualReads[0];
+    const prior = { ...original.output.rows[0], period: "2026-03-31", value: 144282855, source_url: "https://ncua.gov/files/publications/analysis/call-report-data-2026-03.zip" };
+    const ownRead = { ...original, output: { ...original.output, rows: [...original.output.rows, prior] } };
+    const reads = [ownRead, actualReads[2]];
+    const check = (text: string) => writtenAnswerCheck(text, reads.map((read) => read.output), question, { institutionId: 4956, toolResults: reads });
+    const subtraction = "Q2 2026 Navy Federal broad fee income was $153.08 million = $297.36 million YTD minus $144.28 million YTD.";
+    expect(check(subtraction)).toMatchObject({ passed: true, problems: [], figureCheck: { unmatched: [] } });
+    expect(check(`${subtraction} The Q2 peer median was $22.44 million, less than Navy's amount.`).passed).toBe(false);
+    for (const label of ["Q2 peer median", "YTD, the Q2 peer median"]) {
+      const mislabeledOperand = check(`Q2 2026 Navy Federal broad fee income was $153.08 million = $297.36 million YTD minus $144.28 million ${label}.`);
+      expect(mislabeledOperand.figureCheck.unmatched).toEqual([]);
+      expect(mislabeledOperand.passed, label).toBe(false);
+    }
+  });
+
   it("accepts the server's matched institution-quarter result with its shown YTD subtraction", () => {
-    const evidence = { selected_institution_id: 4382, publisher: "NCUA", validated_calculations: [{ source: "ncua", institution_id: 4382, measure: "call:acct_131", metric: "Fee income, standalone quarter", operation: "ytd_to_quarter", unit: "USD", period_basis: "standalone_quarter", report_date: "2026-06-30", value: 30032341 }] };
+    const evidence = { selected_institution_id: 4382, publisher: "NCUA", validated_calculations: [{ source: "ncua", institution_id: 4382, measure: "call:acct_131", metric: "Fee income, standalone quarter", operation: "ytd_to_quarter", unit: "USD", period_basis: "standalone_quarter", report_date: "2026-06-30", value: 30032341, expression: "(57261959 - 27229618)" }] };
     expect(checkAnswerInterpretations("April through June 2026 fee income was $30.032341 million = $57.261959 million YTD minus $27.229618 million YTD.", evidence, "How much fee income did PenFed earn during April through June 2026, rather than the first six months? Show the calculation.")).toEqual([]);
   });
 
