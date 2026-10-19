@@ -1,8 +1,8 @@
 import { unstable_cache } from "next/cache";
-import { sql } from "@/lib/data-store/connection";
+import { sql, withTransaction } from "@/lib/data-store/connection";
 import { DARWIN_VERIFY_STRATEGY } from "./darwin/verify";
 import { PUBLISHER_AGENT_NAMES } from "./gutenberg/names";
-import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaiting, type Sample } from "./flow-model";
+import { INSTITUTION_STEPS, isWentLive, movesFromEvents, nowFromSteps, toObject, type FlowSnapshot, type FlowWaitingCounts, type Sample } from "./flow-model";
 
 export * from "./flow-model";
 
@@ -16,11 +16,39 @@ export * from "./flow-model";
  * so they are cached for five minutes and shared by every viewer.
  */
 
+/**
+ * Limits for the polled Live page (#2016). On 2026-10-18 an open Live tab's polls hung 300 s each
+ * on a saturated pool (26 timeouts, 06:59-07:01 UTC), so every read here is bounded:
+ * - the snapshot's reads (16 ms and 1 ms on average) stop after FLOW_STATEMENT_TIMEOUT_MS;
+ * - the cached waiting counts (14 s on average, 45 s at most) stop after FLOW_WAITING_TIMEOUT_MS,
+ *   inside the route's 30 s maxDuration, so a cache refresh that would run longer leaves the last
+ *   value in place;
+ * - a request waits FLOW_WAITING_WAIT_MS at most for those counts, then answers without them and
+ *   the page keeps showing the last counts with their age.
+ */
+type SqlTag = typeof sql;
+
+export const FLOW_STATEMENT_TIMEOUT_MS = 10_000;
+export const FLOW_WAITING_TIMEOUT_MS = 25_000;
+export const FLOW_WAITING_WAIT_MS = 3_000;
+
+/** Runs `work` in a transaction whose statements stop after `ms` (SET LOCAL, so the pool's other users keep their own limit). */
+async function bounded<T>(ms: number, work: (tx: SqlTag) => Promise<T>): Promise<T> {
+  return withTransaction(async (tx) => {
+    await tx.unsafe(`SET LOCAL statement_timeout = ${Math.max(1, Math.floor(ms))}`);
+    return work(tx);
+  });
+}
+
 // Publish steps from before #1075 step 2 carry Hamilton's name, so both publisher names are read;
 // `STEP_OWNER` files every publish move under Gutenberg either way.
 const FLOW_WORKERS = ["magellan", "rosetta", "knox", "darwin", ...PUBLISHER_AGENT_NAMES];
 
 export async function getFlowSnapshot(): Promise<FlowSnapshot> {
+  return bounded(FLOW_STATEMENT_TIMEOUT_MS, (tx) => readFlowSnapshot(tx));
+}
+
+async function readFlowSnapshot(sql: SqlTag): Promise<FlowSnapshot> {
   const [events, active] = await Promise.all([
     // The last few finished steps per agent, so every agent shows its own latest
     // banks even when one state's pass floods the log. ~1ms on the live database.
@@ -95,7 +123,7 @@ export async function getFlowSnapshot(): Promise<FlowSnapshot> {
 
 /** Institutions waiting in front of each agent (and published), cached five minutes. */
 export const getFlowWaiting = unstable_cache(
-  async (): Promise<FlowWaiting> => {
+  async (): Promise<FlowWaitingCounts> => bounded(FLOW_WAITING_TIMEOUT_MS, async (sql) => {
     const [row] = await sql`
       SELECT
         (SELECT COUNT(*)::int FROM institution_sources i
@@ -160,8 +188,28 @@ export const getFlowWaiting = unstable_cache(
       gutenberg: Number(row?.gutenberg ?? 0),
       published: Number(row?.published ?? 0),
       total: Number(row?.total ?? 0),
+      computedAt: new Date().toISOString(),
     };
-  },
+  }),
   ["admin", "flow-waiting"],
   { revalidate: 300 },
 );
+
+/**
+ * The cached waiting counts, or null when they are not ready within `waitMs`: a cold cache or a
+ * slow refresh never holds the request (the counts finish in the background and are cached).
+ */
+export async function getFlowWaitingWithin(waitMs: number = FLOW_WAITING_WAIT_MS): Promise<FlowWaitingCounts | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), waitMs);
+  });
+  try {
+    return await Promise.race([getFlowWaiting().catch((error) => {
+      console.error("Live flow waiting counts failed", error);
+      return null;
+    }), late]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

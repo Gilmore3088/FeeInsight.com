@@ -1,9 +1,11 @@
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { requireAuth } from "@/lib/auth";
-import { getFlowSnapshot, getFlowWaiting } from "@/lib/agents/flow";
+import { getFlowSnapshot, getFlowWaitingWithin } from "@/lib/agents/flow";
 import { LiveFlow } from "./live-flow";
 
 export const dynamic = "force-dynamic";
+/** Its reads are bounded (`lib/agents/flow.ts`); a render never holds a connection for minutes (#2016). */
+export const maxDuration = 30;
 
 /** One plain page: which institution each agent just handled and what happened to it. */
 export default async function LivePage() {
@@ -13,10 +15,8 @@ export default async function LivePage() {
       console.error("Live flow snapshot failed", error);
       return { moves: [], now: [], generatedAt: new Date().toISOString() };
     }),
-    getFlowWaiting().catch((error) => {
-      console.error("Live flow waiting counts failed", error);
-      return null;
-    }),
+    // The counts are waited for a few seconds at most; the page polls them again (#2016).
+    getFlowWaitingWithin(),
   ]);
 
   return (
