@@ -55,6 +55,13 @@ Rosetta owns source text normalization.
   | 2 | `read.js_fallback` (`js-fallback.ts`) | JavaScript-built pages | `ROSETTA_JS_FALLBACK_VERSION` |
   | 3 | `read.paid_transcribe` (`paid-read.ts`, step `read-paid`) | scans free OCR could not read | `ROSETTA_PAID_READ_VERSION` |
 
+  - A URL or download failure before a reader can run is logged as
+    `read.document_access@1`, with the detected document type and typed failure outcome.
+    Its `detail.reader_version` preserves the reader-version retry rule for permanent
+    access failures such as `too_large`; historical `read.html`, `read.pdf`, `read.text`,
+    `read.unknown` and `read.docx` failures keep their existing retry behavior. An
+    unsupported format keeps its existing format-specific attempt; a failure from a
+    reader that ran stays attributed to that reader.
   - A scan (`scanned_pdf` from `read.pdf_layout`) goes straight to free OCR: tesseract.js
     on the largest image of each page, English model bundled from
     `@tesseract.js-data/eng` (`ROSETTA_OCR_LANG_PATH` overrides), at most
@@ -253,6 +260,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ROSETTA_PAID_READ_VERSION` | — | v1 | `rosetta/paid-read.ts` |
 | `PDF_LAYOUT_VERSION` | — | v4 | `rosetta/reader-versions.ts` |
 | `ROSETTA_READ_VERSION` | — | v3 | `rosetta/reader-versions.ts` |
+| `ROSETTA_DOCUMENT_ACCESS_VERSION` | `read.document_access` | v1 | `rosetta/read.ts` |
 | `REOPEN_VERSION` | — | v1 | `rosetta/read.ts` |
 | `ROSETTA_TABLE_ROWS_VERSION` | — | v1 | `rosetta/reader-versions.ts` |
 | `TEXT_SURVIVAL_VERSION` | — | v1 | `rosetta/text-survival.ts` |

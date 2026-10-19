@@ -660,11 +660,11 @@ migration_version_kill() {
   local dir="supabase/migrations"
   [[ -d "$dir" ]] || { echo "migration-version-kill: OK (no $dir)"; return 0; }
   local bad dupes
-  bad=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort \
+  bad=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -print | sed 's|.*/||' | sort \
     | grep -vE '^(2026[0-9]{4}|[0-9]{14})_[a-z0-9_]+\.sql$' || true)
-  bad+=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort \
+  bad+=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -print | sed 's|.*/||' | sort \
     | awk -F_ 'length($1) == 8 && $1 > "20260517"' || true)
-  dupes=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | cut -d_ -f1 | sort | uniq -d)
+  dupes=$(find "$dir" -maxdepth 1 -type f -name '*.sql' -print | sed 's|.*/||' | cut -d_ -f1 | sort | uniq -d)
   if [[ -n "$bad" || -n "$dupes" ]]; then
     echo "migration-version-kill: migration file names must be <14-digit number>_<snake_name>.sql with a unique number:" >&2
     [[ -n "$bad" ]] && echo "$bad" >&2
@@ -682,7 +682,7 @@ findings_file_kill() {
   local late bad
   late=$(grep -nE '^## [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/project/FINDINGS.md \
     | awk -F'## ' '{ d = substr($2, 1, 10); if (d > "2026-10-09") print }' || true)
-  bad=$(find docs/project/findings -maxdepth 1 -type f ! -name README.md -printf '%f\n' 2>/dev/null \
+  bad=$(find docs/project/findings -maxdepth 1 -type f ! -name README.md -print 2>/dev/null | sed 's|.*/||' \
     | grep -vE '^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*\.md$' || true)
   if [[ -n "$late" || -n "$bad" ]]; then
     echo "findings-file-kill: add each new finding as docs/project/findings/YYYY-MM-DD-short-slug.md (see docs/project/findings/README.md), not in FINDINGS.md:" >&2
@@ -798,8 +798,10 @@ financial_source_kill() {
   # institution_financial_records holds ffiec rows in other units that duplicate fdic quarters
   # (src/lib/data-store/financial-sources.ts). Every FROM/JOIN of the table in src/ must filter
   # by source within the next eight lines: source = / source IN, or the shared helper.
-  local hits="" files=()
-  mapfile -t files < <(grep -rlE '(FROM|JOIN)[[:space:]]+institution_financial_records' \
+  local hits="" file files=()
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(grep -rlE '(FROM|JOIN)[[:space:]]+institution_financial_records' \
     --include='*.ts' --include='*.tsx' --exclude='*.test.ts' --exclude='*.test.tsx' src 2>/dev/null || true)
   if [[ ${#files[@]} -gt 0 ]]; then
     hits=$(awk '
