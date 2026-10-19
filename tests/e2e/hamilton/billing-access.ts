@@ -352,7 +352,6 @@ export interface ActionEntry {
 
 const A = "pro/(hamilton)";
 const notSent = (file: string, name: string, reason: string): ActionEntry => ({ file: `${A}/${file}`, name, kind: "not_sent", reason });
-const serverOnly = (file: string, name: string, reason: string): ActionEntry => ({ file: `${A}/${file}`, name, kind: "server_only", reason });
 const sent = (file: string, name: string, args = "[]"): ActionEntry => ({ file: `${A}/${file}`, name, kind: "premium", args });
 
 export const ACTIONS: ActionEntry[] = [
@@ -365,20 +364,20 @@ export const ACTIONS: ActionEntry[] = [
   notSent("analyze/conversation-actions.ts", "recordAnalyzeConversationAction", "writes; checks canAccessPremium"),
   sent("reports/actions.ts", "loadActiveScenarios"),
   sent("reports/actions.ts", "loadScenarioById", `["${ACTION_TOKENS.ownScenario}"]`),
-  serverOnly("reports/actions.ts", "loadRecentReports", "checks canAccessPremium"),
-  serverOnly("reports/actions.ts", "loadReport", "checks canAccessPremium"),
+  notSent("reports/actions.ts", "loadRecentReports", "a fixture account has no reports, so its empty list reads as refused; checks canAccessPremium"),
+  notSent("reports/actions.ts", "loadReport", "needs a stored report; checks canAccessPremium"),
   notSent("reports/actions.ts", "previewReportPeerCoverage", "needs a report draft; checks canAccessPremium"),
   notSent("reports/actions.ts", "generateReport", "may call a provider; checks canAccessPremium"),
-  serverOnly("reports/actions.ts", "loadPublishedReport", "checks canAccessPremium"),
-  serverOnly("reports/actions.ts", "saveLandingResearchReport", "writes; checks canAccessPremium"),
+  notSent("reports/actions.ts", "loadPublishedReport", "needs a stored report; checks canAccessPremium"),
+  notSent("reports/actions.ts", "saveLandingResearchReport", "writes; checks canAccessPremium"),
   notSent("reports/board-actions.ts", "saveBoardBrief", "writes; checks canAccessPremium"),
   notSent("reports/board-actions.ts", "createMarketBoardBrief", "writes; checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "listScenarios", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getScenario", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getDistributionForCategory", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getInstitutionFee", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "getSimulationCategories", "checks canAccessPremium"),
-  serverOnly("simulate/actions.ts", "saveScenario", "writes; checks canAccessPremium"),
+  notSent("simulate/actions.ts", "listScenarios", "the build serves it only from the Simulate API route, where a posted action answers 404; that route is probed above; checks canAccessPremium"),
+  notSent("simulate/actions.ts", "getScenario", "the build serves it only from the Simulate API route, where a posted action answers 404; that route is probed above; checks canAccessPremium"),
+  notSent("simulate/actions.ts", "getDistributionForCategory", "the build serves it only from the Simulate API route, where a posted action answers 404; that route is probed above; checks canAccessPremium"),
+  notSent("simulate/actions.ts", "getInstitutionFee", "the build serves it only from the Simulate API route, where a posted action answers 404; that route is probed above; checks canAccessPremium"),
+  notSent("simulate/actions.ts", "getSimulationCategories", "the build serves it only from the Simulate API route, where a posted action answers 404; that route is probed above; checks canAccessPremium"),
+  notSent("simulate/actions.ts", "saveScenario", "writes; served only from the Simulate API route; checks canAccessPremium"),
   sent("settings/actions.ts", "getIntelligenceSnapshot"),
   notSent("settings/actions.ts", "updateWorkspaceInstitution", "writes; checks canAccessPremium"),
   notSent("settings/actions.ts", "grantWorkspaceAccess", "writes; checks canAccessPremium"),
