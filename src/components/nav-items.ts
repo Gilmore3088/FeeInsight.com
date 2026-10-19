@@ -12,11 +12,18 @@ export interface NavItem {
 }
 
 export interface NavGroup {
-  /** Column heading; the Product menu uses the three public pillar labels. */
+  /** Small heading over a column (Resources) or a phone-drawer section. */
   heading?: string;
+  /** A Product menu card's title link, with its one line; the card's links sit under it. */
+  title?: NavItem;
+  /** The small drawing on a Product menu card. */
+  exhibit?: "ranges" | "layers" | "ask";
+  /** The navy card: Hamilton, the paid workspace, whose first link is the plans button. */
+  feature?: boolean;
   items: readonly NavItem[];
 }
 
+export const REPORTS_NAV = { label: "Reports", href: "/reports" } as const;
 export const FIND_INSTITUTION_NAV = { label: "Find your institution", href: "/institutions" } as const;
 export const INDEX_NAV = {
   label: PRODUCT_NAME,
@@ -24,24 +31,22 @@ export const INDEX_NAV = {
   description: "Every fee by category, with its median and range",
 } as const;
 export const MARKET_DATA_NAV = {
-  label: "Market data",
+  label: "Market benchmarks",
   href: "/research",
   description: "Your state, your Fed district and the nation",
 } as const;
 export const NATIONAL_INDEX_NAV = { label: `${PRODUCT_NAME}: national`, href: "/research/national-fee-index" } as const;
+export const STATE_DISTRICT_NAV = { label: "State and district data", href: "/research" } as const;
 /**
- * The header and footer name the workspace generically: Hamilton's name and mark appear only
- * on the pages that sell it and inside the workspace (James, 2026-10-15, docs/project/DECISIONS.md).
+ * The Product menu's Hamilton card names the workspace in text, without its mark; the top-level
+ * header items and the footer still don't (James, 2026-10-19, docs/project/DECISIONS.md).
  * Hamilton is the paid product; "Pro" only marks who has paid, never a product name (James, 2026-10-17).
  */
 export const HAMILTON_PAGE_NAV = {
-  label: "Workspace",
+  label: "Hamilton",
   href: "/for-institutions#hamilton",
-  description: "Your fees against every market layer",
+  description: "Your fees against your peers, with every figure linked to its source.",
 } as const;
-
-/** The header's link to the plans; page bodies keep PRO_PLANS_NAV ("See Hamilton plans"). */
-export const HEADER_PLANS_NAV = { label: "Plans", href: "/subscribe" } as const;
 
 /** The Pro button everywhere outside the workspace: Hamilton is the workspace, Pro is the plan. */
 export const PRO_PLANS_NAV = { label: "See Hamilton plans", href: "/subscribe" } as const;
@@ -65,11 +70,31 @@ export const PRIMARY_CTA_NAV = { label: "See where your fees stand", href: "/ins
 /** The one navy header button for signed-out visitors: the plans (James, Oct 16), since the subscription is the goal. */
 export const HEADER_CTA_NAV = { label: "See plans", href: "/subscribe" } as const;
 
-/** Product menu: one column per public pillar label. */
+/**
+ * Product menu: three cards, the free index, the market benchmarks and Hamilton (James, 2026-10-19).
+ * No card claims "every fee": the index covers the schedules collected so far.
+ */
 export const PRODUCT_NAV_GROUPS: readonly NavGroup[] = [
-  { heading: "Every fee", items: [FIND_INSTITUTION_NAV, INDEX_NAV] },
-  { heading: "Every market", items: [MARKET_DATA_NAV, NATIONAL_INDEX_NAV] },
-  { heading: "One workspace", items: [HAMILTON_PAGE_NAV, HEADER_PLANS_NAV] },
+  {
+    title: {
+      label: PRODUCT_NAME,
+      href: "/fees",
+      description: "Medians and ranges by fee category, from banks' and credit unions' own schedules.",
+    },
+    exhibit: "ranges",
+    items: [FIND_INSTITUTION_NAV, { label: "National index", href: NATIONAL_INDEX_NAV.href }],
+  },
+  {
+    title: { label: "Market Benchmarks", href: "/research", description: "Your state, your Fed district and the nation, side by side." },
+    exhibit: "layers",
+    items: [STATE_DISTRICT_NAV, REPORTS_NAV],
+  },
+  {
+    title: HAMILTON_PAGE_NAV,
+    exhibit: "ask",
+    feature: true,
+    items: [HEADER_CTA_NAV, { label: DEMO_REQUEST_NAV.standaloneLabel, href: DEMO_REQUEST_NAV.href }],
+  },
 ];
 
 export const GUIDES_NAV = { label: "Guides", href: "/guides" } as const;
@@ -84,7 +109,6 @@ export const RESOURCES_NAV: readonly NavItem[] = [
   { label: "Submit a fee source", href: "/submit-fees" },
 ];
 
-export const REPORTS_NAV = { label: "Reports", href: "/reports" } as const;
 export const PRICING_NAV = { label: "Pricing", href: "/subscribe" } as const;
 
 /** The signed-out and free top level: Product, Reports, Resources, Pricing. */
@@ -115,7 +139,7 @@ export function navItemsFor(session: { signedIn: boolean; isPro?: boolean } | nu
 
 /** Every link inside a header menu, for active-state checks. */
 export function menuLinks(item: NavItem): NavItem[] {
-  return (item.groups ?? []).flatMap((group) => [...group.items]);
+  return (item.groups ?? []).flatMap((group) => [...(group.title ? [group.title] : []), ...group.items]);
 }
 
 /** True for the section a path belongs to (`/guides` for `/guides/overdraft-fees`). */

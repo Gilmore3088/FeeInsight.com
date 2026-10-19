@@ -3,6 +3,17 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-19
+
+**The Product menu is three cards, and Hamilton's card names it.** James, 2026-10-19, in the
+"Product menu" thread: "Every fee" overclaimed ("it wont be possible to get every fee"), and the
+workspace is called Hamilton. He picked three cards: Bank Fee Index (Find your institution,
+National index), Market Benchmarks (state and district data, Reports) and a navy Hamilton card
+with "See plans" and "Ask for a demo", with no "Pro workspace" label. This narrows the 2026-10-15
+rule below: Hamilton's name, in text and without its mark, appears on its Product menu card and in
+the phone drawer. It still never appears as a top-level header item or in the footer, and its mark
+stays inside the workspace. `src/components/nav-items.test.ts` pins it.
+
 ## 2026-10-17
 
 **The homepage carries no standalone report promotion.** James, 2026-10-17 18:16, reviewing the
