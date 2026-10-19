@@ -23,7 +23,7 @@ import {
   extractAnthropicText,
   getAnthropicMessagesClient,
 } from "@/lib/ai-provider";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse } from "@/lib/ai-provider-usage";
 import { HAMILTON_RULES, HAMILTON_FORBIDDEN } from "../hamilton/voice";
 import type { SectionType, ValidatedSection } from "../hamilton/types";
 import type { ThesisOutput } from "../hamilton/types";
@@ -173,7 +173,7 @@ export async function runEditorReview(
         system: EDITOR_SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       }, attempt);
-    }),
+    }).then((response) => assertCompletedAnthropicTextResponse(response)),
   );
 
   const rawText = extractAnthropicText(response);

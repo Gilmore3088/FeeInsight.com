@@ -1,4 +1,5 @@
 import { sql } from "./data-store/connection";
+import { isIncurredProviderUsage } from "./provider-usage-accounting";
 import { IncompleteProviderResponseError } from "./ai-response-budget";
 import { anthropicPriceFor } from "@/lib/ai-provider";
 import {
@@ -45,6 +46,34 @@ export function observedProviderUsage(value: unknown): ProviderUsage | undefined
     outputTokens: nonNegative(output), cacheReadInputTokens: read, cacheCreationInputTokens: write,
     webSearchRequests: nonNegative((usage.server_tool_use as { web_search_requests?: number } | undefined)?.web_search_requests),
   };
+}
+
+/** Terminal text/JSON consumers opt in; generic tools and partial source readers do not. */
+export function assertCompletedAnthropicTextResponse<T extends {
+  stop_reason?: unknown; stop_sequence?: unknown; usage?: unknown; content?: unknown;
+}>(response: T, request?: { stop_sequences?: readonly string[] }): T {
+  // These callers request text, without client/server tools or container work.
+  const unexpectedContent = Array.isArray(response.content) && response.content.some((block: unknown) =>
+    block === null || typeof block !== "object" || !("type" in block)
+      || (block.type !== "text" && block.type !== "thinking" && block.type !== "redacted_thinking"));
+  if (!unexpectedContent && (response.stop_reason === "end_turn"
+      || (response.stop_reason === "stop_sequence" && typeof response.stop_sequence === "string"
+        && request?.stop_sequences?.includes(response.stop_sequence)))) return response;
+  throw new IncompleteProviderResponseError(
+    unexpectedContent ? "unexpected_content" : typeof response.stop_reason === "string" ? response.stop_reason : undefined,
+    observedProviderUsage(response.usage),
+  );
+}
+
+/** generateSection preserves this typed reason in its one contextual error wrapper. */
+export function incompleteProviderResponse(error: unknown): IncompleteProviderResponseError | null {
+  const seen = new Set<unknown>();
+  for (let depth = 0; depth < 8 && error instanceof Error && !seen.has(error); depth++) {
+    if (error instanceof IncompleteProviderResponseError) return error;
+    seen.add(error);
+    error = error.cause;
+  }
+  return null;
 }
 
 /** Anthropic charges per web search on top of tokens: $10 per 1,000 searches. */
@@ -214,8 +243,12 @@ export async function recordProviderUsage(
   usage: ProviderUsage = {},
   options: { latencyMs?: number; error?: string; usageObservation?: "observed" | "unknown" } = {},
 ): Promise<void> {
-  const estimatedCost = options.usageObservation === "unknown" ? null : context.provider === "anthropic"
-    ? estimateAnthropicCostMicrousd(context.model, usage)
+  // Failed provenance comes only from validated recording options, never annotations.
+  const observed = options.usageObservation === "observed" ? observedProviderUsage(usage) : undefined;
+  const usageObservation = status === "failed" ? (observed ? "observed" : "unknown") : options.usageObservation;
+  const recordedUsage = usageObservation === "unknown" ? {} : usage;
+  const estimatedCost = usageObservation === "unknown" ? null : context.provider === "anthropic"
+    ? estimateAnthropicCostMicrousd(context.model, recordedUsage)
     : null;
   try {
     await sql`
@@ -227,19 +260,19 @@ export async function recordProviderUsage(
          error_summary, metadata)
       VALUES
         (${context.provider}, ${context.model}, ${context.agent}, ${context.operation},
-         ${status}, ${context.requestCount ?? 1}, ${nonNegative(usage.inputTokens)},
-         ${nonNegative(usage.outputTokens)}, ${nonNegative(usage.cacheReadInputTokens)},
-         ${nonNegative(usage.cacheCreationInputTokens)}, ${estimatedCost},
+         ${status}, ${context.requestCount ?? 1}, ${nonNegative(recordedUsage.inputTokens)},
+         ${nonNegative(recordedUsage.outputTokens)}, ${nonNegative(recordedUsage.cacheReadInputTokens)},
+         ${nonNegative(recordedUsage.cacheCreationInputTokens)}, ${estimatedCost},
          ${options.latencyMs ?? null}, ${context.agentRunId ?? null},
          ${context.routeId ?? null}, ${context.budgetPolicyId ?? null},
          ${context.userId ?? null}, ${context.subjectKey ?? null},
          ${options.error?.slice(0, 1000) ?? null},
          ${JSON.stringify({
            ...(context.metadata ?? {}),
-           ...(options.usageObservation ? {
-             usage_observation: options.usageObservation,
+           ...(usageObservation ? {
+             usage_observation: usageObservation,
              response_complete: status === "completed",
-             ...(options.usageObservation === "unknown" ? { token_counts_are_placeholders: true } : {}),
+             token_counts_are_placeholders: usageObservation === "unknown",
            } : {}),
            route_id: context.routeId ?? null,
            budget_policy_id: context.budgetPolicyId ?? null,
@@ -250,14 +283,16 @@ export async function recordProviderUsage(
   } catch (error) {
     console.error("AI provider usage write failed", error);
   }
-  if (context.agentRunId && status === "completed") {
+  const agentRunId = context.agentRunId;
+  if (typeof agentRunId === "number" && Number.isSafeInteger(agentRunId) && agentRunId > 0
+      && isIncurredProviderUsage(status, usageObservation)) {
     try {
       await sql`
         UPDATE agent_runs
            SET actual_provider_calls = actual_provider_calls + ${context.requestCount ?? 1},
                actual_estimated_cost_microusd = actual_estimated_cost_microusd + ${estimatedCost ?? 0},
                updated_at = NOW()
-         WHERE id = ${context.agentRunId}
+         WHERE id = ${agentRunId}
       `;
     } catch (error) {
       console.error("AI provider run budget metadata update failed", error);
@@ -318,7 +353,10 @@ export async function trackAnthropicRequest<T>(
   } catch (error) {
     const message = providerErrorMessage(error);
     const observed = error instanceof IncompleteProviderResponseError ? error.observedUsage : undefined;
-    await recordProviderUsage(fullContext, "failed", observed ?? {}, {
+    await recordProviderUsage({ ...fullContext, metadata: {
+      ...(fullContext.metadata ?? {}),
+      ...(error instanceof IncompleteProviderResponseError ? { provider_finish_reason: error.reason ?? null } : {}),
+    } }, "failed", observed ?? {}, {
       latencyMs: Date.now() - startedAt,
       error: message,
       usageObservation: observed ? "observed" : "unknown",

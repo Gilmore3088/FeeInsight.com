@@ -1,3 +1,4 @@
+import { assertCompletedAnthropicTextResponse } from "@/lib/ai-provider-usage";
 import { sql } from "@/lib/data-store/connection";
 import { getFeeCategorySummaries } from "@/lib/data-store/fees";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
@@ -307,7 +308,7 @@ export async function runGuideDraft(
         { role: "user", content: draftPrompt(primaryCategory, related, summaries) },
       ],
     }, attempt);
-  });
+  }).then((response) => assertCompletedAnthropicTextResponse(response));
   const drafted = parseDraft(extractAnthropicText(response));
 
   await recordEvent(db, runId, "guide.drafted", "running", "Draft returned by provider", {
