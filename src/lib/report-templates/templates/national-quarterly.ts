@@ -55,7 +55,7 @@ import { developmentsContent, feeChangesContent } from "./developments";
 import { regulatoryExtras } from "./regulatory-section";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
-import { financialIncomeLabel } from "@/lib/report-assemblers/financial-income";
+import { financialIncomeLabel, historicalIncomeForDisplay } from "@/lib/report-assemblers/financial-income";
 import type { NationalTrends } from "@/lib/report-assemblers/national-trends";
 import { renderNationalTrendsSection } from "./national-trends-section";
 
@@ -188,7 +188,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   // Payloads stored before the regional and income chapters lack these fields.
   const overdraftDistribution = data.overdraft_distribution ?? [];
   const regional = data.regional ?? { districts: [], sizes: [], states: [] };
-  const financialGroups = data.financial_income_groups ?? [];
+  const financialGroups = (data.financial_income_groups ?? []).map(historicalIncomeForDisplay);
 
   const formattedDate = new Date(data.report_date).toLocaleDateString("en-US", {
     month: "long",

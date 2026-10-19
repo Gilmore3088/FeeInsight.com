@@ -3,6 +3,8 @@ import type { RevenueSnapshot } from "@/lib/data-store/call-reports";
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
 import type { FinancialSource } from "@/lib/data-store/financial-sources";
 
+const FINANCIAL_INCOME_COHORT_RULE = "Canonical same-charter filers with positive, computable standalone-quarter income. Counts are reporting counts; missing filings are not counted. Reporting populations can change; trends are not constant-cohort or merger-adjusted. No selected institution applies to this geographic aggregate.";
+
 export type FinancialIncomeGroup = ReturnType<typeof financialMeasureDefinition> & {
   cohort_rule: string;
   cohort_history?: CallCohortHistory;
@@ -31,7 +33,7 @@ export function buildFinancialIncomeGroup(source: FinancialSource, rows: Revenue
     geography,
     cohort_history: cohortHistory,
     size_criterion: "all_reported_asset_sizes",
-    cohort_rule: "Canonical same-charter filers with positive, computable standalone-quarter income. Counts are reporting counts; missing filings are not counted. Reporting populations can change; trends are not constant-cohort or merger-adjusted. No selected institution applies to this geographic aggregate.",
+    cohort_rule: FINANCIAL_INCOME_COHORT_RULE,
     subject_included: "not_applicable",
     quarters: rows.filter((q) => /^\d{4}-Q[1-4]$/.test(q.quarter) && Number.isSafeInteger(q.total_institutions) && q.total_institutions > 0
       && Number.isFinite(q.total_service_charges) && q.total_service_charges > 0
@@ -44,4 +46,10 @@ export function buildFinancialIncomeGroup(source: FinancialSource, rows: Revenue
         reported_count: q.total_institutions, eligible_count: null, yoy_change_pct: null };
     }),
   };
+}
+
+/** Saved payloads predate the cohort contract; rendering never revives their unreviewed growth. */
+export function historicalIncomeForDisplay(group: FinancialIncomeGroup): FinancialIncomeGroup {
+  return { ...group, cohort_rule: FINANCIAL_INCOME_COHORT_RULE,
+    quarters: group.quarters.map((quarter) => ({ ...quarter, yoy_change_pct: null })) };
 }

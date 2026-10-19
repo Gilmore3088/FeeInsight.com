@@ -8,7 +8,7 @@
 import { chapterDivider, compactTable, footnote, horizontalBarChart, pageBreak, statCardRow } from "../primitives";
 import type { StatCard } from "../primitives";
 import { TREND_FEES, type FeeMedian, type NationalTrends, type TrendFee } from "@/lib/report-assemblers/national-trends";
-import { financialIncomeLabel } from "@/lib/report-assemblers/financial-income";
+import { financialIncomeLabel, historicalIncomeForDisplay } from "@/lib/report-assemblers/financial-income";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 
 const SUBHEAD_STYLE =
@@ -48,12 +48,12 @@ function feeCells(fees: Record<TrendFee, FeeMedian>): Record<string, string> {
 }
 
 function districtPart(t: NationalTrends, withFees: boolean): string {
-  const incomeTable = t.districts.flatMap((d) => (d.financialIncome ?? []).flatMap((g) => {
+  const incomeTable = t.districts.flatMap((d) => (d.financialIncome ?? []).map(historicalIncomeForDisplay).flatMap((g) => {
     const q = g.quarters[0];
     return q ? [{ district: `${d.district} ${d.name}`, measure: financialIncomeLabel(g.source), date: q.report_date,
       filers: q.reported_count, income: thousandsShort(q.total_thousands), yoy: signedPct(q.yoy_change_pct) }] : [];
   }));
-  const districtGroups = new Map(t.districts.flatMap((d) => (d.financialIncome ?? []).map((g) => [g.source, g] as const)));
+  const districtGroups = new Map(t.districts.flatMap((d) => (d.financialIncome ?? []).map(historicalIncomeForDisplay).map((g) => [g.source, g] as const)));
   const income = incomeTable.length ? compactTable({
     caption: "Separate financial measures by Federal Reserve district",
     columns: [{ key: "district", label: "District", align: "left" }, { key: "measure", label: "Measure", align: "left" },
@@ -133,7 +133,7 @@ function tierPart(t: NationalTrends): string {
 }
 
 function incomePart(t: NationalTrends): string {
-  const groups = t.financialIncomeGroups ?? [];
+  const groups = (t.financialIncomeGroups ?? []).map(historicalIncomeForDisplay);
   if (!groups.some((g) => g.quarters.length)) return `<p style="${EMPTY_STYLE}">No source-specific financial filings are on file.</p>`;
   return groups.filter((g) => g.quarters.length).map((g) => {
     const latest = g.quarters[0];
