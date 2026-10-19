@@ -58,6 +58,11 @@ No branch deletion, force-push or direct main push under a general cleanup instr
 - A rule that holds, rejects or re-files a fee ships with its live re-check in Darwin, in the same
   PR, with a dry-run count of the live fees it would take down. Darwin re-checks live fees against
   today's rules (`docs/project/DECISIONS.md`, 2026-10-15).
+- Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
+  first fix the pipeline step that caused it (discovery, document capture, extraction,
+  categorisation or verification) so the whole class of error is fixed, then re-run and validate
+  the output. A one-off data fix (an admin correction, hold or re-file) comes only as the last step
+  after that process fix, never instead of it.
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.

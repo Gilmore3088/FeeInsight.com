@@ -5,6 +5,18 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-19
 
+**Fix the input and the process, not the output.** James, 2026-10-19 04:04 UTC, in the project
+chat: "we don't fix the output, we fix the input and the process. And only then do we validate and
+fix the output ... if we fix one and this is a problem for others, that means we're just gonna have
+to fix one at a time." When a fee error is found, the first fix goes to the pipeline step that
+caused it: discovery and document capture (Magellan), text conversion (Rosetta), extraction or
+categorisation (Knox) or verification and classification (Darwin). That fixes the whole class of
+error. Then the affected institutions are re-run and the output is validated. A one-off data fix
+(an admin correction, hold or re-file) is allowed only as the last step after the process fix,
+never instead of it. This sits beside the 2026-10-15 rule that a holding or re-filing rule ships
+with its Darwin live re-check. It is in CLAUDE.md "Standing rules" and
+AGENTS.md "How work runs".
+
 **The Product menu is three cards, and Hamilton's card names it.** James, 2026-10-19, in the
 "Product menu" thread: "Every fee" overclaimed ("it wont be possible to get every fee"), and the
 workspace is called Hamilton. He picked three cards: Bank Fee Index (Find your institution,
