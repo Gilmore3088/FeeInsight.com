@@ -26,6 +26,11 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
+/** Ordinary fixtures have unchanged current raw rows; real lock races use PostgreSQL. */
+function currentRawLock(text: string, values: unknown[], rows: Array<Record<string, unknown>>) {
+  return text.includes("FOR UPDATE OF fr") ? rows.filter(row => Number(row.fee_raw_id) === Number(values[0])) : null;
+}
+
 /** The stored text of document 55, the schedule Knox read the test fees from. */
 const SCHEDULE_TEXT = [
   "Overdraft fee $35.00",
@@ -50,8 +55,10 @@ const SOURCE_TEXTS = [
 ];
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = templateText(strings);
+    const current = currentRawLock(text, values, rows);
+    if (current) return Promise.resolve(current);
     if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
     if (text.includes("INSERT INTO verified_fee_observations")) {
       return Promise.resolve([{ fee_verified_id: db.mock.calls.length + 1200 }]);
@@ -566,8 +573,10 @@ describe("Darwin agentic verification", () => {
   describe("with the learning core", () => {
     function learningDb(rows: Array<Record<string, unknown>>): DbMock {
       const db = createDbMock(rows);
-      db.mockImplementation((strings: TemplateStringsArray) => {
+      db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
         const text = templateText(strings);
+        const current = currentRawLock(text, values, rows);
+        if (current) return Promise.resolve(current);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
         if (text.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
         if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
@@ -710,6 +719,7 @@ describe("Darwin agentic verification", () => {
         const db = learningDb(rows);
         const template = db.getMockImplementation() as (...args: unknown[]) => unknown;
         db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => {
+          if (templateText(strings).includes("FOR UPDATE OF fr")) return template(strings, ...values);
           if (templateText(strings).includes("FROM raw_fee_observations fr")) return Promise.resolve(copies);
           return template(strings, ...values);
         }) as never);
@@ -929,8 +939,10 @@ describe("category change re-judge (#1295)", () => {
     const unstated = { ...wireRaw, fee_raw_id: 126799, amount: "12.00", conditions: "excerpt=\"Wire Transfer - International | $12.00\"" };
 
     function rejudgeDb(): DbMock {
-      const db = vi.fn((strings: TemplateStringsArray) => {
+      const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
         const text = templateText(strings);
+        const current = currentRawLock(text, values, [wireRaw, unstated]);
+        if (current) return Promise.resolve(current);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
         if (text.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
         if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 7699, normalized_text: DOC_7699 }]);

@@ -168,8 +168,9 @@ and existing safe eligibility hold remains unchanged, including rejected/operato
 and published histories. Ordinary automatic promoters cannot release this shape.
 The insert remains `ON CONFLICT DO NOTHING`; a proven monthly conflict locks its exact
 raw identity in a real transaction and checks judged history in a fresh statement.
-Darwin's post-lock current monthly eligibility check (#2277) blocks stale selections
-even for NULL/unrepresented products, without requiring needs flags on old rejudges.
+Darwin's post-lock current monthly eligibility check (#2277) uses the current raw
+canonical hint and eligibility flags, independently of a stale chosen category. Every
+caller locks, including NULL/unrepresented products; old rejudges need no needs flag.
 
 The 2026-10-19 review explicitly approves a prospective eligibility phase, following
 #1911's phase boundary, as an exception to the general live-rule-join requirement in
