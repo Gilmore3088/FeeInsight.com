@@ -71,7 +71,9 @@ async function clear(db: FixtureDb): Promise<void> {
   for (let pass = 0; pass < 6 && pending.length; pass += 1) {
     for (let i = pending.length - 1; i >= 0; i -= 1) {
       try {
-        await db.unsafe(`DELETE FROM public.${pending[i].table} WHERE ${pending[i].column}::text = ANY($1::text[])`, [ids]);
+        // No DELETE on a table without these rows: append-only tables refuse any DELETE (#2170).
+        const held = await db.unsafe(`SELECT 1 FROM public.${pending[i].table} WHERE ${pending[i].column}::text = ANY($1::text[]) LIMIT 1`, [ids]);
+        if (held.length) await db.unsafe(`DELETE FROM public.${pending[i].table} WHERE ${pending[i].column}::text = ANY($1::text[])`, [ids]);
         pending.splice(i, 1);
       } catch (error) {
         if (pass === 5) throw error;
