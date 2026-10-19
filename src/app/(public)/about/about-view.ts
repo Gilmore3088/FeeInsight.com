@@ -121,15 +121,15 @@ export const METHODOLOGY_LINK = { href: "/methodology", label: "Read the methodo
 
 /**
  * What each coverage figure means, from the code that computes it (src/lib/public-stats.ts):
- * "monitored" is every row of institution_sources (the FDIC and NCUA roster, closed
- * institutions included); "with published fees" is an institution with at least one approved
+ * "monitored" is every row of institution_sources (the FDIC and NCUA roster) the regulator has
+ * not marked inactive (activeInstitutionFilter, #1980); "with published fees" is an institution with at least one approved
  * fee in published_fee_catalog; "data refreshed" is the newest approved fee's created_at, or the
  * last successful schedule fetch when no fee has a date, so it dates the index, not each schedule.
  */
 export const COVERAGE_NOTES = [
   {
     term: "Monitored",
-    line: "Every bank and credit union on our list, loaded from FDIC and NCUA records. The list still includes some that have since closed.",
+    line: "Every bank and credit union on our list, loaded from FDIC and NCUA records. Institutions the regulator lists as inactive are left out.",
   },
   {
     term: "With published fees",
