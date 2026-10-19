@@ -1194,7 +1194,7 @@ describe("agentic run store", () => {
     const runSteps = [...briefStep, { ...briefStep[0], id: 9002, step_key: "publish", sequence: 2 }, { ...briefStep[0], id: 9003, step_key: "publish", sequence: 3 }];
     installSqlMocks({ finalRun: readNowRun, finalSteps: runSteps });
     installTxMocks(runSteps, readNowRun);
-    // The run's queue: the brief runs as the tick's first step; then its publish (55 s at Read-now
+    // The run's queue: the brief runs as the tick's first step; then its publish (65 s at Read-now
     // prices) does not fit the 50 s left, nor would a third step.
     const queue = ["daily-brief", "publish", "publish"];
     let peeks = 0;
@@ -1213,7 +1213,7 @@ describe("agentic run store", () => {
     expect(result.executedSteps).toBe(1);
     const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
     expect(deferred).toHaveLength(1);
-    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 55_000 });
+    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 65_000 });
   });
 
   it("starts no step in a later run of the tick when that step cannot finish by the deadline", async () => {
@@ -1411,7 +1411,7 @@ describe("agentic run store", () => {
 
   it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
     const readNow = "atlas.priority_institution";
-    expect(expectedStepMs("publish", readNow)).toBe(55_000);
+    expect(expectedStepMs("publish", readNow)).toBe(65_000);
     expect(expectedStepMs("extract", readNow)).toBe(110_000);
     expect(expectedStepMs("classify", readNow)).toBe(60_000);
     // Unlisted steps and other runs keep the lane's prices.
@@ -1419,6 +1419,11 @@ describe("agentic run store", () => {
     expect(expectedStepMs("publish", "atlas.priority_state_research")).toBe(expectedStepMs("publish"));
     expect(expectedStepMs("publish", null)).toBe(225_000);
     expect(expectedMsToFirstWork(["classify", "publish"], readNow)).toBe(60_000);
+  });
+
+  it("keeps the hourly lane sync out of the tick and prices it at its measured in-tick p99 (2026-10-18)", () => {
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("lane-sync");
+    expect(expectedStepMs("lane-sync")).toBe(200_000);
   });
 
   it("prices the publish-sweeps step at the moved sweeps' measured p99 and keeps the publish price (PR B)", () => {

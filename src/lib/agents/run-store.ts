@@ -328,6 +328,27 @@ async function executeAgenticStep(
   }
 
   // Hamilton's answer eval: the quality bar asked of a spread of real institutions. Read-only, no model calls.
+  // Atlas's hourly nationwide lane sync (state-lane-scheduler.ts), from its own route.
+  if (step.stepKey === "lane-sync") {
+    const { runNationwideLaneSync } = await import("@/lib/agents/state-lane-scheduler");
+    const synced = await runNationwideLaneSync();
+    const seconds = Math.round((synced.ms.profiles + synced.ms.unchecked + synced.ms.second_looks + synced.ms.priorities) / 1000);
+    return {
+      status: "completed",
+      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
+      detail: {
+        lanes_touched: synced.profiles.lanesTouched,
+        profiles_touched: synced.profiles.profilesTouched,
+        profile_sync_failures: synced.profiles.failures,
+        unchecked_woken: synced.uncheckedWoken,
+        second_look_woken: synced.secondLookWoken,
+        priorities_updated: synced.priorities.updated,
+        priorities_error: synced.priorities.error,
+        part_ms: synced.ms,
+      },
+    };
+  }
+
   if (step.stepKey === "hamilton-answer-eval") {
     const { runAnswerEval } = await import("@/lib/hamilton/answer-eval");
     const result = await runAnswerEval({ perGroup: Number(params.per_group) > 0 ? Number(params.per_group) : 1 });
@@ -3413,6 +3434,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "hamilton-answer-eval": 400_000,
   // Up to five memos at once, each up to two 90 s model calls, after the free answers.
   "hamilton-paid-answer-eval": 280_000,
+  // The hourly nationwide lane sync (state-lane-scheduler runNationwideLaneSync), run from its own
+  // route, never the tick. Measured inside the tick over the 24 hours to 23:55 UTC 2026-10-18:
+  // the first tick of each hour started its first step p50 80 s, p90 171 s, max 200 s in.
+  "lane-sync": 200_000,
   // A few dozen draft rows and one catalog check each (growth/withdraw.ts).
   "growth-withdraw": 30_000,
   // Quick-prefixed steps measured over the 30 s quick default (2026-10-17 p99: 57 s, 89-110 s, 48 s).
@@ -3428,9 +3453,11 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * Steps the tick never starts, because they do not fit its 270 s budget even alone: the tick
  * always gives its first run a step, and Hamilton's answer eval (200-370 s) started that way
  * killed ticks (runs 6483 and 6552 failed after three tries, Oct 15). They run from their own
- * route (`/api/admin/crew/answer-eval`).
+ * route (`/api/admin/crew/answer-eval`). The hourly lane sync (`lane-sync`) fits a tick but would
+ * spend most of one before any lane work, as it did inside the tick until 2026-10-18; it runs
+ * from `/api/admin/crew/lane-sync`.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval"] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "lane-sync"] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**
@@ -3438,12 +3465,15 @@ const DEFAULT_STEP_EXPECTED_MS = 120_000;
  * (`atlas.priority_institution`) reads one institution, so its steps are far shorter than a
  * state lane's; priced at lane p99s it waited 17-20 minutes per step (runs 8086 and 8104, Oct 17).
  * Re-measured over the 24 hours to 22:20 UTC 2026-10-17 (about p99, `agent_run_steps`): publish
- * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. A state re-search run
+ * 50 s, extract 106 s, classify 58 s, fetch 15 s, read 2 s. Publish raised to 65 s on 2026-10-18:
+ * the two Read-now publishes reaped that day (IA 44517, WA 44631) took 61 s and 58 s on retry,
+ * and over the 24 hours to 23:55 UTC Read-now publishes ran p50 28 s, p90 64 s, p99 117 s
+ * (16 of 89 over 55 s, 8 over 65 s). A state re-search run
  * (`atlas.priority_state_research`) ran no step in that window, so it keeps the lane's prices.
  * A step not listed here uses `STEP_EXPECTED_MS`.
  */
 const RUN_SOURCE_STEP_EXPECTED_MS: Record<string, Record<string, number>> = {
-  "atlas.priority_institution": { publish: 55_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
+  "atlas.priority_institution": { publish: 65_000, extract: 110_000, classify: 60_000, fetch: 20_000, read: 5_000 },
 };
 /**
  * A publish step's row loop stops this long after the step began (once it has decided
@@ -3812,6 +3842,8 @@ export async function executeAgentRun(
           // A blocked report is marked failed and then the step throws; outside a
           // transaction, so the job keeps its failed status and recorded findings.
           step.stepKey === "report-reconcile" ||
+          // The lane sync writes through its own statements; a step transaction would sit idle.
+          step.stepKey === "lane-sync" ||
           isRegistryStepKey(step.stepKey)
             ? await executeAgenticStep(sql, run, step)
             : await withTransaction((tx) => executeAgenticStep(tx, run, step));
