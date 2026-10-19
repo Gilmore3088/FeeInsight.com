@@ -33,6 +33,9 @@ env:
   # Public applicability runs on the real database; unit shards leave it out.
   PUBLIC_FEE_APPLICABILITY_TEST: src/lib/data-store/public-fee-applicability.db.test.ts
 
+  # Selected raw bytes are checked through the native reader/writer with real constraints.
+  ROSETTA_BYTE_IDENTITY_TEST: src/lib/agents/rosetta/source-byte-identity.db.test.ts
+
   # Run by the knox-gates job; the unit shards leave them out.
   KNOX_GATES: src/lib/agents/knox/answer-key-gate.test.ts src/lib/agents/knox/state-answer-key-gate.test.ts
   # Run by the e2e job against a real database; the unit shards leave them out.
@@ -105,7 +108,7 @@ jobs:
       - name: Unit tests (shard ${{ matrix.shard }} of 2)
         run: |
           excludes=""
-          for file in $KNOX_GATES $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
+          for file in $KNOX_GATES $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
             excludes="$excludes --exclude $file"
           done
           npx vitest run --shard=${{ matrix.shard }}/2 $excludes
@@ -145,7 +148,7 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
           # These shared-schema suites use transactional DDL/failure triggers;
           # serialize files so another reader cannot observe a temporary fixture.
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST --maxWorkers=1
+          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST --maxWorkers=1
 
   app-tests:
     # The one required check: green only when every job above passed.

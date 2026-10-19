@@ -114,6 +114,93 @@ describe.skipIf(!url)("Rosetta paid policy on owned full-schema PostgreSQL", () 
     return { result, create };
   }
 
+  it.each(["http", "vault", "malformed"])("keeps %s identity failure outside paid settlement and all artifact/profile/witness writes", async (kind) => {
+    const selected = await seed(`${text}\nWire transfer fee | $25.00`);
+    if (kind === "malformed") {
+      await sql`UPDATE source_documents SET content_hash='invalid-selected-hash' WHERE id=${selected.document}`;
+      await sql`UPDATE agent_source_texts SET source_hash='invalid-selected-hash' WHERE id=${selected.artifact}`;
+      await sql`UPDATE pipeline_attempts SET input_fingerprint='invalid-selected-hash' WHERE source_document_id=${selected.document}`;
+    }
+    if (kind === "vault") await sql`UPDATE source_documents SET document_r2_key=${`${sourceHash.slice(0, 2)}/${sourceHash}`} WHERE id=${selected.document}`;
+    await enableWitnessCapability();
+    const [before] = await sql`SELECT * FROM agent_source_texts WHERE id=${selected.artifact}`;
+    const [profile] = await sql`SELECT * FROM institution_source_profiles WHERE institution_id=${selected.institution}`;
+    const changed = new TextEncoder().encode("%PDF-1.4 changed after capture");
+    const fetch = vi.fn(async () => new Response(changed, { headers: { "content-type": "application/pdf" } }));
+    const vaultRead = vi.fn(async () => changed);
+    const create = vi.fn(); const pageCounter = vi.fn(async () => 2);
+    const result = await runRosettaPaidRead({ db: sql, runId: 900, stepId: 4, create, stateCode: "ZX", fetchImpl: fetch, pageCounter,
+      vault: { configured: kind === "vault", read: vaultRead,
+        store: async () => { throw new Error("No vault write"); }, presign: async () => { throw new Error("No presign"); } } });
+    expect(result).toMatchObject({ selected: 1, processed: 1, failed: 1, succeeded: 0, costMicrousd: 0, unknownCostResponses: 0 });
+    expect(result.results[0]).toMatchObject({ outcome: "evidence_mismatch", response_received: false });
+    expect(create).not.toHaveBeenCalled(); expect(pageCounter).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledTimes(kind === "http" ? 1 : 0);
+    expect(vaultRead).toHaveBeenCalledTimes(kind === "vault" ? 1 : 0);
+    expect((await sql`SELECT * FROM agent_source_texts WHERE id=${selected.artifact}`)[0]).toEqual(before);
+    expect((await sql`SELECT * FROM institution_source_profiles WHERE institution_id=${selected.institution}`)[0]).toEqual(profile);
+    expect(await sql`SELECT * FROM agent_source_text_witnesses`).toHaveLength(0);
+    expect(await sql`SELECT * FROM ai_api_usage_events`).toHaveLength(0);
+    expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy=${PAID_READ_STRATEGY}`).toHaveLength(0);
+    const [access] = await sql`SELECT outcome, detail FROM pipeline_attempts WHERE strategy='read.document_access'`;
+    expect(access).toMatchObject({ outcome: "evidence_mismatch", detail: { paid_preflight: true, response_received: false,
+      primary_byte_identity: { status: kind === "malformed" ? "invalid_selected_hash" : "mismatch" } } });
+    const dry = await runRosettaPaidRead({ db: sql, runId: 900, stateCode: "ZX", dryRun: true });
+    expect(dry.selected).toBe(1); // The access failure did not become a settled paid attempt.
+  });
+
+  it("does not select an unbound legacy scan for paid work through the actual SQL join", async () => {
+    const selected = await seed();
+    await sql`UPDATE source_documents SET content_hash=NULL WHERE id=${selected.document}`;
+    await sql`UPDATE agent_source_texts SET source_hash=NULL WHERE id=${selected.artifact}`;
+    expect(await sql`SELECT id FROM agent_source_texts WHERE id=${selected.artifact} AND source_hash IS NULL`).toHaveLength(1);
+    const { result, create } = await run();
+    expect(result).toMatchObject({ selected: 0, processed: 0, unknownCostResponses: 0 });
+    expect(create).not.toHaveBeenCalled();
+    expect(await sql`SELECT * FROM ai_api_usage_events`).toHaveLength(0);
+    expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy=${PAID_READ_STRATEGY}`).toHaveLength(0);
+  });
+
+  it("accepts matching vault bytes without HTTP and retains normal paid accounting", async () => {
+    const selected = await seed();
+    await sql`UPDATE source_documents SET document_r2_key=${`${sourceHash.slice(0, 2)}/${sourceHash}`} WHERE id=${selected.document}`;
+    const create = vi.fn(async () => ({ content: [{ type: "text", text }], stop_reason: "end_turn", usage: known }) as never);
+    const fetch = vi.fn(); const read = vi.fn(async () => pdf);
+    const result = await runRosettaPaidRead({ db: sql, runId: 900, stepId: 4, create, stateCode: "ZX", fetchImpl: fetch, pageCounter: async () => 2,
+      vault: { configured: true, read, store: async () => { throw new Error("No vault write"); }, presign: async () => { throw new Error("No presign"); } } });
+    expect(result).toMatchObject({ succeeded: 1, costMicrousd: 220 });
+    expect(create).toHaveBeenCalledTimes(1); expect(read).toHaveBeenCalledTimes(1); expect(fetch).not.toHaveBeenCalled();
+    expect((await sql`SELECT source_hash FROM agent_source_texts WHERE id=${selected.artifact}`)[0].source_hash).toBe(sourceHash);
+    expect(await sql`SELECT * FROM ai_api_usage_events`).toHaveLength(1);
+  });
+
+  it("allows a legitimate later captured document after a zero-call mismatch", async () => {
+    const selected = await seed();
+    const changed = new TextEncoder().encode("%PDF-1.4 legitimate new captured bytes");
+    const changedHash = hashText(Buffer.from(changed).toString());
+    const create = vi.fn(async () => ({ content: [{ type: "text", text }], stop_reason: "end_turn", usage: known }) as never);
+    const options = { db: sql, runId: 900, stepId: 4, create, stateCode: "ZX", limit: 1,
+      fetchImpl: async () => new Response(changed, { headers: { "content-type": "application/pdf" } }), pageCounter: async () => 2 };
+    expect(await runRosettaPaidRead(options)).toMatchObject({ failed: 1, succeeded: 0 });
+    expect(create).not.toHaveBeenCalled();
+    expect(await sql`SELECT * FROM ai_api_usage_events`).toHaveLength(0);
+    expect(await sql`SELECT * FROM pipeline_attempts WHERE strategy=${PAID_READ_STRATEGY}`).toHaveLength(0);
+    const [next] = await sql`INSERT INTO source_documents (institution_id, status, document_url, content_hash, content_type)
+      VALUES (${selected.institution}, 'success', 'https://fixture.invalid/fees.pdf', ${changedHash}, 'application/pdf') RETURNING id`;
+    await sql`INSERT INTO agent_source_texts (institution_id, source_document_id, status, document_type, reader, source_hash)
+      VALUES (${selected.institution}, ${next.id}, 'needs_ocr', 'pdf', 'read.pdf_layout', ${changedHash})`;
+    await sql`INSERT INTO pipeline_attempts (institution_id, source_document_id, stage, strategy, strategy_version, input_fingerprint, outcome)
+      VALUES (${selected.institution}, ${next.id}, 'read', 'read.pdf_layout', 3, ${changedHash}, 'scanned_pdf')`;
+    const result = await runRosettaPaidRead(options);
+    expect(result).toMatchObject({ selected: 1, succeeded: 1, failed: 0, costMicrousd: 220 });
+    expect(result.results[0].source_document_id).toBe(Number(next.id));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(await sql`SELECT * FROM ai_api_usage_events`).toHaveLength(1);
+    const paid = await sql`SELECT input_fingerprint, source_document_id FROM pipeline_attempts WHERE strategy=${PAID_READ_STRATEGY}`;
+    expect(paid).toHaveLength(1); expect(paid[0].input_fingerprint).toBe(changedHash);
+    expect(Number(paid[0].source_document_id)).toBe(Number(next.id));
+  });
+
   it.each(["end_turn", "max_tokens", "model_context_window_exceeded"])("stores usable %s with actual text/table/profile and receipt lineage", async (reason) => {
     const selected = await seed(); const { result, create } = await run(reason);
     expect(result).toMatchObject({ selected: 1, succeeded: 1, failed: 0, costMicrousd: 220, unknownCostResponses: 0 });
