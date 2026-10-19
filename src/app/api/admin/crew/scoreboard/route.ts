@@ -50,7 +50,7 @@ async function handleGET(request: NextRequest) {
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
       // Last: a data repair, so a pipeline pause holds it without holding the measurements above.
-      { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213)" },
+      { key: "atlas-city-repair", agent: "atlas", title: "Atlas: restore credit union cities NCUA cut at 15 characters (#1213) and hand-checked fee links (#2022)" },
       // Measures the database every day; its log trims delete only once James switches each on.
       { key: "atlas-storage-retention", agent: "atlas", title: "Atlas: measure the database and trim old log history" },
     ],

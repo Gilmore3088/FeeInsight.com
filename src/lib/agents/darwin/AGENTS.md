@@ -230,7 +230,14 @@ Darwin owns verification and classification.
   `document_owner`); on, `other_bank` pairs are
   re-read under their own cap of 25, a failing fee goes through the shared second look
   (`darwin.document_owner`), passing fees clear their pending flags, and a confirmed fee is
-  archived with reason `document_owner: names institution <id>`, never deleted.
+  archived with reason `document_owner: names institution <id>`, never deleted. After the
+  takedowns, on each live step that reads pairs, `releaseOwnerLinks` (#2018 item 13) lets go of the
+  fee link such a takedown leaves behind: when an institution's `fee_schedule_url` is still the
+  document whose fees came down as `document_owner` and no fee from it is still live there (and no
+  correction locked the profile), the URL joins `rejected_source_urls`, the canonical link clears,
+  and `institution_sources` goes back to `rescue_status = 'pending'` with failure reason
+  `darwin_document_owner`. Step detail `links_released`. Read-only count Oct 19: 3 (Bluegrass 5756
+  on UK FCU's PDF, 5Star Bank 2092, First National Bank 1903).
   `documentOwnerCountSql()` is the read-only count of the whole backlog by verdict, mirroring these
   rules in staged, materialized steps, as one script in a read-only transaction that rolls back (JIT
   and merge joins off, a 120 s statement timeout; names are matched only where their first two words
@@ -817,6 +824,19 @@ Darwin owns verification and classification.
   M&T 5, FirstBank PR 2) and 92 stay. v2 (review of v1): a fee with no dollar amount (a percent fee)
   never has a twin, and "fondos", "insuficientes" and "cobro" read as Spanish. A fee taken down for
   its twin is not read again if the twin later comes down under another check; restore it by hand.
+- Canadian bank documents (`canadian-document-check.ts`, #2022, James's "Do all three", Oct 19).
+  Natbank (2675), a Florida bank owned by National Bank of Canada, had 12 live fees read from the
+  parent's Canadian chequing page and personal fee guide. Every institution here is U.S.-chartered,
+  so a live fee's document is Canadian when its stored text names Interac, CDIC or Canada Deposit
+  Insurance as a whole word and names neither FDIC nor NCUA (the address is not used: Natbank's own
+  U.S. pages are on nbc.ca too; "interactive" matched 352 documents, `\mInterac\M` only Natbank's
+  two). It reads every live document's text (8,722; 1.3 to 3.9 s), so at most hourly; an
+  institution-scoped run always reads. On (`CANADIAN_DOCUMENT_TAKEDOWN_LIVE`), a match goes through
+  the 12-hour second look (`darwin.canadian_document`) and is archived with `canadian_document:
+  #<doc>` (batch `darwin-canadian-document-<run>`, verified row rejected with the
+  `canadian_document` flag; event `darwin.canadian_document_takedown`). Step detail
+  `canadian_document_check`. Dry run Oct 19: 12 fees on docs 26833 and 26834, all Natbank; the same
+  12 are #2022 hand takedowns, and Atlas points Natbank's registry at its U.S. accounts page.
 - One printed line, two reads (`line-conflict-check.ts`, #1440). James's catalog review (Oct 15)
   found live fees sharing institution, name, amount and source address under two categories (1st
   Summit's "Prepaid Card" $5 as document reproduction and gift card purchase) or one category with
@@ -1251,7 +1271,11 @@ Darwin owns verification and classification.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v74 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v74 (Oct 19,
+- The guard is at v75 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v75 (Oct 19,
+  #2023, James chose "Take down"): `CLUB_WITHDRAWAL_LIVE` is on, so a club or holiday account
+  withdrawal ("Christmas Club early withdrawal | $20 per w/d") fails early closure; a read-only check
+  of 25 of the 313 live found every one a per-withdrawal charge. Closing a club early still passes.
+  v74 (Oct 19,
   #2018, James's 20-defect register): a bill pay investigation or research request re-files to
   account research; a withdrawal limit ("withdrawal over 6 per month") or returned mail leaves
   account research for its own type (a rule marked `onlyIfRefiles` fails a fee only when the other
@@ -1260,8 +1284,8 @@ Darwin owns verification and classification.
   delivery; a loan payment line that names no deposit leaves returned deposited items for other
   lending; and a withdrawal at the institution's own named ATM ("at JSFCU ATM", `NAMED_OWN_ATM`;
   never "at other/non-network/Allpoint/our ATMs") fails the non-network ATM fee. A club or holiday
-  account withdrawal (`CLUB_WITHDRAWAL`) would fail early closure, but `CLUB_WITHDRAWAL_LIVE` is off:
-  315 live fees would go, and that waits on James. Dry run on 606 live candidates: 38 re-files, 2 to
+  account withdrawal (`CLUB_WITHDRAWAL`) would fail early closure, but `CLUB_WITHDRAWAL_LIVE` was off
+  until v75. Dry run on 606 live candidates: 38 re-files, 2 to
   the second look. v73 (Oct 17,
   #1837, James's yes): `borrowedDirection` is on. A name whose part after its last colon is only a
   direction ("Check Printing: Incoming", a wire row read under the other column's heading) fails
@@ -1432,6 +1456,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `NON_DEPOSIT_CHECK_VERSION` | `darwin.non_deposit_document` | v3 | `darwin/non-deposit-document-check.ts` |
 | `LINE_CONFLICT_CHECK_VERSION` | `darwin.line_conflict` | v1 | `darwin/line-conflict-check.ts` |
 | `TRANSLATED_COPY_CHECK_VERSION` | `darwin.translated_copy` | v2 | `darwin/translated-copy-check.ts` |
+| `CANADIAN_DOCUMENT_CHECK_VERSION` | `darwin.canadian_document` | v1 | `darwin/canadian-document-check.ts` |
 | `DOCUMENT_OWNER_STRATEGY` | `verify.document_owner` | v1 | `darwin/document-owner.ts` |
 | `DARWIN_VERIFY_STRATEGY` | `verify.rules` | v3 | `darwin/verify.ts` |
 | `DARWIN_SOURCE_CHECK_VERSION` | — | v2 | `darwin/verify.ts` |

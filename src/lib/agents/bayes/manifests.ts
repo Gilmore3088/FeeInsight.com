@@ -426,6 +426,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // returned mail leave account research, excess IRA withdrawals leave IRA termination, currency
     // shipping leaves rush card, loan payments leave returned deposited items, and a withdrawal at
     // the institution's own named ATM fails the non-network ATM fee.
+    // v75 (Oct 19, #2023, James's "Take down"): a club or holiday account withdrawal fails early closure.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

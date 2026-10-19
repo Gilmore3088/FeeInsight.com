@@ -74,6 +74,7 @@ import { countLiveFragmentNames, liveFragmentDetail, liveFragmentFindingsDetail,
 import { countHourlyFees, hourlyDetail, hourlyFindingsDetail, recheckHourlyFrequencies } from "@/lib/agents/darwin/hourly-frequency-check";
 import { countNonDepositFees, nonDepositDetail, nonDepositFindingsDetail, recheckNonDepositDocuments } from "@/lib/agents/darwin/non-deposit-document-check";
 import { recheckTranslatedCopies, translatedCopyDetail } from "@/lib/agents/darwin/translated-copy-check";
+import { canadianDocumentDetail, recheckCanadianDocuments } from "@/lib/agents/darwin/canadian-document-check";
 import { lineConflictDetail, recheckLineConflicts } from "@/lib/agents/darwin/line-conflict-check";
 import { documentOwnerDetail } from "@/lib/agents/darwin/document-owner";
 import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, runReleaseRepairStep } from "@/lib/agents/darwin/release-repair";
@@ -99,6 +100,7 @@ import { knoxMissesDetail, runKnoxMisses, summarizeKnoxMisses } from "@/lib/agen
 import { runBayesLedger, summarizeBayesLedger, BAYES_LEDGER_VERSION } from "@/lib/agents/bayes/ledger";
 import { runScheduleCheck, summarizeScheduleCheck, SCHEDULE_CHECK_VERSION } from "@/lib/agents/atlas/schedule-check";
 import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agents/atlas/city-repair";
+import { handLinkRepairDetail, runHandLinkRepair, summarizeHandLinkRepair } from "@/lib/agents/atlas/hand-link-repair";
 import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
 import { coldTierDetail, runColdTier, summarizeColdTier } from "@/lib/agents/hoovie/storage-tiers";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
@@ -935,6 +937,16 @@ async function executeAgenticStep(
         dryRun: run.runKind === "dry_run",
         institutionId: numericRunParam(params, ["institution_id"]),
       });
+      // #2022: fees read from a Canadian bank's document (canadian-document-check.ts), at most hourly.
+      const canadianDocument = await recheckCanadianDocuments(tx, {
+        runId: run.id,
+        stepId: step.id,
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
+      const canadianDocumentNote = canadianDocument.matched > 0
+        ? ` Canadian document re-check: ${canadianDocument.matched.toLocaleString()} live fee(s) on ${canadianDocument.documents.toLocaleString()} Canadian bank document(s) (${canadianDocument.live && !canadianDocument.dryRun ? `${canadianDocument.flagged.toLocaleString()} flagged, ${canadianDocument.takenDown.length.toLocaleString()} archived` : canadianDocument.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}).`
+        : "";
       const translatedCopyNote = translatedCopy.matched > 0
         ? ` Spanish copy re-check: ${translatedCopy.matched.toLocaleString()} of ${translatedCopy.checked.toLocaleString()} live fee(s) on Spanish copies of a schedule have an English twin at the same price (${translatedCopy.live && !translatedCopy.dryRun ? `${translatedCopy.flagged.toLocaleString()} flagged, ${translatedCopy.takenDown.length.toLocaleString()} archived` : translatedCopy.dryRun ? "dry run: would take down, nothing written" : "switch off: would take down, nothing written"}); ${(translatedCopy.keptSpanishOnly + translatedCopy.keptEnglishName).toLocaleString()} stay.`
         : "";
@@ -996,7 +1008,7 @@ async function executeAgenticStep(
         : "";
       return {
         status: "completed",
-        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
+        summary: `Darwin verified ${verification.verifiedFees.toLocaleString()} raw fee observations from ${verification.processedRawFees.toLocaleString()} selected rows (${verification.skippedFees.toLocaleString()} skipped).${conditionalZero.selected > 0 ? ` Settled ${conditionalZero.selected.toLocaleString()} conditional-$0 hold(s) (${conditionalZero.verified.toLocaleString()} verified free on the bank's schedule).` : ""}${verification.categoryChange && verification.categoryChange.candidates > 0 ? ` ${verification.categoryChange.candidates.toLocaleString()} row(s) Knox re-filed since Darwin's decision ${verification.categoryChange.live ? `(${verification.categoryChange.selected.toLocaleString()} judged again under today's category)` : "(switch off: counted, not judged again)"}.` : ""}${verification.categoryChange && verification.categoryChange.takeoverProof.rows > 0 ? ` ${verification.categoryChange.takeoverProof.rows.toLocaleString()} row(s) a re-read took over under a new category ${verification.categoryChange.takeoverProof.live ? "(judged again)" : "(take-over proof switch off: counted, not judged again)"}.` : ""}${liveFragmentNote}${liveFragmentFullNote}${hourlyNote}${hourlyFullNote}${nonDepositNote}${nonDepositFullNote}${translatedCopyNote}${canadianDocumentNote}${lineConflictNote}${releaseRepairNote}${releaseRepairFullNote}${documentOwnerNote}`,
         detail: {
           selected_raw_fees: verification.selectedRawFees,
           processed_raw_fees: verification.processedRawFees,
@@ -1024,6 +1036,7 @@ async function executeAgenticStep(
           ...(hourlyFull ? { hourly_frequency_full_count: hourlyFindingsDetail(hourlyFull) } : {}),
           non_deposit_document_check: nonDepositDetail(nonDeposit),
           translated_copy_check: translatedCopyDetail(translatedCopy),
+          canadian_document_check: canadianDocumentDetail(canadianDocument),
           line_conflict_check: lineConflictDetail(lineConflict),
           ...(nonDepositFull ? { non_deposit_document_full_count: nonDepositFindingsDetail(nonDepositFull) } : {}),
           release_repair: releaseRepair ? releaseRepairDetail(releaseRepair) : { error: releaseRepairError },
@@ -2516,7 +2529,13 @@ async function executeAgenticStep(
     }
     case "atlas-city-repair": {
       const result = await runCityRepair({ db: tx, dryRun: run.runKind === "dry_run" });
-      return { status: "completed", summary: summarizeCityRepair(result), detail: cityRepairDetail(result) };
+      // #2022: registry links checked by hand (Natbank's own U.S. pages), the same guarded kind of repair.
+      const links = await runHandLinkRepair({ db: tx, dryRun: run.runKind === "dry_run" });
+      return {
+        status: "completed",
+        summary: links.candidates.length > 0 ? `${summarizeCityRepair(result)} ${summarizeHandLinkRepair(links)}` : summarizeCityRepair(result),
+        detail: { ...cityRepairDetail(result), hand_links: handLinkRepairDetail(links) },
+      };
     }
     case "atlas-storage-retention": {
       const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run" });
