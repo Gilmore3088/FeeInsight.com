@@ -22,12 +22,13 @@ import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached, type RevenueContext } from "@/lib/custom-report/revenue-context";
-import { getReportPeerFinancialCached, type ReportPeerFinancial } from "@/lib/custom-report/peer-context";
+import { getReportPeerContextCached, getReportPeerFinancialCached, peerLinesFor, type ReportPeerContext, type ReportPeerFinancial } from "@/lib/custom-report/peer-context";
+import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import type { IndexRow } from "@/lib/data-store";
-import { getIndexRowsCached } from "@/lib/data-store/public-cached-reads";
+import { getIndexRowsCached, getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { LandingHero, LandingProof } from "./landing-hero";
@@ -92,7 +93,8 @@ export default async function LandingPage() {
   // their figures; a failed read shows the examples without figures. It is null both when none
   // passes the bar today and on error. The sample bank's reported service-charge income (the
   // read the sample report page shows) gives Prioritize its context; without it, no figures.
-  // The same report and income draw the deliverable before the plans.
+  // The same report and income draw the deliverable before the plans. The One question section
+  // adds the sample report page's peer-context and branch-footprint reads, from the same cache.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
@@ -101,9 +103,10 @@ export default async function LandingPage() {
   const [sampleRead, indexReads] = await Promise.all([
     loadSampleReport().then(
       async (report) => {
-        if (!report) return { report, revenue: null, financial: null, failed: false };
+        if (!report) return { report, revenue: null, financial: null, peers: null, branches: null, failed: false };
         const id = report.data.subject.institution_id;
-        const [revenue, financial] = await Promise.all([
+        const market = report.data.market;
+        const [revenue, financial, peers, branches] = await Promise.all([
           getRevenueContextCached(id).then(
             (value) => ({ value, failed: false }),
             (error: unknown) => {
@@ -118,12 +121,37 @@ export default async function LandingPage() {
               return { value: null as ReportPeerFinancial | null, failed: true };
             },
           ),
+          // The One question section's size-peer fee median and market footprint: the sample
+          // report page's own reads, with the same arguments, so they share its cache entries.
+          getReportPeerContextCached(id, peerLinesFor(report.analysis.lines)).then(
+            (value) => ({ value, failed: false }),
+            (error: unknown) => {
+              console.error("[home] sample bank peer context read failed; size-peer fee median left out", error);
+              return { value: null as ReportPeerContext | null, failed: true };
+            },
+          ),
+          market
+            ? getMarketBranchFootprintCached(market.county_fips, market.sod_year).then(
+                (value) => ({ value, failed: false }),
+                (error: unknown) => {
+                  console.error("[home] sample market footprint read failed; market figures left out", error);
+                  return { value: null as MarketBranchFootprint | null, failed: true };
+                },
+              )
+            : Promise.resolve({ value: null as MarketBranchFootprint | null, failed: false }),
         ]);
-        return { report, revenue: revenue.value, financial: financial.value, failed: revenue.failed || financial.failed };
+        return {
+          report,
+          revenue: revenue.value,
+          financial: financial.value,
+          peers: peers.value,
+          branches: branches.value,
+          failed: revenue.failed || financial.failed || peers.failed || branches.failed,
+        };
       },
       (error: unknown) => {
         console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
-        return { report: null, revenue: null, financial: null, failed: true };
+        return { report: null, revenue: null, financial: null, peers: null, branches: null, failed: true };
       },
     ),
     Promise.all(
@@ -166,7 +194,13 @@ export default async function LandingPage() {
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
         <LandingHamilton report={sampleRead.report} revenue={sampleRead.revenue} financial={sampleRead.financial} />
-        <LandingResearch />
+        <LandingResearch
+          report={sampleRead.report}
+          revenue={sampleRead.revenue}
+          financial={sampleRead.financial}
+          peers={sampleRead.peers}
+          branches={sampleRead.branches}
+        />
         <LandingDeliverable report={sampleRead.report} revenue={sampleRead.revenue} sizePeers={sampleRead.financial !== null} preparedOn={new Date()} />
         <LandingPricing />
       </main>
