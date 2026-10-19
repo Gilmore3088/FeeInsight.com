@@ -94,10 +94,12 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
       expect(before.filter(r => r.fee_category === "wire_intl_outgoing")).toEqual([]);
       expect(before.some(r => r.amount === 45)).toBe(false);
       const [held35] = await tx`SELECT fee_raw_id,to_jsonb(r)::text AS raw_bytes,
+        outlier_flags ? 'knox_review:eligibility' AS eligibility_hold,
         outlier_flags ? 'knox_eligibility:international_wire' AS private_hold,
         outlier_flags ? 'needs_darwin_verification' AS needs_verification
         FROM raw_fee_observations r WHERE institution_id=${f.institutionId}
           AND source_document_id=${f.documentId} AND fee_name='International Wire Transfer Fee' AND amount=35`;
+      expect(held35?.eligibility_hold).toBe(true);
       expect(held35?.private_hold).toBe(true);
       expect(held35?.needs_verification).toBe(false);
       expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${held35.fee_raw_id}`).toEqual([]);
