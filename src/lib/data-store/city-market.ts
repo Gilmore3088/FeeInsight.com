@@ -1,6 +1,7 @@
 import { sql } from "./connection";
 import { statsRowFilter } from "./fee-stats";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
+import { cityKey, foldCitySpellings } from "@/lib/geo/city-names";
 import { readerFeeConditions } from "@/lib/fee-conditions";
 import { feeEvidence, storedLineOf } from "@/lib/fee-evidence";
 import { productNameFromFeeName, readableProductName, waiverForDisplay } from "@/lib/agents/knox/lineup";
@@ -135,6 +136,23 @@ async function latestSodYear(): Promise<number> {
 }
 
 /**
+ * Every spelling the branch records use for this city in the state ("ST. PETERSBURG",
+ * "SAINT PETERSBURG", "ST PETERSBURG"), folded by `cityKey`, upper case. Always includes the
+ * spelling asked for, so a city the fold does not know still reads as before.
+ */
+async function citySpellings(upperCity: string, state: string, year: number): Promise<string[]> {
+  const rows = (await sql`
+    SELECT DISTINCT UPPER(city) AS city FROM institution_branch_deposits
+     WHERE year = ${year} AND state = ${state} AND city IS NOT NULL AND city <> ''
+    UNION
+    SELECT DISTINCT UPPER(city) FROM credit_union_branches
+     WHERE state = ${state} AND city IS NOT NULL AND city <> ''
+  `) as { city: unknown }[];
+  const key = cityKey(upperCity);
+  return [...new Set([upperCity, ...rows.map((r) => String(r.city)).filter((c) => cityKey(c) === key)])];
+}
+
+/**
  * The market for one city. Null when no bank or credit union branch sits in the city, so the
  * page can answer 404 or fall back.
  */
@@ -142,11 +160,13 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
   const state = stateCode.toUpperCase();
   const upperCity = city.toUpperCase();
   const year = await latestSodYear();
+  // One market under every spelling of the city's name, as the state directory counts it.
+  const spellings = await citySpellings(upperCity, state, year);
 
   const metroRows = (await sql`
     SELECT msa_code, MAX(msa_name) AS msa_name, COUNT(*) AS n
       FROM institution_branch_deposits
-     WHERE year = ${year} AND state = ${state} AND UPPER(city) = ${upperCity} AND msa_code IS NOT NULL AND msa_code > 0
+     WHERE year = ${year} AND state = ${state} AND UPPER(city) = ANY(${spellings}::text[]) AND msa_code IS NOT NULL AND msa_code > 0
      GROUP BY msa_code ORDER BY n DESC LIMIT 1
   `) as { msa_code: unknown; msa_name: string | null }[];
   const metro = metroRows[0] ? { code: num(metroRows[0].msa_code), name: String(metroRows[0].msa_name ?? "") } : null;
@@ -160,11 +180,11 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
     : await sql`
         SELECT institution_id, deposits, latitude, longitude, state, UPPER(city) AS city, county_fips, address
           FROM institution_branch_deposits
-         WHERE year = ${year} AND state = ${state} AND UPPER(city) = ${upperCity}`) as Record<string, unknown>[];
+         WHERE year = ${year} AND state = ${state} AND UPPER(city) = ANY(${spellings}::text[])`) as Record<string, unknown>[];
 
   const places = useMetro
     ? [...new Set(bankBranches.map((b) => `${b.state}|${b.city}`))]
-    : [`${state}|${upperCity}`];
+    : spellings.map((c) => `${state}|${c}`);
   const cuBranches = (await sql`
     SELECT c.institution_id, c.latitude, c.longitude, c.address
       FROM credit_union_branches c
@@ -229,7 +249,7 @@ export async function getCityMarket(city: string, stateCode: string, area: CityA
           [ids, CITY_FEES.map((f) => f.key), [...PICK_HIGHEST]],
         ) as unknown as Promise<Record<string, unknown>[]>)
       : Promise.resolve([] as Record<string, unknown>[]),
-    loadDepositYears(year, state, useMetro ? { metro: metro!.code } : { city: upperCity }),
+    loadDepositYears(year, state, useMetro ? { metro: metro!.code } : { cities: spellings }),
     loadCommunity(state, communityCounties, useMetro ? metro!.name : null),
   ]);
 
@@ -324,10 +344,10 @@ export function cityFeeValue(r: Record<string, unknown>): CityFeeValue {
 /** First year in the deposit and branch trend. */
 const TREND_FROM_YEARS_BACK = 10;
 
-async function loadDepositYears(year: number, state: string, where: { metro: number } | { city: string }): Promise<DepositYear[]> {
+async function loadDepositYears(year: number, state: string, where: { metro: number } | { cities: string[] }): Promise<DepositYear[]> {
   const from = year - TREND_FROM_YEARS_BACK;
-  const inArea = "metro" in where ? `msa_code = ${Number(where.metro)}` : `state = $2 AND UPPER(city) = $3`;
-  const params = "metro" in where ? [from, state] : [from, state, where.city];
+  const inArea = "metro" in where ? `msa_code = ${Number(where.metro)}` : `state = $2 AND UPPER(city) = ANY($3::text[])`;
+  const params = "metro" in where ? [from, state] : [from, state, where.cities];
   const rows = (await sql.unsafe(
     `SELECT year,
             SUM(deposits) FILTER (WHERE ${inArea}) AS area_deposits,
@@ -412,26 +432,76 @@ async function loadCommunity(
 
 /** One city in a state's market directory. */
 export interface StateMarketCity {
+  /** The spelling the city is named and linked under, upper case, as a branch record writes it. */
   city: string;
-  /** Banks and credit unions with a branch in the city. */
+  /** Every spelling folded into this city (`cityKey`), upper case, the named one first. */
+  spellings: string[];
+  /** Banks and credit unions with a branch in the city, each counted once across its spellings. */
   institutions: number;
   /** Of those, the ones whose fees we publish. */
   with_fees: number;
   branches: number;
   metro: string | null;
+  /** The middle of the city's branch coordinates, for placing it on a state map; null when no branch has them. */
+  lat: number | null;
+  lon: number | null;
 }
 
-/** Every city in a state with a bank or credit union branch, by how many institutions serve it. */
+/** One spelling of a city as the state directory read returns it, before spellings are folded. */
+export interface CitySpellingRow {
+  city: string;
+  institution_ids: number[];
+  /** The ones among `institution_ids` with approved published fees. */
+  published_ids: number[];
+  branches: number;
+  metro: string | null;
+  lat: number | null;
+  lon: number | null;
+}
+
+/**
+ * The state's cities with the spellings of one city folded together (`foldCitySpellings`): its
+ * institutions are the union over its spellings, so one with branches under two spellings counts
+ * once; branches add up; the map point is the most-used spelling's that has one. Cities none of
+ * whose institutions publish fees are left out. Largest first by institutions, then by name. Pure.
+ */
+export function foldStateMarketCities(rows: CitySpellingRow[]): StateMarketCity[] {
+  const folded = foldCitySpellings(rows.map((row) => ({ name: row.city, branches: row.branches, row })));
+  const cities: StateMarketCity[] = folded.map(({ name, spellings }) => {
+    const ids = new Set(spellings.flatMap((s) => s.row.institution_ids));
+    const published = new Set(spellings.flatMap((s) => s.row.published_ids));
+    const placed = [...spellings].sort((a, b) => b.branches - a.branches).find((s) => s.row.lat != null && s.row.lon != null);
+    return {
+      city: name,
+      spellings: spellings.map((s) => s.name),
+      institutions: ids.size,
+      with_fees: published.size,
+      branches: spellings.reduce((sum, s) => sum + s.row.branches, 0),
+      metro: spellings.find((s) => s.row.metro)?.row.metro ?? null,
+      lat: placed?.row.lat ?? null,
+      lon: placed?.row.lon ?? null,
+    };
+  });
+  return cities.filter((c) => c.with_fees > 0).sort((a, b) => b.institutions - a.institutions || a.city.localeCompare(b.city));
+}
+
+const idList = (v: unknown): number[] => (Array.isArray(v) ? v.filter((x) => x != null).map(num) : []);
+
+/**
+ * Every city in a state with a bank or credit union branch and at least one institution with
+ * published fees, by how many institutions serve it, with the spellings of one city folded.
+ */
 export async function getStateMarketCities(stateCode: string): Promise<StateMarketCity[]> {
   const state = stateCode.toUpperCase();
   const year = await latestSodYear();
+  // One row per spelling; the fold counts institutions once per city in foldStateMarketCities.
   const rows = (await sql`
     WITH branches AS (
-      SELECT UPPER(city) AS city, institution_id, msa_name
+      SELECT UPPER(city) AS city, institution_id, msa_name, latitude, longitude
         FROM institution_branch_deposits
        WHERE year = ${year} AND state = ${state} AND city IS NOT NULL AND city <> ''
       UNION ALL
-      SELECT UPPER(city), institution_id, NULL
+      SELECT UPPER(city), institution_id, NULL, latitude, longitude
         FROM credit_union_branches
        WHERE state = ${state} AND city IS NOT NULL AND city <> ''
     ),
@@ -439,23 +509,27 @@ export async function getStateMarketCities(stateCode: string): Promise<StateMark
       SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved'
     )
     SELECT b.city,
-           COUNT(DISTINCT b.institution_id) AS institutions,
-           COUNT(DISTINCT p.institution_id) AS with_fees,
+           ARRAY_AGG(DISTINCT b.institution_id) FILTER (WHERE b.institution_id IS NOT NULL) AS institution_ids,
+           ARRAY_AGG(DISTINCT p.institution_id) FILTER (WHERE p.institution_id IS NOT NULL) AS published_ids,
            COUNT(*) AS branches,
-           MAX(b.msa_name) AS metro
+           MAX(b.msa_name) AS metro,
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.latitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0 AND b.longitude <> 0) AS lat,
+           PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY b.longitude) FILTER (WHERE b.latitude IS NOT NULL AND b.longitude IS NOT NULL AND b.latitude <> 0 AND b.longitude <> 0) AS lon
       FROM branches b
       LEFT JOIN published p ON p.institution_id = b.institution_id
      GROUP BY b.city
-    HAVING COUNT(DISTINCT p.institution_id) > 0
-     ORDER BY COUNT(DISTINCT b.institution_id) DESC, b.city
   `) as Record<string, unknown>[];
-  return rows.map((r) => ({
-    city: String(r.city),
-    institutions: num(r.institutions),
-    with_fees: num(r.with_fees),
-    branches: num(r.branches),
-    metro: r.metro ? String(r.metro) : null,
-  }));
+  return foldStateMarketCities(
+    rows.map((r) => ({
+      city: String(r.city),
+      institution_ids: idList(r.institution_ids),
+      published_ids: idList(r.published_ids),
+      branches: num(r.branches),
+      metro: r.metro ? String(r.metro) : null,
+      lat: numOrNull(r.lat),
+      lon: numOrNull(r.lon),
+    })),
+  );
 }
 
 /** True when any bank or credit union branch sits in the city: the city page has a market to show. */

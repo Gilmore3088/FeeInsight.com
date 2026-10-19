@@ -13,7 +13,7 @@ import {
   getFeeRevenueData,
   getTierFeeRevenueSummary,
 } from "./fee-revenue";
-import { getInstitutionStateDirectorySummaries, searchInstitutions } from "./search";
+import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
 import { getHeadlineCoverageRows, getMarketReadiness, reportRuleCheckFromRows } from "./market-readiness";
 import { getCustomReportMarketData } from "./custom-report-market";
@@ -80,10 +80,11 @@ export const getNationalRateStatsCached = cachedPublicRead(
 export const getPeerIndexCached = cachedPublicRead("peer-index", getPeerIndex);
 export const getStateStatsCached = cachedPublicRead("state-stats", getStateStats);
 export const getDistrictStatsCached = cachedPublicRead("district-stats", getDistrictStats);
-// v2: branch points carry their institution, and fees carry account, conditions and source line.
-export const getCityMarketCached = cachedPublicRead("city-market-v3", getCityMarket);
-export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v1", getStateMarketCities);
-export const getStateMarketFeesCached = cachedPublicRead("state-market-fees-v1", getStateMarketFees, (r) => r.length === 0);
+// v4: branch points carry their institution, fees carry account, conditions and source line, and every spelling of the city is read.
+export const getCityMarketCached = cachedPublicRead("city-market-v4", getCityMarket);
+// v3: cities carry the middle of their branch coordinates, for the state map, with the spellings of one city folded.
+export const getStateMarketCitiesCached = cachedPublicRead("state-market-cities-v3", getStateMarketCities);
+export const getStateMarketFeesCached = cachedPublicRead("state-market-fees-v3", getStateMarketFees, (r) => r.length === 0);
 export const getDataCoverageSummaryCached = cachedPublicRead("data-coverage-summary", getDataCoverageSummary);
 export const getMarketConcentrationCached = cachedPublicRead("market-concentration", getMarketConcentration);
 export const getStateDemographicsCached = cachedPublicRead("state-demographics", getStateDemographics);
@@ -101,10 +102,17 @@ export const getInstitutionStateDirectorySummariesCached = cachedPublicRead(
   "institution-state-directory",
   getInstitutionStateDirectorySummaries,
 );
+// v2: a name search matches from the start of a word ("US Bank" no longer finds Pegasus Bank).
 export const searchInstitutionsCached = cachedPublicRead(
-  "institution-search",
+  "institution-search-v2",
   searchInstitutions,
   (result) => result.rows.length === 0,
+);
+/** The directory's opening list: the largest institutions by assets, one entry per type and size. */
+export const getLargestInstitutionsCached = cachedPublicRead(
+  "largest-institutions-v1",
+  getLargestInstitutions,
+  (rows) => rows.length === 0,
 );
 export const getResearchCoverageCached = cachedPublicRead(
   // v2 (#1951): each area carries counted_institutions, the population behind its medians.
@@ -157,6 +165,18 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   if (!rule || !filters) return null;
   const values = peerGroupValuesFrom(await getAllPeerRankValuesCached(), filters);
   return peerRankFromGroupValues(institutionId, rule, filters, values);
+}
+/**
+ * Headline categories live for each of `ids`, from the shared coverage entry the institution
+ * pages already read (0 for an id with none), so the directory adds no per-request read.
+ */
+export async function getInstitutionHeadlineCoverageCached(ids: number[]): Promise<Map<number, number>> {
+  const wanted = new Set(ids);
+  const coverage = new Map<number, number>(ids.map((id) => [id, 0]));
+  for (const [id, categories] of await getHeadlineCoverageRowsCached()) {
+    if (wanted.has(id)) coverage.set(id, categories);
+  }
+  return coverage;
 }
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */

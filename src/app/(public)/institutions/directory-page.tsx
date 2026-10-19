@@ -1,49 +1,64 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { InstitutionSearchResult } from "@/lib/data-store/search";
-import { getPublicCategorySummaries, getPublicStatsSummary, UNAVAILABLE_LABEL, UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
+import { Check } from "lucide-react";
+import { institutionNameRank, type InstitutionSearchResult } from "@/lib/data-store/search";
+import { getPublicCategorySummaries, getPublicStatsSummary, UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
 import { STATE_NAMES } from "@/lib/us-states";
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
-import { PRODUCT_NAME } from "@/lib/constants";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { linkPreview } from "@/lib/link-preview";
+import { PRO_PLANS_NAV } from "@/components/nav-items";
+import { TrackLink } from "@/components/track-link";
+import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
+import { PageHero, PAGE_HERO_WRAP } from "@/components/public/page-hero";
+import {
+  getInstitutionHeadlineCoverageCached,
+  getInstitutionStateDirectorySummariesCached,
+  getLargestInstitutionsCached,
+  searchInstitutionsCached,
+} from "@/lib/data-store/public-cached-reads";
+import { HEADLINE_FEE_KEYS } from "@/lib/data-store/market-readiness";
+import { createReadBudget } from "@/lib/read-deadline";
+import { boundedSearchTerm } from "@/lib/api-hardening/query-caps";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { SourceNote } from "../research/district/[id]/district-hub";
 import { InstitutionSearchBar } from "./search-bar";
 import { StateDirectoryMap } from "./state-directory-map";
-import { DirectoryFilters } from "./directory-filters";
+import { StatePicker } from "./directory-filters";
+import { StateList } from "./state-list";
+import { CoverageDisclosure } from "./coverage-disclosure";
 import {
   DirectoryPagination,
   InstitutionMobileCards,
   InstitutionResultsTable,
   type FeeFocus,
+  type HeadlineCoverage,
 } from "./institution-results";
+import { DIRECTORY_PAGE_SIZE, DIRECTORY_SORT_WINDOW, hasVerifiedFees, paginate, sortVerifiedFirst } from "./directory-sort";
 import {
-  DIRECTORY_PAGE_SIZE,
-  DIRECTORY_SORT_WINDOW,
-  paginate,
-  sortVerifiedFirst,
-} from "./directory-sort";
-import { getInstitutionStateDirectorySummariesCached, searchInstitutionsCached } from "@/lib/data-store/public-cached-reads";
-import { getInstitutionHeadlineCoverage } from "@/lib/data-store/market-readiness";
-import { PAGE_HEADER } from "@/components/public/page-header";
-import { createReadBudget } from "@/lib/read-deadline";
-import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-
-/**
- * One deadline for the directory's database reads (#1919): with the connection pool
- * saturated the page sat on its loading skeleton for minutes. Past it, the error
- * boundary answers instead, and the per-row fee coverage drops out.
- */
-const DIRECTORY_READ_BUDGET_MS = 15_000;
-
-export const DIRECTORY_METADATA: Metadata = {
-  title: `Find Your Bank — Search the ${PRODUCT_NAME}`,
-  description:
-    "Search banks and credit unions to compare fees against national benchmarks. Free institution lookup for all US financial institutions.",
-};
+  CHARTER_OPTIONS,
+  availabilityLine,
+  bandsInUse,
+  charterNoun,
+  coverageFinding,
+  directoryHref,
+  nationalCoverage,
+  normalizeCharter,
+  normalizeFeesFilter,
+  normalizeStateCode,
+  percentLabel,
+  stateCoverage,
+  stateRows,
+  stateSummaryLine,
+  type Charter,
+} from "./directory-view";
+import { headlineFeeList } from "./headline-fee-names";
 
 /**
  * The directory, shared by /institutions (cached, ISR: the plain directory every crawler and
  * visitor lands on, #1811) and /institutions/results, which the proxy rewrites any request
- * carrying a search, state, charter, page or fee filter to, since those vary per request.
+ * carrying a search, state, charter, page, fee or fees filter to, since those vary per request.
  */
 export interface DirectoryParams {
   q?: string;
@@ -52,6 +67,35 @@ export interface DirectoryParams {
   page?: string;
   /** A fee category to compare, arriving from a consumer guide ("check your own bank"). */
   fee?: string;
+  /** "1": only institutions with fees in the index. */
+  fees?: string;
+}
+
+/**
+ * One deadline for the directory's database reads (#1919): with the connection pool
+ * saturated the page sat on its loading skeleton for minutes. Past it, the error
+ * boundary answers instead, and the per-row fee coverage drops out.
+ */
+const DIRECTORY_READ_BUDGET_MS = 15_000;
+
+const DESCRIPTION = `Find your bank or credit union by name or state and see the fees it publishes, from overdraft to wire fees, each from its own schedule, in the ${PRODUCT_NAME}.`;
+
+export function directoryMetadata(params: DirectoryParams): Metadata {
+  const stateCode = normalizeStateCode(params.state);
+  const stateName = stateCode ? STATE_NAMES[stateCode] : "";
+  const title = stateName ? `${stateName} Banks and Credit Unions: Published Fees` : "Bank and Credit Union Fees by Institution";
+  const description = stateName
+    ? `${stateName} banks and credit unions in the ${PRODUCT_NAME}, by headquarters, with the fees each one publishes, from its own schedule.`
+    : DESCRIPTION;
+  const path = stateCode ? `/institutions?state=${stateCode}` : "/institutions";
+  // Name searches, filters and later pages are views of the same list: keep them out of search.
+  const isView = Boolean(params.q || params.charter || params.fee || params.fees || (params.page && params.page !== "1"));
+  return {
+    title,
+    description,
+    ...(isView ? { robots: { index: false, follow: true } } : { alternates: { canonical: path } }),
+    ...linkPreview({ title, description, path }),
+  };
 }
 
 const TAXONOMY = new Set(Object.values(FEE_FAMILIES).flat());
@@ -63,272 +107,399 @@ function plainLabel(category: string): string {
 
 interface DirectoryResults {
   rows: InstitutionSearchResult[];
-  total: number;
+  /** Matches (with the fees filter on, matches with fees in the index); null when not counted. */
+  total: number | null;
+  /** Matches with published fees, when the whole match set was read in one window; else null. */
+  published: number | null;
+  /** Without a count: whether a next page has rows. Null when `total` answers that. */
+  hasNext: boolean | null;
 }
 
 /**
- * Published-first ordering across the whole result set when it fits in one
- * window; otherwise the current page is sorted on its own.
+ * Published-first ordering across the whole result set when it fits in one window; otherwise
+ * the current page is sorted on its own.
+ *
+ * The fees filter is applied to the rows read. The database lists institutions with fees first,
+ * so when the window holds any row without fees it already holds every row with fees, and the
+ * filtered set is exact. Only when every row in the window has fees (more than 1,500 matches with
+ * fees) are later pages read one at a time, without a count; `hasNext` then says whether the next
+ * page holds any row with fees, so the page never offers a "next" that comes back empty.
  */
 async function loadResults(params: {
   query?: string;
   state_code?: string;
   charter_type?: string;
   fee_category?: string;
+  feesOnly: boolean;
   page: number;
 }): Promise<DirectoryResults> {
-  const firstPass = await searchInstitutionsCached({
-    ...params,
-    page: 1,
-    pageSize: DIRECTORY_SORT_WINDOW,
-  });
-  if (firstPass.total <= DIRECTORY_SORT_WINDOW) {
+  const { feesOnly, ...search } = params;
+  const firstPass = await searchInstitutionsCached({ ...search, page: 1, pageSize: DIRECTORY_SORT_WINDOW });
+  // A name search puts the institution it names first among equals ("US Bank": U.S. Bank, then First US Bank).
+  const query = params.query;
+  const nameRank = query ? (name: string) => institutionNameRank(name, query) : undefined;
+  const withFees = firstPass.rows.filter(hasVerifiedFees);
+  const windowComplete = firstPass.total <= DIRECTORY_SORT_WINDOW || (feesOnly && withFees.length < firstPass.rows.length);
+  if (windowComplete) {
+    const matches = feesOnly ? withFees : firstPass.rows;
     return {
-      rows: paginate(sortVerifiedFirst(firstPass.rows), params.page, DIRECTORY_PAGE_SIZE),
-      total: firstPass.total,
+      rows: paginate(sortVerifiedFirst(matches, nameRank), params.page, DIRECTORY_PAGE_SIZE),
+      total: matches.length,
+      published: matches.filter(hasVerifiedFees).length,
+      hasNext: null,
     };
   }
-  const paged = await searchInstitutionsCached({ ...params, pageSize: DIRECTORY_PAGE_SIZE });
-  return { rows: sortVerifiedFirst(paged.rows), total: paged.total };
+  const paged = await searchInstitutionsCached({ ...search, pageSize: DIRECTORY_PAGE_SIZE });
+  const rows = sortVerifiedFirst(paged.rows, nameRank);
+  if (!feesOnly) return { rows, total: paged.total, published: null, hasNext: null };
+  const pageRows = rows.filter(hasVerifiedFees);
+  const lastRaw = params.page * DIRECTORY_PAGE_SIZE >= paged.total;
+  const hasNext =
+    pageRows.length === DIRECTORY_PAGE_SIZE && !lastRaw
+      ? (await searchInstitutionsCached({ ...search, page: params.page + 1, pageSize: DIRECTORY_PAGE_SIZE })).rows.some(hasVerifiedFees)
+      : false;
+  return { rows: pageRows, total: null, published: null, hasNext };
 }
 
+/** Rows in the opening list, and how many of the largest are read to fill it with the fees filter on. */
+const LARGEST_SHOWN = 25;
+const LARGEST_READ_WITH_FEES = 100;
+
+const COUNT = new Intl.NumberFormat("en-US");
+const H2 = "text-[22px] font-semibold leading-tight tracking-[-0.02em] text-ink sm:text-[28px]";
+const NOTE = "mt-2 max-w-3xl text-[15px] leading-relaxed text-ink-soft";
+const LINK = "font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
+const PILL = "inline-flex min-h-11 items-center gap-1.5 whitespace-nowrap rounded-full px-4 text-[14px] font-medium transition-colors";
+const STATE_ROWS_SHOWN = 5;
+
 export async function InstitutionsDirectory({ params }: { params: DirectoryParams }) {
-  const query = params.q || "";
-  const stateCode = (params.state || "").toUpperCase();
-  const charterType = params.charter || "";
+  const query = (params.q || "").trim();
+  const stateCode = normalizeStateCode(params.state);
+  const charter: Charter = normalizeCharter(params.charter);
+  const feesOnly = normalizeFeesFilter(params.fees);
   const page = Math.max(1, parseInt(params.page || "1", 10) || 1);
   // Validated against the taxonomy: an unknown value degrades to the plain directory.
   const focusCategory = params.fee && TAXONOMY.has(params.fee) ? params.fee : "";
 
-  const hasQuery = query.trim().length >= 2;
+  // A name with under two letters or digits ("--", "a.") is no search: the page stays the
+  // plain directory instead of listing every institution.
+  const hasQuery = boundedSearchTerm(query) !== null;
   const hasState = Boolean(stateCode);
-  const shouldShowResults = hasQuery || hasState;
+  // A name or a state lists every match; otherwise the page opens on the largest institutions.
+  const isSearch = hasQuery || hasState;
   const budget = createReadBudget(DIRECTORY_READ_BUDGET_MS, "Directory");
-  const [stats, stateSummaries, results, summaries] = await Promise.all([
-    // Optional like the state summaries: a slow count at build time must not fail the whole
-    // deploy (#1988). The stats bar shows the unavailable label and the page lives one minute.
+  const [stats, summaries, results, categorySummaries] = await Promise.all([
+    // Optional: a slow count at build time must not fail the whole deploy (#1988).
     budget.optional(getPublicStatsSummary(), "public stats", UNAVAILABLE_PUBLIC_STATS),
     // The cached directory is also rendered at build time: a failed read draws the map without
     // its counts for a minute (shortenPageLife below) instead of failing the build or the page.
-    budget.optional(getInstitutionStateDirectorySummariesCached({ charter_type: charterType || undefined }), "state summaries", []),
-    shouldShowResults
-      ? budget.required(loadResults({
-          query: hasQuery ? query : undefined,
-          state_code: stateCode || undefined,
-          charter_type: charterType || undefined,
-          fee_category: focusCategory || undefined,
-          page,
-        }), "search results")
-      : Promise.resolve<DirectoryResults>({ rows: [], total: 0 }),
+    budget.optional(getInstitutionStateDirectorySummariesCached({ charter_type: charter || undefined }), "state summaries", []),
+    isSearch
+      ? budget.required(
+          loadResults({
+            query: hasQuery ? query : undefined,
+            state_code: stateCode || undefined,
+            charter_type: charter || undefined,
+            fee_category: focusCategory || undefined,
+            feesOnly,
+            page,
+          }),
+          "search results",
+        )
+      : // The opening list is one bounded, cached read: no page of it varies per request.
+        budget
+          .optional(
+            getLargestInstitutionsCached({
+              charter_type: charter || undefined,
+              limit: feesOnly ? LARGEST_READ_WITH_FEES : LARGEST_SHOWN,
+            }),
+            "largest institutions",
+            [],
+          )
+          .then<DirectoryResults>((rows) => {
+            const shown = (feesOnly ? rows.filter(hasVerifiedFees) : rows).slice(0, LARGEST_SHOWN);
+            return { rows: shown, total: shown.length, published: null, hasNext: null };
+          }),
     focusCategory ? budget.optional(getPublicCategorySummaries(), "category summaries", []) : Promise.resolve([]),
   ]);
 
-  // One read for the visible page only. On failure the rows fall back to "Fees published"
-  // rather than showing a made-up count.
-  const coverage =
+  // Each row's headline coverage, from the shared cached coverage entry (no per-request read).
+  // On failure the rows fall back to "Fees in the index" rather than showing a made-up count.
+  const coverage: HeadlineCoverage =
     results.rows.length > 0
-      ? await budget.optional(getInstitutionHeadlineCoverage(results.rows.map((row) => row.id)), "headline coverage", null)
+      ? await budget.optional(getInstitutionHeadlineCoverageCached(results.rows.map((row) => row.id)), "headline coverage", null)
       : null;
+  // A render with a failed optional read is cached for a minute, not an hour (#1572). An empty
+  // opening list is treated the same: the largest institutions are never really none.
+  if (budget.failed() || !stats.complete || (!isSearch && results.rows.length === 0)) await shortenPageLife();
 
   const focus: FeeFocus | null = focusCategory
     ? {
         category: focusCategory,
         label: plainLabel(focusCategory),
-        median: summaries.find((s) => s.fee_category === focusCategory)?.median_amount ?? null,
+        median: categorySummaries.find((s) => s.fee_category === focusCategory)?.median_amount ?? null,
       }
     : null;
 
-  const totalPages = Math.ceil(results.total / DIRECTORY_PAGE_SIZE);
-  const selectedStateName = stateCode ? STATE_NAMES[stateCode] ?? stateCode : "";
-  /** Pagination preserves every active filter, including the fee focus. */
-  const buildPageHref = (nextPage: number) => {
-    const search = new URLSearchParams();
-    if (query) search.set("q", query);
-    if (stateCode) search.set("state", stateCode);
-    if (charterType) search.set("charter", charterType);
-    if (focusCategory) search.set("fee", focusCategory);
-    search.set("page", String(nextPage));
-    return `/institutions?${search.toString()}`;
-  };
+  const stateName = stateCode ? STATE_NAMES[stateCode] : "";
+  const noun = charterNoun(charter);
+  const national = nationalCoverage(stats, summaries, charter);
+  const picked = stateCode ? stateCoverage(summaries.find((s) => s.state_code === stateCode)) : null;
+  const heroCoverage = hasState ? picked : national;
+  const available = availabilityLine(heroCoverage, charter, hasState ? stateName : undefined);
+
+  const rows = stateRows(summaries);
+  const bands = bandsInUse(summaries.filter((s) => STATE_NAMES[s.state_code]));
+
+  const keep = { q: hasQuery ? query : "", charter, fee: focusCategory, fees: feesOnly };
+  // Without a count (the fees filter over a very large match set), "next" shows only when the
+  // next page has rows.
+  const totalPages = results.total !== null ? Math.ceil(results.total / DIRECTORY_PAGE_SIZE) : results.hasNext ? page + 1 : page;
+  const buildPageHref = (nextPage: number) => directoryHref({ ...keep, state: stateCode, page: nextPage });
+  const stateHref = (code: string) => directoryHref({ ...keep, state: code });
 
   // The no-result state offers the source form, carrying the name that was searched for.
   const submitSourceHref = hasQuery
-    ? `/submit-fees?${new URLSearchParams({ institutionName: query.trim() }).toString()}`
+    ? `/submit-fees?${new URLSearchParams({ institutionName: query }).toString()}`
     : "/submit-fees";
 
-  // A name search with no state picked: the results go straight under the search box.
-  // Below the state map and filters they sat about three phone screens down.
-  const resultsFirst = hasQuery && !hasState;
-  // A render with a failed optional read is cached for a minute, not an hour (#1572).
-  // An incomplete count (a read that answered but failed inside) is retried in a minute too.
-  if (budget.failed() || !stats.complete) await shortenPageLife();
-  const resultsSection = shouldShowResults && (
-    <>
-      {results.total > 0 && (
-        <section className="fi-reveal fi-reveal-delay-2 pt-5">
-          <div className="mb-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
-              {selectedStateName ? `${selectedStateName} directory` : "Search results"}
-            </p>
-            <p className="mt-1 text-sm text-ink-muted">
-              {results.total.toLocaleString("en-US")} institution{results.total !== 1 ? "s" : ""} found
-              {query && (
-                <span>
-                  {" "}for <strong className="text-ink">{query}</strong>
-                </span>
-              )}
-              . Institutions with published fees are listed first.
-            </p>
-          </div>
+  const withFees = feesOnly ? " with fees in the index" : "";
+  const resultsTitle = !isSearch ? `Largest ${noun}` : hasQuery ? "Search results" : `${stateName} ${noun}`;
+  const resultsNote = !isSearch
+    ? `The ${results.rows.length === LARGEST_SHOWN ? `${LARGEST_SHOWN} ` : ""}largest ${noun} by total assets${withFees}. Search by name or choose a state to see every institution.`
+    : [
+        results.total === null
+          ? `${noun.charAt(0).toUpperCase()}${noun.slice(1)}${withFees}${hasQuery ? ` matching “${query}”` : ""}${hasState ? ` in ${stateName}` : ""}.`
+          : `${COUNT.format(results.total)} ${results.total === 1 ? "institution" : "institutions"}${withFees}${
+              hasQuery ? ` ${results.total === 1 ? "matches" : "match"} “${query}”` : ""
+            }${hasState ? ` in ${stateName}` : ""}.`,
+        !feesOnly && results.total !== null && results.total > 1 && results.published !== 0 && results.published !== results.total
+          ? "Institutions with fees in the index are listed first."
+          : "",
+        focus && focus.median !== null ? `The national median ${focus.label.toLowerCase()} fee is ${formatAmount(focus.median)}.` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+  const tableCaption = `${resultsTitle}. ${resultsNote}`;
 
-          <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
-          <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} />
-          <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />
-        </section>
-      )}
-
-      {results.total === 0 && (
-        <div className="fi-reveal fi-reveal-delay-2 py-8 text-center">
-          <p className="text-sm text-ink-muted">
-            No institutions found. Try adjusting your search or filters.
-          </p>
-          <p className="mt-2 text-sm">
-            <Link
-              href={submitSourceHref}
-              className="font-semibold text-brick underline-offset-2 hover:underline"
-            >
-              Can&apos;t find the institution? Send its fee schedule
-            </Link>
-          </p>
-          <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-ink-muted">
-            A link to the published schedule is enough. Reviewers check it against the source before
-            any fee is published.
-          </p>
-        </div>
-      )}
-    </>
-  );
-
-  return (
-    <div className="min-h-screen bg-paper text-ink">
-      <div className="mx-auto max-w-page px-4 py-7 sm:px-6 sm:py-9">
-        {focus && (
-          <div className="fi-reveal mb-6 rounded-xl border border-brick/20 bg-white px-5 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-brick/80">
-              Comparing {focus.label}
-            </p>
-            <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
-              Search your institution below and its published {focus.label.toLowerCase()} appears
-              alongside the national median
-              {focus.median !== null && (
-                <>
-                  {" "}
-                  of{" "}
-                  <span className="font-semibold tabular-nums text-ink">
-                    {formatAmount(focus.median)}
-                  </span>
-                </>
-              )}
-              .{" "}
-              <Link href={`/fees/${focus.category}`} className="font-medium text-brick hover:underline">
-                See the full {focus.label.toLowerCase()} analysis
-              </Link>
-            </p>
-          </div>
-        )}
-        {/* `relative z-20` keeps the search dropdown above the sections that follow; see .fi-reveal. */}
-        <section className="fi-reveal relative z-20 border-b border-border pb-6">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
-            <div className={`min-w-0 ${PAGE_HEADER}`}>
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
-                Institution Directory
-              </p>
-              <h1
-                className="mx-auto mt-2 max-w-3xl text-4xl font-extrabold leading-[1.02] tracking-tight text-ink sm:mx-0 sm:text-5xl"
-                style={{ fontFamily: "var(--fi-font-sans)" }}
-              >
-                Find your bank or credit union.
-              </h1>
-              {/* With a state picked, the intro and statistics give way so the list sits higher. */}
-              {!hasState && (
-                <>
-                  <p className="mx-auto mt-3 max-w-[34rem] text-base leading-relaxed text-ink-soft sm:mx-0 sm:max-w-2xl">
-                    Pick your state, then your bank or credit union, to see its published fees and
-                    how they compare.
-                  </p>
-                  {stats.institutionsLabel !== UNAVAILABLE_LABEL && (
-                    <p className="mt-1 text-sm text-ink-muted">
-                      Published fees for {stats.institutionsLabel} institutions and growing.
-                    </p>
-                  )}
-                </>
-              )}
-              {/* The search box and its suggestions stay left-aligned under the centered phone header. */}
-              <div className="mx-auto mt-5 max-w-2xl text-left sm:mx-0">
-                <InstitutionSearchBar
-                  autoFocus={!hasQuery}
-                  initialQuery={query}
-                  ariaLabel="Search institution name, city, or state"
-                  placeholder="Search institution name, city, or state..."
-                />
-              </div>
-            </div>
-
-            {!hasState && (
-              <div className="grid grid-cols-3 divide-x divide-border border-y border-border bg-surface-0">
-                <DirectoryStat label="Institutions with published fees" value={stats.institutionsLabel} />
-                <DirectoryStat label="Published fees" value={stats.observationsLabel} />
-                <DirectoryStat label="Institutions monitored" value={stats.monitoredLabel} />
-              </div>
-            )}
-          </div>
-        </section>
-
-        {resultsFirst && resultsSection}
-
-        <StateDirectoryMap
-          summaries={stateSummaries}
-          selectedStateCode={stateCode}
-          query={hasQuery ? query : ""}
-          charterType={charterType}
-          feeCategory={focusCategory}
-        />
-
-        <DirectoryFilters
-          query={query}
-          stateCode={stateCode}
-          charterType={charterType}
-          feeCategory={focusCategory}
-        />
-
-        {!shouldShowResults && (
-          <section className="fi-reveal fi-reveal-delay-2 py-6">
-            <div className="border-y border-border py-4">
-              <p className="text-sm font-semibold text-ink">
-                Select a state to view institution profiles.
-              </p>
-              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-muted">
-                Or search by name above to jump straight to an institution.
-              </p>
-            </div>
-          </section>
-        )}
-
-        {!resultsFirst && resultsSection}
+  const filterCard = (
+    // The search takes the whole first row; the three filters share the second on a wide screen.
+    <div className="grid gap-3 rounded-2xl border border-border bg-surface-0 p-3 text-ink shadow-[0_18px_40px_-24px_rgba(16,45,67,0.45)] sm:p-4 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center">
+      <div className="md:col-span-3">
+        <InstitutionSearchBar initialQuery={query} ariaLabel="Search by bank or credit union name" placeholder="Bank or credit union name" />
+      </div>
+      <nav aria-label="Institution type" className="flex justify-center">
+        <ul className="inline-flex rounded-full border border-control-border bg-surface-0 p-1">
+          {CHARTER_OPTIONS.map((option) => {
+            const active = option.value === charter;
+            return (
+              <li key={option.label}>
+                <Link
+                  href={directoryHref({ ...keep, state: stateCode, charter: option.value })}
+                  prefetch={false}
+                  aria-current={active ? "page" : undefined}
+                  className={`${PILL} ${active ? "bg-ink text-on-ink" : "text-ink-soft hover:text-ink"}`}
+                >
+                  {option.label}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+      <StatePicker query={keep.q} stateCode={stateCode} charter={charter} fee={focusCategory} fees={feesOnly} />
+      <div className="flex justify-center">
+        <Link
+          href={directoryHref({ ...keep, state: stateCode, fees: !feesOnly })}
+          prefetch={false}
+          aria-current={feesOnly ? "page" : undefined}
+          className={`${PILL} border ${feesOnly ? "border-ink bg-ink text-on-ink" : "border-control-border text-ink-soft hover:text-ink"}`}
+        >
+          {feesOnly && <Check aria-hidden="true" className="size-4" />}
+          Fees available
+        </Link>
       </div>
     </div>
   );
-}
 
-function DirectoryStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0 px-3 py-3">
-      <p className="text-[11px] font-bold uppercase leading-tight tracking-[0.1em] text-ink-muted">
-        {label}
-      </p>
-      <p className="mt-1 truncate text-base font-semibold tabular-nums text-ink" title={value}>
-        {value}
-      </p>
+    <div className="min-h-screen overflow-x-clip bg-paper text-ink">
+      <BreadcrumbJsonLd
+        items={[
+          { name: "Home", href: "/" },
+          { name: "Institutions", href: "/institutions" },
+          ...(stateCode ? [{ name: stateName, href: `/institutions?state=${stateCode}` }] : []),
+        ]}
+      />
+      {/* `relative z-20` keeps the search suggestions above the sections that follow. */}
+      <div className="fi-reveal relative z-20">
+        <PageHero
+          id="directory-heading"
+          eyebrow="Institution directory"
+          crumbs={
+            hasState ? (
+              <Link href={directoryHref({ ...keep, state: "" })} prefetch={false}>
+                All states
+              </Link>
+            ) : undefined
+          }
+          title={hasState ? `${stateName} ${noun}` : "Find your bank or credit union"}
+          lede={
+            focus
+              ? `Each result shows its ${focus.label.toLowerCase()} fee${
+                  focus.median !== null ? ` beside the ${formatAmount(focus.median)} national median` : ""
+                }.`
+              : "Explore published fees and compare institutions."
+          }
+        >
+          {filterCard}
+          {available && <p className="mt-4 text-[15px] text-[#e0e9ee]">{available}</p>}
+        </PageHero>
+      </div>
+
+      <div className={`${PAGE_HERO_WRAP} pb-14 sm:pb-20`}>
+        <section aria-labelledby="results-heading" className="fi-reveal fi-reveal-delay-1 pt-6 sm:pt-8">
+          <h2 id="results-heading" className={H2}>
+            {resultsTitle}
+          </h2>
+          <p className={NOTE}>
+            {resultsNote}
+            {focus && (
+              <>
+                {" "}
+                <Link href={`/fees/${focus.category}`} className={LINK}>
+                  See the full {focus.label.toLowerCase()} analysis
+                </Link>
+                .
+              </>
+            )}
+          </p>
+
+          {results.rows.length > 0 ? (
+            <div className="mt-5">
+              <InstitutionMobileCards rows={results.rows} coverage={coverage} focus={focus} />
+              <InstitutionResultsTable rows={results.rows} coverage={coverage} focus={focus} caption={tableCaption} />
+              {isSearch && <DirectoryPagination page={page} totalPages={totalPages} buildHref={buildPageHref} />}
+              <p className="mt-4 max-w-3xl text-[13px] leading-relaxed text-ink-muted">
+                Coverage counts how many of the {HEADLINE_FEE_KEYS.length} headline fees are in the index for each
+                institution. A fee that is not in the index has not been published there yet; it does not mean the
+                institution charges $0.
+              </p>
+            </div>
+          ) : isSearch ? (
+            <div className="mt-5 rounded-xl border border-dashed border-border px-5 py-8 text-center">
+              <p className="text-[15px] text-ink-soft">
+                {hasQuery
+                  ? `No ${noun}${withFees} match “${query}”${hasState ? ` in ${stateName}` : ""}.`
+                  : `No ${noun}${withFees} found.`}
+              </p>
+              {hasState && hasQuery && (
+                <p className="mt-2 text-[14px]">
+                  <Link href={directoryHref({ ...keep, state: "" })} className={LINK}>
+                    Search every state
+                  </Link>
+                </p>
+              )}
+              <p className="mt-3 text-[14px]">
+                <Link href={submitSourceHref} className={`inline-flex min-h-11 items-center ${LINK}`}>
+                  Send an institution&apos;s fee schedule
+                </Link>
+              </p>
+              <p className="mx-auto mt-1 max-w-md text-[13px] leading-relaxed text-ink-muted">
+                A link to the published schedule is enough. Each fee is checked against the source before it is published.
+              </p>
+            </div>
+          ) : (
+            <p className="mt-5 rounded-xl border border-dashed border-border px-5 py-6 text-[15px] text-ink-soft">
+              The list of largest institutions is unavailable right now. Search by name or choose a state above.
+            </p>
+          )}
+        </section>
+
+        {rows.length > 0 && (
+          <section aria-labelledby="states-heading" className="fi-reveal fi-reveal-delay-2 mt-12 sm:mt-16">
+            <CoverageDisclosure
+              collapsed={isSearch}
+              headingId="states-heading"
+              title="Explore by headquarters state"
+              summary={stateSummaryLine(rows)}
+              heading={
+                <h2 id="states-heading" className={H2}>
+                  Explore by headquarters state
+                </h2>
+              }
+            >
+              <p className={NOTE}>
+                Each institution is counted in the state where it is headquartered, not every state where it has branches.
+              </p>
+              <figure className="mt-6 min-w-0">
+                <figcaption className="text-[13px] font-semibold text-ink">
+                  Share of {noun} with fees in the index, by headquarters state
+                </figcaption>
+                <div className="mx-auto mt-3 hidden max-w-[860px] lg:block">
+                  <StateDirectoryMap rows={rows} bands={bands} hrefFor={stateHref} />
+                </div>
+                <div className="mt-3 lg:mt-6">
+                  <StateList
+                    rows={rows.map((r) => ({
+                      code: r.code,
+                      name: r.name,
+                      href: stateHref(r.code),
+                      published: COUNT.format(r.published),
+                      monitored: COUNT.format(r.monitored),
+                      share: percentLabel(r.share),
+                    }))}
+                    shown={STATE_ROWS_SHOWN}
+                  />
+                </div>
+              </figure>
+            </CoverageDisclosure>
+          </section>
+        )}
+
+        <section aria-labelledby="coverage-heading" className="fi-reveal mt-12 border-t border-border pt-8 sm:mt-16">
+          <h2 id="coverage-heading" className={H2}>
+            Coverage and methodology
+          </h2>
+          {heroCoverage && <p className={NOTE}>{coverageFinding(heroCoverage, charter, hasState ? stateName : undefined)}</p>}
+          <details className="group mt-3">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[15px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+              <span aria-hidden="true" className="text-ink-muted transition-transform group-open:rotate-90">
+                &#8250;
+              </span>
+              How coverage is counted
+            </summary>
+            <div className="mt-2 max-w-3xl space-y-3 text-[14px] leading-relaxed text-ink-soft">
+              <p>
+                An institution has fees in the index when at least one fee from its own current schedule has passed
+                review and is published in the {PRODUCT_NAME}. Institutions monitored are every bank and credit union
+                in the index, from FDIC and NCUA records.
+              </p>
+              <p>
+                Coverage on each result counts the {HEADLINE_FEE_KEYS.length} headline fees: {headlineFeeList()}. A
+                fee missing from the index is not a $0 fee; the institution may charge it and we have not published it
+                yet.
+              </p>
+              <SourceNote label="Source">
+                Fees from each institution&apos;s own published schedule in the {PRODUCT_NAME}; institutions from FDIC
+                and NCUA records, counted by headquarters state. {stats.freshnessLabel}.
+              </SourceNote>
+            </div>
+          </details>
+          <p className="mt-6 text-[14px] leading-relaxed text-ink-muted">
+            Work at a bank or credit union? Open its profile to compare it with peers in Hamilton, the {SITE_NAME} Pro
+            workspace.{" "}
+            <TrackLink
+              event="upgrade_click"
+              eventProps={{ placement: "institutions_footer_link" }}
+              href={PRO_PLANS_NAV.href}
+              className={LINK}
+            >
+              {PRO_PLANS_NAV.label}
+            </TrackLink>
+          </p>
+        </section>
+      </div>
     </div>
   );
 }
