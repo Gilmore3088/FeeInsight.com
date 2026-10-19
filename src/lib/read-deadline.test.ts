@@ -99,6 +99,54 @@ describe("createReadBudget", () => {
     expect(budget.failed()).toBe(true);
   });
 
+  it("does not revive after remaining observes zero and the clock moves backward", async () => {
+    let clock = 0;
+    const budget = createReadBudget(100, "Test page", () => clock);
+    clock = 100;
+    expect(budget.remaining()).toBe(0);
+    clock = -100;
+    const start = vi.fn(async () => "late");
+
+    await expect(budget.required(start, "institution")).rejects.toBeInstanceOf(ReadDeadlineError);
+    expect(await budget.optional(start, "footprint", "fallback")).toBe("fallback");
+    expect(start).not.toHaveBeenCalled();
+    expect(budget.remaining()).toBe(0);
+  });
+
+  it("keeps a real timer deadline terminal while the injected clock is earlier", async () => {
+    vi.useRealTimers();
+    let clock = 0;
+    let release!: (value: string[]) => void;
+    const pending = new Promise<string[]>((resolve) => { release = resolve; });
+    const retained: Promise<unknown>[] = [];
+    const budget = createReadBudget(20, "Test page", () => clock, (read) => { retained.push(read); });
+    const start = vi.fn(async () => []);
+    try {
+      expect(await budget.optional(() => pending, "first", [])).toEqual([]);
+      expect(retained).toEqual([pending]);
+      clock = -100;
+      expect(await budget.optional(start, "later", [])).toEqual([]);
+      expect(start).not.toHaveBeenCalled();
+      await expect(budget.required(start, "institution")).rejects.toBeInstanceOf(ReadDeadlineError);
+      expect(budget.remaining()).toBe(0);
+    } finally {
+      release([]);
+      await pending;
+      await Promise.all(retained);
+    }
+  });
+
+  it("does not expire the budget for a read's own deadline error", async () => {
+    const budget = createReadBudget(100, "Test page");
+    const error = new ReadDeadlineError("another operation", 10);
+    expect(await budget.optional(Promise.reject(error), "first", "fallback")).toBe("fallback");
+
+    const later = vi.fn(async () => "ready");
+    expect(await budget.required(later, "later")).toBe("ready");
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(budget.remaining()).toBe(100);
+  });
+
   it("passes synchronous factory errors through and preserves optional fallback", async () => {
     const error = new Error("read could not start"), retain = vi.fn();
     const budget = createReadBudget(100, "Test page", Date.now, retain);
