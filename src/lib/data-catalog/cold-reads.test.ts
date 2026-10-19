@@ -104,11 +104,17 @@ describe("cold reads", () => {
       row({ report_date: "2019-03-31", value: 5 }),
     ];
     expect(coldCallRollup(rows)).toEqual([
-      { period: "2019-06-30", unit: "USD", median: 2_000, p25: 1500, p75: 2500, institution_count: 2, period_basis: "ytd", sources: ["ffiec"], fetched_at: "2026-02-01", source_url: "new" },
-      { period: "2019-06-30", unit: "USD", median: 2, p25: 2, p75: 2, institution_count: 1, period_basis: "ytd", sources: ["ncua"], fetched_at: null, source_url: null },
-      { period: "2019-03-31", unit: "USD", median: 5_000, p25: 5_000, p75: 5_000, institution_count: 1, period_basis: "ytd", sources: ["ffiec"], fetched_at: null, source_url: null },
+      { period: "2019-06-30", unit: "USD", median: 2_000, p25: 1500, p75: 2500, institution_count: 2, reporting_institution_ids: [1, 2], reporter_ids_complete: true, period_basis: "ytd", sources: ["ffiec"], fetched_at: "2026-02-01", source_url: "new" },
+      { period: "2019-06-30", unit: "USD", median: 2, p25: 2, p75: 2, institution_count: 1, reporting_institution_ids: [3], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], fetched_at: null, source_url: null },
+      { period: "2019-03-31", unit: "USD", median: 5_000, p25: 5_000, p75: 5_000, institution_count: 1, reporting_institution_ids: [1], reporter_ids_complete: true, period_basis: "ytd", sources: ["ffiec"], fetched_at: null, source_url: null },
     ]);
     expect(coldInstitutionSeries([row({ value: 2 })])[0]).toMatchObject({ period: "2019-06-30", value: 2_000, unit: "USD" });
+  });
+
+  it("caps only the archived reporter manifest, preserving the full count and financial median", () => {
+    const rows = coldCallRollup(Array.from({ length: 513 }, (_, at) => row({ institution_id: 513 - at, value: at })), 513);
+    expect(rows[0]).toMatchObject({ institution_count: 513, median: 256000, reporter_ids_complete: false, subject_included: true });
+    expect(rows[0].reporting_institution_ids).toEqual(Array.from({ length: 512 }, (_, at) => at + 1));
   });
 
   it("reads only the asked line and members from a checked file, and reports a file that fails its checks", async () => {

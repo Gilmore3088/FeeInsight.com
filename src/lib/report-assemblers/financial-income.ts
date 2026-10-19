@@ -1,9 +1,11 @@
+import type { CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import type { RevenueSnapshot } from "@/lib/data-store/call-reports";
 import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-contract";
 import type { FinancialSource } from "@/lib/data-store/financial-sources";
 
 export type FinancialIncomeGroup = ReturnType<typeof financialMeasureDefinition> & {
   cohort_rule: string;
+  cohort_history?: CallCohortHistory;
   geography: string;
   size_criterion: "all_reported_asset_sizes";
   subject_included: "not_applicable";
@@ -23,10 +25,11 @@ export function financialIncomeLabel(source: FinancialSource): string {
 }
 
 /** The caller reads each regulator separately; no combined denominator is constructed. */
-export function buildFinancialIncomeGroup(source: FinancialSource, rows: RevenueSnapshot[], limit = 8, geography = "United States"): FinancialIncomeGroup {
+export function buildFinancialIncomeGroup(source: FinancialSource, rows: RevenueSnapshot[], limit = 8, geography = "United States", cohortHistory?: CallCohortHistory): FinancialIncomeGroup {
   return {
     ...financialMeasureDefinition(source),
     geography,
+    cohort_history: cohortHistory,
     size_criterion: "all_reported_asset_sizes",
     cohort_rule: "Canonical same-charter filers with positive, computable standalone-quarter income. Counts are reporting counts; missing filings are not counted. Reporting populations can change; trends are not constant-cohort or merger-adjusted. No selected institution applies to this geographic aggregate.",
     subject_included: "not_applicable",
@@ -38,7 +41,7 @@ export function buildFinancialIncomeGroup(source: FinancialSource, rows: Revenue
       const reportDate = `${q.quarter.slice(0, 4)}-${["03-31", "06-30", "09-30", "12-31"][quarter - 1]}`;
       return { quarter: q.quarter, report_date: reportDate, total_thousands: q.total_service_charges,
         mean_thousands: q.total_service_charges / q.total_institutions,
-        reported_count: q.total_institutions, eligible_count: null, yoy_change_pct: q.yoy_change_pct };
+        reported_count: q.total_institutions, eligible_count: null, yoy_change_pct: null };
     }),
   };
 }

@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { decodeColdFile, getColdStore, type ColdStore } from "@/lib/agents/hoovie/cold-files";
 import type { CallInstitutionRow, CallRollupRow } from "./roll-ups";
 import { ncuaCallMeasure } from "./ncua-call-measures";
+import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
 
 /**
  * Cold reads (#1870): a call-report quarter whose hot rows were pruned from Postgres is read from
@@ -199,13 +200,16 @@ export function coldCallRollup(rows: readonly ColdCallRow[], subjectId?: number 
     const [period, unit, periodBasis] = key.split("|");
     const values = list.map((r) => comparable(r).value).sort((a, b) => a - b);
     const newest = [...list].sort((a, b) => (b.fetched_at ?? "").localeCompare(a.fetched_at ?? ""))[0];
+    const reporters = [...new Set(list.map((row) => row.institution_id))].sort((a, b) => a - b);
     out.push({
       period,
       unit,
       median: percentileCont(values, 0.5),
       p25: percentileCont(values, 0.25),
       p75: percentileCont(values, 0.75),
-      institution_count: new Set(list.map((r) => r.institution_id)).size,
+      institution_count: reporters.length,
+      reporting_institution_ids: reporters.slice(0, MAX_COHORT_REPORTERS),
+      reporter_ids_complete: reporters.length <= MAX_COHORT_REPORTERS,
       period_basis: periodBasis,
       sources: [...new Set(list.map((r) => r.source))].sort(),
       ...(subjectId !== undefined ? { subject_included: subjectId === null ? null : list.some((row) => row.institution_id === subjectId) } : {}),

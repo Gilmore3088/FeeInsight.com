@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const calls: Array<{ text: string; values: unknown[] }> = [];
 let nextRows: unknown[] = [];
 let nextIdentities: Array<{ id: number; charter_type: string }> = [];
+let nextCohortIdentities: unknown[] = [];
+let nextLifecycleEvents: unknown[] = [];
 
 vi.mock("@/lib/data-store/connection", () => {
   const tx = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     calls.push({ text: strings.join("?"), values });
-    return Promise.resolve(strings.join("").includes("SET LOCAL") ? [] : strings.join("").includes("SELECT id, charter_type FROM institution_sources") ? nextIdentities : nextRows);
+    const text = strings.join("");
+    return Promise.resolve(text.includes("SET LOCAL") ? [] : text.includes("SELECT id, charter_type FROM institution_sources") ? nextIdentities
+      : text.includes("SELECT id, source, charter_type") ? nextCohortIdentities : text.includes("FROM institution_structure_events") ? nextLifecycleEvents : nextRows);
   });
   // unsafe() carries constant SQL (the served-row rule); the mock passes its text through as a value.
   Object.assign(tx, { unsafe: (text: string) => ({ unsafe: text }) });
@@ -48,7 +52,7 @@ import { QUERY_DATA_MAX_LIMIT, familyRows, parseMeasure, periodMonths, queryData
 import { NCUA_CALL_MEASURES } from "./ncua-call-measures";
 
 const AREA = "area:bls-laus:laus_unemployment_rate";
-const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL"));
+const queries = () => calls.filter((c) => !c.text.includes("SET LOCAL") && !c.text.includes("SELECT id, source, charter_type") && !c.text.includes("FROM institution_structure_events"));
 const lastQuery = () => queries().at(-1)!;
 
 const ENTRY = {
@@ -61,6 +65,8 @@ beforeEach(() => {
   calls.length = 0;
   nextRows = [];
   nextIdentities = [];
+  nextCohortIdentities = [];
+  nextLifecycleEvents = [];
   vi.clearAllMocks();
 });
 
@@ -350,6 +356,33 @@ describe("queryData: area measures over a peer group", () => {
 
 describe("queryData: call-report lines", () => {
   const CALL = "call:service_charges_deposits_ytd";
+
+  it("keeps dated reporting identities in nested metadata while statistic rows remain scalar", async () => {
+    nextRows = [
+      { period: "2026-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 6,
+        reporting_institution_ids: [2, 3, 4, 5, 6, 7], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/new", fetched_at: null },
+      { period: "2025-06-30", unit: "USD", median: 350, p25: 225, p75: 475, institution_count: 6,
+        reporting_institution_ids: [1, 2, 3, 4, 5, 6], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"], source_url: "https://ncua.gov/old", fetched_at: null },
+    ];
+    nextCohortIdentities = Array.from({ length: 7 }, (_, at) => ({ id: String(at + 1), source: "ncua", charter_type: "credit_union", cert_number: String(at + 101),
+      ncua_charter_id: String(at + 101), institution_name: `Current ${at + 1}`, regulatory_status: at ? "active" : "inactive", closed_date: at ? null : "2026-01-01" }));
+    nextLifecycleEvents = [{ id: "1", source: "ncua-mergers", event_key: "merge", institution_id: null, cert: "101", outgoing_cert: "101", acquirer_cert: "102", survivor_cert: "102",
+      effective_date: "2026-01-01", change_code: "merger", change_description: "Published event", source_url: "https://ncua.gov/event" }];
+    const result = await queryData({ measure: "call:acct_131", scope: { kind: "national" } });
+    expect(result).toMatchObject({ ok: true, peer_comparison: { cohort_history: {
+      basis: "period_cross_sections", growth_status: "not_established", merger_adjusted: false, charter_refs_complete: true,
+      requested: { institution_ids: null, member_count: null },
+      periods: [expect.objectContaining({ period: "2026-06-30", source: "ncua", reporting_institution_ids: [2, 3, 4, 5, 6, 7] }),
+        expect.objectContaining({ period: "2025-06-30", source: "ncua", reporting_institution_ids: [1, 2, 3, 4, 5, 6] })],
+      membership_changes: [expect.objectContaining({ added_ids: [7], dropped_ids: [1], common_ids: [2, 3, 4, 5, 6] })],
+      lifecycle: { coverage: "not_established", events: [expect.objectContaining({ event_key: "merge" })] },
+    } } });
+    if (!result.ok) throw new Error(result.reason);
+    expect(result.peer_comparison!.cohort_history.charter_refs[0]).toMatchObject({ institution_id: 1, current_regulatory_status: "inactive" });
+    expect(result.rows.map((row) => [row.period, row.median, row.reported_count])).toEqual([["2026-06-30", 350, 6], ["2025-06-30", 350, 6]]);
+    expect(result.rows.every((row) => Object.values(row).every((value) => value === null || ["number", "string", "boolean"].includes(typeof value)))).toBe(true);
+    expect(calls.find((call) => call.text.includes("FROM institution_structure_events"))?.values).toContain("2025-01-01");
+  });
 
   it("reads one institution's own filed values, in dollars, with the regulator's citation", async () => {
     nextRows = [
