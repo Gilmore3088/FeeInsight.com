@@ -53,7 +53,12 @@ describe("API documentation", () => {
       expect(endpoint).toHaveAttribute("aria-labelledby", heading.id);
       expect(within(heading).getByRole("link")).toHaveAttribute("href", `#${heading.id}`);
 
-      const table = within(endpoint).getByRole("table");
+      const table = within(endpoint).queryByRole("table");
+      if (!table) {
+        expect(endpoint.querySelector("code")!.textContent).toBe("/hamilton-context");
+        expect(within(endpoint).getByText("No query parameters.")).toBeInTheDocument();
+        return heading.id;
+      }
       expect(table).toHaveAccessibleName(/parameters$/);
       expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Name", "Type", "Description"]);
       for (const header of within(table).getAllByRole("columnheader")) expect(header).toHaveAttribute("scope", "col");
@@ -123,5 +128,26 @@ describe("API documentation", () => {
     }
     expect(within(table).getByText("burst_limited").closest("tr")).toHaveTextContent("Retry-After");
     expect(within(table).getByText("rate_limited").closest("tr")).toHaveTextContent("X-RateLimit-Reset");
+    expect(within(table).getByText("account_context_required").closest("tr")).toHaveTextContent("Generic partner keys");
+    expect(within(table).getByText("context_unavailable").closest("tr")).toHaveTextContent("no partial account context");
+  });
+
+  it("documents holder context and saved-peer precedence without making institution_id mandatory", async () => {
+    const { container } = render(await ApiDocsPage());
+    const context = within(screen.getByRole("article", { name: "Read your saved institution and peer sets" }));
+    expect(context.getByText("No query parameters.")).toBeInTheDocument();
+    expect(context.getByText(/generic partner keys return 403 account_context_required/i)).toBeInTheDocument();
+    const example = JSON.parse(context.getByLabelText("Example response · illustrative values, not live data").textContent!);
+    expect(example.institution_source).toBe("manual");
+    expect(example.peer_sets[0]).toMatchObject({ scope: "personal", workspace_institution_id: null });
+    expect(example).not.toHaveProperty("user_id");
+    expect(example).not.toHaveProperty("email");
+
+    const peers = within(screen.getByRole("article", { name: "Compare one institution's fees with its peers" }));
+    for (const name of ["institution_id", "saved_peer_set_id", "use_saved_context"]) {
+      expect(peers.getByRole("rowheader", { name })).not.toHaveTextContent("required");
+    }
+    expect(peers.getByText(/explicit peer_ids or peer-group parameters bypass saved peer defaults/i)).toBeInTheDocument();
+    expect(container).toHaveTextContent("get_hamilton_context");
   });
 });
