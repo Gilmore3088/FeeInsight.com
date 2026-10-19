@@ -12,6 +12,7 @@ export * from "./market";
 export * from "./market-readiness";
 export * from "./geographic";
 export * from "./city-market";
+export { hqCityName } from "./city-spellings";
 export * from "./fee-revenue";
 export * from "./articles";
 export * from "./knox-reviews";
