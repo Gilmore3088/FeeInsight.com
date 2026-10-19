@@ -1122,13 +1122,46 @@ this adds 30 lessons (28 per-bank, mostly international wires and overdraft tran
 
 Takedown lessons (`takedown-lessons.ts`). Knox reads Hamilton's second-look confirmations
 (`takedown_confirmed` from the source check, limit guard and business-schedule check) for fees
-still down with no live twin. When it reads the same bank, name and price again, usually from a
-new copy of the page, it writes the row held (`knox_review:taken_down`,
-`knox_lesson:taken_down:<check>`) and does not send it to Darwin. The row is kept, never dropped.
-First-look takedowns (`not_on_schedule`, `wrong_amount`, `threshold`, `unreproduced`) do not teach,
-because many are restored. The extract event carries `takedown_lessons_loaded` and `takedown_holds`.
-Before this, in the 48 hours to Oct 7 05:50 UTC, Knox re-read 208 taken-down fees, sent 49 back to
-Darwin, and 6 were published again.
+still down with no complete-identity live twin. v2 (#2186) permits a new raw hold only with a
+bounded original witness captured from the limit guard's actual selected publication,
+verification, raw observation and recorded Rosetta artifact **before** its verdict, then carried
+in the existing second-look confirmation. No later join supplies missing historical proof.
+SQL projects optional witness inputs only up to 64,000 serialized bytes each, then applies a
+1,024,000-byte cumulative transfer budget in the existing publication-ID order. Oversized or
+over-budget inputs become NULL/unknown, never clipped proof. Every original candidate and its
+existing verdict inputs remain selected and checked; these caps do not limit takedown decisions
+or claim to bound unrelated legacy fields in that selection. Final single-lesson reads enforce
+the same per-input cap, and the complete saved receipt is capped separately at 64,000 bytes.
+The supported flat identity includes institution, category, meaningful name/digits, exact price,
+assigned or unassigned product, audience, frequency, conditions, treatment, variant and represented
+rate fields. Null product is not every product. The candidate uses the facts the raw writer will
+actually persist, with no two-decimal key rounding or aggressive name stripping.
+
+The incoming artifact must belong to the same institution and have exactly the original verified
+`normalized_text` SHA256. It may be another document/artifact (a newly fetched PDF can normalize to
+the same text). This is not PDF-byte equality: the original document/artifact remains separately
+bound by the raw extraction pointer, hash and complete selected state. Before insertion, bounded
+NOWAIT locks follow publication→verification→raw→feedback, then stable artifact IDs, and recheck
+confirmation, exact closure/lineage, both artifacts and the original witness. Missing, unsupported,
+changed or contended proof is explicitly unknown and leaves a **new** candidate eligible for
+ordinary Darwin verification. Source-check/business-schedule and legacy confirmations currently
+have no supported original witness; they cannot hard-hold a new row. Their existing second-look
+policies, weights and historical held rows stay unchanged.
+
+A proven lesson writes only newly inserted lineage held (`knox_review:taken_down`,
+`knox_lesson:taken_down:<check>`), without `needs_darwin_verification`. A raw conflict returns
+`existing_raw_kept` without enrichment or an invented hold count; existing rows are not released.
+Both extract and re-read use the shared guarded write and actual RETURNING flags. The receipts
+carry `takedown_lessons_loaded`, actual `takedown_holds`, `takedown_lessons_unknown` and
+`takedown_guard_declines`; unavailable proof creates no new queue or human task. A writer failure
+rolls back its savepoint and propagates; it does not silently retry an ordinary insert.
+
+This changes future learned-hold eligibility only. Extract83, stale-read78, verify3, batch-key4,
+publish3, refresh2, current-copy2, newer-copy1 and every settled fingerprint remain unchanged.
+Bayes records `TAKEDOWN_LESSONS_VERSION` v2 as a no-replay exception. There is no historical hold
+release, broad re-extraction, source fetch, recovery, migration, provider activation or switch.
+The guards cover selected rows under Read Committed, not serializable new-row phantom isolation.
+The original Oct7 recurrence counts remain dated history, not current impact measurements.
 
 Live name tidy (`name-retidy.ts`, Oct 7): names Knox stored before it tidied reads ("Stop Payment |
 Item", "/mo. | Dormant Fee", "An overdraft fee of") are re-tidied on live rows, a batch of banks per
@@ -1203,7 +1236,8 @@ after the held-line passes, reads these requests (`consumeRereadRequests`, `knox
   `writeLiveRenames` returns the fees it renamed), and the unresolved ones: `same_name`,
   `not_found`, `no_text`, `other_category`, `ambiguous`, `refused` (category guard or
   `checkFeeAgainstSource`), `live_twin` (another live fee of the bank has the proper name at that
-  price), `held_taken_down` (the read repeats a takedown Hamilton confirmed, `takedownLessonFor`:
+  price), `held_taken_down` (the read repeats a takedown with the current original witness and
+  complete supported identity, `insertCandidateWithLearning`:
   written held as `knox_review:taken_down`, as the extract does), plus `stale` (the request no
   longer applies). A failed write (`refused` by `write_failed` or `live_twin_check_failed`) is
   settled unresolved too, so it never holds the head of the queue; a rules bump reads it again.
@@ -1414,4 +1448,4 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_RULES_STRATEGY` | `extract.rules` | v83 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
-| `TAKEDOWN_LESSONS_VERSION` | — | v1 | `knox/takedown-lessons.ts` |
+| `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

@@ -15,7 +15,9 @@ import { ownCells } from "@/lib/agents/knox/own-cells";
 import { ANCILLARY_PRODUCT_FLAG } from "./ancillary-product";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
-import { loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
+import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
+import { candidateWriteFacts } from "./candidate-facts";
+import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
 import { calibratedConfidence, calibrationKey, loadKnoxCalibration, PUBLISH_FLOOR } from "@/lib/agents/knox/calibration";
 import { knoxFreeSignature, MISSING_FEES_DETAIL, RULES_RECHECK_STRATEGY } from "@/lib/agents/hamilton/rules-recheck";
@@ -230,6 +232,8 @@ export interface RunKnoxExtractResult {
   takedownLessonsLoaded: number;
   /** Fees written held because they repeat a confirmed takedown, by check. */
   takedownHolds: Record<string, number>;
+  takedownLessonsUnknown?: Record<string,number>;
+  takedownGuardDeclines?: Record<string,number>;
   /** Strategy/category groups with survival history, and reads calibration puts below Hamilton's floor (`calibration.ts`, shadow). */
   calibrationGroups: number;
   calibratedBelowPublishFloor: number;
@@ -661,9 +665,7 @@ export async function retireRowsFromOlderCopies(
   return retired.length;
 }
 
-export async function insertCandidate(
-  db: SqlTag,
-  options: {
+export interface CandidateInsertOptions {
     runId: number;
     row: KnoxTextRow;
     candidate: ExtractedFeeCandidate;
@@ -673,10 +675,12 @@ export async function insertCandidate(
     method?: string;
     /** Shadow calibrated confidence (`calibration.ts`), recorded in the audit text only. */
     calibratedConfidence?: number;
-    /** The check whose confirmed takedown this fee repeats: written held, not sent to Darwin. */
-    takenDownBy?: string | null;
-  },
-): Promise<boolean> {
+}
+interface CandidateWriteResult { inserted:boolean; flags:string[] }
+async function writeCandidate(
+  db: SqlTag,
+  options: CandidateInsertOptions & { takenDownBy?:string|null },
+): Promise<CandidateWriteResult> {
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const institutionId = Number(options.row.institution_id);
@@ -693,10 +697,11 @@ export async function insertCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []));
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==TAKEN_DOWN_REVIEW_FLAG
+    && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
-  const owner = options.candidate.ancillaryProduct;
+  const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(options.candidate);
   if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
   const conditions =
     `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${documentTextId}. ` +
@@ -707,21 +712,6 @@ export async function insertCandidate(
     (options.candidate.ownedBullet && options.candidate.linkedConditions ? `linked_conditions="${options.candidate.linkedConditions}"; ` : "") +
     // #1394: only the fee's own cells, not the neighbouring column's fee on the same line.
     `excerpt="${options.candidate.ownedBullet ? options.candidate.excerpt : ownCells(options.candidate.excerpt, options.candidate.feeName, options.candidate.amount).slice(0, 180)}"`;
-  // The catalog's conditions are the bank's own text, distinct from audit metadata.
-  const sourceConditions = owner
-    ? [owner.title, owner.applicability, options.candidate.ownedBullet ? options.candidate.excerpt : owner.ownLine,
-      options.candidate.linkedConditions].filter(Boolean).join("\n")
-    : options.candidate.ownedBullet
-      ? [options.candidate.excerpt, options.candidate.linkedConditions].filter(Boolean).join(" ")
-      : null;
-  // A checking account's lineup facts, already grounded in the text (`lineup.ts`): a monthly
-  // maintenance fee carries them all, a minimum balance fee only its account (v73).
-  const applicability = feeApplicability(options.candidate.feeName, options.candidate.excerpt, options.candidate.amount);
-  const read = ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) ? (options.candidate.lineup ?? null)
-    : owner ? { productName: owner.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null;
-  const lineup = read && options.candidate.canonicalHint !== LINEUP_CATEGORY
-    ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null }
-    : read;
   // The dedupe index is (document, lowercased fee name, amount, audience, line share), so an existing
   // row would block this fee forever. Two kinds take the new read instead:
   //   - a line an older version held as unclassified or untraced;
@@ -826,6 +816,9 @@ export async function insertCandidate(
                               AND old_hint.hint IS DISTINCT FROM ${options.candidate.canonicalHint}::text
                          ), '[]'::jsonb)
      WHERE fr.source = 'knox'
+       -- Positive learned holds annotate newly inserted lineage only. Never overwrite
+       -- an existing observation's retained owner/frequency/hold on an insert conflict.
+       AND ${!options.takenDownBy}
        -- v1 ancillary ownership is for new raw lineage only. A conflict keeps the
        -- existing observation, including held/verified history, for explicit recovery.
        AND ${!owner}
@@ -837,9 +830,9 @@ export async function insertCandidate(
          OR (fr.outlier_flags ? 'superseded_by_reread'
              AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id))
        )
-    RETURNING fee_raw_id
+    RETURNING fee_raw_id,outlier_flags
   `;
-  if (inserted.length === 0 && lineup && !owner) {
+  if (inserted.length === 0 && lineup && !owner && !options.takenDownBy) {
     // The same fee read again from the same document: fill lineup fields an earlier read
     // left empty, within its audience. The raw identity includes audience: a business fee
     // with the same label and price must not take a consumer account's product or waiver.
@@ -864,7 +857,37 @@ export async function insertCandidate(
          AND line_share = ${options.candidate.lineShare ?? ""}
     `;
   }
-  return inserted.length > 0;
+  const rawFlags=inserted[0]?.outlier_flags;
+  return {inserted:inserted.length>0,flags:Array.isArray(rawFlags)?rawFlags.map(String):[]};
+}
+
+/** Ordinary callers cannot supply an unvalidated learned-hold flag. */
+export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
+  return (await writeCandidate(db,{...options,takenDownBy:null})).inserted;
+}
+export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string|null; declinedReason:string|null }
+
+/** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
+export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const matches=takedownLessonsFor(options.candidate,lessons,options.row);
+  if (matches.length===0) return {inserted:await insertCandidate(db,options),takenDownBy:null,declinedReason:null};
+  return withPublishedIdentityWrite(db,async transaction=>{
+    let declinedReason:string|null=null;
+    for (const lesson of matches) {
+      const guarded=await withCurrentTakedownLesson(transaction,lesson,options.row,(scope,check)=>writeCandidate(scope,{...options,takenDownBy:check}));
+      if ("value" in guarded) {
+        const held=guarded.value.inserted && guarded.value.flags.includes(TAKEN_DOWN_REVIEW_FLAG) && !guarded.value.flags.includes("needs_darwin_verification")
+          && guarded.value.flags.includes(takedownLessonFlag(lesson.witness.check));
+        if (held) return {inserted:true,takenDownBy:lesson.witness.check,declinedReason:null};
+        // A positive lesson is for new lineage only. An existing/concurrent row keeps
+        // every fact, including monthly ownership: do not retry through enrichment.
+        if (guarded.value.inserted) return {inserted:true,takenDownBy:null,declinedReason:"hold_flags_not_returned"};
+        return {inserted:false,takenDownBy:null,declinedReason:"existing_raw_kept"};
+      }
+      declinedReason=guarded.reason;
+    }
+    return {inserted:await insertCandidate(transaction,options),takenDownBy:null,declinedReason};
+  });
 }
 
 /**
@@ -1173,8 +1196,9 @@ export async function runKnoxExtract(
   const rowByDocumentTextId = new Map(rows.map((row) => [Number(row.document_text_id), row]));
   const lessons = !dryRun && rows.length > 0 ? await loadKnoxLessons(db) : new Map();
   const lessonRefiles: Record<string, number> = {};
-  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+  const takedownLessons = !dryRun && rows.length > 0 ? await loadTakedownLessons(db,rows.map(row=>Number(row.institution_id))) : emptyTakedownLessons();
   const takedownHolds: Record<string, number> = {};
+  const takedownGuardDeclines: Record<string,number> = {};
   const calibration = !dryRun && rows.length > 0 ? await loadKnoxCalibration(db) : new Map();
   let calibratedBelowPublishFloor = 0;
   const layoutReads: Array<{ signature: string; priceLines: number; found: number }> = [];
@@ -1219,19 +1243,17 @@ export async function runKnoxExtract(
           calibration.get(calibrationKey(candidate.strategy ?? KNOX_RULES_STRATEGY.strategy, candidate.canonicalHint)),
         );
         if (calibrated < PUBLISH_FLOOR) calibratedBelowPublishFloor += 1;
-        const takenDownBy = takedownLessonFor(candidate, takedownLessons, Number(row.institution_id));
-        if (takenDownBy) takedownHolds[takenDownBy] = (takedownHolds[takenDownBy] ?? 0) + 1;
         const named = candidate;
-        if (
-          await insertCandidate(db, {
+        const receipt=await insertCandidateWithLearning(db, {
             runId: options.runId,
             row,
             candidate: named.lineup ? { ...named, lineup: groundLineup(named.lineup, row.normalized_text) } : named,
             extraFlags: lessonFlag ? [lessonFlag] : [],
             calibratedConfidence: calibrated,
-            takenDownBy,
-          })
-        ) inserted += 1;
+          },takedownLessons);
+        if (receipt.inserted) inserted+=1;
+        if (receipt.takenDownBy) takedownHolds[receipt.takenDownBy]=(takedownHolds[receipt.takenDownBy]??0)+1;
+        if (receipt.declinedReason) takedownGuardDeclines[receipt.declinedReason]=(takedownGuardDeclines[receipt.declinedReason]??0)+1;
       }
       for (const rate of rates) {
         if (await insertRateCandidate(db, { runId: options.runId, row, rate })) inserted += 1;
@@ -1335,8 +1357,10 @@ export async function runKnoxExtract(
     learning,
     lessonsLoaded: lessons.size,
     lessonRefiles,
-    takedownLessonsLoaded: takedownLessons.size,
+    takedownLessonsLoaded: [...takedownLessons.values()].reduce((n,group)=>n+group.length,0),
     takedownHolds,
+    takedownLessonsUnknown: takedownLessons.unknownReasons,
+    takedownGuardDeclines,
     calibrationGroups: calibration.size,
     calibratedBelowPublishFloor,
     layouts: thinLayouts(layoutReads),

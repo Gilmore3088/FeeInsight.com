@@ -6,10 +6,10 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { LIVE_FRAGMENT_CHECK, LIVE_FRAGMENT_REREAD_KIND } from "@/lib/agents/darwin/live-fragment-check";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
-import { insertCandidate, type KnoxTextRow } from "@/lib/agents/knox/extract";
+import { insertCandidateWithLearning, type KnoxTextRow } from "@/lib/agents/knox/extract";
 import { writeLiveRenames, type RetidyRename } from "@/lib/agents/knox/name-retidy";
 import { liveFragmentName } from "@/lib/fee-name-fragments";
-import { loadTakedownLessons, takedownLessonFor } from "@/lib/agents/knox/takedown-lessons";
+import { emptyTakedownLessons, loadTakedownLessons } from "@/lib/agents/knox/takedown-lessons";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
 
 type SqlTag = typeof sql;
@@ -279,6 +279,8 @@ export interface RereadFeedbackResult {
   samples: RereadFeedbackSample[];
   /** A read failed; nothing was written. */
   failed: boolean;
+  takedownLessonsUnknown?: Record<string,number>;
+  takedownGuardDeclines?: Record<string,number>;
 }
 
 function emptyResult(live: boolean, dryRun: boolean): RereadFeedbackResult {
@@ -632,9 +634,11 @@ export async function consumeRereadRequests(
       }
     }
     // Taken-down fees: today's proper read goes to Darwin as a raw row; a read repeating a takedown
-    // Hamilton confirmed is written held instead, as the extract writes it (`takedownLessonFor`).
+    // Hamilton confirmed with current original proof is written held, through the extract's shared gate.
     const toDarwin = decisions.filter(({ decision }) => decision.outcome === "sent_to_darwin");
-    const takedownLessons = toDarwin.length > 0 ? await loadTakedownLessons(db) : new Map<string, string>();
+    const takedownLessons = toDarwin.length > 0 ? await loadTakedownLessons(db,toDarwin.flatMap(e=>e.request.institutionId?[e.request.institutionId]:[])) : emptyTakedownLessons();
+    result.takedownLessonsUnknown=takedownLessons.unknownReasons;
+    result.takedownGuardDeclines={};
     for (const entry of toDarwin) {
       const { request, decision } = entry;
       const row: KnoxTextRow = {
@@ -645,18 +649,17 @@ export async function consumeRereadRequests(
         text_hash: request.textHash,
       };
       const candidate = decision.candidate as ExtractedFeeCandidate;
-      const takenDownBy = takedownLessonFor(candidate, takedownLessons, request.institutionId as number);
       try {
-        const inserted = await inSavepoint(db, (scope) => insertCandidate(scope, {
+        const receipt = await inSavepoint(db, (scope) => insertCandidateWithLearning(scope, {
           runId: options.runId,
           row,
           candidate,
           extraFlags: [KNOX_REREAD_FEEDBACK_FLAG],
           method: `${KNOX_REREAD_FEEDBACK_STRATEGY.strategy} v${KNOX_REREAD_FEEDBACK_STRATEGY.version} re-read (Darwin request #${request.requestId})`,
-          takenDownBy,
-        }));
-        if (!inserted) entry.decision = { ...decision, outcome: "already_read" };
-        else if (takenDownBy) entry.decision = { ...decision, outcome: "held_taken_down", refusedBy: `taken_down:${takenDownBy}` };
+        },takedownLessons));
+        if (receipt.declinedReason) result.takedownGuardDeclines[receipt.declinedReason]=(result.takedownGuardDeclines[receipt.declinedReason]??0)+1;
+        if (!receipt.inserted) entry.decision = { ...decision, outcome: "already_read" };
+        else if (receipt.takenDownBy) entry.decision = { ...decision, outcome: "held_taken_down", refusedBy: `taken_down:${receipt.takenDownBy}` };
         else result.sentToDarwin.push(request.feePublishedId ?? request.requestId);
       } catch (error) {
         console.error("[knox] re-read insert failed", error instanceof Error ? error.message : error);
@@ -729,6 +732,8 @@ export function rereadFeedbackDetail(result: RereadFeedbackResult) {
     renamed: result.renamed.length,
     sent_to_darwin: result.sentToDarwin.length,
     failed: result.failed,
+    takedown_lessons_unknown: result.takedownLessonsUnknown ?? {},
+    takedown_guard_declines: result.takedownGuardDeclines ?? {},
     samples: result.samples,
   };
 }
