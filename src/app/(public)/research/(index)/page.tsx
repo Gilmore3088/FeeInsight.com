@@ -7,7 +7,8 @@
 export const revalidate = 3600;
 
 import type { Metadata } from "next";
-import { STATE_NAMES, US_TERRITORIES } from "@/lib/us-states";
+import Link from "next/link";
+import { US_TERRITORIES } from "@/lib/us-states";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { PRODUCT_NAME, SITE_URL } from "@/lib/constants";
 import { getPublicNationalIndex, getPublicSnapshot } from "@/lib/public-stats";
@@ -30,9 +31,9 @@ import { GeoReports } from "../geo-reports";
 import { ResearchLibrary } from "../research-library";
 import { MethodFlow, ProBand } from "../method-flow";
 import { HubFindings } from "../hub-findings";
-import { charterCountLine, computeFindings, sentenceName } from "../findings";
+import { computeFindings, sentenceName } from "../findings";
 import { DistrictsExhibit, type DistrictCard, type DistrictFeeCell, type MapFee } from "../districts-exhibit";
-import { FindPlace } from "../find-place";
+import { ExploreMarket } from "../explore-market";
 import { HubSection } from "../district/[id]/district-hub";
 import { DISTRICT_REGIONS } from "../district/[id]/district-exhibits";
 import { stateShape } from "../district/[id]/district-geo";
@@ -103,9 +104,6 @@ export default async function ResearchHubPage() {
   }
 
   const statesWithFees = coverage.states.filter((s) => s.verified_institutions > 0);
-  const placeStates = statesWithFees
-    .map((s) => ({ code: s.state_code, name: STATE_NAMES[s.state_code] ?? s.state_code, institutions: s.verified_institutions }))
-    .sort((a, b) => a.name.localeCompare(b.name));
   // US_TERRITORIES includes DC; count DC separately.
   const territoryCount = statesWithFees.filter((s) => US_TERRITORIES.has(s.state_code) && s.state_code !== "DC").length;
   const hasDc = statesWithFees.some((s) => s.state_code === "DC");
@@ -115,27 +113,23 @@ export default async function ResearchHubPage() {
   const asOf = summary.refreshedOn;
   const coverageLabel = `${stateCount} states${hasDc ? ", DC" : ""}${territoryCount > 0 ? ` and ${territoryCount} territories` : ""}`;
 
-  // Each district's line is the one its own page opens with, from the same index and helper.
+  // Every district card reads the same fee; each district's other large gaps sit in its own report.
   const openings = DISTRICT_IDS.map((id, i) => {
     const indexes = districtIndexes[i];
     const name = DISTRICT_NAMES[id] ?? `District ${id}`;
-    // The hub's card leads with the district's strongest difference; the district page keeps its own opening.
-    const opening = indexes
-      ? districtOpening(indexes, nationalIndex, showAllCategories, `${name} district`, { lead: "strongest" })
-      : null;
+    const opening = indexes ? districtOpening(indexes, nationalIndex, showAllCategories, `${name} district`) : null;
     return { id, name, indexes, opening };
   });
   // The map's fees: the district hub's fees this reader may see, kept only where at least half the districts compare.
   const mapFees: MapFee[] = hubFeeKeys(showAllCategories)
     .filter((key) => openings.filter((o) => o.opening && feeSide(o.opening, key) !== null).length >= DISTRICT_IDS.length / 2)
     .map((key) => ({ key, name: sentenceStart(key) }));
-  const initialFee = mapFees[0]?.key ?? "overdraft";
+  // The map opens on an everyday account fee rather than overdraft, so overdraft isn't the page's lead story.
+  const initialFee = mapFees.find((f) => f.key === "monthly_maintenance")?.key ?? mapFees[0]?.key ?? "overdraft";
   const districts: DistrictCard[] = openings.map(({ id, name, indexes, opening }) => ({
     id,
     name,
     region: DISTRICT_REGIONS[id] ?? `the ${name} district`,
-    statement: opening?.statement ?? null,
-    leadKey: opening?.leadKey ?? null,
     institutions: indexes?.verified_institutions ?? 0,
     fees: Object.fromEntries(
       mapFees.map(({ key }): [string, DistrictFeeCell] => {
@@ -156,7 +150,7 @@ export default async function ResearchHubPage() {
       ) ?? districtsFallback(key),
     ]),
   );
-  const withoutLine = districts.filter((d) => !d.statement).length;
+  const LINK = "inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink";
 
   return (
     <>
@@ -171,83 +165,88 @@ export default async function ResearchHubPage() {
       <ResearchSectionNav />
 
       <div className="mx-auto max-w-page space-y-16 px-4 py-10 sm:space-y-24 sm:px-6 sm:py-14">
-        <HubSection
-          id="find"
-          title="Find your state or district"
-          line={`Reports cover ${coverageLabel}, plus all 12 Federal Reserve districts.`}
-          source={`${PRODUCT_NAME}, verified published fee schedules.${asOf ? ` Data as of ${asOf}.` : ""}`}
-        >
-          <FindPlace states={placeStates} districts={DISTRICT_IDS.map((id) => ({ id, name: DISTRICT_NAMES[id] ?? `District ${id}` }))} />
-        </HubSection>
-
-        <HubFindings findings={findings} line={charterCountLine(benchmarks)} asOf={asOf} />
-
-        <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
+        <HubFindings findings={findings} asOf={asOf} />
 
         <HubSection
-          id="districts"
-          title="Federal Reserve districts"
+          id="explore"
+          title="Explore your market"
+          line={`Reports for ${coverageLabel}, all 12 Federal Reserve districts and the U.S.`}
           source={
             <>
-              {PRODUCT_NAME}, verified published fee schedules, one value per institution, against the national median.
-              {asOf ? ` Data as of ${asOf}.` : ""}
+              {PRODUCT_NAME}, verified published fee schedules, one value per institution. A state is listed once any of its institutions
+              has published fees.{asOf ? ` Data as of ${asOf}.` : ""}
             </>
           }
         >
-          <div>
-            <DistrictsExhibit
-              districts={districts}
-              mapFees={mapFees}
-              initialFee={initialFee}
-              findings={districtLines}
-              fallback={districtsFallback("overdraft")}
-              minInstitutions={STATE_FINDING_MIN_INSTITUTIONS}
-            />
-            {withoutLine > 0 && (
-              <p className="mt-3 text-[13px] text-ink-muted sm:mx-0 sm:text-left">
-                {withoutLine === 1 ? "One district has" : `${withoutLine} districts have`} too few published fees yet for a headline.
-              </p>
-            )}
-            <details className="group mt-3">
-              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-[13px] font-semibold text-brick [&::-webkit-details-marker]:hidden">
-                How districts are compared
-                <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
-              </summary>
-              <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted sm:mx-0 sm:text-left">
-                Each institution counts once, at the median of its published prices for a fee (overdraft: its highest), and a
-                district&apos;s median is taken across its institutions. A district is shaded for a fee only when at least{" "}
-                {STATE_FINDING_MIN_INSTITUTIONS} of its institutions publish it; a median within 1% of the national median reads as
-                about the same. Each state is shaded by the district that covers most of it. A district&apos;s line names its fee with
-                the largest gap from the national median, measured as a percent of that median. The gap must be more than $1. Only fees with at least{" "}
-                {STATE_FINDING_MIN_INSTITUTIONS} district institutions count. The district&apos;s own report opens with overdraft and NSF.
-              </p>
-            </details>
-          </div>
+          <ExploreMarket
+            state={<GeoReports states={coverage.states} />}
+            district={
+              <div>
+                <DistrictsExhibit
+                  districts={districts}
+                  mapFees={mapFees}
+                  initialFee={initialFee}
+                  findings={districtLines}
+                  fallback={districtsFallback(initialFee)}
+                  minInstitutions={STATE_FINDING_MIN_INSTITUTIONS}
+                />
+                <details className="group mt-3">
+                  <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 text-[13px] font-semibold text-ink-soft [&::-webkit-details-marker]:hidden">
+                    How districts are compared
+                    <span aria-hidden="true" className="transition-transform group-open:rotate-90">&rsaquo;</span>
+                  </summary>
+                  <p className="max-w-3xl text-[13px] leading-relaxed text-ink-muted">
+                    Each institution counts once, at the median of its published prices for a fee (overdraft: its highest), and a
+                    district&apos;s median is taken across its institutions. A district is shaded only when at least{" "}
+                    {STATE_FINDING_MIN_INSTITUTIONS} of its institutions publish the fee. A gap under 1% of the national median is
+                    shaded as &ldquo;within 1%&rdquo;; the card still shows both figures. Each state is shaded by the district that
+                    covers most of it. A district&apos;s own report lists its other notable differences.
+                  </p>
+                </details>
+              </div>
+            }
+            national={
+              <div className="max-w-3xl">
+                <p className="text-[15px] leading-relaxed text-ink-soft">
+                  U.S. medians for {summary.categoriesLabel} fee categories from {summary.institutionsLabel} banks and credit unions.
+                </p>
+                <ul className="mt-2 flex flex-wrap gap-x-6">
+                  <li>
+                    <a href="#benchmarks" className={LINK}>
+                      Everyday fees, banks against credit unions
+                    </a>
+                  </li>
+                  <li>
+                    <Link href="/research/national-fee-index" className={LINK}>
+                      The national fee index
+                    </Link>
+                  </li>
+                  <li>
+                    <Link href="/fees" className={LINK}>
+                      Every fee category
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+            }
+          />
         </HubSection>
 
-        {/* Phones reach a state from the finder at the top; the map and directory are for wider screens. */}
-        <div className="hidden sm:block">
-        <HubSection
-          id="states"
-          title="State reports"
-          source={`${PRODUCT_NAME}, verified published fee schedules. Reports cover ${coverageLabel}; a state is listed once any of its institutions has published fees.`}
-        >
-          <GeoReports states={coverage.states} />
-        </HubSection>
-        </div>
+        <BenchmarkBoard benchmarks={benchmarks} asOf={asOf} />
 
-        <ResearchLibrary articles={articles} asOf={asOf} />
+        <ProBand sampleLive={sampleLive} />
 
         <MethodFlow summary={summary} stateCount={stateCount} coverageLabel={coverageLabel} />
 
-        <ProBand sampleLive={sampleLive} />
+        <ResearchLibrary articles={articles} asOf={asOf} />
       </div>
 
-      {/* Anchors clear the sticky header and section bar (/districts lands on #districts). Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
-      <style>{`#find, #findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7.5rem; }
-      @media (min-width: 640px) { #find, #findings, #benchmarks, #districts, #states, #in-progress, #about-data { scroll-margin-top: 7rem; } }
+      {/* Anchors clear the sticky header and section bar. Print / Save as PDF: drop site chrome and interactive controls, keep exhibits whole. */}
+      <style>{`#findings, #explore, #districts, #benchmarks, #apply, #about-data, #in-progress { scroll-margin-top: 7.5rem; }
+      @media (min-width: 640px) { #findings, #explore, #districts, #benchmarks, #apply, #about-data, #in-progress { scroll-margin-top: 7rem; } }
       @media print {
-        header, footer, nextjs-portal, #geo-filter, #find, #district-fee { display: none !important; }
+        header, footer, nextjs-portal, #geo-filter, #district-fee, [role="tablist"] { display: none !important; }
+        [role="tabpanel"][hidden] { display: block !important; }
         body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         section { break-inside: avoid-page; }
         a { text-decoration: none !important; }

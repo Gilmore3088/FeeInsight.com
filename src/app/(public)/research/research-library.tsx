@@ -11,8 +11,10 @@ interface Study {
   href: string;
   /** The question the study asks. */
   question: string;
-  /** What the study shows today, said plainly; no finding is claimed before one is published. */
-  status: string;
+  /** The deliverable a reader can open today, said precisely. */
+  available: string;
+  /** What the study hasn't published yet; no finding is claimed before one is. */
+  pending: string;
   /** Which data the study reads and how current it is. */
   data: (asOf: string | null) => string;
   pro: boolean;
@@ -22,43 +24,50 @@ const STUDIES: Study[] = [
   {
     href: "/research/fee-revenue-analysis",
     question: "Do institutions that publish higher fees earn more service-charge income?",
-    status: "In Hamilton: fee levels beside service-charge income, by asset size and by charter.",
+    available: "Fee levels beside service-charge income, by asset size and by charter, for Hamilton subscribers.",
+    pending: "A conclusion on whether higher fees mean more income.",
     data: (asOf) => `Fees as of ${asOf ?? "the latest refresh"}; income from each institution's latest call report.`,
     pro: true,
   },
   {
     href: "/research/market-concentration",
     question: "Are fees higher where fewer banks compete for deposits?",
-    status: "In Hamilton: deposit concentration (HHI) for U.S. metro areas. The comparison with fees isn't published yet.",
+    available: "Deposit concentration (HHI) for each U.S. metro area, for Hamilton subscribers.",
+    pending: "The comparison of concentration with fees.",
     data: () => `Deposits from the FDIC Summary of Deposits, ${MARKET_CONCENTRATION_YEAR}.`,
     pro: true,
   },
 ];
 
-/** Studies without a published result yet, kept small and near the bottom so they don't interrupt the findings. */
+/** Studies without a published result yet: secondary, at the foot of the page, each saying what is available now and what isn't. */
 export function ResearchLibrary({ articles, asOf }: { articles: ArticleSummary[]; asOf: string | null }) {
   return (
     <HubSection
       id="in-progress"
-      title="Research in progress"
-      line="Two studies set published fees beside call-report fee income and deposit competition; neither has published a conclusion yet."
+      title="Ongoing research"
+      line="Two studies under way. Each lists the data you can open today and what hasn't been published."
       source="Published fee schedules beside FDIC and NCUA call reports and the FDIC Summary of Deposits. Each study page says what is published so far."
     >
       <div>
       <p id="studies-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">
-        Studies under way and what each has published
+        Studies under way
       </p>
       <ul aria-labelledby="studies-label" className="mt-3 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-white">
         {STUDIES.map((s) => (
           <li key={s.href}>
             <Link href={s.href} className="group block px-5 py-4 hover:bg-paper">
               <span className="flex items-start justify-between gap-3">
-                <span className="text-[15px] font-semibold leading-snug text-ink group-hover:text-brick" style={SERIF}>
+                <span className="text-[14px] font-semibold leading-snug text-ink group-hover:text-brick" style={SERIF}>
                   {s.question}
                 </span>
                 {s.pro && <ProLock className="mt-0.5 shrink-0" />}
               </span>
-              <span className="mt-1 block text-[13px] leading-relaxed text-ink-soft">{s.status}</span>
+              <span className="mt-2 grid gap-1 text-[13px] leading-relaxed text-ink-soft sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+                <span className="text-[12px] font-semibold text-ink">Available now</span>
+                <span>{s.available}</span>
+                <span className="text-[12px] font-semibold text-ink-muted">Not yet published</span>
+                <span className="text-ink-muted">{s.pending}</span>
+              </span>
               <span className="mt-1 block text-[11px] text-ink-muted">{s.data(asOf)}</span>
             </Link>
           </li>

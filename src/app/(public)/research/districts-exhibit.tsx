@@ -25,10 +25,6 @@ export interface DistrictCard {
   name: string;
   /** The region in a reader's words, e.g. "the Southeast". */
   region: string;
-  /** The district's strongest supported difference from the national median; null when nothing clears the minimum. */
-  statement: string | null;
-  /** The fee the statement names, so its card doesn't repeat it as the selected fee's line. */
-  leadKey: string | null;
   institutions: number;
   /** Each map fee's shading and figures, by fee key: the same rule as the section's finding. */
   fees: Record<string, DistrictFeeCell>;
@@ -52,13 +48,17 @@ const SIDE_FILL: Record<"above" | "same" | "below", string> = {
 const NOT_COMPARED = "url(#district-not-compared)";
 const NUMBER = new Intl.NumberFormat("en-US");
 const noopSubscribe = () => () => {};
+
+function feeFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get("fee");
+}
 /** Rows a phone shows before "Show all". */
 const PHONE_ROWS = 5;
 
 function legendFor(minInstitutions: number): { key: "above" | "same" | "below" | "none"; label: string; fill: string }[] {
   return [
     { key: "above", label: "Above the national median", fill: SIDE_FILL.above },
-    { key: "same", label: "About the same", fill: SIDE_FILL.same },
+    { key: "same", label: "Within 1% of it", fill: SIDE_FILL.same },
     { key: "below", label: "Below", fill: SIDE_FILL.below },
     { key: "none", label: `Fewer than ${minInstitutions} institutions publish it`, fill: "none" },
   ];
@@ -84,9 +84,10 @@ function Swatch({ fill }: { fill: string }) {
 
 /**
  * All 12 Federal Reserve districts on one map, shaded by where the selected fee's median sits
- * against the national median, with each district's strongest supported difference. The map
- * is a picture; the cards carry the links for keyboards and screen readers, and on phones the
- * map is left out. The fee select is a GET form, so it re-shades the map without scripts too.
+ * against the national median; every district card follows the same fee, and each district's
+ * other notable differences sit in its own report. The map is a picture; the cards carry the
+ * links for keyboards and screen readers, and on phones the map is left out. The page is
+ * cached, so a shared ?fee= link is applied in the browser.
  */
 export function DistrictsExhibit({
   districts,
@@ -108,13 +109,10 @@ export function DistrictsExhibit({
 }) {
   const [active, setActive] = useState<number | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [feeKey, setFeeKey] = useState(initialFee);
-  // Before hydration the form's button submits the choice; afterwards the select applies it in place.
-  const hydrated = useSyncExternalStore(
-    noopSubscribe,
-    () => true,
-    () => false,
-  );
+  const [picked, setFeeKey] = useState<string | null>(null);
+  // A shared link's ?fee= is read in the browser (the page is cached); a fee the reader picks wins.
+  const requested = useSyncExternalStore(noopSubscribe, feeFromUrl, () => null);
+  const feeKey = picked ?? (requested && mapFees.some((f) => f.key === requested) ? requested : initialFee);
   const listRef = useRef<HTMLOListElement>(null);
   const byId = new Map(districts.map((d) => [d.id, d]));
   const fee = mapFees.find((f) => f.key === feeKey) ?? mapFees[0];
@@ -125,21 +123,20 @@ export function DistrictsExhibit({
 
   return (
     <div className="space-y-6">
-      <p aria-live="polite" className="-mt-5 max-w-3xl text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
+      <p aria-live="polite" className="max-w-3xl text-[15px] leading-relaxed text-ink-soft sm:mx-0 sm:text-left">
         {finding}
       </p>
       {mapFees.length > 1 && fee && (
-        <form method="get" action="/research#districts" className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <label htmlFor="district-fee" className="text-[13px] font-semibold text-ink">
-            Compare by fee
+            Fee
           </label>
           <select
             id="district-fee"
-            name="fee"
             value={fee.key}
             onChange={(e) => {
               setFeeKey(e.target.value);
-              history.replaceState(null, "", `?fee=${encodeURIComponent(e.target.value)}#districts`);
+              history.replaceState(null, "", `?fee=${encodeURIComponent(e.target.value)}#explore`);
             }}
             className="min-h-11 min-w-0 max-w-full rounded-full border border-border bg-surface-0 px-4 text-[14px] font-semibold text-ink"
           >
@@ -149,12 +146,7 @@ export function DistrictsExhibit({
               </option>
             ))}
           </select>
-          {!hydrated && (
-            <button type="submit" className="inline-flex min-h-11 items-center rounded-full bg-ink px-4 text-[14px] font-semibold text-on-ink">
-              Show
-            </button>
-          )}
-        </form>
+        </div>
       )}
 
       <figure className="hidden rounded-2xl border border-border bg-white p-4 sm:block lg:p-6">
@@ -235,7 +227,7 @@ export function DistrictsExhibit({
 
       <div>
         <p id="district-cards-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">
-          Each district&apos;s largest gap from the national median
+          {fee ? `${fee.name} median in each district` : "Each district"}, against the U.S.
         </p>
         <ol
           ref={listRef}
@@ -267,8 +259,7 @@ export function DistrictsExhibit({
                       <span className="font-normal text-ink-muted"> · {d.region.replace(/^the /, "")}</span>
                     )}
                   </span>
-                  {d.statement && <span className="mt-1 block text-[13px] leading-snug text-ink-soft">{d.statement}</span>}
-                  {fee && fee.key !== d.leadKey && <FeeLine fee={fee} cell={d.fees[fee.key]} />}
+                  {fee && <FeeLine fee={fee} cell={d.fees[fee.key]} minInstitutions={minInstitutions} />}
                   <span className="mt-1 block text-[11px] tabular-nums text-ink-muted">
                     {NUMBER.format(d.institutions)} institutions with published fees
                   </span>
@@ -301,16 +292,29 @@ export function DistrictsExhibit({
   );
 }
 
-/** The selected fee in one district: its median and the national median, when it can be compared. */
-function FeeLine({ fee, cell }: { fee: MapFee; cell: DistrictFeeCell | undefined }) {
-  if (!cell?.side || cell.median == null || cell.us == null || cell.us <= 0) return null;
-  // Phones have no map, so the side is spelled out there.
-  const side = cell.side === "same" ? "about the same as U.S." : `${cell.side} U.S.`;
+/** The gap in words: "$2 above U.S. (7%)", or "within 1% of U.S." when the gap is under 1% of the U.S. median. */
+export function gapWords(cell: DistrictFeeCell): string {
+  if (!cell.side || cell.median == null || cell.us == null || cell.us <= 0) return "";
+  if (cell.side === "same") return "within 1% of U.S.";
+  const gap = Math.abs(cell.median - cell.us);
+  const share = Math.round((gap / cell.us) * 100);
+  return `${formatFeeAmount(gap)} ${cell.side} U.S.${share >= 1 ? ` (${share}%)` : ""}`;
+}
+
+/** The selected fee in one district: its median, the national median and the actual gap, or why it can't be compared. */
+function FeeLine({ fee, cell, minInstitutions }: { fee: MapFee; cell: DistrictFeeCell | undefined; minInstitutions: number }) {
+  if (!cell?.side || cell.median == null || cell.us == null || cell.us <= 0) {
+    return (
+      <span className="mt-1 block text-[12px] text-ink-muted">
+        {fee.name}: fewer than {minInstitutions} institutions publish it
+      </span>
+    );
+  }
   return (
-    <span className="mt-1 block text-[12px] tabular-nums text-ink">
-      {fee.name} median {formatFeeAmount(cell.median)}
-      <span className="text-ink-muted"> · U.S. {formatFeeAmount(cell.us)}</span>
-      <span className="text-ink-muted sm:hidden"> · {side}</span>
+    <span className="mt-1 block text-[13px] tabular-nums text-ink">
+      {fee.name} {formatFeeAmount(cell.median)}
+      <span className="text-ink-muted"> vs U.S. {formatFeeAmount(cell.us)}</span>
+      <span className={`block text-[12px] font-semibold ${cell.side === "same" ? "text-ink-muted" : "text-ink-soft"}`}>{gapWords(cell)}</span>
     </span>
   );
 }

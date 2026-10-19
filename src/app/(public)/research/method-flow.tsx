@@ -69,7 +69,7 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
   return (
     <HubSection
       id="about-data"
-      title="About the data"
+      title="Methodology"
       line={`${summary.institutionsLabel} of the ${summary.monitoredLabel} banks and credit unions monitored have verified published fees.`}
       source={`${PRODUCT_NAME}, verified published fee schedules; coverage spans ${coverageLabel}.`}
     >
@@ -95,6 +95,19 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
           <p className="mt-3 text-[12px] text-ink-muted">
             Not yet checked: which account each price belongs to. A schedule with several accounts can list several prices
             for one fee, so each institution counts once, at the median of its prices (overdraft: its highest).
+          </p>
+        </Note>
+        <Note title="Fees with no stated audience" id="audience">
+          <p>
+            Some schedules don&apos;t say whether a fee is for personal or business accounts. Those fees are counted as personal and
+            included in the medians on this page. Each benchmark row shows how many of its institutions this affects. A median
+            without them isn&apos;t published yet, so the size of the effect isn&apos;t shown.
+          </p>
+        </Note>
+        <Note title={"\u201cAll observed prices are $0\u201d"}>
+          <p>
+            An institution is counted when every price found for the fee on its own schedule is $0. Which account each price belongs
+            to isn&apos;t checked yet, so this doesn&apos;t show that every account at the institution is free.
           </p>
         </Note>
         <Note title="How a fee gets here">
@@ -141,17 +154,18 @@ export function ProBand({ sampleLive }: { sampleLive: boolean }) {
     : { href: "/for-institutions#report", label: REPORT_OFFER.institutionCtaLabel };
   return (
     <section
+      id="apply"
       aria-labelledby="pro-heading"
-      className="grid gap-5 rounded-2xl bg-ink px-6 py-7 text-on-ink print:hidden sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-12 lg:px-10"
+      className="scroll-mt-28 grid gap-5 rounded-2xl bg-ink px-6 py-7 text-on-ink print:hidden sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-12 lg:px-10"
     >
       <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">Hamilton</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">For banks and credit unions</p>
         <h2 id="pro-heading" className="mt-2 text-[22px] font-semibold leading-snug text-on-ink" style={SERIF}>
-          Benchmark an institution against a chosen peer set.
+          Apply this to your institution
         </h2>
         <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">
-          Hamilton is the {SITE_NAME} workspace. It sets an institution&apos;s fees against a verified market, from its own counties to
-          the nation.
+          Hamilton, the {SITE_NAME} Pro workspace, sets your fees against a peer set you choose, from your own counties to the
+          nation, with the source for every figure.
         </p>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">

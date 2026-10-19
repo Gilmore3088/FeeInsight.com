@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IndexEntry } from "@/lib/data-store";
-import { districtOpening, districtsFallback, districtsFinding, feeSide, overdraftSide, strongestDifference } from "./district-opening";
+import { districtOpening, districtsFallback, districtsFinding, feeSide, notableDifferences, overdraftSide, strongestDifference } from "./district-opening";
 
 function entry(fee_category: string, median: number, institutions: number, p25 = median * 0.8, p75 = median * 1.2): IndexEntry {
   return {
@@ -104,10 +104,10 @@ describe("strongestDifference (the hub's card line)", () => {
 });
 
 describe("districtsFinding", () => {
-  it("counts districts above, below and about the same", () => {
+  it("counts districts above, below and within 1%", () => {
     const sides = [...Array(5).fill("above"), ...Array(4).fill("below"), ...Array(3).fill("same")];
     expect(districtsFinding(sides, 12)).toBe(
-      "The overdraft median is above the national median in 5 of 12 districts, below it in 4, and about the same in 3.",
+      "The overdraft median is above the national median in 5 of 12 districts, below it in 4, and within 1% of it in 3.",
     );
   });
 
@@ -128,5 +128,21 @@ describe("districtsFinding", () => {
 
   it("forces no finding when under half the districts compare", () => {
     expect(districtsFinding(["above", "below", null, null, null, null, null, null, null, null, null, null], 12)).toBeNull();
+  });
+});
+
+describe("notableDifferences (the district report's list)", () => {
+  it("lists the largest gaps as a share of the U.S. median, with both medians and the gap, skipping the opening's fees", () => {
+    const fees = [
+      { key: "overdraft", median: 40, institutions: 50, us: { median: 30 } },
+      { key: "wire_domestic_outgoing", median: 30, institutions: 50, us: { median: 25 } },
+      { key: "monthly_maintenance", median: 8, institutions: 50, us: { median: 10 } },
+      { key: "stop_payment", median: 30.1, institutions: 50, us: { median: 30 } },
+      { key: "nsf", median: 60, institutions: 3, us: { median: 30 } },
+    ];
+    expect(notableDifferences(fees, 10, ["overdraft"])).toEqual([
+      { key: "wire_domestic_outgoing", line: "Outgoing domestic wire: $30 median, versus $25 nationally ($5 higher, 20%)." },
+      { key: "monthly_maintenance", line: "Monthly maintenance: $8 median, versus $10 nationally ($2 lower, 20%)." },
+    ]);
   });
 });

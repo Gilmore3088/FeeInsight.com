@@ -24,27 +24,33 @@ function summary(overrides: Partial<FeeCategorySummary>): FeeCategorySummary {
   };
 }
 
-describe("research hub benchmark board, unstated audience (#1132)", () => {
-  const NOTE = /Some schedules do not say whether a fee is for personal or business accounts/;
-
-  it("states the audience assumption once, in the methodology disclosure, not beside each median", () => {
-    const { container } = render(
-      <BenchmarkBoard
-        benchmarks={[
-          summary({ unstated_audience_institution_count: 3 }),
-          summary({ fee_category: "nsf", unstated_audience_institution_count: 2 }),
-        ]}
-        asOf={null}
-      />,
-    );
-    expect(screen.getAllByText(NOTE)).toHaveLength(1);
-    expect(screen.getByText(NOTE).closest("details")?.querySelector("summary")?.textContent).toMatch(/How these are calculated/);
-    expect(screen.queryAllByTitle(UNSTATED_AUDIENCE_FOOTNOTE)).toHaveLength(0);
-    expect(container.textContent).not.toContain("*");
+describe("research hub benchmark board", () => {
+  it("is a compact table: fee, bank median, credit union median, sample size, with the lower median said in words", () => {
+    render(<BenchmarkBoard benchmarks={[summary({ bank_median_amount: 32, cu_median_amount: 25 })]} asOf={null} />);
+    const row = screen.getByRole("list", { name: "National benchmark fees" }).querySelector("summary")!;
+    expect(row.textContent).toContain("$32.00");
+    expect(row.textContent).toContain("$25.00");
+    expect(row.textContent).toContain("40");
+    expect(row.textContent).toContain("lower");
   });
 
-  it("leaves the note out when every row states its audience", () => {
-    render(<BenchmarkBoard benchmarks={[summary({ unstated_audience_institution_count: 0 })]} asOf={null} />);
-    expect(screen.queryByText(NOTE)).toBeNull();
+  it("labels the $0 share as observed prices, with its coverage caveat", () => {
+    const { container } = render(<BenchmarkBoard benchmarks={[summary({})]} asOf={null} />);
+    expect(screen.getByText("All observed prices are $0")).toBeTruthy();
+    expect(container.textContent).toContain("doesn't show every account is free");
+    expect(container.textContent).not.toContain("Publish only $0");
+  });
+
+  it("states the unstated-audience count and that a median without those fees isn't published", () => {
+    const { container } = render(<BenchmarkBoard benchmarks={[summary({ unstated_audience_institution_count: 3 })]} asOf={null} />);
+    expect(container.textContent).toContain("3 of 40 institutions");
+    expect(container.textContent).toContain("counted as personal");
+    expect(container.textContent).toContain("A median without them isn't published yet.");
+    expect(screen.queryAllByTitle(UNSTATED_AUDIENCE_FOOTNOTE)).toHaveLength(0);
+  });
+
+  it("says so when every schedule states the audience", () => {
+    const { container } = render(<BenchmarkBoard benchmarks={[summary({ unstated_audience_institution_count: 0 })]} asOf={null} />);
+    expect(container.textContent).toContain("Every schedule in this benchmark states the audience.");
   });
 });

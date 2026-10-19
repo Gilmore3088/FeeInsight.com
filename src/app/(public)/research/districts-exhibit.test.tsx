@@ -1,13 +1,11 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { DistrictsExhibit, type DistrictCard, type MapFee } from "./districts-exhibit";
+import { DistrictsExhibit, gapWords, type DistrictCard, type MapFee } from "./districts-exhibit";
 
 const cards: DistrictCard[] = Array.from({ length: 12 }, (_, i) => ({
   id: i + 1,
   name: `District ${i + 1} name`,
   region: "the Southeast",
-  statement: i === 0 ? "The overdraft median is $2 above the national median." : null,
-  leadKey: i === 0 ? "nsf" : null,
   institutions: 100 + i,
   fees: {
     overdraft: { side: i % 3 === 0 ? "above" : i % 3 === 1 ? "below" : null, median: 35, us: 32 },
@@ -31,18 +29,25 @@ const props = {
 };
 
 describe("DistrictsExhibit", () => {
-  it("lists all 12 districts, each linking to its district page, with its opening line", () => {
+  it("lists all 12 districts, each linking to its district page, every card on the selected fee", () => {
     render(<DistrictsExhibit {...props} />);
-    const list = screen.getByRole("list", { name: "Each district's largest gap from the national median" });
+    const list = screen.getByRole("list", { name: "Overdraft median in each district, against the U.S." });
     const links = list.querySelectorAll("a");
     expect(links).toHaveLength(12);
     expect(links[5].getAttribute("href")).toBe("/research/district/6");
-    expect(screen.getByText("The overdraft median is $2 above the national median.")).toBeTruthy();
+    expect(screen.getAllByText("$3 above U.S. (9%)").length).toBe(4);
+    expect(screen.getAllByText("Overdraft: fewer than 10 institutions publish it").length).toBe(4);
+  });
+
+  it("states the actual gap, even within 1%", () => {
+    expect(gapWords({ side: "same", median: 29.8, us: 30 })).toBe("within 1% of U.S.");
+    expect(gapWords({ side: "below", median: 29, us: 30 })).toBe("$1 below U.S. (3%)");
+    expect(gapWords({ side: null, median: null, us: 30 })).toBe("");
   });
 
   it("keeps rows past the fifth for the Show all control on phones", () => {
     render(<DistrictsExhibit {...props} />);
-    const rows = screen.getByRole("list", { name: "Each district's largest gap from the national median" }).querySelectorAll(":scope > li");
+    const rows = screen.getByRole("list", { name: "Overdraft median in each district, against the U.S." }).querySelectorAll(":scope > li");
     expect(rows[5].className).toContain("hidden sm:block");
     const toggle = screen.getByRole("button", { name: "Show all 12 districts" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -62,18 +67,16 @@ describe("DistrictsExhibit", () => {
 
   it("re-shades for the selected fee and keeps the legend in step", () => {
     render(<DistrictsExhibit {...props} />);
-    const select = screen.getByLabelText("Compare by fee") as HTMLSelectElement;
-    expect(select.getAttribute("name")).toBe("fee");
-    expect(select.closest("form")?.getAttribute("method")).toBe("get");
+    const select = screen.getByLabelText("Fee") as HTMLSelectElement;
     expect(screen.getByText("Overdraft median against the national median, by Federal Reserve district")).toBeTruthy();
     expect(screen.getByText("Overdraft finding line.")).toBeTruthy();
-    expect(screen.getAllByText("· above U.S.").length).toBeGreaterThan(0);
     fireEvent.change(select, { target: { value: "nsf" } });
     expect(screen.getByText("NSF median against the national median, by Federal Reserve district")).toBeTruthy();
     expect(screen.getByText("NSF finding line.")).toBeTruthy();
     // Two districts compare on NSF; the other ten are hatched.
     expect(screen.getByText("(10)")).toBeTruthy();
-    // District 1 leads with NSF already, so only district 2 repeats it as a fee line.
-    expect(screen.getAllByText(/^NSF median \$30/)).toHaveLength(1);
+    // Every card now follows NSF: two compare, within 1%, with both figures shown.
+    expect(screen.getAllByText("within 1% of U.S.")).toHaveLength(2);
+    expect(screen.getByRole("list", { name: "NSF median in each district, against the U.S." })).toBeTruthy();
   });
 });

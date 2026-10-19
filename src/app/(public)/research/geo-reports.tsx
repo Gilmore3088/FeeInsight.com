@@ -19,7 +19,7 @@ interface Entry {
 }
 
 /**
- * The state reports: a map and a searchable directory, for wider screens (phones use the finder at the top).
+ * The state reports: a map (wider screens) and a searchable directory of every state with a report.
  * A state is listed once it has institutions with published fees.
  */
 export function GeoReports({ states }: { states: StateCoverage[] }) {
@@ -55,7 +55,7 @@ export function GeoReports({ states }: { states: StateCoverage[] }) {
         States with a report, by institutions with published fees
       </p>
       <div className="mt-3 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <figure className="relative rounded-2xl border border-border bg-white p-4 lg:p-6">
+        <figure className="relative hidden rounded-2xl border border-border bg-white p-4 sm:block lg:p-6">
           <svg viewBox="0 0 960 600" className="mx-auto h-auto max-h-[24rem] w-full" aria-hidden="true" focusable="false">
             {US_STATES.map((st) => {
               const entry = byCode.get(st.id);

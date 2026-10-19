@@ -100,7 +100,7 @@ export function strongestDifference(fees: OpeningFee[], minInstitutions: number)
 
 /**
  * Where the district's overdraft median sits against the national median, by the opening
- * finding's rule (within 1% reads as about the same). Null when the district has fewer than
+ * finding's rule (a gap under 1% of the national median reads as "same"). Null when the district has fewer than
  * the finding minimum of institutions publishing an overdraft fee.
  */
 export function overdraftSide(opening: Pick<DistrictOpening, "againstUs">): "above" | "below" | "same" | null {
@@ -126,7 +126,7 @@ export function districtsFinding(sides: ("above" | "below" | "same" | null)[], t
   const of = known.length === total ? `${known.length} districts` : `${known.length} districts with enough ${name} fees`;
   const parts = [`above the national median in ${above} of ${of}`];
   if (below > 0) parts.push(`below it in ${below}`);
-  if (same > 0) parts.push(`about the same in ${same}`);
+  if (same > 0) parts.push(`within 1% of it in ${same}`);
   const tail = parts.length > 1 ? `${parts.length > 2 ? "," : ""} and ${parts.pop()}` : "";
   return `The ${name} median is ${parts.join(", ")}${tail}.`;
 }
@@ -134,4 +134,27 @@ export function districtsFinding(sides: ("above" | "below" | "same" | null)[], t
 /** The section line when too few districts compare on a fee. */
 export function districtsFallback(fee: string): string {
   return `Too few districts have enough published ${sentenceName(fee)} fees yet for a comparison.`;
+}
+
+/**
+ * The district report's "other notable differences": up to `limit` fees furthest from the
+ * national median as a share of it (the strongestFee rule: enough institutions, a gap over 1%
+ * and over MIN_LEAD_GAP dollars), skipping fees the page already leads with. Each line states
+ * both medians and the gap, so a reader sees the size of the difference.
+ */
+export function notableDifferences(fees: OpeningFee[], minInstitutions: number, skip: string[] = [], limit = 3): { key: string; line: string }[] {
+  const share = (f: OpeningFee) => Math.abs(nationalGap(f)) / f.us!.median;
+  return fees
+    .filter((f) => !skip.includes(f.key) && f.us && f.us.median > 0 && f.institutions >= minInstitutions)
+    .filter((f) => nationalGap(f) !== 0 && Math.abs(nationalGap(f)) > MIN_LEAD_GAP)
+    .sort((a, b) => share(b) - share(a))
+    .slice(0, limit)
+    .map((f) => {
+      const name = sentenceName(f.key);
+      const gap = f.median - f.us!.median;
+      return {
+        key: f.key,
+        line: `${name.charAt(0).toUpperCase()}${name.slice(1)}: ${formatFeeAmount(f.median)} median, versus ${formatFeeAmount(f.us!.median)} nationally (${formatFeeAmount(Math.abs(gap))} ${gap > 0 ? "higher" : "lower"}, ${Math.round(share(f) * 100)}%).`,
+      };
+    });
 }
