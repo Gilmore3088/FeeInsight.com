@@ -70,7 +70,7 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
         subjectKey,
         metadata: requestShape(request),
       }).catch(() => {});
-      if (policy.surface === "v1") retainV1BackgroundTask(auditTask);
+      retainV1BackgroundTask(auditTask);
       return response;
     } catch (error) {
       const auditTask = recordApiRouteAuditEvent({
@@ -86,7 +86,7 @@ export function withApiRoutePolicy<TArgs extends unknown[]>(
           error: error instanceof Error ? error.message : String(error),
         },
       }).catch(() => {});
-      if (policy.surface === "v1") retainV1BackgroundTask(auditTask);
+      retainV1BackgroundTask(auditTask);
       throw error;
     }
   };

@@ -78,14 +78,15 @@ describe("v1 route audit lifetime", () => {
     expect(auditMock).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves the existing background behavior outside v1", async () => {
+  it("retains the same pending audit once outside v1", async () => {
     const audit = pendingAudit();
     const response = new Response("ok");
 
     expect(await withApiRoutePolicy("api.session", "GET", () => response)()).toBe(response);
-    expect(afterMock).not.toHaveBeenCalled();
+    expect(afterMock).toHaveBeenCalledTimes(1);
     expect(auditMock).toHaveBeenCalledTimes(1);
     audit.finish();
-    await auditMock.mock.results[0].value;
+    await expect(afterMock.mock.calls[0][0]).resolves.toBeUndefined();
+    expect(auditMock).toHaveBeenCalledTimes(1);
   });
 });
