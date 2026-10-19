@@ -60,6 +60,20 @@ const ARCHETYPES: { key: ArchetypeKey; label: string; rule: string; test: (v: nu
   { key: "premium", label: "Premium", rule: "Over $30", test: (v) => v > 30 },
 ];
 
+/** Each pricing group as the action title counts it ("11 at $15.01–$30"). */
+const ARCHETYPE_COUNT_TEXT: Record<ArchetypeKey, string> = {
+  zero_od: "at $0",
+  low_capped: "up to $15",
+  mid: "at $15.01–$30",
+  premium: "over $30",
+};
+
+/**
+ * The pricing groups' printed rules: fixed definitions, not data, so the answer eval skips their
+ * dollar edges ("$15.01" ties to no live fee). The $0 group is left out so a real $0 still counts.
+ */
+export const ARCHETYPE_RULE_TEXTS: string[] = ARCHETYPES.filter((a) => a.key !== "zero_od").flatMap((a) => [`(${a.rule})`, ARCHETYPE_COUNT_TEXT[a.key]]);
+
 // ─── Small formatters ────────────────────────────────────────────────────────
 
 function money(n: number): string {
@@ -276,10 +290,10 @@ function archetypePiece(research: FeeResearch, name: string): Piece | null {
     key: "archetype",
     actionTitle: `Of ${count(n)} ${group.label}: ${listParts(
       [
-        [by.zero_od, "at $0"],
-        [by.low_capped, "up to $15"],
-        [by.mid, "at $15.01–$30"],
-        [by.premium, "over $30"],
+        [by.zero_od, ARCHETYPE_COUNT_TEXT.zero_od],
+        [by.low_capped, ARCHETYPE_COUNT_TEXT.low_capped],
+        [by.mid, ARCHETYPE_COUNT_TEXT.mid],
+        [by.premium, ARCHETYPE_COUNT_TEXT.premium],
       ],
     )}.`,
     exhibit: {

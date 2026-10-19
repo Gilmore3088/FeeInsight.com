@@ -18,11 +18,13 @@
  * yet checked; sentences sourced to other tables (call reports, fee changes, complaints) are out
  * of scope; and the whole-schedule overview's peer medians are accepted as printed, because the
  * overview does not carry its peer members (the bank's own value on each line is re-read live).
+ * The overdraft pricing groups' rules ("$15.01 to $30") are fixed definitions and are skipped.
  */
 
 import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
 import { countedAmounts, summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
 import { extractFigures } from "./figure-check";
+import { ARCHETYPE_RULE_TEXTS } from "./workspace/storyline";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
 
@@ -198,8 +200,13 @@ function around(text: string, index: number): string {
   return `${start > 0 && text[start - 1] !== "\n" ? "…" : ""}${text.slice(start, end).replace(/[()]/g, "")}${end < text.length && text[end] !== "\n" ? "…" : ""}`;
 }
 
+/** The text with the pricing groups' rules blanked (same length, so indices still point into it). */
+function withoutGroupRules(text: string): string {
+  return ARCHETYPE_RULE_TEXTS.reduce((t, rule) => t.split(rule).join(" ".repeat(rule.length)), text);
+}
+
 function tieText(text: string, anchors: number[], singles: number[], failures: string[]): CorrectnessResult {
-  const usd = extractFigures(text).filter((f) => f.kind === "usd");
+  const usd = extractFigures(withoutGroupRules(text)).filter((f) => f.kind === "usd");
   // Each untied figure with the words around it, so the failing sentence can be found (#981).
   const untied = [...new Map(usd.filter((f) => !ties(f.value, f.tolerance, anchors, singles)).map((f) => [f.raw, `${f.raw} (${around(text, f.index)})`])).values()];
   if (untied.length > 0) {
