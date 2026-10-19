@@ -6,12 +6,68 @@
 import { ExhibitFrame, ExhibitView, EVIDENCE_LABELS } from "@/components/hamilton/memo/exhibit-view";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { withFiguresBold } from "@/components/hamilton/memo/answer-memo";
-import { ANSWER_TYPE, dayDate, figureSize, fmtMoney, fmtSignedMoney, SERIF } from "@/components/hamilton/memo/memo";
+import { ANSWER_TYPE, dayDate, figureSize, fmtMoney, fmtSignedMoney, More, SERIF } from "@/components/hamilton/memo/memo";
 import type { StoryExhibit } from "./types";
 import { IncomeSplitChart, incomeSplitOf } from "./income-split";
 import { PeerList } from "./peer-list";
 
 const th = ANSWER_TYPE.th;
+
+type MatrixRow = Extract<StoryExhibit["exhibit"], { kind: "structure_matrix" }>["rows"][number];
+
+/** Rows a matrix shows before the rest fold under "Show all" (#2036): the institution and 12 others. */
+const MATRIX_SHOWN = 13;
+
+function MatrixRows({ columns, rows }: { columns: string[]; rows: MatrixRow[] }) {
+  return (
+    <>
+    {/* On a phone each institution is a card of label and value, so nothing scrolls sideways. */}
+    <ul className="flex flex-col gap-2 sm:hidden">
+      {rows.map((r) => (
+        <li key={r.name} className={`rounded-md border px-3 py-2 ${r.own ? "border-terra/40 bg-terra-soft/40" : "border-warm-200 bg-white"}`}>
+          <p className={`text-sm ${r.own ? "font-medium text-terra-text" : "font-medium text-warm-900"}`}>{r.name}</p>
+          <dl className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 text-sm">
+            {columns.map((c, i) => (
+              <div key={c} className="contents">
+                <dt className="text-warm-600">{c}</dt>
+                <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not listed</span>}</dd>
+              </div>
+            ))}
+          </dl>
+        </li>
+      ))}
+    </ul>
+    <div className="hidden overflow-x-auto rounded-md border border-warm-200 bg-white sm:block">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-warm-200">
+            <th className={th} scope="col">Institution</th>
+            {columns.map((c) => (
+              <th key={c} className={`${th} text-center`} scope="col">
+                {c}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.name} className={`border-b border-warm-100 last:border-0 ${r.own ? "bg-terra-soft/40" : ""}`}>
+              <th scope="row" className={`px-3 py-2 text-left font-normal ${r.own ? "font-medium text-terra-text" : "text-warm-900"}`}>
+                {r.name}
+              </th>
+              {r.cells.map((c, i) => (
+                <td key={i} className={`px-3 py-2 text-center text-warm-800 ${ANSWER_TYPE.num}`}>
+                  {c ?? <span className="text-warm-600">Not listed</span>}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    </>
+  );
+}
 
 export function StoryExhibitView({ item, number, researchInstitutionName }: { item: StoryExhibit; number: number; researchInstitutionName?: string | null }) {
   const x = item.exhibit;
@@ -110,50 +166,14 @@ export function StoryExhibitView({ item, number, researchInstitutionName }: { it
     }
     return (
       <ExhibitFrame title={item.actionTitle} sources={x.sources} note={x.note} number={number}>
-        {/* On a phone each institution is a card of label and value, so nothing scrolls sideways. */}
-        <ul className="flex flex-col gap-2 sm:hidden">
-          {x.rows.map((r) => (
-            <li key={r.name} className={`rounded-md border px-3 py-2 ${r.own ? "border-terra/40 bg-terra-soft/40" : "border-warm-200 bg-white"}`}>
-              <p className={`text-sm ${r.own ? "font-medium text-terra-text" : "font-medium text-warm-900"}`}>{r.name}</p>
-              <dl className="mt-1 grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 text-sm">
-                {x.columns.map((c, i) => (
-                  <div key={c} className="contents">
-                    <dt className="text-warm-600">{c}</dt>
-                    <dd className={`text-right text-warm-800 ${ANSWER_TYPE.num}`}>{r.cells[i] ?? <span className="text-warm-600">Not listed</span>}</dd>
-                  </div>
-                ))}
-              </dl>
-            </li>
-          ))}
-        </ul>
-        <div className="hidden overflow-x-auto rounded-md border border-warm-200 bg-white sm:block">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-warm-200">
-                <th className={th} scope="col">Institution</th>
-                {x.columns.map((c) => (
-                  <th key={c} className={`${th} text-center`} scope="col">
-                    {c}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {x.rows.map((r) => (
-                <tr key={r.name} className={`border-b border-warm-100 last:border-0 ${r.own ? "bg-terra-soft/40" : ""}`}>
-                  <th scope="row" className={`px-3 py-2 text-left font-normal ${r.own ? "font-medium text-terra-text" : "text-warm-900"}`}>
-                    {r.name}
-                  </th>
-                  {r.cells.map((c, i) => (
-                    <td key={i} className={`px-3 py-2 text-center text-warm-800 ${ANSWER_TYPE.num}`}>
-                      {c ?? <span className="text-warm-600">Not listed</span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <MatrixRows columns={x.columns} rows={x.rows.slice(0, MATRIX_SHOWN)} />
+        {x.rows.length > MATRIX_SHOWN ? (
+          <div className="mt-2">
+            <More label={`Show all ${(x.rows.filter((r) => !r.own).length).toLocaleString("en-US")}`}>
+              <MatrixRows columns={x.columns} rows={x.rows.slice(MATRIX_SHOWN)} />
+            </More>
+          </div>
+        ) : null}
         {takeaway}
       </ExhibitFrame>
     );

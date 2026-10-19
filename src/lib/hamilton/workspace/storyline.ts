@@ -42,6 +42,8 @@ export const MIN_STORY_EXHIBITS = 3;
 export const MAX_STORY_EXHIBITS = 5;
 /** Rows a structure matrix shows after the bank's own. */
 const MAX_MATRIX_ROWS = 12;
+/** Most rows a table carries; the page shows the first MAX_MATRIX_ROWS and folds the rest under "Show all" (#2036). */
+export const MAX_LISTED_ROWS = 100;
 /** Names an archetype lists. */
 const MAX_ARCHETYPE_NAMES = 5;
 /** A peer within this many dollars of the bank's price is "close" for the watch list. */
@@ -229,10 +231,25 @@ function largestPiece(research: FeeResearch, name: string): Piece | null {
   };
 }
 
+type LocalCompetitor = NonNullable<FeeResearch["localCompetitors"]>[number];
+
+function competitorItem(p: LocalCompetitor) {
+  return { name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) };
+}
+
+/** The chart shows the largest by local deposits; the rest fold under "Show all" (#2036). */
+export function largestNote(total: number, shown: number, listed: number): string {
+  const others = listed - shown;
+  const unlisted = total - listed;
+  return `The ${shown} largest by local deposits are charted; Show all lists the other ${others}.${unlisted > 0 ? ` ${unlisted} more are not listed.` : ""}`;
+}
+
 function localPiece(research: FeeResearch, name: string): Piece | null {
   const list = research.localCompetitors ?? [];
   if (list.length === 0) return null;
   const items = list.slice(0, MAX_MATRIX_ROWS).sort((a, b) => a.amount - b.amount);
+  // The rest stay listable under "Show all" (#2036), lowest fee first like the chart.
+  const rest = list.slice(MAX_MATRIX_ROWS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount);
   // The title counts every local competitor, as the market lens does, so the exhibit's line and
   // the memo never give two different counts; the chart shows the largest and its note says so.
   // Range and counts come from the same one value per institution; named fees stay on the rows (#1931).
@@ -263,10 +280,10 @@ function localPiece(research: FeeResearch, name: string): Piece | null {
       unit: "dollars",
       own: research.current,
       ownLabel: research.institutionName,
-      items: items.map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) })),
-      ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts } : {}),
+      items: items.map(competitorItem),
+      ...(list.length > MAX_MATRIX_ROWS ? { allAmounts: amounts, rest: rest.map(competitorItem) } : {}),
       sources: [research.localMarket?.source ?? feeSource(research)],
-      note: list.length > MAX_MATRIX_ROWS ? `The ${MAX_MATRIX_ROWS} largest by local deposits of ${list.length}.` : undefined,
+      note: list.length > MAX_MATRIX_ROWS ? largestNote(list.length, items.length, items.length + rest.length) : undefined,
     },
   };
 }
@@ -339,7 +356,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const transfer = has("od_protection_transfer");
   const cap = has("od_daily_cap");
   const label = set.groupLabel.startsWith("peers") ? "peers" : set.groupLabel;
-  const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_MATRIX_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
+  const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_LISTED_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
   return {
     key: "structure",
     actionTitle: `Of ${count(group.length)} ${label}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
@@ -358,7 +375,7 @@ function structurePiece(research: FeeResearch): Piece | null {
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
-      note: group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : undefined,
+      note: group.length > MAX_LISTED_ROWS ? `Showing ${MAX_LISTED_ROWS} of ${group.length}.` : undefined,
     },
   };
 }
@@ -389,7 +406,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
     group.length >= MIN_PEERS_FOR_POSITION
       ? `${ownLead}; ${count(withFree)} of ${count(group.length)} ${label} offer a no-fee account.`
       : `${ownLead}; too few ${label} publish their lineup to compare.`;
-  const shown = [own, ...group.slice(0, MAX_MATRIX_ROWS)];
+  const shown = [own, ...group.slice(0, MAX_LISTED_ROWS)];
   return {
     key: "lineup",
     actionTitle,
@@ -409,7 +426,7 @@ function lineupPiece(research: FeeResearch): Piece | null {
         own: r.own || undefined,
       })),
       sources: [{ ...set.source, asOf: set.source.asOf ?? research.provenance.dataAsOf.fees ?? null }],
-      note: [group.length > MAX_MATRIX_ROWS ? `Showing ${MAX_MATRIX_ROWS} of ${group.length}.` : null, "A blank balance means the schedule states none."]
+      note: [group.length > MAX_LISTED_ROWS ? `Showing ${MAX_LISTED_ROWS} of ${group.length}.` : null, "A blank balance means the schedule states none."]
         .filter(Boolean)
         .join(" "),
     },

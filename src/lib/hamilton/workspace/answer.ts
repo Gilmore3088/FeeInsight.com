@@ -14,7 +14,7 @@ import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
 import { feeItem, proseFeeName } from "./names";
 import { annualItemsQuestion, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition } from "./scenario";
 import { segmentClaims, segmentExhibit, segmentHeadline } from "./segment";
-import { buildStoryline, type StoryIntent } from "./storyline";
+import { buildStoryline, largestNote, MAX_LISTED_ROWS, type StoryIntent } from "./storyline";
 import { ownRate, rateClaims, rateHeadline, rateVolumeQuestion } from "./rates";
 
 import { uniqueStampedFigures, type StampedFigure } from "@/lib/dataset-note";
@@ -279,10 +279,10 @@ function positionExhibit(research: FeeResearch, name: string): Exhibit | null {
 function competitorExhibit(research: FeeResearch, name: string): Exhibit | null {
   const list = research.localCompetitors ?? [];
   if (list.length === 0) return null;
-  const items = [...list]
-    .slice(0, MAX_COMPETITORS)
-    .sort((a, b) => a.amount - b.amount)
-    .map((p) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) }));
+  const item = (p: (typeof list)[number]) => ({ name: p.institutionName, amount: p.amount, url: p.documentUrls[0] ?? null, deposits: p.marketDeposits ?? null, ...(p.several ? { several: p.several } : {}) });
+  const items = list.slice(0, MAX_COMPETITORS).sort((a, b) => a.amount - b.amount).map(item);
+  // Every competitor counted stays listable under "Show all" (#2036).
+  const rest = list.slice(MAX_COMPETITORS, MAX_LISTED_ROWS).sort((a, b) => a.amount - b.amount).map(item);
   return {
     kind: "competitor_range",
     title: `${name[0].toUpperCase()}${name.slice(1)} fees at ${items.length} institutions in ${subjectPossessive(research, false)} market`,
@@ -290,9 +290,9 @@ function competitorExhibit(research: FeeResearch, name: string): Exhibit | null 
     own: research.current,
     ownLabel: research.institutionName,
     items,
-    ...(list.length > MAX_COMPETITORS ? { allAmounts: list.map((p) => p.amount) } : {}),
+    ...(list.length > MAX_COMPETITORS ? { allAmounts: list.map((p) => p.amount), rest } : {}),
     sources: [research.localMarket?.source ?? feeSource(research)],
-    note: list.length > MAX_COMPETITORS ? `The ${MAX_COMPETITORS} largest by local deposits of ${list.length}.` : undefined,
+    note: list.length > MAX_COMPETITORS ? largestNote(list.length, items.length, items.length + rest.length) : undefined,
   };
 }
 

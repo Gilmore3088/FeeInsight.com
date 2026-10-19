@@ -118,3 +118,27 @@ describe("peer list (#2033)", () => {
     expect(html).toContain("Peer Three Credit Union");
   });
 });
+
+describe("every row is listable (#2036)", () => {
+  it("shows the institution and 12 others, and folds the rest under Show all", () => {
+    const rows = [{ name: "Subject CU", cells: ["$30"], own: true }, ...Array.from({ length: 14 }, (_, i) => ({ name: `Local ${i + 1}`, cells: ["$35"] }))];
+    const item: StoryExhibit = { id: "structure", actionTitle: "Of 14 local competitors: 1 charge an NSF fee.", exhibit: { kind: "structure_matrix", title: "t", columns: ["Overdraft fee"], rows, sources: [] } };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={4} />);
+    expect(html).toContain("Show all 14");
+    expect(html).toContain("Local 14");
+    expect(html.indexOf("Local 12")).toBeLessThan(html.indexOf("Show all 14"));
+    expect(html.indexOf("Local 13")).toBeGreaterThan(html.indexOf("Show all 14"));
+  });
+
+  it("lists the competitors beyond the charted largest under Show all", () => {
+    const item: StoryExhibit = {
+      id: "local",
+      actionTitle: "Local",
+      exhibit: { kind: "competitor_range", title: "t", unit: "dollars", own: 30, ownLabel: "Subject CU", items: [{ name: "Big", amount: 35, url: null }], rest: [{ name: "Small A", amount: 10, url: null }, { name: "Small B", amount: 40, url: null }], sources: [] },
+    };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={4} />);
+    expect(html).toContain("Show all 3");
+    expect(html.indexOf("Small A")).toBeGreaterThan(html.indexOf("Show all 3"));
+    expect(html).toContain("Charges less");
+  });
+});

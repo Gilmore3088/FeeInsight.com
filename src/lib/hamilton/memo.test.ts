@@ -11,7 +11,7 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => ({
 }));
 vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
 
-import { MEMO_ROUTE_ID, memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
+import { MEMO_ROUTE_ID, memoPayload, memoProblems, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildFeeResearchEvidence } from "./evidence-contract";
 import { INTERPRETATION_LIMITATION } from "./narrative-bound";
@@ -242,5 +242,17 @@ describe("storyline memo", () => {
     expect(payload.stated_amounts.map((a) => a.amount)).toEqual(expect.arrayContaining([32, 29.5]));
     expect(payload.fact_evidence).toEqual(evidence);
     expect(memoPayload(storyline)).not.toHaveProperty("fact_evidence");
+  });
+});
+
+describe("pointing-back sentences (#2036)", () => {
+  const data = { fee: 10 };
+  it("flags a sentence that points back instead of naming its subject", () => {
+    const { problems } = memoProblems({ summary: "One competitor charges less. That one is Bank of America at $10.", board: "Board.", market: "Market.", questions: [] }, data);
+    expect(problems.some((p) => p.startsWith('"That one is Bank of America at $10" points back'))).toBe(true);
+  });
+  it("leaves named subjects alone", () => {
+    const { problems } = memoProblems({ summary: "Bank of America charges $10. These 14 banks set the local range.", board: "Board.", market: "Market.", questions: [] }, data);
+    expect(problems.some((p) => p.includes("points back"))).toBe(false);
   });
 });

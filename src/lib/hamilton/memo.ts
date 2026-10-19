@@ -64,6 +64,8 @@ Hard rules:
   never call it a no-fee position, a $0 fee, or a claim the bank can make.
 - A fee changed only where DATA lists the change (a change_timeline exhibit or a dated change line). Never infer a
   price change from anything else. When DATA lists none, say the change history is still building.
+- Every sentence names what it is about. Never open a sentence with "That one", "This one", "Those" or "These"
+  pointing back at an earlier sentence; name the institution or fee again.
 - Plain language, short sentences, no jargon, no internal system names. DATA is this prompt's name for the payload:
   never write the word in the memo; say "the filings", "the index" or "the schedule" instead.`;
 
@@ -74,6 +76,8 @@ function withoutPayloadName(text: string): string {
 
 /** Phrases that treat a fee missing from the index as a fee the bank does not charge. */
 const NO_FEE_CLAIM = /\bno-[a-z]+ (?:position|claim|policy|stance)\b|\bno-fee\b|\bschedule shows no\b|\bcharges? no [a-z/ ]{0,30}fee\b/i;
+/** A sentence that points back instead of naming its subject: "That one is Bank of America at $10." (#2036) */
+const POINTING_OPENER = /(?:^|[.!?]\s+)((?:That|This) ones?\b|(?:Those|These) (?:are|were|charge|include|sit)\b)[^.!?]{0,40}/;
 /** An opening sentence that leads with what the data lacks. */
 const LIMIT_OPENING = /^(?:the data|DATA|hamilton|we|this (?:data|index))\b[^.]{0,40}\b(?:cannot|can't|does not|doesn't|has no|holds no|lacks)\b/i;
 
@@ -206,6 +210,8 @@ export function memoProblems(draft: MemoDraft, payload: unknown, question?: stri
   for (const line of binding?.limitations ?? []) if (line.startsWith("Sources disagree")) problems.push(`State this instead of either figure: ${line}`);
   const noFee = ownFeeMissing(payload) ? all.match(NO_FEE_CLAIM) : null;
   if (noFee) problems.push(`"${noFee[0]}" reads as if the bank charges no fee. No price for its fee is in the index; say it as DATA's claims word it.`);
+  const pointing = all.match(POINTING_OPENER);
+  if (pointing) problems.push(`"${pointing[0].replace(/^[.!?]?\s*/, "")}" points back at an earlier sentence. Name the institution or fee instead.`);
   const opening = firstSentence(draft.summary).match(LIMIT_OPENING);
   if (opening) problems.push(`The summary opens with a limit ("${opening[0]}"). Open with what DATA shows; state the limit after.`);
   const identity = (payload as { identityContext?: HamiltonIdentitySnapshot } | null)?.identityContext;

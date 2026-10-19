@@ -29,7 +29,7 @@ export interface SourceRef {
 }
 
 /** Bump when any builder's math or wording changes, so a saved output names the engine that made it. */
-export const WORKSPACE_ENGINE_VERSION = "1.19.2";
+export const WORKSPACE_ENGINE_VERSION = "1.19.3";
 
 /** A figure the bank gave Hamilton, with who gave it and when. */
 export interface ClientFactRef {
@@ -582,6 +582,8 @@ export type Exhibit =
       items: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       /** Every competitor's amount when items shows only the largest, so counts use the whole market. */
       allAmounts?: number[];
+      /** The competitors beyond the charted largest, lowest fee first; the page lists them under "Show all" (#2036). */
+      rest?: { name: string; amount: number; url: string | null; deposits?: number | null; several?: SeveralFees }[];
       sources: SourceRef[];
       note?: string;
     }
