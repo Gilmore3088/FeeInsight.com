@@ -67,3 +67,46 @@ describe("figures that are not the data's to trace (#1425)", () => {
     ] as const) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual(unmatched);
   });
 });
+
+describe("explicit monetary units and compacted evidence (#2274)",()=>{
+  it.each([
+    ["thousands_dollars",1234,"$1.234 million"],
+    ["thousands of dollars",1234,"$1.234 million"],
+    ["millions_dollars",1.234,"$1.234 million"],
+    ["billions_dollars",1.234,"$1.234 billion"],
+    ["dollars (billions)",1.234,"$1.234 billion"],
+  ])("normalizes %s before matching a stated dollar amount",(unit,value,text)=>{
+    expect(checkNarrativeFigures(String(text),{rows:[{value,unit}]}).unmatched).toEqual([]);
+  });
+  it("rejects the unscaled amount and scales arithmetic differences consistently",()=>{
+    const data={rows:[{value:1234,unit:"thousands_dollars"},{value:1000,unit:"thousands_dollars"}]};
+    expect(checkNarrativeFigures("The difference is $234 thousand.",data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Income is $1,234, with a $234 gap.",data).unmatched).toEqual(["$1,234","$234"]);
+  });
+  it("keeps financial dollar units on nested records and fractions on ratio fields",()=>{
+    const data={financials:{units:"dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+      latest:{service_charge_income:311051,fee_income_ratio:0.068,employee_count:4}},fees:[{amount:35}]};
+    expect(checkNarrativeFigures("Income was $311.05 million, a 6.8% share. The fee is $35.",data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The fee is $35 thousand and the ratio is $0.068.",data).unmatched).toEqual(["$35 thousand","$0.068"]);
+  });
+  it("reads valid compacted JSON without treating ordinary prose as supporting evidence",()=>{
+    const data={_shortened:true,text:JSON.stringify({rows:[{value:"1,234",unit:"thousands of dollars"}]})};
+    expect(checkNarrativeFigures("Income was $1.234 million.",data).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Income was $1.234 million.","Income was $1.234 million.").unmatched).toEqual(["$1.234 million"]);
+  });
+  it("keeps rates, counts and other currencies out of dollar candidates",()=>{
+    for(const unit of ["percent","persons","count","Canadian dollars","euros"])
+      expect(checkNarrativeFigures("The amount is $4.10.",{value:4.1,unit}).unmatched,unit).toEqual(["$4.10"]);
+    expect(checkNarrativeFigures("The rate is 4.1%.",{value:4.1,unit:"percent"}).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("The rate is 410%.",{value:4.1,unit:"percent"}).unmatched).toEqual(["410%"]);
+    expect(checkNarrativeFigures("The rate is 14.2%.",{value:0.142,unit:"fraction"}).unmatched).toEqual([]);
+  });
+  it("keeps legitimate zero and excludes ids/counts under a monetary caption",()=>{
+    expect(checkNarrativeFigures("Income was $0.",{value:0,unit:"thousands_dollars"}).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Income was $4 thousand.",{units:"thousands_dollars",institution_id:4,employee_count:4}).unmatched).toEqual(["$4 thousand"]);
+  });
+  it("preserves legacy unannotated dollar growth fields and explicit monetary growth units", () => {
+    expect(checkNarrativeFigures("Deposit growth was $1,234.", { deposit_growth: 1234 }).unmatched).toEqual([]);
+    expect(checkNarrativeFigures("Deposit growth was $1.234 million.", { deposit_growth: 1234, unit: "thousands_dollars" }).unmatched).toEqual([]);
+  });
+});

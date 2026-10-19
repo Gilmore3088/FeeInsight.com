@@ -41,12 +41,22 @@ step is priced at 150 seconds and must fit an explicit tick deadline even when s
 other runs retain their existing first-step progress behavior. Both controls paused permits only
 recovery and already pause-exempt execution in Atlas `workflow` runs with source `atlas.scoreboard`.
 That path schedules no runs, consults no provider budget, and leaves unrelated alerts/digests,
-marketing/data runs and other sources untouched. City repair/storage remain queued until the
+marketing/data runs and other sources untouched. The new live-source draw and city repair/storage remain queued until the
 pipeline control permits them; backend disabled still does nothing. Run/step/events expose every
 completion, deferral and held tail. The narrow continuation's opt-in ceiling checks the existing
 exempt list in selection, before each step and on the actual step under the ledger claim lock,
 so a control change or concurrent progression cannot carry it into the held tail. No new
 exception is added to `PAUSE_EXEMPT_STEP_KEYS`; normal callers have no new ceiling.
+
+## Separate live-source diagnostic (#2061)
+
+The daily workflow has 13 steps. After all ten existing pause-exempt measurements and their
+snapshot, `deming-live-source-draw` freezes a capped current-dollar catalog frame without network
+I/O. This draw and all subsequent observation/capture/archive work obey the pipeline pause.
+The existing tick admits at most one finite `deming.live_source_audit` workflow per UTC ten-minute
+bucket, alternating fresh oldest-draw work and due capture episodes. Magellan's capture workflow
+has its own Atlas archive tail. No provider, R2 activation, extra pause exception or inline daily
+execution is introduced. See [the diagnostic contract](../deming/LIVE-SOURCE-AUDIT.md).
 
 ## Answer-key relabels (`answer-key-relabels.ts`, #1099)
 
@@ -164,6 +174,10 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   free work left (`stateHasDocumentBacklog`, which must use the same filters as those steps'
   selectors); otherwise it sleeps until its next full pass, checking again at least every 12
   hours (`STATE_LANE_IDLE_RECHECK_HOURS`).
+- Scoped stacked-PDF repair readiness (#2219) calls Rosetta's exact owner query with
+  LIMIT1/EXISTS. It respects the same current-copy, vault/source-hash and versioned
+  attempt guards as the four-per-step free repair dispatch; it does not raise global
+  reader or prose replay floors. Bayes and Rosetta's health number count that same pool.
 - A state runs daily full passes instead of monthly while more than
   `DAILY_FULL_PASS_MISSING_LINKS` (50) of its banks have no fee link and a search can still
   find them (website on file, not offline or manual-review, last search not `dead` or

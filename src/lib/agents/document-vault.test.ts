@@ -59,3 +59,21 @@ describe("document vault", () => {
     expect(send.mock.calls[0][0]).toBeInstanceOf(GetObjectCommand);
   });
 });
+
+describe("vault cancellation at actual SDK send boundary",()=>{
+  it("never starts an SDK command for an already cancelled store",async()=>{
+    const send=vi.fn();const result=await createDocumentVault(client(send)).store(new Uint8Array([1]),HASH,null,{signal:AbortSignal.abort()});
+    expect(result.status).toBe("failed");expect(send).not.toHaveBeenCalled();
+  });
+  it.each(["HEAD","PUT"])("passes abortSignal and bounds an ignored %s promise",async(stage)=>{
+    const controller=new AbortController();let release!:(value:unknown)=>void;
+    const pending=new Promise(resolve=>{release=resolve;});
+    const send=stage==="HEAD"?vi.fn(()=>pending):vi.fn().mockRejectedValueOnce({name:"NotFound"}).mockReturnValueOnce(pending);
+    const work=createDocumentVault(client(send)).store(new Uint8Array([1]),HASH,"application/pdf",{signal:controller.signal});
+    await vi.waitFor(()=>expect(send).toHaveBeenCalledTimes(stage==="HEAD"?1:2));controller.abort();
+    expect(await work).toMatchObject({status:"failed",key:null});
+    const last=send.mock.calls.at(-1)!;expect(last[0]).toBeInstanceOf(stage==="HEAD"?HeadObjectCommand:PutObjectCommand);
+    expect(last[1]).toEqual({abortSignal:controller.signal});
+    release({});await Promise.resolve();expect(send).toHaveBeenCalledTimes(stage==="HEAD"?1:2);
+  });
+});

@@ -13,6 +13,7 @@ import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
 import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -65,6 +66,10 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   ownedBullet?: true;
   /** Complete single-column price paragraph with a bounded, explicit exception policy. */
   ownedPolicy?: true;
+  /** Bounded literal own-unit evidence; metadata never supplies price/category admission. */
+  ownUnit?: OwnFeeUnit;
+  /** Complete exact own additive charge clause; source metadata, never admission authority. */
+  ownCondition?: string;
   /** Literal product/age eligibility not yet represented safely by benchmark selection. */
   eligibilityReview?: true;
   /** Bounded, explicitly referenced context; never read as the price's charging unit. */
@@ -77,6 +82,8 @@ export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untr
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
   /** Eligibility holds retain their complete own-price policy and independent event key. */
   ownedPolicy?: true;
+  ownUnit?: OwnFeeUnit;
+  ownCondition?: string;
   linkedConditions?: string;
   lineShare?: string;
   shape: HeldShape;

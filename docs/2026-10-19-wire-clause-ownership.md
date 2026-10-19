@@ -22,7 +22,7 @@ Family's separate international $35 keeps its prior candidate, source verdict an
 
 ## Release and replay boundary
 
-This preintegration branch retains rules 85 while monthly 86 and unit 87 are reviewed. Final Family integration reserves rules 88 and must use a same-snapshot87→88 ordinary-reread counter. Selector predicates, settled floors, general source-check version 18 and controls are unchanged.
+Final composition is rules 88 on reviewed Rosetta `04a1a5c7a6e9e96df9893aca5230fa6f5b0191ef`, which contains unit 87 and released monthly 86. The ordinary-reread counter compares rules 87 and 88 in one snapshot. Selector predicates, settled floors 78/73/82, general source-check version 18 and controls are unchanged.
 
 The rules version is part of `knoxFreeSignature`, so an older already-passed document is selected again. The new own-price refusal runs before accepting a category/amount reproduction. It still needs the independent original-source failure and existing 12-hour second look. The PostgreSQL regression seeds a genuine passed attempt at the preceding signature, proves first flag and immediate retention, then ages only its local pending receipt 13 hours and confirms removal of the wrong incoming $20 alone.
 

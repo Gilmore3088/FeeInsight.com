@@ -1,6 +1,7 @@
 import { unstable_cache, revalidateTag } from "next/cache";
 import { getFeeCategorySummaries, type FeeCategorySummary } from "./fees";
 import { PUBLIC_READ_CACHE_TAG } from "./public-read-cache";
+import { STATS_METHOD_VERSION } from "./fee-stats";
 
 /**
  * Cached read path for national fee summaries.
@@ -17,7 +18,7 @@ const CACHE_CEILING_SECONDS = 3600;
 
 const cachedSummaries = unstable_cache(
   async () => getFeeCategorySummaries(),
-  ["fee-category-summaries", "v2"],
+  ["fee-category-summaries", "v2", `stats-v${STATS_METHOD_VERSION}`],
   { tags: [FEE_SUMMARY_CACHE_TAG], revalidate: CACHE_CEILING_SECONDS },
 );
 

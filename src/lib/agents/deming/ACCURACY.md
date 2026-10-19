@@ -3,7 +3,9 @@
 This series measures support for **published dollar fees in stored documents**, using the
 deployed source, category and name checks. It is not an independent live-site assessment, a
 measure of missed fees, rate-fee accuracy, or evidence that a stored schedule is current.
-Live-site validation remains #2061; the separate [answer-key reference guard](REFERENCE-ELIGIBILITY.md)
+The separate [live-source diagnostic](LIVE-SOURCE-AUDIT.md) (#2061) observes a frozen sample
+against fresh official-path evidence. Its supported/contradicted/unknown receipts remain a
+shared-validator diagnostic, without missing-fee recall, independence or launch certification. The separate [answer-key reference guard](REFERENCE-ELIGIBILITY.md)
 (#1862) controls current-key diagnostic inputs and teaching without certifying live correctness. The
 [weekly live fee accuracy plan](../../../../docs/plans/weekly-live-fee-accuracy-plan.md) (#1923)
 defines the separate 50-institution draw, current-source decisions, missing-fee denominators,

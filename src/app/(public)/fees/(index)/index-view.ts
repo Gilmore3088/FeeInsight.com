@@ -3,6 +3,7 @@ import { HIGHEST_TIER_CATEGORIES, countedRepresentatives, countedValuePerInstitu
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildHistogramBuckets, type HistogramBucket } from "@/lib/fee-histogram-buckets";
 import { STATE_NAMES } from "@/lib/us-states";
+import { UNIT_LABELS } from "@/lib/fee-unit";
 
 /**
  * The Bank Fee Index explorer's numbers, all from one read (the category's published rows)
@@ -93,6 +94,7 @@ export function accountName(raw: string | null): string | null {
 }
 
 const FREQUENCY: Record<string, string> = {
+  ...UNIT_LABELS,
   monthly: "a month",
   annual: "a year",
   quarterly: "a quarter",
