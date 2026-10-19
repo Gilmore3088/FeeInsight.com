@@ -141,7 +141,9 @@ import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 // overdraft-program charge stays held instead of losing its period on the paid-item path.
 // v86 (#2259): repeated monthly price prose without one literal account owner stays
 // eligibility-held; paid and minimal-row callers share the source-bearing writer gate.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 86 } as const;
+// v87 (#2248): new raw lineage keeps literal own charging units and full conditions;
+// known special units leave mixed-unit comparisons. Historical raw metadata stays settled.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 87 } as const;
 
 export interface SpecialistRun {
   strategy: string;
