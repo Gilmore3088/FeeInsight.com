@@ -156,6 +156,7 @@ import {
   MAX_STEP_ATTEMPTS,
   PAUSE_EXEMPT_STEP_KEYS,
   pauseScopeForStep,
+  OPTIONAL_PAID_PASS_STEP_KEYS,
   PROVIDER_STEP_KEYS,
   STALE_RUNNING_STEP_MINUTES,
 } from "./types";
@@ -2919,7 +2920,10 @@ interface PreparedAgenticStep {
   step: AgentRunStepSnapshot;
 }
 
-async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false }: { pauseExemptOnly?: boolean } = {}): Promise<
+async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, expectedStepKey }: {
+  pauseExemptOnly?: boolean;
+  expectedStepKey?: string;
+} = {}): Promise<
   | { kind: "ready"; prepared: PreparedAgenticStep }
   | { kind: "missing" }
   | { kind: "terminal"; status: AgentRunStatus; message: string }
@@ -3005,6 +3009,11 @@ async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false }
     // tick may have completed the peeked measurement and exposed the paused tail.
     if (pauseExemptOnly && !PAUSE_EXEMPT_STEP_KEYS.includes(step.stepKey)) {
       return { kind: "held", status: run.status, message: "Next step is outside the pause-exempt continuation; run left queued." };
+    }
+    // A concurrent executor may have advanced past the paid step we intended to skip.
+    // Never mark its newly exposed free work (or another provider job) as skipped.
+    if (expectedStepKey != null && step.stepKey !== expectedStepKey) {
+      return { kind: "held", status: run.status, message: "Next step changed before the paid skip; run left queued." };
     }
     const alreadyStarted = steps.some((candidate) => candidate.startedAt !== null);
 
@@ -3915,7 +3924,10 @@ export async function executeAgentRun(
       if (!gate.allowed) {
         // A paid pass is optional: when the budget or the stop blocks it, record it as
         // skipped and let the free steps behind it run. It never stalls the run.
-        const blocked = await prepareNextAgenticStep(runId, { pauseExemptOnly: options.pauseExemptOnly });
+        const blocked = await prepareNextAgenticStep(runId, {
+          pauseExemptOnly: options.pauseExemptOnly,
+          expectedStepKey: nextStepKey,
+        });
         if (blocked.kind !== "ready") {
           return {
             runId,
@@ -4050,8 +4062,9 @@ export async function executeQueuedAgentRuns({
   pauseExemptOnly?: boolean;
 } = {}): Promise<ExecuteQueuedAgentRunsResult> {
   const safeRunLimit = Math.min(Math.max(Math.floor(runLimit), 1), 10);
-  // When provider steps cannot run this tick, skip runs whose next queued step is a
-  // provider step so they do not crowd deterministic work out of the run limit.
+  // Keep mandatory paid jobs out of a capped tick's run limit. A state's optional
+  // paid pass must still reach executeAgentRun's skip receipt when free work follows;
+  // otherwise three lanes waiting at paid steps fill every active lane slot forever.
   const rows = await sql`
     SELECT r.id, r.run_kind, r.params_json->>'source' AS source,
            -- Time since the run last did anything: its last finished step, else when it was queued.
@@ -4070,6 +4083,28 @@ export async function executeQueuedAgentRuns({
        ))
        AND (
          ${allowProviderSteps}
+         OR (r.run_kind = 'workflow_lane' AND EXISTS (
+           SELECT 1 FROM agent_run_steps optional
+            WHERE optional.agent_run_id = r.id
+              AND optional.status = 'queued'
+              AND optional.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
+              AND optional.sequence = (
+                SELECT MIN(first_step.sequence) FROM agent_run_steps first_step
+                 WHERE first_step.agent_run_id = r.id AND first_step.status = 'queued'
+              )
+              AND EXISTS (
+                SELECT 1 FROM agent_run_steps later
+                 WHERE later.agent_run_id = r.id AND later.status = 'queued'
+                   AND later.sequence > optional.sequence
+                   AND NOT later.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM agent_run_steps required
+                 WHERE required.agent_run_id = r.id AND required.status = 'queued'
+                   AND required.step_key = ANY(${[...PROVIDER_STEP_KEYS]}::text[])
+                   AND NOT required.step_key = ANY(${[...OPTIONAL_PAID_PASS_STEP_KEYS]}::text[])
+              )
+         ))
          OR NOT EXISTS (
            SELECT 1
              FROM agent_run_steps s
