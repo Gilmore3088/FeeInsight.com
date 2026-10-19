@@ -5,13 +5,20 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 const capture = vi.hoisted(() => ({ query: "", values: [] as unknown[] }));
 vi.mock("./connection", () => ({
-  sql: (parts: TemplateStringsArray, ...values: unknown[]) => {
+  sql: Object.assign((parts: TemplateStringsArray, ...values: unknown[]) => {
     capture.query = parts.reduce((text, part, index) => text + (index ? `$${index}` : "") + part, "");
     capture.values = values;
     return Promise.resolve([]);
-  },
+  }, { unsafe: (query: string, values: unknown[] = []) => {
+    capture.query = query;
+    capture.values = values;
+    return Promise.resolve(/SELECT COUNT\(\*\) as cnt\s+FROM institution_sources ct/.test(query) ? [{ cnt: 0 }] : []);
+  } }),
 }));
 import { getInstitutionById } from "./core";
+import { getInstitutionFeeScheduleEvidence } from "./institution";
+import { getLargestInstitutions } from "./search";
+import { getDataTrustQueueRows, searchInstitutions } from "../admin-queries";
 
 async function unpublishedCte() {
   await getInstitutionById(101);
@@ -26,6 +33,43 @@ it("bounds unpublished publication lookup to the verified row's institution (#23
   const query = await unpublishedCte();
   expect(query.text).toContain("pfc.institution_id = fv.institution_id");
   expect(query.values).toEqual([101, 101]);
+});
+
+interface CountQuery { label: string; text: string; values: unknown[] }
+let otherQueries: Promise<CountQuery[]> | undefined;
+function remainingCountQueries(): Promise<CountQuery[]> {
+  return otherQueries ??= (async () => {
+    const queries: CountQuery[] = [];
+    await getInstitutionFeeScheduleEvidence(101);
+    const alias = capture.query.indexOf(") AS verified_without_published_count");
+    const countStart = capture.query.lastIndexOf("SELECT COUNT(*)::int", alias);
+    expect(alias).toBeGreaterThan(countStart);
+    const values: unknown[] = [];
+    const statement = capture.query.slice(countStart, alias).replace(/\$(\d+)/g, (_match, index: string) => {
+      values.push(capture.values[Number(index) - 1]); return `$${values.length}`;
+    });
+    queries.push({ label: "institution source evidence", text: `SELECT (${statement}) AS count`, values });
+    for (const [label, read] of [
+      ["admin institution quality", () => searchInstitutions(undefined, 1, 10)],
+      ["admin data trust queue", () => getDataTrustQueueRows()],
+      ["public multi-institution search", () => getLargestInstitutions({ limit: 2 })],
+    ] as const) {
+      await read();
+      const body = /verified_unpublished_counts AS \(([\s\S]*?)\n\s*\),/.exec(capture.query)?.[1];
+      expect(body, label).toBeDefined();
+      const countColumn = label === "admin data trust queue" ? "verified_without_published_count" : "verified_unpublished_fee_count";
+      // Execute each reader's actual count CTE; scoped aliases include both test institutions.
+      const text = `WITH scope_catalog AS (SELECT * FROM published_fee_catalog), scope_verified AS (SELECT * FROM verified_fee_observations WHERE review_status <> 'rejected'), verified_unpublished_counts AS (${body}) SELECT COALESCE((SELECT ${countColumn} FROM verified_unpublished_counts WHERE institution_id = 101), 0) AS count`;
+      queries.push({ label, text, values: [] });
+    }
+    return queries;
+  })();
+}
+
+it("bounds every remaining catalog anti-join to the verified row's institution (#2375)", async () => {
+  for (const query of await remainingCountQueries()) {
+    expect(query.text, query.label).toContain("pfc.institution_id = fv.institution_id");
+  }
 });
 
 const connection = process.env.E2E_DATABASE_URL;
@@ -53,5 +97,9 @@ describe.skipIf(!connection)("actual unpublished-count SQL lineage in isolated P
     const query = await unpublishedCte();
     const rows = await db.unsafe(query.text, query.values as never[]);
     expect(Number(rows[0]?.verified_unpublished_fee_count ?? 0)).toBe(expected);
+    for (const other of await remainingCountQueries()) {
+      const counts = await db.unsafe(other.text, other.values as never[]);
+      expect(Number(counts[0]?.count ?? 0), other.label).toBe(expected);
+    }
   });
 });
