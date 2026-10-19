@@ -247,6 +247,10 @@ describe("Rosetta's read of a hand-supplied copy", () => {
       }
       return Promise.resolve([]);
     });
+    // Callback-only sink; native Rosetta SQL controls prove rollback.
+    Object.assign(db, {
+      begin: vi.fn(async (work: (scope: typeof db) => Promise<unknown>) => work(db)),
+    });
     const schedule = [
       "Schedule of Fees and Charges for Personal Deposit Accounts",
       "Overdraft fee $35.00 per item paid into overdraft",

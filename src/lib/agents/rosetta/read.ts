@@ -1459,7 +1459,7 @@ export async function recordReadResult(
 ): Promise<void> {
   if (!(await normalizedWitnessSchemaReady(db))) {
     result.witnessRetention = { status: "unavailable_schema" };
-    return writeReadResult(db, runId, result, normalizedText, textColumns, false);
+    return atomicTextWrite(db, (scope) => writeReadResult(scope, runId, result, normalizedText, textColumns, false));
   }
   return atomicTextWrite(db, (scope) => writeReadResult(scope, runId, result, normalizedText, textColumns, true));
 }

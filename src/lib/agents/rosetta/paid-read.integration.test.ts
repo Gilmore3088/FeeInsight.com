@@ -87,7 +87,10 @@ async function execute({ reason = "end_turn", usage = known, model = priced, ext
     source_document_id: 1, institution_id: 41, institution_name: "Owned Fixture Bank",
     document_url: "https://source.fixture.invalid/fees.pdf", content_hash: sourceHash,
     ...(prior ? { text_status: "completed", current_text: prior, current_text_hash: hashText(prior) } : {}),
-  }] : []) });
+  }] : []),
+    // This synthetic sink does not model transaction rollback.
+    begin: vi.fn(async (work: (scope: typeof state.db) => Promise<unknown>) => work(state.db)),
+  });
   const sourceFetch = vi.fn(async () => new Response(pdf, { headers: { "content-type": "application/pdf" } }));
   const result = await runRosettaPaidRead({ runId: 900, stepId: 4,
     db: db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>,
