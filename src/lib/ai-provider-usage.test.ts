@@ -194,6 +194,34 @@ describe("AI provider usage", () => {
     expect(insertCall?.slice(1)).toEqual(expect.arrayContaining([120, 30]));
   });
 
+  it.each([undefined, { input_tokens: "10", output_tokens: 1 }, { input_tokens: 0, output_tokens: 0 }])
+  ("opt-in accepted partial retains authoritative observation %j without changing the generic default", async (usage) => {
+    const response = { usage, stop_reason: "max_tokens" };
+    await trackAnthropicRequest({ model: "claude-haiku-4-5", agent: "rosetta", operation: "paid_read", agentRunId: 7,
+      metadata: { original: "preserved", usage_observation: "observed" } }, async () => response,
+    () => ({ accepted: true, complete: false, reason: "max_tokens", metadata: { response_policy_version: 2 } }));
+    const rows = sqlMock.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO ai_api_usage_events"));
+    expect(rows).toHaveLength(1);
+    const observed = typeof usage?.input_tokens === "number";
+    expect(rows[0][5]).toBe("completed"); expect(rows[0][11]).toBe(observed ? 0 : null);
+    expect(JSON.parse(rows[0].at(-1))).toMatchObject({ original: "preserved", response_policy_version: 2,
+      response_complete: false, usage_observation: observed ? "observed" : "unknown", token_counts_are_placeholders: !observed });
+    // Completed requests remain incurred under the existing predicate, even with unknown cost.
+    expect(sqlMock.mock.calls.filter((call) => templateText(call[0]).includes("UPDATE agent_runs"))).toHaveLength(1);
+  });
+
+  it("assesses inside the caught request boundary before any completed event", async () => {
+    const request = vi.fn(async () => ({ usage: { input_tokens: 7, output_tokens: 2 }, stop_reason: "refusal" }));
+    await expect(trackAnthropicRequest({ model: "claude-haiku-4-5", agent: "rosetta", operation: "paid_read", agentRunId: 7 }, request,
+      () => ({ accepted: false, complete: false, reason: "refusal", metadata: { response_policy_version: 2 } })))
+      .rejects.toBeInstanceOf(IncompleteProviderResponseError);
+    const rows = sqlMock.mock.calls.filter((call) => templateText(call[0]).includes("INSERT INTO ai_api_usage_events"));
+    expect(request).toHaveBeenCalledTimes(1); expect(rows).toHaveLength(1);
+    expect(rows[0][5]).toBe("failed"); expect(rows[0][11]).toBe(17);
+    expect(JSON.parse(rows[0].at(-1))).toMatchObject({ response_complete: false, usage_observation: "observed", provider_finish_reason: "refusal" });
+    expect(stopMock).not.toHaveBeenCalled();
+  });
+
   it("records web search charges in the ledger the budget caps read", async () => {
     const response = {
       content: [],

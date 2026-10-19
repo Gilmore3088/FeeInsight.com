@@ -3,6 +3,12 @@ import { narrateEvent, narrateStepFinished } from "./narrate";
 import { verifiedRecheckReceipt } from "./darwin/verified-recheck-receipt";
 
 describe("narrateStepFinished", () => {
+  it("independently discloses unknown returned-response costs without calling them zero", () => {
+    expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 1, cost_microusd: 220, unknown_cost_responses: 1 }))
+      .toContain("$0.00 in known estimates; cost unavailable for 1 returned response");
+    expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 2, cost_microusd: 0, unknown_cost_responses: 2 }))
+      .toContain("cost unavailable for 2 returned responses");
+  });
   const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
   const recheckContext = { dryRun: false, learning: true };
 
