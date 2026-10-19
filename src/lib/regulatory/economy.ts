@@ -33,6 +33,8 @@ import { streamXlsxSheets } from "./xlsx-stream";
 export type AreaGeoType = "nation" | "state" | "county" | "metro";
 
 export interface AreaStat {
+  /** A specific upstream request when a source combines several tables/geographies. */
+  source_url?: string | null;
   geo_type: AreaGeoType;
   geo_code: string;
   geo_name: string | null;
@@ -100,6 +102,8 @@ async function fetchFirst(
 
 /** Result of one source fetch: rows plus the gaps the parser found. */
 export interface AreaFetch {
+  /** Explicit unavailable subrequests; valid values may still have loaded elsewhere. */
+  unavailableParts?: Array<{key:string;reason:string}>;
   url: string | null;
   rows: AreaStat[];
   /** Expected columns or fields the file did not carry. */
@@ -1006,16 +1010,26 @@ export async function fetchBea(year: number, key: string, options: RegistryFetch
         combined.missingFields.push(`${series.key} ${geo.geo_type}: ${error.slice(0, 120)}`);
         continue;
       }
+      if (error && geo.geo_type === "metro" && /^code=101;/.test(error)) {
+        // Observed on production's CAINC1/MSA requests for 2023 and 2024. Do not invent
+        // a metro sum or discard the valid published state/county responses.
+        const reason = `${context}: ${error}`;
+        (combined.unavailableParts ??= []).push({key:`MSA/line=${series.line}`,reason:reason.slice(0,500)});
+        combined.missingFields.push(reason.slice(0,160));
+        continue;
+      }
       if (error) throw new Error(`${context}: ${error}`);
       const results = beaResults(body);
       if (results.length === 0 || results.some(result => !Array.isArray(result.Data))) throw new Error(`${context}: missing Data array`);
       const parsed = parseBeaData(body, geo.geo_type, series, year);
       combined.url ??= url.replace(/UserID=[^&]+/, "UserID=***");
-      combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation")));
+      combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation"))
+        .map(row=>({...row,source_url:url.replace(/UserID=[^&]+/, "UserID=***")})));
       combined.missingFields.push(...parsed.missingFields.map((f) => `${series.key} ${geo.geo_type}: ${f}`));
       for (const [k, v] of Object.entries(parsed.skipped)) combined.skipped[`${geo.geo_type}_${k}`] = (combined.skipped[`${geo.geo_type}_${k}`] ?? 0) + v;
     }
   }
+  if (combined.rows.length === 0 && combined.unavailableParts?.length) throw new Error(combined.unavailableParts[0].reason);
   if (combined.rows.length === 0) combined.emptyReason = `BEA has no published personal-income values for ${year} in the requested tables`;
   return combined;
 }

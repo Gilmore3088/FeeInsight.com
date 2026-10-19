@@ -219,3 +219,27 @@ describe("branch tracts", () => {
     expect(statements).toHaveLength(1);
   });
 });
+
+it("retains valid BEA state/county rows with their request URLs and explicit partial receipts",async()=>{
+  const {db,statements}=createDb();
+  const fetchImpl=vi.fn(async(input:string)=>{
+    const params=new URL(input).searchParams;
+    if(params.get("method")==="GetParameterValuesFiltered")return Response.json({BEAAPI:{Results:{ParamValue:[{Key:"2024"}]}}});
+    const geo=params.get("GeoFips");
+    if(geo==="MSA")return Response.json({BEAAPI:{Results:{Error:{APIErrorCode:"101",APIErrorDescription:"Unknown error."}}}});
+    return Response.json({BEAAPI:{Results:{Data:[{GeoFips:geo==="STATE"?"01000":"01001",TimePeriod:"2024",DataValue:"1234"}]}}});
+  }) as unknown as typeof fetch;
+  const result=await runRegistryEconomy({source:ECONOMY_SOURCES.bea,partitionKey:"2024",db,env:{BEA_API_KEY:"test-key"},fetchOptions:{fetchImpl,retries:0}});
+  expect(result.rows).toBe(6);
+  expect(result.writtenRows).toBe(6);
+  const receipt=partitionDetail(statements);
+  expect(receipt.status).toBe("succeeded");
+  expect(receipt.detail.partial).toBe(true);
+  expect(receipt.detail.unavailable_parts).toHaveLength(3);
+  for(const write of statements.filter(statement=>statement.text.includes("INSERT INTO area_statistics"))){
+    const rows=JSON.parse(write.values.find(value=>typeof value==="string"&&value.startsWith("[")) as string) as Array<{geo_type:string}>;
+    const url=write.values.find(value=>typeof value==="string"&&value.startsWith("https://apps.bea.gov/")) as string;
+    expect(url).not.toContain("test-key");
+    expect(new URL(url).searchParams.get("TableName")).toBe(rows[0].geo_type==="state"?"SAINC1":"CAINC1");
+  }
+});

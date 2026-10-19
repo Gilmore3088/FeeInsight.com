@@ -229,3 +229,13 @@ it("redacts and bounds empty-check evidence without inventing a legacy reason",(
   expect(sourceHealth(contract("legacy"),feed("legacy",{lastSuccessAt:NOW.toISOString()}),null,NOW).reason)
     .toBe("every load so far came back empty");
 });
+
+it("does not grade a load fresh while upstream geographies remain explicitly unavailable",()=>{
+  const record=feed("bea",{succeeded:1,lastSuccessAt:NOW.toISOString(),lastLoadedAt:NOW.toISOString(),partial:1,
+    partialReason:"MSA code 101; supported state/county rows loaded"});
+  const health=sourceHealth(contract("bea"),record,null,NOW);
+  expect(health.status).toBe("failed");
+  expect(health.reason).toContain("partially loaded");
+  expect(health.reason).toContain("MSA code 101");
+  expect(health.lastLoadedAt).toBe(NOW.toISOString());
+});
