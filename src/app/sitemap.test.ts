@@ -144,6 +144,13 @@ describe("sitemap duplicates and dates (#1163)", () => {
     vi.mocked(getStatesWithFeeData).mockResolvedValue([]);
   });
 
+  it("lists Fee Check and the canonical consumer hub, excluding its redirect", async () => {
+    const paths = await urls();
+    expect(paths).toContain("/check");
+    expect(paths).toContain("/for-consumers");
+    expect(paths).not.toContain("/consumer");
+  });
+
   it("lists a city once when two stored spellings map to the same address", async () => {
     vi.mocked(getTopCitiesByState).mockResolvedValueOnce([
       { city: "Little Rock", state_code: "AR", institution_count: 9, with_fees: 6 },

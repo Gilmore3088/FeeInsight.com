@@ -84,6 +84,72 @@ describe.skipIf(!connection)("Wrapped bullet stages in real PostgreSQL (#2151)",
       WHERE fp.institution_id=${f.institutionId} AND fp.canonical_fee_key IN ('nsf','overdraft')
         AND fp.rolled_back_at IS NULL ORDER BY fp.canonical_fee_key`;
 
+  it("#2240/#2241/#2246 keeps physical prices, own item units and the annual-program hold across all ordinary stages", async () => {
+    await rolledBack(async tx => {
+      const text = readFileSync(new URL("./__fixtures__/oakwood-repaired-source.txt", import.meta.url), "utf8");
+      const f = await seed(tx, text, {
+        name: "Oakwood Bank",
+        website: "https://www.oakwoodbank.net/",
+        url: "https://www.oakwoodbank.net/webfiles/fnitools/documents/cra_accounts_and_fees.pdf",
+      });
+      await stages(tx, f);
+      const catalog = await tx`
+        SELECT fee_name, fee_category, amount, frequency, conditions FROM published_fee_catalog
+        WHERE institution_id=${f.institutionId} ORDER BY fee_category, fee_name, amount`;
+      expect(catalog.filter(row => row.fee_name === "Check Images").map(row => Number(row.amount))).toEqual([10]);
+      expect(catalog).toContainEqual(expect.objectContaining({ fee_name: "Copy of canceled check image", amount: 5 }));
+      expect(catalog.some(row => row.fee_name === "Ready Reserve Overdraft Protection Fee")).toBe(false);
+      expect(catalog.some(row => Number(row.amount) === 140)).toBe(false);
+      const overdraft = catalog.find(row => row.fee_category === "overdraft" && Number(row.amount) === 35);
+      expect(overdraft).toMatchObject({ fee_name: "Overdraft Fee", amount: 35, frequency: "per_item" });
+      expect(overdraft?.conditions).toContain("$140.00 Maximum. $35.00 per item");
+      expect(overdraft?.conditions).not.toContain("per day");
+      const held = await tx`
+        SELECT fee_raw_id, fee_name, amount, frequency, conditions, extraction_note, outlier_flags
+        FROM raw_fee_observations WHERE institution_id=${f.institutionId}
+          AND fee_name='Ready Reserve Overdraft Protection Fee'`;
+      expect(held).toHaveLength(1);
+      expect(held[0]).toMatchObject({ amount: 25, frequency: "annual" });
+      expect(held[0].conditions).toContain("(annually)");
+      expect(held[0].extraction_note).toContain("(annually)");
+      expect(held[0].outlier_flags).toContain("knox_review:periodic_program");
+      expect(held[0].outlier_flags).not.toContain("needs_darwin_verification");
+
+      expect(await extract.insertCandidate(tx, {
+        runId: f.runId,
+        row: {
+          document_text_id: f.textId, source_document_id: f.documentId,
+          institution_id: f.institutionId, source_url: f.sourceUrl,
+          text_hash: createHash("sha256").update(f.text).digest("hex"),
+        } as Parameters<typeof extract.insertCandidate>[1]["row"],
+        candidate: {
+          feeName: "Ready Reserve Overdraft Protection Fee", amount: 25, frequency: "annual",
+          canonicalHint: "overdraft", confidence: .95, excerpt: "Ready Reserve Overdraft Protection Fee | • $25.00 (annually)",
+          waivable: false, ownedPolicy: true,
+        },
+      })).toBe(false);
+      const promoters = await import("./held-recheck");
+      const scoped = { runId: f.runId, institutionId: f.institutionId };
+      await promoters.recheckPromotedRows(tx, scoped);
+      await promoters.recheckHeldRows(tx, scoped);
+      await promoters.fileHeldByName(tx, scoped);
+      await promoters.recheckUntracedRows(tx, scoped);
+      await promoters.recheckSupersededRows(tx, { ...scoped, source: "free" });
+      await promoters.refileSupersededRows(tx, scoped);
+      await promoters.recheckHeldRates(tx, scoped);
+      await stages(tx, f);
+      expect(await tx`
+        SELECT fee_raw_id, fee_name, amount, frequency, conditions, extraction_note, outlier_flags
+        FROM raw_fee_observations WHERE institution_id=${f.institutionId}
+          AND fee_name='Ready Reserve Overdraft Protection Fee'`).toEqual(held);
+      expect(await tx`
+        SELECT fee_name, fee_category, amount, frequency, conditions FROM published_fee_catalog
+        WHERE institution_id=${f.institutionId} ORDER BY fee_category, fee_name, amount`).toEqual(catalog);
+      expect(await tx`SELECT fee_verified_id FROM verified_fee_observations
+        WHERE institution_id=${f.institutionId} AND fee_name='Ready Reserve Overdraft Protection Fee'`).toHaveLength(0);
+    });
+  }, 30_000);
+
   it("carries the actual official PDF's complete conditions through every stage and repeats idempotently", async () => {
     await rolledBack(async (tx) => {
       const f = await seed(tx, official);

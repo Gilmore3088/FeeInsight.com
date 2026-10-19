@@ -32,7 +32,7 @@ const SECONDARY =
   "inline-flex min-h-11 items-center rounded-md border border-border bg-surface-0 px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:border-brick hover:text-brick disabled:opacity-50";
 
 /**
- * Save this bank or credit union and get an email when a fee you follow changes.
+ * Save this bank or credit union and get an email when a fee you follow changes in our data.
  *
  * Signed in: one click. Signed out: email and password create a free account and save the
  * institution in the same step, without leaving the page. Saved: shows what is followed,
@@ -70,11 +70,13 @@ export function FeeAlertControl({
   const headline =
     mode === "verify"
       ? `Get an email when ${institutionName} publishes more fees`
-      : `Get an email when ${institutionName} updates ${focusLabel ? `its published ${focusLabel.toLowerCase()}` : "a published fee"}`;
+      : `Get an email when ${focusLabel ? `${institutionName}'s ${focusLabel.toLowerCase()}` : `a fee at ${institutionName}`} changes in our data`;
+  // What the daily send (src/lib/agents/fee-alerts.ts) does: one email per reader per run,
+  // after a followed fee's published amount changes or the fee is first published here.
   const body =
     mode === "verify"
       ? "Once when its schedule is verified, then when a verified fee changes."
-      : "One email when a fee you follow changes.";
+      : "We check once a day and send one email covering every change.";
 
   function done(next: string[] | null) {
     setSaved(true);
@@ -147,8 +149,13 @@ export function FeeAlertControl({
       {saved ? (
         <>
           <h2 id={`${ids}-heading`} className="mt-1 text-base font-semibold text-ink">
-            You&rsquo;ll get an email when {institutionName} changes{" "}
-            {categories === null ? "any fee" : categories.length === 1 ? `its ${label(categories[0]).toLowerCase()}` : "a fee you follow"}.
+            You&rsquo;ll get an email when{" "}
+            {categories === null
+              ? `a fee at ${institutionName}`
+              : categories.length === 1
+                ? `${institutionName}'s ${label(categories[0]).toLowerCase()}`
+                : `a fee you follow at ${institutionName}`}{" "}
+            changes in our data.
           </h2>
           {categories !== null && categories.length > 1 && (
             <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Fees you follow">

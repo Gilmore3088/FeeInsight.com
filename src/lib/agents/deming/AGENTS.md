@@ -20,6 +20,16 @@ confirmed key fees retire cases. Frozen tuning/holdout provenance is a separate 
 runtime judgment when its original document identity cannot be established. See
 [reference eligibility](REFERENCE-ELIGIBILITY.md); no additional James checks or confirmations.
 
+## Live-source diagnostic (#2061)
+
+`live-source-audit.ts` adds a separate, versioned diagnostic of an immutable daily sample against
+fresh official-path evidence. The queue-only daily route freezes the frame after its existing
+measurement/snapshot steps. Non-exempt finite tick work observes, records unknowns and positive
+contradictions, consumes exact-document Magellan side-copy requests, and archives late completion
+into the original dated snapshot. It changes no answer key or fee and cannot certify missing-fee
+recall or launch accuracy. See [LIVE-SOURCE-AUDIT.md](LIVE-SOURCE-AUDIT.md). James's weekly 50 whole
+institutions remains the only human launch workflow.
+
 ## What it owns
 
 - `eval_cases` (migration `20270110000036`): one labeled example per row, in five datasets

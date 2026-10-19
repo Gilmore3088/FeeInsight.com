@@ -585,6 +585,12 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     already-passed documents are selected again at that signature, and their own source trace
     must independently fail before the shared 12-hour second look can confirm a takedown.
     General source-check v18 and its historical decisions are not reopened for this change.
+    #2240/#2241/#2246 use the v85 signature for their bounded physical-price refusal. This
+    exact refusal is checked before accepting a category/amount reproduction, because another
+    service may own the same figure. It then follows the unchanged original-source independent
+    check and 12-hour second look. No broader recheck epoch or selector changes. A full own-source
+    read-only impact scan at 14:38:38 UTC found zero current live matches; the ordinary v85
+    reread cohort still grows by two on the separately recorded same-snapshot due counter.
 24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.
@@ -1245,3 +1251,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
+
+The shared figure gate and paid eval use the same explicit monetary-unit normalization
+(`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,
+including financial container captions and compacted JSON evidence. Explicit rates/counts and
+unsupported currencies do not become dollar candidates; fee-catalog exclusions in the eval stay.
+Named financial ratios retain their ratio interpretation. This remains numerical consistency,
+not institution/category/period/direction claim verification. FDIC/NCUA readers preserve stored
+thousands as documented in `data-store/financial-sources.ts`; no stored values are rewritten.

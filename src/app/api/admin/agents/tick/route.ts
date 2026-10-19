@@ -12,6 +12,7 @@ import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
 import { schedulePublishSweepsRun } from "@/lib/agents/hamilton/publish-sweeps-schedule";
 import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel-schedule";
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
+import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedule";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -241,6 +242,9 @@ async function handleGET(request: NextRequest) {
     console.error("Stale outreach withdrawal scheduling failed:", error);
     staleOutreachWithdraw = { error: error instanceof Error ? error.message : String(error) };
   }
+  const liveSourceAudit=pipeline.enabled
+    ?await scheduleLiveSourceAudit({pipelineEnabled:true,backendEnabled:true}).catch((error:unknown)=>({error:error instanceof Error?error.message:"Live-source admission failed"}))
+    :null;
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -270,6 +274,7 @@ async function handleGET(request: NextRequest) {
     publishSweeps,
     audienceRelabel,
     staleOutreachWithdraw,
+    liveSourceAudit,
     ...result,
   });
 }

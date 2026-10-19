@@ -15,6 +15,9 @@ import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { readAccuracyHistory, type AccuracyHistory } from "@/lib/agents/deming/accuracy-history";
 import { accuracyStatusLabel, formatAccuracyBound } from "@/lib/agents/deming/accuracy-measure";
 import { AccuracyHistoryPanel } from "./accuracy-history";
+import { LiveSourceAuditPanel } from "./live-source-audit-panel";
+import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
+import type { LiveAuditComponent } from "@/lib/agents/deming/live-source-audit-records";
 
 interface Metric {
   key: keyof ScoreboardSnapshotRow;
@@ -129,10 +132,11 @@ export default async function ScoreboardPage({
   await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await scoreboardSchemaReady().catch(() => false);
-  const [rows, accuracyHistory]: [ScoreboardSnapshotRow[], AccuracyHistory | null] = ready ? await Promise.all([
+  const [rows, accuracyHistory,liveSourceAudit]: [ScoreboardSnapshotRow[], AccuracyHistory | null,Awaited<ReturnType<typeof readLiveSourceAudit>>] = ready ? await Promise.all([
     listScoreboardSnapshots(30),
     readAccuracyHistory().catch((error) => { console.error("Accuracy history read failed", error); return null; }),
-  ]) : [[], null];
+    readLiveSourceAudit().catch(()=>null),
+  ]) : [[], null,null];
   const latest = rows.at(-1) ?? null;
   const previous = rows.length > 1 ? rows.at(-2) ?? null : null;
 
@@ -162,6 +166,8 @@ export default async function ScoreboardPage({
         <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-200">{message}</p>
       ) : null}
 
+      {ready ? <GoalSection rows={rows} current={liveSourceAudit} /> : null}
+
       {!ready ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
           The scoreboard migration (20270106050000_answer_key_and_scoreboard.sql) is not applied yet.
@@ -170,12 +176,18 @@ export default async function ScoreboardPage({
         <p className="py-12 text-center text-sm text-gray-400">No snapshots yet. The daily Atlas run records the first one, or press Score now.</p>
       ) : (
         <>
-        <GoalSection rows={rows} />
-        <AccuracyHistoryPanel history={accuracyHistory} />
         <details className="admin-card p-4">
           <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">
             Pipeline diagnostics (older numbers, not goal measures)
           </summary>
+          <section className="admin-card mt-3 space-y-1 p-4" aria-labelledby="stored-copy-title">
+            <h2 id="stored-copy-title" className="text-sm font-semibold">Stored-copy support (secondary)</h2>
+            <p className="text-2xl font-bold tabular-nums">{share(latest.goal?.accuracy?.accuracy)}</p>
+            <p className="text-xs text-gray-500">Sampled dollar fees supported by stored documents over 7 days; diagnostic target {ACCURACY_TARGET_LABEL}. This does not independently check the current official schedule.</p>
+            <div className="text-[11px] text-gray-500">{latest.goal?.accuracy ? <AccuracyDetail accuracy={latest.goal.accuracy} /> : "Could not be read."}</div>
+            <p className="font-mono text-[10px] text-gray-400">query: goal.deming_accuracy_7d</p>
+          </section>
+          <AccuracyHistoryPanel history={accuracyHistory} />
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {METRICS.map((metric) => {
             const value = latest[metric.key] as number | null;
@@ -221,8 +233,6 @@ interface GoalCardSpec {
   unit: string;
   detail: (goal: GoalScorecard) => React.ReactNode;
   lowerIsBetter?: boolean;
-  /** Accuracy has its own weekly, versioned table instead of an unversioned rolling line. */
-  versionedAccuracy?: boolean;
 }
 
 const GOAL_CARDS: GoalCardSpec[] = [
@@ -251,15 +261,6 @@ const GOAL_CARDS: GoalCardSpec[] = [
     detail: (goal) => goal.liveInstitutions
       ? `${n(goal.liveInstitutions.addedThisWeek)} added: live now, no live fee 7 days ago (refreshes add nothing).${goal.liveInstitutions.droppedThisWeek == null ? "" : ` ${n(goal.liveInstitutions.droppedThisWeek)} dropped: live 7 days ago, no live fee now.`}`
       : "Could not be read.",
-  },
-  {
-    label: "Automated source audit",
-    query: "goal.deming_accuracy_7d",
-    value: (goal) => goal.accuracy?.accuracy,
-    format: share,
-    unit: `of sampled dollar fees supported by stored documents (target ${ACCURACY_TARGET_LABEL})`,
-    detail: (goal) => goal.accuracy ? <AccuracyDetail accuracy={goal.accuracy} /> : "Could not be read.",
-    versionedAccuracy: true,
   },
   {
     label: "Wrong after publish",
@@ -349,25 +350,23 @@ function weekBefore(rows: ScoreboardSnapshotRow[], latest: ScoreboardSnapshotRow
   return [...rows].reverse().find((row) => row.goal && new Date(`${row.snapshot_date}T00:00:00Z`).getTime() <= cutoff) ?? null;
 }
 
-function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
+function GoalSection({ rows, current }: { rows: ScoreboardSnapshotRow[]; current: LiveAuditComponent | null }) {
   const withGoal = rows.filter((row) => row.goal);
   const latest = withGoal.at(-1) ?? null;
-  if (!latest?.goal) {
-    return (
-      <p className="admin-card p-4 text-sm text-gray-500">
-        No goal numbers yet. Atlas stores them with the next daily scoreboard; press Score now to read them today.
-      </p>
-    );
-  }
-  const before = weekBefore(withGoal, latest);
+  const before = latest ? weekBefore(withGoal, latest) : null;
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">The goal</h2>
+      <LiveSourceAuditPanel current={current} history={rows.map(row=>({date:row.snapshot_date,detail:{goal:row.goal}}))} />
+      {!latest?.goal ? (
+        <p className="admin-card p-4 text-sm text-gray-500">
+          Other goal numbers appear with the next daily scoreboard; press Score now to read them today.
+        </p>
+      ) : <>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {GOAL_CARDS.map((card) => {
           const value = card.value(latest.goal!);
-          const sameSeries = !card.versionedAccuracy || Boolean(latest.goal?.accuracy?.series && latest.goal.accuracy.series === before?.goal?.accuracy?.series);
-          const prior = before?.goal && sameSeries ? card.value(before.goal) : null;
+          const prior = before?.goal ? card.value(before.goal) : null;
           const delta = value != null && prior != null ? value - prior : null;
           const better = delta == null || delta === 0 ? null : card.lowerIsBetter ? delta < 0 : delta > 0;
           return (
@@ -382,7 +381,7 @@ function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
                 ) : null}
               </p>
               <p className="text-xs text-gray-500">{card.unit}</p>
-              {!card.versionedAccuracy && <Sparkline values={withGoal.map((row) => (row.goal ? card.value(row.goal) ?? null : null))} />}
+              <Sparkline values={withGoal.map((row) => (row.goal ? card.value(row.goal) ?? null : null))} />
               <p className="text-[11px] text-gray-500">{card.detail(latest.goal!)}</p>
               {card.query ? <p className="font-mono text-[10px] text-gray-400">query: {card.query}</p> : null}
             </div>
@@ -391,6 +390,7 @@ function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
       </div>
       {latest.goal.spend ? <SpendTable goal={latest.goal} /> : null}
       <ReaderMisses goal={latest.goal} />
+      </>}
     </section>
   );
 }

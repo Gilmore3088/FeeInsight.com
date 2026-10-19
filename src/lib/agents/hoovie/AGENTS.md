@@ -89,6 +89,12 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
   waits a week, other permanent 4xx waits a day, transient/parser errors at least six hours.
   A deployed parser change can retry a failed partition immediately. Dry runs write no receipt.
 
+OEWS archive selection ignores AppleDouble/resource metadata, matches the requested level's
+exact basename and year, and inspects directory entries before inflating one bounded workbook.
+Two genuine matching workbooks remain an error with bounded names in the receipt. The 2022
+selection repair retains parser v1, so six successful years are not replayed; the failed year
+uses its existing normal retry/backoff. Contract fixtures do not certify the publisher's bytes.
+
 ## Order of work
 
 James's rule (2026-10-17): "Let's get the data first." The order follows the public data pipeline map (#1783):

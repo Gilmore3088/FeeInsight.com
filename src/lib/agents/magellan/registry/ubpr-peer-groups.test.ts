@@ -27,7 +27,8 @@ const tsv = (rows: string[][]) => strToU8(rows.map((r) => r.map((c) => `"${c}"`)
 
 const page = (products: string[]) => `<input name="__VIEWSTATE" value="v" /><input name="__VIEWSTATEGENERATOR" value="g" />
   <select name="ctl00$MainContentHolder$ListBox1">${products.map((p, i) => `<option value="P${i}">${p}</option>`).join("")}</select>
-  <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="1">06/30/2026</option></select>`;
+  <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="1">06/30/2026</option></select>
+  <input type="radio" name="ctl00$MainContentHolder$FormatType" value="TSVRadioButton" />`;
 
 /** Fakes the bulk page: HTML until the Download post, then the zip for the chosen product (P0, P1...). */
 function bulkFetch(products: string[], zips: Uint8Array[]) {
@@ -107,7 +108,7 @@ describe("registry ubpr-peer-groups", () => {
     const run = runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl } });
     await expect(run).rejects.toThrow(/text\/html; charset=utf-8 instead of the UBPR bulk zip for "UBPR Ratio -- Single Period" 2026-06-30/);
     await expect(runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl } })).rejects.toThrow(
-      /tab-delimited format not offered on the format page\)\. Page: title "CDR Bulk Data"; messages: "Select a format\."; fields: .*FormatType\[radio=XBRLRadioButton\]/,
+      /tab-delimited format offered\)\. Page: title "CDR Bulk Data"; messages: "Select a format\."; fields: .*FormatType\[radio=XBRLRadioButton\]/,
     );
     // The Download control the page names is the one posted.
     expect(posted.at(-1)?.get("ctl00$MainContentHolder$TabStrip1$Download_1")).toBe("Download");

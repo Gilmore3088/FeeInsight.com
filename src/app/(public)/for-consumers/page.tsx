@@ -7,13 +7,15 @@ import { InstitutionSearchBar } from "../institutions/search-bar";
 import { ConsumerMarketLookup } from "@/components/public/consumer-market-lookup";
 import "./consumer.css";
 
+const TITLE = "For Consumers — Understand Bank Fees";
 const DESCRIPTION = "Free consumer guides to bank and credit union fees: understand a charge, avoid unnecessary fees, and decide when a service is worth paying for.";
+const PAGE_URL = `${SITE_URL}/for-consumers`;
 
 export const metadata: Metadata = {
-  title: "For Consumers — Understand Bank Fees",
+  title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: `${SITE_URL}/for-consumers` },
-  openGraph: { title: "For Consumers — Understand Bank Fees", description: DESCRIPTION, url: `${SITE_URL}/for-consumers`, type: "website" },
+  alternates: { canonical: PAGE_URL },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: PAGE_URL, type: "website" },
 };
 
 const GUIDES = [
@@ -29,6 +31,37 @@ const GUIDES = [
   { slug: "safe-deposit-fees", title: "Safe deposit boxes", description: "Consider what you need to store, access and protect before renting a box." },
 ] as const;
 
+// Describe the guide collection from the same entries rendered below, and connect the
+// toolkit to Fee Check without mixing a tool into the list of educational guides.
+const JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "@id": `${PAGE_URL}#webpage`,
+  url: PAGE_URL,
+  name: TITLE,
+  description: DESCRIPTION,
+  inLanguage: "en",
+  isAccessibleForFree: true,
+  audience: { "@type": "Audience", audienceType: "Consumers" },
+  relatedLink: `${SITE_URL}/check`,
+  mainEntity: {
+    "@type": "ItemList",
+    "@id": `${PAGE_URL}#consumer-guides`,
+    name: "Consumer guides",
+    numberOfItems: GUIDES.length,
+    itemListElement: GUIDES.map((guide, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      item: {
+        "@type": "WebPage",
+        url: `${SITE_URL}/guides/${guide.slug}`,
+        name: guide.title,
+        description: guide.description,
+      },
+    })),
+  },
+};
+
 const TEXT_LINK = "inline-flex min-h-11 items-center gap-2 font-semibold text-brick underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-brick";
 
 function Arrow() {
@@ -39,6 +72,10 @@ export default function ForConsumersPage() {
   return (
     <>
       <BreadcrumbJsonLd items={[{ name: "Home", href: "/" }, { name: "For consumers", href: "/for-consumers" }]} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD).replace(/</g, "\\u003c") }}
+      />
       <PageHero
         eyebrow="For consumers"
         title={<>Understand the fee.<br />Know your options.</>}
@@ -78,10 +115,7 @@ export default function ForConsumersPage() {
               <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">Understand a charge, avoid unnecessary fees, and weigh the cost of a service.</p>
             </li>
             <li className="border-t border-control-border pt-4">
-              <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-1">
-                <h3 className="text-[18px] font-semibold">Fee Check</h3>
-                <span className="text-[12px] font-medium text-ink-muted">Coming soon</span>
-              </div>
+              <Link href="/check" className={`${TEXT_LINK} group text-[18px]`}>Fee Check <Arrow /></Link>
               <p className="mt-2 text-[15px] leading-relaxed text-ink-soft">See how your institution’s fees compare with state and national medians.</p>
             </li>
             <li className="border-t border-control-border pt-4">
