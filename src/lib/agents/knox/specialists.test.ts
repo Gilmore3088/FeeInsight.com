@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { FAMILY_EXPERTS, priceWindows, runFamilyExpert } from "./families";
 import { composableTail, namesALimit, splitCapsHeading, titleTail } from "./layout";
-import { runFreeSpecialists } from "./specialists";
+import { runFreeSpecialists, tailOfEarlierRead } from "./specialists";
 import { extractFromTableRows, tableRowsFromText } from "./table-rows";
 import { extractAccountTableCandidates } from "./account-table";
 
@@ -554,5 +554,50 @@ describe("a price-first row keeps its own price (#1827)", () => {
       ["Overdraft Fee | ", 35],
       ["Stop Payment | ", 30],
     ]);
+  });
+});
+
+describe("v81 (#1830): a later specialist's read of a line's tail", () => {
+  // Stored lines of live bill pay fees that were each a stop payment's tail (prod, Oct 19).
+  const lines = [
+    "Stop Payment - Per item (includes Check(s), ACH, and Bill Pay) $25.00",
+    "Stop Payments (to put on or remove) including ACH and Bill Pay | $25.00",
+    "Stop payment on Bill Pay: $15.00 per occurrence",
+    "Stop Payment fee (Including Online Bill Pay) $15 per request",
+  ];
+
+  it.each(lines)("keeps the stop payment and no bill pay tail: %s", (line) => {
+    const fees = runFreeSpecialists(`Other Services\n${line}\nCashier Check $5.00`).candidates;
+    expect(fees.filter((fee) => fee.canonicalHint === "stop_payment")).toHaveLength(1);
+    expect(fees.some((fee) => fee.canonicalHint === "bill_pay")).toBe(false);
+  });
+
+  it("keeps a bill pay fee on its own line beside a stop payment at the same price", () => {
+    const fees = runFreeSpecialists("Other Services\nStop payment on Bill Pay: $15.00 per occurrence\nBill Pay $15.00 per month").candidates;
+    expect(fees.map((fee) => fee.canonicalHint).sort()).toEqual(["bill_pay", "stop_payment"]);
+  });
+
+  const read = (feeName: string, amount: number, excerpt: string) => ({ feeName, amount, excerpt, canonicalHint: "x", frequency: null, confidence: 0.85, waivable: false });
+
+  it("counts only a shorter name of whole words of the earlier find, on its line at its price", () => {
+    const line = "Stop Payment (check, ACH or Bill Pay) | $25 per request";
+    const prior = read("Stop Payment (check, ACH or Bill Pay)", 25, line);
+    expect(tailOfEarlierRead(prior, read("ACH or Bill Pay)", 25, line))).toBe(true);
+    expect(tailOfEarlierRead(prior, read("ACH or Bill Pay", 30, line))).toBe(false);
+    expect(tailOfEarlierRead(prior, read("ACH or Bill Pay", 25, "Bill Pay | $25"))).toBe(false);
+    expect(tailOfEarlierRead(prior, read("Pay Stop", 25, line))).toBe(false);
+    expect(tailOfEarlierRead(prior, read("Bil", 25, line))).toBe(false);
+    expect(tailOfEarlierRead(prior, read("Stop Payment (check, ACH or Bill Pay)", 25, line))).toBe(false);
+  });
+});
+
+describe("v81: two fees named together at one price", () => {
+  it("keeps both halves of a joined name", () => {
+    const line = "Returned Check &amp; Stop Payment Fee | $30.00";
+    const read = (feeName: string) => ({ feeName, amount: 30, excerpt: line, canonicalHint: "x", frequency: null, confidence: 0.85, waivable: false });
+    expect(tailOfEarlierRead(read("Returned Check &amp; Stop Payment Fee"), read("Stop Payment Fee"))).toBe(false);
+    expect(tailOfEarlierRead(read("Overdraft and NSF Fee"), read("NSF Fee"))).toBe(false);
+    expect(tailOfEarlierRead(read("Stop Payment (check, ACH or Bill Pay)"), read("ACH or Bill Pay"))).toBe(true);
+    expect(tailOfEarlierRead(read("Stop Payments including ACH and Bill Pay"), read("ACH and Bill Pay"))).toBe(true);
   });
 });
