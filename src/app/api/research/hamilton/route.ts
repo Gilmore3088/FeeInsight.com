@@ -55,6 +55,7 @@ import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { getInstitutionById } from "@/lib/data-store";
+import { writtenAnswerStepSystemPrompt } from "@/lib/hamilton/written-answer-evidence";
 
 export const maxDuration = 300;
 
@@ -215,7 +216,7 @@ async function handlePOST(request: Request) {
   if (prompt.status === "institution_not_found") {
     return Response.json({ error: "Institution not found" }, { status: 404 });
   }
-  const { systemPrompt, focus } = prompt;
+  const { systemPrompt, focus, briefingEvidence } = prompt;
 
   const providerContext = {
     provider: "anthropic" as const,
@@ -262,7 +263,10 @@ async function handlePOST(request: Request) {
             model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
             system: cachedSystem(systemPrompt),
             messages: await convertToModelMessages(messages),
-            prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+            prepareStep: ({ messages: stepMessages, steps }) => ({
+              messages: cacheLatestMessage(stepMessages),
+              system: cachedSystem(writtenAnswerStepSystemPrompt(systemPrompt, steps)),
+            }),
             tools: agent.tools,
             maxOutputTokens: agent.maxTokens,
             stopWhen: stepCountIs(agent.maxSteps),
@@ -311,6 +315,9 @@ async function handlePOST(request: Request) {
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
         questionOnly(lastUserText),
+        { briefingEvidence, toolResults: (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
+          toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+        }))), institutionId },
       );
       if (!evidence.passed) {
         return Response.json(
@@ -363,7 +370,10 @@ async function handlePOST(request: Request) {
       // tool results: cache both so later steps read them instead of paying full input.
       system: cachedSystem(systemPrompt),
       messages: await convertToModelMessages(messages),
-      prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+      prepareStep: ({ messages: stepMessages, steps }) => ({
+        messages: cacheLatestMessage(stepMessages),
+        system: cachedSystem(writtenAnswerStepSystemPrompt(systemPrompt, steps)),
+      }),
       tools: agent.tools,
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
@@ -381,7 +391,11 @@ async function handlePOST(request: Request) {
           // resolve (a promise keeps its first value), so the reader is never left waiting and
           // the usage below is still recorded.
           try {
-            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText), {
+              briefingEvidence, toolResults: steps.flatMap((step) => step.toolResults.map((toolResult) => ({
+                toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+              }))), institutionId,
+            });
             // Each sentence bound to the fee records the tools returned (#981, H06-T06). An answer
             // with nothing left once the contradicted sentences go is held like a failing one.
             const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText));

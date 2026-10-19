@@ -1,7 +1,7 @@
 import { getAnthropicMessagesClient, type Anthropic, type ProviderAgent } from "@/lib/ai-provider";
 import { RAW_PROVIDER_TIMEOUT_MS, withRawProviderResponseOperation } from "@/lib/ai-response-budget";
 import type { sql } from "@/lib/data-store/connection";
-import { estimateAnthropicCostMicrousd, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, observedProviderUsage, trackAnthropicRequest, WEB_SEARCH_COST_MICROUSD, type AnthropicResponsePolicy } from "@/lib/ai-provider-usage";
 
 export { WEB_SEARCH_COST_MICROUSD };
 
@@ -38,6 +38,14 @@ export interface PaidCallResult {
   costMicrousd: number;
 }
 
+export interface AssessedPaidCallResult {
+  message: Anthropic.Message;
+  costMicrousd: number | null;
+  usageObservation: "observed" | "unknown";
+}
+
+export type PaidResponsePolicy = AnthropicResponsePolicy<Anthropic.Message>;
+
 type MessageParams = Anthropic.MessageCreateParamsNonStreaming;
 
 export type PaidMessageCreator = (params: MessageParams) => PromiseLike<Anthropic.Message>;
@@ -46,15 +54,7 @@ export type PaidMessageCreator = (params: MessageParams) => PromiseLike<Anthropi
  * One budget-checked, logged model call. Throws ProviderBudgetBlockedError (or the
  * automation stop) before any money is spent when a cap or stop applies.
  */
-export async function paidModelCall({
-  agent,
-  operation,
-  runId,
-  params,
-  create,
-  metadata,
-  keyAgent,
-}: {
+interface PaidCallOptions {
   agent: PaidPassAgent;
   /** The agent whose API key pays, when it is not `agent` (the Wire bills to Magellan's key). */
   keyAgent?: ProviderAgent;
@@ -64,7 +64,13 @@ export async function paidModelCall({
   /** Test seam; defaults to the Anthropic Messages API. */
   create?: PaidMessageCreator;
   metadata?: Record<string, unknown>;
-}): Promise<PaidCallResult> {
+}
+
+export function paidModelCall(options: PaidCallOptions & { responsePolicy: PaidResponsePolicy }): Promise<AssessedPaidCallResult>;
+export function paidModelCall(options: PaidCallOptions): Promise<PaidCallResult>;
+export async function paidModelCall({
+  agent, operation, runId, params, create, metadata, keyAgent, responsePolicy,
+}: PaidCallOptions & { responsePolicy?: PaidResponsePolicy }): Promise<PaidCallResult | AssessedPaidCallResult> {
   const billTo: ProviderAgent | undefined = keyAgent ?? (agent === "wire" ? "magellan" : agent);
   const searchSettings = webSearchSettings(params.tools);
   const message = await trackAnthropicRequest(
@@ -73,7 +79,16 @@ export async function paidModelCall({
       const client = create ? null : getAnthropicMessagesClient(`${agent} ${operation}`, billTo, scope);
       return (attempt) => create ? create(params) : client!.messages.create(params, attempt);
     }),
+    ...(responsePolicy ? [responsePolicy] as const : []),
   );
+  if (responsePolicy) {
+    const usage = observedProviderUsage(message.usage);
+    return {
+      message,
+      costMicrousd: usage ? estimateAnthropicCostMicrousd(params.model, usage) : null,
+      usageObservation: usage ? "observed" : "unknown",
+    };
+  }
   return { message, costMicrousd: paidCallCostMicrousd(params.model, message) };
 }
 
@@ -157,6 +172,8 @@ export interface PaidPassResult {
   budgetStopped: boolean;
   budgetReason: string | null;
   costMicrousd: number;
+  /** Opt-in readers: costMicrousd is the known subtotal, excluding these returned replies. */
+  unknownCostResponses?: number;
   dryRun: boolean;
   results: Array<Record<string, unknown>>;
 }

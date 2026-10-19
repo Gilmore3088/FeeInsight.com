@@ -20,11 +20,15 @@ export interface NarrativeFigure {
   tolerance: number;
   /** Where the figure starts in the text. */
   index: number;
+  /** A dollar/account figure is a different quantity from a total dollar figure. */
+  denominatorUnit?: "account" | "employee";
 }
 
 export interface FigureCheckOptions {
   /** The reader's own question: a figure it names may be restated. */
   question?: string;
+  /** Written NCUA answers use observed values and server-validated arithmetic, not pooled-number guesses. */
+  explicitFinancialDerivations?: boolean;
 }
 
 export interface FigureCheckResult {
@@ -44,12 +48,23 @@ function toleranceFor(decimals: string | undefined, scale: number): number {
   return 0.5 * 10 ** -places * scale + 1e-9;
 }
 
+function figureDenominator(text: string, start: number, end: number): NarrativeFigure["denominatorUnit"] {
+  const after = text.slice(end, end + 70).replace(/[*_`]/g, "");
+  const suffix = /^\s*(?:per\s+|\/\s*)(?:(?:share[- ]draft|checking)\s+)?(account|employee)s?\b/i.exec(after);
+  if (suffix) return suffix[1].toLowerCase() as NarrativeFigure["denominatorUnit"];
+  const before = text.slice(Math.max(0, start - 70), start).replace(/[*_`]/g, "");
+  const prefix = /\bper[- ]+(?:(?:share[- ]draft|checking)[- ]+)?(account|employee)s?\s*(?:(?:balance|ratio|figure|amount|was|is|of|at|equals?|averages?|:)\s*){0,5}$/i.exec(before);
+  return prefix ? prefix[1].toLowerCase() as NarrativeFigure["denominatorUnit"] : undefined;
+}
+
 export function extractFigures(text: string): NarrativeFigure[] {
   const figures: NarrativeFigure[] = [];
   for (const match of text.matchAll(USD_PATTERN)) {
     const scale = match[3] ? SCALE[match[3].toLowerCase()] ?? 1 : 1;
     const value = Number(`${match[1].replace(/,/g, "")}${match[2] ? `.${match[2]}` : ""}`) * scale;
-    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0 });
+    const denominatorUnit = figureDenominator(text, match.index ?? 0, (match.index ?? 0) + match[0].length);
+    figures.push({ raw: match[0].trim(), kind: "usd", value, tolerance: toleranceFor(match[2], scale), index: match.index ?? 0,
+      ...(denominatorUnit ? { denominatorUnit } : {}) });
   }
   for (const match of text.matchAll(PCT_PATTERN)) {
     const value = Number(`${match[1]}${match[2] ? `.${match[2]}` : ""}`);
@@ -69,12 +84,17 @@ interface PayloadNumber {
   dollars?: number | null;
   /** Percent multiplier, null for explicit nonrates, absent for legacy named ratios/rates. */
   rateMultiplier?: number | null;
+  /** In written answers these source-bound figures support direct values, not implicit pairwise arithmetic. */
+  ncuaFinancial?: boolean;
+  implicitArithmeticAllowed?: boolean;
+  denominatorUnit?: NarrativeFigure["denominatorUnit"];
 }
 
 /** Every finite number in the payload with the key it sits under (numeric strings included). */
 export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
   const found: PayloadNumber[] = [];
-  const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0) => {
+  const visit = (value: unknown, key: string, unit: unknown = undefined, depth = 0,
+    ncuaFinancial = false, implicitArithmeticAllowed = true, denominatorUnit?: NarrativeFigure["denominatorUnit"]) => {
     if (found.length >= MAX_PAYLOAD_NUMBERS || depth > 12) return;
     const number = numericPayloadValue(value);
     if (number !== null) {
@@ -86,26 +106,36 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
         key, value: number,
         ...(unit !== undefined ? { dollars: dollarsFromUnit(number, unit), rateMultiplier: percentageUnitScale(unit) } : {}),
         ...(rateField && scale !== null ? { dollars: null, rateMultiplier: undefined } : {}),
+        ...(ncuaFinancial ? { ncuaFinancial: true } : {}),
+        ...(!implicitArithmeticAllowed ? { implicitArithmeticAllowed: false } : {}),
+        ...(denominatorUnit ? { denominatorUnit } : {}),
       });
     } else if (typeof value === "string") {
       const text = value.trim();
       if (text.length <= 1_000_000 && (text.startsWith("{") || text.startsWith("["))) {
         try {
-          visit(JSON.parse(text), key, unit, depth + 1);
+          visit(JSON.parse(text), key, unit, depth + 1, ncuaFinancial, implicitArithmeticAllowed, denominatorUnit);
         } catch { /* Plain or malformed text is not numeric evidence. */ }
       }
     } else if (Array.isArray(value)) {
       for (const item of value) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
-        visit(item, key, unit, depth + 1);
+        visit(item, key, unit, depth + 1, ncuaFinancial, implicitArithmeticAllowed, denominatorUnit);
       }
     } else if (value && typeof value === "object") {
       const record = value as Record<string, unknown>;
       const own = Object.hasOwn(record, "unit") ? record.unit
         : Object.hasOwn(record, "units") ? record.units : unit;
+      const feeRecord = record.period_basis === "fee_schedule" || (typeof record.measure === "string" && record.measure.startsWith("fee:"));
+      const source = typeof record.source === "string" ? record.source.toLowerCase() : "";
+      const ownNcua = !feeRecord && (ncuaFinancial || source === "ncua" || source === "ncua-extras"
+        || (typeof record.measure === "string" && /^call:acct_/.test(record.measure)));
+      const ownArithmetic = implicitArithmeticAllowed && record.numeric_arithmetic_allowed !== false;
+      const ownDenominator = record.denominator_unit === "account" || record.denominator_unit === "employee"
+        ? record.denominator_unit : denominatorUnit;
       for (const [childKey, child] of Object.entries(record)) {
         if (found.length >= MAX_PAYLOAD_NUMBERS) break;
-        visit(child, childKey, own, depth + 1);
+        visit(child, childKey, own, depth + 1, ownNcua, ownArithmetic, ownDenominator);
       }
     }
   };
@@ -118,14 +148,24 @@ export function collectPayloadNumbers(data: unknown): PayloadNumber[] {
  * differences between them. Percentages: rate fields (ratios also as x100) and the
  * percent change between money fields. Ids, counts and years never qualify.
  */
-function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]): number[] {
+function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"], options: FigureCheckOptions,
+  denominatorUnit?: NarrativeFigure["denominatorUnit"]): number[] {
   const usable = numbers.filter((n) => !NOT_A_FIGURE.test(n.key));
-  const money = usable.filter((n) => MONEY_KEY.test(n.key) && n.dollars !== null).map((n) => n.dollars ?? n.value);
+  const sameQuantity = (n: PayloadNumber) => n.denominatorUnit === denominatorUnit
+    // Existing fee prices can be described "per account" without being a calculated
+    // balance/account ratio. Preserve legacy sources; NCUA totals require the typed ratio.
+    || (denominatorUnit !== undefined && n.denominatorUnit === undefined && !(options.explicitFinancialDerivations && n.ncuaFinancial));
+  const money = usable.filter((n) => MONEY_KEY.test(n.key) && n.dollars !== null && sameQuantity(n));
+  const arithmetic = money.filter((n) => !n.denominatorUnit && n.implicitArithmeticAllowed !== false && !(options.explicitFinancialDerivations && n.ncuaFinancial));
   const candidates = new Set<number>();
   if (kind === "usd") {
-    for (const a of money) {
-      candidates.add(Math.abs(a));
-      for (const b of money) if (a !== b) candidates.add(Math.abs(a - b));
+    for (const number of money) candidates.add(Math.abs(number.dollars ?? number.value));
+    for (const first of arithmetic) {
+      const a = first.dollars ?? first.value;
+      for (const second of arithmetic) {
+        const b = second.dollars ?? second.value;
+        if (a !== b) candidates.add(Math.abs(a - b));
+      }
     }
   } else {
     for (const n of usable) {
@@ -136,8 +176,12 @@ function candidateValues(numbers: PayloadNumber[], kind: NarrativeFigure["kind"]
         if (Math.abs(n.value) <= 1) candidates.add(Math.abs(n.value) * 100);
       }
     }
-    for (const a of money) {
-      for (const b of money) if (a !== b && b !== 0) candidates.add(Math.abs(((a - b) / b) * 100));
+    for (const first of arithmetic) {
+      const a = first.dollars ?? first.value;
+      for (const second of arithmetic) {
+        const b = second.dollars ?? second.value;
+        if (a !== b && b !== 0) candidates.add(Math.abs(((a - b) / b) * 100));
+      }
     }
   }
   return [...candidates];
@@ -164,6 +208,8 @@ const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
  */
 function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<NarrativeFigure> {
   const accepted = new Set<NarrativeFigure>();
+  const definedRanges = new Set<string>();
+  const references: Array<{ a: NarrativeFigure; b: NarrativeFigure; range: string }> = [];
   const ordered = [...figures].sort((a, b) => a.index - b.index);
   for (let i = 0; i < ordered.length; i++) {
     const a = ordered[i];
@@ -171,9 +217,15 @@ function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<Narrati
     const aEnd = a.index + a.raw.length;
     const b = ordered[i + 1];
     if (b && isTierBound(b) && RANGE_JOIN.test(text.slice(aEnd, b.index))) {
-      if (SIZE_AFTER.test(text.slice(b.index + b.raw.length, b.index + b.raw.length + 30))) {
+      const after = text.slice(b.index + b.raw.length, b.index + b.raw.length + 30);
+      const range = `${a.value}:${b.value}`;
+      if (SIZE_AFTER.test(after)) {
         accepted.add(a);
         accepted.add(b);
+        definedRanges.add(range);
+      } else if (/^\s*group\b/i.test(after)
+        && /\bpeers?\s+(?:in|within)\s+(?:the\s+)?$/i.test(text.slice(Math.max(0, a.index - 40), a.index))) {
+        references.push({ a, b, range });
       }
       i++;
       continue;
@@ -182,6 +234,11 @@ function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<Narrati
     const after = text.slice(aEnd, aEnd + 30);
     if (ASSETS_THRESHOLD_BEFORE.test(before) || (THRESHOLD_BEFORE.test(before) && SIZE_AFTER.test(after))) accepted.add(a);
   }
+  // A repeated peer-group name keeps its previously stated asset dimension.
+  // This never turns the same bound used as fee income or a fee price into data.
+  for (const { a, b, range } of references) {
+    if (definedRanges.has(range)) { accepted.add(a); accepted.add(b); }
+  }
   return accepted;
 }
 
@@ -189,15 +246,17 @@ export function checkNarrativeFigures(narrative: string, data: unknown, options:
   const figures = extractFigures(narrative);
   if (figures.length === 0) return { checked: 0, unmatched: [] };
   const numbers = collectPayloadNumbers(data);
-  const byKind = {
-    usd: candidateValues(numbers, "usd"),
-    pct: candidateValues(numbers, "pct"),
+  const candidates = new Map<string, number[]>();
+  const valuesFor = (figure: NarrativeFigure) => {
+    const key = `${figure.kind}:${figure.denominatorUnit ?? "total"}`;
+    if (!candidates.has(key)) candidates.set(key, candidateValues(numbers, figure.kind, options, figure.denominatorUnit));
+    return candidates.get(key)!;
   };
   const asked = options.question ? extractFigures(options.question) : [];
   const sizes = tierBoundsAsSize(narrative, figures);
   const traced = (figure: NarrativeFigure) =>
-    byKind[figure.kind].some((value) => near(figure, value))
-    || asked.some((q) => q.kind === figure.kind && near(figure, Math.abs(q.value)))
+    valuesFor(figure).some((value) => near(figure, value))
+    || asked.some((q) => q.kind === figure.kind && q.denominatorUnit === figure.denominatorUnit && near(figure, Math.abs(q.value)))
     || sizes.has(figure);
   const unmatched = figures
     .filter((figure) => !traced(figure))

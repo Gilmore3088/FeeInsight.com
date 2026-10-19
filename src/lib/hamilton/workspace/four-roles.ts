@@ -38,6 +38,26 @@ export interface FourRolesResult {
 export const RECOMMENDATION =
   /\b(should|ought to|recommend(s|ed|ation)?|we suggest|you need to|consider (raising|lowering|cutting|dropping|eliminating)|(raise|lower|cut|drop|increase|reduce) (your|the|this) (fee|price))\b/i;
 
+/**
+ * A financial-source caution is not a choice of fee. Remove only the modal in
+ * this narrow construction, then still inspect the rest of the same sentence.
+ * In particular, "should not raise your fee" and "should annualize" stay advice.
+ */
+export function findUnrequestedAdvice(text: string): RegExpMatchArray | null {
+  const cautions = /\b(?:figures?|amounts?|totals?|(?:fee|dividend|reported|year[ -]to[ -]date|YTD)\s+(?:income|expense))\s+(?:(?:is|are)\s+not\s+annuali[sz]ed\s+and\s+|and\s+)?(should\s+not\s+be)\s+(annuali[sz]ed|doubled)\b/gi;
+  const withoutCautionModal = text.replace(cautions, (full: string, modal: string, operation: string, offset: number) => {
+    // "Your fee figure should not be doubled" is still a pricing instruction.
+    if (/\b(?:fees?|price|pricing)\s+$/i.test(text.slice(Math.max(0, offset - 30), offset))) return full;
+    if (operation.toLowerCase() === "doubled") {
+      const before = text.slice(0, offset).split(/[.!?\n]/).at(-1) ?? "";
+      const after = text.slice(offset + full.length).split(/[.!?\n]/)[0];
+      if (!/\b(?:YTD|year[ -]to[ -]date|(?:three|six|nine|twelve|\d+)[ -]month|quarter|yearly|full[ -]year|annuali[sz]ed|annual)\b/i.test(`${before}${full}${after}`)) return full;
+    }
+    return full.replace(modal, "must not be");
+  });
+  return withoutCautionModal.match(RECOMMENDATION);
+}
+
 /** Internal names a bank reader should never see: agent names, and any snake_case table or column name. */
 export const PIPELINE_TERMS = /\b(Knox|Darwin|Rosetta|Magellan|Atlas|pipeline|agent run)\b|\b[a-z0-9]+_[a-z0-9_]+\b/i;
 
@@ -155,7 +175,7 @@ function checkConsultant(answer: HamiltonAnswer): RoleCheck {
   }
   if (!answer.evidenceLevel) failures.push("No evidence level.");
   for (const text of allText(answer)) {
-    if (RECOMMENDATION.test(text.replace(/"[^"]*"/g, ""))) failures.push(`Recommendation not asked for: "${text}"`);
+    if (findUnrequestedAdvice(text.replace(/"[^"]*"/g, ""))) failures.push(`Recommendation not asked for: "${text}"`);
   }
   return { role: "consultant", pass: failures.length === 0, failures };
 }
