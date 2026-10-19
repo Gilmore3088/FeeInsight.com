@@ -11,10 +11,10 @@ import {
   Play,
   Scale,
   Search,
-  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Logo } from "@/brand/components/Logo";
 import { TrackLink } from "@/components/track-link";
 import type { EvidenceKey, OneQuestionAsk, OneQuestionFee, OneQuestionView, OutputKey } from "./landing-one-question";
 import { useAutoAdvance, useReducedMotion } from "./landing-motion";
@@ -46,8 +46,8 @@ export const OUTPUTS: { key: OutputKey; icon: LucideIcon; name: string; detail: 
   { key: "report", icon: FileText, name: "Report", detail: "Brief your committee", heading: "What goes to committee?", evidence: ["financial", "competitive", "market", "regulatory"] },
 ];
 
-/** Each question shows this long before the next (James: "that question rotate"). */
-export const ASK_MS = 6000;
+/** Each question shows this long before the next (James: "rotate a little faster"). */
+export const ASK_MS = 4500;
 /** After a new question fades in, its evidence lights one card at a time, then its output opens. */
 export const LEAD_MS = 500;
 export const STEP_MS = 380;
@@ -961,12 +961,9 @@ export function OneQuestionFlow({ view, sampleHref }: { view: OneQuestionView | 
       <Connectors dir="in" lit={litFlags} run={dotsRun ? `${dotsRun}:in` : null} />
       <Stem />
 
-      {/* C. Hamilton Intelligence */}
+      {/* C. Hamilton */}
       <div className="mx-auto max-w-[40rem] rounded-[8px] bg-[#102d43] px-5 py-4 text-center text-white" data-evidence-hub="">
-        <p className="flex items-center justify-center gap-2 text-[17px] font-semibold tracking-[-0.01em]">
-          <Waypoints aria-hidden="true" strokeWidth={1.5} className="size-5" />
-          Hamilton Intelligence
-        </p>
+        <Logo mark="hamilton-wordmark" tone="reverse" height={22} className="mx-auto" />
         <p className="mx-auto mt-1 max-w-[32rem] text-[14px] leading-snug text-white/80">
           Connects the evidence, identifies what matters, and helps your team evaluate the next decision.
         </p>

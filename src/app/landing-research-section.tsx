@@ -1,4 +1,5 @@
 import { ArrowUpRight } from "lucide-react";
+import { Logo } from "@/brand/components/Logo";
 import { PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import type { ReportPeerContext, ReportPeerFinancial } from "@/lib/custom-report/peer-context";
@@ -25,7 +26,7 @@ export function sourcesShown(view: OneQuestionView | null): string[] {
 }
 
 /**
- * "One question. Every angle considered." (James's brief and mockup, Oct 19, and his review the same
+ * "The full picture behind your next fee decision." (James's brief and mockup, Oct 19, and his reviews the same
  * day): the homepage's one interactive Hamilton demonstration. Real questions about the demo bank
  * rotate, each lighting the evidence it reads and opening one of four outputs, all drawn from the
  * live sample report. The page passes the reads it already makes; this section
@@ -50,13 +51,12 @@ export function LandingResearch({
     <section id="research" aria-labelledby="research-title" className="border-y border-border bg-surface-0 py-12 sm:py-16">
       <div className={HOME_WRAP}>
         <header className="mx-auto max-w-[52rem] text-center">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted">Hamilton Intelligence</p>
+          <Logo mark="hamilton-wordmark" height={24} className="mx-auto" />
           <h2 id="research-title" className="mt-3 text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[48px]" style={SERIF}>
-            {/* Each sentence starts its own line, so a break never strands a word. */}
-            <span className="block">One question.</span> <span className="block">Every angle considered.</span>
+            The full picture behind your next fee decision.
           </h2>
           <p className="mx-auto mt-4 max-w-[46rem] text-[16px] leading-relaxed text-ink-soft sm:text-[18px]">
-            Financial performance. Competitors. Market conditions. Regulation. Connected in one analysis.
+            Hamilton connects your financial performance, competitor pricing, market conditions and regulatory context to help you decide what to do next.
           </p>
         </header>
 

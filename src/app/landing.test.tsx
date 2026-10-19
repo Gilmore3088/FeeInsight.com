@@ -418,9 +418,10 @@ describe("one question section", () => {
 
   it("uses James's words, in reading order: question, evidence, Hamilton, outputs, the action", () => {
     const html = full();
-    expect(html).toMatch(/One question\.<\/span> <span class="block">Every angle considered\./);
-    expect(html).toContain("Hamilton Intelligence");
-    expect(text(html)).toContain("Financial performance. Competitors. Market conditions. Regulation. Connected in one analysis.");
+    expect(html).toContain("The full picture behind your next fee decision.");
+    expect(html).toContain('aria-label="Hamilton"');
+    expect(html).not.toContain("Hamilton Intelligence");
+    expect(text(html)).toContain("Hamilton connects your financial performance, competitor pricing, market conditions and regulatory context to help you decide what to do next.");
     expect(html).toContain("Connects the evidence, identifies what matters, and helps your team evaluate the next decision.");
     expect(EVIDENCE.map((e) => e.name)).toEqual(["Financial performance", "Competitive position", "Market conditions", "Regulatory context"]);
     expect(OUTPUTS.map((o) => o.name)).toEqual(["Benchmark", "Investigate", "Monitor", "Report"]);
