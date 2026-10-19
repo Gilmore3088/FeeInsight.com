@@ -20,4 +20,18 @@ describe("source-specific national trends heading", () => {
     expect(html).toContain("2026-03-31");
     expect(html).not.toContain("0 quarters");
   });
+  it("withholds growth in stored national and district financial groups without changing their filings", () => {
+    const group = buildFinancialIncomeGroup("ncua", [{ quarter: "2026-Q2", total_service_charges: 1000, total_institutions: 25,
+      bank_service_charges: 0, cu_service_charges: 1000, yoy_change_pct: null }]);
+    group.quarters[0].yoy_change_pct = 77.7;
+    const saved = buildNationalTrends({ feeRows: [], financialIncomeGroups: [group] });
+    saved.districts[0].financialIncome = [group];
+    const html = renderNationalTrendsSection(saved, { number: "3", districtFees: false });
+    expect(html).toContain("Separate financial measures by Federal Reserve district");
+    expect(html).not.toContain("77.7%");
+    expect(html).toContain("2026-06-30");
+    expect(html).toContain("not constant-cohort or merger-adjusted");
+    expect(group.quarters[0].yoy_change_pct).toBe(77.7);
+  });
+
 });

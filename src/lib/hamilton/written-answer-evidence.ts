@@ -2,6 +2,7 @@ import { deriveNcuaAnswerEvidence, type NcuaAnswerDerivation, type NcuaDerivatio
 import type { HamiltonBriefingEvidence } from "./institution-briefing";
 import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
 import { filedPeerIncomeEvidenceResult } from "./filed-peer-evidence";
+import { callPeerHistoryEvidence } from "./call-peer-history-evidence";
 
 /** Server-observed tool reads, never calculations supplied by a model or browser. */
 export interface AnswerToolEvidence {
@@ -90,6 +91,7 @@ export function writtenAnswerEvidence(
     validated_filed_peer_income: filedPeers.observations,
     // Never take a conflict verdict from model/browser-supplied output-shaped data.
     filed_peer_income_conflict: filedPeers.conflicting,
+    validated_call_peer_history: callPeerHistoryEvidence(context.toolResults ?? [], context.institutionId ?? null),
     tool_evidence: context.toolResults?.length
       ? context.toolResults.map((read) => ({ ...read, output: withoutEmbeddedDerivations(read.output) }))
       : toolOutputs.map((output) => withoutEmbeddedDerivations(output)),

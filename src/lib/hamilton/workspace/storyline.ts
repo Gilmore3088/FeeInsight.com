@@ -10,6 +10,7 @@
  */
 
 import { PERCENTILE_METHOD } from "@/lib/percentile";
+import { HISTORICAL_INCOME_CAVEAT } from "./national-income";
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -719,7 +720,8 @@ function trendPiece(research: FeeResearch): Piece | null {
   return {
     key: "trend",
     actionTitle,
-    exhibit: { kind: "trend", title: `${subjectPossessive(research)} ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])] },
+    exhibit: { kind: "trend", title: `${subjectPossessive(research)} ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
+      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: HISTORICAL_INCOME_CAVEAT } : {}) },
   };
 }
 

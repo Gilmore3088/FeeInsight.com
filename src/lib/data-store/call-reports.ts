@@ -1,4 +1,5 @@
-import { getSql } from "./connection";
+import { getSql, type withTransaction } from "./connection";
+import { readCallCohortHistory, MAX_COHORT_REPORTERS, type CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { financialSourceFilter, type FinancialSource } from "./financial-sources";
 import { canonicalFinancialSourceSql, financialSourceForCharter, financialPeerComparison, type FinancialPeerComparison } from "./financial-peer-contract";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
@@ -65,14 +66,24 @@ export interface RevenueSnapshot {
 export interface RevenueTrend {
   quarters: RevenueSnapshot[];
   latest: RevenueSnapshot | null;
+  cohort_history?: CallCohortHistory;
 }
 
 export interface PeerIncomeQuarter {
   quarter_end: string;
   /** Median quarterly deposit service charges among filers, in thousands. */
-  median_thousands: number;
+  median_thousands: number | null;
   institutions: number;
 }
+
+export interface PeerIncomeHistory {
+  quarters: PeerIncomeQuarter[];
+  cohort_history?: CallCohortHistory;
+}
+
+// Optional identity/lifecycle reads use the same connection owner as the financial reader.
+// A missing registry field or timed-out diagnostic read cannot erase valid filing statistics.
+const historyRead: typeof withTransaction = (callback) => getSql().begin((tx) => callback(tx as unknown as ReturnType<typeof getSql>)) as ReturnType<typeof callback>;
 
 /**
  * Median quarterly deposit service charges for one charter and asset tier, newest quarter
@@ -83,9 +94,10 @@ export async function getPeerServiceChargeMedians(
   charterType: string,
   assetTier: string,
   quarterCount = 8,
-): Promise<PeerIncomeQuarter[]> {
+  subjectId?: number,
+): Promise<PeerIncomeHistory> {
   const source = financialSourceForCharter(charterType);
-  if (!source) return [];
+  if (!source) return { quarters: [] };
   const sql = getSql();
   const rows = (await sql.unsafe(
     `WITH filed AS (
@@ -105,7 +117,7 @@ export async function getPeerServiceChargeMedians(
                     ORDER BY inf.report_date::date)
      ),
      quarterly AS (
-       SELECT rd,
+       SELECT institution_id, source, rd,
               CASE
                 WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
                 WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
@@ -114,21 +126,27 @@ export async function getPeerServiceChargeMedians(
          FROM filed
      )
      SELECT TO_CHAR(rd, 'YYYY-MM-DD') AS quarter_end,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY income) AS median_thousands,
-            COUNT(*)::int AS institutions
+            CASE WHEN COUNT(*) >= $4 THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY income) END AS median_thousands,
+            COUNT(*)::int AS institutions,
+            (ARRAY_AGG(DISTINCT institution_id ORDER BY institution_id))[1:${MAX_COHORT_REPORTERS}] AS reporting_institution_ids
        FROM quarterly
       WHERE income > 0
       GROUP BY rd
-     HAVING COUNT(*) >= $4
       ORDER BY rd DESC
       LIMIT $3`,
     [charterType, assetTier, quarterCount, MIN_INSTITUTIONS_FOR_MEDIAN],
-  )) as { quarter_end: string; median_thousands: string | number; institutions: number }[];
-  return rows.filter((r) => Number(r.institutions) >= MIN_INSTITUTIONS_FOR_MEDIAN).map((r) => ({
-    quarter_end: r.quarter_end,
-    median_thousands: Number(r.median_thousands),
-    institutions: Number(r.institutions),
-  }));
+  )) as { quarter_end: string; median_thousands: string | number | null; institutions: number; reporting_institution_ids?: (number | string)[] }[];
+  return {
+    quarters: rows.map((r) => ({
+      quarter_end: r.quarter_end,
+      median_thousands: Number(r.institutions) >= MIN_INSTITUTIONS_FOR_MEDIAN && r.median_thousands !== null ? Number(r.median_thousands) : null,
+      institutions: Number(r.institutions),
+    })),
+    cohort_history: await readCallCohortHistory({ requestedIds: null, subjectId,
+      eligibility_basis: "positive_standalone_quarter_income_current_registry_charter_and_size",
+      periods: rows.map((r) => ({ period: r.quarter_end, sources: [source], unit: "thousands of dollars", period_basis: "standalone_quarter",
+        institution_count: Number(r.institutions), reporting_institution_ids: r.reporting_institution_ids })) }, historyRead),
+  };
 }
 
 export interface TopRevenueInstitution {
@@ -178,7 +196,7 @@ export async function getRevenueTrend(quarterCount = 8, source?: FinancialSource
                     ORDER BY inf.report_date::date)
      ),
      quarterly AS (
-       SELECT institution_id, report_date, rd,
+       SELECT institution_id, source, report_date, rd,
               CASE
                 WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
                 WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
@@ -194,7 +212,11 @@ export async function getRevenueTrend(quarterCount = 8, source?: FinancialSource
        SUM(CASE WHEN ct.charter_type = 'bank' THEN inf.service_charge_income ELSE 0 END)
                                                                  AS bank_service_charges,
        SUM(CASE WHEN ct.charter_type = 'credit_union' THEN inf.service_charge_income ELSE 0 END)
-                                                                 AS cu_service_charges
+                                                                 AS cu_service_charges,
+       COUNT(DISTINCT inf.institution_id) FILTER (WHERE inf.source = 'fdic') AS bank_reporters,
+       COUNT(DISTINCT inf.institution_id) FILTER (WHERE inf.source = 'ncua') AS cu_reporters,
+       (ARRAY_AGG(DISTINCT inf.institution_id ORDER BY inf.institution_id) FILTER (WHERE inf.source = 'fdic'))[1:${MAX_COHORT_REPORTERS}] AS bank_reporting_ids,
+       (ARRAY_AGG(DISTINCT inf.institution_id ORDER BY inf.institution_id) FILTER (WHERE inf.source = 'ncua'))[1:${MAX_COHORT_REPORTERS}] AS cu_reporting_ids
      FROM quarterly inf
      JOIN institution_sources ct ON ct.id = inf.institution_id
      WHERE inf.service_charge_income > 0
@@ -209,6 +231,10 @@ export async function getRevenueTrend(quarterCount = 8, source?: FinancialSource
     total_institutions: string;
     bank_service_charges: string;
     cu_service_charges: string;
+    bank_reporters?: string;
+    cu_reporters?: string;
+    bank_reporting_ids?: (number | string)[];
+    cu_reporting_ids?: (number | string)[];
   }[];
 
   const snapshots: RevenueSnapshot[] = rows.map((row) => ({
@@ -217,24 +243,24 @@ export async function getRevenueTrend(quarterCount = 8, source?: FinancialSource
     total_institutions: Number(row.total_institutions),
     bank_service_charges: Number(row.bank_service_charges),
     cu_service_charges: Number(row.cu_service_charges),
-    // YoY = compare to 4 quarters back (idx + 4); null if not available
+    // No reviewed constant economic-cohort basis has been established.
     yoy_change_pct: null,
   }));
 
-  // Attach YoY change: compare index i to index i+4 (same quarter, prior year)
-  for (let i = 0; i < snapshots.length; i++) {
-    const priorYearIdx = i + 4;
-    if (priorYearIdx < snapshots.length) {
-      const current = snapshots[i].total_service_charges;
-      const prior = snapshots[priorYearIdx].total_service_charges;
-      snapshots[i].yoy_change_pct =
-        prior > 0 ? ((current - prior) / prior) * 100 : null;
-    }
-  }
+  // Cross-sectional arithmetic cannot establish growth of a stable economic cohort.
+  // Equal charter IDs still do not account for acquisitions or other perimeter changes.
+  const cohort_history = await readCallCohortHistory({ requestedIds: null,
+    eligibility_basis: "positive_standalone_quarter_income",
+    periods: rows.flatMap((row) => (["fdic", "ncua"] as const).filter((family) => source === undefined || source === family).map((family) => ({
+      period: row.quarter_date, sources: [family], unit: "thousands of dollars", period_basis: "standalone_quarter",
+      institution_count: Number((family === "fdic" ? row.bank_reporters : row.cu_reporters) ?? (source === family ? row.total_institutions : 0)),
+      reporting_institution_ids: family === "fdic" ? row.bank_reporting_ids : row.cu_reporting_ids,
+    }))) }, historyRead);
 
   return {
     quarters: snapshots,
     latest: snapshots[0] ?? null,
+    cohort_history,
   };
   } catch {
     return { quarters: [], latest: null };
