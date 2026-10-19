@@ -107,7 +107,7 @@ export function PeerList({ exhibit, title, number }: { exhibit: PeerListExhibit;
       ) : null}
       {exhibit.unlisted > 0 ? (
         <p className="mt-2 text-xs text-warm-600">
-          {exhibit.unlisted.toLocaleString("en-US")} more {exhibit.unlisted === 1 ? "institution is" : "institutions are"} in this group and not listed.
+          {exhibit.unlisted.toLocaleString("en-US")} more {exhibit.unlisted === 1 ? "peer in this group is" : "peers in this group are"} not shown.
         </p>
       ) : null}
     </ExhibitFrame>

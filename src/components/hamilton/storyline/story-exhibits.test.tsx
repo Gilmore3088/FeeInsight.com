@@ -83,10 +83,10 @@ describe("peer list (#2033)", () => {
   // Invented institutions and fees for tests only.
   const list: StoryExhibit = {
     id: "list-peerList",
-    actionTitle: "Overdraft fees of 3 peers, largest first",
+    actionTitle: "Overdraft fees of 3 peers, largest institutions first",
     exhibit: {
       kind: "peer_list",
-      title: "Overdraft fees of 3 peers, largest first",
+      title: "Overdraft fees of 3 peers, largest institutions first",
       feeLabel: "Overdraft fee",
       rows: [
         { institutionId: 1, institutionName: "Example Valley Credit Union", stateCode: null, totalAssets: null, amount: 32, status: "published", documentUrl: "https://example.test/own.pdf", publishedAt: "2026-09-12", own: true },
@@ -108,7 +108,7 @@ describe("peer list (#2033)", () => {
     expect(html).toContain('href="https://example.test/two.pdf"');
     expect(html).toContain("Not found on its schedule");
     expect(html).toContain("No schedule on file");
-    expect(html).toContain("2 more institutions are in this group and not listed.");
+    expect(html).toContain("2 more peers in this group are not shown.");
     expect(html).toContain("Peer group picked by Hamilton");
   });
 

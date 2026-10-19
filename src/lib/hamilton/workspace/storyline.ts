@@ -548,7 +548,7 @@ function ownListRow(research: FeeResearch): PeerListRow[] {
 }
 
 /**
- * Every institution in the peer group by name, largest first: the fee and its source, or why
+ * Every institution in the peer group by name, largest institutions first: the fee and its source, or why
  * none is on file. The governing thought counts them, so the title only
  * says how the rows are ordered.
  */
@@ -580,7 +580,7 @@ function peerListPiece(research: FeeResearch, name: string): Piece | null {
     actionTitle,
     exhibit: {
       kind: "peer_list",
-      title: `${capitalize(name)} fees of ${count(rows.length + unlisted)} peers, largest first`,
+      title: `${capitalize(name)} fees of ${count(rows.length + unlisted)} peers, largest institutions first`,
       feeLabel: `${capitalize(name)} fee`,
       rows: [...ownListRow(research), ...rows],
       unlisted,
