@@ -454,11 +454,13 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     expect(triesFor("Maple Test Bank")).toEqual([
       ["discover.homepage_links", "no_candidates"],
       ["discover.sitemap", "no_candidates"],
+      ["discover.second_document", "no_candidates"],
     ].map(([strategy, outcome]) => [strategy, strategy === "discover.sitemap" ? "ok" : outcome]));
     expect(triesFor("Birch Test Bank")).toEqual([
       ["discover.homepage_links", "no_candidates"],
       ["discover.sitemap", "no_candidates"],
       ["discover.hub_pages", "ok"],
+      ["discover.second_document", "no_candidates"],
     ]);
     expect(tries.find((row) => row.institution_name === "Birch Test Bank" && row.strategy === "discover.hub_pages")?.code).toBe("found_deep");
     // A scanned PDF with no text layer: free OCR (pass 2) read it in the same read step,
