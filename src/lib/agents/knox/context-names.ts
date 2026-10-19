@@ -8,6 +8,7 @@ import {
   type ExtractedFeeCandidate,
 } from "@/lib/agents/knox/rules";
 import { passesDarwinChecks } from "@/lib/agents/knox/layout";
+import { nsfPolicyPrices } from "@/lib/custom-report/nsf-policy-prices";
 
 /**
  * v33: fees an overdraft page names by its context, not on the price's own line (Largest banks
@@ -169,7 +170,11 @@ function audienceRowUnderHeading(all: string[], index: number): ExtractedFeeCand
 
 export function contextFees(text: string): ExtractedFeeCandidate[] {
   const all = lines(text);
-  const found: ExtractedFeeCandidate[] = [];
+  const found: ExtractedFeeCandidate[] = nsfPolicyPrices(text).flatMap(row => {
+    const read = candidate(row.feeName, row.amount, "nsf", row.sourceLine);
+    return read ? [{ ...read, frequency: "per_item", ownedPolicy: true as const, linkedConditions: row.linkedConditions,
+      ...(row.eligibilityRestricted ? { eligibilityReview: true as const } : {}) }] : [];
+  });
   all.forEach((line, index) => {
     if (!line.includes("$") || NO_LONGER_CHARGED.test(line)) return;
     const fee = perItemUnderHeading(all, index) ?? thisFeeAfterTerm(all, index) ?? audienceRowUnderHeading(all, index);

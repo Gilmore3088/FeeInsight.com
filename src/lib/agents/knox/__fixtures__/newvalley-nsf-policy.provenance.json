@@ -1,0 +1,13 @@
+{
+  "source_url": "https://banknewvalley.com/personal/consumer-fees/",
+  "source_html_sha256": "df496dbcbde9219dc6859668b69651eeffb03850b27f727c9d98a4885c35e7f8",
+  "normalized_full_text_sha256": "ebf05f78fa2e3e21c57cb829d1cadc827ae8dd0b72c79dd028988d96b008aee9",
+  "fixture": "newvalley-nsf-policy.txt",
+  "derivation": "Verbatim NSF heading/description, two price paragraphs and their exception sentences from the saved official DOM output; whitespace-only blank lines compacted. Fixture stops before Funds Availability. Tests add the separately explicit nearby Rise exemption and a distinct protection-transfer control.",
+  "related_official_pdf": "https://banknewvalley.com/wp-content/uploads/2026/08/Consumer-Schedule-of-Fees.pdf",
+  "pdf_sha256": "271cbc2b1dd7661c0605a3fc5ea86865add376edfdfeeb43ca010f40856c2737",
+  "pdf_effective_date": "2026-08-21",
+  "pdf_page": 3,
+  "issue": 2209,
+  "not_an_answer_key": true
+}

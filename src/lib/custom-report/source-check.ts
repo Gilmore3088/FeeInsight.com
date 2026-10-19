@@ -18,6 +18,8 @@ import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { newestColumnText } from "@/lib/fee-change-columns";
 import { feeBullets, ownsBulletName } from "./fee-bullets";
 import { accountTableRow } from "@/lib/custom-report/account-table";
+import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
+const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
   | "no_source_text"
@@ -1060,6 +1062,7 @@ function chargedOnceOverdrawnDays(row: string, amount: number, nextLine?: string
 
 /** A cushion or a dollar total for a day is not a per-item overdraft/NSF price. */
 function policyAmount(row: string, amount: number): boolean {
+  if (chargedFeeCountTotal(row, amount)) return true;
   const tokens = moneyTokens(row);
   return tokens.some((token, index) => {
     if (Math.abs(token.value - amount) >= 0.005) return false;
@@ -1091,6 +1094,14 @@ export function checkFeeAgainstSource(
   if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
   // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
   const text = droppedPointText(rawText);
+  // A complete returned/paid-item policy paragraph owns its stated price and linked exceptions.
+  // Only the exact shared reader's name/amount/category can use this witness.
+  if (canonicalFeeKey == null || NSF_POLICY_CATEGORIES.has(canonicalFeeKey)) {
+    const policy = nsfPolicyPrices(text).find(row => row.feeName === feeName && row.amount === amount);
+    if (policy && new RegExp(categoryPattern.replace(/\\m|\\M/g, "\\b"), "i").test(policy.sourceLine)) {
+      return { ok: true, sourceLine: policy.sourceLine };
+    }
+  }
   // An explicit primary bullet owns its price. Never fall back to a neighboring
   // equal/unequal-price row when the owned unit is incomplete or disagrees.
   const owned = feeBullets(text).filter((row) => ownsBulletName(row, feeName));

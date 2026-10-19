@@ -59,6 +59,11 @@ always zero and its misses never enter prompts. See `deming/REFERENCE-ELIGIBILIT
   Darwin or publish joins Darwin's live re-check in the same PR, with a dry-run count of the live
   fees it would take down. Takedowns go through the shared second look and the run ledger
   (`docs/project/DECISIONS.md`, 2026-10-15).
+  #2209's fee-count dollar-total refusal uses the shared source check. Its live twin is the
+  existing Hamilton rules re-check: the Knox v84 free-team fingerprint reselects documents,
+  checks the missing read against its own original source, and uses the normal first flag and
+  12-hour second look before rejection/archive and cache invalidation. It does not raise the
+  general source-check, verify or older-live recheck versions or reopen old rejected rows.
   The account type hold (#1100 gap 1, James Oct 16: a savings, money market, club, business or
   IRA/HSA/CD account's monthly fee is not consumer checking monthly maintenance) has its live
   re-check in Hamilton's publish step (`hamilton/account-type-hold.ts`, part 1), which reads every

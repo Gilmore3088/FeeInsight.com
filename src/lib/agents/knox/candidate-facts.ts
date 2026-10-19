@@ -10,9 +10,10 @@ export function candidateWriteFacts(candidate: ExtractedFeeCandidate) {
     : owner ? { productName: owner.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : null;
   const lineup = read && candidate.canonicalHint !== LINEUP_CATEGORY
     ? { productName: read.productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null } : read;
+  const ownedPrice = candidate.ownedBullet || candidate.ownedPolicy;
   const sourceConditions = owner
-    ? [owner.title, owner.applicability, candidate.ownedBullet ? candidate.excerpt : owner.ownLine,
+    ? [owner.title, owner.applicability, ownedPrice ? candidate.excerpt : owner.ownLine,
       candidate.linkedConditions].filter(Boolean).join("\n")
-    : candidate.ownedBullet ? [candidate.excerpt, candidate.linkedConditions].filter(Boolean).join(" ") : null;
+    : ownedPrice ? [candidate.excerpt, candidate.linkedConditions].filter(Boolean).join(" ") : null;
   return { owner, applicability, lineup, sourceConditions };
 }
