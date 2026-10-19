@@ -243,4 +243,20 @@ describe("source-owned international wire scope, independent of price admission 
   ])("declines ambiguous, repeated or tiered paired prices: %s", text => {
     expect(sourceOwnedWireScope(text, "Wire Transfers – Foreign Incoming", 15).kind).toBe("unresolved");
   });
+
+  it("keeps a left-cell header on the left priced owner, even when the price checker accepts the right row", () => {
+    const text = "International Wire Transfers | Other Fees\nIncoming | $15 | Outgoing | $50";
+    const wrongName = "International Wire Transfers: Outgoing";
+    expect(checkFeeAgainstSource(text, wrongName, 50, ".", "wire_intl_outgoing").ok).toBe(true);
+    expect(sourceOwnedWireScope(text, wrongName, 50).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope(text, "International Wire Transfers: Incoming", 15)).toMatchObject({ kind: "owned", geography: "international", directions: ["incoming"] });
+  });
+
+  it.each([
+    "Wire Transfers | Other Fees\nInternational | Other\nIncoming | $15 | Outgoing | $50",
+    "International Wire Transfers | Other Fees\nIncoming | $15 | | Outgoing | $50",
+  ])("keeps the nearest one-word geography child and empty cells in their physical column: %s", text => {
+    expect(sourceOwnedWireScope(text, "International Wire Transfers: Outgoing", 50).kind).toBe("unresolved");
+    expect(sourceOwnedWireScope(text, "International Wire Transfers: Incoming", 15)).toMatchObject({ kind: "owned", geography: "international", directions: ["incoming"] });
+  });
 });

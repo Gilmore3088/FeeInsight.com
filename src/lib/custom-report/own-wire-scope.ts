@@ -38,7 +38,8 @@ function physicalRows(lines: string[]): PhysicalRow[] {
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const sourceLine = lines[lineIndex].trim();
     if (!sourceLine || sourceLine.length > MAX_ROW) continue;
-    const cells = sourceLine.split("|").map(clean).filter(Boolean);
+    // Keep empty cells: collapsing one would move a right-column label under a left header.
+    const cells = sourceLine.split("|").map(clean);
     result.push({ cells, sourceLine, lineIndex });
     if (cells.length !== 1) continue;
     const cell = cells[0];
@@ -90,28 +91,31 @@ function facts(own: string): { geography: WireGeography; directions: WireDirecti
     directions: [...(incoming ? ["incoming" as const] : []), ...(outgoing ? ["outgoing" as const] : [])] };
 }
 
-function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow>, at: number, admittedZero: boolean): string | null {
+function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow[]>, at: number, admittedZero: boolean, ownerColumn: number): string | null {
   let visited = 0;
   let geographyChild: string | null = null;
   for (let index = at - 1; index >= 0 && at - index <= 14 && visited < 8; index--) {
     const line = clean(lines[index]);
     if (!line) continue;
     visited++;
-    const left = clean(line.split("|").find(cell => cell.trim()) ?? "");
-    const words = left.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
-    if (!/\$|\b(?:free|no charge|no fee)\b/i.test(line) && left.length <= 100 && /\bwires?\b/i.test(left) && WIRE_WORDS.test(words)) return geographyChild ? `${left}\n${geographyChild}` : left;
-    if (/^(?:international|domestic)$/i.test(line)) { geographyChild ??= line; continue; }
+    const cells = line.split("|").map(clean);
+    const column = cells[ownerColumn] ?? "";
+    const nextCell = cells[ownerColumn + 1] ?? "";
+    const ownPrice = /\$|\b(?:free|no charge|no fee)\b/i.test(column) || /^\$|^(?:free|no charge|no fee)\b/i.test(nextCell);
+    const words = column.replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
+    if (!ownPrice && column.length <= 100 && /\bwires?\b/i.test(column) && WIRE_WORDS.test(words)) return geographyChild ? `${column}\n${geographyChild}` : column;
+    if (!ownPrice && /^(?:international|domestic)$/i.test(column)) { geographyChild ??= column; continue; }
     // Only consecutive simple rows can remain under the nearest literal wire heading.
-    const prior = rows.get(index);
-    const inlinePrice = [...line.matchAll(MONEY)][0];
-    const price = prior?.cells[1] ?? (inlinePrice ? line.slice(inlinePrice.index) : "");
-    const label = (prior?.cells[0] ?? (inlinePrice ? line.slice(0, inlinePrice.index) : "")).replace(/(?:\.\s*){3,}|…/g, " ").replace(/\b(incoming|outgoing)[1-3](?:,[1-3])?(?=\s|$)/gi, "$1").replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
+    const prior = rows.get(index)?.find(row => row.cells[ownerColumn] && row.cells[ownerColumn + 1]);
+    const inlinePrice = [...column.matchAll(MONEY)][0];
+    const price = inlinePrice ? column.slice(inlinePrice.index) : prior?.cells[ownerColumn + 1] ?? "";
+    const label = (inlinePrice ? column.slice(0, inlinePrice.index) : prior?.cells[ownerColumn] ?? "").replace(/(?:\.\s*){3,}|…/g, " ").replace(/\b(incoming|outgoing)[1-3](?:,[1-3])?(?=\s|$)/gi, "$1").replace(/[():/&-]/g, " ").replace(/\s+/g, " ").trim();
     const simplePrice = SIMPLE_PRICE.test(price) || (admittedZero && /^(?:free|no charge|no fee)\s*(?:per wire|each|per item)?\s*$/i.test(price));
     const directedLabel = WIRE_WORDS.test(label) || /^(?:(?:USD|US Dollars?|Foreign Currency)\s+)?(?:Incoming|Outgoing)$/i.test(label);
     if (directedLabel && simplePrice) continue;
     // In a stacked table the prior price line is followed backwards by its explicit label.
-    if (SIMPLE_PRICE.test(line) && index > 0 && [rows.get(index - 1), rows.get(index - 2)].some(row => row
-      && WIRE_WORDS.test(row.cells[0]) && row.sourceLine.endsWith(lines[index].trim()))) continue;
+    if (SIMPLE_PRICE.test(column) && index > 0 && [rows.get(index - 1), rows.get(index - 2)].flat().some(row => row
+      && WIRE_WORDS.test(row.cells[ownerColumn] ?? "") && row.sourceLine.endsWith(lines[index].trim()))) continue;
     break;
   }
   return null;
@@ -124,7 +128,8 @@ function headingBefore(lines: string[], rows: ReadonlyMap<number, PhysicalRow>, 
 export function sourceOwnedWireScope(text: string, feeName: string, admittedAmount: number): OwnWireScope {
   if (!Number.isFinite(admittedAmount) || admittedAmount < 0) return { kind: "unresolved", reason: "missing_owner" };
   const key = labelKey(feeName), lines = text.split(/\r?\n/), rows = physicalRows(lines);
-  const simpleRows = new Map(rows.filter(row => row.cells.length === 2).map(row => [row.lineIndex, row]));
+  const rowsByLine = new Map<number, PhysicalRow[]>();
+  for (const row of rows) rowsByLine.set(row.lineIndex, [...(rowsByLine.get(row.lineIndex) ?? []), row]);
   if (!key) return { kind: "unresolved", reason: "missing_owner" };
   const found: Extract<OwnWireScope, { kind: "owned" }>[] = [];
   let unsupported = false;
@@ -155,7 +160,6 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
   }
   for (const { lineIndex, cells, sourceLine } of rows) {
     if (literalClauses.some(row => row.lineIndex === lineIndex)) continue;
-    const heading = headingBefore(lines, simpleRows, lineIndex, admittedAmount === 0);
     for (const [cellIndex, cell] of cells.entries()) {
       const dollars = [...cell.matchAll(MONEY)];
       // Factual ownership for an ALREADY admitted zero; no numeric admission is added.
@@ -165,10 +169,13 @@ export function sourceOwnedWireScope(text: string, feeName: string, admittedAmou
       if (!price || (!zeroMarker && !prices.some(row => Number(row[1].replace(/,/g, "")) === admittedAmount))) continue;
       let label = clean(cell.slice(0, price.index));
       let ownText = cell;
+      let ownerColumn = cellIndex;
       if (!label && cellIndex > 0 && !/[$%]/.test(cells[cellIndex - 1])) {
         label = cells[cellIndex - 1];
         ownText = `${label} | ${cell}`;
+        ownerColumn = cellIndex - 1;
       }
+      const heading = headingBefore(lines, rowsByLine, lineIndex, admittedAmount === 0, ownerColumn);
       const combined = heading ? `${heading}: ${label}` : label;
       const after = clean(cell.slice(price.index! + price[0].length));
       const prefixes = heading ? [heading, heading.split("\n").reverse().join(" ")] : [];
