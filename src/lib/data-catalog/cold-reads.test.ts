@@ -5,6 +5,8 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(() => Promise.reject(
 import { ColdFileWriter, type ColdStore } from "@/lib/agents/hoovie/cold-files";
 import { CALL_ITEM_COLUMNS } from "@/lib/agents/hoovie/storage-tiers";
 import {
+  callSourcePeriodKey,
+  canonicalColdCallRows,
   clearColdIndexCache,
   coldCallRollup,
   coldFilesInRange,
@@ -40,11 +42,36 @@ describe("cold reads", () => {
   it("picks files by source and month bounds, newest first, skipping periods Postgres answered", () => {
     const f = (source: string, period: string) => ({ source, period, objectKey: `${source}/${period}`, rowCount: 1, sha256: "x" });
     const files = [f("ffiec", "2018-03-31"), f("ncua", "2019-06-30"), f("ffiec", "2019-06-30"), f("ffiec", "2020-12-31")];
-    expect(coldFilesInRange(files, { rowSources: ["ffiec"], from: "2018-04", to: null, hotPeriods: new Set(["2020-12-31"]) })).toEqual([f("ffiec", "2019-06-30")]);
-    expect(coldFilesInRange(files, { rowSources: ["ffiec", "ncua"], from: null, to: "2019-06", hotPeriods: new Set() }).map((x) => x.objectKey)).toEqual([
+    expect(coldFilesInRange(files, { rowSources: ["ffiec"], from: "2018-04", to: null, hotSourcePeriods: new Set([callSourcePeriodKey("ffiec", "2020-12-31")]) })).toEqual([f("ffiec", "2019-06-30")]);
+    expect(coldFilesInRange(files, { rowSources: ["ffiec", "ncua"], from: null, to: "2019-06", hotSourcePeriods: new Set() }).map((x) => x.objectKey)).toEqual([
       "ffiec/2019-06-30",
       "ncua/2019-06-30",
       "ffiec/2018-03-31",
+    ]);
+  });
+
+  it("keeps archived NCUA and FFIEC coverage independent within the same period", () => {
+    const files = ["ffiec", "ncua"].map((source) => ({ source, period: "2026-06-30", objectKey: source, rowCount: 1, sha256: "x" }));
+    expect(coldFilesInRange(files, { rowSources: ["ffiec", "ncua"], from: null, to: null,
+      hotSourcePeriods: new Set([callSourcePeriodKey("ffiec", "2026-06-30")]) })).toEqual([files[1]]);
+    expect(coldFilesInRange(files, { rowSources: ["ffiec", "ncua"], from: null, to: null,
+      hotSourcePeriods: new Set([callSourcePeriodKey("ncua", "2026-06-30")]) })).toEqual([files[0]]);
+  });
+
+  it("requires canonical institution identity before archived rows enter a series or rollup", () => {
+    const rows = [
+      row({ institution_id: 1, source: "ffiec", value: 10 }),
+      row({ institution_id: 2, source: "ncua", value: 20 }),
+      row({ institution_id: 1, source: "ncua", value: 999 }),
+      row({ institution_id: 2, source: "ffiec", value: 999 }),
+      row({ institution_id: 3, source: "ncua", value: 999 }),
+      row({ institution_id: 4, source: "ncua", value: 999 }),
+    ];
+    const filtered = canonicalColdCallRows(rows, [{ id: "1", charter_type: "bank" }, { id: 2, charter_type: "credit_union" }, { id: 3, charter_type: "unknown" }]);
+    expect(filtered.map((r) => [r.institution_id, r.source])).toEqual([[1, "ffiec"], [2, "ncua"]]);
+    expect(coldInstitutionSeries(filtered).map((r) => r.value)).toEqual([10000, 20000]);
+    expect(coldCallRollup(filtered).map((r) => [r.sources, r.institution_count, r.median])).toEqual([
+      [["ffiec"], 1, 10000], [["ncua"], 1, 20000],
     ]);
   });
 
@@ -63,7 +90,8 @@ describe("cold reads", () => {
       row({ report_date: "2019-03-31", value: 5 }),
     ];
     expect(coldCallRollup(rows)).toEqual([
-      { period: "2019-06-30", unit: "USD", median: 1_000, p25: 501, p75: 2_000, institution_count: 3, period_basis: "ytd", sources: ["ffiec", "ncua"], fetched_at: "2026-02-01", source_url: "new" },
+      { period: "2019-06-30", unit: "USD", median: 2_000, p25: 1500, p75: 2500, institution_count: 2, period_basis: "ytd", sources: ["ffiec"], fetched_at: "2026-02-01", source_url: "new" },
+      { period: "2019-06-30", unit: "USD", median: 2, p25: 2, p75: 2, institution_count: 1, period_basis: "ytd", sources: ["ncua"], fetched_at: null, source_url: null },
       { period: "2019-03-31", unit: "USD", median: 5_000, p25: 5_000, p75: 5_000, institution_count: 1, period_basis: "ytd", sources: ["ffiec"], fetched_at: null, source_url: null },
     ]);
     expect(coldInstitutionSeries([row({ value: 2 })])[0]).toMatchObject({ period: "2019-06-30", value: 2_000, unit: "USD" });

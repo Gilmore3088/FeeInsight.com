@@ -5,6 +5,7 @@
  * year-to-date less the prior quarter). Pure; the rows come from getFeeRevenueData.
  */
 import type { FeeRevenueCorrelation } from "@/lib/data-store/fee-revenue";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 
 /** Below this many peers there is no median (the Pro evidence rule). */
 export const MIN_PEERS_FOR_MEDIAN = 5;
@@ -43,6 +44,8 @@ function describe(row: FeeRevenueCorrelation) {
     charter_type: row.charter_type,
     total_assets: row.total_assets,
     service_charge_income: row.service_charge_income,
+    financial_source: row.financial_source,
+    report_date: row.report_date,
     income_per_10k_assets: row.fee_income_ratio,
   };
 }
@@ -59,11 +62,19 @@ export function feeIncomeAgainstPeers(
       error: "This institution has no call report service charge income on file with at least three published fees, so its fee income cannot be compared.",
     };
   }
+  const source = financialSourceForCharter(subject.charter_type);
+  if (!source || subject.financial_source !== source || !subject.report_date || subject.service_charge_income === null || !Number.isFinite(Number(subject.service_charge_income))) {
+    return { view: "peers" as const, error: "This institution has no source- and charter-consistent dated financial filing, so its fee income cannot be compared." };
+  }
   const peers = rows.filter((row) =>
     row.institution_id !== institutionId
     && row.report_date === subject.report_date
-    && row.financial_source === subject.financial_source
+    && row.financial_source === source
+    && financialSourceForCharter(row.charter_type) === source
     && row.fee_income_ratio !== null
+    && Number.isFinite(Number(row.fee_income_ratio))
+    && row.service_charge_income !== null
+    && Number.isFinite(Number(row.service_charge_income))
     && matches(row, filters),
   );
   const ratios = peers.map((row) => Number(row.fee_income_ratio));
@@ -76,12 +87,23 @@ export function feeIncomeAgainstPeers(
     view: "peers" as const,
     quarter: subject.report_date ?? null,
     income_basis: subject.financial_source === "ncua"
-      ? "NCUA 5300 service charge income for this quarter (year to date less the prior quarter)"
-      : "FDIC call report service charge income for this quarter",
+      ? "NCUA 5300 broad fee income (account 131) for this quarter (year to date less the prior quarter); not deposit-only service charges"
+      : "FDIC call report deposit-account service charge income for this quarter",
     measure: "income_per_10k_assets is service charge income per $10,000 of total assets",
     subject: describe(subject),
     peer_count: peers.length,
-    peers_rule: "Peers filed for the same quarter with the same regulator; the institution itself is not counted.",
+    peers_rule: "Peers filed for the same quarter with the same canonical regulator and charter type; the institution itself is not counted. Bank deposit-account service charges and NCUA broad fee income are not comparable measures.",
+    comparison: {
+      ...financialMeasureDefinition(source),
+      financial_source: source,
+      report_date: subject.report_date,
+      period_basis: "standalone_quarter",
+      income_unit: "thousands of dollars",
+      ratio_unit: "USD income per 10,000 USD assets",
+      subject_included: false,
+      sample_size: peers.length,
+      filters,
+    },
     peer_median_income_per_10k_assets: peerMedian === null ? null : Math.round(peerMedian * 100) / 100,
     peer_median_service_charge_income: enough ? median(peers.map((row) => Number(row.service_charge_income ?? 0))) : null,
     peers_below_subject: below,

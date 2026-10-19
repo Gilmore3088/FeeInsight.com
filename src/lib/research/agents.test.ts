@@ -130,6 +130,15 @@ describe("getHamilton", () => {
     expect(config.systemPrompt).toContain("queryFeeRevenueCorrelation(view='peers'");
   });
 
+  it("all Hamilton audiences preserve the financial measure boundary while allowing same-fee price comparisons", async () => {
+    for (const role of ["consumer", "pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(config.systemPrompt).toContain("bank deposit-account service charges (FDIC) and broad credit-union fee income (NCUA) are different measures");
+      expect(config.systemPrompt).toContain("Never pool them into a financial median, ranking, revenue share or trend");
+      expect(config.systemPrompt).toContain("Published prices for the same fee category may still be compared across charters");
+    }
+  });
+
   it("pro and admin answers can read the data catalog; the consumer answer cannot", async () => {
     for (const role of ["pro", "admin"] as const) {
       const config = await getHamilton(role);

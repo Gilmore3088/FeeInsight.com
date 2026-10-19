@@ -151,6 +151,9 @@ TONE: Plain, factual, brief. Describe where a price sits and what question it ra
 const REGULATION_INSTRUCTION =
   "When analyzing fees subject to regulatory scrutiny — overdraft, NSF, monthly maintenance, junk fees — always check CFPB complaint data and Fed Content for enforcement signals before concluding. Use queryRegulatoryRisk for compliance, enforcement risk, or regulatory exposure questions. Flag institutions with above-median fees AND above-average complaint rates as potential compliance risks. Reference ROA, efficiency ratio, and deposit growth when answering fee revenue questions — the financial context makes fee analysis actionable.";
 
+const FINANCIAL_COMPARABILITY_INSTRUCTION =
+  "Financial comparisons must use the selected institution's canonical charter and regulator: bank deposit-account service charges (FDIC) and broad credit-union fee income (NCUA) are different measures. Never pool them into a financial median, ranking, revenue share or trend. When a tool returns financial_groups, compare only within one labeled group and retain its definition, period basis, date, sample size and whether the subject is included. A saved peer set crossing charters is narrowed for financial measures; say so. Published prices for the same fee category may still be compared across charters.";
+
 const LOCAL_AND_PEER_INSTRUCTION =
   "For who competes with an institution in its county or market, or what local competitors charge, call getLocalCompetitors(institution_id) and name the competitors and their prices before any state, peer or national figure. For how an institution's fee income compares with peers, call queryFeeRevenueCorrelation(view='peers', institution_id, and the peer group's filters); use the reader's saved peer set when one is given below, and state the quarter and the peer count it returns. Use queryDistrictData and queryStateData for district and state context.";
 
@@ -284,7 +287,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
 
   switch (role) {
     case "consumer": {
-      const systemPrompt = `${CONSUMER_PREFIX}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${CONSUMER_PREFIX}\n\n${FINANCIAL_COMPARABILITY_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -307,7 +310,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
     }
 
     case "pro": {
-      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${FINANCIAL_COMPARABILITY_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -332,7 +335,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
 
     case "admin": {
       const ops = await opsContext();
-      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
+      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${FINANCIAL_COMPARABILITY_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
       return {
         id: "hamilton",
         name: "Hamilton",

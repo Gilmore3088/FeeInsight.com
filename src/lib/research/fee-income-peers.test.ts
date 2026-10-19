@@ -47,7 +47,26 @@ describe("feeIncomeAgainstPeers", () => {
   it("filters by state, charter, asset tier and district", () => {
     const varied = [...rows, row(10, 9, { state_code: "WI" }), row(11, 9, { charter_type: "credit_union" }), row(12, 9, { asset_size_tier: "large" }), row(13, 9, { fed_district: 7 })];
     expect(feeIncomeAgainstPeers(varied, 1, { states: ["MN"], charterType: "bank", assetTiers: ["community_small"], fedDistricts: [9] })).toMatchObject({ peer_count: 6 });
-    expect(feeIncomeAgainstPeers(varied, 1, {})).toMatchObject({ peer_count: 10 });
+    expect(feeIncomeAgainstPeers(varied, 1, {})).toMatchObject({ peer_count: 9 });
+  });
+
+  it("rejects missing or unknown source identity, including equal invalid sources", () => {
+    for (const financial_source of [null, undefined, "ffiec", "mystery", "FDIC"]) {
+      const invalid = [row(1, 3, { financial_source }), row(2, 4, { financial_source })];
+      expect(feeIncomeAgainstPeers(invalid, 1, {})).toMatchObject({ error: expect.stringContaining("cannot be compared") });
+    }
+  });
+
+  it("excludes the same regulator attached to the wrong charter, and requires a dated subject", () => {
+    const mixed = [...rows, row(8, 100, { charter_type: "credit_union" }), row(9, 200, { charter_type: "unknown" })];
+    expect(feeIncomeAgainstPeers(mixed, 1, {})).toMatchObject({ peer_count: 6, peer_median_income_per_10k_assets: 4.5 });
+    expect(feeIncomeAgainstPeers([row(1, 3, { report_date: null })], 1, {})).toHaveProperty("error");
+  });
+
+  it("carries source, definition, period, date, count, filters and subject inclusion with its figures", () => {
+    expect(feeIncomeAgainstPeers(rows, 1, { states: ["MN"] })).toMatchObject({
+      comparison: { source: "fdic", charter_type: "bank", definition: expect.stringContaining("deposit"), period_basis: "standalone_quarter", report_date: "2026-06-30", sample_size: 6, subject_included: false, filters: { states: ["MN"] } },
+    });
   });
 
   it("says so when the institution has no fee income on file", () => {

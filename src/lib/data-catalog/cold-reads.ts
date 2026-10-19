@@ -50,17 +50,22 @@ export async function prunedCallFiles(now = Date.now()): Promise<ColdFileRef[]> 
   return files;
 }
 
+/** A filing period is covered independently for each regulator. */
+export function callSourcePeriodKey(source: string, period: string): string {
+  return JSON.stringify([source, period]);
+}
+
 /**
  * Pure: the files a query needs, newest first: the row sources it reads, inside the month bounds
- * (same rule as the hot query: the report date's YYYY-MM), and not a period Postgres already answered.
+ * (same rule as the hot query: the report date's YYYY-MM), excluding only source/periods Postgres answered.
  */
 export function coldFilesInRange(
   files: readonly ColdFileRef[],
-  args: { rowSources: readonly string[]; from: string | null; to: string | null; hotPeriods: ReadonlySet<string> },
+  args: { rowSources: readonly string[]; from: string | null; to: string | null; hotSourcePeriods: ReadonlySet<string> },
 ): ColdFileRef[] {
   return files
     .filter((f) => args.rowSources.includes(f.source))
-    .filter((f) => !args.hotPeriods.has(f.period))
+    .filter((f) => !args.hotSourcePeriods.has(callSourcePeriodKey(f.source, f.period)))
     .filter((f) => (args.from == null || f.period.slice(0, 7) >= args.from) && (args.to == null || f.period.slice(0, 7) <= args.to))
     .sort((a, b) => (a.period === b.period ? a.source.localeCompare(b.source) : a.period < b.period ? 1 : -1));
 }
@@ -131,6 +136,22 @@ export async function readColdCallRows(
   return { rows, failed };
 }
 
+/**
+ * Archive integrity is not institution identity. Apply the same current canonical
+ * charter/source boundary as the hot SQL before either a series or a median is shaped.
+ */
+export function canonicalColdCallRows(
+  rows: readonly ColdCallRow[],
+  identities: readonly { id: number | string; charter_type: unknown }[],
+): ColdCallRow[] {
+  const charterById = new Map(identities.map((identity) => [String(identity.id), identity.charter_type]));
+  return rows.filter((row) => {
+    if (!Number.isSafeInteger(row.institution_id) || row.institution_id <= 0) return false;
+    const charter = charterById.get(String(row.institution_id));
+    return (charter === "bank" && row.source === "ffiec") || (charter === "credit_union" && row.source === "ncua");
+  });
+}
+
 /** Same conversion as the hot reads: FFIEC thousands become dollars; counts stay counts. */
 function comparable(row: ColdCallRow): { value: number; unit: string } {
   return { value: row.unit === "thousands" ? row.value * 1000 : row.value, unit: row.unit === "count" ? "count" : "USD" };
@@ -168,7 +189,7 @@ export function percentileCont(sorted: readonly number[], fraction: number): num
 export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
   const groups = new Map<string, ColdCallRow[]>();
   for (const row of rows) {
-    const key = `${row.report_date}|${comparable(row).unit}|${row.period_basis}`;
+    const key = `${row.report_date}|${comparable(row).unit}|${row.period_basis}|${row.source}`;
     const list = groups.get(key) ?? [];
     list.push(row);
     groups.set(key, list);

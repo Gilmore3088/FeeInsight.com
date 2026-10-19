@@ -167,8 +167,10 @@ export interface PeerIncomeSeries {
   sourceRef: SourceRef;
 }
 
-/** Industry-wide deposit service charge income, from every FDIC and NCUA filer on file. */
+/** Source-specific national quarterly income; bank deposit charges and CU broad fee income stay separate. */
 export interface MarketIncome {
+  financialSource?: "fdic" | "ncua";
+  measureDefinition?: Record<string, unknown>;
   quarter: string;
   /** Dollars, that quarter. */
   total: number;

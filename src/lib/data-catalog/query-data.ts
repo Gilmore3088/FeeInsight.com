@@ -55,6 +55,8 @@ import {
 } from "./roll-ups";
 import {
   MAX_COLD_FILES_PER_QUERY,
+  callSourcePeriodKey,
+  canonicalColdCallRows,
   coldCallRollup,
   coldFilesInRange,
   coldInstitutionSeries,
@@ -692,7 +694,7 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
     measure: input.measure,
     scope: scope.kind,
     ...metadata,
-    rows: rows.map((r) => ({ ...rollupRow(r, label, memberCount), period_basis: r.period_basis, sources: (r.sources ?? []).join(", ") })),
+    rows: rows.map((r) => ({ ...rollupRow(r, `${label} — ${(r.sources ?? []).join("/").toUpperCase()} filers only`, memberCount), period_basis: r.period_basis, sources: (r.sources ?? []).join(", ") })),
     unit: units.length === 1 ? units[0] : units.length > 1 ? "mixed" : null,
     citation: citation(rows, [...new Set(rows.flatMap((r) => r.sources ?? []))]),
     note: `${measure && rows.length === 0 ? `No comparable loaded figures for this line with unit ${measure.unit} and period basis ${measure.periodBasis}. ` : ""}${coverageNote(rows, memberCount, "a filed figure")}${coldNote ? ` ${coldNote}` : ""}`,
@@ -885,22 +887,35 @@ export function familyRows(root: FamilyNode, subjectLeis: Set<string>): QueryDat
 /**
  * Adds archived quarters (#1870): when the hot rows leave room under the limit, quarters whose
  * rows were pruned to cold files are read from those files and shaped like the hot rows. Hot
- * periods always win; at most MAX_COLD_FILES_PER_QUERY files are read per question.
+ * source/period pairs always win; at most MAX_COLD_FILES_PER_QUERY files are read per question.
  */
-async function withColdQuarters<T extends { period: string }>(
+async function withColdQuarters<T extends { period: string; source?: string; sources?: readonly string[] | null }>(
   hotRows: T[],
   args: { itemKey: string; rowSources: string[]; from: string | null; to: string | null; limit: number; institutionIds: number[] | null },
   shape: (rows: ColdCallRow[]) => T[],
 ): Promise<{ rows: T[]; note: string | null }> {
   if (hotRows.length >= args.limit) return { rows: hotRows, note: null };
-  const files = coldFilesInRange(await prunedCallFiles(), { ...args, hotPeriods: new Set(hotRows.map((r) => r.period)) });
+  const hotSourcePeriods = new Set(hotRows.flatMap((row) =>
+    (row.source ? [row.source] : row.sources ?? []).map((source) => callSourcePeriodKey(source, row.period)),
+  ));
+  const files = coldFilesInRange(await prunedCallFiles(), { ...args, hotSourcePeriods });
   if (files.length === 0) return { rows: hotRows, note: null };
   const read = files.slice(0, MAX_COLD_FILES_PER_QUERY);
   const cold = await readColdCallRows(read, { itemKey: args.itemKey, institutionIds: args.institutionIds });
-  const rows = [...hotRows, ...shape(cold.rows)]
+  const institutionIds = [...new Set(cold.rows.map((row) => row.institution_id))]
+    .filter((id) => Number.isSafeInteger(id) && id > 0);
+  const identities = institutionIds.length === 0 ? [] : await withTransaction(async (tx) => {
+    await tx`SET LOCAL statement_timeout = '5s'`;
+    return tx<Array<{ id: number | string; charter_type: string }>>`
+      SELECT id, charter_type FROM institution_sources WHERE id = ANY(${institutionIds}::bigint[])
+    `;
+  });
+  const comparableRows = canonicalColdCallRows(cold.rows, identities);
+  const rows = [...hotRows, ...shape(comparableRows)]
     .sort((a, b) => (a.period === b.period ? 0 : a.period < b.period ? 1 : -1))
     .slice(0, args.limit);
   const notes: string[] = [];
+  if (comparableRows.length < cold.rows.length) notes.push("Archived rows with unknown or mismatched canonical institution identity are excluded.");
   if (files.length > read.length) notes.push(`Older quarters are archived; at most ${MAX_COLD_FILES_PER_QUERY} archived quarter files are read per question, so ask with a narrower period to read the rest.`);
   if (cold.failed.length > 0) notes.push(`Archived quarters that could not be read are left out: ${cold.failed.join(", ")}.`);
   return { rows, note: notes.length > 0 ? notes.join(" ") : null };
