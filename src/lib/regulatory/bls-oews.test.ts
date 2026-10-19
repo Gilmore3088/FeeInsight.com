@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 
-import { fetchOews, metroState, oewsUrl, parseOewsWorkbook, streamXlsxRows } from "./bls-oews";
+import { fetchOews, readOewsBytes, oewsWorkbookFromZip, OEWS_MAX_WORKBOOK_BYTES, metroState, oewsUrl, parseOewsWorkbook, streamXlsxRows } from "./bls-oews";
 
 function colName(i: number): string {
   let s = "";
@@ -87,4 +87,54 @@ describe("fetchOews", () => {
     expect(r.missingFields).toContain("st file");
     expect(oewsUrl(2024, "ma")).toBe("https://www.bls.gov/oes/special-requests/oesm24ma.zip");
   });
+});
+
+describe("OEWS download failures", () => {
+  it("names the year, level, archive stage and byte count for a truncated outer ZIP", async () => {
+    const bytes=zipSync({"national_M2022_dl.xlsx":xlsx([HEADER])}).subarray(0,30);
+    const fetchImpl=vi.fn(async()=>new Response(bytes,{headers:{"content-type":"application/zip"}})) as unknown as typeof fetch;
+    await expect(fetchOews(2022,{fetchImpl,retries:0})).rejects.toThrow(/2022 nat outer ZIP.*bytes=30/);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  it("distinguishes an invalid inner workbook from an invalid outer archive", async () => {
+    const bytes=zipSync({"national_M2022_dl.xlsx":new Uint8Array([80,75,3,4])});
+    const fetchImpl=vi.fn(async()=>new Response(bytes)) as unknown as typeof fetch;
+    await expect(fetchOews(2022,{fetchImpl,retries:0})).rejects.toThrow(/2022 nat XLSX.*bytes=/);
+  });
+  it("does not count a 200 HTML block page as a successful empty check", async () => {
+    const fetchImpl=vi.fn(async()=>new Response("<html>refused</html>",{headers:{"content-type":"text/html"}})) as unknown as typeof fetch;
+    await expect(fetchOews(2022,{fetchImpl,retries:0})).rejects.toThrow(/2022 nat download.*not a ZIP.*content_type=text\/html/);
+  });
+});
+
+describe("OEWS archive bounds", () => {
+  it("cancels before reading a declared oversized response", async () => {
+    let cancelled=false;
+    const response=new Response(new ReadableStream({cancel(){cancelled=true;}}),{headers:{"content-length":"100"}});
+    await expect(readOewsBytes(response,10)).rejects.toThrow("declared download exceeds");
+    expect(cancelled).toBe(true);
+  });
+  it("cancels an undeclared oversized stream and checks truncated identity bodies", async () => {
+    let cancelled=false;
+    const response=new Response(new ReadableStream({start(controller){controller.enqueue(new Uint8Array(11));},cancel(){cancelled=true;}}));
+    await expect(readOewsBytes(response,10)).rejects.toThrow("received download exceeds");
+    expect(cancelled).toBe(true);
+    await expect(readOewsBytes(new Response(new Uint8Array(2),{headers:{"content-length":"3"}}),10)).rejects.toThrow("incomplete download");
+  });
+  it("compares decoded size only to the byte cap when HTTP compression is declared", async () => {
+    expect(await readOewsBytes(new Response(new Uint8Array(2),{headers:{"content-length":"1","content-encoding":"gzip"}}),10)).toHaveLength(2);
+  });
+  it("rejects an oversized workbook from directory metadata before inflating it", () => {
+    const bytes=zipSync({"MSA_M2022_dl.xlsx":new Uint8Array(2)});
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    // Change only the central-directory uncompressed size; allocate no huge fixture.
+    for(let at=0;at<bytes.length-24;at++) if(view.getUint32(at,true)===0x02014b50){view.setUint32(at+24,OEWS_MAX_WORKBOOK_BYTES+1,true);break;}
+    expect(()=>oewsWorkbookFromZip(bytes,"ma")).toThrow("workbook exceeds");
+  });
+});
+
+it("does not record a valid ZIP with non-workbook contents as an empty XLSX check", async () => {
+  const bytes=zipSync({"national_M2022_dl.xlsx":zipSync({"readme.txt":strToU8("unavailable")})});
+  const fetchImpl=vi.fn(async()=>new Response(bytes)) as unknown as typeof fetch;
+  await expect(fetchOews(2022,{fetchImpl,retries:0})).rejects.toThrow(/2022 nat XLSX: ZIP is missing XLSX/);
 });
