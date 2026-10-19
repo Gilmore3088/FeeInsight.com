@@ -39,11 +39,15 @@ The ordinary insert retains `ON CONFLICT DO NOTHING`. Only proven monthly ambigu
 locks the conflict's exact raw identity in an actual transaction, then uses a fresh
 statement snapshot to check judgments before updating. This also handles a concurrent
 ordinary insert winning an initially absent key. Darwin checks the current monthly
-eligibility flag after its raw lock, including NULL or legacy unrepresented products.
+eligibility and canonical-hint flags after its raw lock, independently of the stale
+chosen category. Every caller locks, including NULL or legacy unrepresented products.
 It does not require a needs-verification flag for legitimate historical rejudges.
 Two actual-function, two-connection PostgreSQL repros established both prior races:
 an UPSERT could rewrite history after waiting for Darwin's commit, and a stale Darwin
-selection could verify after a monthly hold committed. Both directions are regressions.
+selection could verify after a monthly hold committed. A stale `minimum_balance` choice
+also reproduced the latter bypass when the guard depended on the caller's chosen key;
+current raw canonical proof now owns the decision. Both directions and both product
+representations have permanent real PostgreSQL regressions.
 Every identity with any verified judgment stays byte-for-byte unchanged, including
 rejected/operator-held/published history. An existing safe eligibility hold stays
 unchanged too. The retained source evidence and provider flags survive common-writer
