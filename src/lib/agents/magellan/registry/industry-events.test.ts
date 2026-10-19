@@ -135,7 +135,7 @@ describe("registry industry-events: NCUA proposed mergers", () => {
     // An unknown merging CU and a continuing name two credit unions share both stay unmatched.
     expect(payload[1]).toMatchObject({ institution_id: null, acquirer_cert: null, effective_date: "2026-10-08" });
     expect(payload[1].event_key).toMatch(/^ncua-proposed-merger:[0-9a-f]{40}$/);
-    expect(partitionDetail(statements)).toMatchObject({ acquirers_matched: 1 });
+    expect(partitionDetail(statements)).toMatchObject({ acquirers_matched: 1, acquirers_ambiguous: 1 });
   });
 
   it("is listed as its own partition", () => {

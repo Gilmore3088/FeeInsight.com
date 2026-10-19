@@ -274,11 +274,13 @@ export function prepareProposedMergers(fetched: FetchedEvents, creditUnions: Ins
   const unique = [...new Map(fetched.events.map((e) => [e.eventKey, e])).values()];
   const cleaning: CleaningInput[] = [];
   let acquirersMatched = 0;
+  let acquirersAmbiguous = 0;
   const rows: StructurePayload[] = unique.map((e) => {
     const merging = matchInstitution(index, { name: e.institutionName, nameWithoutState: true });
     const continuing = matchInstitution(index, { name: e.acquirerName, nameWithoutState: true });
     const acquirerCert = continuing.institutionId !== null ? charterById.get(continuing.institutionId) ?? null : null;
     if (acquirerCert) acquirersMatched += 1;
+    if (continuing.ambiguous) acquirersAmbiguous += 1;
     cleaning.push({
       key: e.eventKey,
       institutionId: merging.institutionId,
@@ -312,7 +314,7 @@ export function prepareProposedMergers(fetched: FetchedEvents, creditUnions: Ins
     cleaning,
     reason: rows.length === 0 ? fetched.reason ?? "no records" : null,
     refreshHours: HOURS.week,
-    extra: { ...fetched.extra, total: fetched.total, duplicate_records: fetched.events.length - unique.length, acquirers_matched: acquirersMatched },
+    extra: { ...fetched.extra, total: fetched.total, duplicate_records: fetched.events.length - unique.length, acquirers_matched: acquirersMatched, acquirers_ambiguous: acquirersAmbiguous },
     write: writeStructureEvents("ncua-proposed-mergers", rows),
   };
 }

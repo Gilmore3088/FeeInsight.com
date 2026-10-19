@@ -494,6 +494,8 @@ export async function fetchPublishedList<F extends string>(
   spec: HeaderSpec<F>,
   required: readonly F[],
   options: RegistryFetchOptions = {},
+  /** Most data files downloaded per page (a page listing one file per quarter, newest first, needs 1). */
+  maxFiles: number = Infinity,
 ): Promise<PublishedList<F>> {
   const result: PublishedList<F> = { sourceUrl: null, pagesTried: [], candidates: [], fileUrl: null, innerFile: null, table: null, reason: null };
   const reasons: string[] = [];
@@ -515,7 +517,7 @@ export async function fetchPublishedList<F extends string>(
     }
     const links = html ? findDataLinks(html, page, accept) : result.candidates.filter((c) => c.url === page);
     if (html) result.candidates.push(...links);
-    for (const link of links.filter((l) => READABLE.includes(l.kind))) {
+    for (const link of links.filter((l) => READABLE.includes(l.kind)).slice(0, maxFiles)) {
       const bytes = new Uint8Array(await (await registryFetch(link.url, { timeoutMs: 180_000, ...options })).arrayBuffer());
       const read = readTableFile(bytes, link.kind);
       if (!read.table) {
@@ -641,7 +643,8 @@ export async function fetchFdicFailures(options: RegistryFetchOptions = {}): Pro
 
 /**
  * NCUA's quarterly Merger Activity and Insurance Report: the landing page links one ZIP per
- * quarter (insurance-report-activity-<month>-<year>.zip), newest first. The two addresses used
+ * quarter (insurance-report-activity-<month>-<year>.zip), newest first; only the newest is read,
+ * so an unreadable layout costs one download, not one per quarter. The two addresses used
  * before 2026-10-19 return 404 (registry run 8051, 2026-10-17). The run reports each page tried.
  */
 export const NCUA_MERGER_PAGES = ["https://ncua.gov/analysis/chartering-mergers/merger-activity-insurance-report"] as const;
@@ -713,7 +716,7 @@ function listToEvents<F extends string>(
 }
 
 export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_MERGER_PAGES): Promise<FetchedEvents> {
-  const list = await fetchPublishedList<MergerField>(pages, NCUA_MERGER_LINKS, NCUA_MERGER_SPEC, ["name", "date"], options);
+  const list = await fetchPublishedList<MergerField>(pages, NCUA_MERGER_LINKS, NCUA_MERGER_SPEC, ["name", "date"], options, 1);
   return listToEvents(list, (f, raw) => ({
     eventKey: `ncua-merger:${hashKey([idValue(f.charter), eventDate(f.date), exactNameKey(f.name), exactNameKey(f.acquirerName), f.type])}`,
     cert: idValue(f.charter),
@@ -732,7 +735,8 @@ export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages
 /**
  * Proposed mergers from NCUA's member-vote list. The merging credit union is the row's
  * institution and the continuing one its acquirer; effective_date is the member vote date. The
- * key is the docket id when present, so a rescheduled vote updates the same row.
+ * key is the docket id when present, else the two names, so a rescheduled vote updates the same
+ * row either way.
  */
 export async function fetchNcuaProposedMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_PROPOSED_MERGER_PAGES): Promise<FetchedEvents> {
   // No data file is accepted: the list is the page's own table.
@@ -741,7 +745,7 @@ export async function fetchNcuaProposedMergers(options: RegistryFetchOptions = {
     const docket = f.docket?.trim().toUpperCase() || null;
     const docketUrl = ncuaDocketUrl(docket);
     return {
-      eventKey: `ncua-proposed-merger:${docketUrl ? docket : hashKey([exactNameKey(f.name), exactNameKey(f.acquirerName), eventDate(f.date)])}`,
+      eventKey: `ncua-proposed-merger:${docketUrl ? docket : hashKey([exactNameKey(f.name), exactNameKey(f.acquirerName)])}`,
       cert: null,
       institutionName: f.name,
       changeCode: NCUA_PROPOSED_MERGER_CODE,
