@@ -64,7 +64,7 @@ describe("setting a fee link on a bank marked offline (#1884)", () => {
     const [, profile] = mocks.tx.mock.calls;
     expect(text(profile)).toContain("canonical_source_url = ?");
     expect(text(profile)).toContain("CASE WHEN source_kind = 'offline' THEN 'unknown' ELSE source_kind END");
-    expect(text(profile)).not.toContain("read_strategy");
+    expect(text(profile)).toContain("CASE WHEN read_strategy = 'manual_review' THEN NULL ELSE read_strategy END");
     expect(profile[1]).toBe("https://www.example.com/fees.pdf");
   });
 });

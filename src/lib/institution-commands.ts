@@ -56,12 +56,14 @@ function revalidateInstitutionSurfaces(institutionId: number, stateCode?: string
  * unread on Oct 18. A person's link wins over a locked correction as well: it is the newer word.
  */
 async function rememberPersonFeeUrl(tx: typeof sql, institutionId: number, url: string): Promise<void> {
-  // A new link also brings back a bank marked offline (#1884): the profile sync keeps a locked
-  // 'offline' kind, and Magellan skips that kind, so the link alone would never be fetched.
+  // A new link also brings back a bank marked offline (#1884). The profile sync keeps a locked
+  // 'offline' kind and keeps the 'manual_review' strategy it gives offline rows, and Magellan's
+  // fetch queues skip both, so the link alone would never be fetched.
   await tx`
     UPDATE institution_source_profiles
        SET canonical_source_url = ${url},
            source_kind = CASE WHEN source_kind = 'offline' THEN 'unknown' ELSE source_kind END,
+           read_strategy = CASE WHEN read_strategy = 'manual_review' THEN NULL ELSE read_strategy END,
            updated_at = NOW()
      WHERE institution_id = ${institutionId}
   `;
