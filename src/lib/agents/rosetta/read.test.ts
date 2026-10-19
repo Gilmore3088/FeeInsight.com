@@ -35,8 +35,18 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
 }
 
 function asReadDb(db: DbMock): NonNullable<Parameters<typeof runRosettaRead>[0]["db"]> {
+  // Callback facade only; native SQL tests prove actual rollback/savepoint behavior.
+  Object.assign(db, { begin: vi.fn(async (work: (scope: DbMock) => Promise<unknown>) => work(db)) });
   return db as unknown as NonNullable<Parameters<typeof runRosettaRead>[0]["db"]>;
 }
+
+it("requires a transaction primitive before any artifact write when witness capability is absent", async () => {
+  const db = vi.fn(async (_strings: TemplateStringsArray) => [{ normalized_witness_ready: false }]);
+  await expect(recordReadResult(db as unknown as Parameters<typeof recordReadResult>[0], 1, {} as Parameters<typeof recordReadResult>[2], null))
+    .rejects.toThrow();
+  expect(db).toHaveBeenCalledTimes(1);
+  expect(templateText(db.mock.calls[0]?.[0])).toContain("normalized_witness_ready");
+});
 
 function response(body: BodyInit, contentType = "text/html", status = 200): Response {
   return new Response(body, { status, headers: { "content-type": contentType } });
