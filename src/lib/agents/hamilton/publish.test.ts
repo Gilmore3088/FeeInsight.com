@@ -37,6 +37,7 @@ function createDbMock(
   let nextPublishedId = 1201;
   const db = vi.fn((strings: TemplateStringsArray, ...params: unknown[]) => {
     const text = templateText(strings);
+    if (text.includes("AS verified_state")) return Promise.resolve(rows.filter(row => Number(row.fee_verified_id) === Number(params[0])));
     if (text.includes("agent_source_texts")) return Promise.resolve(movementEvidence);
     if (text.includes("INSERT INTO published_fee_records")) {
       return Promise.resolve([{ fee_published_id: nextPublishedId++ }]);
@@ -66,6 +67,7 @@ function createDbMock(
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
+  Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
   return db;
 }
 

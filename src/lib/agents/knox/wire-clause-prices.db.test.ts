@@ -67,9 +67,9 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
       (institution_id,status,document_url,content_hash,content_type)
       VALUES(${institutionId},'success',${source.sourceURL},${source.sourceBytesSHA256},'text/html') RETURNING id`;
     const [{ id: textId }] = await tx`INSERT INTO agent_source_texts
-      (agent_run_id,source_document_id,institution_id,source_url,document_type,content_type,status,normalized_text,text_hash,char_count)
+      (agent_run_id,source_document_id,institution_id,source_url,document_type,content_type,status,source_hash,normalized_text,text_hash,char_count)
       VALUES(${runId},${documentId},${institutionId},${source.sourceURL},'html','text/html','completed',
-        ${text},${hash},${text.length}) RETURNING id`;
+        ${source.sourceBytesSHA256},${text},${hash},${text.length}) RETURNING id`;
     return { institutionId: Number(institutionId), runId, documentId: Number(documentId), textId: Number(textId), text, hash };
   }
   async function stages(tx: Db, f: Fixture) {
@@ -81,7 +81,7 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
     FROM published_fee_catalog WHERE institution_id=${f.institutionId} AND fee_category LIKE 'wire_%'
     ORDER BY fee_category,amount,fee_name`;
 
-  it("publishes own incoming10/outgoing20 and legacy international35, with no borrowed20 on repeat", async () => {
+  it("publishes own incoming10/outgoing20 while keeping newly extracted generic international35 held on repeat", async () => {
     await rolledBack(async tx => {
       const f = await seed(tx);
       expect(f.hash).toBe(official.textSHA256);
@@ -89,8 +89,20 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
       const before = await live(tx, f);
       expect(before.filter(r => r.fee_category === "wire_domestic_incoming").map(r => r.amount)).toEqual([10]);
       expect(before.filter(r => r.fee_category === "wire_domestic_outgoing").map(r => r.amount)).toEqual([20]);
-      expect(before.filter(r => r.fee_category === "wire_intl_outgoing").map(r => r.amount)).toEqual([35]);
+      // #2278 changes prospective admission only. The historical seeded35/two-look
+      // control below still proves existing verified/published history stays unchanged.
+      expect(before.filter(r => r.fee_category === "wire_intl_outgoing")).toEqual([]);
       expect(before.some(r => r.amount === 45)).toBe(false);
+      const [held35] = await tx`SELECT fee_raw_id,to_jsonb(r)::text AS raw_bytes,
+        outlier_flags ? 'knox_review:eligibility' AS eligibility_hold,
+        outlier_flags ? 'knox_eligibility:international_wire' AS private_hold,
+        outlier_flags ? 'needs_darwin_verification' AS needs_verification
+        FROM raw_fee_observations r WHERE institution_id=${f.institutionId}
+          AND source_document_id=${f.documentId} AND fee_name='International Wire Transfer Fee' AND amount=35`;
+      expect(held35?.eligibility_hold).toBe(true);
+      expect(held35?.private_hold).toBe(true);
+      expect(held35?.needs_verification).toBe(false);
+      expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${held35.fee_raw_id}`).toEqual([]);
       const incoming = before.find(r => r.fee_category === "wire_domestic_incoming");
       expect(incoming?.conditions).toContain("$10.00 on Incoming Wires");
       expect(incoming?.conditions).not.toContain("$20");
@@ -108,6 +120,9 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
       await promoters.recheckHeldRates(tx, scoped);
       await stages(tx, f);
       expect(await live(tx, f)).toEqual(before);
+      const [heldAfter] = await tx`SELECT to_jsonb(r)::text AS raw_bytes FROM raw_fee_observations r WHERE fee_raw_id=${held35.fee_raw_id}`;
+      expect(heldAfter.raw_bytes).toBe(held35.raw_bytes);
+      expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${held35.fee_raw_id}`).toEqual([]);
     });
   }, 60_000);
 

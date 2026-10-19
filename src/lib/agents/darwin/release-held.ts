@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { completeAudienceAdmission, prepareVerificationAudience, VerificationAudienceDeferred } from "./verification-audience";
+import { requireInternationalVerification } from "./international-verification";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { CATEGORY_GUARD_RULES } from "@/lib/fee-category-guard";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
@@ -15,6 +16,7 @@ import {
   insertVerifiedFee,
   loadSourceTexts,
   rawFeeFingerprint,
+  resolvedRawCategory,
   type RawFeeRow,
 } from "./verify";
 
@@ -240,6 +242,7 @@ export async function releaseHeldFee(
   return inSavepoint(db, async scope => {
     const admission = await prepareVerificationAudience(scope, options.originalRow ?? options.row, options.sourceText);
     const row = admission.row as HeldFeeRow;
+    requireInternationalVerification(admission, row.held_canonical_fee_key, resolvedRawCategory(admission.row));
     let sourceLine = options.sourceLine;
     let frequency = options.row.frequency;
     if ((!row.fee_audience || row.fee_audience === "unknown") && admission.ownClause !== "none") {
@@ -494,6 +497,7 @@ export async function runDarwinReleaseHeld(options: {
         const legacyText = selected.source_document_id == null ? null : texts.get(Number(selected.source_document_id));
         const admission = learning ? await prepareVerificationAudience(scope, selected, legacyText) : null;
         const raw = (admission?.row ?? selected) as HeldFeeRow;
+        if (admission) requireInternationalVerification(admission, raw.held_canonical_fee_key, resolvedRawCategory(admission.row));
         const row = admission?.audience ? { ...raw, fee_audience: admission.audience.feeAudience } : raw;
         const text = admission ? admission.sourceText : legacyText;
         const secondLook = row.first_look_at != null;

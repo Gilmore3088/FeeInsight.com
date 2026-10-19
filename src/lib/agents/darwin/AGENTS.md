@@ -1,5 +1,22 @@
 # Darwin Agent Guide
 
+## Prospective international wire applicability (#2278, #2368)
+
+The current shared admission's readonly factual source context supplies the raw row and
+document/artifact snapshots; identity stamps, model fields and caller text are not source
+authority. Private international eligibility provenance, current raw/final international
+classification, literal current international wire/transfer names, and a positive actual own
+international wire clause identify affected uncertainty. Even two stale nonwire keys cannot
+negate those actual facts. A bound original artifact and the own geography/direction must agree
+with the final existing category; the guard never chooses a category or admits a numeric price.
+
+The common verified insert repeats this review after its fresh raw/admission CAS. Normal,
+held, accepted review, recorded pass and zero paths also check before ordinary positive or
+negative settlement. Uncertainty uses the shared transient savepoint protocol, leaves inputs
+pending and teaches no negative lesson. Ordinary domestic and unrelated International Money
+Order unavailable-source behavior remains legacy. This is not original-history recovery,
+source URL replacement, a relabel replay, or a verification/selector epoch change.
+
 ## Current symbolic lesser-of applicability hold (#2335)
 
 The existing current-raw lock also refuses verification when both `knox_review:eligibility`

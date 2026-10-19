@@ -2,6 +2,23 @@
 
 Knox owns conservative raw fee extraction.
 
+## Prospective international wire applicability (#2278)
+
+Numeric source support does not choose incoming/outgoing scope. After ordinary admission,
+literal own-source direction/geography reviews the existing resolved category. Complete own
+cells, bounded physical label/price continuations and literal wire headings retain their facts;
+an exact two-direction/two-dollar pair binds each admitted amount to its printed direction.
+Repeated/equal-price, tiered/extra-column pairs and unsupported owners remain unresolved.
+Generic international prices do not borrow a nearby outgoing row or the legacy outgoing hint.
+
+Both common candidate writers derive private `knox_eligibility:international_wire` from actual
+hash-bound full source. Supplied model flags/conditions cannot create it. Only the exact pending
+unverified identity can become this hold; judged and unrelated held histories remain unchanged.
+Affected missing source declines/defer without inventing scope; unresolved domestic callers keep
+their existing availability contract. Final Darwin/publication use actual locked lineage and
+nonsettling uncertainty, including old generic/new explicit mixed-price conflicts. No numeric
+matcher, category rule, selector, epoch, provider control or historical correction is changed.
+
 ## Source-owned symbolic lesser-of eligibility (#2335)
 
 A complete physical own-label row can print a dollar bound followed by `or amount of

@@ -1,5 +1,25 @@
 # Hamilton Agent Guide
 
+## Prospective international wire direction (#2278)
+
+An unpublished international wire must bind its actual verified/raw lineage to the current
+exact original artifact and prove its own geography and direction after normal Darwin
+classification. Generic, opposite or unavailable source scope stays pending; a literal price
+alone does not prove applicability. The source-only document/artifact prefix precedes the
+existing published/verified/raw identity suffix, with nonwaiting acquisitions and fresh full
+candidate/peer checks inside a rollback-capable savepoint. Direct insertions derive actual
+identity and category; normal ordinary rows retain their existing complete verified-state CAS.
+
+A differing-price, market-comparable same-product/audience live peer with unproven scope
+also defers the prospective international insertion. Catalog overlay facts decide whether a
+peer participates, independently of original-body availability. This prevents an unresolved
+old generic $35 and a new explicit outgoing $45 from creating a spurious $40 comparison.
+The exact verified input remains selectable without a primary publish.rules settlement or
+negative lesson; finite pending counts/reasons are separate from required-evidence failures.
+Supported operator holds and corrections retain authority. Normal advisory serialization
+and fresh membership checks bound automatic writes; external/manual phantom writers are not
+claimed to be serializable. No history cleanup, price authority, median or replay epoch changes.
+
 ## Literal charging units and comparisons (#2248)
 
 Prospective source-owned hourly, page, document, image, statement, half-hour, quarter-hour

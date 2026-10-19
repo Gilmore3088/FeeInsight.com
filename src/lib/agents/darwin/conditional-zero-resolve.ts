@@ -1,5 +1,6 @@
 import type { sql } from "@/lib/data-store/connection";
 import { completeAudienceAdmission, prepareVerificationAudience, VerificationAudienceDeferred } from "./verification-audience";
+import { requireInternationalVerification } from "./international-verification";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { isProductPageUrl } from "@/lib/agents/learning/fee-page";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
@@ -12,6 +13,7 @@ import {
   insertVerifiedFee,
   loadSourceTexts,
   rawFeeFingerprint,
+  resolvedRawCategory,
   sourceLineFor,
   type RawFeeRow,
 } from "./verify";
@@ -170,6 +172,7 @@ export async function runDarwinConditionalZeroResolve(options: {
         const legacyText = selected.source_document_id == null ? null : texts.get(Number(selected.source_document_id)) ?? null;
         const admission = dryRun ? null : await prepareVerificationAudience(scope, selected, legacyText);
         const original = (admission?.row ?? selected) as HeldZeroRow;
+        if (admission) requireInternationalVerification(admission, original.canonical_fee_key, resolvedRawCategory(admission.row));
         const row: HeldZeroRow = admission?.audience ? { ...original, fee_audience: admission.audience.feeAudience } : original;
         const documentText = admission ? admission.sourceText : legacyText;
         const currentTexts = new Map(texts);

@@ -28,6 +28,7 @@ import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/st
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
+import { internationalWireEligibility } from "./international-wire-eligibility";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -483,6 +484,17 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
+  // #2278: source price support does not establish an international wire's direction.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!read.canonicalHint.startsWith("wire_")) continue;
+    const scope = internationalWireEligibility(sourceText, read);
+    if (scope.kind === "not_applicable" || scope.kind === "admit") continue;
+    candidates.splice(at, 1);
+    if (scope.kind === "hold") held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
+      excerpt: scope.scope.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
   // #2335: the printed dollar remains supported, but a symbolic charge is not flat.
   for (let at = candidates.length - 1; at >= 0; at--) {
     const read = candidates[at];

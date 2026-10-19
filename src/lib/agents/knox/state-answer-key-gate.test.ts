@@ -42,7 +42,11 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // ("Club Account Early Withdrawal | $10.00", "Holiday Club Withdrawal | $3"). Knox no longer reads
   // them as early closure, so CA 157 to 156, GA 174 to 171, MI 130 to 128, all 874 to 869; no wrong
   // read added, and with the switch off every floor holds.
-  CA: { right: 156, wrong: 5 },
+  // #2278 intentionally withholds seven keyed state reads for unresolved own scope or
+  // finite parser limits (15 across both gates); prior-wrong River City total75 leaves too.
+  // No numeric fix/rescore: original keys and wrong ceilings stay. Every case/text/reason
+  // is explicit in international-wire-answer-key-boundaries.test.ts. FL/GA/IL/MI stay.
+  CA: { right: 153, wrong: 5 },
   FL: { right: 136, wrong: 6 },
   GA: { right: 171, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
@@ -52,9 +56,9 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 121, wrong: 8 },
-  NY: { right: 44, wrong: 5 },
-  all: { right: 869, wrong: 38 },
+  MN: { right: 119, wrong: 8 },
+  NY: { right: 43, wrong: 5 },
+  all: { right: 862, wrong: 38 },
 };
 
 const fixture = JSON.parse(

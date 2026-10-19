@@ -68,6 +68,8 @@ import {
   type PublicationEvidenceCheck,
   type PublishEvidenceCheck,
 } from "./publication-evidence";
+import { deferInternationalPublication, withInternationalPublicationWrite, type InternationalPublicationDeferral, type InternationalPublicationWrite } from "./international-publication";
+import type { LockedSourceSnapshot } from "../darwin/locked-raw-source";
 
 type SqlTag = typeof sql;
 
@@ -169,6 +171,8 @@ export interface HamiltonPublishResult {
   /** Required evidence was unavailable; leave this exact input undecided and retryable. */
   evidenceDeferred?: boolean;
   unavailableEvidence?: PublicationEvidenceCheck[];
+  /** Source direction or a live differing-price peer remains unresolved; no primary settlement. */
+  internationalDeferred?: InternationalPublicationDeferral;
   feeVerifiedId: number;
   institutionId: number;
   feeName: string;
@@ -243,6 +247,9 @@ export interface RunHamiltonPublishResult {
   /** Still-undecided selected-state guard skips, included in skippedFees. */
   identityDeferredFees?: number;
   evidenceDeferredFees?: number;
+  internationalDeferredFees?: number;
+  internationalCheck?: { protocol: "publish.international_scope.v1"; deferred: number;
+    samples: Array<{ fee_verified_id: number; reason: string; conflicting_published_ids: number[] }> };
   /** Live rows closed because the same fee was published at a new amount. */
   supersededFees: number;
   /** Published rows that are explicit $0 (free) fees. */
@@ -709,9 +716,7 @@ export function correctedReason(block: CorrectionBlock | null): string | null {
     : `Protected by an admin correction (correction #${block.correctionId})`;
 }
 
-export async function insertPublishedFee(
-  db: SqlTag,
-  options: {
+interface PublishedInsertOptions {
     runId: number;
     batchId: string;
     row: VerifiedFeeRow;
@@ -721,8 +726,33 @@ export async function insertPublishedFee(
     priorFeePublishedId?: number | null;
     /** Called when an admin correction of the same logical fee blocked this publish. */
     onCorrected?: (block: CorrectionBlock) => void;
-  },
-): Promise<number | null> {
+    onInternationalDeferred?: (detail: InternationalPublicationDeferral) => void;
+}
+
+/** All exported direct insertions enter the same actual-lineage gate as the normal owner. */
+export async function insertPublishedFee(db: SqlTag, options: PublishedInsertOptions): Promise<number | null> {
+  const guarded = await withInternationalPublicationWrite(db, {
+    feeVerifiedId: Number(options.row.fee_verified_id), expectedVerifiedState: options.row.selected_verified_state,
+    expectedCategory: options.row.canonical_fee_key,
+  }, async (scope, actual, current) => {
+    // Direct ordinary callers do not have the normal owner's final identity guard.
+    // Lock only the candidate suffix, nonwaiting, and compare the complete preflight
+    // verification before an ordinary→international transition could use old fields.
+    await scope`SELECT fee_verified_id FROM verified_fee_observations
+      WHERE fee_verified_id=${Number(current.fee_verified_id)} FOR UPDATE NOWAIT`;
+    if (current.fee_raw_id != null) await scope`SELECT fee_raw_id FROM raw_fee_observations
+      WHERE fee_raw_id=${Number(current.fee_raw_id)} FOR UPDATE NOWAIT`;
+    const unchanged = await scope`SELECT fee_verified_id FROM verified_fee_observations
+      WHERE fee_verified_id=${Number(current.fee_verified_id)} AND to_jsonb(verified_fee_observations)::text=${current.selected_verified_state!}`;
+    if (unchanged.length === 0) return deferInternationalPublication("selected_changed");
+    return writePublishedFee(scope, { ...options, row: actual ?? options.row });
+  });
+  if (guarded.kind === "deferred") { options.onInternationalDeferred?.(guarded.detail); return null; }
+  return guarded.value;
+}
+
+/** Called only under the direct or normal owner's completed guard; no second source acquisition. */
+async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): Promise<number | null> {
   const feeVerifiedId = Number(options.row.fee_verified_id);
   const institutionId = Number(options.row.institution_id);
   const confidence = normalizedConfidence(options.row.extraction_confidence);
@@ -826,6 +856,18 @@ export async function insertPublishedFee(
     RETURNING fee_published_id
   `;
   return inserted[0]?.fee_published_id == null ? null : Number(inserted[0].fee_published_id);
+}
+
+/** Real normal rows come from the existing selector and retain its mandatory final CAS.
+ * An ordinary→international mutation fails that CAS before any private insertion. Do not
+ * add a new source/availability read to every ordinary publication. Never exported to callers.
+ */
+async function withSelectedInternationalPublication<T>(db: SqlTag, row: VerifiedFeeRow,
+  work: (tx: SqlTag, actual: VerifiedFeeRow | null, current: VerifiedFeeRow,
+    sources: ReadonlyMap<number, LockedSourceSnapshot> | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
+  if (!row.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(db, null, row, null) };
+  return withInternationalPublicationWrite(db, { feeVerifiedId: Number(row.fee_verified_id),
+    expectedVerifiedState: row.selected_verified_state, expectedCategory: row.canonical_fee_key }, work);
 }
 
 /** Live rows for the same fee (institution, canonical key, variant, frequency), newest first. */
@@ -2033,7 +2075,7 @@ const NO_MOVEMENT = {
 } as const;
 
 function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome | null {
-  if (result.evidenceDeferred) return null;
+  if (result.evidenceDeferred || result.internationalDeferred) return null;
   if (result.status === "published") return "ok";
   if (result.identityDeferred) return "evidence_mismatch";
   return result.reason === "Identical fee already published" ||
@@ -2314,7 +2356,11 @@ export async function runHamiltonPublish(
         evidenceDeferred: true,
       };
     } else if (dryRun) {
-      result = {
+      const guarded = await withSelectedInternationalPublication(db, row, async () => true);
+      result = guarded.kind === "deferred" ? {
+        ...base, status: "skipped", reason: "International wire evidence or identity is unresolved; left pending",
+        feePublishedId: null, ...NO_MOVEMENT, internationalDeferred: guarded.detail,
+      } : {
         ...base,
         status: "published",
         reason: null,
@@ -2328,7 +2374,10 @@ export async function runHamiltonPublish(
       // fee, and never a closed row without its replacement.
       let heldBy: number | null = null;
       let correctedBy: CorrectionBlock | null = null;
-      const written = await withPublishedIdentityWrite(db, async (scope) => {
+      const guarded = await withSelectedInternationalPublication(db, row,
+      async (prefixed, actual) => withPublishedIdentityWrite(prefixed, async (scope) => {
+        if (actual && row.source_document_id !== undefined
+          && Number(actual.source_document_id) !== Number(row.source_document_id)) return deferInternationalPublication("selected_changed");
         const defer = async () => {
           await recordIdentitySkips(scope, options.runId, "publish", 1);
           return { feePublishedId: null, superseded: false, changeRecorded: false, identityChanged: true };
@@ -2350,10 +2399,10 @@ export async function runHamiltonPublish(
             return defer();
           }
         }
-        const feePublishedId = await insertPublishedFee(scope, {
+        const feePublishedId = await writePublishedFee(scope, {
           runId: options.runId,
           batchId,
-          row,
+          row: actual ?? row,
           onHeld: (heldId) => { heldBy = heldId; },
           priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
           onCorrected: (block) => { correctedBy = block; },
@@ -2368,14 +2417,18 @@ export async function runHamiltonPublish(
           feePublishedId,
         });
         return { feePublishedId, ...supersede };
-      });
+      }));
+      const written = guarded.kind === "written" ? guarded.value
+        : { feePublishedId: null, superseded: false, changeRecorded: false };
       const { feePublishedId } = written;
       result = {
         ...base,
         status: feePublishedId ? "published" : "skipped",
-        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
+        reason: guarded.kind === "deferred" ? "International wire evidence or identity is unresolved; left pending"
+          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
         feePublishedId,
         ...("identityChanged" in written && written.identityChanged ? { identityDeferred: true } : {}),
+        ...(guarded.kind === "deferred" ? { internationalDeferred: guarded.detail } : {}),
         ...(feePublishedId ? movementFor(priorPublishedFee, row) : NO_MOVEMENT),
         supersededFeePublishedId:
           written.superseded && priorPublishedFee ? Number(priorPublishedFee.fee_published_id) : null,
@@ -2522,6 +2575,15 @@ export async function runHamiltonPublish(
     skippedFees: results.length - published.length,
     identityDeferredFees: results.filter((result) => result.identityDeferred).length,
     evidenceDeferredFees: evidenceCheck.deferred,
+    ...(results.some(result => result.internationalDeferred) ? {
+      internationalDeferredFees: results.filter(result => result.internationalDeferred).length,
+      internationalCheck: { protocol: "publish.international_scope.v1" as const,
+        deferred: results.filter(result => result.internationalDeferred).length,
+        samples: results.filter(result => result.internationalDeferred).slice(0, 20).map(result => ({
+          fee_verified_id: result.feeVerifiedId, reason: result.internationalDeferred!.reason,
+          conflicting_published_ids: result.internationalDeferred!.conflictingPublishedIds.slice(0, 20),
+        })) },
+    } : {}),
     supersededFees: results.filter((result) => result.supersededFeePublishedId != null).length,
     zeroFeesPublished: published.filter((result) => result.amount === 0).length,
     learning,
