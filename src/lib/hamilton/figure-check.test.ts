@@ -97,6 +97,8 @@ describe("figures that are not the data's to trace (#1425)", () => {
       "Among institutions with assets above $10 billion, the median is $30.",
       "Reported assets from $10 billion up to, but not including, $250 billion.",
       "Reported assets from $10 billion to $250 billion.",
+      "Credit unions with $10 billion to under $250 billion in assets.",
+      "Credit unions with reported assets of at least $10 billion and under $250 billion.",
     ]) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual([]);
   });
 
@@ -110,6 +112,9 @@ describe("figures that are not the data's to trace (#1425)", () => {
       // Only the tiers' own bounds: $5 billion is not one.
       ["Banks with $5 billion in assets charge $30.", ["$5 billion"]],
       ["Fee income from $10 billion up to, but not including, $250 billion.", ["$10 billion", "$250 billion"]],
+      ["Fee income from $10 billion to under $250 billion.", ["$10 billion", "$250 billion"]],
+      ["Institutions with $5 billion to under $250 billion in assets.", ["$5 billion"]],
+      ["Credit unions with $10 billion to under $250 billion in assets had $10 billion in fee income.", ["$10 billion"]],
       ["Reported assets from $10 billion up to, but not including, $250 billion. Fee income was $10 billion.", ["$10 billion"]],
     ] as const) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual(unmatched);
   });

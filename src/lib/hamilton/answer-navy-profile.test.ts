@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import retained from "./test-fixtures/navy-comparable-peers-4003.json";
 import operandRetained from "./test-fixtures/navy-comparable-peers-017b.json";
+import exclusiveRetained from "./test-fixtures/navy-comparable-peers-2ce4.json";
 import { writtenAnswerCheck } from "./answer-save";
 import { HAMILTON_INTERPRETATION_INSTRUCTION } from "./answer-interpretations";
 import { profileQuarterCalculations } from "./profile-quarter-evidence";
@@ -205,5 +206,39 @@ describe("retained Navy operand-only explanation and scope claims (#2379, #2380,
   it("instructs generation to separate coverage from quality and preserve overdraft inclusion", () => {
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("not a strong, reliable, robust or representative benchmark");
     expect(HAMILTON_INTERPRETATION_INSTRUCTION).toContain("Broad NCUA fee income includes overdraft fees");
+  });
+});
+
+describe("retained Navy exclusive ranges and six-month equation (#2365, #2366, #2379)", () => {
+  const context = exclusiveRetained.context as WrittenAnswerEvidenceContext;
+  const outputs = exclusiveRetained.context.toolResults.map((read) => read.output);
+  const check = (answer: string) => writtenAnswerCheck(answer, outputs, exclusiveRetained.question, context);
+  const headline = "Navy Federal's Q2 2026 standalone fee income was $153.08 million.";
+  const equation = "The quarter figure is the six-month total of $297.363 million minus the first-quarter total of $144.283 million, which gives $153.08 million.";
+
+  it("passes the entire unmodified captured answer and every figure against the real question and context", () => {
+    expect(check(exclusiveRetained.answer)).toMatchObject({ passed: true, problems: [], figureCheck: { checked: 12, unmatched: [] } });
+  });
+
+  it("binds the six-month explanation to the server's Q2 subtraction and a separately validated quarter statement", () => {
+    expect(check(`${headline} ${equation}`).passed).toBe(true);
+    expect(check(`${equation} ${headline}`).passed).toBe(true);
+    expect(check(equation).passed).toBe(false);
+  });
+
+  it.each([
+    equation.replace("first-quarter", "second-quarter"),
+    equation.replace("first-quarter total", "first-quarter peer median"),
+    equation.replace("$144.283 million", "$153.08 million"),
+    equation.replace("six-month", "three-month"),
+  ])("holds wrong-period or relabeled arithmetic: %s", (equation) => {
+    const checked = check(`${headline} ${equation}`);
+    expect(checked.figureCheck.unmatched).toEqual([]);
+    expect(checked.passed).toBe(false);
+    expect(checked.problems.join(" ")).toContain("standalone-quarter");
+  });
+
+  it("does not let a valid equation excuse a YTD amount mislabeled as the requested quarter", () => {
+    expect(check(`${headline.replace("$153.08 million", "$297.363 million")} ${equation}`).passed).toBe(false);
   });
 });

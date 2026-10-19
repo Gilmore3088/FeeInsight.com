@@ -216,8 +216,9 @@ const SIZE_AFTER = /^\s*(?:in\s+(?:total\s+)?assets?\b|of\s+(?:total\s+)?assets\
 const THRESHOLD_BEFORE = /\b(?:under|over|above|below|more\s+than|less\s+than|at\s+least|up\s+to|exceeding)\s*$/i;
 const ASSETS_THRESHOLD_BEFORE = /\bassets?\s+(?:of\s+)?(?:under|over|above|below|more\s+than|less\s+than|at\s+least|up\s+to|exceeding)\s*$/i;
 const RANGE_JOIN = /^\s*(?:to|-|–|—|and)\s*$/i;
+const EXCLUSIVE_UPPER_JOIN = /^\s*(?:to|and)\s+under\s*$/i;
 const EXCLUSIVE_RANGE_JOIN = /^\s*up to\s*,?\s*but not including\s*,?\s*$/i;
-const ASSETS_RANGE_BEFORE = /\bassets?\s+(?:ranging\s+)?from\s*$/i;
+const ASSETS_RANGE_BEFORE = /\bassets?\s+(?:(?:ranging\s+)?from|(?:of\s+)?at least)\s*$/i;
 
 /**
  * An asset-tier bound stated as a size, not as money: two bounds as a range followed by a size
@@ -237,6 +238,7 @@ export function tierBoundsAsSize(text: string, figures: NarrativeFigure[]): Set<
     const b = ordered[i + 1];
     const assetsRange = ASSETS_RANGE_BEFORE.test(text.slice(Math.max(0, a.index - 50), a.index));
     if (b && isTierBound(b) && (RANGE_JOIN.test(text.slice(aEnd, b.index))
+      || (a.value < b.value && EXCLUSIVE_UPPER_JOIN.test(text.slice(aEnd, b.index)))
       || (assetsRange && a.value < b.value && EXCLUSIVE_RANGE_JOIN.test(text.slice(aEnd, b.index))))) {
       const after = text.slice(b.index + b.raw.length, b.index + b.raw.length + 30);
       const range = `${a.value}:${b.value}`;

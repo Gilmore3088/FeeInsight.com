@@ -343,8 +343,8 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
   const clearRefusal = clauses.some(refusal);
   const failure = "The question asks for standalone-quarter fee income. Answer that quarter from matched institution-quarter calculations or the dated comparable-quarter tool, or clearly state that the requested quarter comparison cannot be computed; a YTD substitute does not answer it.";
   let answeredRequestedQuarter = false;
-  const validatedClaims: { institutionId: string | null; period: string; value: number; tolerance: number }[] = [];
-  const operandExplanations: Evidence["quarterCalculations"][] = [];
+  const validatedClaims: { institutionId: string | null; period: string; value: number; tolerance: number; clause: string }[] = [];
+  const operandExplanations: { calculations: Evidence["quarterCalculations"]; clause?: string }[] = [];
   for (const clause of clauses) {
     if (clause.endsWith("?")) continue;
     const explicitQuarter = namesQuarter(clause);
@@ -378,7 +378,7 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
           && Math.abs(calculation.inputs[1] - prior.value) <= prior.tolerance);
         if (calculations.length) {
           calculationInputs.add(current); calculationInputs.add(prior);
-          operandExplanations.push(calculations);
+          operandExplanations.push({ calculations });
         }
       }
     }
@@ -406,13 +406,17 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
       const [current, prior, result] = quoted.slice(index, index + 3);
       const currentLabel = clause.slice(0, current.index);
       const priorLabel = clause.slice(current.index + current.raw.length, prior.index);
-      const priorQuarter = /^\s*(?:minus|−|-)\s+(?:(?:its|the)\s+)?Q([1-4])\s+(?:(YTD|year[ -]to[ -]date)\s+)?(?:total|fee income)(?:\s+of)?\s*$/i.exec(priorLabel);
-      if (/\b(?:YTD|year[ -]to[ -]date)\s+(?:total|fee income)(?:\s+of)?\s*$/i.test(currentLabel)
-        && priorQuarter && (priorQuarter[1] === "1" || priorQuarter[2])
-        && /^\s*(?:equals?|=)\s*$/i.test(clause.slice(prior.index + prior.raw.length, result.index))
-        && citationTail.test(clause.slice(result.index + result.raw.length))
-        && matchingCalculations(result, current, prior).some((calculation) => Number(calculation.period.slice(5, 7)) / 3 - 1 === Number(priorQuarter[1]))) {
+      const priorQuarter = /^\s*(?:minus|−|-)\s+(?:(?:its|the)\s+)?(?:Q([1-4])|(first|second|third|fourth)[ -]quarter)\s+(?:(YTD|year[ -]to[ -]date)\s+)?(?:total|fee income)(?:\s+of)?\s*$/i.exec(priorLabel);
+      const priorNumber = priorQuarter ? Number(priorQuarter[1]) || ["first", "second", "third", "fourth"].indexOf((priorQuarter[2] ?? "").toLowerCase()) + 1 : 0;
+      const sixMonth = /\bsix[ -]month\s+total\s+of\s*$/i.test(currentLabel);
+      const currentIsYtd = /\b(?:YTD|year[ -]to[ -]date)\s+(?:total|fee income)(?:\s+of)?\s*$/i.test(currentLabel)
+        || (requested.quarter === 2 && sixMonth);
+      const calculations = matchingCalculations(result, current, prior).filter((calculation) => Number(calculation.period.slice(5, 7)) / 3 - 1 === priorNumber);
+      if (currentIsYtd && priorQuarter && (priorNumber === 1 || priorQuarter[3])
+        && /^\s*(?:equals?|=|,\s*which gives)\s*$/i.test(clause.slice(prior.index + prior.raw.length, result.index))
+        && citationTail.test(clause.slice(result.index + result.raw.length)) && calculations.length) {
         calculationInputs.add(current); calculationInputs.add(prior);
+        if (sixMonth) operandExplanations.push({ calculations, clause });
       }
     }
     // Only operands of the server's exact YTD subtraction are contextual input figures.
@@ -432,15 +436,15 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
       // A refusal in another sentence never excuses an affirmative quarter-dollar claim.
       if (matches.length === 0) return [failure];
       if (role === "subject") for (const income of matches) validatedClaims.push({
-        institutionId: income.institutionId, period: income.period, value: figure.value, tolerance: figure.tolerance,
+        institutionId: income.institutionId, period: income.period, value: figure.value, tolerance: figure.tolerance, clause,
       });
       if (role === "subject" && matches.some((income) => income.period === requested.period) && !refusal(clause)) answeredRequestedQuarter = true;
     }
   }
   // An operand-only explanation never supplies the answer itself: its matching
   // selected-institution quarter result must also have passed elsewhere.
-  if (operandExplanations.some((calculations) => !calculations.some((calculation) => validatedClaims.some((claim) =>
-    claim.institutionId === calculation.institutionId && claim.period === calculation.period
+  if (operandExplanations.some((explanation) => !explanation.calculations.some((calculation) => validatedClaims.some((claim) =>
+    claim.clause !== explanation.clause && claim.institutionId === calculation.institutionId && claim.period === calculation.period
       && Math.abs(claim.value - calculation.value) <= claim.tolerance)))) return [failure];
   return answeredRequestedQuarter || clearRefusal ? [] : [failure];
 }
