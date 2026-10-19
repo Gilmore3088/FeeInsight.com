@@ -65,7 +65,7 @@ export function SamplePosition({ sample }: { sample: SampleExhibit }) {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         {/* The comparison. */}
-        <div className="rounded-lg border border-[#dfe3ea] bg-white p-5 sm:p-6" aria-live="polite">
+        <div className="rounded-lg border border-[#dfe3ea] bg-white p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h3 className="text-[19px] font-medium text-ink" style={SERIF}>
               {line.label}
@@ -212,7 +212,10 @@ export function SamplePosition({ sample }: { sample: SampleExhibit }) {
           <p className="mt-4">
             Coverage: {sample.competitorsWithData} of the {sample.competitorsInMarket} institutions in{" "}
             {sample.market ?? "the local market"} have verified fees; {line.peers} publish this one. The middle half runs
-            from the 25th to the 75th percentile of their prices.{" "}
+            from the 25th to the 75th percentile of their prices.
+            {line.peerFigures.length < line.peers
+              ? ` The table lists the ${line.peerFigures.length} the market names; the other ${line.peers - line.peerFigures.length} count in the figures above.`
+              : ""}{" "}
             <Link href="/methodology" className="font-medium text-ink underline underline-offset-2">
               How we verify
             </Link>

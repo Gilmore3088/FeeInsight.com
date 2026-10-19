@@ -144,11 +144,32 @@ export const POSITION_LABEL: Record<LinePosition, string> = {
  * One or two sentences on what the line shows, from the same figures the chart draws. It says
  * where the fee sits, never that it should change: a fee above the local median can be right.
  */
+/** Each line's name as it reads inside a sentence ("its $36 NSF fee"). */
+const IN_SENTENCE: Record<string, string> = {
+  monthly_maintenance: "monthly maintenance",
+  overdraft: "overdraft",
+  nsf: "NSF",
+  atm_non_network: "out-of-network ATM",
+  wire_domestic_outgoing: "outgoing domestic wire",
+  wire_intl_outgoing: "outgoing international wire",
+  wire_domestic_incoming: "incoming domestic wire",
+  stop_payment: "stop payment",
+  cashiers_check: "cashier's check",
+  od_protection_transfer: "overdraft protection transfer",
+  paper_statement: "paper statement",
+  card_replacement: "debit card replacement",
+  deposited_item_return: "deposited item return",
+};
+
+export function feeInSentence(l: Pick<SampleLine, "key" | "label">): string {
+  return IN_SENTENCE[l.key] ?? l.label.replace(/\s*\(.*?\)/g, "").toLowerCase();
+}
+
 export function lineInsight(name: string, l: SampleLine): string {
-  const fee = l.label.toLowerCase();
+  const fee = feeInSentence(l);
   const counted = `${l.chargingLess} of the ${l.peers} local competitors publishing this fee charge less.`;
   if (l.position === "free") {
-    return `${name} charges nothing for ${fee}. The local median is ${money(l.median)}, across ${l.peers} competitors.`;
+    return `${name} charges no ${fee} fee. The local median is ${money(l.median)}, across ${l.peers} competitors.`;
   }
   const gap = Math.abs(l.own - l.median);
   const vsMedian =
@@ -176,7 +197,7 @@ const FIRST_STEP: Record<string, string> = {
 /** Up to three things to look into before deciding anything; never a recommendation to change the price. */
 export function nextSteps(l: SampleLine): string[] {
   return [
-    FIRST_STEP[l.key] ?? "Review how often it is charged",
+    l.position === "free" ? "Review what offering it free costs and earns" : (FIRST_STEP[l.key] ?? "Review how often it is charged"),
     "Check waivers and exceptions",
     "Weigh revenue before changing the price",
   ];

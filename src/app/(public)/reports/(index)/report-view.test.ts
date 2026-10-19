@@ -108,7 +108,7 @@ describe("reports page view", () => {
     );
     expect(lineInsight("Capital City Bank", sampleLine({ own: 50, position: "in_market", chargingLess: 2 }))).toMatch(/matches the local median and sits inside the middle half/);
     expect(lineInsight("Capital City Bank", sampleLine({ own: 0, position: "free" }))).toBe(
-      "Capital City Bank charges nothing for outgoing international wire. The local median is $50, across 16 competitors.",
+      "Capital City Bank charges no outgoing international wire fee. The local median is $50, across 16 competitors.",
     );
     for (const position of ["above_market", "in_market", "below_market", "free"] as const) {
       const words = [lineInsight("X", sampleLine({ position })), ...nextSteps(sampleLine({ position }))].join(" ");
@@ -123,5 +123,12 @@ describe("reports page view", () => {
       "Weigh revenue before changing the price",
     ]);
     expect(nextSteps(sampleLine({ key: "stop_payment" }))[0]).toBe("Review how often it is charged");
+    expect(nextSteps(sampleLine({ position: "free", own: 0 }))[0]).toBe("Review what offering it free costs and earns");
+  });
+
+  it("names every fee as it reads in a sentence, acronyms kept", () => {
+    expect(lineInsight("X", sampleLine({ key: "nsf", label: "NSF / returned item", own: 36 }))).toMatch(/^X's \$36 NSF fee/);
+    expect(lineInsight("X", sampleLine({ key: "monthly_maintenance", label: "Monthly maintenance (entry checking)", own: 8 }))).toMatch(/^X's \$8 monthly maintenance fee/);
+    expect(lineInsight("X", sampleLine({ key: "new_line", label: "Coin counting (non-customers)", own: 5 }))).toMatch(/^X's \$5 coin counting fee/);
   });
 });

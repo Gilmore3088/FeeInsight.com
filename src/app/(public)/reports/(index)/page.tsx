@@ -128,11 +128,13 @@ export default async function ReportsPage() {
               )}
             </div>
             <p className="mt-5 flex flex-wrap gap-x-2 gap-y-1 text-[14px] text-ink-muted">
-              <span>Starting at ${REPORT_OFFER.fromPriceUsd}</span>
-              <span aria-hidden="true">·</span>
-              <span>No payment to request</span>
-              <span aria-hidden="true">·</span>
-              <span>Scope confirmed within one business day</span>
+              <span className="whitespace-nowrap">Starting at ${REPORT_OFFER.fromPriceUsd}</span>
+              <span className="whitespace-nowrap">
+                <span aria-hidden="true">· </span>No payment to request
+              </span>
+              <span className="whitespace-nowrap">
+                <span aria-hidden="true">· </span>Scope confirmed within one business day
+              </span>
             </p>
           </div>
           {sample && <ReportPreview sample={sample} preparedOn={preparedOn} />}
