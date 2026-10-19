@@ -14,15 +14,15 @@
     "test:quality-gates": "vitest run src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/adversarial-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.58",
-    "@ai-sdk/react": "^3.0.118",
+    "@ai-sdk/anthropic": "3.0.89",
+    "@ai-sdk/react": "3.0.216",
     "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-s3": "^3.1014.0",
     "@aws-sdk/s3-request-presigner": "^3.1025.0",
     "@react-pdf/renderer": "^4.5.1",
     "@tesseract.js-data/eng": "1.0.0",
     "@vercel/analytics": "^2.0.1",
-    "ai": "^6.0.116",
+    "ai": "6.0.214",
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
