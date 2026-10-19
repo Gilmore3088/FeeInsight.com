@@ -1252,8 +1252,8 @@ export async function getFeeResearch(
         ...(wire.some((f) => f.source.table === "institution_enforcement_actions") ? [{ label: "OCC, Federal Reserve and state enforcement action lists", table: "institution_enforcement_actions" }] : []),
       ],
       assumptions: [
-        peers.length < MIN_PEERS_FOR_POSITION
-          ? `Only ${peers.length} institutions publish this fee even nationally, too few for percentiles.`
+        sorted.length < MIN_PEERS_FOR_POSITION
+          ? `Only ${sorted.length} institutions in the peer group publish this fee, too few for percentiles.`
           : chosen?.saved
             ? "Peers are the saved peer group, the same group for every fee."
             : `Peers are one group for every fee: the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish an overdraft fee.`,

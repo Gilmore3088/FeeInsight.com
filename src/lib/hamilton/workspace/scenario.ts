@@ -129,7 +129,7 @@ function scenarioProvenance(
     engineVersion: WORKSPACE_ENGINE_VERSION,
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     evidenceLevel,
-    peerGroup: { label: input.peerLabel, n: input.peers.length },
+    peerGroup: { label: input.peerLabel.split(";")[0].trim(), n: input.peers.length },
     dataAsOf: { fees: input.feesAsOf ?? null, financials: line?.quarterEnd ?? null },
     sources: line ? [PEER_SOURCE, line.source] : [PEER_SOURCE],
     assumptions,
