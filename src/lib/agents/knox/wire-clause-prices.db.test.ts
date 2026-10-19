@@ -122,6 +122,7 @@ describe.skipIf(!connection)("Wire clause actual PostgreSQL stages (#2021)", () 
       expect(await live(tx, f)).toEqual(before);
       const [heldAfter] = await tx`SELECT to_jsonb(r)::text AS raw_bytes FROM raw_fee_observations r WHERE fee_raw_id=${held35.fee_raw_id}`;
       expect(heldAfter.raw_bytes).toBe(held35.raw_bytes);
+      expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${held35.fee_raw_id}`).toEqual([]);
     });
   }, 60_000);
 
