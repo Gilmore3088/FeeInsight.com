@@ -103,7 +103,7 @@ function failSelectedSql(tx:Tx,needle:string):Db {
     },
   }) as unknown as Db;
 }
-afterAll(async()=>{await db?.end();if(url)await appSql.end();});
+afterAll(async()=>{await db?.end();if(process.env.DATABASE_URL)await appSql.end();});
 suite("Darwin recheck committed settlement (#2072)",()=>{
   it.each(["restore","reject"] as const)("attests ordinary %s with actual RETURNING and valid ledger/source context",async state=>{
     await rollback(state,async(tx,f)=>{
