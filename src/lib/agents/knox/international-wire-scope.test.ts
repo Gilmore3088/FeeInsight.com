@@ -1,0 +1,137 @@
+// @vitest-environment node
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { sourceOwnedWireScope, reviewInternationalDirection } from "@/lib/custom-report/own-wire-scope";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { refileCategory, refileFromLine } from "@/lib/fee-category-guard";
+import { groundPaidRow } from "./paid-extract";
+import { runFreeSpecialists } from "./specialists";
+
+const fixture = JSON.parse(readFileSync(new URL("./__fixtures__/family-international-wire-scope.json", import.meta.url), "utf8"));
+const pdf = fixture.sources.find((row: { kind: string }) => row.kind === "consumer_pdf");
+const html = fixture.sources.find((row: { kind: string }) => row.kind === "fresh_html");
+
+describe("source-owned international wire scope, independent of price admission (#2278)", () => {
+  it("keeps all four exact PDF wire prices and the incoming domestic-hint refile", () => {
+    expect(createHash("sha256").update(pdf.normalizedText).digest("hex")).toBe(pdf.normalizedTextSHA256);
+    expect(pdf.sourceBytesSHA256).toBe("d978a0178d3d8063f8d99c41f508f69135578dbabab1af980836d27b09009cc9");
+    const wires = runFreeSpecialists(pdf.normalizedText).candidates.filter(row => row.canonicalHint.startsWith("wire_"));
+    expect(wires.map(row => row.amount)).toEqual([10, 20, 35, 45]);
+    for (const row of wires) {
+      const resolved = refileFromLine(row.canonicalHint, row.feeName, { amount: row.amount, conditions: `excerpt="${row.excerpt}"` })
+        ?? refileCategory(row.canonicalHint, row.feeName);
+      const scope = sourceOwnedWireScope(pdf.normalizedText, row.feeName, row.amount);
+      expect(scope.kind, row.feeName).toBe("owned");
+      expect(checkFeeAgainstSource(pdf.normalizedText, row.feeName, row.amount, ".", resolved).ok).toBe(true);
+      expect(reviewInternationalDirection(scope, resolved).kind).toBe(row.amount < 30 ? "not_applicable" : "admit");
+      if (row.amount === 35) {
+        expect(row.canonicalHint).toBe("wire_domestic_incoming");
+        expect(resolved).toBe("wire_intl_incoming");
+        expect(scope).toMatchObject({ geography: "international", directions: ["incoming"] });
+      }
+    }
+  });
+
+  it("does not borrow nearby outgoing45 for the HTML generic35 row", () => {
+    expect(createHash("sha256").update(html.normalizedText).digest("hex")).toBe(html.normalizedTextSHA256);
+    const scope = sourceOwnedWireScope(html.normalizedText, "International Wire Transfer Fee", 35);
+    expect(scope).toMatchObject({ kind: "owned", geography: "international", directions: [] });
+    expect(reviewInternationalDirection(scope, "wire_intl_outgoing")).toMatchObject({ kind: "hold", reason: "direction_missing" });
+    expect(checkFeeAgainstSource(html.normalizedText, "International Wire Transfer Fee", 35, ".", "wire_intl_outgoing").ok).toBe(true);
+  });
+
+  it("validates a previously admitted literal international slash clause without creating its price", () => {
+    const scope = sourceOwnedWireScope(html.normalizedText, "Outgoing International Wire Transfer Fees", 45);
+    expect(scope).toMatchObject({ kind: "owned", geography: "international", directions: ["outgoing"] });
+    expect(reviewInternationalDirection(scope, "wire_intl_outgoing").kind).toBe("admit");
+    // Existing domestic-only free admission remains outside this pure helper.
+    expect(runFreeSpecialists(html.normalizedText).candidates.some(row => row.amount === 45)).toBe(false);
+  });
+
+  it("distinguishes accepted paid price support from a wrong claimed direction", () => {
+    const quote = "International Wire Outgoing $45 | FEE SCHEDULE & ACCOUNT DISCLOSURE";
+    const paid = groundPaidRow({ fee_name: "International Wire Outgoing", amount: 45, canonical_key: "wire_intl_incoming", source_line: quote }, pdf.normalizedText);
+    expect(typeof paid).toBe("object");
+    const scope = sourceOwnedWireScope(pdf.normalizedText, "International Wire Outgoing", 45);
+    expect(reviewInternationalDirection(scope, "wire_intl_incoming")).toMatchObject({ kind: "hold", reason: "direction_mismatch" });
+    const wrongName = sourceOwnedWireScope(pdf.normalizedText, "International Wire Incoming", 45);
+    expect(wrongName).toEqual({ kind: "unresolved", reason: "missing_owner" });
+    expect(reviewInternationalDirection(wrongName, "wire_intl_incoming").kind).toBe("decline");
+  });
+
+  it.each([
+    ["Incoming Wire Transfers\nInternational | $35.00", "Incoming Wire Transfers: International", 35, "incoming"],
+    ["Incoming Wire Transfers\nDomestic | $10.00\nInternational | $35.00", "Incoming Wire Transfers: International", 35, "incoming"],
+    ["Outgoing Wire Transfers\nInternational | $45.00", "Outgoing Wire Transfers: International", 45, "outgoing"],
+    ["International Wire-In | $35.00", "International Wire-In", 35, "incoming"],
+    ["International Wire Outbound | $45.00", "International Wire Outbound", 45, "outgoing"],
+    ["International Wire Fee | $35.00 on incoming wires", "International Wire Fee", 35, "incoming"],
+  ] as const)("binds bounded literal own direction: %s", (text, name, amount, direction) => {
+    expect(sourceOwnedWireScope(text, name, amount)).toMatchObject({ kind: "owned", geography: "international", directions: [direction] });
+  });
+
+  it.each([
+    ["International Wire Incoming | $35\nInternational Wire Outgoing | $35", "International Wire Incoming", "incoming"],
+    ["International Wire Outgoing | $35\nInternational Wire Incoming | $35", "International Wire Outgoing", "outgoing"],
+  ] as const)("retains separately named equal-price direction owners", (text, name, direction) => {
+    expect(sourceOwnedWireScope(text, name, 35)).toMatchObject({ kind: "owned", directions: [direction] });
+  });
+
+  it("requires literal both-direction and shared-geography clauses", () => {
+    const both = sourceOwnedWireScope("Incoming/Outgoing International Wire Fee | $35", "Incoming/Outgoing International Wire Fee", 35);
+    expect(both).toMatchObject({ kind: "owned", geography: "international", directions: ["incoming", "outgoing"] });
+    const shared = sourceOwnedWireScope("Domestic & International Incoming Wires | $35", "Domestic & International Incoming Wires", 35);
+    expect(shared).toMatchObject({ kind: "owned", geography: "shared", directions: ["incoming"] });
+    expect(reviewInternationalDirection(shared, "wire_intl_incoming").kind).toBe("admit");
+  });
+
+  it.each([
+    ["Incoming Wires | $10\nInternational Wire Fee | $35", "International Wire Fee", "direction_missing"],
+    ["Incoming Wires\nContact us about our services\nInternational Wire Fee | $35", "International Wire Fee", "direction_missing"],
+    ["International Wire Fee | $35\nOutgoing Wires | $45", "International Wire Fee", "direction_missing"],
+    ["Wire Incoming | $35", "Wire Incoming", "geography_missing"],
+    ["Domestic Wire Incoming | $35", "Domestic Wire Incoming", "geography_mismatch"],
+  ] as const)("does not infer missing scope from neighbors or a supplied key", (text, name, reason) => {
+    expect(reviewInternationalDirection(sourceOwnedWireScope(text, name, 35), "wire_intl_incoming")).toMatchObject({ kind: "hold", reason });
+  });
+
+  it.each([
+    ["International Wire Fee | $35\nInternational Wire Fee | $35", "ambiguous_owner"],
+    ["Incoming Wires\nInternational Wire Fee | $35\nOutgoing Wires\nInternational Wire Fee | $35", "ambiguous_owner"],
+    ["International Wire Fee | $35 / $45", "unsupported_shape"],
+    ["International Wire Fee | $35 or 1%", "unsupported_shape"],
+    ["International Wire Fee | $35 ask about incoming options", "unsupported_shape"],
+    ["International Wire Fee | $35\nInternational Wire Fee | $45", null],
+  ] as const)("is conservative about repeated/unsupported ownership: %s", (text, reason) => {
+    const scope = sourceOwnedWireScope(text, "International Wire Fee", 35);
+    if (reason) expect(scope).toEqual({ kind: "unresolved", reason });
+    else expect(scope).toMatchObject({ kind: "owned", directions: [] });
+  });
+
+  it("does not merge contradictory heading geography into shared scope", () => {
+    expect(sourceOwnedWireScope("Domestic Incoming Wires\nInternational | $35", "Domestic Incoming Wires: International", 35))
+      .toEqual({ kind: "unresolved", reason: "unsupported_shape" });
+  });
+
+  it("can bind an explicit literal zero without inferring a price from scope", () => {
+    expect(reviewInternationalDirection(sourceOwnedWireScope("International Wire Incoming | $0", "International Wire Incoming", 0), "wire_intl_incoming").kind).toBe("admit");
+    expect(sourceOwnedWireScope("International Wire Incoming", "International Wire Incoming", 0).kind).toBe("unresolved");
+  });
+
+  it.each([
+    ["Premier Account Domestic Wire | $25 / $30", "Premier Account Domestic Wire", 25],
+    ["Wire service under a named product, ask for the applicable price", "Wire service", 25],
+    ["Domestic Wire Fee | $25 or 1%", "Domestic Wire Fee", 25],
+  ] as const)("does not make this finite resolver a new domestic admission requirement", (text, name, amount) => {
+    const scope = sourceOwnedWireScope(text, name, amount);
+    expect(scope.kind).toBe("unresolved");
+    expect(reviewInternationalDirection(scope, "wire_domestic_outgoing")).toEqual({ kind: "not_applicable" });
+    expect(reviewInternationalDirection(scope, "wire_domestic_incoming")).toEqual({ kind: "not_applicable" });
+  });
+
+  it("still holds positively owned international scope under an unresolved domestic final category", () => {
+    const scope = sourceOwnedWireScope("International Wire Incoming | $35", "International Wire Incoming", 35);
+    expect(reviewInternationalDirection(scope, "wire_domestic_incoming")).toMatchObject({ kind: "hold", reason: "category_mismatch" });
+  });
+});

@@ -1,0 +1,188 @@
+// @vitest-environment node
+/** Full exact source editions through real stages. Owned loopback fixtures only. */
+import postgres from "postgres";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { institutionValue } from "@/lib/data-store/fee-stats";
+
+vi.mock("@/lib/agents/fee-source-fetch", async original => ({
+  ...await original<typeof import("@/lib/agents/fee-source-fetch")>(),
+  feeSourceFetch: () => { throw new Error("International scope fixture forbids network/provider calls"); },
+}));
+const connection = process.env.E2E_DATABASE_URL;
+const fixture = JSON.parse(readFileSync(new URL("./__fixtures__/family-international-wire-scope.json", import.meta.url), "utf8"));
+type Source = { sourceURL: string; normalizedText: string; normalizedTextSHA256?: string; textSHA256?: string; sourceBytesSHA256: string; contentType?: string };
+const pdf: Source = fixture.sources.find((row: { kind: string }) => row.kind === "consumer_pdf");
+const html: Source = fixture.sources.find((row: { kind: string }) => row.kind === "fresh_html");
+type Db = typeof import("@/lib/data-store/connection").sql;
+type Seed = { institutionId: number; runId: number; stepId: number; documentId: number; textId: number; hash: string; source: Source };
+
+describe.skipIf(!connection)("International wire source applicability, real normal stages (#2278)", () => {
+  let db: postgres.Sql, appSql: Db;
+  let extract: typeof import("./extract"), paid: typeof import("./paid-extract");
+  let darwin: typeof import("../darwin/verify"), publish: typeof import("../hamilton/publish");
+  let runId = -227_800_000 - process.pid * 10;
+  const receipts: unknown[] = [];
+  beforeAll(async () => {
+    if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname))
+      throw new Error("International scope tests require an owned loopback database; production forbidden");
+    vi.stubEnv("DATABASE_URL", connection);
+    const connectionModule = await import("@/lib/data-store/connection");
+    appSql = connectionModule.sql;
+    db = postgres(connection, { max: 1, ssl: "require", types: {
+      numeric: connectionModule.NUMERIC_AS_NUMBER, json: connectionModule.JSON_TEXT_PASSTHROUGH,
+      text: connectionModule.TEXT_WITHOUT_NUL,
+    } }) as unknown as postgres.Sql;
+    extract = await import("./extract"); paid = await import("./paid-extract");
+    darwin = await import("../darwin/verify"); publish = await import("../hamilton/publish");
+  });
+  afterAll(async () => {
+    if (db) await db.end(); if (typeof appSql?.end === "function") await appSql.end(); vi.unstubAllEnvs();
+    if (process.env.WIRE_SCOPE_RECEIPT_PATH) writeFileSync(process.env.WIRE_SCOPE_RECEIPT_PATH,
+      JSON.stringify({ capturedAt: new Date().toISOString(), scope: "Owned loopback, exact full normalized source editions; no live mutation or provider call", receipts }, null, 2) + "\n");
+  });
+  async function rollback(work: (tx: Db) => Promise<void>) {
+    const signal = new Error("rollback owned international wire fixture");
+    await db.begin(async scope => { await work(scope as unknown as Db); throw signal; })
+      .catch(error => { if (error !== signal) throw error; });
+  }
+  async function seed(tx: Db, source: Source, existingInstitution?: number): Promise<Seed> {
+    const hash = createHash("sha256").update(source.normalizedText).digest("hex");
+    expect(hash).toBe(source.normalizedTextSHA256 ?? source.textSHA256);
+    const institutionId = existingInstitution ?? Number((await tx`INSERT INTO institution_sources
+      (institution_name,website_url,fee_schedule_url,charter_type,state,state_code,asset_size,source,status)
+      VALUES ('Synthetic international source scope fixture','https://www.familysavingscu.com/',${source.sourceURL},
+      'credit_union','Alabama','AL',1000000,'e2e','active') RETURNING id`)[0].id);
+    const currentRunId = runId--;
+    await tx`INSERT INTO agent_runs(id,agent_name,run_kind,title,status)
+      VALUES (${currentRunId},'knox','state_agent','International scope fixture','running')`;
+    const [{ id: stepId }] = await tx`INSERT INTO agent_run_steps(agent_run_id,step_key,agent_name,title,status)
+      VALUES (${currentRunId},'publish','hamilton','International scope fixture','running') RETURNING id`;
+    const [{ id: documentId }] = await tx`INSERT INTO source_documents
+      (institution_id,status,document_url,content_hash,content_type)
+      VALUES (${institutionId},'success',${source.sourceURL},${source.sourceBytesSHA256},${source.contentType ?? "text/html"}) RETURNING id`;
+    const [{ id: textId }] = await tx`INSERT INTO agent_source_texts
+      (agent_run_id,source_document_id,institution_id,source_url,status,normalized_text,text_hash,char_count)
+      VALUES (${currentRunId},${documentId},${institutionId},${source.sourceURL},'completed',${source.normalizedText},${hash},${source.normalizedText.length}) RETURNING id`;
+    return { institutionId, runId: currentRunId, stepId: Number(stepId), documentId: Number(documentId), textId: Number(textId), hash, source };
+  }
+  const live = (tx: Db, f: Seed) => tx`SELECT c.id,c.fee_name,c.fee_category,c.amount,c.frequency,c.conditions,c.fee_audience,r.product_name
+    FROM published_fee_catalog c LEFT JOIN raw_fee_observations r ON r.fee_raw_id=c.fee_raw_id
+    WHERE c.institution_id=${f.institutionId} AND c.fee_category LIKE 'wire_%' ORDER BY c.fee_category,c.amount,c.id`;
+  async function snapshot(tx: Db, f: Seed, name: string) {
+    const catalog = await live(tx, f);
+    const raw = await tx`SELECT * FROM raw_fee_observations WHERE institution_id=${f.institutionId} ORDER BY fee_raw_id`;
+    const verified = await tx`SELECT * FROM verified_fee_observations WHERE institution_id=${f.institutionId} ORDER BY fee_verified_id`;
+    const published = await tx`SELECT * FROM published_fee_records WHERE institution_id=${f.institutionId} ORDER BY fee_published_id`;
+    const outgoing = catalog.filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount));
+    receipts.push({ name, source: { documentId: f.documentId, textId: f.textId, textHash: f.hash, url: f.source.sourceURL },
+      raw, verified, published, catalog, internationalOutgoingValue: outgoing.length ? institutionValue("wire_intl_outgoing", outgoing) : null });
+    return catalog;
+  }
+  async function fullPublish(tx: Db, f: Seed) {
+    const sweeps = await import("../hamilton/publish-sweeps");
+    const opts = { runId: f.runId, stepId: f.stepId, institutionId: f.institutionId, dryRun: false, batchId: `agentic-run-${f.runId}` };
+    const ctx = { db: tx, ...opts, researchSplitFullCount: false, categoryGuardLimit: 1000, sweepMs: {} as Record<string, number>, mode: "full" as const };
+    const results = [await sweeps.sweepsBeforeGuardRequeue(ctx),
+      await (await import("../hamilton/guard-requeue")).requeueGuardRejectedFees(tx, opts),
+      await (await import("../hamilton/companion-retire")).rollBackRetiredCompanionFees(tx, opts),
+      await sweeps.sweepsBeforeNewerCopy(ctx),
+      await (await import("../hamilton/newer-copy-retire")).retireFeesDroppedFromNewerCopy(tx, opts),
+      await (await import("../hamilton/current-copy")).secondLookFeesNotOnCurrentCopy(tx, opts),
+      await (await import("../hamilton/rules-recheck")).rollBackUnreproducedFees(tx, opts),
+      await sweeps.sweepsBeforeRows(ctx), await (await import("../hamilton/source-link")).resourceSourceLinks(tx, opts),
+      await publish.runHamiltonPublish({ db: tx, runId: f.runId, institutionId: f.institutionId, limit: 100, minInstitutionFees: 1 }),
+      await (await import("../hamilton/duplicate-collapse")).collapsePublishedDuplicates(tx, opts),
+      await (await import("../hamilton/source-check")).takeDownUntraceableFees(tx, opts), await sweeps.sweepsAfterRows(ctx)];
+    const errors: unknown[] = [];
+    const visit = (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      for (const [key, child] of Object.entries(value)) if (key === "error" && child != null) errors.push(child); else if (typeof child === "object") visit(child);
+    };
+    results.forEach(visit); expect(errors).toEqual([]);
+  }
+  async function stages(tx: Db, f: Seed, doExtract = true) {
+    if (doExtract) await extract.runKnoxExtract({ db: tx, runId: f.runId, institutionId: f.institutionId, limit: 10 });
+    await darwin.runDarwinVerify({ db: tx, runId: f.runId, institutionId: f.institutionId, limit: 100 });
+    await fullPublish(tx, f);
+  }
+  async function sourceBackedDepth(tx: Db, f: Seed) {
+    const { runFreeSpecialists } = await import("./specialists");
+    const categories = new Set(["money_order", "cashiers_check", "card_replacement"]);
+    const controls = runFreeSpecialists(f.source.normalizedText).candidates.filter(row => categories.has(row.canonicalHint));
+    expect(new Set(controls.map(row => row.canonicalHint)).size).toBe(3);
+    for (const candidate of controls) await extract.insertCandidate(tx, { runId: f.runId,
+      row: { document_text_id: f.textId, source_document_id: f.documentId, institution_id: f.institutionId,
+        source_url: f.source.sourceURL, text_hash: f.hash, normalized_text: f.source.normalizedText }, candidate });
+    await stages(tx, f, false);
+    expect(await tx`SELECT DISTINCT fee_category FROM published_fee_catalog
+      WHERE institution_id=${f.institutionId} AND fee_category=ANY(${[...categories]}::text[])`).toHaveLength(3);
+  }
+
+  it("keeps all four properly resolved PDF wire prices through the actual normal stage owners", async () => rollback(async tx => {
+    const f = await seed(tx, pdf);
+    await stages(tx, f);
+    const catalog = await snapshot(tx, f, "correct_full_pdf");
+    const facts = catalog.map(row => [row.fee_category, Number(row.amount)]);
+    expect(facts).toEqual(expect.arrayContaining([["wire_domestic_incoming", 10], ["wire_domestic_outgoing", 20],
+      ["wire_intl_incoming", 35], ["wire_intl_outgoing", 45]]));
+  }));
+
+  it("does not publish a fresh generic HTML35 as an outgoing international fee", async () => rollback(async tx => {
+    const f = await seed(tx, html);
+    await stages(tx, f);
+    const catalog = await snapshot(tx, f, "generic_html_must_hold");
+    expect(catalog.filter(row => row.fee_category === "wire_intl_outgoing")).toEqual([]);
+    const raw = await tx`SELECT outlier_flags FROM raw_fee_observations WHERE institution_id=${f.institutionId}
+      AND fee_name='International Wire Transfer Fee' AND amount=35`;
+    expect(raw[0]?.outlier_flags).toContain("knox_review:eligibility");
+    expect(raw[0]?.outlier_flags).not.toContain("needs_darwin_verification");
+  }));
+
+  it("does not verify or publish an accepted paid outgoing45 claimed as incoming", async () => rollback(async tx => {
+    const depth = await seed(tx, html);
+    await sourceBackedDepth(tx, depth);
+    const f = await seed(tx, pdf, depth.institutionId);
+    const grounded = paid.groundPaidRow({ fee_name: "International Wire Outgoing", amount: 45, canonical_key: "wire_intl_incoming",
+      source_line: "International Wire Outgoing $45 | FEE SCHEDULE & ACCOUNT DISCLOSURE", conditions: "invented incoming applicability" }, pdf.normalizedText);
+    if (typeof grounded === "string") throw new Error(`The price baseline must remain accepted: ${grounded}`);
+    await extract.insertCandidate(tx, { runId: f.runId, row: { document_text_id: f.textId, source_document_id: f.documentId,
+      institution_id: f.institutionId, source_url: pdf.sourceURL, text_hash: f.hash, normalized_text: pdf.normalizedText },
+      candidate: { feeName: grounded.feeName, amount: grounded.amount, frequency: grounded.frequency, canonicalHint: grounded.canonicalKey,
+        confidence: .95, excerpt: grounded.sourceLine, waivable: false, ownUnit: grounded.ownUnit, ownCondition: grounded.ownCondition } });
+    await stages(tx, f, false);
+    const catalog = await snapshot(tx, f, "paid_outgoing45_wrong_incoming_key");
+    expect(catalog.filter(row => row.fee_category === "wire_intl_incoming")).toEqual([]);
+    expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE institution_id=${f.institutionId}
+      AND canonical_fee_key='wire_intl_incoming' AND fee_name='International Wire Outgoing' AND amount=45`).toEqual([]);
+  }));
+
+  it("defers new outgoing45 while a preserved old generic outgoing35 would create a synthetic40", async () => rollback(async tx => {
+    const old = await seed(tx, fixture.historicalHtml);
+    await sourceBackedDepth(tx, old);
+    const excerpt = "International Wire Transfer Fee | $35.00";
+    const note = `Knox read Rosetta artifact #${old.textId}. canonical_hint=wire_intl_outgoing; text_hash=${old.hash}; excerpt="${excerpt}"`;
+    const [{ fee_raw_id: rawId }] = await tx`INSERT INTO raw_fee_observations
+      (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,extraction_confidence,extraction_note,outlier_flags,fee_audience,fee_treatment)
+      VALUES (${old.institutionId},${old.documentId},${old.source.sourceURL},'knox',gen_random_uuid(),'International Wire Transfer Fee',35,'per_item',.95,${note},
+      '["canonical_hint:wire_intl_outgoing"]'::jsonb,'unknown','charged') RETURNING fee_raw_id`;
+    const [{ fee_verified_id: verifiedId }] = await tx`INSERT INTO verified_fee_observations
+      (fee_raw_id,institution_id,source_url,verified_by_agent_event_id,canonical_fee_key,fee_name,amount,frequency,extraction_confidence,review_status,fee_audience,fee_treatment)
+      VALUES (${rawId},${old.institutionId},${old.source.sourceURL},gen_random_uuid(),'wire_intl_outgoing','International Wire Transfer Fee',35,'per_item',.95,'verified','unknown','charged') RETURNING fee_verified_id`;
+    await tx`INSERT INTO published_fee_records
+      (lineage_ref,institution_id,published_by_adversarial_event_id,canonical_fee_key,fee_name,amount,frequency,amount_kind,fee_audience,fee_treatment,published_at)
+      VALUES (${verifiedId},${old.institutionId},gen_random_uuid(),'wire_intl_outgoing','International Wire Transfer Fee',35,'per_item','flat','unknown','charged',NOW()-interval '1 day')`;
+    const [before] = await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`;
+    expect((await live(tx, old)).filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount))).toEqual([35]);
+    const f = await seed(tx, pdf, old.institutionId);
+    await stages(tx, f);
+    const catalog = await snapshot(tx, f, "old_generic35_plus_new_pdf");
+    const outgoing = catalog.filter(row => row.fee_category === "wire_intl_outgoing").map(row => Number(row.amount));
+    expect(outgoing).toEqual([35]);
+    expect(institutionValue("wire_intl_outgoing", outgoing)).not.toBe(40);
+    expect((await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${rawId}`)[0]).toEqual(before);
+    expect(await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE institution_id=${f.institutionId}
+      AND canonical_fee_key='wire_intl_outgoing' AND amount=45`).toHaveLength(1);
+  }));
+});
