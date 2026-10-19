@@ -1239,7 +1239,7 @@ async function executeAgenticStep(
         stateCode,
       }));
       const newerCopyRetired = newerCopy.live ? newerCopy.retired.length : 0;
-      const newerCopyRestored = newerCopy.live ? newerCopy.restored : 0;
+      const newerCopyRestored = newerCopy.live ? (run.runKind === "dry_run" ? newerCopy.proposedRestores : newerCopy.restored) : 0;
       const { identicalCopy } = await sweepsBeforeRefreshCopy(sweepCtx);
       // A live fee the current copy of its page still states at the same amount moves to
       // that copy, so it no longer points at a superseded copy and its date is current.

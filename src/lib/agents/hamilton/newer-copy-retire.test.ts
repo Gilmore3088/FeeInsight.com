@@ -9,7 +9,7 @@ import {
   type NewerCopyFeeRow,
 } from "./newer-copy-retire";
 
-type DbMock = ReturnType<typeof vi.fn>;
+type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -54,7 +54,7 @@ const olderFees = [
 ];
 
 function createDb(fees: NewerCopyFeeRow[], text = newerText): DbMock {
-  return vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray) => {
     const sqlText = templateText(strings);
     if (sqlText.includes("WITH older AS")) return Promise.resolve([{ older_id: 500, newer_id: 900 }]);
     if (sqlText.includes("FROM unnest(")) return Promise.resolve(sqlText.includes("UPDATE")
@@ -68,7 +68,9 @@ function createDb(fees: NewerCopyFeeRow[], text = newerText): DbMock {
     }
     if (sqlText.includes("RETURNING fp.lineage_ref")) return Promise.resolve([{ lineage_ref: 1005 }]);
     return Promise.resolve([]);
-  });
+  }) as DbMock;
+  db.unsafe = vi.fn((text: string) => ({ rawSql: text }));
+  return db;
 }
 
 const asDb = (db: DbMock) => db as unknown as Parameters<typeof retireFeesDroppedFromNewerCopy>[0];
@@ -135,6 +137,13 @@ describe("Hamilton newer-copy check", () => {
   it("restores a retired fee a later copy states again", () => {
     const judged = judgeNewerCopy([...olderFees.slice(0, 3), fee(5, "Paper Statement", 3, { retired: true })], newerText, `${olderText}\nPaper Statement | $3.00`);
     expect(judged.restore.map((row) => row.fee_published_id)).toEqual([5]);
+  });
+
+  it("keeps a source-stated retired fee out of the plan when its exact twin is held", () => {
+    const held = { ...fee(5,"Paper Statement",3,{retired:true}), restore_block_reason:"account_type_hold_twin" as const };
+    const judged = judgeNewerCopy([...olderFees.slice(0,3),held],newerText,`${olderText}\nPaper Statement | $3.00`);
+    expect(judged.restore).toEqual([]);
+    expect(judged).toMatchObject({ blockedRestore:[held] });
   });
 
   it("changes no fee in shadow mode but logs what it would retire", async () => {
