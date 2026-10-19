@@ -849,7 +849,7 @@ describe("agentic run store", () => {
 
   async function savedRecheckRun(
     alias: "classify" | "verify", recheck: unknown,
-    options: { dryRun?: boolean; learning?: boolean; processed?: number } = {},
+    options: { dryRun?: boolean; learning?: boolean; processed?: number; deferred?: number; deferrals?: Array<{ feeRawId: number; reason: string }> } = {},
   ) {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const steps = [{ ...queuedStepRows[0], step_key: alias, agent_name: "darwin", title: "Verify fees" }];
@@ -860,6 +860,7 @@ describe("agentic run store", () => {
     txMock.unsafe.mockResolvedValue([]);
     runDarwinVerifyMock.mockResolvedValue({
       selectedRawFees: 7, processedRawFees: options.processed ?? 7, verifiedFees: 6, skippedFees: 1,
+      deferredRawFees: options.deferred ?? 0, deferrals: options.deferrals ?? [],
       limit: 10, dryRun: options.dryRun === true, learning: options.learning ?? true, results: [], recheck,
       outcomes: {}, reasonCounts: {}, zeroFeesVerified: 0, peerFallbackChecks: 0,
       peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0,
@@ -878,6 +879,30 @@ describe("agentic run store", () => {
   }
 
   const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
+
+  it("saves bounded unresolved-admission receipts without source context and excludes deferred zeros from settled counts", async () => {
+    const zero = await import("./darwin/conditional-zero-resolve");
+    const zeroSpy = vi.spyOn(zero, "runDarwinConditionalZeroResolve").mockResolvedValue({
+      selected: 4, verified: 1, dryRun: false, verdicts: { conditional_zero_free_on_schedule: 1 },
+      deferred: 2, deferrals: [{ feeRawId: 89, reason: "no_original_hash" }],
+    });
+    try {
+      const samples = Array.from({ length: 30 }, (_, index) => ({ feeRawId: index + 1,
+        reason: index === 0 ? "SECRET source stack" : "no_original_hash", sourceContext: "SECRET source body" }));
+      const { detail, message } = await savedRecheckRun("verify", recheckZero, { deferred: 30, deferrals: samples });
+      expect(detail.deferred_raw_fees).toBe(30);
+      expect(detail.verification_deferrals).toHaveLength(25);
+      expect(detail.verification_deferrals[0]).toEqual({ feeRawId: 1, reason: "admission_unresolved" });
+      expect(JSON.stringify(detail.verification_deferrals)).not.toContain("SECRET");
+      expect(detail.conditional_zero).toMatchObject({ selected: 4, settled: 2, deferred: 2,
+        deferrals: [{ feeRawId: 89, reason: "no_original_hash" }] });
+      expect(message).toContain("30 row(s) deferred without a verification decision");
+      expect(message).toContain("Settled 2 conditional-$0 hold(s)");
+      expect(message).toContain("2 conditional-$0 hold(s) deferred without a decision");
+    } finally {
+      zeroSpy.mockRestore();
+    }
+  });
 
   it.each(["classify", "verify"] as const)("saves nonzero producer reports through %s → real finish INSERT", async alias => {
     const { detail, message } = await savedRecheckRun(alias, {

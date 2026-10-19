@@ -25,6 +25,7 @@ describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2
   let appSql: Db;
   let extract: typeof import("./extract");
   let darwin: typeof import("../darwin/verify");
+  let AudienceDeferred: typeof import("../darwin/verification-audience").VerificationAudienceDeferred;
   let nextRunId = -233_550_000 - process.pid * 10;
 
   beforeAll(async () => {
@@ -41,6 +42,7 @@ describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2
     secondConnection = postgres(connection, options);
     extract = await import("./extract");
     darwin = await import("../darwin/verify");
+    ({ VerificationAudienceDeferred: AudienceDeferred } = await import("../darwin/verification-audience"));
   }, 30_000);
   afterAll(async () => {
     for (const client of [firstConnection, secondConnection, observer, appSql]) if (client) await client.end();
@@ -131,7 +133,10 @@ describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2
     const ready = deferred<{ pid: number; result: number | boolean | null }>();
     const waiting = deferred<number>();
     let firstTask: Promise<unknown> | undefined;
-    let secondTask: Promise<unknown> | undefined;
+    let secondTask: Promise<
+      | { kind: "completed"; result: number | boolean | null }
+      | { kind: "deferred"; error: unknown }
+    > | undefined;
     try {
       firstTask = firstConnection.begin(async scope => {
         const tx = scope as unknown as Db;
@@ -150,10 +155,54 @@ describe.skipIf(!connection)("Symbolic lesser-of hold and Darwin concurrency (#2
         const [{ pid }] = await tx`SELECT pg_backend_pid() AS pid`;
         waiting.resolve(Number(pid));
         return first === "Darwin" ? hold(tx, fixture) : verify(tx, fixture, legacy, canonicalFeeKey);
-      }).catch(error => { waiting.reject(error); throw error; });
-      await observeBlock(await waiting.promise, firstResult.pid);
-      release.resolve();
-      const [, secondResult] = await Promise.all([firstTask, secondTask]);
+      }).then(
+        result => ({ kind: "completed" as const, result }),
+        error => { waiting.reject(error); return { kind: "deferred" as const, error }; },
+      );
+      let secondResult: number | boolean | null;
+      if (first === "Darwin") {
+        // The existing held writer still waits for the winning judgment's raw lock.
+        await observeBlock(await waiting.promise, firstResult.pid);
+        release.resolve();
+        const [, outcome] = await Promise.all([firstTask, secondTask]);
+        expect(outcome.kind).toBe("completed");
+        if (outcome.kind !== "completed") throw outcome.error;
+        secondResult = outcome.result;
+      } else {
+        // Audience's newly introduced locks never wait. Settle this attempt while
+        // the held writer is still uncommitted, then retry the identical stale
+        // callback after commit to retain the existing eligibility protection.
+        await waiting.promise;
+        const outcome = await secondTask;
+        expect(outcome.kind).toBe("deferred");
+        if (outcome.kind !== "deferred") throw new Error("Darwin did not defer the busy raw row");
+        expect(outcome.error).toBeInstanceOf(AudienceDeferred);
+        if (!(outcome.error instanceof AudienceDeferred)) throw outcome.error;
+        expect(outcome.error.reason).toBe("busy");
+        expect(await observer`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${fixture.rawId}`)
+          .toEqual([fixture.row]);
+        expect(await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`)
+          .toHaveLength(0);
+        expect(await observer`SELECT id FROM pipeline_attempts WHERE input_fingerprint=${`raw:${fixture.rawId}`}`)
+          .toHaveLength(0);
+        expect(await observer`SELECT id FROM pipeline_feedback WHERE institution_id=${fixture.institutionId}`)
+          .toHaveLength(0);
+        release.resolve();
+        await firstTask;
+        // The held write changed selected metadata: the identical stale callback
+        // must defer rather than settle against that now-different raw identity.
+        await expect(secondConnection.begin(scope =>
+          verify(scope as unknown as Db, fixture, legacy, canonicalFeeKey)))
+          .rejects.toMatchObject({ reason: "admitted_raw_changed" });
+        expect(await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`)
+          .toHaveLength(0);
+        // A normal fresh selection reaches the pre-existing eligibility guard,
+        // even if the callback still proposes the stale alternate category.
+        const [fresh] = await observer`SELECT fr.*, COALESCE(fr.extraction_note,fr.conditions) AS conditions
+          FROM raw_fee_observations fr WHERE fr.fee_raw_id=${fixture.rawId}`;
+        secondResult = await secondConnection.begin(scope => verify(scope as unknown as Db,
+          { ...fixture, row: fresh as unknown as RawFeeRow }, legacy, canonicalFeeKey));
+      }
       const [current] = await observer`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${fixture.rawId}`;
       const judgments = await observer`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_raw_id=${fixture.rawId}`;
       if (first === "Darwin") {
