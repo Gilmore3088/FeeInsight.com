@@ -4,6 +4,13 @@ Knox owns conservative raw fee extraction.
 
 ## Literal own charging units (#2248, prospective raw lineage)
 
+The same unreleased v87 outcome also closes #2283: after admission, one exact bounded own
+label/price can retain a complete additive parenthetical such as a separately incurred
+locksmith fee. Source text supplies it, including a single lowercase wrapped continuation;
+model claims, extra prices, columns, incomplete or repeated conflicting occurrences do not.
+Unknown units such as per-key stay literal conditions, without a new supported unit code.
+This condition-only annotation has the same historical conflict/promoter protections as units.
+
 After the existing name, price and category admission checks, an exact own label/price pair
 can carry its literal hourly, page, document, image, statement, half-hour, quarter-hour or
 minute unit. The numeric amount is unchanged. The full own price clause and existing linked
@@ -205,8 +212,9 @@ and existing safe eligibility hold remains unchanged, including rejected/operato
 and published histories. Ordinary automatic promoters cannot release this shape.
 The insert remains `ON CONFLICT DO NOTHING`; a proven monthly conflict locks its exact
 raw identity in a real transaction and checks judged history in a fresh statement.
-Darwin's post-lock current monthly eligibility check (#2277) blocks stale selections
-even for NULL/unrepresented products, without requiring needs flags on old rejudges.
+Darwin's post-lock current monthly eligibility check (#2277) uses the current raw
+canonical hint and eligibility flags, independently of a stale chosen category. Every
+caller locks, including NULL/unrepresented products; old rejudges need no needs flag.
 
 The 2026-10-19 review explicitly approves a prospective eligibility phase, following
 #1911's phase boundary, as an exception to the general live-rule-join requirement in

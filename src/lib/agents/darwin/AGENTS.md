@@ -14,13 +14,15 @@ shared SQL/client predicate. The historical hourly switch and provider controls 
 Darwin owns verification and classification.
 
 Monthly eligibility admission (#2277/#2259, Oct 19): `insertVerifiedFee` locks the current
-monthly raw identity and checks its current strong eligibility hold, including NULL or
-legacy unrepresented products. A stale selected row cannot verify after that hold wins
+raw identity for every caller. Current `knox_review:eligibility` together with
+`canonical_hint:monthly_maintenance` blocks verification regardless of the stale chosen
+category, including NULL or legacy unrepresented products. A stale selected row cannot verify after that hold wins
 the lock. Conversely, the monthly writer locks an exact conflict in a real transaction,
 then checks all verified history in a fresh statement before changing it. Ordinary
 historical rejudge callers need not carry `needs_darwin_verification`; no global needs
 flag requirement or replay version is added. Two-connection loopback PostgreSQL tests
-prove both actual blocking orders and normal pending controls. The existing caller
+prove both actual blocking orders, a stale `minimum_balance` choice with both product
+representations, and ordinary/flagless rejudge controls. The existing caller
 transaction precondition on `insertVerifiedFee` still applies.
 
 ## Ancillary product ownership (#1911 code phase, 2026-10-19)

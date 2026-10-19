@@ -26,6 +26,7 @@ import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { ownFeeUnit, type OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { ownAdditiveCondition } from "@/lib/custom-report/own-additive-condition";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { DOCUMENT_OWNER_STRATEGY, documentOwnerFingerprintPrefix } from "@/lib/agents/darwin/document-owner";
@@ -157,6 +158,7 @@ export interface AcceptedPaidFee {
   /** monthly_maintenance only; each value grounded in the text or null. */
   lineup: AccountLineup | null;
   ownUnit?: OwnFeeUnit;
+  ownCondition?: string;
 }
 
 export type PaidRowRejection = "missing_fields" | "unknown_canonical" | "invalid_amount" | "not_in_text" | "limit_not_fee";
@@ -248,6 +250,7 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
       )
     : null;
   const ownUnit = ownFeeUnit(text, feeName, rounded, mapped);
+  const ownCondition = ownAdditiveCondition(text, feeName, rounded);
   return {
     feeName,
     canonicalKey: mapped,
@@ -257,6 +260,7 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
     sourceLine: sourceLine || feeName,
     lineup,
     ...(ownUnit ? { ownUnit } : {}),
+    ...(ownCondition ? { ownCondition } : {}),
   };
 }
 
@@ -580,7 +584,7 @@ export async function runKnoxPaidExtract(
         ? await insertHeldCandidate(db, {
             runId: options.runId,
             row: textRow,
-            held: { shape: "zero", feeName: fee.feeName, amount: 0, amountMax: null, percent: null, frequency: fee.frequency, canonicalHint: fee.canonicalKey, excerpt, ownUnit: fee.ownUnit },
+            held: { shape: "zero", feeName: fee.feeName, amount: 0, amountMax: null, percent: null, frequency: fee.frequency, canonicalHint: fee.canonicalKey, excerpt, ownUnit: fee.ownUnit, ownCondition: fee.ownCondition },
             extraFlags: [KNOX_PAID_FLAG],
             assignedMonthlyProduct: fee.lineup?.productName,
           })
@@ -597,6 +601,7 @@ export async function runKnoxPaidExtract(
               waivable: /\bwaiv/i.test(`${fee.conditions ?? ""} ${fee.sourceLine}`),
               lineup: fee.lineup,
               ownUnit: fee.ownUnit,
+              ownCondition: fee.ownCondition,
             },
             extraFlags: [KNOX_PAID_FLAG],
             method: `paid extraction (${model})`,

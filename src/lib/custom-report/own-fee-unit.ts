@@ -2,6 +2,7 @@ import { HOURLY_EXEMPT_KEYS, hourlyFromLine, PERIOD_FEE_KEYS } from "@/lib/fee-f
 import { conflictingSpecialUnits, specialUnitInName, specialUnitOnPriceLine, type SpecialUnitFrequency } from "@/lib/fee-unit";
 import { feeBullets } from "./fee-bullets";
 import { stackedLabelKey } from "./stacked-fee-prices";
+import { ownAdditiveCondition } from "./own-additive-condition";
 
 export interface OwnFeeUnit {
   frequency: SpecialUnitFrequency;
@@ -67,7 +68,10 @@ export function ownFeeUnit(text: string, name: string, amount: number, category:
 
 export function withOwnFeeUnit<T extends { feeName: string; amount: number; canonicalHint: string; frequency: string | null }>(
   candidate: T, sourceText: string,
-): T & { ownUnit?: OwnFeeUnit } {
+): T & { ownUnit?: OwnFeeUnit; ownCondition?: string } {
   const ownUnit = ownFeeUnit(sourceText, candidate.feeName, candidate.amount, candidate.canonicalHint);
-  return ownUnit ? { ...candidate, frequency: ownUnit.frequency, ownUnit } : candidate;
+  const ownCondition = ownAdditiveCondition(sourceText, candidate.feeName, candidate.amount);
+  if (!ownUnit && !ownCondition) return candidate;
+  return { ...candidate, ...(ownUnit ? { frequency: ownUnit.frequency, ownUnit } : {}),
+    ...(ownCondition ? { ownCondition } : {}) };
 }

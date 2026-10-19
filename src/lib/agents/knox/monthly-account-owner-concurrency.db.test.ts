@@ -102,10 +102,10 @@ describe.skipIf(!connection)("Monthly hold and Darwin concurrency (#2259)", () =
     candidate: { feeName: "Monthly fee", amount: 5, frequency: "monthly", canonicalHint: "monthly_maintenance",
       confidence: .91, excerpt: "Monthly fee $5.00", waivable: false },
   });
-  const verify = (tx: Db, fixture: Fixture, legacy = false) => {
+  const verify = (tx: Db, fixture: Fixture, legacy = false, canonicalFeeKey = "monthly_maintenance") => {
     const row = { ...fixture.row };
     if (legacy) delete row.product_name;
-    return darwin.insertVerifiedFee(tx, { runId: fixture.runId, row, canonicalFeeKey: "monthly_maintenance", sourceText: TEXT });
+    return darwin.insertVerifiedFee(tx, { runId: fixture.runId, row, canonicalFeeKey, sourceText: TEXT });
   };
 
   async function observeBlock(waitingPid: number, expectedBlocker: number) {
@@ -120,10 +120,12 @@ describe.skipIf(!connection)("Monthly hold and Darwin concurrency (#2259)", () =
   }
 
   it.each([
-    { first: "Darwin", legacy: false },
-    { first: "hold", legacy: false },
-    { first: "hold", legacy: true },
-  ] as const)("preserves judgment and held eligibility when $first wins (legacy=$legacy)", async ({ first, legacy }) => {
+    { first: "Darwin", legacy: false, canonicalFeeKey: "monthly_maintenance" },
+    { first: "hold", legacy: false, canonicalFeeKey: "monthly_maintenance" },
+    { first: "hold", legacy: true, canonicalFeeKey: "monthly_maintenance" },
+    { first: "hold", legacy: false, canonicalFeeKey: "minimum_balance" },
+    { first: "hold", legacy: true, canonicalFeeKey: "minimum_balance" },
+  ] as const)("preserves judgment and held eligibility when $first wins (legacy=$legacy, stale category=$canonicalFeeKey)", async ({ first, legacy, canonicalFeeKey }) => {
     const fixture = await seed();
     const release = deferred<void>();
     const ready = deferred<{ pid: number; result: number | boolean | null }>();
@@ -147,7 +149,7 @@ describe.skipIf(!connection)("Monthly hold and Darwin concurrency (#2259)", () =
         await tx`SET LOCAL lock_timeout='8s'`;
         const [{ pid }] = await tx`SELECT pg_backend_pid() AS pid`;
         waiting.resolve(Number(pid));
-        return first === "Darwin" ? hold(tx, fixture) : verify(tx, fixture, legacy);
+        return first === "Darwin" ? hold(tx, fixture) : verify(tx, fixture, legacy, canonicalFeeKey);
       }).catch(error => { waiting.reject(error); throw error; });
       await observeBlock(await waiting.promise, firstResult.pid);
       release.resolve();
@@ -182,14 +184,14 @@ describe.skipIf(!connection)("Monthly hold and Darwin concurrency (#2259)", () =
     } finally { await cleanup(fixture); }
   });
 
-  it("does not add a needs-verification flag requirement to legitimate monthly rejudges", async () => {
+  it.each(["monthly_maintenance", "minimum_balance"])("does not add a needs-verification flag requirement to legitimate %s rejudges", async canonicalFeeKey => {
     const fixture = await seed();
     try {
       await observer`UPDATE raw_fee_observations SET outlier_flags='["canonical_hint:monthly_maintenance"]'::jsonb
         WHERE fee_raw_id=${fixture.rawId}`;
       const [current] = await observer`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${fixture.rawId}`;
       fixture.row = current as unknown as RawFeeRow;
-      expect(await firstConnection.begin(scope => verify(scope as unknown as Db, fixture))).not.toBeNull();
+      expect(await firstConnection.begin(scope => verify(scope as unknown as Db, fixture, false, canonicalFeeKey))).not.toBeNull();
       expect(await observer`SELECT fee_verified_id FROM verified_fee_observations
         WHERE fee_raw_id=${fixture.rawId} AND review_status='verified'`).toHaveLength(1);
     } finally { await cleanup(fixture); }

@@ -1235,15 +1235,16 @@ export async function insertVerifiedFee(
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   // With no decision the trigger copies the raw row's audience, as before.
   const audience = options.audience !== undefined ? options.audience : darwinAudience(options.row, amount, options.sourceText);
-  const monthly = options.canonicalFeeKey === "monthly_maintenance";
-  if (options.row.product_name !== undefined || monthly) {
+  // Every caller locks current raw state, including legacy rows with no represented product.
+  {
     const current = await db`
       SELECT fr.fee_raw_id FROM raw_fee_observations fr WHERE fr.fee_raw_id = ${feeRawId}
         AND (${options.row.product_name === undefined} OR
           ${db.unsafe(productKeySql("fr.product_name"))} = ${productKey(options.row.product_name)})
-        -- A stale selection must not verify a monthly row whose current owner is held.
+        -- The current raw proof owns this decision, including a stale different category.
         -- Do not require a needs flag: legitimate historical rejudges may lack it.
-        AND (${!monthly} OR NOT COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility')
+        AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
+          AND COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'canonical_hint:monthly_maintenance')
       FOR UPDATE OF fr`;
     if (current.length === 0) return null;
   }
