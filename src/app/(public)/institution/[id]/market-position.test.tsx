@@ -209,4 +209,32 @@ describe("the compare link always ends at #peers (James's phone review of #1887)
     expect(push).not.toHaveBeenCalled();
     expect(scrolled).not.toHaveBeenCalled();
   });
+
+  it("should_reveal_peers_on_every_click_when_the_address_already_matches", () => {
+    window.history.replaceState(null, "", "/institution/323?peers=metro#peers");
+    renderWithPeers();
+    for (let i = 0; i < 4; i += 1) fireEvent.click(link());
+    expect(push).not.toHaveBeenCalled();
+    expect(scrolled).toHaveBeenCalledTimes(4);
+    expect(window.location.hash).toBe("#peers");
+  });
+});
+
+describe("the deposit share chart fits a phone", () => {
+  const LONG = "First National Bank and Trust Company of the Treasure Coast Region";
+  const position: MarketPosition = {
+    ...POSITION,
+    metros: [metro({ shares: [{ name: "Subject Bank", sharePct: 20.6, rank: 1, branches: 16, subject: true }, { name: LONG, sharePct: 14.2, rank: 2, branches: 9, subject: false }] })],
+  };
+
+  it("should_size_its_rows_to_the_card_and_wrap_a_long_name", () => {
+    render(<MarketPositionCard institutionId={323} position={position} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    const list = screen.getByRole("list", { name: "Share of bank deposits by institution" });
+    // An auto track grows to the longest name; minmax(0,1fr) keeps it to the card's width.
+    expect(list.className).toContain("grid-cols-[minmax(0,1fr)]");
+    expect(list.parentElement?.parentElement?.className).toContain("grid-cols-[minmax(0,1fr)]");
+    const name = screen.getByText(LONG);
+    expect(name.className).toContain("break-words");
+    expect(name.className).not.toContain("truncate");
+  });
 });

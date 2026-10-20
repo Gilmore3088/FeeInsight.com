@@ -116,7 +116,8 @@ export function MarketPositionCard({
         </div>
       )}
       <MetroSummary metro={metro} institutionId={institutionId} institutionName={institutionName} home={home} metroPeerCount={metroPeerCount} />
-      <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* minmax(0,1fr) on a phone too: an auto column grows to the longest bank name and runs past the card. */}
+      <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <MetroMapPanel metro={metro} institutionName={institutionName} />
         <ShareChart metro={metro} institutionName={institutionName} />
       </div>
@@ -368,16 +369,18 @@ function ShareChart({ metro, institutionName }: { metro: MetroPosition; institut
           As of {sodDate(metro.year)}. FDIC-insured offices only; credit unions are not included.
         </p>
       </figcaption>
-      <ol className="mt-3 grid gap-2.5">
+      {/* One minmax(0,1fr) column: an auto track sized to the longest name pushed the rows past the card at 390px. */}
+      <ol className="mt-3 grid grid-cols-[minmax(0,1fr)] gap-2.5" aria-label="Share of bank deposits by institution">
         {metro.shares.map((s, i) => {
           // The subject appended below the largest names sits after a break.
           const gap = s.subject && i > 0 && i === metro.shares.length - 1 && s.rank > metro.shares[i - 1].rank + 1;
           return (
-            <li key={`${s.rank}-${s.name}`} className={gap ? "border-t border-dashed border-border pt-2.5" : undefined}>
+            <li key={`${s.rank}-${s.name}`} className={`min-w-0 ${gap ? "border-t border-dashed border-border pt-2.5" : ""}`}>
               <div className="flex items-baseline justify-between gap-3 text-[12px] leading-tight">
-                <span className={`min-w-0 truncate ${s.subject ? "font-semibold text-ink" : "text-ink-soft"}`}>
-                  <span className="mr-1.5 inline-block w-5 text-right tabular-nums text-ink-muted">{s.rank}</span>
-                  {s.subject ? institutionName : s.name}
+                {/* A long name wraps under itself rather than being cut off. */}
+                <span className={`flex min-w-0 items-baseline ${s.subject ? "font-semibold text-ink" : "text-ink-soft"}`}>
+                  <span className="mr-1.5 inline-block w-5 shrink-0 text-right tabular-nums text-ink-muted">{s.rank}</span>
+                  <span className="min-w-0 break-words">{s.subject ? institutionName : s.name}</span>
                 </span>
                 <span className={`shrink-0 tabular-nums ${s.subject ? "font-semibold text-ink" : "text-ink-soft"}`}>{s.sharePct.toFixed(1)}%</span>
               </div>
