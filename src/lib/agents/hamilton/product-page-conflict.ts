@@ -4,7 +4,8 @@ import { productPageUrlSql } from "@/lib/agents/learning/fee-page";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { PENDING_KIND, secondLook } from "@/lib/agents/hamilton/second-look";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { TIER_NAME_SQL, TIER_PATH_SQL } from "@/lib/agents/darwin/tier-perk";
+import { TIER_NAME_SQL, TIER_PATH_SQL, TIER_WORDS_SQL } from "@/lib/agents/darwin/tier-perk";
+import { nearNames } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
 
@@ -100,7 +101,8 @@ export function productPageConflictSql(scope: ConflictScope): string {
         FROM live l JOIN docs d ON d.id = l.source_document_id
     ),
     schedule AS (
-      SELECT institution_id, canonical_fee_key, array_agg(DISTINCT amount ORDER BY amount) AS amounts
+      SELECT institution_id, canonical_fee_key, array_agg(DISTINCT amount ORDER BY amount) AS amounts,
+             jsonb_agg(jsonb_build_object('name', fee_name, 'amount', amount) ORDER BY fee_published_id) AS lines
         FROM priced
        WHERE NOT product
          AND regexp_replace(COALESCE(document_url, ''), '^[a-z]+://[^/]+', '', 'i') !~* '${TIER_PATH_SQL}'
@@ -108,11 +110,16 @@ export function productPageConflictSql(scope: ConflictScope): string {
        GROUP BY institution_id, canonical_fee_key
     )
     SELECT p.fee_published_id, p.fee_verified_id, p.institution_id, p.source_document_id,
-           p.document_url, p.canonical_fee_key, p.fee_name, p.amount, s.amounts AS schedule_amounts
+           p.document_url, p.canonical_fee_key, p.fee_name, p.amount, s.amounts AS schedule_amounts,
+           s.lines AS schedule_lines
       FROM priced p
       JOIN schedule s ON s.institution_id = p.institution_id AND s.canonical_fee_key = p.canonical_fee_key
      WHERE p.product
        AND NOT (p.amount = ANY(s.amounts))
+       -- A tier's own product page or fee ("/checking/bankon", "BankOn Checking Overdraft") prices
+       -- that tier, not the bank's general fee (#2438 sample: two BankOn $0s).
+       AND regexp_replace(COALESCE(p.document_url, ''), '^[a-z]+://[^/]+', '', 'i') !~* '(^|[/_-])(${TIER_WORDS_SQL})([/_.-]|$)'
+       AND COALESCE(p.fee_name, '') !~* '${TIER_NAME_SQL}'
        AND p.canonical_fee_key <> ALL(ARRAY['${PER_ACCOUNT_CATEGORIES.join("','")}'])
      ORDER BY p.fee_published_id`;
 }
@@ -127,6 +134,7 @@ interface ConflictRow {
   fee_name: string | null;
   amount: number | string;
   schedule_amounts: Array<number | string> | string | null;
+  schedule_lines?: Array<{ name: string | null; amount: number | string }> | string | null;
 }
 
 export interface ProductPageConflict {
@@ -161,6 +169,38 @@ export function parseAmounts(value: ConflictRow["schedule_amounts"]): number[] {
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+
+/** A product-page price named as a discount or a perk is a different price on purpose ("Discounted return item fee"). */
+const OWN_PRICE_WORDS = /\b(?:discount(?:ed)?|reduced|promo(?:tional)?|introductory|waived|member(?:s)?\s+price)\b/i;
+
+/** Pure: do two fee names name the same item? Same words once case, plurals, an article and a trailing "fee" are set aside, or one qualifier word apart. */
+export function sameItem(a: string | null | undefined, b: string | null | undefined): boolean {
+  const [one, two] = [(a ?? "").trim().toLowerCase(), (b ?? "").trim().toLowerCase()];
+  if (!one || !two) return false;
+  return one === two || nearNames(a, b);
+}
+
+function parseLines(value: ConflictRow["schedule_lines"]): Array<{ name: string; amount: number }> {
+  if (value == null) return [];
+  const lines = typeof value === "string" ? (JSON.parse(value) as Array<{ name: string | null; amount: number | string }>) : value;
+  return lines.map((line) => ({ name: line.name ?? "", amount: Number(line.amount) })).filter((line) => Number.isFinite(line.amount));
+}
+
+/**
+ * Pure: is this a real conflict? The schedule must price the same item, not only the same category:
+ * a category holds several items ("HSA closing" and "Christmas Club early withdrawal", a returned
+ * item and a bill-pay NSF, a loan application and a payoff quote), and 12 of 20 sampled takedowns
+ * paired different items (Lane speed sample, 2026-10-20). A schedule line for the same item at this
+ * price, or a product price named as a discount, is no conflict.
+ */
+export function isSameItemConflict(row: ConflictRow): boolean {
+  if (OWN_PRICE_WORDS.test(row.fee_name ?? "")) return false;
+  // Rows read before the schedule lines were returned keep the category rule.
+  if (row.schedule_lines === undefined) return true;
+  const same = parseLines(row.schedule_lines).filter((line) => sameItem(row.fee_name, line.name));
+  if (same.length === 0) return false;
+  return !same.some((line) => Math.abs(line.amount - Number(row.amount)) < 0.005);
+}
 
 /** Pure: a conflict row as a takedown candidate. */
 export function toConflict(row: ConflictRow): ProductPageConflict {
@@ -199,7 +239,7 @@ export async function retireProductPageConflicts(
     console.error("retireProductPageConflicts read failed:", error);
     return result;
   }
-  const failing = rows.map(toConflict);
+  const failing = rows.filter(isSameItemConflict).map(toConflict);
   result.conflicts = failing.length;
   // Live fees this check flagged earlier and no longer raises (a tier schedule's $0 no longer counts,
   // #1397) pass now, so their pending flags clear.
