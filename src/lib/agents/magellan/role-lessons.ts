@@ -146,4 +146,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-19",
   },
+  {
+    id: "issue-1200-refetch-live-fee-pages",
+    agent: "magellan",
+    stage: "fetch",
+    lesson: "Keep fetching every page that live fees come from, not only the bank's current fee address: when no fetch has stored a copy of such a page in 30 days, fetch it as a copy under its own address, oldest first, and after a failure try again after 1, 3, 7 and then every 30 days rather than giving it up. A page the bank still serves unchanged counts as checked today.",
+    why: "The plain fetch asks for one address per bank and judges it due by the bank's last crawl. When the remembered address moved, or a single 403 in April went unretried, the page the live fees were read from was never fetched again: on Oct 20, 101 such pages at 101 banks (1,219 live fees) had no copy in 30 days, 99 of them in 90, including the five banks first flagged on Oct 13 whose fees still came from February and March documents.",
+    evidence: { issues: [1200], prs: [], files: ["docs/project/findings/2026-10-20-live-fee-pages-never-refetched.md", "src/lib/agents/magellan/live-source-refetch.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
