@@ -7,7 +7,7 @@ import { useSessionChrome } from "@/components/use-session-chrome";
 import { TrackLink } from "@/components/track-link";
 import { displayCity } from "@/lib/format";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
-import { estimateTextWidth, labelBox, placePointLabel } from "@/lib/chart-label-placement";
+import { estimateTextWidth, fitText, type LabelPlacement, LINE_HEIGHT, placeLineLabel, placePointLabel } from "@/lib/chart-label-placement";
 import { MEDIAN_TONE, MEDIAN_TONE_NOTE } from "@/components/public/peer-gap-chip";
 import {
   EXPLORER_FEE_KEYS,
@@ -430,8 +430,10 @@ function Roster({ set, fee }: { set: PeerExplorerSet; fee: ExplorerFeeKey }) {
               return (
                 <tr key={inst.id} className={subject ? "bg-paper" : "border-t border-border"}>
                   <th scope="row" className={`px-3 py-2 text-left text-ink ${subject ? "font-semibold" : "font-medium"}`}>
-                    {inst.name}
-                    {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
+                    <span className="line-clamp-2 overflow-hidden break-words" title={inst.name}>
+                      {inst.name}
+                      {subject && <span className="ml-1 font-normal text-ink-muted">(this institution)</span>}
+                    </span>
                   </th>
                   <td className="px-3 py-2 text-ink-soft">{place || "Not on record"}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-ink-soft">{assetsLabel(inst.assets) ?? "Not on record"}</td>
@@ -572,7 +574,9 @@ function Tooltip({ inst, fee, left, top, extra }: { inst: ExplorerInstitution; f
       className="pointer-events-none absolute z-20 w-max max-w-[16rem] -translate-x-1/2 -translate-y-full rounded-md border border-border bg-surface-0 px-2.5 py-1.5 text-[12px] leading-snug shadow-fi-1"
       style={{ left, top }}
     >
-      <p className="font-semibold text-ink">{inst.name}</p>
+      <p className="line-clamp-2 overflow-hidden break-words font-semibold text-ink" title={inst.name}>
+        {inst.name}
+      </p>
       <p className="tabular-nums text-ink-muted">
         {value !== undefined ? money(value) : "Not published"}
         {proxy ? ` · ${proxy.replace("Comparison price: ", "comparison price, ")}` : ""}
@@ -855,6 +859,29 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
 
 const MARGIN = { top: 20, right: 16, bottom: 44, left: 52 };
 
+/** Clear space a label's halo keeps around its text. */
+const HALO_PAD = 2;
+
+/** The surface behind a chart label, and its leader line when the label sits away from its mark. */
+function LabelHalo({ place }: { place: LabelPlacement }) {
+  const { box, leader } = place;
+  return (
+    <>
+      {leader && <line x1={leader.x1} y1={leader.y1} x2={leader.x2} y2={leader.y2} stroke="var(--color-ink-muted)" strokeWidth={1} data-mark="label-leader" />}
+      <rect
+        x={box.left - HALO_PAD}
+        y={box.top - HALO_PAD}
+        width={box.right - box.left + HALO_PAD * 2}
+        height={box.bottom - box.top + HALO_PAD * 2}
+        rx={3}
+        fill="var(--fi-surface-0)"
+        fillOpacity={0.92}
+        data-mark="label-halo"
+      />
+    </>
+  );
+}
+
 function axisTick(axis: LandscapeAxis, value: number): string {
   if (axis === "assets") return assetsLabel(value) ?? "$0";
   if (axis === "share") return `${+(value * 100).toFixed(value < 0.1 ? 1 : 0)}%`;
@@ -885,22 +912,29 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
   const order = [...plotted].sort((a, b) => Number(a.id === selectedId || a.id === set.subject.id) - Number(b.id === selectedId || b.id === set.subject.id));
   const pointOf = (inst: ExplorerInstitution) => ({ x: px(landscapeValue(set, inst, axis) as number), y: py(feeOf(inst, fee) as number) });
   const medianText = median !== undefined ? `Peer median ${money(median)}` : "";
-  // Each name label stays inside the plot and off the median line, its label, the other points
-  // and the label placed before it (James's Oct 20 review: it ran off a phone and over the median).
-  const taken =
-    median !== undefined ? [labelBox(width - MARGIN.right, py(median) - 6, "end", [estimateTextWidth(medianText)])] : [];
+  // Every label (the median's, the subject's, a tapped peer's) keeps its whole box, all lines,
+  // inside the plot and off every point, the median line and the labels placed before it; when
+  // nothing near is free it moves to free space with a leader line. Labels draw after the points
+  // on a halo (growthOS re-check, Oct 20: a dot sat on the median label and a phone label ran off).
+  const bounds = { left: MARGIN.left, right: width - MARGIN.right, top: 0, bottom: height - MARGIN.bottom };
+  const points = plotted.map((inst) => ({ id: inst.id, ...pointOf(inst) }));
+  const medianPlace =
+    median !== undefined ? placeLineLabel({ y: py(median), width: estimateTextWidth(medianText), bounds, avoidPoints: points }) : null;
+  const taken = medianPlace ? [medianPlace.box] : [];
+  const labelWidth = bounds.right - bounds.left;
   const labels = named.map((inst) => {
     const point = pointOf(inst);
-    const text = `${short(inst.name)} · ${money(feeOf(inst, fee) as number)}`;
-    const proxy = comparisonTag(fee, inst.fees[fee]);
+    const text = fitText(`${short(inst.name)} · ${money(feeOf(inst, fee) as number)}`, labelWidth);
+    const tag = comparisonTag(fee, inst.fees[fee]);
+    const proxy = tag ? fitText(tag, labelWidth) : null;
     const widths = [estimateTextWidth(text), ...(proxy ? [estimateTextWidth(proxy)] : [])];
     const place = placePointLabel({
       ...point,
       widths,
-      bounds: { left: MARGIN.left, right: width - 2, top: 0, bottom: height - MARGIN.bottom },
+      bounds,
       avoidBoxes: [...taken],
       avoidLines: median !== undefined ? [py(median)] : [],
-      avoidPoints: plotted.filter((other) => other.id !== inst.id).map(pointOf),
+      avoidPoints: points.filter((other) => other.id !== inst.id),
     });
     taken.push(place.box);
     return { inst, text, proxy, place };
@@ -950,9 +984,6 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
             {median !== undefined && (
               <g>
                 <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(median)} y2={py(median)} stroke="var(--fi-ink)" strokeWidth={1.25} strokeDasharray="5 4" />
-                <text x={width - MARGIN.right} y={py(median) - 6} textAnchor="end" data-mark="median-label" className="fill-ink text-[12px] font-semibold tabular-nums">
-                  {medianText}
-                </text>
               </g>
             )}
             {order.map((inst) => {
@@ -982,24 +1013,36 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
                 </g>
               );
             })}
-            {labels.map(({ inst, text, proxy, place }) => (
-              <text
-                key={`l${inst.id}`}
-                x={place.x}
-                y={place.y}
-                textAnchor={place.anchor}
-                data-mark="point-label"
-                className={`pointer-events-none text-[12px] tabular-nums ${inst.id === set.subject.id ? "fill-ink font-semibold" : "fill-ink-soft font-semibold"}`}
-                style={{ paintOrder: "stroke", stroke: "var(--fi-surface-0)", strokeWidth: 3 }}
-              >
-                {text}
-                {proxy && (
-                  <tspan x={place.x} dy="1.25em" className="fill-ink-soft font-normal">
-                    {proxy}
-                  </tspan>
-                )}
-              </text>
-            ))}
+            {/* The label layer: after the points, each label on a halo, so no dot ever covers text. */}
+            <g data-layer="labels" className="pointer-events-none">
+              {medianPlace && (
+                <g>
+                  <LabelHalo place={medianPlace} />
+                  <text x={medianPlace.x} y={medianPlace.y} textAnchor={medianPlace.anchor} data-mark="median-label" className="fill-ink text-[12px] font-semibold tabular-nums">
+                    {medianText}
+                  </text>
+                </g>
+              )}
+              {labels.map(({ inst, text, proxy, place }) => (
+                <g key={`l${inst.id}`}>
+                  <LabelHalo place={place} />
+                  <text
+                    x={place.x}
+                    y={place.y}
+                    textAnchor={place.anchor}
+                    data-mark="point-label"
+                    className={`text-[12px] tabular-nums ${inst.id === set.subject.id ? "fill-ink font-semibold" : "fill-ink-soft font-semibold"}`}
+                  >
+                    {text}
+                    {proxy && (
+                      <tspan x={place.x} dy={LINE_HEIGHT} className="fill-ink-soft font-normal">
+                        {proxy}
+                      </tspan>
+                    )}
+                  </text>
+                </g>
+              ))}
+            </g>
           </svg>
           {hovered && (
             <Tooltip
@@ -1310,11 +1353,12 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                         type="button"
                         onClick={() => onSelect(inst.id)}
                         aria-pressed={isSelected}
+                        aria-label={inst.name}
                         className={`flex min-h-11 w-full items-center gap-2 border-l-[3px] px-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink ${
                           isSubject ? "border-ink font-semibold text-ink" : isSelected ? "border-[var(--fi-viz-bar)] font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
                         }`}
                       >
-                        <span className="line-clamp-2 min-w-0 break-words py-1 leading-snug" title={inst.name}>
+                        <span className="line-clamp-2 min-w-0 overflow-hidden break-words py-1 leading-snug" title={inst.name} data-mark="peer-name">
                           {inst.name}
                         </span>
                       </button>
@@ -1487,7 +1531,7 @@ function Compare({ set, rows, onClear }: { set: PeerExplorerSet; rows: ExplorerI
             <tr className="text-left text-[12px] text-ink-muted">
               <th scope="col" className="px-2 py-1 font-medium">Fee</th>
               {rows.map((inst) => (
-                <th key={inst.id} scope="col" className={`px-2 py-1 text-right font-semibold ${inst.id === set.subject.id ? "text-ink underline decoration-ink underline-offset-4" : "text-ink-soft"}`}>
+                <th key={inst.id} scope="col" className={`px-2 py-1 text-right font-semibold ${inst.id === set.subject.id ? "text-ink underline decoration-ink underline-offset-4" : "text-ink-soft"}`} title={inst.name}>
                   {short(inst.name)}
                 </th>
               ))}

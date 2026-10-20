@@ -14,10 +14,10 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// Keep v1 pair fingerprints closed (#2117/#2118/#2121): identity/hold fixes apply only to
-// pending pairs and future copies. Historical decisions are not automatically replayed;
-// Bayes documents this deliberate no-replay contract in VERSIONS_WITHOUT_REPLAY.
-export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 1 } as const;
+// v2 (#2477, James 2026-10-20): every v1 pair is judged again under the current identity, restore
+// and hold guards (#2117/#2118/#2121). Prod dry run 2026-10-20: 772 pairs, 8 fees retired at 2
+// institutions, 0 restores. Recorded in DECISIONS.md and Bayes VERSIONS_WITHOUT_REPLAY.
+export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 2 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
  * any fee is retired. Below it the newer copy is not recognizably the same schedule (an

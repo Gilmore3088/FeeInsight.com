@@ -57,6 +57,9 @@ describe("PeerExplorerSection", () => {
     expect(screen.getByText("Capital City Bank · $4.4B in assets")).toBeTruthy();
     // The selected nearest set is labelled with the live count of peers on the page.
     expect(screen.getAllByText("3 closest in assets").length).toBeGreaterThan(0);
+    // The title uses the same count as the chip, never the number the set asked for.
+    expect(screen.getAllByText("The 3 banks closest in assets").length).toBeGreaterThan(0);
+    expect(screen.queryByText("The 25 banks closest in assets")).toBeNull();
     expect(screen.getByText("Banks only")).toBeTruthy();
     expect(screen.getByText("$2.1B to $7.3B in assets")).toBeTruthy();
     expect(screen.getByText("Banks of similar size, for comparing published prices. All are headquartered in Florida.")).toBeTruthy();
@@ -130,13 +133,13 @@ describe("PeerExplorerSection", () => {
     // Hamilton's settings page reads only instId today: the panel never says the link loads the set.
     expect(within(preview).getByText("Hamilton opens for Capital City Bank. Add this set under Peer sets:")).toBeTruthy();
     expect(preview.textContent).not.toMatch(/This link opens|opens Hamilton with|briefing/i);
-    expect(within(preview).getByText("The 25 banks closest in assets")).toBeTruthy();
+    expect(within(preview).getByText("The 3 banks closest in assets")).toBeTruthy();
     expect(within(preview).getByText("3: Pine State Bank, Summit Bank and First US Bank")).toBeTruthy();
     expect(within(preview).getByText("Monthly maintenance")).toBeTruthy();
     expect(within(preview).getByText("Published prices against the peer median of 3 publishing peers")).toBeTruthy();
     expect(within(preview).getByText("Oct 17, 2026")).toBeTruthy();
     expect(within(preview).getByRole("link", { name: /Continue to Hamilton/ }).getAttribute("href")).toBe(
-      "/pro/settings?instId=323&peers=2%2C3%2C4&name=The+25+banks+closest+in+assets&fee=monthly_maintenance&asof=2026-10-17#peer-sets",
+      "/pro/settings?instId=323&peers=2%2C3%2C4&name=The+3+banks+closest+in+assets&fee=monthly_maintenance&asof=2026-10-17#peer-sets",
     );
     expect(screen.queryByRole("link", { name: /Compare local deposit competitors/ })).toBeNull();
   });
@@ -196,6 +199,29 @@ describe("PeerExplorerSection", () => {
     expect(within(screen.getByRole("complementary")).getByText("Selected peer")).toBeTruthy();
   });
 
+  it("should_draw_every_landscape_label_on_a_halo_after_the_points", () => {
+    const { container } = renderSection({ view: "landscape" });
+    const svg = container.querySelector("svg[role=img]")!;
+    const layer = svg.querySelector("g[data-layer=labels]")!;
+    expect(layer).toBeTruthy();
+    // The label layer is the last thing drawn, so no point sits over text.
+    const lastPoint = [...svg.querySelectorAll("g.cursor-pointer")].at(-1)!;
+    expect(lastPoint.compareDocumentPosition(layer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(layer.querySelector("text[data-mark=median-label]")?.textContent).toBe("Peer median $10");
+    const texts = layer.querySelectorAll("text");
+    expect(layer.querySelectorAll("rect[data-mark=label-halo]").length).toBe(texts.length);
+  });
+
+  it("should_clamp_long_peer_names_to_two_lines_with_the_full_name_kept", () => {
+    const { container } = renderSection({ view: "matrix" });
+    const names = container.querySelectorAll("[data-mark=peer-name]");
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      expect(name.className).toContain("line-clamp-2");
+      expect(name.getAttribute("title")).toBe(name.textContent);
+    }
+  });
+
   it("should_keep_landscape_name_labels_inside_the_chart", () => {
     const { container } = renderSection({ view: "landscape" });
     const svg = container.querySelector("svg[role=img]")!;
@@ -204,8 +230,8 @@ describe("PeerExplorerSection", () => {
       const x = Number(label.getAttribute("x"));
       const chars = (label.firstChild?.textContent ?? "").length;
       const anchor = label.getAttribute("text-anchor");
-      const right = anchor === "end" ? x : x + chars * 6.9;
-      const left = anchor === "end" ? x - chars * 6.9 : x;
+      const right = anchor === "end" ? x : x + chars * 7.3;
+      const left = anchor === "end" ? x - chars * 7.3 : x;
       expect(right).toBeLessThanOrEqual(width);
       expect(left).toBeGreaterThanOrEqual(0);
     }

@@ -19,7 +19,7 @@ const noSamples = { duplicates: [], stale: [], noCategory: [], noSource: [] };
 
 function counts(overrides: Partial<CatalogCounts> = {}): CatalogCounts {
   return {
-    liveFees: 10_000, institutions: 1_000, duplicates: 50, stale: 900, noCategory: 0, offTaxonomy: 0,
+    liveFees: 10_000, institutions: 1_000, duplicates: 50, sameAmount: 120, stale: 900, noCategory: 0, offTaxonomy: 0,
     noSource: 20, noDocument: 40, linkMismatch: 0, linkUrlVariant: 0, linkReadPage: 0, linkMismatchSample: [], samples: noSamples,
     categories: [{ category: "overdraft", institutions: 800 }, { category: "nsf", institutions: 600 }],
     ...overrides,

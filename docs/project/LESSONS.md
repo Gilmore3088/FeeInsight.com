@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-181 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+182 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — Newer-copy check v2 reopens every settled pair. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Legacy event-log partitions are dropped, not trimmed. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Call-report quarterly summaries are computed once per load. — [decision](DECISIONS.md#2026-10-20)
@@ -202,10 +203,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-247 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+250 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (31)
+### Extraction and fee reading (32)
 
+- 2026-10-19 — One literal "NSF Paid/Returned" row publishes two events only when the source owns the pair; a separate overdraft or item price for the same audience holds it. — [finding](findings/2026-10-19-compressed-paid-returned-events.md) — Guard: `src/lib/custom-report/paid-returned-events.test.ts` (+2 more)
 - 2026-10-19 — Wrapped fee bullets lost their title or their own price. — [finding](findings/2026-10-19-wrapped-fee-bullets.md) — Agent lesson: knox/pr-2162-wrapped-bullet-unit
 - 2026-10-19 — A printed bound can be source-supported while the actual charge remains symbolic. — [finding](findings/2026-10-19-symbolic-lesser-of-charge.md) — Guard: The hash-bound full Woodlawn source has a retained functional OLD-red. Pure controls...
 - 2026-10-19 — A queue that re-reads on every version bump needs a guarantee that untouched work still drains. — [finding](findings/2026-10-19-stale-reread-backlog-starved.md) — Guard: `extract.test.ts`
@@ -275,8 +277,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (43)
+### Verification and publication (44)
 
+- 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
 - 2026-10-20 — Agent checks could take down a fee an admin had corrected. — [finding](findings/2026-10-20-agent-checks-undo-admin-corrections.md) — Guard: `src/lib/fee-corrections.db.test.ts`
@@ -343,8 +346,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (9)
+### Public and regulatory data (10)
 
+- 2026-10-20 — When a publisher's page answers silently with itself, try the other formats and products it offers: the format may be withdrawn (FFIEC serves the single-period UBPR file only as XBRL, #2473). — [finding](findings/2026-10-20-ffiec-ubpr-single-period-xbrl-only.md) — Guard: `src/lib/agents/magellan/registry/ubpr-peer-groups.test.ts` (+1 more)
 - 2026-10-19 — NCUA credit union mergers never loaded: both addresses were dead. — [finding](findings/2026-10-19-ncua-merger-list-dead.md) — Guard: `src/lib/agents/magellan/registry/industry-events.test.ts`
 - 2026-10-19 — Only rows actually loaded can show that data is there. — [finding](findings/2026-10-19-hoovie-finished-is-not-loaded.md) — Guard: `src/lib/regulatory/industry-events.test.ts` (+4 more)
 - 2026-10-19 — Verify that a publisher still supplies the identity input before interpreting successful aggregate ingestion as institution readiness. — [finding](findings/2026-10-19-hmda-canonical-matching.md) — Guard: HMDA/FDIC/GLEIF parser, resolver, loader and manual-route tests, cron exclusion...
@@ -379,8 +383,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (14)
+### Migrations, deploys and builds (15)
 
+- 2026-10-20 — A page or route that reads the database must not be prerendered at build; render it on request and cache the data, so the database's load never decides whether a deploy succeeds. — [finding](findings/2026-10-20-sitemap-build-time-db-reads.md) — Guard: `src/app/sitemap-cache.test.ts` (+1 more)
 - 2026-10-20 — A migration number is claimed when any open PR uses it, not when it reaches `main`, so check open PRs before taking one. — [finding](findings/2026-10-20-migration-number-collisions-across-open-prs.md) — Guard: Foundation tracker #1048 line "guard for migration numbers claimed by open PRs"; until then, merge `main` and re-run `migration-version-kill`
 - 2026-10-20 — Agents never run deploy-capable `vc`/`vercel` commands and never write a Vercel token to disk. — [finding](findings/2026-10-20-vercel-env-run-deploys.md) — Guard: Foundation tracker #1048 line "ban deploy-capable vercel commands for agents"
 - 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: Foundation tracker #1048 lines "ignoreCommand diffs against the PR merge-base and skips drafts" and "sitemap rendered on request with caching"
@@ -474,8 +479,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (13)
+### Agent process, learning and measurement (14)
 
+- 2026-10-20 — A data-quality check has to use the same identity as the step that repairs the problem, or its alarm can never clear. — [finding](findings/2026-10-20-duplicate-check-counted-shared-prices.md) — Guard: `src/lib/agents/deming/data-quality.db.test.ts`
 - 2026-10-20 — The answer-key eligibility gate admitted none of the 62 confirmed keys. — [finding](findings/2026-10-20-answer-key-eligibility-admits-none.md) — Agent lesson: deming/issue-2466-reference-binding
 - 2026-10-19 — Define the weekly live sampling and repair protocol. — [finding](findings/2026-10-19-weekly-live-accuracy-plan.md) — no Guard or Agent lesson named
 - 2026-10-19 — A learned takedown needs the same fee and original judged text. — [finding](findings/2026-10-19-takedown-lesson-identity.md) — Guard: `src/lib/agents/knox/takedown-lessons.test.ts` (+5 more)

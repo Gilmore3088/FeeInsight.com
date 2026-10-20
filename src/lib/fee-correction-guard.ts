@@ -5,6 +5,7 @@
  */
 
 import type { sql as Sql } from "@/lib/data-store/connection";
+import { PAID_RETURNED_EVENT_KEYS } from "@/lib/custom-report/paid-returned-events";
 import { sameFeeValues } from "./fee-correction-rules";
 
 type SqlTag = typeof Sql;
@@ -60,6 +61,8 @@ export interface CorrectionCandidate {
   /** The live row the publish step would supersede with this one, when it chose one. */
   priorFeePublishedId?: number | null;
   runId?: number | null;
+  /** A paired paid/returned event's compressed source line: a correction of it covers each event. */
+  pairedLabel?: string | null;
 }
 
 /**
@@ -108,6 +111,10 @@ export async function correctionBlockFor(db: SqlTag, candidate: CorrectionCandid
                   AND regexp_replace(lower(v.fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${candidate.feeName}), '[^a-z0-9]+', '', 'g'))
                 OR (v.before_canonical_fee_key = ${candidate.canonicalFeeKey}
                   AND regexp_replace(lower(v.before_fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${candidate.feeName}), '[^a-z0-9]+', '', 'g'))
+                OR (v.canonical_fee_key = ANY(${[...PAID_RETURNED_EVENT_KEYS]}::text[])
+                  AND regexp_replace(lower(v.fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${candidate.pairedLabel ?? null}::text), '[^a-z0-9]+', '', 'g'))
+                OR (v.before_canonical_fee_key = ANY(${[...PAID_RETURNED_EVENT_KEYS]}::text[])
+                  AND regexp_replace(lower(v.before_fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${candidate.pairedLabel ?? null}::text), '[^a-z0-9]+', '', 'g'))
               )
          )
        )

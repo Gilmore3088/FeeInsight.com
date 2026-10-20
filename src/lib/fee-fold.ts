@@ -401,8 +401,18 @@ export const RETURNED_MAIL = new RegExp(
 /** An IRA's charge for withdrawals past the free count ("IRA Excess Withdrawal Fee"), a charge on the IRA itself. */
 const IRA_EXCESS_WITHDRAWAL = /^(?=[\s\S]*\bira\b)[\s\S]*\bexcess(?:ive)? withdrawals?\b/i;
 
+/** Words that make "fax" how something else is requested or sent, not a fax service. */
+const FAX_CHANNEL_WORDS = String.raw`research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate`;
 /** Lines where "fax" is how something else is requested or sent, not a fax service. */
-const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:research|phone|telephone|e-?mail|in (?:branch|person)|initiated|wires?|transfers?|domestic|manual|verification|verify|request|clos\w*|pay-?offs?|loans?|mortgages?|real estate)\b|[\s\S]*\bcar ?fax)`;
+const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:${FAX_CHANNEL_WORDS}|domestic)\b|[\s\S]*\bcar ?fax)`;
+/**
+ * Fold v19 (#1829): a line led by the fax itself, with at most where it goes in front ("Fax (Domestic &
+ * International)", "Faxes (Domestic only)", "Domestic Faxes", "Fax charge (domestic)"). "Domestic"
+ * names the fax's destination there, not a domestic wire sent by fax ("Domestic incoming (fax)" is
+ * not fax-led and stays). The other channel words still keep a fax-led line where it is ("Fax
+ * Request Outgoing Wire", "Fax Payoff Request", "Fax/Email Charge").
+ */
+const FAX_LED = String.raw`(?![\s\S]*\b(?:${FAX_CHANNEL_WORDS})\b|[\s\S]*\bcar ?fax)[\s(]*(?:(?:domestic|international|foreign|local)\s+)?fax(?:es|ed|ing)?\b`;
 
 /**
  * Sending or receiving a fax ("Fax (Outgoing)"), which document reproduction holds. Fax as the
@@ -410,10 +420,10 @@ const FAX_AS_CHANNEL = String.raw`(?![\s\S]*\b(?:research|phone|telephone|e-?mai
  * Carfax report, and research priced with copies stay where they are. Knox reads fax lines
  * with this too (`FOLDED_PATTERNS`), so its reads and the fold agree.
  */
-export const FAX_SERVICE = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*\bfax(?:es|ed|ing)?\b`, "i");
+export const FAX_SERVICE = new RegExp(String.raw`^(?:${FAX_AS_CHANNEL}[\s\S]*\bfax(?:es|ed|ing)?\b|${FAX_LED})`, "i");
 
 /** A fax or a document copy ("Copy of previous statement"), outside the same exceptions. */
-const FAX_OR_COPY = new RegExp(String.raw`^${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)`, "i");
+const FAX_OR_COPY = new RegExp(String.raw`^(?:${FAX_AS_CHANNEL}[\s\S]*(?:\bfax(?:es|ed|ing)?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breproduc)|${FAX_LED})`, "i");
 
 /**
  * A copy charge priced by the page ("Account Research Copies (per page)", "Research Request - Per
@@ -648,7 +658,10 @@ export function splitLiveCategory(
 // v18: International ATM is its own type again (James, Oct 19, #2037): it leaves the retired table,
 // and an ATM used abroad filed as the card's foreign transaction fee or the non-network ATM fee
 // splits out to it, whether or not the research split is on.
-export const FOLD_RULES_VERSION = 18;
+// v19 (#1829): a fax-led line names its destination without becoming a wire ("Fax (Domestic &
+// International)", "Faxes (Domestic only)"): document reproduction, so account research's split
+// moves the live ones (`FAX_LED`). Count in the PR.
+export const FOLD_RULES_VERSION = 19;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {

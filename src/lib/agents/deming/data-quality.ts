@@ -3,6 +3,8 @@ import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { BENCHMARK_SHOW_FROM, COLLAPSE_KEEPS_BELOW } from "@/lib/agents/deming/benchmark-health";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { documentLinkKeySql } from "@/lib/document-link-key";
+import { productKeySql } from "@/lib/fee-product";
+import { frequencyClassSql } from "@/lib/agents/hamilton/duplicate-collapse";
 
 export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
 
@@ -15,7 +17,12 @@ export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
  * rate fees (`published_fee_rate_catalog`); a rate is never pooled with a dollar amount
  * (`percent-fees.ts`). Each number names its query (`DATA_QUALITY_QUERIES`).
  *
- *   duplicates     rows beyond the first for the same institution, category and amount (or rate)
+ *   duplicates     rows beyond the first for the same fee line, the identity Hamilton's duplicate
+ *                  collapse closes (duplicate-collapse.ts): institution, category, variant, product,
+ *                  audience, amount kind, amount or rate with its caps and basis, and name (case and
+ *                  outer spaces ignored), counted only when the stated frequency classes agree. Rows that only
+ *                  share an institution, category and amount are counted apart (`sameAmount`),
+ *                  not graded: two products or two services at one price are not a duplicate
  *   stale          live fees whose document was last fetched or checked over 90 days ago (the
  *                  scoreboard's freshness clock)
  *   no category    live fees with no category; a category outside the 50-type taxonomy is
@@ -41,6 +48,12 @@ export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
 type SqlTag = typeof sql;
 
 export const DATA_QUALITY_VERSION = 1;
+/**
+ * Which rows the duplicate check counts: "fee_line" is the duplicate collapse's identity (2026-10-20);
+ * steps before it counted any shared institution, category and amount ("shared_amount"). Change
+ * outcomes never compare a data-quality number across the two.
+ */
+export const DUPLICATES_IDENTITY = "fee_line";
 /** A live fee is stale when its document was last fetched or checked longer ago than this. */
 export const STALE_AFTER_DAYS = 90;
 /** A catalog with fewer live fees than this reports its counts but is not graded. */
@@ -78,6 +91,8 @@ export interface CatalogCounts {
   liveFees: number;
   institutions: number;
   duplicates: number;
+  /** Rows sharing institution, category and amount with another, whatever the fee (counted, not graded). */
+  sameAmount: number;
   stale: number;
   noCategory: number;
   /** A category not in the 50-type taxonomy (counted, not graded). */
@@ -126,6 +141,8 @@ export interface CatalogQuality {
   liveFees: number;
   institutions: number;
   checks: Record<GradedCheck, GradedResult>;
+  /** Rows sharing institution, category and amount with another, whatever the fee (counted, not graded). */
+  sameAmount: number;
   offTaxonomy: number;
   noDocument: number;
   linkMismatch: number;
@@ -225,6 +242,7 @@ export function catalogQuality(catalog: Catalog, counts: CatalogCounts, history:
       noCategory: gradeCheck("noCategory", counts.noCategory, counts.liveFees),
       noSource: gradeCheck("noSource", counts.noSource, counts.liveFees),
     },
+    sameAmount: counts.sameAmount,
     offTaxonomy: counts.offTaxonomy,
     noDocument: counts.noDocument,
     linkMismatch: counts.linkMismatch,
@@ -272,17 +290,29 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
                row_number() OVER (
                  PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn}
                  ORDER BY c.fee_published_id
-               ) AS copy
+               ) AS same_amount_copy,
+               -- The collapse's identity (duplicate-collapse.ts): one fee line, whatever its frequency;
+               -- it counts only when the stated frequency classes agree (checked below).
+               row_number() OVER line AS copy,
+               min(${frequencyClassSql("c.frequency")}) OVER part AS min_class,
+               max(${frequencyClassSql("c.frequency")}) OVER part AS max_class
           FROM ${catalog} c
           LEFT JOIN source_documents sd ON sd.id = c.source_document_id
           LEFT JOIN agent_source_texts ast ON ast.source_document_id = c.source_document_id
+        WINDOW part AS (
+          PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), COALESCE(c.variant_type, ''),
+            ${productKeySql("c.account_product_type")}, COALESCE(c.fee_audience, 'unknown'), COALESCE(c.amount_kind, 'flat'),
+            c.amount, c.rate_percent, c.rate_min_amount, c.rate_max_amount, COALESCE(c.rate_basis, ''), lower(btrim(c.fee_name))
+        ), line AS (part ORDER BY c.fee_published_id)
       ), keyed AS (
         SELECT live.*, ${documentLinkKeySql("source_url")} AS link_key, ${documentLinkKeySql("document_url")} AS document_key,
                ${documentLinkKeySql("read_url")} AS read_key
           FROM live
       ), flags AS (
         SELECT fee_published_id, institution_id, category, source_document_id,
-               (copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS duplicate,
+               (copy > 1 AND category IS NOT NULL AND value IS NOT NULL
+                 AND (min_class IS NULL OR min_class = max_class)) AS duplicate,
+               (same_amount_copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS same_amount,
                (evidence_at < NOW() - make_interval(days => $1::int)) AS stale,
                (category IS NULL) AS no_category,
                (category IS NOT NULL AND NOT (category = ANY($2::text[]))) AS off_taxonomy,
@@ -300,6 +330,7 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
       SELECT COUNT(*)::int AS live_fees,
              COUNT(DISTINCT institution_id)::int AS institutions,
              (COUNT(*) FILTER (WHERE duplicate))::int AS duplicates,
+             (COUNT(*) FILTER (WHERE same_amount))::int AS same_amount,
              (COUNT(*) FILTER (WHERE stale))::int AS stale,
              (COUNT(*) FILTER (WHERE no_category))::int AS no_category,
              (COUNT(*) FILTER (WHERE off_taxonomy))::int AS off_taxonomy,
@@ -331,6 +362,7 @@ function countsFrom(row: CountsRow | undefined): CatalogCounts {
     liveFees: num("live_fees"),
     institutions: num("institutions"),
     duplicates: num("duplicates"),
+    sameAmount: num("same_amount"),
     stale: num("stale"),
     noCategory: num("no_category"),
     offTaxonomy: num("off_taxonomy"),
@@ -417,7 +449,7 @@ const label = (key: string) => {
 export function summarizeDataQuality(result: DataQualityResult): string {
   const d = result.dollar;
   const parts = [
-    `${d.checks.duplicates.count.toLocaleString("en-US")} duplicates (${pct(d.checks.duplicates.rate)})`,
+    `${d.checks.duplicates.count.toLocaleString("en-US")} duplicates (${pct(d.checks.duplicates.rate)}; ${d.sameAmount.toLocaleString("en-US")} sharing category and amount)`,
     `${d.checks.stale.count.toLocaleString("en-US")} stale (${pct(d.checks.stale.rate)})`,
     `${d.checks.noCategory.count.toLocaleString("en-US")} with no category`,
     `${d.checks.noSource.count.toLocaleString("en-US")} with no source link`,
@@ -437,6 +469,7 @@ function catalogDetail(quality: CatalogQuality) {
     live_fees: quality.liveFees,
     institutions: quality.institutions,
     checks: quality.checks,
+    same_amount: quality.sameAmount,
     off_taxonomy: quality.offTaxonomy,
     no_document: quality.noDocument,
     link_mismatch: { count: quality.linkMismatch, url_variants: quality.linkUrlVariant, read_page: quality.linkReadPage, sample: quality.linkMismatchSample },
@@ -454,6 +487,7 @@ function catalogDetail(quality: CatalogQuality) {
 export function dataQualityDetail(result: DataQualityResult) {
   return {
     version: result.version,
+    duplicates_identity: DUPLICATES_IDENTITY,
     stale_after_days: STALE_AFTER_DAYS,
     thresholds: DATA_QUALITY_THRESHOLDS,
     failing: result.failing,
