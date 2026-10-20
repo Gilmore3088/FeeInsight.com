@@ -72,12 +72,13 @@ export type NewerCopyVerdict = "still_stated" | "still_named" | "dropped" | "unp
 /**
  * A stored name can glue a heading to its row ("Early Closing of AccountClub Account", read from a
  * PDF that ran "Early Closing of Account" into "Club Account: $20.00") while a newer copy prints
- * them on two lines. When the source check rejects the glued name, the split name is tried once: it
- * can only turn a fee the page still states into `still_stated`, never retire or flag one (#2477).
+ * them on two lines. When the source check rejects the glued name in the NEWER copy, the split name
+ * is tried once. Only the newer copy gets the retry: there it can only turn a fee into `still_stated`;
+ * on the older copy it could turn an `unproven` fee into a judged one, which could retire it (#2477).
  */
-function states(text: string, fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">): ReturnType<typeof checkFeeAgainstSource> {
+function states(text: string, fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">, retrySplit = false): ReturnType<typeof checkFeeAgainstSource> {
   const result = checkFeeAgainstSource(text, fee.fee_name, Number(fee.amount), ".");
-  if (result.ok) return result;
+  if (result.ok || !retrySplit) return result;
   const split = fee.fee_name.replace(/([a-z])([A-Z])/g, "$1 $2");
   if (split === fee.fee_name) return result;
   const retried = checkFeeAgainstSource(text, split, Number(fee.amount), ".");
@@ -140,7 +141,7 @@ export function newerCopyVerdict(
     // Use only the proven product block; another section's price cannot be a witness.
     newerText = owner.block;
   }
-  const newer = states(newerText, fee);
+  const newer = states(newerText, fee, true);
   if (newer.ok || newer.reason === "tiered_fee") return "still_stated";
   const older = states(olderText, fee);
   if (!older.ok) return older.reason === "tiered_fee" ? "still_named" : "unproven";
