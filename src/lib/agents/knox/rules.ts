@@ -613,12 +613,16 @@ export const FEE_PATTERNS: FeePattern[] = [
  * after every rule above, so they only claim names no rule recognizes. A bare "Wire Transfer
  * Fee" is left out: about 1 in 5 such lines say incoming or international after the price.
  *
- * Off until James switches it on (`KNOX_HELD_NAME_RULES_LIVE`, with a rules version bump in the
- * same change): on, new reads file these names, the held re-check sends the held lines to
+ * On since Oct 20 (v89) under James's sampled-clean rule (his decision card, 01:54 UTC, "all eight
+ * with rules"), with the returned-statement rule dropped to keep his v26 call. The global dry run
+ * released 478 held lines, 440 passing Darwin's checks; 231 of those were returned statements, so
+ * about 209 remain (early closure 121, stop payment 62, box sizes 12, paper statements 10, IRA
+ * close-outs 4), and a random 20 of the 478 were all printed on the bank's document. On (it takes a
+ * rules version bump to switch, either way), new reads file these names, the held re-check sends the held lines to
  * Darwin (`knox_promoted_from_held`, plus `knox_held_name_rule`), and Hamilton's rules re-check
  * reads them the same way. Off, only the extract step's read-only preview applies them.
  */
-export const KNOX_HELD_NAME_RULES_LIVE = false;
+export const KNOX_HELD_NAME_RULES_LIVE = true;
 
 export const HELD_NAME_PATTERNS: FeePattern[] = [
   { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
@@ -636,10 +640,8 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
       "i",
     ),
   },
-  // A statement mailed back undelivered is returned mail: its own type while `RESEARCH_SPLIT_LIVE`
-  // is on (v77), account research while it is off (`SPLIT_CATEGORIES.paper_statement` in
-  // fee-fold.ts). Returned mail on its own stays unclassified (v14).
-  { key: researchSplitTarget("returned_mail"), pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
+  // No returned-statement rule: a statement mailed back undelivered stays held (James's call since
+  // v26; "Returned Statement Fee" has no right home and would skew a featured fee).
   { key: "paper_statement", pattern: /\b(?:paper|mailed|printed)\s+(?:member|account|monthly|quarterly|periodic)\s+statements?\b/i },
   { key: "ira_termination", pattern: /\bIRA\b.{0,30}\bclose[- ]?outs?\b/i },
   { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },

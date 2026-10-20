@@ -186,6 +186,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1102-held-names",
+    agent: "knox",
+    stage: "held queue",
+    lesson: "A held line whose own name says its category (\"Stop Pay Fee\", a club withdrawal fee, an early closure inside a short window, a box size) is a fee to file, not one to leave unclassified; a name the owner has ruled stays held, as returned statements do, even when a rule could file it.",
+    why: "Hundreds of plainly named fees sat held as unclassified because no rule read the name (478 such lines at 207 banks on Oct 20), and the first version of the fix would also have filed 231 returned statements against James's standing call that they stay held.",
+    evidence: { issues: [1102], prs: [2445], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/held-recheck.ts"] },
+    appliesTo: ["extract"],
+    since: "2026-10-20",
+  },
+  {
     id: "price-first-rows",
     agent: "knox",
     stage: "extract",
