@@ -4,7 +4,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import { assetBand, quarterLabel, type InstitutionPrice } from "./common";
 import { buildFeeDependence, latestYearOf, withinTrend, type DependenceRow } from "./fee-dependence";
-import { buildInferredVolume, type IncomeFeeRow } from "./inferred-volume";
+import { buildInferredVolume, isCurrentIncome, type IncomeFeeRow } from "./inferred-volume";
 import { runPriceStudy } from "./price-study";
 import { median, midRankPercentile, ols, pricePercentile, quartileOf, ranks, spearman } from "./stats";
 import { sourcesChanged } from "./store";
@@ -182,6 +182,31 @@ describe("inferred volume", () => {
     expect(built.rows.map((r) => r.institutionId)).toEqual([9]);
     expect(String(built.record.findings.headline)).toContain("in the year to 2025-12-31");
     expect(built.record.sources.find((s) => s.name.startsWith("NCUA"))?.asOf).toBe("2025-12-31");
+  });
+
+  // NCUA credit union income is December year to date, so mid-year filings never carry a newer one.
+  it("should_keep_december_credit_union_income_within_four_quarters_of_a_mid_year_filing", () => {
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 500_000, period: "2025-12-31", newestFiling: "2026-06-30", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const built = buildInferredVolume([cu]);
+    expect(built.rows.map((r) => r.institutionId)).toEqual([9]);
+    expect(built.record.findings.income_periods).toEqual([
+      { charter: "credit_union", income_period: "2025-12-31", newest_filing: "2026-06-30", left_out: 0, stale_income_period: null },
+    ]);
+    expect(String(built.record.findings.headline)).toContain("in the year to 2025-12-31");
+    expect(isCurrentIncome({ charter: "credit_union", period: "2025-12-31", newestFiling: "2026-09-30" })).toBe(true);
+    expect(isCurrentIncome({ charter: "credit_union", period: "2025-12-31", newestFiling: "2026-12-31" })).toBe(false);
+  });
+
+  it("should_leave_out_december_credit_union_income_more_than_four_quarters_before_the_newest_filing", () => {
+    const cu: IncomeFeeRow = { institutionId: 9, charter: "credit_union", assetsThousands: 500_000, period: "2024-12-31", newestFiling: "2026-06-30", feeCategory: "overdraft", incomeDollars: 300_000, feeLow: 30, feeHigh: 30 };
+    const built = buildInferredVolume([cu]);
+    expect(built.rows).toEqual([]);
+    expect(String(built.record.findings.headline)).toContain("Credit unions are left out");
+  });
+
+  it("should_keep_the_one_quarter_rule_for_bank_income", () => {
+    expect(isCurrentIncome({ charter: "bank", period: "2026-03-31", newestFiling: "2026-06-30" })).toBe(true);
+    expect(isCurrentIncome({ charter: "bank", period: "2025-12-31", newestFiling: "2026-06-30" })).toBe(false);
   });
 });
 
