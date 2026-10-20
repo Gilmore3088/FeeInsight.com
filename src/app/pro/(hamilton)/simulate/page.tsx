@@ -66,7 +66,8 @@ function SavedScenarioNotice({ title, message }: { title: string; message: strin
     <MemoPage width="reading">
       <div role="alert" className="flex flex-col gap-4">
         <MemoHeader kicker="Try a price" title={title} dek={message} />
-        <div>
+        {/* Centred under the centred phone header, left-aligned from sm up like MemoHeader. */}
+        <div className="flex justify-center sm:justify-start">
           <LinkButton href="/pro/simulate" primary>
             Try a new price
           </LinkButton>
