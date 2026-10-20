@@ -101,6 +101,7 @@ vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+  HAMILTON_PUBLISH_MIN_INSTITUTION_FEES: 3,
 }));
 
 vi.mock("@/lib/agents/hamilton/change-pairing", () => ({

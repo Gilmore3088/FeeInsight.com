@@ -366,7 +366,9 @@ function narrateFinished(
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
-      return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+      const piles = Array.isArray((detail.queues as Detail | null)?.queues) ? ((detail.queues as Detail).queues as Array<{ alarms?: unknown[] }>) : null;
+      const alarmed = piles ? piles.filter((pile) => Array.isArray(pile.alarms) && pile.alarms.length > 0).length : null;
+      return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision${alarmed == null ? "" : `, ${alarmed} of ${piles!.length} piles alarmed`}.`;
     }
     case "content-market-spread": {
       const picked = (detail.picked ?? null) as Detail | null;

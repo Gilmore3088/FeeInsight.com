@@ -2700,6 +2700,7 @@ async function executeAgenticStep(
           snapshot_date: result.snapshotDate,
           ...result.numbers,
           agent_health: result.agentHealth ?? null,
+          queues: result.queues ?? null,
         },
       };
     }
