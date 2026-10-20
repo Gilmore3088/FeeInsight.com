@@ -70,7 +70,7 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     id: "pr-807-one-current-copy",
     agent: "magellan",
     stage: "fetch",
-    lesson: "Keep one current copy per schedule: when a bank's hand-found schedule moves to a new address and the new copy is readable, mark the old link's copy superseded by the new one.",
+    lesson: "Keep one current copy per schedule: when a bank's hand-found schedule moves to a new address (same host and file name) and the new copy is readable, mark the old link's copy superseded by the new one.",
     why: "Regions' old hand-found copy stayed current after its schedule moved, because one current copy per page paired only the same address, so 34 live fees still cited the stale copy and Darwin's second-source check compared new rows against it.",
     evidence: { issues: [], prs: [807, 826], files: ["docs/project/findings/2026-10-09-moved-hand-found-schedule-stays-current.md"] },
     appliesTo: "all",
