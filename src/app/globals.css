@@ -126,6 +126,10 @@
   /* Admin layout tokens */
   --admin-bg: oklch(0.976 0.003 70);        /* warm-tinted neutral — barely-there warmth that harmonizes with brand terracotta */
   --admin-nav-h: 2.75rem; /* 44px — admin header height; also the sticky offset for tabs/rails */
+  /* Public sticky bars, so an in-page jump (#peers) lands its heading below them. */
+  --fi-site-header-h: 57px; /* consumer-nav.tsx: h-14 row plus its 1px border */
+  --fi-layer-nav-h: 61px; /* state-layers.tsx LayerNav: py-2 around a 44px link plus its 1px border */
+  --fi-state-sticky-h: calc(var(--fi-site-header-h) + var(--fi-layer-nav-h));
   --brand-primary: var(--fi-brick);
   --brand-primary-hover: var(--fi-brick-ink);
   --brand-primary-soft: var(--fi-brick-tint);

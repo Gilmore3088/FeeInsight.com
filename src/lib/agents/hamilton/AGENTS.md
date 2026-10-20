@@ -705,6 +705,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     price closes as `superseded by #<id>`.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
     `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
+    It ends `succeeded`, `no_work` (no institution due) or `failed` (#2235). A failed read or
+    write rolls back its savepoint, leaves a `step.warning` event, records no institution as
+    checked, and is kept in the step detail (`source_check_status`, `source_check_failed_phase`,
+    `source_check_error`) and the receipt ("Source check failed (select): ..."). The publish
+    carries on.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
@@ -733,7 +738,7 @@ id>'` and the run's batch id, and their verified row is rejected; a later copy t
 the fee again restores it. Fees still named at a new price stay live: the price change
 belongs to the publish step once Knox reads the newer copy. Each pair is checked once
 (attempt log, stage `publish`, strategy `hamilton.newer_copy_check`, fingerprint
-`v2:<older>:<newer>`; v2 judged every v1 pair again, #2477). The shared learning store skips these takedowns, since the bank
+`v1:<older>:<newer>`). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
@@ -783,8 +788,7 @@ flag/count and says the restoration proposals remain pending. Neither a pair dec
 restored lineage/source-check receipt survives rollback; the normal next check can retry the
 still-pending pair. This adds no retry subsystem or historical replay.
 
-v2 (#2477, James 2026-10-20) reopened every v1 pair under these guards; prod dry run: 772 pairs,
-8 fees retired at 2 institutions, 0 restores. Before v2 these fixes kept v1 fingerprints; they applied to pending pairs and future copies,
+These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
 can retire more. Bayes records the explicit no-replay policy in
 `VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
@@ -1329,7 +1333,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
-| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v2 (every v1 pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
+| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |

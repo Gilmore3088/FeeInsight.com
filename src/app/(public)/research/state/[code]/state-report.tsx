@@ -13,9 +13,12 @@ import { LeadCapture } from "@/components/public/lead-capture";
 import { TrackLink } from "@/components/track-link";
 import { Button, SearchInput } from "@/brand/components";
 import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
-import { REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
+import { PRODUCT_NAME, REPORT_OFFER, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
-import { getPeerIndexCached, getStateFeeIndexesCached, getStateHubCached, getStateMarketFeesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
+import { getPeerIndexCached, getStateFeeIndexesCached, getStateHubCached, getStateMarketFeesCached, getStatePeerSetIndexesCached, getStateStatsCached } from "@/lib/data-store/public-cached-reads";
+import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
+import { StatePeerSets, statePeerSetView } from "./state-peer-sets";
+import { StatePeerSetsIsland } from "./state-peer-sets-island";
 import { MIN_COMPLAINT_PEERS, MIN_LEADER_BRANCHES } from "@/lib/data-store/district-hub";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
@@ -145,7 +148,7 @@ export async function StateReport({ code, user }: { code: string; user: User | n
   // Every read is served from the public cache between publishes. A render where one of
   // them failed is cached for a minute, not an hour, so the next render reads it again.
   const district = STATE_TO_DISTRICT[stateCode];
-  const [summary, indexesRead, nationalIndex, districtRead, sampleRead, marketRead, hubRead, beigeHeadline, beigeSections, coverageSoft] = await Promise.all([
+  const [summary, indexesRead, nationalIndex, districtRead, sampleRead, marketRead, hubRead, beigeHeadline, beigeSections, coverageSoft, peerSetsRead] = await Promise.all([
     getPublicStatsSummary(),
     softRead(getStateFeeIndexesCached(stateCode), EMPTY_INDEXES),
     getPublicNationalIndex(),
@@ -159,8 +162,9 @@ export async function StateReport({ code, user }: { code: string; user: User | n
     // The shared coverage read (#1951). No read deadline yet: this branch predates
     // src/lib/read-deadline.ts; a failed read drops the coverage sentence, never the page.
     softRead(getResearchCoverageCached(), null),
+    softRead(getStatePeerSetIndexesCached(stateCode), []),
   ]);
-  if (!summary.complete || [indexesRead, districtRead, sampleRead, marketRead, hubRead, coverageSoft].some((r) => r.failed)) {
+  if (!summary.complete || [indexesRead, districtRead, sampleRead, marketRead, hubRead, coverageSoft, peerSetsRead].some((r) => r.failed)) {
     await shortenPageLife();
   }
   const indexes = indexesRead.value;
@@ -212,6 +216,23 @@ export async function StateReport({ code, user }: { code: string; user: User | n
       : cuLowerOn >= bankLowerOn
         ? `Credit unions have lower medians on ${cuLowerOn} of ${charter.length} fees`
         : `Banks have lower medians on ${bankLowerOn} of ${charter.length} fees`;
+  // Peer groups within the state, on the same fees the board shows, against the state's own medians.
+  // The page is cached, so every group is drawn here and the browser shows the one in ?peers=.
+  const peerFees = shown.map((f) => ({ key: f.key, name: f.name, median: f.median, institutions: f.institutions }));
+  const peerView = statePeerSetView(peerSetsRead.value, peerFees, stateName, null);
+  const peerViews = peerView
+    ? Object.fromEntries(
+        peerView.options.map((option) => [
+          option.key,
+          <StatePeerSets
+            key={option.key}
+            view={statePeerSetView(peerSetsRead.value, peerFees, stateName, option.key) ?? peerView}
+            stateName={stateName}
+            hrefFor={(key) => `/research/state/${stateCode}?peers=${encodeURIComponent(key)}#peers`}
+          />,
+        ]),
+      )
+    : null;
   // The local layer: the state's largest markets, each read against the state, district and U.S.
   const districtLabel = district ? DISTRICT_NAMES[district] : null;
   // The ladder names each fee as the rest of the page does.
@@ -311,7 +332,8 @@ export async function StateReport({ code, user }: { code: string; user: User | n
         freshnessLabel={summary.freshnessLabel}
       />
 
-      <div className="mx-auto max-w-page px-4 pb-12 sm:px-6 sm:pb-16">
+      {/* Anchored sections land below the header and the sticky section row (globals.css). */}
+      <div className="mx-auto max-w-page px-4 pb-12 [--fi-anchor-offset:calc(var(--fi-state-sticky-h)_+_0.75rem)] sm:px-6 sm:pb-16">
         <LayerNav layers={layers} />
         <div className="mt-10 space-y-16 sm:mt-12 sm:space-y-24">
         {/* Layer 1, local: one market against the state, its district and the U.S., inside the page. */}
@@ -352,6 +374,22 @@ export async function StateReport({ code, user }: { code: string; user: User | n
             </div>
             <CharterField fees={charter} place={stateName} />
           </section>
+        )}
+
+        {/* The state's institutions by peer group: size band, bank regulator, credit union charter. */}
+        {peerView && peerViews && (
+          <HubSection
+            id="peers"
+            title="Fee medians by peer group"
+            source={
+              <>
+                Institutions headquartered in {stateName} with verified fees, {PRODUCT_NAME}; size, regulator and charter from FDIC and NCUA
+                records. A group median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN} institutions.{asOf ? ` Data as of ${asOf}.` : ""}
+              </>
+            }
+          >
+            <StatePeerSetsIsland views={peerViews} defaultKey={peerView.key} />
+          </HubSection>
         )}
 
         {/* Who serves the state: deposits at branches in the state, and headquartered institutions by size. */}

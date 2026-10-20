@@ -283,6 +283,16 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v93 (Oct 20, #1828): a dot-leader row priced in words (`LEADER_PRICE_WORDS`: "Reconveyance…………
+Actual Cost", "Check Orders…… Prices Vary", "Incoming Wire....... Free") closes its line. When it
+names a fee of its own it is never a heading for the row under it, and `tidyFeeName` starts a name
+after it. Before this, Oregon Community FCU's "Reconveyance .. Actual Cost: Returned payment" was
+read at the next row's $4.95 (raw 851289, 851314, 851354; live 152591 came down by hand). The class
+was 18 raw rows at 10 banks, 11 of them verified and none live. Name re-tidy v24 renames the live
+names it left: 1 of 2 on Oct 20 (60770). The family pass reads the row the same way, so
+Gunnison's "Wire Fee.......$25.00" under "Incoming Wire.......Free" stays held as unclassified and
+never borrows the incoming direction (doc 17871). v93 follows #2465's v92 and #2470's v91.
+
 v91 (Oct 20, #1829, #1830) reads a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic
 only)") as document reproduction (`FAX_SERVICE`, fold v19). "Domestic" there is where the fax
 goes, not a domestic wire sent by fax, so "Domestic incoming (fax)" stays where it is. A stop
@@ -1740,9 +1750,9 @@ fails a PR that changes one of these constants without updating its line here (#
 | `KNOX_LAYOUT_SIGNATURE_VERSION` | — | v1 | `knox/layout-signature.ts` |
 | `KNOX_LESSONS_VERSION` | — | v3 | `knox/lessons.ts` |
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
-| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
+| `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v24 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v91 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v93 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

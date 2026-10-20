@@ -17,6 +17,7 @@ import {
   cleanFeeName,
   composableTail,
   inPriceFirstRun,
+  LEADER_PRICE_WORDS,
   looksLikeHeading,
   nameAfterPrice,
   qualifiesName,
@@ -172,6 +173,16 @@ export function priceWindows(text: string): PriceWindow[] {
     if (windows.length >= MAX_WINDOWS) return;
     const values = valuesIn(line);
     if (values.length === 0) {
+      // v93 (#1828): a row priced in words ("Incoming Wire.......Free", "Reconveyance…… Actual Cost")
+      // closes its own line. It is neither a heading nor a name for the price below, so "Wire
+      // Fee.......$25.00" under Gunnison's free incoming wire never borrows its direction. One that
+      // names a fee of its own ends the reach of the heading above it.
+      if (LEADER_PRICE_WORDS.test(line)) {
+        if (classifyPatternKey(line.split(/(?:\.\s?){2,}|…/)[0])) heading = null;
+        pending = null;
+        feeLine = null;
+        return;
+      }
       // "(for each overdraft item paid)" under "Overdraft Item Fee": the name stays the one above.
       if (!(pending != null && qualifiesName(line))) pending = line.length <= 160 ? line : null;
       // A table row with no price ("Check Printing Fee | Prices vary") is a fee, not a heading.

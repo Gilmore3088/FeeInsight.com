@@ -20,9 +20,15 @@ describe("gated research", () => {
 });
 
 describe("sitemap speed", () => {
-  it("is served from cache rather than rebuilt on every request", () => {
-    expect(source).toMatch(/export const revalidate = \d+;/);
-    expect(source).toContain('export const dynamic = "force-static";');
+  it("renders on request, never during next build, so a busy database cannot fail a deploy", () => {
+    expect(source).toContain('export const dynamic = "force-dynamic";');
+    expect(source).not.toMatch(/export const revalidate\b/);
+    expect(source).not.toContain("force-static");
+  });
+
+  it("is served from a cached copy rather than rebuilt on every request", () => {
+    expect(source).toMatch(/const SITEMAP_CACHE_SECONDS = \d+;/);
+    expect(source).toContain("unstable_cache(");
   });
 
   it("loads city pages in one query instead of one per state", () => {

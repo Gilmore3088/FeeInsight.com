@@ -88,10 +88,19 @@ async function HamiltonLayoutInner({
   const artifactLookup = hasResearch ? null : getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
   const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report"
     || (pathname === "/pro/simulate" && artifactLookup?.kind === "scenario");
+  // null means the artifact is missing or unscoped (its page 404s). A failed read is different:
+  // log it and let it reach the Pro error boundary, rather than open an unscoped shell (#975).
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
     lookup: artifactLookup,
-  }).catch(() => null);
+  }).catch((error: unknown) => {
+    console.error(
+      "[hamilton-shell] saved artifact context read failed",
+      { userId: user.id, kind: artifactLookup?.kind, artifactId: artifactLookup?.artifactId, pathname },
+      error,
+    );
+    throw error;
+  });
   const contextInstitutionId = resolveArtifactContextInstitutionId({
     urlInstitutionId: selectedInstId,
     artifactInstitutionId,

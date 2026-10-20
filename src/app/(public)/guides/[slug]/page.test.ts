@@ -24,6 +24,12 @@ describe("/guides/[slug] reads", () => {
     expect(dataStore).toEqual(["@/lib/data-store/public-cached-reads"]);
   });
 
+  // #1811: "Fee data updated" printed the newest document crawl, which publishes nothing.
+  it("dates the fee data by the public snapshot's publish date, never a crawl date", () => {
+    expect(source).not.toContain("last_crawl_at");
+    expect(source).toContain("summary.refreshedOn");
+  });
+
   it("finds runtime imports and skips type-only ones", () => {
     const code = [
       'import { getDataFreshness } from "@/lib/data-store/core";',

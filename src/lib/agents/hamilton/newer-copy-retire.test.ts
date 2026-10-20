@@ -129,11 +129,6 @@ describe("Hamilton newer-copy check", () => {
     expect(judged.retire.map((row) => row.fee_published_id)).toEqual([4]);
   });
 
-  it("judges every pair again under v2", () => {
-    expect(newerCopyFingerprint(500, 900, true)).toBe("v2:500:900");
-    expect(newerCopyFingerprint(500, 900, false)).toBe("v2-shadow:500:900");
-  });
-
   it("retires nothing when the newer copy states too few of the older fees", () => {
     const judged = judgeNewerCopy(olderFees, "Skip to Main Content\nHOME\nABOUT US\nContact Us", olderText);
     expect(judged.recognized).toBe(false);

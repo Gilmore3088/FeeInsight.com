@@ -186,7 +186,12 @@ function narrateFinished(
     }
     case "lane-sync": {
       if (typeof detail.priorities_error === "string") return `Synced every state's lane, but the priority refresh failed, so lanes kept their scores.`;
+      const unreadStates = Array.isArray(detail.unchecked_failed_states) ? detail.unchecked_failed_states.length : 0;
       return `Synced every state's lane and rescored ${count(n(detail, "priorities_updated"), "lane")}${joinParts([
+        typeof detail.unchecked_wake_error === "string" &&
+          (unreadStates > 0
+            ? `could not read unchecked live fees for ${count(unreadStates, "state")}`
+            : "could not read unchecked live fees"),
         n(detail, "unchecked_woken") > 0 && `${count(n(detail, "unchecked_woken"), "lane")} woken for unchecked live fees`,
         n(detail, "second_look_woken") > 0 && `${count(n(detail, "second_look_woken"), "lane")} woken for a pending second look`,
       ])}.`;

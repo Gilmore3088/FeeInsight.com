@@ -22,7 +22,11 @@ import {
   getFeeShareCohortCached,
   getInstitutionCallItemHistoryCached,
   getInstitutionFinancialHistoryCached,
+  getInstitutionPeerSetsCached,
+  getPeerExplorerSetCached,
 } from "@/lib/data-store/public-cached-reads";
+import { PeerExplorerSection, peerSetHrefs } from "./peer-explorer-section";
+import { PeerExplorerIsland } from "./peer-explorer-island";
 import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
@@ -186,7 +190,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
     catalogVisibleFeeCount === 0 &&
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
-  const [visibleFees, rateFees, evidence, financials] = await Promise.all([
+  const [visibleFees, rateFees, evidence, financials, peerSets] = await Promise.all([
     catalogVisibleFeeCount > 0 ? budget.required(() => getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
     budget.required(() => getRateFeesForPage(instId), "rate fees"),
     shouldLoadPipelineEvidence
@@ -197,7 +201,16 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
       "financial context",
       [],
     ),
+    // The default peer set; another set (?peers=) is read in the browser (peer-explorer-island.tsx).
+    budget.optional(() => getInstitutionPeerSetsCached(instId, null), "peer sets", null),
   ]);
+  const peerExplorerSet = peerSets
+    ? await budget.optional(
+        () => getPeerExplorerSetCached(instId, peerSets.selectedFilters, peerSets.selected.key === "metro"),
+        "peer explorer",
+        null,
+      )
+    : null;
 
   // Call-report history and its asset-size cohort are public filings, read for every visitor
   // through cached reads, for the overview, financial performance and the connected panel (James's
@@ -550,6 +563,18 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
                 sampleReportHref={sampleHref}
               />
             </FreeOnly>
+          )}
+
+          {/* One peer set the visitor picks, drawn three ways around one shared selection (#peers). */}
+          {!sparse && peerSets && peerExplorerSet && (
+            <PeerExplorerIsland institutionId={instId} defaultSet={peerSets.selected.key}>
+              <PeerExplorerSection
+                sets={peerSets}
+                set={peerExplorerSet}
+                hrefFor={peerSetHrefs(instId, focusFeeCategory)}
+                initial={{}}
+              />
+            </PeerExplorerIsland>
           )}
 
           {/* Financial performance: any measure by quarter, and the share against its size cohort. */}
