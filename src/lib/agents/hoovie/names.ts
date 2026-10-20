@@ -16,9 +16,6 @@ export const HOOVIE_AGENT = "hoovie" as const;
 /** Every registry step key starts with this (`REGISTRY_STEP_PREFIX` in magellan/registry). */
 export const REGISTRY_STEP_KEY_PREFIX = "registry-";
 
-/** SQL LIKE pattern for a registry step key. */
-export const REGISTRY_STEP_KEY_LIKE = `${REGISTRY_STEP_KEY_PREFIX}%`;
-
 /** The agent names registry rows carry: Magellan's before #1865, Hoovie's after it. */
 export const REGISTRY_AGENT_NAMES: readonly string[] = ["magellan", HOOVIE_AGENT];
 
