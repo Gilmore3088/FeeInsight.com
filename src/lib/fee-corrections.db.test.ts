@@ -264,6 +264,25 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     expect(rows[0]).toMatchObject({ n: 4, live: 1 });
   });
 
+  it("should_keep_a_corrected_fee_live_when_an_agent_check_takes_it_down_but_let_the_correction_workflow_replace_it", async () => {
+    const [current] = await raw`SELECT fee_published_id FROM published_fee_corrections WHERE fee_chain_id = ${wrongFeeId} AND status = 'current'`;
+    const correctedId = Number(current.fee_published_id);
+    // The shape every agent takedown takes (rules re-check, taxonomy fold, duplicates): it reads the
+    // corrected row through its original Knox lineage and closes it against the old document.
+    const closed = await raw`UPDATE published_fee_records
+         SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'hamilton-rules-recheck-978', rolled_back_reason = 'knox_rules_recheck'
+       WHERE fee_published_id = ${correctedId} AND rolled_back_at IS NULL
+       RETURNING fee_published_id`;
+    expect(closed).toHaveLength(0);
+    const [still] = await raw`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id = ${correctedId}`;
+    expect(still.rolled_back_at).toBeNull();
+    // A fee nobody corrected still comes down as before.
+    const overdraft = await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'hamilton-rules-recheck-978'
+       WHERE fee_published_id = ${overdraftFeeId} RETURNING fee_published_id`;
+    expect(overdraft).toHaveLength(1);
+    await raw`UPDATE published_fee_records SET rolled_back_at = NULL, rolled_back_by_batch_id = NULL WHERE fee_published_id = ${overdraftFeeId}`;
+  });
+
   it("should_let_only_one_of_two_concurrent_editors_win", async () => {
     const listed = await getInstitutionCorrections(db, INST);
     const [currentId, version] = Object.entries(listed.versions)[0];
