@@ -26,3 +26,5 @@ observed column gaps and adds an explicit missing-object failure gate.
 ## Current-main reconciliation — October 11, 2026
 
 Reconciled the existing R09 false-green fixture fix against main `3b2b13e` without reverting the newer audience role/migration-40 fixture, consumer peer seeding or other pipeline assertions. The same missing-column log pattern occurred at PR #1013's exact-head [application CI 38109451128](https://github.com/Gilmore3088/FeeInsight.com/actions/runs/38109451128): three passing pipeline assertions while six PostgreSQL missing-column exceptions were logged. This branch restores the R09 known-object failure assertion and additive disposable columns only. CI result and negative-control proof must be recorded separately after execution; a created branch is not acceptance.
+
+**Guard:** `src/lib/agents/pipeline.e2e.test.ts:342` (the pipeline E2E fails when it logs a missing column or table, 42703 or 42P01, even if its result assertions pass)

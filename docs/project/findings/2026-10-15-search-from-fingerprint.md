@@ -12,3 +12,5 @@ monthly recheck reads the attempt log, so the list entry was never needed.
 strategy's older entries on the bank's next search. No version bump, so nothing re-runs.
 **Lesson:** before giving a strategy a fingerprint, ask whether its failure is a verdict on that
 input. If it is not, keep it off the do-not-retry list.
+
+**Agent lesson:** magellan/pr-1497-search-not-input-verdict

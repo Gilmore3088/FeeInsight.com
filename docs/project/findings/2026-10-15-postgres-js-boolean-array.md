@@ -35,3 +35,5 @@ The unit test now fails if any bound value is a boolean array.
 - Never bind a JS boolean array. Send text and cast `::text[]::boolean[]`, or use `sql.array(values, 16)`.
 - A catch that turns a failed write into "nothing to do" hides the failure. The run ledger should record it, not only the console.
 - Rule 4 (data fixes proven end to end) covers this: the expected after-state was named, and the prod check caught the gap before the takedowns.
+
+**Guard:** `src/lib/agents/hamilton/category-guard.test.ts:266` (no value the guard's live re-file binds is a JS boolean array, which postgres.js would send as a scalar)
