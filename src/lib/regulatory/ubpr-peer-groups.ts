@@ -637,7 +637,7 @@ export function cleanUbpr(
 // ---------------------------------------------------------------------------------------------
 // Transport
 
-/** Option value for the first ListBox1 product whose label matches, plus every label seen. */
+/** Value of the option a select on the page marks selected, or null. */
 function selectedOptionValue(html: string, field: string): string | null {
   const select = new RegExp(`<select[^>]*name="${FIELD.replaceAll("$", "\\$")}${field}"[^>]*>([\\s\\S]*?)<\\/select>`).exec(html);
   if (!select) return null;
@@ -659,6 +659,7 @@ function withdrawnFormatAnswer(html: string, page: ReturnType<typeof describeFfi
     && /<input\b[^>]*name="ctl00\$MainContentHolder\$FormatType"[^>]*value="XBRLRadio[Bb]utton"/.test(html);
 }
 
+/** Option value for the first ListBox1 product whose label matches, plus every label seen. */
 export function productOption(html: string, label: RegExp): { value: string | null; labels: string[] } {
   const select = /<select[^>]*name="ctl00\$MainContentHolder\$ListBox1"[^>]*>([\s\S]*?)<\/select>/.exec(html);
   if (!select) return { value: null, labels: [] };
