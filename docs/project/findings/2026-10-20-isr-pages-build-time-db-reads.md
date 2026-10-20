@@ -20,7 +20,10 @@ failed-read fallback, which calls `shortenPageLife`: that build copy lives one m
 first request after the deploy regenerates it in the background from the cached public reads
 (`cachedPublicRead`, which keeps the last good value). The losing read is not awaited; its result
 and any later error are dropped, so it cannot hold the render or raise an unhandled rejection.
-On request nothing changed. `/methodology` gained the explicit hourly `revalidate` and the
+`/for-institutions` makes a second read that needs the first (the market ladder needs the
+sample), so its ladder read gets only what is left of a 30-second page budget
+(`BUILD_PAGE_BUDGET_MS`, `startBuildBudget`); a late ladder hides the ladder and shortens the
+page's life. On request nothing changed. `/methodology` gained the explicit hourly `revalidate` and the
 `shortenPageLife` call the other three already had. They did not become `force-dynamic`: the
 homepage left per-request rendering because cached reads that missed made p75 TTFB 3.8 s (#1168).
 
@@ -39,4 +42,5 @@ it, or renders on request; the database's load must never decide whether a deplo
 **Guard:** `src/lib/build-phase.test.ts` (the deadline, a late or failing read gives the
 fallback, a late rejection is dropped, the request path is unchanged) and
 `src/app/build-time-reads.test.ts` (with `NEXT_PHASE` set to the build phase each page renders
-live data from fast reads, and falls back and shortens its life when its reads never finish).
+live data from fast reads, and falls back and shortens its life when its reads never finish;
+`/for-institutions` with a fast sample and a hung ladder read finishes within the page budget).

@@ -3,9 +3,9 @@
  * The page reads no session, cookies or search params: the header's signed-in parts and the
  * report link's query pass-through are client islands. A render with a failed read is cached
  * for one minute instead (`shortenPageLife`, #1572), so a database blip never pins a page
- * with hidden exhibits for the full 15. During `next build` its reads get 15 s
- * (`readOnRequest`) before it renders as such a render: a busy database held its build-time
- * reads past Next's 60-second page limit (#1048).
+ * with hidden exhibits for the full 15. During `next build` each read gets 15 s and the
+ * page's two reads 30 s together (`readOnRequest`) before it renders as such a render: a busy
+ * database held its build-time reads past Next's 60-second page limit (#1048).
  */
 export const revalidate = 900;
 
@@ -21,7 +21,7 @@ import { PRO_TIERS, tierPriceLabel } from "@/lib/pro-tiers";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
-import { readOnRequest } from "@/lib/build-phase";
+import { readOnRequest, startBuildBudget } from "@/lib/build-phase";
 import { FeeRange, FeeRangeAxis } from "@/brand/components";
 
 import { ConsumerNav } from "@/components/consumer-nav";
@@ -65,6 +65,7 @@ export const metadata: Metadata = {
  * sample report (Capital City Bank when its market passes) and the cached index reads.
  */
 export default async function ForInstitutionsPage() {
+  const budgetLeft = startBuildBudget();
   // The sample is read once: it is null both when none passes the bar today and on error.
   const [snapshot, sampleRead] = await readOnRequest(
     () =>
@@ -85,8 +86,13 @@ export default async function ForInstitutionsPage() {
   const sampleLive = liveSample !== null;
   const board = buildCompetitorBoard(liveSample);
   // The ladder opens on the same lead line as the board, when the index can place it.
+  // During `next build` the ladder gets what is left of the page's budget (BUILD_PAGE_BUDGET_MS).
   const ladderRead = liveSample
-    ? await readSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null)
+    ? await readOnRequest(
+        () => readSampleLadder(liveSample, snapshot.categories, board?.leadKey ?? null),
+        { ladder: null, failed: true },
+        budgetLeft(),
+      )
     : { ladder: null, failed: false };
   const ladder = ladderRead.ladder;
   const failedRead =

@@ -47,7 +47,7 @@ vi.mock("@/components/customer-footer", () => ({ CustomerFooter: () => null }));
 vi.mock("@/components/public/search-modal", () => ({ SearchModal: () => null }));
 
 import { UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
-import { BUILD_READ_DEADLINE_MS } from "@/lib/build-phase";
+import { BUILD_PAGE_BUDGET_MS, BUILD_READ_DEADLINE_MS } from "@/lib/build-phase";
 import MethodologyPage from "./(public)/methodology/page";
 import DataSourcesPage from "./(public)/research/data-sources/page";
 import AboutPage from "./(public)/about/page";
@@ -107,6 +107,30 @@ describe("database-backed ISR pages during next build", () => {
       return page;
     });
     await vi.advanceTimersByTimeAsync(BUILD_READ_DEADLINE_MS);
+    await render;
+    expect(rendered).toBe(true);
+    expect(reads.shortenPageLife).toHaveBeenCalled();
+  });
+
+  it("/for-institutions gives its ladder read only what is left of the page budget during the build", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubEnv("NEXT_PHASE", PHASE_PRODUCTION_BUILD);
+    const SAMPLE = { data: { competitors: [], subject: { state_code: "FL", charter_type: "bank" } }, analysis: { lines: [] } };
+    reads.snapshot.mockResolvedValue({ summary: LIVE_SUMMARY, categories: [{ fee_category: "overdraft", institution_count: 40 }] });
+    // The first batch takes most of its own deadline, then the ladder read never finishes.
+    reads.sample.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(SAMPLE), BUILD_READ_DEADLINE_MS - 1_000)),
+    );
+    reads.ladder.mockReturnValue(new Promise(() => undefined));
+    let rendered = false;
+    const render = ForInstitutionsPage().then((page) => {
+      rendered = true;
+      return page;
+    });
+    await vi.advanceTimersByTimeAsync(BUILD_READ_DEADLINE_MS - 1_000);
+    expect(reads.ladder).toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(BUILD_PAGE_BUDGET_MS - (BUILD_READ_DEADLINE_MS - 1_000));
     await render;
     expect(rendered).toBe(true);
     expect(reads.shortenPageLife).toHaveBeenCalled();

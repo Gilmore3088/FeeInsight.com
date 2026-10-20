@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PHASE_PRODUCTION_BUILD } from "next/constants";
-import { BUILD_READ_DEADLINE_MS, readOnRequest } from "./build-phase";
+import { BUILD_PAGE_BUDGET_MS, BUILD_READ_DEADLINE_MS, readOnRequest, startBuildBudget } from "./build-phase";
 
 /**
  * #1048 / #2507 review: during `next build` a page tries its real read, but only for
@@ -68,6 +68,22 @@ describe("readOnRequest during next build", () => {
     await vi.advanceTimersByTimeAsync(0);
     process.off("unhandledRejection", unhandled);
     expect(unhandled).not.toHaveBeenCalled();
+  });
+
+  it("keeps a page's whole build budget well under the 60-second limit", () => {
+    expect(BUILD_PAGE_BUDGET_MS).toBeLessThanOrEqual(30_000);
+    const budgetLeft = startBuildBudget();
+    vi.advanceTimersByTime(BUILD_PAGE_BUDGET_MS - 5_000);
+    expect(budgetLeft()).toBe(5_000);
+    vi.advanceTimersByTime(10_000);
+    expect(budgetLeft()).toBe(0);
+  });
+
+  it("falls back once a shorter page-budget deadline passes", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const result = readOnRequest(() => new Promise<typeof LIVE>(() => undefined), FALLBACK, 2_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(result).resolves.toBe(FALLBACK);
   });
 
   it("leaves no timer behind when the read wins", async () => {
