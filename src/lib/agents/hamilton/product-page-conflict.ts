@@ -124,7 +124,7 @@ export function productPageConflictSql(scope: ConflictScope): string {
      ORDER BY p.fee_published_id`;
 }
 
-interface ConflictRow {
+export interface ConflictRow {
   fee_published_id: number | string;
   fee_verified_id: number | string;
   institution_id: number | string;
