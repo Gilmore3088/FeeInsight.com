@@ -36,3 +36,5 @@ found 3 records wrong on account or audience while their amounts were right:
 
 **Lesson:** a right amount is not a right record. Check the product and audience fields against the
 page the way the amount is checked, and treat a field filled from page prose as unproven.
+
+**Agent lesson:** knox/pr-841-account-name-from-heading, gutenberg/pr-841-business-named-fee

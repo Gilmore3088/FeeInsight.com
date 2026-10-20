@@ -54,3 +54,5 @@ Publish could apply it, but only Darwin's live re-check did, after the fee was s
 **Lesson:** Put the rule at the earliest stage that has its inputs. A verdict that needs only
 the document URL belongs at publish, and one that needs the document text belongs before
 publish. A check that runs only on live rows is a detector, not a gate.
+
+**Agent lesson:** gutenberg/issue-1069, darwin/pr-1769-judge-owner-before-live, knox/pr-1769-no-paid-read-unshown

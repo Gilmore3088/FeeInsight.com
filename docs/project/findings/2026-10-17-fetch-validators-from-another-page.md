@@ -25,3 +25,5 @@ companion fetch stores the bytes when the reused copy has no vault key. Not merg
 of writing.
 **Lesson:** an HTTP validator belongs to one address. When code keys a "previous copy" by
 institution rather than by address, check every place that uses it as if it were that address's.
+
+**Agent lesson:** magellan/pr-1752-validators-own-address

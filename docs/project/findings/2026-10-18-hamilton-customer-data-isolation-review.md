@@ -93,3 +93,5 @@ public fee data only. `/r/[token]` and `/pay/report/[token]` are under tokens.
 5. Not covered here: the email senders (`agents/fee-alerts.ts`, `agents/pro-digest.ts`) group per
    user in SQL but have no two-account test. A live two-account run is #1715.
 6. Seen while testing, not a leak: single JSON values in memory facts are stored as strings (#2004).
+
+**Guard:** `src/app/pro/(hamilton)/settings/page.team-isolation.test.tsx:84` (another bank's Pro user who researches bank X sees none of X's team or invites); `src/lib/hamilton/customer-isolation.db.test.ts:404`, in CI's `E2E_TESTS`, checks a member who left a team keeps none of its peer groups
