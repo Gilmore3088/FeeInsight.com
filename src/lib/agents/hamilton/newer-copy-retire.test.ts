@@ -129,6 +129,43 @@ describe("Hamilton newer-copy check", () => {
     expect(judged.retire.map((row) => row.fee_published_id)).toEqual([4]);
   });
 
+  it("retires a fee the newer copy re-prices once that copy's fee of the category is live", () => {
+    const fees = olderFees.map((row) => (row.fee_published_id === 3 ? { ...row, newer_live_same_key: true } : row));
+    const judged = judgeNewerCopy(fees, newerText, olderText);
+    expect(judged.recognized).toBe(true);
+    expect(judged.repriced).toBe(1);
+    expect(judged.retire.map((row) => row.fee_published_id)).toEqual([3, 4]);
+  });
+
+  it("keeps a re-priced fee while no fee of its category from the newer copy is live", () => {
+    expect(judgeNewerCopy(olderFees, newerText, olderText).retire.map((row) => row.fee_published_id)).toEqual([4]);
+  });
+
+  it("keeps a re-priced fee whose old amount the newer copy still states anywhere", () => {
+    const fees = olderFees.map((row) => (row.fee_published_id === 3 ? { ...row, newer_live_same_key: true } : row));
+    const judged = judgeNewerCopy(fees, `${newerText}
+Notary Service | $20.00`, olderText);
+    expect(judged.repriced).toBe(0);
+    expect(judged.retire.map((row) => row.fee_published_id)).toEqual([4]);
+  });
+
+  it("keeps a fee the newer copy names with no price on its line", () => {
+    const fees = olderFees.map((row) => (row.fee_published_id === 3 ? { ...row, newer_live_same_key: true } : row));
+    const unpriced = newerText.replace("Wire Transfer Outgoing Domestic | $25.00", "Wire Transfer Outgoing Domestic | see branch");
+    expect(judgeNewerCopy(fees, unpriced, olderText).repriced).toBe(0);
+  });
+
+  it("keeps a free fee the newer copy names at a price", () => {
+    const free = [...olderFees, fee(6, "Paper Statement", 0, { newer_live_same_key: true })];
+    const judged = judgeNewerCopy(free, newerText, `${olderText}\nPaper Statement | $0.00`);
+    expect(judged.retire.map((row) => row.fee_published_id)).not.toContain(6);
+  });
+
+  it("re-judges every pair under v2 so earlier v1 decisions get the re-price rule", () => {
+    expect(newerCopyFingerprint(500, 900, true)).toBe("v2:500:900");
+    expect(newerCopyFingerprint(500, 900, false)).toBe("v2-shadow:500:900");
+  });
+
   it("retires nothing when the newer copy states too few of the older fees", () => {
     const judged = judgeNewerCopy(olderFees, "Skip to Main Content\nHOME\nABOUT US\nContact Us", olderText);
     expect(judged.recognized).toBe(false);

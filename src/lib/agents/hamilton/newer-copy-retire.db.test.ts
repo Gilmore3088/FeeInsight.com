@@ -97,6 +97,35 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect(await attempt()).toMatchObject({ outcome: "ok_partial", detail: { planned_retired: 1, retired: 1 } });
   });
 
+  async function repricedCard(newerLive: boolean) {
+    await db`UPDATE agent_source_texts SET normalized_text=${`${olderText}\nReplacement Card | $40.00`} WHERE id=1`;
+    await db`UPDATE agent_source_texts SET normalized_text=${`${newerText}\nReplacement Card | $10.00`} WHERE id=2`;
+    await db`INSERT INTO raw_fee_observations VALUES (5, 42, 500, 'Replacement Card', 40, 'consumer', 'per_item', 'flat', NULL, NULL),
+      (905, 42, 900, 'Replacement Card', 10, 'consumer', 'per_item', 'flat', NULL, NULL)`;
+    await db`INSERT INTO verified_fee_observations VALUES (1005, 5, 'verified', '[]'), (1905, 905, 'verified', '[]')`;
+    await db`INSERT INTO published_fee_records (fee_published_id, lineage_ref, institution_id,
+      canonical_fee_key, fee_name, amount, fee_audience, frequency, amount_kind, rolled_back_at)
+      VALUES (5, 1005, 42, 'card_replacement', 'Replacement Card', 40, 'consumer', 'per_item', 'flat', NULL),
+      (905, 1905, 42, 'card_replacement', 'Replacement Card', 10, 'consumer', 'per_item', 'flat',
+        ${newerLive ? null : "2026-10-01T00:00:00Z"})`;
+  }
+
+  it("retires a fee the newer copy re-prices once the newer copy's price is live", async () => {
+    await repricedCard(true);
+    const result = await run();
+    expect(result.retired.map((fee) => Number(fee.fee_published_id))).toEqual([4, 5]);
+    expect(result.repriced).toBe(1);
+    expect((await row(5)).rolled_back_reason).toBe("newer_copy_drops_fee:#900");
+    expect((await row(905)).rolled_back_at).toBeNull();
+  });
+
+  it("keeps the old price live while the newer copy's price is not", async () => {
+    await repricedCard(false);
+    const result = await run();
+    expect(result.retired.map((fee) => Number(fee.fee_published_id))).toEqual([4]);
+    expect((await row(5)).rolled_back_at).toBeNull();
+  });
+
   it("accepts a positive normalized same-identity witness independently of its amount", async () => {
     await db`UPDATE raw_fee_observations SET fee_name = 'Coin-counting!', amount = 99 WHERE fee_raw_id = 901`;
     expect(await run()).toMatchObject({ documentsChecked: 1, stillNamed: 1, retired: [] });
@@ -310,12 +339,18 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect((await row(14)).amount_kind).toBe("percent");
   });
 
-  it("keeps an already-decided v1 pair closed", async () => {
-    expect(newerCopyFingerprint(500, 900)).toBe("v1:500:900");
+  it("keeps an already-decided v2 pair closed", async () => {
+    expect(newerCopyFingerprint(500, 900)).toBe("v2:500:900");
     await db`INSERT INTO pipeline_attempts (source_document_id, stage, strategy, input_fingerprint)
-      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v1:500:900')`;
+      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v2:500:900')`;
     expect(await run()).toMatchObject({ documentsChecked: 0, retired: [], restored: 0 });
     expect((await row()).rolled_back_at).toBeNull();
+  });
+
+  it("judges a pair decided under v1 again under v2", async () => {
+    await db`INSERT INTO pipeline_attempts (source_document_id, stage, strategy, input_fingerprint)
+      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v1:500:900')`;
+    expect((await run()).documentsChecked).toBe(1);
   });
 
   async function restorableMonthlyFee() {
@@ -465,10 +500,10 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
       const [target]=await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=4`;
       expect(target.rolled_back_reason).toBe('newer_copy_drops_fee:#800');
       expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=1004`)[0].review_status).toBe('rejected');
-      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint IN ('restored:4:9','v1:500:900')`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint IN ('restored:4:9','v2:500:900')`).toHaveLength(0);
       expect(await tx`SELECT 1 FROM agent_run_events`).toHaveLength(0);
       expect(await run(false,tx as unknown as Db)).toMatchObject({ restored:1, writeFailed:false, failedRestores:0 });
-      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='v1:500:900'`).toHaveLength(1);
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='v2:500:900'`).toHaveLength(1);
     });
   });
 });
