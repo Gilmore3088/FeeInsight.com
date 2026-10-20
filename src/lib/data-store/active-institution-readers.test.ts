@@ -284,7 +284,6 @@ const WITHOUT_RULE: Record<string, string> = {
   "market-study.ts": "not yet reviewed",
   "merger-screen.ts": "not yet reviewed",
   "overdraft-policies.ts": "not yet reviewed",
-  "peer-sets.ts": "not yet reviewed",
 };
 
 describe("catalog readers without the active-institution rule are named (#2190)", () => {

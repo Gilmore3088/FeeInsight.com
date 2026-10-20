@@ -37,6 +37,7 @@ import {
 import { getInstitutionPeerChoices, getStatePeerSetIndexes } from "./public-peer-sets";
 import { getPeerExplorerSet } from "./peer-explorer";
 import { getMarketBranchFootprint } from "./branches";
+import { getMarketPosition } from "./market-position";
 import { getBranchCityForZip } from "./branch-cities";
 import { getNationalRateStats } from "./rate-fees";
 import { getCountyFeeMap } from "./state-visuals";
@@ -235,8 +236,9 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
 // v3: wrapped, so an id with no choices (no such institution) is cached too: the explorer's server
 // action takes any id from the address, and an empty list would otherwise reach the database on
 // every request. A failed read throws and is not cached.
+// v4: a chosen set keeps only the institutions the explorer lists, so its count is the explorer's.
 const getInstitutionPeerChoicesEntryCached = cachedPublicRead(
-  "institution-peer-sets-v3",
+  "institution-peer-sets-v4",
   async (institutionId: number) => ({ choices: await getInstitutionPeerChoices(institutionId) }),
   () => false,
 );
@@ -278,6 +280,8 @@ export async function getInstitutionHeadlineCoverageCached(ids: number[]): Promi
 export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint-v2", getMarketBranchFootprint);
 /** The city a ZIP code belongs to, from the branch records; the fee check reads it per ZIP. */
 export const getBranchCityForZipCached = cachedPublicRead("branch-city-for-zip-v1", getBranchCityForZip);
+/** An institution profile's market position section (FDIC SOD shares and history, NCUA offices), per institution. */
+export const getMarketPositionCached = cachedPublicRead("institution-market-position-v2", getMarketPosition);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
 // v3: institution groups carry the regulator size_group.
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);

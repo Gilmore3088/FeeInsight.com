@@ -87,6 +87,44 @@ describe("resolvePeerSet", () => {
     expect(params.slice(-2)).toEqual([800_000, 20]);
   });
 
+  /** A fake institution_sources that applies the query's active rule, asset ordering and limit. */
+  function nearestDatabase(rows: { id: number; asset_size: number; inactive?: boolean }[]) {
+    unsafe().mockImplementation((query: string, params: unknown[]) => {
+      const activeOnly = query.includes("s.regulatory_status IS DISTINCT FROM 'inactive'");
+      const [own, limit] = params.slice(-2) as number[];
+      const picked = rows
+        .filter((row) => !activeOnly || !row.inactive)
+        .sort((a, b) => Math.abs(a.asset_size - own) - Math.abs(b.asset_size - own) || a.id - b.id)
+        .slice(0, limit);
+      return Promise.resolve(picked.map((row) => ({ id: row.id })));
+    });
+  }
+
+  it("should_pick_25_active_institutions_when_an_inactive_one_is_among_the_nearest", async () => {
+    // 27 banks; the second closest is inactive, so the set reaches one further for its 25th.
+    const rows = Array.from({ length: 27 }, (_, i) => ({ id: 100 + i, asset_size: 800_000 + (i + 1) * 1_000, inactive: i === 1 }));
+    nearestDatabase(rows);
+    const resolved = await resolvePeerSet({ charter_type: "bank", nearest: 25 }, BANK);
+    const ids = resolved.filters?.institutionIds ?? [];
+    expect(ids).toHaveLength(25);
+    expect(ids).not.toContain(101);
+    expect(ids).toContain(125);
+    expect(resolved.label).toBe("The 25 banks closest in assets");
+  });
+
+  it("should_name_the_real_count_when_fewer_than_25_institutions_are_available", async () => {
+    nearestDatabase(Array.from({ length: 9 }, (_, i) => ({ id: 200 + i, asset_size: 700_000 + i * 1_000, inactive: i === 4 })));
+    const resolved = await resolvePeerSet({ charter_type: "bank", nearest: 25 }, BANK);
+    expect(resolved.filters?.institutionIds).toHaveLength(8);
+    expect(resolved.label).toBe("The 8 banks closest in assets");
+  });
+
+  it("should_name_a_single_nearest_peer_in_the_singular", async () => {
+    nearestDatabase([{ id: 300, asset_size: 790_000 }]);
+    const resolved = await resolvePeerSet({ charter_type: "bank", nearest: 25 }, BANK);
+    expect(resolved.label).toBe("The 1 bank closest in assets");
+  });
+
   it("refuses an unknown metro", async () => {
     vi.mocked(getMarketInstitutionIds).mockResolvedValue(null);
     await expect(resolvePeerSet({ market_code: 1 }, BANK)).rejects.toThrow(/No metro market/);
