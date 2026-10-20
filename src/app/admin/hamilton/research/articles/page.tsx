@@ -2,7 +2,6 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { getArticles } from "@/lib/data-store/articles";
-import { ensureResearchTables } from "@/lib/research/history";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ArticlesTable } from "@/components/articles-table";
 
@@ -11,8 +10,7 @@ export default async function ArticlesPage({
 }: {
   searchParams: Promise<{ status?: string; category?: string }>;
 }) {
-  await requireAuth("view");
-  await ensureResearchTables();
+  await requireAuth("operate");
 
   const params = await searchParams;
   const { articles, total } = await getArticles({

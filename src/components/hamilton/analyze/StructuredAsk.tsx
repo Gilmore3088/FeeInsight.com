@@ -14,6 +14,9 @@ import { AnswerMemo } from "@/components/hamilton/memo/answer-memo";
 import { SegmentTable } from "@/components/hamilton/memo/segment-table";
 import { StorylineView, type MemoState } from "@/components/hamilton/storyline/StorylineView";
 import type { StorylineMemoResult } from "@/lib/hamilton/workspace/storyline-types";
+import { AnswerFollowThrough } from "./AnswerFollowThrough";
+import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
+import { basketItemId } from "@/lib/hamilton/report-basket";
 import { Callout, LinkButton, SERIF, fmtMoney, fmtSignedMoney } from "@/components/hamilton/memo/memo";
 import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
 import { FactList, SchedulePositionsChart } from "./schedule-answer";
@@ -22,6 +25,7 @@ import { isLocalMarketQuestion } from "@/lib/hamilton/local-market-question";
 import { matchFeeCategory } from "@/lib/hamilton/workspace/ask";
 import type { LocalMarketAnswer } from "@/lib/hamilton/local-market-answer";
 import { hamiltonIdentityLines, readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
+import { readStampedFigures } from "@/lib/dataset-note";
 
 /** The engine answered on its own (an answer, every fee's position, or sourced findings), so no written answer is needed. */
 export function engineAnswered(res: AskResponse): boolean {
@@ -448,6 +452,12 @@ function StructuredAskConversation({
       if (res?.answer?.storyline) {
         onStoryline?.();
         onLead?.(res.answer.storyline.governingThought);
+        // A list is the answer itself; no memo is written over it (#2033).
+        if (res.answer.storyline.kind === "list") {
+          memoFor.current = null;
+          setMemo(undefined);
+          return;
+        }
         memoFor.current = asked;
         setMemo({ state: "writing" });
         void postMemo({ institutionId, question: asked, decisionId: decisionId.current, savedAnalysisId: res.savedAnalysisId }).then((m) => {
@@ -617,6 +627,7 @@ function StructuredAskConversation({
         <StorylineView
           story={storyline}
           identityContext={response.identityContext}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           memo={memo}
           nextSteps={
             researchHrefFor ? (
@@ -633,6 +644,7 @@ function StructuredAskConversation({
       ) : response.answer ? (
         <AnswerMemo
           answer={{ ...response.answer, question: null }}
+          stamps={readStampedFigures(response.answer.provenance?.stamps)}
           nextSteps={
             researchHrefFor ? (
               <>
@@ -668,6 +680,31 @@ function StructuredAskConversation({
             setOfferTaken(true);
             onClarification(offered, notFound);
           } : undefined}
+        />
+      ) : null}
+      {/* One row to carry the answer on (#2045); a written answer on the page carries its own. */}
+      {response.answer && response.savedAnalysisId && !proseShown ? (
+        <AnswerFollowThrough
+          analysisId={response.savedAnalysisId}
+          institutionId={institutionId}
+          institutionName={response.identityContext?.researchInstitutionName ?? null}
+          feeCategory={response.answer.feeCategory}
+          inDecision={Boolean(response.decisionId)}
+          report={
+            <AddToReportButton
+              variant="link"
+              item={{
+                id: basketItemId("Ask", institutionId, response.shortAnswer),
+                source: "Ask",
+                title: response.shortAnswer,
+                detail: response.answer.headline,
+                feeCategory: response.answer.feeCategory,
+                institutionId,
+                savedAnalysisId: response.savedAnalysisId,
+                ...(response.identityContext ? { identityContext: response.identityContext } : {}),
+              }}
+            />
+          }
         />
       ) : null}
       {/* Who the answer is about stays one click away, after the answer itself. */}

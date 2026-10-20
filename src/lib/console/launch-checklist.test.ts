@@ -36,6 +36,13 @@ describe("buildLaunchChecklist", () => {
     expect(state("library", checks).state).toBe("not_done");
   });
 
+  it("reserves launch accuracy for the weekly live batch of 50 whole institutions", () => {
+    const check = state("accuracy");
+    expect(check.state).toBe("unknown");
+    expect(check.detail).toContain("50 whole institutions, including missing categories");
+    expect(check.detail).toContain("stored-copy scorecard cannot satisfy this launch gate");
+  });
+
   it("names the agents still on the shared key", () => {
     const checks = buildLaunchChecklist({
       env: { ANTHROPIC_API_KEY: "k", ANTHROPIC_API_KEY_KNOX: "k1", ANTHROPIC_API_KEY_DARWIN: "k2" },

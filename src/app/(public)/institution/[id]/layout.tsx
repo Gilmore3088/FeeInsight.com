@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createReadBudget } from "@/lib/read-deadline";
+import { createPublicReadBudget as createReadBudget } from "@/lib/public-read-budget";
 import { getPublicInstitutionForPage } from "./profile-data";
 import { LAYOUT_READ_BUDGET_MS } from "./profile-budget";
 
@@ -24,6 +24,6 @@ export default async function InstitutionLayout({
   const instId = parseInt(id, 10);
   if (Number.isNaN(instId)) notFound();
   const budget = createReadBudget(LAYOUT_READ_BUDGET_MS, "Institution layout");
-  if (!(await budget.required(getPublicInstitutionForPage(instId), "institution"))) notFound();
+  if (!(await budget.required(() => getPublicInstitutionForPage(instId), "institution"))) notFound();
   return children;
 }

@@ -18,9 +18,9 @@ import { isOpenAction } from "./registry-profile";
 import { STATE_REGULATORS } from "@/lib/regulatory/state-regulators";
 import { ALL_FEE_TOPICS, TOPIC_CATEGORIES } from "@/lib/regulatory/fee-topics";
 import type { InstitutionOwnFee } from "@/lib/own-fee";
+import { WATCH_ACTION_YEARS } from "@/lib/regulatory/watch-policy";
 
-/** Actions that began within this many years are shown. */
-export const WATCH_ACTION_YEARS = 3;
+export { WATCH_ACTION_YEARS } from "@/lib/regulatory/watch-policy";
 /** Competitors checked: the largest by deposits in the market counties. */
 export const WATCH_PEER_LIMIT = 25;
 /** Market fee medians use the same 40 competitors as the benchmark export, so the card and the CSV agree. */

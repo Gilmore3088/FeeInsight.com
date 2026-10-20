@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 import { getCurrentUser } from "@/lib/auth";
-import { Logo } from "@/brand/components";
 import { activateIfPaid } from "@/lib/subscription-activation";
 import { redirect } from "next/navigation";
 import { canAccessPremium } from "@/lib/access";
@@ -18,6 +17,7 @@ import { getHamiltonWorkspaceContext } from "@/lib/hamilton/workspace-context";
 import { WelcomeSteps } from "./welcome-steps";
 import type { Metadata } from "next";
 import { TrackView } from "@/components/track-view";
+import { UtilityShell } from "@/components/utility/utility-shell";
 
 export const metadata: Metadata = {
   title: "Welcome",
@@ -92,34 +92,24 @@ export default async function WelcomePage({
   ]);
 
   return (
-    <div className="min-h-screen bg-paper">
-      <header className="border-b border-border bg-paper/95 backdrop-blur-sm">
-        <div className="mx-auto max-w-2xl px-4 flex items-center h-14">
-          <div className="flex items-center gap-2 text-ink">
-            <Logo mark="fee-insight-oneline" height={22} />
-          </div>
-        </div>
-      </header>
-
-      <main id="main-content" className="px-4 py-10">
-        {params.success === "true" && <TrackView event="checkout_complete" onceKey={`checkout_complete:${user.id}`} />}
-        <WelcomeSteps
-          userName={user.display_name}
-          user={user}
-          feePreview={feePreview}
-          districtName={districtName}
-          districtId={district}
-          isPro={isPro}
-          activationPending={params.success === "true" && !isPro}
-          workspaceInstitution={workspaceInstitution}
-          refreshHref={`/account/welcome?${new URLSearchParams({
-            success: "true",
-            ...(returnTo && returnTo !== "/account/welcome" ? { from: returnTo } : {}),
-          }).toString()}`}
-          pendingWorkspaceInvitations={pendingWorkspaceInvitations}
-          workspaceMemberships={workspaceMemberships}
-        />
-      </main>
-    </div>
+    <UtilityShell width="wide">
+      {params.success === "true" && <TrackView event="checkout_complete" onceKey={`checkout_complete:${user.id}`} />}
+      <WelcomeSteps
+        userName={user.display_name}
+        user={user}
+        feePreview={feePreview}
+        districtName={districtName}
+        districtId={district}
+        isPro={isPro}
+        activationPending={params.success === "true" && !isPro}
+        workspaceInstitution={workspaceInstitution}
+        refreshHref={`/account/welcome?${new URLSearchParams({
+          success: "true",
+          ...(returnTo && returnTo !== "/account/welcome" ? { from: returnTo } : {}),
+        }).toString()}`}
+        pendingWorkspaceInvitations={pendingWorkspaceInvitations}
+        workspaceMemberships={workspaceMemberships}
+      />
+    </UtilityShell>
   );
 }

@@ -30,8 +30,8 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const UBPR_PEER_GROUPS_SOURCE = "ubpr-peer-groups";
-/** v2 (#1806): the Download control is read from the page, and an HTML answer names the page's title, messages and fields. */
-export const UBPR_PEER_GROUPS_PARSER_VERSION = 2;
+/** v3 (#2204): follow the actual TSV radio postback handler, or submit a non-postback radio with Download. */
+export const UBPR_PEER_GROUPS_PARSER_VERSION = 3;
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 2_000;
 

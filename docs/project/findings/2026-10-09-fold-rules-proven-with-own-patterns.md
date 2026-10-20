@@ -17,3 +17,5 @@ overdraft.
 every row in the source key that names the thing in any wording. Count what is left, and list
 why each leftover stays. A row the new type's price range rejects (a $1 box late fee, or a $2
 returned statement against account research's $5 minimum) stays put on purpose.
+
+**Agent lesson:** gutenberg/pr-779-fold-proof

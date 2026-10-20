@@ -301,3 +301,18 @@ export function rangeQuarters(quarters: LedgerQuarter[], metric: LedgerMetric, r
   const from = Number.isFinite(n) ? withValue[Math.max(0, withValue.length - n)].reportDate : withValue[0].reportDate;
   return quarters.filter((q) => q.reportDate >= from);
 }
+
+/**
+ * The connected panel's bars: the newest `count` quarters carrying service-charge income, oldest
+ * first, as standalone quarters with the filing each came from. The panel draws the same figures
+ * as the overview and financial performance, never a second calculation.
+ */
+export function connectedPanelSeries(
+  ledger: Ledger,
+  count: number,
+): { reportDate: string; value: number; source: LedgerSource }[] {
+  return ledger.quarters
+    .filter((q) => q.values.serviceCharges)
+    .slice(-count)
+    .map((q) => ({ reportDate: q.reportDate, value: q.values.serviceCharges!.value, source: q.values.serviceCharges!.source }));
+}

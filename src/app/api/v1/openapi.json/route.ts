@@ -2,7 +2,7 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import { NextResponse } from "next/server";
 import { SITE_NAME, SITE_URL } from "@/lib/constants";
 import { API_ERROR_CODES, API_VERSION } from "@/lib/api-v1";
-import { API_MONTHLY_CALLS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
+import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { PEER_GROUP_PARAMS } from "@/lib/peer-set-dimensions";
 
@@ -12,6 +12,14 @@ const FEE_NAME =
   "The fee's name as the bank's schedule words it, made complete where the schedule's row leaves its heading out (a safe deposit box row reading \"3 X 10\" becomes \"Safe Deposit Box 3 X 10\"). When the stored name was cut off mid-line, the fee category's name stands in.";
 const NAME_IS_CATEGORY_FALLBACK =
   "True when fee_name is the fee category's name standing in for a stored name that was cut off mid-line; false when fee_name is the schedule's own name, or that name made complete.";
+const PAID_ACCESS = `Hamilton ${API_PLANS_LABEL} or a paid partner key`;
+// dateTimeParam also accepts dates, minute precision, and times without a zone.
+// A date-time format would incorrectly require an RFC 3339 timestamp from generated clients.
+const UPDATED_SINCE_INPUT = {
+  type: "string",
+  pattern: "^\\d{4}-\\d{2}-\\d{2}(?:T\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,6})?)?(?:Z|[+-]\\d{2}:\\d{2})?)?$",
+  description: "ISO 8601 date or date-time, with optional seconds and timezone. Dates and times without a zone are UTC. Calendar-impossible dates and out-of-range times are rejected.",
+};
 
 const spec = {
   openapi: "3.0.3",
@@ -19,7 +27,7 @@ const spec = {
     title: "Bank Fee Index API",
     version: API_VERSION,
     description:
-      "Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Every request needs an API key. Hamilton subscribers on the $300 and $500 plans make theirs on their account page; partner keys are issued by hand.",
+      `Programmatic access to bank and credit union fee benchmarking data across thousands of U.S. financial institutions. Covers a curated catalog of consumer and commercial fee categories, sourced from published fee schedules, FDIC, and NCUA registries. Every request needs an API key. Hamilton subscribers on the ${API_PLANS_LABEL} make theirs on their account page; partner keys are issued by hand.`,
     contact: {
       name: SITE_NAME,
       email: "hello@bankfeeindex.com",
@@ -40,7 +48,7 @@ const spec = {
         type: "http",
         scheme: "bearer",
         description:
-          "Pass your API key as a Bearer token in the Authorization header. Subscribers on the $300 and $500 plans make theirs on the account page; partner keys are issued by hand.",
+          `Pass your API key as a Bearer token in the Authorization header. Hamilton subscribers on the ${API_PLANS_LABEL} make theirs on the account page; partner keys are issued by hand.`,
       },
       ApiKeyQuery: {
         type: "apiKey",
@@ -83,6 +91,7 @@ const spec = {
       },
       FeeSummary: {
         type: "object",
+        required: ["category", "display_name", "family", "tier", "median", "p25", "p75", "min", "max", "institution_count"],
         properties: {
           category: {
             type: "string",
@@ -94,26 +103,42 @@ const spec = {
           },
           family: {
             type: "string",
+            nullable: true,
             example: "Overdraft & NSF",
           },
           tier: {
             type: "string",
             enum: ["spotlight", "core", "extended", "comprehensive"],
           },
-          median: { type: "number", example: 35.0 },
-          p25: { type: "number", example: 30.0 },
-          p75: { type: "number", example: 36.0 },
-          min: { type: "number", example: 5.0 },
-          max: { type: "number", example: 40.0 },
+          median: { type: "number", nullable: true, example: 35.0 },
+          p25: { type: "number", nullable: true, example: 30.0 },
+          p75: { type: "number", nullable: true, example: 36.0 },
+          min: { type: "number", nullable: true, example: 5.0 },
+          max: { type: "number", nullable: true, example: 40.0 },
           institution_count: { type: "integer", example: 842 },
+        },
+      },
+      DimensionBreakdown: {
+        type: "object",
+        required: ["dimension_value", "count", "min_amount", "max_amount", "avg_amount", "median_amount"],
+        properties: {
+          dimension_value: { type: "string" },
+          count: { type: "integer" },
+          min_amount: { type: "number", nullable: true },
+          max_amount: { type: "number", nullable: true },
+          avg_amount: { type: "number", nullable: true },
+          median_amount: { type: "number", nullable: true },
+          p25_amount: { type: "number", nullable: true },
+          p75_amount: { type: "number", nullable: true },
         },
       },
       FeeCategoryDetail: {
         type: "object",
+        required: ["category", "summary", "by_charter_type", "by_asset_tier", "by_fed_district", "by_state"],
         properties: {
           category: { type: "string" },
           display_name: { type: "string" },
-          family: { type: "string" },
+          family: { type: "string", nullable: true },
           tier: { type: "string" },
           summary: {
             type: "object",
@@ -123,24 +148,28 @@ const spec = {
             },
           },
           by_charter_type: {
-            type: "object",
+            type: "array",
+            items: { $ref: "#/components/schemas/DimensionBreakdown" },
             description:
-              "Breakdown by charter type (bank vs credit_union) with median, p25, p75, count.",
+              "Breakdown by charter type; dimension_value is Bank, Credit Union or Unknown.",
           },
           by_asset_tier: {
-            type: "object",
+            type: "array",
+            items: { $ref: "#/components/schemas/DimensionBreakdown" },
             description:
-              "Breakdown by asset size tier with median, p25, p75, count.",
+              "Breakdown by asset-size tier; dimension_value is the tier key or Unknown.",
           },
           by_fed_district: {
-            type: "object",
+            type: "array",
+            items: { $ref: "#/components/schemas/DimensionBreakdown" },
             description:
-              "Breakdown by Federal Reserve district (1-12) with median, p25, p75, count.",
+              "Breakdown by Federal Reserve district; dimension_value is District 1 through District 12.",
           },
           by_state: {
-            type: "object",
+            type: "array",
+            items: { $ref: "#/components/schemas/DimensionBreakdown" },
             description:
-              "Breakdown by state code with median, p25, p75, count.",
+              "Breakdown by state code; at most the 15 states with the largest institution counts.",
           },
         },
       },
@@ -152,13 +181,13 @@ const spec = {
             type: "string",
             example: "Monthly Maintenance",
           },
-          family: { type: "string", example: "Account Maintenance" },
+          family: { type: "string", nullable: true, example: "Account Maintenance" },
           tier: { type: "string" },
-          median: { type: "number", example: 12.0 },
-          p25: { type: "number", example: 8.0 },
-          p75: { type: "number", example: 15.0 },
-          min: { type: "number", example: 0.0 },
-          max: { type: "number", example: 30.0 },
+          median: { type: "number", nullable: true, example: 12.0 },
+          p25: { type: "number", nullable: true, example: 8.0 },
+          p75: { type: "number", nullable: true, example: 15.0 },
+          min: { type: "number", nullable: true, example: 0.0 },
+          max: { type: "number", nullable: true, example: 30.0 },
           institution_count: { type: "integer", example: 1205 },
           bank_count: { type: "integer", example: 710 },
           cu_count: { type: "integer", example: 495 },
@@ -175,36 +204,39 @@ const spec = {
       },
       InstitutionSummary: {
         type: "object",
+        required: ["id", "name", "state", "city", "charter_type", "asset_size", "asset_tier", "fee_count"],
         properties: {
           id: { type: "integer", example: 123 },
           name: {
             type: "string",
             example: "First National Bank",
           },
-          state: { type: "string", example: "NY" },
-          city: { type: "string", example: "New York" },
+          state: { type: "string", nullable: true, example: "NY" },
+          city: { type: "string", nullable: true, example: "New York" },
           charter_type: {
             type: "string",
-            enum: ["bank", "credit_union"],
+            nullable: true,
+            enum: ["bank", "credit_union", null],
           },
           asset_size: { type: "number", nullable: true, example: 1200000, description: "Total assets in thousands of US dollars (1200000 = $1.2B)" },
           asset_tier: { type: "string", nullable: true, example: "community_large", description: "community_small, community_mid, community_large, regional, large_regional or super_regional" },
-          fed_district: { type: "integer", example: 2 },
+          fed_district: { type: "integer", nullable: true, example: 2, description: "Null in name-search results or when no district is on file; omitted in fee rankings." },
           fee_count: { type: "integer", example: 18 },
           fee_amount: { type: "number", nullable: true, description: "With fee_category only: the institution's lowest published amount for that fee, or null" },
         },
       },
       InstitutionDetail: {
         type: "object",
+        required: ["id", "name", "fees", "rate_fees", "call_reports", "complaints"],
         properties: {
           id: { type: "integer" },
           name: { type: "string" },
-          state: { type: "string" },
-          city: { type: "string" },
+          state: { type: "string", nullable: true },
+          city: { type: "string", nullable: true },
           charter_type: { type: "string" },
-          asset_size: { type: "number" },
-          asset_tier: { type: "string" },
-          fed_district: { type: "integer" },
+          asset_size: { type: "number", nullable: true, description: "Total assets in thousands of US dollars." },
+          asset_tier: { type: "string", nullable: true },
+          fed_district: { type: "integer", nullable: true },
           updated_since: {
             type: "string",
             format: "date-time",
@@ -218,7 +250,7 @@ const spec = {
               properties: {
                 fee_name: { type: "string", example: "Overdraft Fee", description: FEE_NAME },
                 name_is_category_fallback: { type: "boolean", description: NAME_IS_CATEGORY_FALLBACK },
-                amount: { type: "number", example: 35.0 },
+                amount: { type: "number", nullable: true, example: 35.0 },
                 frequency: {
                   type: "string",
                   nullable: true,
@@ -318,6 +350,7 @@ const spec = {
       },
       FeeRow: {
         type: "object",
+        required: ["fee_id", "institution_id", "institution_name", "fee_name", "amount"],
         description: "One published dollar fee, as returned by view=fees.",
         properties: {
           fee_id: { type: "integer", description: "Stable id of the published fee. Match on it when the same row comes back again." },
@@ -335,6 +368,256 @@ const spec = {
           published_at: { type: "string", format: "date-time", nullable: true },
         },
       },
+      BenchmarkGroup: {
+        type: "object",
+        required: ["median", "p25", "p75", "institutions"],
+        properties: {
+          median: { type: "number", nullable: true },
+          p25: { type: "number", nullable: true },
+          p75: { type: "number", nullable: true },
+          institutions: { type: "integer" },
+        },
+      },
+      BenchmarkRow: {
+        type: "object",
+        required: ["fee_category", "display_name", "family", "amount", "amount_low", "amount_high", "fees", "national", "state", "asset_peers", "local_market", "position", "source_url"],
+        properties: {
+          fee_category: { type: "string" },
+          display_name: { type: "string" },
+          family: { type: "string", nullable: true },
+          amount: { type: "number", nullable: true, description: "Null when the institution states several different fees in the category; use amount_low, amount_high and fees." },
+          amount_low: { type: "number" },
+          amount_high: { type: "number" },
+          fees: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["name", "amount"],
+              properties: { name: { type: "string" }, amount: { type: "number" } },
+            },
+          },
+          national: { $ref: "#/components/schemas/BenchmarkGroup" },
+          state: { $ref: "#/components/schemas/BenchmarkGroup" },
+          asset_peers: { $ref: "#/components/schemas/BenchmarkGroup" },
+          local_market: {
+            type: "object",
+            required: ["median", "institutions"],
+            properties: { median: { type: "number", nullable: true }, institutions: { type: "integer" } },
+          },
+          position: { type: "string", nullable: true, enum: ["lower", "typical", "higher", null], description: "Position against asset-size peers, or null when no comparison is available." },
+          source_url: { type: "string", nullable: true },
+        },
+      },
+      BenchmarkRateRow: {
+        type: "object",
+        required: ["fee_category", "display_name", "family", "rate_percent", "rate_terms", "national", "position", "source_url"],
+        properties: {
+          fee_category: { type: "string" },
+          display_name: { type: "string" },
+          family: { type: "string", nullable: true },
+          rate_percent: { type: "number", description: "3 means 3%; compared only with rates for the same fee." },
+          rate_terms: { type: "string" },
+          national: { $ref: "#/components/schemas/BenchmarkGroup" },
+          position: { type: "string", nullable: true, enum: ["lower", "typical", "higher", null] },
+          source_url: { type: "string", nullable: true },
+        },
+      },
+      InstitutionBenchmark: {
+        type: "object",
+        description: "view=benchmark: dollar fees against national, state, asset-size and local-market groups, with rate fees compared separately.",
+        required: ["institution", "groups", "rows", "rate_rows", "attribution"],
+        properties: {
+          institution: {
+            type: "object",
+            required: ["id", "name", "state", "charter_type", "asset_tier"],
+            properties: {
+              id: { type: "integer" },
+              name: { type: "string" },
+              state: { type: "string", nullable: true },
+              charter_type: { type: "string", nullable: true },
+              asset_tier: { type: "string", nullable: true },
+            },
+          },
+          groups: {
+            type: "object",
+            required: ["national", "state", "asset_peers", "local_market"],
+            properties: {
+              national: { type: "string" },
+              state: { type: "string" },
+              asset_peers: { type: "string" },
+              local_market: { type: "string", nullable: true },
+            },
+          },
+          rows: { type: "array", items: { $ref: "#/components/schemas/BenchmarkRow" } },
+          rate_rows: { type: "array", items: { $ref: "#/components/schemas/BenchmarkRateRow" } },
+          attribution: { $ref: "#/components/schemas/Attribution" },
+        },
+      },
+      WatchFeeTie: {
+        type: "object",
+        required: ["fee_category", "display_name", "amount", "amount_low", "amount_high", "market_median", "market_count"],
+        properties: {
+          fee_category: { type: "string" },
+          display_name: { type: "string" },
+          amount: { type: "number", nullable: true },
+          amount_low: { type: "number" },
+          amount_high: { type: "number" },
+          market_median: { type: "number", nullable: true },
+          market_count: { type: "integer" },
+        },
+      },
+      WatchRuleChange: {
+        type: "object",
+        required: ["source", "title", "kind", "stage", "agencies", "published_on", "comments_close_on", "effective_on", "url", "topics", "fees", "all_fees"],
+        properties: {
+          source: { type: "string", enum: ["federal_register", "congress_gov", "open_states"] },
+          title: { type: "string" },
+          kind: { type: "string" },
+          stage: { type: "string", nullable: true },
+          agencies: { type: "array", items: { type: "string" } },
+          published_on: { type: "string", nullable: true },
+          comments_close_on: { type: "string", nullable: true },
+          effective_on: { type: "string", nullable: true },
+          url: { type: "string", nullable: true },
+          topics: { type: "array", items: { type: "string" } },
+          fees: { type: "array", items: { $ref: "#/components/schemas/WatchFeeTie" } },
+          all_fees: { type: "boolean" },
+        },
+      },
+      InstitutionRegulatoryWatch: {
+        type: "object",
+        description: "view=regulatory_watch: public enforcement records for local competitors, fees of regulatory interest, and tracked rules. Source coverage and tracker flags describe availability.",
+        required: ["id", "name", "state", "market", "peer_actions", "fee_focus", "agencies_loaded", "rule_changes", "rules_tracked", "as_of", "attribution"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          state: {
+            type: "object",
+            nullable: true,
+            required: ["state_code", "state_name", "supervisor", "laws", "laws_reviewed", "bills", "bills_tracked"],
+            properties: {
+              state_code: { type: "string" },
+              state_name: { type: "string" },
+              supervisor: {
+                type: "object",
+                nullable: true,
+                required: ["agency", "website"],
+                properties: { agency: { type: "string" }, website: { type: "string", nullable: true } },
+              },
+              laws: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["id", "name", "citation", "summary", "url", "topic", "fees", "all_fees"],
+                  properties: {
+                    id: { type: "string" },
+                    name: { type: "string" },
+                    citation: { type: "string" },
+                    summary: { type: "string" },
+                    url: { type: "string", nullable: true },
+                    topic: { type: "string" },
+                    fees: { type: "array", items: { $ref: "#/components/schemas/WatchFeeTie" } },
+                    all_fees: { type: "boolean" },
+                  },
+                },
+              },
+              laws_reviewed: { type: "boolean" },
+              bills: { type: "array", items: { $ref: "#/components/schemas/WatchRuleChange" } },
+              bills_tracked: { type: "boolean" },
+            },
+          },
+          market: {
+            type: "object",
+            nullable: true,
+            required: ["places", "peers_checked"],
+            properties: { places: { type: "array", items: { type: "string" } }, peers_checked: { type: "integer" } },
+          },
+          peer_actions: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["peer_id", "peer_name", "agency", "party_name", "against_holding_company", "action_type", "subject", "consumer_law", "theme", "no_end_date_on_file", "start_date", "termination_date", "penalty_amount", "document_url"],
+              properties: {
+                peer_id: { type: "integer" },
+                peer_name: { type: "string" },
+                agency: { type: "string" },
+                party_name: { type: "string" },
+                against_holding_company: { type: "boolean" },
+                action_type: { type: "string", nullable: true },
+                subject: { type: "string", nullable: true },
+                consumer_law: { type: "boolean" },
+                theme: { type: "string", enum: ["consumer", "bsa_aml", "governance", "other"] },
+                no_end_date_on_file: { type: "boolean" },
+                start_date: { type: "string", nullable: true },
+                termination_date: { type: "string", nullable: true },
+                penalty_amount: { type: "number", nullable: true },
+                document_url: { type: "string", nullable: true },
+              },
+            },
+          },
+          fee_focus: { type: "array", items: { $ref: "#/components/schemas/WatchFeeTie" } },
+          agencies_loaded: { type: "array", items: { type: "string" } },
+          rule_changes: { type: "array", items: { $ref: "#/components/schemas/WatchRuleChange" } },
+          rules_tracked: { type: "boolean" },
+          as_of: { type: "string", nullable: true },
+          attribution: { $ref: "#/components/schemas/Attribution" },
+        },
+      },
+      HamiltonPeerSet: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "name", "scope", "workspace_institution_id", "is_default", "filters"],
+        properties: {
+          id: { type: "integer" },
+          name: { type: "string" },
+          scope: { type: "string", enum: ["personal", "workspace"] },
+          workspace_institution_id: { type: "integer", nullable: true },
+          is_default: { type: "boolean" },
+          filters: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              charter_type: { type: "string" },
+              asset_tiers: { type: "array", items: { type: "string" } },
+              fed_districts: { type: "array", items: { type: "integer" } },
+              states: { type: "array", items: { type: "string" } },
+              institution_ids: { type: "array", items: { type: "integer" } },
+            },
+          },
+        },
+      },
+      HamiltonContext: {
+        type: "object",
+        additionalProperties: false,
+        required: ["institution", "institution_source", "peer_sets", "active_peer_set_id", "note", "attribution"],
+        description: "The authenticated key holder's saved Hamilton institution and authorized personal or workspace peer sets. No account identifiers, contact details or billing information are included.",
+        properties: {
+          institution: {
+            type: "object",
+            nullable: true,
+            additionalProperties: false,
+            required: ["id", "name"],
+            properties: { id: { type: "integer" }, name: { type: "string" } },
+          },
+          institution_source: { type: "string", description: "The persisted source label for a saved institution, account for the current account fallback, or none when no institution is available." },
+          peer_sets: { type: "array", items: { $ref: "#/components/schemas/HamiltonPeerSet" } },
+          active_peer_set_id: { type: "integer", nullable: true, description: "The saved active peer set, or null when none is active." },
+          note: { type: "string" },
+          attribution: { $ref: "#/components/schemas/Attribution" },
+        },
+      },
+      PeerComparisonContext: {
+        type: "object",
+        additionalProperties: false,
+        required: ["institution_source", "peer_source", "saved_peer_set_id", "saved_peer_set_name"],
+        properties: {
+          institution_source: { type: "string", enum: ["explicit", "saved", "account", "none"] },
+          peer_source: { type: "string", enum: ["explicit", "saved", "default"] },
+          saved_peer_set_id: { type: "integer", nullable: true },
+          saved_peer_set_name: { type: "string", nullable: true },
+        },
+      },
+      UpdatedSinceInput: UPDATED_SINCE_INPUT,
       PeerCategory: {
         type: "object",
         description: `One fee category: the institution's dollar amount next to its peers. Median, percentiles and placement are null when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee.`,
@@ -379,11 +662,19 @@ const spec = {
       },
       Unauthorized: {
         description:
-          "No API key was sent (code api_key_required), or the key was turned away: unknown (invalid_api_key), revoked (key_revoked), its Pro subscription is not active (subscription_inactive), or its holder no longer has a seat on the plan (seat_removed)",
+          "No API key was sent (code api_key_required), or the key was turned away: unknown key or unavailable subscriber payer/holder account (invalid_api_key), revoked (key_revoked), its Hamilton subscription is not active (subscription_inactive), or its holder no longer has a seat on the plan (seat_removed). Subscriber keys require both payer and holder accounts to exist and be active; partner keys without subscriber-user lineage retain their issued access.",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       PlanRequired: {
-        description: "The request needs a Pro or Enterprise key (code plan_required)",
+        description: `The request needs ${PAID_ACCESS} (code plan_required)`,
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      AccountContextRequired: {
+        description: `The request needs ${PAID_ACCESS} (code plan_required). Saved account context also needs a subscriber-holder-linked key or a paid signed-in session; a generic partner key has no personal mapping (code account_context_required). A valid partner key never falls back to the browser's signed-in account.`,
+        content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
+      },
+      ContextUnavailable: {
+        description: "Hamilton context could not be read (code context_unavailable), or usage tracking is temporarily down (code rate_limit_unavailable). Retry later; no partial account context is returned.",
         content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
       },
       RateLimited: {
@@ -422,7 +713,7 @@ const spec = {
         name: "format",
         in: "query",
         schema: { type: "string", enum: ["json", "csv"], default: "json" },
-        description: 'Set to "csv" for CSV download. Requires a Pro or Enterprise API key, or a signed-in Pro export session. On /institutions, CSV is offered for view=benchmark.',
+        description: `Set to "csv" for CSV download. Requires ${PAID_ACCESS}, or a signed-in Hamilton export session. On /institutions, CSV is offered for view=benchmark.`,
       },
     },
   },
@@ -432,7 +723,7 @@ const spec = {
         operationId: "listFees",
         summary: "List fee categories",
         description:
-          "Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Pass `category` for one category's breakdown by charter type, asset tier, Fed district, and state (Pro and Enterprise only).",
+          `Returns every fee category in the catalog with national median, P25/P75 percentiles, min/max, and institution counts. Pass \`category\` for one category's breakdown by charter type, asset tier, Fed district, and state (${PAID_ACCESS}).`,
         tags: ["Fees"],
         parameters: [
           {
@@ -455,8 +746,9 @@ const spec = {
                   oneOf: [
                     {
                       type: "object",
+                      required: ["total", "data"],
                       properties: {
-                        total: { type: "integer", example: 60 },
+                        total: { type: "integer", example: 50 },
                         data: {
                           type: "array",
                           items: { $ref: "#/components/schemas/FeeSummary" },
@@ -586,7 +878,7 @@ const spec = {
         operationId: "listInstitutions",
         summary: "List institutions",
         description:
-          "Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass `id` for one institution's profile with fees, call reports and complaints (Pro and Enterprise only); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for its enforcement actions and complaint counts (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.",
+          `Paginated list of financial institutions. Filter by state, charter, asset_tier, city or has_fees; search by name with q; rank by one fee with fee_category and sort. Maximum 200 results per page. Pass \`id\` for one institution's profile with fees, call reports and complaints (${PAID_ACCESS}); add view=benchmark for its fees beside peer medians (also as CSV with format=csv; a category where it states several different fees has a null amount, with amount_low, amount_high and each fee by name) or view=regulatory_watch for local competitor enforcement records, fees of regulatory interest and tracked rule changes (a fee tie there likewise has a null amount, with amount_low and amount_high, when it states several different fees). view=fees lists published fees one row each and does not take q, fee_category, asset_tier, city or has_fees=true.`,
         tags: ["Institutions"],
         parameters: [
           {
@@ -631,7 +923,7 @@ const spec = {
             in: "query",
             schema: { type: "string" },
             description:
-              "Rank institutions by one fee (Pro and Enterprise only), e.g. overdraft. Each row gains fee_amount: the institution's lowest published amount, or null when it has none (those sort last). Combines with state, charter and q.",
+              `Rank institutions by one fee (${PAID_ACCESS}), e.g. overdraft. Each row gains fee_amount: the institution's lowest published amount, or null when it has none (those sort last). Combines with state, charter and q.`,
             example: "overdraft",
           },
           {
@@ -659,12 +951,12 @@ const spec = {
             in: "query",
             schema: { type: "string", enum: ["detail", "benchmark", "regulatory_watch", "fees"], default: "detail" },
             description:
-              "detail (default), benchmark and regulatory_watch need id. fees (Pro and Enterprise only) lists published dollar fees one row each, oldest publish first and then by fee_id, optionally for one id, state or charter, and takes updated_since.",
+              `detail (default), benchmark and regulatory_watch need id. fees (${PAID_ACCESS}) lists published dollar fees one row each, oldest publish first and then by fee_id, optionally for one id, state or charter, and takes updated_since.`,
           },
           {
             name: "updated_since",
             in: "query",
-            schema: { type: "string", format: "date-time" },
+            schema: { $ref: "#/components/schemas/UpdatedSinceInput" },
             description:
               "ISO 8601 date or date-time (a date, or a time with no zone, is read as UTC). With view=fees, only fees published at or after it. With id on the detail view, fees and rate_fees keep only those published at or after it. Rows published at exactly that time come back again, so match on fee_id. A fee taken down drops out rather than appearing as a change.",
             example: "2026-10-01T00:00:00Z",
@@ -694,7 +986,7 @@ const spec = {
         ],
         responses: {
           "200": {
-            description: "Paginated institution list, or one institution's detail when `id` is set",
+            description: "Paginated institution list, published fee rows, or institution detail, benchmark or regulatory watch according to id and view",
             content: {
               "text/csv": { schema: { type: "string" }, description: "view=benchmark with format=csv" },
               "application/json": {
@@ -702,6 +994,9 @@ const spec = {
                   oneOf: [
                     {
                       type: "object",
+                      required: ["total", "page", "page_size", "pages", "has_more", "data"],
+                      // The fee-row feed has the same pagination envelope, including when empty.
+                      not: { required: ["view"] },
                       properties: {
                         total: { type: "integer" },
                         page: { type: "integer" },
@@ -717,9 +1012,12 @@ const spec = {
                       },
                     },
                     { $ref: "#/components/schemas/InstitutionDetail" },
+                    { $ref: "#/components/schemas/InstitutionBenchmark" },
+                    { $ref: "#/components/schemas/InstitutionRegulatoryWatch" },
                     {
                       type: "object",
                       description: "view=fees: published dollar fees, oldest publish first, then by fee_id",
+                      required: ["view", "total", "page", "page_size", "pages", "has_more", "data"],
                       properties: {
                         view: { type: "string", enum: ["fees"] },
                         updated_since: { type: "string", format: "date-time", nullable: true },
@@ -760,7 +1058,7 @@ const spec = {
         operationId: "getRevenueTrend",
         summary: "Market-wide fee revenue by quarter",
         description:
-          "Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of US dollars per quarter, newest first. view=national splits banks and credit unions and adds year-over-year change; view=districts gives one row per Fed district per quarter. Pro and Enterprise only.",
+          `Deposit service-charge income summed from FDIC and NCUA call reports, in thousands of US dollars per quarter, newest first. view=national splits banks and credit unions and adds year-over-year change; view=districts gives one row per Fed district per quarter. ${PAID_ACCESS}.`,
         tags: ["Revenue"],
         parameters: [
           {
@@ -820,7 +1118,7 @@ const spec = {
         operationId: "getFeeChanges",
         summary: "Detected fee changes",
         description:
-          "Fee changes our monitoring detected when an institution's published schedule changed between reads, newest first, at most 200. Coverage is still small and growing. Pro and Enterprise only.",
+          `Fee changes our monitoring detected when an institution's published schedule changed between reads, newest first, at most 200. Coverage is still small and growing. ${PAID_ACCESS}.`,
         tags: ["Fees"],
         parameters: [
           {
@@ -883,7 +1181,7 @@ const spec = {
         operationId: "getBranches",
         summary: "Branch locations",
         description:
-          "Bank branches from the FDIC Summary of Deposits (latest survey year, with deposits) and credit union branches from NCUA (no deposits; coordinates added over time), with address and latitude/longitude. Give institution_id for one institution, or state (optionally with city or zip) for an area. Pro and Enterprise only.",
+          `Bank branches from the FDIC Summary of Deposits (latest survey year, with deposits) and credit union branches from NCUA (no deposits; coordinates added over time), with address and latitude/longitude. Give institution_id for one institution, or state (optionally with city or zip) for an area. ${PAID_ACCESS}.`,
         tags: ["Branches"],
         parameters: [
           { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 } },
@@ -951,7 +1249,7 @@ const spec = {
         operationId: "getLocalMarket",
         summary: "Local market competitors",
         description:
-          "Who competes in an institution's local market: the counties holding most of its deposits (or its headquarters city's counties for credit unions), with each competitor's deposits there and deposit share. Credit unions have no deposit figure, so their share is null. Pro and Enterprise only.",
+          `Who competes in an institution's local market: the counties holding most of its deposits (or its headquarters city's counties for credit unions), with each competitor's deposits there and deposit share. Credit unions have no deposit figure, so their share is null. ${PAID_ACCESS}.`,
         tags: ["Branches"],
         parameters: [{ name: "institution_id", in: "query", required: true, schema: { type: "integer", minimum: 1 } }],
         responses: {
@@ -1004,15 +1302,39 @@ const spec = {
         },
       },
     },
+    "/hamilton-context": {
+      get: {
+        operationId: "getHamiltonContext",
+        summary: "Saved Hamilton institution and peer sets",
+        description: `Returns the subscriber key holder's saved institution, the current account institution when no saved institution is available, and authorized personal or workspace peer sets. Requires a subscriber-holder-linked key on the Hamilton ${API_PLANS_LABEL}, or a paid signed-in session. Generic partner keys return 403 account_context_required because they have no personal account mapping. No query parameters. Responses are private and never cached.`,
+        tags: ["Institutions"],
+        parameters: [],
+        responses: {
+          "200": {
+            description: "The authenticated holder's saved Hamilton defaults; institution and active_peer_set_id may be null.",
+            headers: {
+              "Cache-Control": { schema: { type: "string", enum: ["private, no-store"] }, description: "Personal account context must not be stored or reused from a cache." },
+            },
+            content: { "application/json": { schema: { $ref: "#/components/schemas/HamiltonContext" } } },
+          },
+          "401": { $ref: "#/components/responses/Unauthorized" },
+          "403": { $ref: "#/components/responses/AccountContextRequired" },
+          "429": { $ref: "#/components/responses/RateLimited" },
+          "503": { $ref: "#/components/responses/ContextUnavailable" },
+        },
+      },
+    },
     "/peers": {
       get: {
         operationId: "getPeerComparison",
         summary: "Fees against peers",
         description:
-          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. Peers default to the institution's charter type, asset-size tier and Fed district. Any of the peer-group parameters define the group instead (only those given apply; same means the institution's own value), or peer_ids names the institutions. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. Pro and Enterprise only.`,
+          `For each fee category where an institution publishes a dollar amount: its amount, the peers' median and 25th to 75th percentiles, how many peers publish the fee, and the institution's percentile among them. With a subscriber-holder-linked key or a paid signed-in session, omitted institution and peer defaults may come from saved Hamilton context. Explicit peer_ids or peer-group parameters bypass saved peer defaults. A selected saved_peer_set_id must be authorized for the holder and cannot be combined with explicit peers or peer-group parameters. Set use_saved_context=false to disable automatic institution and peer defaults; an explicit authorized saved_peer_set_id remains available. Without saved peers, peers default to the institution's charter type, asset-size tier and Fed district. Only given peer-group parameters apply, and same means the institution's own value. The response context records each selection's source; peer_group.basis remains chosen, defined or default, and its label names the saved group when one is used. One value per institution, from sourced consumer-facing rows; median, percentiles and placement are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish the fee. Fees stated as a rate are listed in rate_fees and never compared with dollar amounts. ${PAID_ACCESS}.`,
         tags: ["Institutions"],
         parameters: [
-          { name: "institution_id", in: "query", required: true, schema: { type: "integer", minimum: 1 } },
+          { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 }, description: "Institution ID. May be omitted when saved Hamilton or current account context supplies an institution; otherwise returns 400 invalid_parameter." },
+          { name: "saved_peer_set_id", in: "query", schema: { type: "integer", minimum: 1 }, description: "An authorized saved personal or workspace peer set. Cannot be combined with peer_ids or peer-group parameters. A missing or unauthorized saved set returns 404 not_found. Generic partner keys return 403 account_context_required." },
+          { name: "use_saved_context", in: "query", schema: { type: "boolean", default: true }, description: "Use saved institution and active peer defaults when no explicit value is provided. false disables automatic defaults; it does not block an explicitly requested authorized saved_peer_set_id." },
           {
             name: "peer_ids",
             in: "query",
@@ -1025,10 +1347,15 @@ const spec = {
         responses: {
           "200": {
             description: "The institution's fees against its peers",
+            headers: {
+              "Cache-Control": { schema: { type: "string", enum: ["private, max-age=300", "private, no-store"] }, description: "Saved-context comparisons use private, no-store. Fully explicit/default comparisons can use the normal private data cache." },
+              ETag: { schema: { type: "string" }, description: "Only on cacheable comparisons; omitted when saved context is enabled for a mapped holder or an explicit saved set is used." },
+            },
             content: {
               "application/json": {
                 schema: {
                   type: "object",
+                  required: ["institution", "peer_group", "min_peers", "categories", "rate_fees", "context", "note", "attribution"],
                   properties: {
                     institution: {
                       type: "object",
@@ -1081,6 +1408,7 @@ const spec = {
                         },
                       },
                     },
+                    context: { $ref: "#/components/schemas/PeerComparisonContext" },
                     note: { type: "string" },
                     attribution: { $ref: "#/components/schemas/Attribution" },
                   },
@@ -1091,13 +1419,13 @@ const spec = {
           "304": { $ref: "#/components/responses/NotModified" },
           "400": { $ref: "#/components/responses/BadRequest" },
           "401": { $ref: "#/components/responses/Unauthorized" },
-          "403": { $ref: "#/components/responses/PlanRequired" },
+          "403": { $ref: "#/components/responses/AccountContextRequired" },
           "404": {
-            description: "Institution not found (code not_found)",
+            description: "Institution not found, or the saved peer set is missing or not authorized for this holder (code not_found). Missing and unauthorized saved sets return the same error.",
             content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
           },
           "429": { $ref: "#/components/responses/RateLimited" },
-          "503": { $ref: "#/components/responses/Unavailable" },
+          "503": { $ref: "#/components/responses/ContextUnavailable" },
         },
       },
     },
@@ -1106,7 +1434,7 @@ const spec = {
         operationId: "listRateFees",
         summary: "Fees stated as a rate",
         description:
-          "Published fees each institution states as a percentage (for example 3% of the transaction), from its own fee schedule, with any dollar minimum or maximum. Kept apart from dollar fees and never included in dollar medians. Ordered by publish date, then id. Pro and Enterprise only.",
+          `Published fees each institution states as a percentage (for example 3% of the transaction), from its own fee schedule, with any dollar minimum or maximum. Kept apart from dollar fees and never included in dollar medians. Ordered by publish date, then id. ${PAID_ACCESS}.`,
         tags: ["Fees"],
         parameters: [
           { name: "institution_id", in: "query", schema: { type: "integer", minimum: 1 } },
@@ -1116,8 +1444,8 @@ const spec = {
           {
             name: "updated_since",
             in: "query",
-            schema: { type: "string", format: "date-time" },
-            description: "ISO 8601 date or date-time; only fees published at or after it.",
+            schema: { $ref: "#/components/schemas/UpdatedSinceInput" },
+            description: "ISO 8601 date or date-time; dates and times without a zone are UTC. Only fees published at or after it.",
           },
           { name: "page", in: "query", schema: { type: "integer", default: 1, minimum: 1 } },
           { name: "limit", in: "query", schema: { type: "integer", default: 100, minimum: 1, maximum: 500 } },
@@ -1205,7 +1533,7 @@ const spec = {
     },
   ],
   "x-rateLimit": {
-    description: `One monthly allowance per plan, shared by every key on it and across all endpoints: subscriber keys on the $300 and $500 plans get ${API_MONTHLY_CALLS_LABEL} calls a month. Partner (Enterprise) keys are issued by hand and are unlimited, so X-RateLimit-Limit and X-RateLimit-Remaining are omitted. There are no free keys. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (Enterprise exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
+    description: `One monthly allowance per plan, shared by every key on it and across all endpoints: Hamilton subscriber keys on the ${API_PLANS_LABEL} get ${API_MONTHLY_CALLS_LABEL} calls a month. Partner keys issued with an unlimited allowance omit X-RateLimit-Limit and X-RateLimit-Remaining. There are no self-serve free keys. Each plan can also make at most ${BURST_CALLS_PER_MINUTE} calls a minute (unlimited partner keys exempt); past that, calls return 429 burst_limited with a Retry-After header in seconds, and a refused call does not use monthly allowance.`,
     headers: {
       "X-RateLimit-Limit": "Maximum requests allowed in the current monthly window",
       "X-RateLimit-Remaining": "Requests remaining in the current monthly window",
@@ -1215,7 +1543,7 @@ const spec = {
   },
   "x-caching": {
     description:
-      "Successful JSON and CSV responses carry Cache-Control: private, max-age=300 and a weak ETag. Send the ETag back in If-None-Match to get 304 Not Modified with no body when the data has not changed. A 304 still counts against the per-minute and monthly allowances. Errors carry Cache-Control: no-store.",
+      "Successful JSON and CSV data responses carry Cache-Control: private, max-age=300 and a weak ETag. Send the ETag back in If-None-Match to get 304 Not Modified with no body when the data has not changed. A 304 still counts against the per-minute and monthly allowances. /hamilton-context and personalized /peers responses instead use Cache-Control: private, no-store with no ETag or 304. On /peers this applies when saved context is enabled for a mapped holder or an explicit saved set is used. Errors are not cached.",
   },
 };
 

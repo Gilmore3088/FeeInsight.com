@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getArticleBySlug } from "@/lib/data-store/articles";
+import { loadPublishedArticle } from "./load-article";
 
 /**
  * A missing or unpublished article answers 404 (#1267). The check sits in this layout, above
@@ -13,7 +13,6 @@ export default async function ArticleLayout({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const article = await getArticleBySlug(slug);
-  if (!article || article.status !== "published") notFound();
+  if (!(await loadPublishedArticle(slug))) notFound();
   return children;
 }

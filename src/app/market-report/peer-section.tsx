@@ -98,7 +98,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
           <tbody>
             {peers.financial.rows.map((row) => (
               <tr key={row.key} data-peer-financial={row.key} className="border-b border-surface-200 last:border-0">
-                <td className="py-2 pr-3 text-ink">{PEER_FINANCIAL_LABELS[row.key]}</td>
+                <td className="py-2 pr-3 text-ink">{row.key === "fee_income_ratio" && peers.financial?.source === "ncua" ? "Broad credit-union fee income as a share of revenue" : PEER_FINANCIAL_LABELS[row.key]}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{percent(row, row.own)}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{percent(row, row.median)}</td>
                 <td className="hidden py-2 text-ink-soft sm:table-cell print:table-cell">{rankText(row.percentile)}</td>
@@ -111,7 +111,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
       <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">
         Fee medians count each institution once, from its own published schedule.
         {peers.financial &&
-          ` Reported figures are as each institution filed them in its ${filing} for the quarter (${peers.financial.peerCount.toLocaleString("en-US")} peers filed). The efficiency ratio is noninterest expense as a share of revenue.`}{" "}
+          ` Reported figures are as each institution filed them in its ${filing} for ${quarterOfDate(peers.financial.reportDate)}. That quarter, ${peers.financial.peerCount.toLocaleString("en-US")} peers filed one, not counting ${name}. The efficiency ratio is noninterest expense as a share of revenue.`}{" "}
         A published price does not say how often a fee is charged or waived.
       </p>
     </section>

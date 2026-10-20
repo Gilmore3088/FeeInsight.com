@@ -18,3 +18,5 @@ empty partitions as a pull; it shows the feed as blocked and names the host.
 before guessing at the form. A host that refuses production is a named gap in the contract and the
 partition detail, never a repeated silent failure. Use no proxies or spoofed user agents to get
 around it.
+
+**Agent lesson:** hoovie/pr-1934-name-what-host-answered

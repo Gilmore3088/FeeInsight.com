@@ -15,3 +15,5 @@ No step checked the document's own text against the institution. The host stood 
 - Darwin's `verify.document_owner` (`src/lib/agents/darwin/document-owner.ts`) reads the bank name and city/state printed on the document for every shared or vendor-path document.
 - It is in shadow (`DARWIN_DOCUMENT_OWNER_TAKEDOWN = false`) until James sees the count from `documentOwnerCountSql()`.
 - The stored websites are not corrected in code. That data fix waits on James's approval (#1455 step 2).
+
+**Agent lesson:** darwin/pr-1489-document-names-the-bank

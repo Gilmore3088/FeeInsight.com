@@ -11,6 +11,7 @@ import { getPeerFeeValues, getSegmentFeeValues, type PeerFilterSet } from "@/lib
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { computeStats } from "@/lib/data-store/fees";
 import { countedAmounts } from "@/lib/data-store/counted-amounts";
+import { feeScheduleUrls, type SeveralFees } from "@/lib/own-fee";
 import { feeComplaintFilterSql } from "@/lib/data-store/complaints";
 import type { LandingResearchHandoff } from "./landing-research-handoff";
 
@@ -96,6 +97,8 @@ export interface PeerRow {
   totalAssets: number | null;
   amount: number;
   documentUrl: string | null;
+  documentUrls?: string[];
+  several?: SeveralFees;
   publishedAt: string | null;
 }
 
@@ -151,7 +154,9 @@ export async function loadPeerTable(
         charter: v.charter_type,
         totalAssets: v.total_assets,
         amount: v.amount,
-        documentUrl: v.document_urls[0] ?? null,
+        documentUrl: v.document_urls.length === 1 ? v.document_urls[0] : null,
+        documentUrls: feeScheduleUrls(v.document_urls),
+        ...(v.several ? { several: v.several } : {}),
         publishedAt: v.published_at,
       }));
     return { category, institutionsInScope: segment.institutionsInSegment, rows };

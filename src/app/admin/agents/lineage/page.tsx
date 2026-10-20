@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/auth";
 import {
   getLineageGraph,
   listRecentPublishedFees,
@@ -27,6 +28,7 @@ export default async function AgentsLineagePage({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
+  await requireAuth("operate");
   const params = await searchParams;
   const feeParam = params.fee?.trim();
   const feeId = feeParam ? Number(feeParam) : null;

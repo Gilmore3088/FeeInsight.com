@@ -49,8 +49,8 @@ describe("Hamilton navigation institution identity", () => {
     mocks.institution.mockResolvedValueOnce({
       institution: { id: 8109, name: "Space Coast Credit Union", privateNote: "never return", city: "Melbourne" }, error: null,
     }).mockResolvedValueOnce({ institution: { id: 1535, name: "Addition Financial Credit Union" }, error: null });
-    expect(await loadHamiltonNavigationInstitution(" 8109 ")).toEqual({ id: "8109", name: "Space Coast Credit Union" });
-    expect(await loadHamiltonNavigationInstitution("1535")).toEqual({ id: "1535", name: "Addition Financial Credit Union" });
+    expect(await loadHamiltonNavigationInstitution(" 8109 ")).toEqual({ id: "8109", name: "Space Coast Credit Union", facts: null });
+    expect(await loadHamiltonNavigationInstitution("1535")).toEqual({ id: "1535", name: "Addition Financial Credit Union", facts: null });
     expect(mocks.institution.mock.calls).toEqual([["8109"], ["1535"]]);
     expect(mocks.user).toHaveBeenCalledTimes(2);
     expect(mocks.workspace).not.toHaveBeenCalled();
@@ -59,8 +59,8 @@ describe("Hamilton navigation institution identity", () => {
   it("reads the authenticated user's fresh saved preference on every bare Hamilton URL", async () => {
     mocks.workspace.mockResolvedValueOnce({ institution: { id: 8109, name: "Space Coast Credit Union" }, source: "manual", error: null })
       .mockResolvedValueOnce({ institution: { id: 1535, name: "Addition Financial Credit Union" }, source: "manual", error: null });
-    expect(await loadHamiltonNavigationInstitution(null)).toEqual({ id: "8109", name: "Space Coast Credit Union" });
-    expect(await loadHamiltonNavigationInstitution(null)).toEqual({ id: "1535", name: "Addition Financial Credit Union" });
+    expect(await loadHamiltonNavigationInstitution(null)).toEqual({ id: "8109", name: "Space Coast Credit Union", facts: null });
+    expect(await loadHamiltonNavigationInstitution(null)).toEqual({ id: "1535", name: "Addition Financial Credit Union", facts: null });
     expect(mocks.workspace.mock.calls).toEqual([
       [{ userId: 25, persistUrlSelection: false }], [{ userId: 25, persistUrlSelection: false }],
     ]);

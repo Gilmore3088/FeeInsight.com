@@ -145,8 +145,9 @@ describe(`hard-document gate (category guard v${CATEGORY_GUARD_VERSION})`, () =>
     expect(new Set(all.map((item) => item.case_key)).size).toBe(all.length);
     for (const item of all) expect(Number.isInteger(item.source_document_id)).toBe(true);
     for (const item of [...hard.same_price, ...hard.category]) expect(item.text_hash).toMatch(/^[0-9a-f]{64}$/);
-    // 52 once excess withdrawals and returned mail leave account research (#1398).
-    expect(TAXONOMY_COUNT).toBe(RESEARCH_SPLIT_LIVE ? 52 : 50);
+    // 52 once excess withdrawals and returned mail leave account research (#1398), plus International
+    // ATM split back out of International ATM & Card (James, Oct 19, #2037).
+    expect(TAXONOMY_COUNT).toBe(RESEARCH_SPLIT_LIVE ? 53 : 51);
   });
 
   it("covers each of the five categories with the most wrong-after-publish takedowns", () => {

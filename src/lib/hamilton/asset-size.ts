@@ -12,7 +12,6 @@ export const ASSET_SIZES = [
 ] as const;
 
 export type AssetSize = (typeof ASSET_SIZES)[number];
-export type AssetSizeId = AssetSize["id"];
 
 export function assetSizeFor(id: string | null | undefined): AssetSize {
   return ASSET_SIZES.find(s => s.id === id) ?? ASSET_SIZES[0];

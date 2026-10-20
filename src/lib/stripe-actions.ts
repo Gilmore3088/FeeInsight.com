@@ -104,8 +104,7 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
   const customerId = await ensureStripeCustomer(user);
 
   try {
-    // users.id is a bigint, which the database driver returns as a string ("26"); the checkout
-    // lock only accepts a whole number, so every checkout failed with "Invalid checkout owner".
+    // getCurrentUser already returns a number (#1970); the checkout lock only accepts one.
     const result = await createGuardedCheckout(Number(user.id), customerId, {
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
@@ -125,7 +124,8 @@ export async function createCheckoutSession(input: ProCheckoutInput): Promise<Pr
       pro_plan: plan,
       ...(institutionId ? { institution_id: String(institutionId) } : { organization: "other" }),
       ...(tierPicked ? { tier_picked_by_buyer: "true" } : {}),
-      ...(hasReturnTo ? { return_to: sanitizedReturnTo } : {}),
+      // Stripe refuses a metadata value over 500 characters; success_url carries the address either way.
+      ...(hasReturnTo && sanitizedReturnTo.length <= 500 ? { return_to: sanitizedReturnTo } : {}),
     },
     // Kept on the subscription itself so the consultant report cap can tell who it covers.
     subscription_data: {

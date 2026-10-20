@@ -2,7 +2,36 @@ import { describe, expect, it } from "vitest";
 import type { InstitutionFinancialHistoryRow } from "@/lib/data-store/financial";
 import type { CallItemHistoryRow } from "@/lib/data-store/institution-quarterly";
 import { fieldNotes } from "./ledger-fields";
-import { buildLedger, change, latestOf, previousQuarterEnd, rangeQuarters, toStandaloneQuarters } from "./quarterly-ledger";
+import {
+  buildLedger,
+  change,
+  connectedPanelSeries,
+  latestOf,
+  previousQuarterEnd,
+  rangeQuarters,
+  toStandaloneQuarters,
+} from "./quarterly-ledger";
+
+describe("connectedPanelSeries", () => {
+  it("returns the newest quarters carrying service charges, oldest first, with their filing", () => {
+    const ledger = {
+      quarters: [
+        { reportDate: "2025-09-30", quarter: "Q3 2025", values: { serviceCharges: { value: 1, source: "fdic" as const } } },
+        { reportDate: "2025-12-31", quarter: "Q4 2025", values: { assets: { value: 9, source: "fdic" as const } } },
+        { reportDate: "2026-03-31", quarter: "Q1 2026", values: { serviceCharges: { value: 2, source: "ffiec" as const } } },
+        { reportDate: "2026-06-30", quarter: "Q2 2026", values: { serviceCharges: { value: 3, source: "ffiec" as const } } },
+      ],
+      filer: "bank" as const,
+      ffiecCodes: {},
+      retrievedAt: null,
+    };
+    expect(connectedPanelSeries(ledger, 2)).toEqual([
+      { reportDate: "2026-03-31", value: 2, source: "ffiec" },
+      { reportDate: "2026-06-30", value: 3, source: "ffiec" },
+    ]);
+    expect(connectedPanelSeries(ledger, 4).map((q) => q.reportDate)).toEqual(["2025-09-30", "2026-03-31", "2026-06-30"]);
+  });
+});
 
 function record(partial: Partial<InstitutionFinancialHistoryRow> & { report_date: string; source: string }): InstitutionFinancialHistoryRow {
   return {

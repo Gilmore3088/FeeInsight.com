@@ -51,7 +51,7 @@ export function quarterlyServiceCharges(quarters: NormalizedFinancial[]): { repo
 
 const pct = (n: number) => `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}%`;
 /** A share outside this range is a filing artefact, not a figure to lead with. */
-const plausibleShare = (n: number | null): n is number => n !== null && Number.isFinite(n) && n > 0 && n < 60;
+export const plausibleShare = (n: number | null): n is number => n !== null && Number.isFinite(n) && n > 0 && n < 60;
 
 /**
  * Where the tour clip will play. The clip is one generic recording on a demo institution, so the

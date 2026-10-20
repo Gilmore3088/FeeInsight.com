@@ -255,7 +255,6 @@ export const HAND_REJECTED_TWINS: readonly HandRejectedTwin[] = [
     why: "#1828: Oregon Community FCU (doc 21634) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
   },
 ];
-export const HAND_REJECTED_TWIN_FLAG = "hand_rejected:cut_cents_twin";
 const twinPattern = (twin: HandRejectedTwin) => twin.pattern ?? "cut_cents_twin";
 /** The flag a rejected twin carries. */
 export const twinFlag = (twin: HandRejectedTwin) => `hand_rejected:${twinPattern(twin)}`;

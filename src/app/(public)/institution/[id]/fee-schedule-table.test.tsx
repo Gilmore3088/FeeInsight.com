@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FeeScheduleTable, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
+import { FeeScheduleTable, scheduleAmount, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
 import { feeHashCategory, tabForHash } from "./fee-audience-tabs";
 
 function fee(overrides: Partial<DisplayFee>): DisplayFee {
@@ -252,5 +252,14 @@ describe("business-only schedule (#1592)", () => {
     const panel = screen.getByRole("tabpanel");
     expect(within(panel).getAllByText("Wire transfer").length).toBeGreaterThan(0);
     expect(panel.textContent).not.toMatch(/treated as personal/);
+  });
+});
+
+describe("scheduleAmount (#1953)", () => {
+  it("says No charge for a $0 fee and keeps every other amount", () => {
+    expect(scheduleAmount(0)).toBe("No charge");
+    expect(scheduleAmount(35)).toBe("$35");
+    expect(scheduleAmount(7.95)).toBe("$7.95");
+    expect(scheduleAmount(null)).toBeNull();
   });
 });

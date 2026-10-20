@@ -59,7 +59,12 @@ export async function createGuardedCheckout(
     });
     const result = await withCheckoutLock(userId, async (store): Promise<GuardedCheckoutResult | null> => {
       const intent = await store.current();
-      if (!intent || intent.customer_id !== customerId || intent.state === "review") return { error: REVIEW };
+      if (!intent || intent.state === "review") return { error: REVIEW };
+      if (intent.customer_id !== customerId) {
+        // ensureStripeCustomer replaced a deleted or test customer (#1974). The old intent's
+        // session belongs to the old customer, so this buyer's new customer can't complete it.
+        await store.retire(intent.id); return null;
+      }
       await lockBillingCustomer(store.tx, customerId);
       // R02 distinguishes incomplete/past-due from canceled; both must block a new purchase.
       if (await readSubscriptionState(customerId, stripe) !== "canceled") return { error: EXISTING };

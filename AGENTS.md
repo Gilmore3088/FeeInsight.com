@@ -6,8 +6,9 @@ This repository uses one agentic experience for data trust, validation, publishi
 
 Up to three builders, one per lane, starting from the Now list in GitHub issue #1026: one
 outcome, one branch, one PR, with small related fixes batched into it. Search open issues, PRs and current main before building, and reuse or explicitly
-supersede what exists. Every change a review finds is its own issue under a tracker (one per
-agent, plus the Foundation tracker for non-agent work), and the review names what it closes.
+supersede what exists. A review finding the PR can fix is fixed in that PR; anything else is a
+checklist line on its root-cause issue or tracker (one per agent, plus the Foundation tracker for
+non-agent work). A new issue is opened only for a new root cause, and the review names what it closes.
 Outreach is parked. Do not delete branches; unknown-age branches may hold unmerged work.
 James has standing approval for clean, merge-ready GitHub PRs to merge without another per-PR
 approval request. "Clean, merge-ready" means the exact current head is reviewed, required CI/checks
@@ -19,6 +20,20 @@ require their own authorization/evidence. A green branch that is stacked on an u
 or release dependency is not merge-ready. Record the merge receipt and continue; do not ask James
 again merely because a routine code PR reached a clean merge-ready state.
 
+Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
+first fix the pipeline step that caused it (Magellan discovery and document capture, Rosetta text
+conversion, Knox extraction or categorisation, Darwin verification or classification) so the
+whole class of error is fixed, then re-run the affected institutions and validate the output. A
+one-off data fix (an admin correction, hold or re-file) comes only as the last step after that
+process fix, never instead of it.
+
+Issues become lessons for the agents, not only checks (James, 2026-10-20). A PR that closes an
+issue whose root cause is in a pipeline agent adds a lesson to that agent's
+`src/lib/agents/<agent>/role-lessons.ts` in the same PR: one or two plain sentences on how the agent
+should do its role differently, the root cause, the evidence and the steps it shapes. Every run
+reads its agent's lessons and records them as `lessons_applied`; model-calling steps send them as
+instructions. `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
+
 ## Current Runtime
 
 - Agent runs start in `agent_runs`, advance through `agent_run_steps`, and write `agent_run_events`.
@@ -27,7 +42,7 @@ again merely because a routine code PR reached a clean merge-ready state.
 - Manual advancement happens through `/api/admin/agents/runs/[id]/execute`.
 - Provider access must flow through `src/lib/ai-provider.ts` and usage/circuit accounting.
 - `src/lib/automation-control.ts` holds three controls. The `global` provider stop blocks provider steps (`PROVIDER_STEP_KEYS`, paid model calls) and provider calls; deterministic steps keep running. The `pipeline` control is the operator pause for deterministic steps; a paused run stays queued. The `marketing` control is the operator pause for Growth's steps (`MARKETING_STEP_KEYS`), which obey it instead of the pipeline pause; each pause leaves the other side's runs going. The Atlas emergency stop engages the provider stop and the pipeline pause.
-- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued. With the pipeline paused it schedules no data runs but still drains Growth's runs; it does nothing only when both the pipeline and marketing are paused. While marketing runs, it also queues Growth's daily `growth-withdraw` run when unreviewed outreach drafts no longer qualify (`src/lib/agents/growth/withdraw.ts`).
+- The tick (`/api/admin/agents/tick`) first reaps steps stuck `running` (re-queue, then dead after 3 attempts), then schedules lanes and drains runs. It consults the cron provider budget policy only when a provider step is queued. With only the pipeline paused it schedules no data runs but still drains Growth's runs. With both pipeline and marketing paused it recovers and drains only existing Atlas `workflow` runs with source `atlas.scoreboard`, executing only their already pause-exempt measurement steps; it schedules nothing and consults no provider budget. Other runs and the scoreboard's city-repair/storage tail remain held. Backend disabled is a hard no-op. While marketing runs, it also queues Growth's daily `growth-withdraw` run when unreviewed outreach drafts no longer qualify (`src/lib/agents/growth/withdraw.ts`).
 - Every agent, marketing included, works through the run ledger: a run that writes, drafts or sends anything is an `agent_runs` row with visible steps and events. No marketing work runs outside it.
 - `/api/admin/job-health` is the external alerting endpoint: it returns 503 with plain-language problems when ticks stop succeeding, ticks are blocked, steps are stuck, lanes are overdue, or nothing has been published for a week.
 
@@ -136,13 +151,14 @@ Growth owns marketing: the weekly LinkedIn drafts and the monthly marketing emai
 Use these current semantic tables and read models:
 
 - Institutions and sources: `institution_sources`, `source_documents`, `source_collection_runs`, `agent_source_texts`.
+- Private future normalized witnesses: `agent_source_text_witnesses` (diagnostic evidence, no automatic fee authority).
 - Fee tiers: `raw_fee_observations`, `verified_fee_observations`, `published_fee_records`, `published_fee_catalog`.
 - Public intake: `community_fee_submissions`.
 - Institution authority: `institution_claims`, `institution_claim_events`, `institution_workspace_memberships`, `institution_workspace_invitations`.
 - Agent ledger: `agent_runs`, `agent_run_steps`, `agent_run_events`.
 - Provider safety: `automation_control`, `ai_api_usage_events`.
 - Marketing (Growth): `content_drafts`, `pipeline_feedback`.
-- Hamilton Pro persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
+- Hamilton persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
 
 Do not use retired runtime contracts such as `fee_crawler`, `ops_jobs`, Modal worker IDs, old crawler table aliases, or request-time DDL.
 
@@ -168,6 +184,6 @@ Before calling agentic work done, run the narrow tests for the touched code and 
 - `npx tsc --noEmit`
 - `npm run lint`
 - `npx vitest run` (full suite; CI runs all of these)
-- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton Pro flows.
+- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton flows.
 
 For database-affecting work, verify against the actual current schema and add a migration only through the project migration workflow. Do not edit production-applied migrations in place.

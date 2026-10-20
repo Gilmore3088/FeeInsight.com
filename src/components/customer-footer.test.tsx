@@ -17,6 +17,7 @@ const FORMER_FOOTER_ONLY = [
   "/research",
   "/research/national-fee-index",
   "/guides",
+  "/methodology",
   "/research/data-sources",
   "/api-docs",
   "/submit-fees",
@@ -33,10 +34,11 @@ describe("CustomerFooter", () => {
       "Product",
       "Reports",
       "Pricing",
-      "Methodology",
+      "For consumers",
       "About",
       "Contact",
     ]);
+    expect(within(nav).getByRole("link", { name: "For consumers" })).toHaveAttribute("href", "/for-consumers");
     expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "/privacy");
     expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "/terms");
     expect(screen.getByRole("link", { name: "hello@bankfeeindex.com" })).toHaveAttribute(

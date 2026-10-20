@@ -1,11 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useState, type ReactNode } from "react";
 import { useSessionChrome } from "@/components/use-session-chrome";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { FeeAlertControl, type FeeAlertControlProps } from "./fee-alert-control";
 import { loadAlertSubscription, loadProFinancialProfile } from "./viewer-actions";
+import type { ProFinancialProfileData } from "./financial-profile-data";
+
+// The client owns the component tree. Returning it from the server action referenced
+// charts missing from the route's client manifest and crashed the page after hydration.
+// Keep the heavy Pro charts lazy so signed-out visitors never load them.
+const FinancialProfileSection = dynamic(
+  () => import("./financial-profile-section").then((module) => module.FinancialProfileSection),
+  { ssr: false },
+);
 
 /**
  * Client islands for the parts of the cached institution profile that depend on who is
@@ -62,21 +72,33 @@ export function ProOnly({ children }: { children: ReactNode }) {
 export function ProFinancialProfile(props: InstitutionRef & { charterLabel: string }) {
   const session = useSessionChrome();
   const isPro = Boolean(session?.isPro);
-  const [section, setSection] = useState<ReactNode>(null);
+  const [profile, setProfile] = useState<ProFinancialProfileData | null>(null);
   const { institutionId, institutionName, charterLabel } = props;
   useEffect(() => {
     if (!isPro) return;
     let live = true;
     loadProFinancialProfile({ institutionId, institutionName, charterLabel })
-      .then((node) => {
-        if (live) setSection(node);
+      .then((data) => {
+        if (live) setProfile(data);
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
   }, [isPro, institutionId, institutionName, charterLabel]);
-  return isPro ? <>{section}</> : null;
+  if (!isPro || profile?.institutionId !== institutionId) return null;
+  return (
+    <FinancialProfileSection
+      isPro
+      points={profile.points}
+      peers={profile.peers}
+      insights={profile.insights}
+      regulatoryWatch={profile.regulatoryWatch}
+      charterLabel={charterLabel}
+      institutionName={institutionName}
+      exportHref={`/api/v1/institutions?id=${institutionId}&view=benchmark&format=csv`}
+    />
+  );
 }
 
 /** The fee alert, starting signed out and remounted with the reader's own alert once known. */

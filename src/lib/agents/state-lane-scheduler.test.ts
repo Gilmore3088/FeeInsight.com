@@ -27,6 +27,7 @@ import {
   STATE_LANE_STEPS,
   laneIdempotencyKey,
   refreshLanePriorities,
+  runNationwideLaneSync,
   LANE_PRIORITY_REFRESH_FAILED_EVENT,
   NEAR_READY_BANK_PRIORITY,
   NEAR_READY_GAP,
@@ -57,6 +58,12 @@ import { thinRereadKindSql } from "./thin-document";
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
+}
+
+function documentBacklogCall() {
+  const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("AS backlog"));
+  expect(call).toBeDefined();
+  return call!;
 }
 
 function laneUpdate(): { text: string; values: unknown[] } | undefined {
@@ -182,7 +189,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    expect(sqlMock.mock.calls[0]).toContain(thinRereadKindSql("adt"));
+    expect(documentBacklogCall()).toContain(thinRereadKindSql("adt"));
     expect(thinRereadKindSql("adt")).toContain("adt.document_kind_version IS DISTINCT FROM");
   });
 
@@ -191,7 +198,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    const backlogQuery = templateText(documentBacklogCall()[0]);
     expect(backlogQuery).toContain("inst.last_rescue_attempt_at IS NULL");
     expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
   });
@@ -201,9 +208,9 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("TX");
 
-    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    const backlogQuery = templateText(documentBacklogCall()[0]);
     expect(backlogQuery).toContain("inst.last_crawl_at < NOW() - make_interval(days =>");
-    expect(sqlMock.mock.calls[0]).toContain(30);
+    expect(documentBacklogCall()).toContain(30);
   });
 
   it("counts a live fee flagged since its bank's last fetch as backlog, so the page is re-fetched before the second look", async () => {
@@ -211,7 +218,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("TX");
 
-    const query = templateText(sqlMock.mock.calls[0][0]);
+    const query = templateText(documentBacklogCall()[0]);
     expect(query).toContain("pending.kind = 'takedown_pending'");
     expect(query).toContain("pending_fee.rolled_back_at IS NULL");
     expect(query).toContain("(pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
@@ -233,7 +240,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    const query = templateText(sqlMock.mock.calls[0][0]);
+    const query = templateText(documentBacklogCall()[0]);
     expect(query).toContain("prior.text_hash = adt.text_hash");
     expect(query).toContain("prior.id <> adt.id");
   });
@@ -244,19 +251,29 @@ describe("state lane scheduler", () => {
     await stateHasDocumentBacklog("GU");
 
     // #1052: the same test the selection runs, so Guam's 9 rows due under guard v61 wake its lane.
-    expect(sqlMock.mock.calls[0]).toContain(darwinDueSql());
+    expect(documentBacklogCall()).toContain(darwinDueSql());
     expect(darwinDueSql()).toContain(`COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}`);
   });
 
-  it("syncs every state's profiles only on the first tick of each hour", async () => {
+  it("never runs the nationwide sync inside the tick, at the top of the hour or not (2026-10-18)", async () => {
     sqlMock.mockResolvedValue([]);
     withTransactionMock.mockImplementation((fn: (tx: unknown) => unknown) => fn(vi.fn().mockResolvedValue([])));
 
     await scheduleDueStateLaneRuns({ limit: 2, now: new Date("2026-10-05T06:35:00Z") });
-    expect(syncStateLaneProfilesMock).not.toHaveBeenCalled();
-
     await scheduleDueStateLaneRuns({ limit: 2, now: new Date("2026-10-05T07:02:00Z") });
+    expect(syncStateLaneProfilesMock).not.toHaveBeenCalled();
+    expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("SET priority_score"))).toBe(false);
+  });
+
+  it("the hourly lane sync step syncs every state, runs both wakes and rescores lanes, timing each part", async () => {
+    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 3 })));
+    const result = await runNationwideLaneSync();
     expect(syncStateLaneProfilesMock).toHaveBeenCalledTimes(1);
+    expect(syncStateLaneProfilesMock.mock.calls[0]).toHaveLength(1);
+    expect(result.priorities).toEqual({ updated: 3, error: null });
+    expect(result.secondLookWoken).toBe(3);
+    expect(Object.keys(result.ms).sort()).toEqual(["priorities", "profiles", "second_looks", "unchecked"]);
+    expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"))).toBe(false);
   });
 
   it("launches only into free queue slots, so the priority order decides who runs", async () => {
@@ -470,15 +487,15 @@ describe("state lane scheduler", () => {
     await expect(refreshLanePriorities()).resolves.toEqual({ updated: 0, error: "canceling statement due to statement timeout" });
   });
 
-  it("puts a failed priority refresh on the newest lane run when the tick starts none (#1264)", async () => {
+  it("puts a failed priority refresh on the newest lane run and on the sync step's result (#1264)", async () => {
     sqlMock.mockImplementation((strings: unknown) => {
       const text = templateText(strings);
       if (text.includes("SET priority_score")) return Promise.reject(new Error("statement timeout"));
       if (text.includes("INSERT INTO public.agent_run_events")) return Promise.resolve([{ agent_run_id: 9001 }]);
-      return Promise.resolve([{ runs: MAX_ACTIVE_STATE_LANE_RUNS }]);
+      return Promise.resolve(Object.assign([], { count: 0 }));
     });
 
-    const result = await scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-14T09:02:00Z") });
+    const result = await runNationwideLaneSync();
 
     expect(result.priorities).toEqual({ updated: 0, error: "statement timeout" });
     const insert = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"));
@@ -488,33 +505,6 @@ describe("state lane scheduler", () => {
     expect(text).toContain("ORDER BY id DESC");
     expect(insert?.slice(1)).toEqual(expect.arrayContaining([[], LANE_PRIORITY_REFRESH_FAILED_EVENT]));
     expect(insert?.slice(1).some((value) => typeof value === "string" && value.includes("kept its previous score") && value.includes("statement timeout"))).toBe(true);
-  });
-
-  it("puts a failed priority refresh on each lane run the same tick starts (#1264)", async () => {
-    mockCadence({ fullThisMonth: false, recheckThisQuarter: true });
-    const cadence = sqlMock.getMockImplementation();
-    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
-      const text = templateText(strings);
-      if (text.includes("SET priority_score")) return Promise.reject(new Error("statement timeout"));
-      if (text.includes("INSERT INTO public.agent_run_events")) return Promise.resolve([{ agent_run_id: 77 }]);
-      if (text.includes("count(*)::int AS runs")) return Promise.resolve([{ runs: 0 }]);
-      return cadence?.(strings, ...values);
-    });
-    const txMock = vi.fn().mockResolvedValue([{ state_code: "PA" }]);
-    withTransactionMock.mockImplementation((fn: (tx: typeof txMock) => unknown) => fn(txMock));
-
-    const result = await scheduleDueStateLaneRuns({ limit: 1, now: new Date("2026-10-14T09:02:00Z") });
-
-    expect(result.results.map((row) => row.runId)).toEqual([77]);
-    const insert = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"));
-    expect(insert?.slice(1)).toEqual(expect.arrayContaining([[77], LANE_PRIORITY_REFRESH_FAILED_EVENT]));
-  });
-
-  it("leaves no ledger event when the priority refresh works", async () => {
-    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([{ runs: MAX_ACTIVE_STATE_LANE_RUNS }], { count: 4 })));
-    const result = await scheduleDueStateLaneRuns({ limit: 3, now: new Date("2026-10-14T09:02:00Z") });
-    expect(result.priorities).toEqual({ updated: 4, error: null });
-    expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("INSERT INTO public.agent_run_events"))).toBe(false);
   });
 
   it("puts states with an open report request or a near-ready bank market first", async () => {
@@ -528,12 +518,24 @@ describe("state lane scheduler", () => {
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
-  it("gives a state whose report James is waiting to review the report-request weight", async () => {
-    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
-    await refreshLanePriorities();
-    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
-    expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
-    expect(call?.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("binds report-review priority states $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
+      await refreshLanePriorities();
+      const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+      expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("OR lane.state_code = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+      expect(call![reviewBinding + 2]).toBe(REPORT_REQUEST_PRIORITY);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("puts states whose market leaders lack headline fees ahead", async () => {

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 import { proxy } from "./proxy";
+import { signSessionId } from "@/lib/session-cookie";
 
 function request(
   url: string,
@@ -29,11 +30,16 @@ describe("proxy", () => {
   });
 
   it("serves a filtered directory per request and the plain directory from cache (#1811)", () => {
-    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf"]) {
+    for (const query of ["q=chase", "state=TX", "charter=bank", "page=2", "fee=nsf", "fees=1"]) {
       const response = proxy(request(`https://feeinsight.com/institutions?${query}`));
       expect(response.headers.get("x-middleware-rewrite")).toBe(`https://feeinsight.com/institutions/results?${query}`);
     }
-    for (const url of ["https://feeinsight.com/institutions", "https://feeinsight.com/institutions?utm_source=x&q="]) {
+    for (const url of [
+      "https://feeinsight.com/institutions",
+      "https://feeinsight.com/institutions?utm_source=x&q=",
+      "https://feeinsight.com/institutions?fees=0",
+      "https://feeinsight.com/institutions?fees=yes",
+    ]) {
       expect(proxy(request(url)).headers.get("x-middleware-rewrite")).toBeNull();
     }
   });
@@ -77,11 +83,10 @@ describe("proxy", () => {
 
   it("permanently redirects retired public paths to their current homes", () => {
     const cases: Array<[string, string]> = [
-      ["https://feeinsight.com/consumer", "https://feeinsight.com/institutions"],
-      ["https://feeinsight.com/check", "https://feeinsight.com/institutions"],
       ["https://feeinsight.com/pricing", "https://feeinsight.com/subscribe"],
       ["https://feeinsight.com/districts", "https://feeinsight.com/research#districts"],
-      ["https://feeinsight.com/waitlist", "https://feeinsight.com/for-institutions#report"],
+      ["https://feeinsight.com/waitlist", "https://feeinsight.com/reports?report=institution#request"],
+      ["https://feeinsight.com/consumer", "https://feeinsight.com/for-consumers"],
     ];
     for (const [from, to] of cases) {
       const response = proxy(request(from));
@@ -91,7 +96,7 @@ describe("proxy", () => {
   });
 
   it("does not redirect nested or similarly named routes as legacy paths", () => {
-    for (const path of ["/pro/districts", "/research/district/2", "/checkout", "/consumers"]) {
+    for (const path of ["/pro/districts", "/research/district/2", "/check", "/checkout", "/consumers"]) {
       const response = proxy(
         request(`https://feeinsight.com${path}`, undefined, { cookie: "fsh_session=present" }),
       );
@@ -106,6 +111,58 @@ describe("proxy", () => {
     expect(response.headers.get("location")).toBe(
       "https://feeinsight.com/admin/login?from=%2Fadmin%2Fknox%3Fqueue%3Dfees",
     );
+  });
+
+  it("rejects a forged admin cookie even with the old login marker", () => {
+    const response = proxy(request("https://feeinsight.com/admin/quality?tab=sources", undefined, {
+      cookie: "fsh_session=arbitrary-unsigned-value",
+      "x-bfi-admin-login-route": "1",
+      "x-pathname": "/admin/login",
+    }));
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://feeinsight.com/admin/login?from=%2Fadmin%2Fquality%3Ftab%3Dsources",
+    );
+    expect(response.headers.get("x-middleware-next")).toBeNull();
+  });
+
+  it("strips the old login marker before forwarding a signed cookie to live authorization", () => {
+    const response = proxy(request("https://feeinsight.com/admin/quality", undefined, {
+      cookie: `fsh_session=${signSessionId("a".repeat(64))}`,
+      "x-bfi-admin-login-route": "1",
+      "x-pathname": "/admin/login",
+    }));
+    expect(response.headers.get("x-middleware-next")).toBe("1");
+    expect(response.headers.get("x-middleware-request-x-bfi-admin-login-route")).toBeNull();
+    expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/admin/quality");
+    expect(response.headers.get("x-middleware-override-headers")).not.toContain("x-bfi-admin-login-route");
+  });
+
+  it("strips the legacy login marker on rewritten public requests too", () => {
+    const response = proxy(request("https://feeinsight.com/institutions?q=chase", undefined, {
+      "x-bfi-admin-login-route": "1",
+    }));
+    expect(response.headers.get("x-middleware-rewrite")).toContain("/institutions/results");
+    expect(response.headers.get("x-middleware-request-x-bfi-admin-login-route")).toBeNull();
+  });
+
+  it("redirects legacy admin login to shared login with a safe return path", () => {
+    for (const [from, expected] of [
+      ["", "/admin"],
+      ["/admin/quality?tab=sources", "/admin/quality?tab=sources"],
+      ["https://evil.example/steal", "/admin"],
+      ["//evil.example/steal", "/admin"],
+      ["/\\evil.example/steal", "/admin"],
+    ]) {
+      const url = new URL("https://feeinsight.com/admin/login");
+      if (from) url.searchParams.set("from", from);
+      const response = proxy(request(url.toString(), undefined, { "x-bfi-admin-login-route": "1" }));
+      const destination = new URL(response.headers.get("location")!);
+      expect(response.status).toBe(307);
+      expect(destination.origin + destination.pathname).toBe("https://feeinsight.com/login");
+      expect(destination.searchParams.get("from")).toBe(expected);
+      expect(response.headers.get("x-middleware-next")).toBeNull();
+    }
   });
 
   it("does not treat similarly named public routes as admin routes", () => {
@@ -129,5 +186,25 @@ describe("proxy", () => {
     const response = proxy(request("https://feeinsight.com/products"));
 
     expect(response.headers.get("x-middleware-next")).toBe("1");
+  });
+  it("rewrites a signed-in reader of a cached research page to its per-request route (#1811)", async () => {
+    const { signSessionId } = await import("@/lib/session-cookie");
+    const signedIn = proxy(
+      request("https://feeinsight.com/research/state/TX", "feeinsight.com", { cookie: `fsh_session=${signSessionId("b".repeat(64))}` }),
+    );
+    expect(signedIn.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/research/state/TX/signed-in");
+
+    const signedOut = proxy(request("https://feeinsight.com/research/state/TX"));
+    expect(signedOut.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(signedOut.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("answers 404 to a direct request for a per-request route, so it cannot skip the cache", () => {
+    expect(proxy(request("https://feeinsight.com/research/national-fee-index/signed-in")).status).toBe(404);
+  });
+
+  it("serves a city's metro view from its cached route, keeping the address", () => {
+    const response = proxy(request("https://feeinsight.com/fees/city/tx/austin?area=metro&fee=nsf"));
+    expect(response.headers.get("x-middleware-rewrite")).toBe("https://feeinsight.com/fees/city/tx/austin/metro?area=metro&fee=nsf");
   });
 });

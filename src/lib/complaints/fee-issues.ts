@@ -46,11 +46,3 @@ export const FEE_SUB_ISSUES = [`Managing an account${SUB_ISSUE_SEPARATOR}Fee pro
 export function subIssueKey(issue: string, subIssue: string): string {
   return `${issue}${SUB_ISSUE_SEPARATOR}${subIssue}`;
 }
-
-export function isFeeIssue(issue: string): boolean {
-  return (FEE_ISSUES as readonly string[]).includes(issue);
-}
-
-export function isFeeSubIssue(issueAndSubIssue: string): boolean {
-  return (FEE_SUB_ISSUES as readonly string[]).includes(issueAndSubIssue);
-}

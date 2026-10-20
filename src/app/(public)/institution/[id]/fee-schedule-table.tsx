@@ -5,8 +5,14 @@ import { FEE_FAMILIES, getFeeFamily } from "@/lib/fee-taxonomy";
 import { notComparableReason } from "@/lib/fee-comparability";
 import { countsInMarketComparison } from "@/lib/market-eligibility";
 import { formatFeeAmount } from "@/lib/format";
+
+/** A schedule's amount as a reader sees it: a $0 fee says "No charge", not a $0 price (#1953). */
+export function scheduleAmount(amount: number | null): string | null {
+  return amount === 0 ? "No charge" : formatFeeAmount(amount);
+}
 import { getFrequencyLabel } from "./enum-labels";
 import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
+import { displayFeeIdentity } from "./fee-row-identity";
 
 export interface DisplayFee {
   feeAudience?: FeeAudience;
@@ -124,7 +130,7 @@ export function countPositions(fees: DisplayFee[], benchmarks: FeeBenchmarks): R
   for (const fee of fees) {
     const benchmark = benchmarkFor(fee, benchmarks);
     if (!benchmark || fee.amount === null) continue;
-    const key = dedupeKey(fee);
+    const key = displayFeeIdentity(fee);
     if (seen.has(key)) continue;
     seen.add(key);
     counts[fee.amount < benchmark.p25 ? "below" : fee.amount > benchmark.p75 ? "above" : "within"] += 1;
@@ -215,18 +221,15 @@ function familyFor(fee: DisplayFee): string {
   return (fee.feeCategory ? getFeeFamily(fee.feeCategory) : null) ?? OTHER_FAMILY;
 }
 
-function dedupeKey(fee: DisplayFee): string {
-  return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
-}
 
-/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order for families and rows. */
+/** Groups fees by family, collapses identical displayed fee rows, keeps taxonomy order for families and rows. */
 export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   const groups = new Map<string, FeeGroup>();
   const seen = new Set<string>();
 
   for (const fee of fees) {
     const family = familyFor(fee);
-    const key = `${family}|${dedupeKey(fee)}`;
+    const key = `${family}|${displayFeeIdentity(fee)}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -467,13 +470,15 @@ function FeeRow({
   benchmark: FeeBenchmark | null;
 }) {
   const sourceUrl = fee.sourceUrl ?? disclosureUrl;
-  const amount = formatFeeAmount(fee.amount);
+  const amount = scheduleAmount(fee.amount);
   const basis = getFrequencyLabel(fee.frequency);
   const showUnderReview = mixedGroup && fee.status === "provisional";
 
   return (
     <tr
       id={focused && rowId && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
+      data-fee-id={fee.id}
+      data-fee-category={fee.feeCategory ?? undefined}
       data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
       className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""} ${extra ? EXTRA_ROW : ""}`}
     >
@@ -537,6 +542,8 @@ function FeeScheduleStack({
               return (
                 <li
                   key={fee.id}
+                  data-fee-id={fee.id}
+                  data-fee-category={fee.feeCategory ?? undefined}
                   data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
                   className={`scroll-mt-24 border-b border-surface-200 px-4 py-3 last:border-0 ${focused ? FOCUSED_ROW : ""} ${
                     extra.has(fee.id) ? EXTRA_ITEM : ""
@@ -551,7 +558,7 @@ function FeeScheduleStack({
                     </span>
                     <span className="shrink-0 font-semibold text-base text-ink" style={FIGURE}>
                       <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
-                        {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "Not stated"}
+                        {fee.rate ? <RateValue rate={fee.rate} /> : scheduleAmount(fee.amount) ?? "Not stated"}
                       </AmountLink>
                     </span>
                   </div>

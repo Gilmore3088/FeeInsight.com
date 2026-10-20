@@ -25,3 +25,5 @@ guards the layout.
 
 **Lesson:** a route that must answer 404 does its existence check in a layout with no loading
 boundary above it. Adding a `loading.tsx` to a parent folder silently turns its 404s into 200s.
+
+**Guard:** `src/app/not-found-status.test.ts:56` (no loading.tsx sits above a route that answers 404, and that route's layout calls notFound())

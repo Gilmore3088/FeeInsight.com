@@ -1,6 +1,11 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import { buildRevenueContext } from "@/lib/custom-report/revenue-context";
 import { describe, expect, it } from "vitest";
 import { buildMarketBranchFootprint } from "@/lib/data-store/branches";
-import { footprintLine, notComparableNote } from "./report-body";
+import { footprintLine, notComparableNote, peersBesideRevenue, RevenueSection } from "./report-body";
+import type { ReportPeerContext } from "@/lib/custom-report/peer-context";
 
 const footprint = buildMarketBranchFootprint(
   2025,
@@ -62,5 +67,51 @@ describe("notComparableNote", () => {
   it("keeps the small-group wording for thin lines", () => {
     expect(notComparableNote({ own: null, peers: { n: 2 } as never })).toBe("Too few local competitors");
     expect(notComparableNote({ own: { amount: 10 } as never, peers: { n: 3 } as never })).toBe("Too few local competitors");
+  });
+});
+
+
+describe("RevenueSection financial measure labels", () => {
+  it("renders only a CU cohort and its broad income definition, never a mixed peer claim", () => {
+    const comparison = financialPeerComparison({ source: "ncua", reportDate: "2026-06-30", tier: "regional", minimumAssetsUsd: 1e10, maximumAssetsUsd: 250e9, subjectIncluded: true, eligibleCount: 25, reportedCount: 25, ratioReportedCount: 24, minimumMedianCount: 5 });
+    const revenue = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 300 }], { tier: "regional", sc_rank: 2, peer_count: 25, peer_median_sc: 75, comparison })!;
+    const html = renderToStaticMarkup(createElement(RevenueSection, { name: "Synthetic CU", revenue }));
+    expect(html).toContain("Broad credit-union fee income");
+    expect(html).toContain("25 credit unions");
+    expect(html).toContain("The rank and the median count one set: credit unions with $10B to $250B in assets that reported broad credit-union fee income for Q2 2026, Synthetic CU included.");
+    expect(html).toContain("not deposit-only or overdraft-only income");
+    expect(html).not.toContain("banks and credit unions");
+    expect(html).not.toContain("Deposit service charges");
+  });
+});
+
+describe("RevenueSection one comparison", () => {
+  const comparison = financialPeerComparison({ source: "fdic", reportDate: "2026-06-30", tier: "midsize", minimumAssetsUsd: 1e9, maximumAssetsUsd: 1e10, subjectIncluded: true, eligibleCount: 880, reportedCount: 872, ratioReportedCount: 870, minimumMedianCount: 5 });
+  const revenue = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 5656 }], {
+    tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662, comparison,
+  })!;
+
+  it("reads the rank, the dollar median and the share median from one set, the bank included", () => {
+    const html = renderToStaticMarkup(createElement(RevenueSection, { name: "Capital City Bank", revenue }));
+    expect(html).toContain("It ranks 13 of the 872 banks with $1B to $10B in assets that reported them, itself included");
+    expect(html).toContain("Median of those 872 banks, Q2 2026");
+    expect(html).toContain("The rank and the dollar median count one set: banks with $1B to $10B in assets that reported deposit service charges for Q2 2026, Capital City Bank included. The share median counts the 870 of them with a share of revenue on file.");
+    expect(html).not.toContain("both medians");
+    expect(html).toContain("Median of the 870 of them that filed a share");
+    expect(html).toContain("8.7%");
+    expect(html).toContain("2.2%");
+    expect(html).not.toMatch(/other banks|above 0%/);
+  });
+
+  it("drops the peer table's own fee-share row when the revenue section shows the share", () => {
+    const peers: ReportPeerContext = {
+      groupLabel: "Banks with $1B to $10B in assets", fees: [], thinFeeKeys: [],
+      financial: { reportDate: "2026-06-30", source: "fdic", peerCount: 869, rows: [
+        { key: "fee_income_ratio", own: 8.7, median: 2.1, percentile: 90 },
+        { key: "roa", own: 1.1, median: 1.0, percentile: 55 },
+      ] },
+    };
+    expect(peersBesideRevenue(peers, revenue).financial?.rows.map((r) => r.key)).toEqual(["roa"]);
+    expect(peersBesideRevenue(peers, null)).toBe(peers);
   });
 });

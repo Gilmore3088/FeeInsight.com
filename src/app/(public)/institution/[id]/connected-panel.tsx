@@ -1,146 +1,189 @@
+import Link from "next/link";
 import { ArrowRight } from "lucide-react";
+import { PRODUCT_NAME } from "@/lib/constants";
 import { formatCompactDollars } from "@/lib/format";
-import { pct } from "./overview-observations";
-import { aboutSame, amountText, isRange, lowerLabel, money, reference, type CompareRow } from "./profile-view";
+import { hamiltonHandoffs } from "@/lib/hamilton-handoff";
+import type { ConnectedPanel as Panel, Direction } from "./connected-panel-view";
+import { HandoffLinks } from "./handoff-links";
+import { FreeOnly } from "./viewer-islands";
 import { SERIF } from "./profile-serif";
-import { HamiltonLink } from "./viewer-islands";
 
-/**
- * The connected panel (James's brief, section 6, small version): the call-report income beside
- * three of its published fees against the state median, then the questions those numbers raise.
- * Reported facts, calculated comparisons and open questions are labelled apart; nothing here
- * concludes a cause. Its one Hamilton action opens the institution's peer sets for a signed-in reader
- * and the Pro plans for everyone else (a client island: this panel is in the cached page).
- */
+const pct = (n: number) => `${n >= 10 ? n.toFixed(0) : n.toFixed(1)}%`;
+const NUM = "[font-variant-numeric:tabular-nums]";
+const KIND = "text-[12px] font-semibold uppercase tracking-[0.14em] text-ink-muted";
 
-/** Everyday fees first, in the order a reader looks for them. */
-const RELATED = ["overdraft", "nsf", "monthly_maintenance", "atm_non_network", "foreign_atm", "stop_payment", "wire_domestic_outgoing"];
-
-export function pickRelatedFees(rows: CompareRow[], n = 3): CompareRow[] {
-  const priced = rows.filter((r) => r.amount != null && reference(r));
-  const rank = (r: CompareRow) => {
-    const i = RELATED.indexOf(r.key);
-    return i === -1 ? RELATED.length : i;
-  };
-  return [...priced].sort((a, b) => rank(a) - rank(b)).slice(0, n);
-}
-
-/**
- * The small line under a fee listed at several prices: the comparison price named for what it
- * is, then the gap. "Compared at $8.45, the middle of its two prices: $0.95 above".
- */
-export function comparedLine(row: CompareRow, gap: string): string | null {
-  if (!isRange(row) || row.amount == null) return null;
-  const which = row.highestTier ? "the highest of its prices" : `the middle of its ${row.count === 2 ? "two " : ""}prices`;
-  return `Compared at ${money(row.amount)}, ${which}: ${gap}`;
-}
-
-/** "Monthly maintenance", "Non-network ATM": sentence case, acronyms kept. */
-function sentenceLabel(label: string): string {
-  const lower = lowerLabel(label);
-  return lower.charAt(0).toUpperCase() + lower.slice(1);
-}
-
-function Tag({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">{children}</p>;
-}
-
-export function ConnectedPanel({
-  institutionId,
-  institutionName,
-  stateName,
-  stateShort,
-  facts,
-  share,
-  fees,
-  incomeName,
-}: {
-  institutionId: number;
-  institutionName: string;
-  /** "service-charge income" or "fee income" (feeIncomeTerms), lower case. */
-  incomeName: string;
-  stateName: string | null;
-  stateShort: string | null;
-  /** Reported: the latest quarter's income and revenue, as on the cards. */
-  facts: Array<{ label: string; value: number; quarter: string }>;
-  /** Calculated: its share against the cohort median. */
-  share: { own: number; median: number; cohort: string } | null;
-  fees: CompareRow[];
-}) {
-  if (facts.length === 0 && fees.length === 0) return null;
+function QuarterBars({ panel }: { panel: Panel }) {
+  const { quarters, incomeLabel } = panel.reported;
+  if (quarters.length < 2) return null;
+  const top = Math.max(1, ...quarters.map((q) => q.value));
   return (
-    <section aria-labelledby="connected-heading" className="rounded-xl border border-border bg-surface-0 p-4 sm:p-6">
-      <h3 id="connected-heading" className="text-[22px] font-medium leading-tight text-ink sm:text-[26px]" style={SERIF}>
-        Income and prices, side by side
-      </h3>
-      <div className="mt-5 grid gap-6 md:grid-cols-3">
-        <div className="min-w-0">
-          <Tag>Reported</Tag>
-          <dl className="mt-2 space-y-2 [font-variant-numeric:tabular-nums]">
-            {facts.map((f) => (
-              <div key={f.label}>
-                <dt className="text-[13px] text-ink-muted">
-                  {f.label}, {f.quarter}
-                </dt>
-                <dd className="text-[18px] font-semibold text-ink">{formatCompactDollars(f.value)}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-        <div className="min-w-0">
-          <Tag>Compared</Tag>
-          <ul className="mt-2 space-y-2 text-[14px] [font-variant-numeric:tabular-nums]">
-            {share && (
-              <li>
-                <span className="font-semibold text-ink">{pct(share.own)}</span>
-                <span className="text-ink-soft"> of revenue vs {pct(share.median)} median, {share.cohort}</span>
-              </li>
-            )}
-            {fees.map((row) => {
-              const ref = reference(row);
-              if (!ref || row.amount == null) return null;
-              const place = ref.level === "state" ? (stateShort ?? stateName ?? "state") : "U.S.";
-              const diff = row.amount - ref.median.median;
-              const gap = aboutSame(row.amount, ref.median.median)
-                ? "about the same"
-                : `${money(Math.abs(diff))} ${diff > 0 ? "above" : "below"}`;
-              // Several prices: the headline shows them all and the small line names the comparison price.
-              const compared = comparedLine(row, gap);
-              return (
-                <li key={row.key}>
-                  <span className="font-semibold text-ink">
-                    {sentenceLabel(row.label)} {amountText(row)}
-                  </span>
-                  <span className="text-ink-soft">
-                    {" "}
-                    vs {place} {money(ref.median.median)}
-                    {compared ? "" : ` (${gap})`}
-                  </span>
-                  {compared && <span className="block text-[12px] text-ink-muted">{compared}</span>}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-        <div className="min-w-0">
-          <Tag>Open questions</Tag>
-          <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[14px] leading-snug text-ink-soft">
-            <li>Which fees and accounts make up its {incomeName}?</li>
-            <li>How much of any gap to the median comes from account volume rather than price?</li>
-            <li>How often are these fees waived or refunded?</li>
-          </ul>
-        </div>
+    <div
+      className="mt-5"
+      role="img"
+      aria-label={`${incomeLabel} by quarter: ${quarters.map((q) => `${q.label} ${formatCompactDollars(q.value)}`).join(", ")}`}
+    >
+      <div className="flex h-24 items-end gap-2">
+        {quarters.map((q, i) => (
+          <div key={q.label} className="flex flex-1 flex-col items-center gap-1">
+            <span className={`text-[11px] text-ink-muted ${NUM}`}>{formatCompactDollars(q.value)}</span>
+            <span
+              className={`w-3/5 rounded-t-[3px] ${i === quarters.length - 1 ? "bg-ink" : "bg-ink/35"}`}
+              style={{ height: `${Math.max(4, (Math.max(0, q.value) / top) * 64)}px` }}
+            />
+            <span className="text-[11px] text-ink-muted">{q.label}</span>
+          </div>
+        ))}
       </div>
-      <div className="mt-6 border-t border-border pt-4">
-        <HamiltonLink
-          institutionId={institutionId}
-          institutionName={institutionName}
-          to="peerSets"
-          className="inline-flex min-h-11 items-center gap-2 text-[15px] font-medium text-ink underline decoration-border underline-offset-[6px] hover:decoration-ink"
-        >
-          Analyze the drivers of {incomeName} in Hamilton
-          <ArrowRight aria-hidden="true" className="size-4" />
-        </HamiltonLink>
+    </div>
+  );
+}
+
+/** One row of the exhibit: its value as a dot against the median as a tick, on its own scale. */
+function Dumbbell({ label, own, median, ownText, medianText, direction }: {
+  label: string;
+  own: number;
+  median: number;
+  ownText: string;
+  medianText: string;
+  direction: Direction;
+}) {
+  const top = Math.max(own, median) * 1.15 || 1;
+  const at = (n: number) => `${(Math.max(0, n) / top) * 100}%`;
+  const [lo, hi] = own < median ? [own, median] : [median, own];
+  return (
+    <li className="grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)_auto] items-center gap-x-3 py-2.5 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
+      <span className="text-[13px] leading-snug text-ink-soft">{label.replace(/-/g, "\u2011")}</span>
+      <span
+        className="relative h-5"
+        role="img"
+        aria-label={`${label}: ${ownText}, median ${medianText}, ${direction === "same" ? "about the same" : direction}`}
+      >
+        <span className="absolute inset-x-0 top-1/2 h-px bg-border" />
+        <span className="absolute top-1/2 h-[3px] -translate-y-1/2 bg-ink/25" style={{ left: at(lo), width: `calc(${at(hi)} - ${at(lo)})` }} />
+        <span className="absolute top-0 h-5 w-0.5 -translate-x-1/2 bg-ink-muted" style={{ left: at(median) }} />
+        <span className="absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink" style={{ left: at(own) }} />
+      </span>
+      <span className={`text-right text-[14px] ${NUM}`}>
+        <span className="font-medium text-ink">{ownText}</span>
+        <span className="text-ink-muted"> / {medianText}</span>
+      </span>
+    </li>
+  );
+}
+
+/**
+ * Fee income beside fee prices (James's brief §6), cut to two exhibits (James, Oct 18: "too much
+ * text"): the reported quarters, and its share and fees against their medians. Sources and the
+ * questions the figures can't answer sit in one drawer; the Hamilton hand-offs carry the rest.
+ */
+export function ConnectedPanel({
+  panel,
+  sampleReportHref,
+}: {
+  panel: Panel;
+  /** The free sample report, offered to readers who aren't Pro. */
+  sampleReportHref: string | null;
+}) {
+  const { reported, share, fees, questions } = panel;
+  const handoffs = hamiltonHandoffs(panel.handoff);
+  const placeOf = fees[0]?.place;
+  return (
+    <section aria-labelledby="connected-heading" className="scroll-mt-20 border-t border-border pt-10">
+      <h2
+        id="connected-heading"
+        className="text-[36px] font-medium leading-[1.04] tracking-[-0.02em] text-ink sm:text-[54px]"
+        style={SERIF}
+      >
+        Fee income beside fee prices
+      </h2>
+      <p className="mt-3 max-w-3xl text-[16px] leading-relaxed text-ink-soft sm:text-[18px]">{panel.observation}</p>
+
+      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:gap-12">
+        <figure className="min-w-0">
+          <figcaption className={KIND}>
+            {reported.incomeLabel}, {reported.latest.label}
+          </figcaption>
+          <p className={`mt-2 text-[44px] font-medium leading-none tracking-[-0.02em] text-ink ${NUM}`} style={SERIF}>
+            {formatCompactDollars(reported.latest.value)}
+          </p>
+          <QuarterBars panel={panel} />
+        </figure>
+
+        <figure className="min-w-0">
+          <figcaption className={KIND}>Against the median{placeOf ? ` (${placeOf === "U.S." ? "U.S." : placeOf} for fees)` : ""}</figcaption>
+          <ul className="mt-2 divide-y divide-border">
+            {share && (
+              <Dumbbell
+                label="Share of revenue"
+                own={share.own}
+                median={share.median}
+                ownText={pct(share.own)}
+                medianText={pct(share.median)}
+                direction={share.direction}
+              />
+            )}
+            {fees.map((fee) => (
+              <Dumbbell
+                key={fee.key}
+                label={fee.label}
+                own={fee.value}
+                median={fee.medianValue}
+                ownText={`${fee.amount}${fee.basis ? "*" : ""}`}
+                medianText={fee.median}
+                direction={fee.direction}
+              />
+            ))}
+          </ul>
+          <p className="mt-2 flex items-center gap-4 text-[12px] text-ink-muted">
+            <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-ink" aria-hidden="true" />{panel.handoff.institutionName}</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-3 w-0.5 bg-ink-muted" aria-hidden="true" />Median</span>
+          </p>
+        </figure>
+      </div>
+
+      <div className="mt-8">
+        <HandoffLinks institutionId={panel.handoff.institutionId} handoffs={handoffs} />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-start gap-x-6 gap-y-1">
+        <details className="group/src min-w-0 flex-1">
+          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-2 text-[13px] text-ink-muted hover:text-ink [&::-webkit-details-marker]:hidden">
+            <span aria-hidden="true" className="text-[10px] transition-transform group-open/src:rotate-90">&#9654;</span>
+            Sources and open questions
+          </summary>
+          <div className="max-w-3xl space-y-2 text-[12px] leading-relaxed text-ink-muted">
+            <p>
+              {reported.source}s, {reported.entity.toLowerCase()} level, standalone quarters.{panel.caution ? ` ${panel.caution}` : ""}
+            </p>
+            {share && (
+              <p>
+                Share of revenue: median of {share.peers.toLocaleString("en-US")} {share.cohort}, {panel.handoff.quarter}.
+              </p>
+            )}
+            {fees.length > 0 && (
+              <p>
+                Fees from each institution&rsquo;s own schedule against {PRODUCT_NAME} medians, not weighted by revenue
+                {fees.some((fee) => fee.basis) ? `. *${fees.filter((fee) => fee.basis).map((fee) => `${fee.label}: ${fee.basis}`).join(" ")}` : "."}
+              </p>
+            )}
+            <ul className="list-disc space-y-1 pl-4">
+              {questions.map((question) => (
+                <li key={question}>{question}</li>
+              ))}
+            </ul>
+          </div>
+        </details>
+        {sampleReportHref && (
+          <FreeOnly>
+            <Link
+              href={sampleReportHref}
+              className="inline-flex min-h-11 items-center gap-2 text-[13px] font-medium text-ink underline decoration-border underline-offset-[6px] hover:decoration-ink"
+            >
+              See a free sample report
+              <ArrowRight className="size-4" aria-hidden="true" />
+            </Link>
+          </FreeOnly>
+        )}
       </div>
     </section>
   );

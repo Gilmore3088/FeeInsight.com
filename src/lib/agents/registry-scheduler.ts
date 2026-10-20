@@ -66,7 +66,7 @@ import {
   INDUSTRY_EVENTS_SOURCE,
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
-import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES, REMITTANCE_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
+import { BEA_PARSER_VERSION, BRANCH_TRACT_PARSER_VERSION, ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES, REMITTANCE_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
 import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
 import {
@@ -97,6 +97,9 @@ import {
 import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/agents/magellan/registry/market-growth";
 import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
 import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
+import { BANK_ZELLE_SOURCE } from "@/lib/agents/magellan/registry/bank-zelle";
+import { CALL_REPORT_SUMMARIES_SOURCE } from "@/lib/agents/magellan/registry/call-report-summaries";
+import { BANK_ZELLE_MATCHER_VERSION } from "@/lib/agents/magellan/registry/bank-zelle-match";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -165,6 +168,8 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
   ...Object.fromEntries(ECONOMY_DEFINITIONS.map((d) => [d.source, ECONOMY_PARSER_VERSION])),
   [ECONOMY_SOURCES.remittances]: REMITTANCE_PARSER_VERSION,
+  [ECONOMY_SOURCES.branchTracts]: BRANCH_TRACT_PARSER_VERSION,
+  [ECONOMY_SOURCES.bea]: BEA_PARSER_VERSION,
   ...Object.fromEntries(MARKET_GROWTH_DEFINITIONS.map((d) => [d.source, MARKET_GROWTH_PARSER_VERSION])),
   ...Object.fromEntries(SMALLBIZ_PAYMENTS_DEFINITIONS.map((d) => [d.source, SMALLBIZ_PAYMENTS_PARSER_VERSION])),
   ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.map((d) => [d.source, NATIONAL_CREDIT_PARSER_VERSION])),
@@ -190,6 +195,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NIC_STRUCTURE_SOURCE]: NIC_STRUCTURE_PARSER_VERSION,
   [UBPR_PEER_GROUPS_SOURCE]: UBPR_PEER_GROUPS_PARSER_VERSION,
   [CFPB_CARD_AGREEMENTS_SOURCE]: CFPB_CARD_AGREEMENTS_PARSER_VERSION,
+  [BANK_ZELLE_SOURCE]: BANK_ZELLE_MATCHER_VERSION,
 };
 
 /**
@@ -208,6 +214,7 @@ export function isParserStale(
   if (current === undefined) return false;
   if (status === "succeeded" || status === "empty") return (parserVersion ?? 1) < current;
   if (status === "scheduled") return (claimedParserVersion ?? 1) < current;
+  if (status === "failed") return (parserVersion ?? claimedParserVersion ?? 1) < current;
   return false;
 }
 
@@ -353,12 +360,14 @@ export function registryPartitionsBySource(
  * partitions is due, so the closed-institution and merger checks (Atlas marks closed or merged
  * charters inactive from these) keep their cadence however many data sources are added. The
  * FDIC universe and NCUA 5300 syncs set `institution_sources.status`; ffiec-overdraft feeds the
- * overdraft income series. Every other source shares the remaining runs round-robin.
+ * overdraft income series; call-report-summaries rebuilds the readers' quarterly income right
+ * after a call-report load makes it due. Every other source shares the remaining runs round-robin.
  */
 export const PRIORITY_REGISTRY_SOURCES: readonly string[] = [
   FDIC_UNIVERSE_SOURCE,
   NCUA_FINANCIALS_SOURCE,
   FFIEC_OVERDRAFT_SOURCE,
+  CALL_REPORT_SUMMARIES_SOURCE,
 ];
 
 function roundRobin(lists: Array<{ source: string; partitions: string[] }>): RegistryPartitionCandidate[] {
@@ -449,6 +458,9 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
            AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
        OR (registry_ingest_partitions.status = 'scheduled'
            AND COALESCE((registry_ingest_partitions.detail->>'claimed_parser_version')::int, 1) < ${parserVersion})
+       OR (registry_ingest_partitions.status = 'failed'
+           AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int,
+                        (registry_ingest_partitions.detail->>'claimed_parser_version')::int,1) < ${parserVersion})
        OR ${keylessSkipSql("registry_ingest_partitions", keysSet)}
     RETURNING id
   `;

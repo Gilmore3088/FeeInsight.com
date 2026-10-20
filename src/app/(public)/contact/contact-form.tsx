@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, use } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
@@ -27,20 +28,41 @@ export interface ContactHeadings {
 }
 
 interface ContactFormProps {
-  searchParamsPromise: Promise<Record<string, string | string[] | undefined>>;
   /** The page's h1 and intro; they follow the select, as the button and reply do. */
   headings?: ContactHeadings;
 }
 
-export function ContactForm({ searchParamsPromise, headings }: ContactFormProps) {
-  const searchParams = use(searchParamsPromise);
+/**
+ * The query (`?source=demo`, `?company=`) is read here, in the browser, so /contact itself
+ * reads no search params and is prerendered once for everyone (#1811). The prerendered HTML
+ * carries the general form; the form with the query's option chosen replaces it on load.
+ */
+export function ContactForm(props: ContactFormProps) {
+  return (
+    <Suspense fallback={<ContactFormInner {...props} source={null} company={null} />}>
+      <ContactFormWithParams {...props} />
+    </Suspense>
+  );
+}
+
+function ContactFormWithParams(props: ContactFormProps) {
+  const params = useSearchParams();
+  // Keyed on the query so a same-page link that changes `?source=` opens on that option
+  // (useState reads the default only on first render).
+  return (
+    <ContactFormInner key={params.toString()} {...props} source={params.get("source")} company={params.get("company")} />
+  );
+}
+
+function ContactFormInner({
+  headings,
+  source,
+  company,
+}: ContactFormProps & { source: string | null; company: string | null }) {
   // A source with no option of its own (e.g. sample_report, a correction) opens on "Something
   // else", not on the first option, so it is never recorded as a demo request.
-  const defaultSource =
-    typeof searchParams.source === "string" && INQUIRY_TYPES.some((t) => t.value === searchParams.source)
-      ? searchParams.source
-      : "general";
-  const defaultCompany = typeof searchParams.company === "string" ? searchParams.company.slice(0, 160) : "";
+  const defaultSource = source && INQUIRY_TYPES.some((t) => t.value === source) ? source : "general";
+  const defaultCompany = company ? company.slice(0, 160) : "";
 
   const [inquiry, setInquiry] = useState(defaultSource);
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");

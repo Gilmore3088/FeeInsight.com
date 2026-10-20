@@ -1,6 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { checkWireClausePrice } from "@/lib/custom-report/wire-clause-prices";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -12,6 +14,7 @@ import {
   type PaidMessageCreator,
   type PaidPassResult,
   type PaidStepOptions,
+  providerRefusalSql,
 } from "@/lib/agents/paid-pass";
 import {
   insertCandidate,
@@ -25,6 +28,8 @@ import { namesALimit } from "@/lib/agents/knox/layout";
 import { KNOX_RULES_STRATEGY } from "@/lib/agents/knox/specialists";
 import { groundLineup, LINEUP_CATEGORY, type AccountLineup } from "@/lib/agents/knox/lineup";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { ownFeeUnit, type OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { ownAdditiveCondition } from "@/lib/custom-report/own-additive-condition";
 import { closedInstitutionSql } from "@/lib/agents/hamilton/closed-institution";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { DOCUMENT_OWNER_STRATEGY, documentOwnerFingerprintPrefix } from "@/lib/agents/darwin/document-owner";
@@ -155,6 +160,8 @@ export interface AcceptedPaidFee {
   sourceLine: string;
   /** monthly_maintenance only; each value grounded in the text or null. */
   lineup: AccountLineup | null;
+  ownUnit?: OwnFeeUnit;
+  ownCondition?: string;
 }
 
 export type PaidRowRejection = "missing_fields" | "unknown_canonical" | "invalid_amount" | "not_in_text" | "limit_not_fee";
@@ -219,6 +226,9 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
   if (!Number.isFinite(amount) || amount < 0 || amount > MAX_REASONABLE_FEE_AMOUNT) return "invalid_amount";
   if (namesALimit(feeName, mapped) || namesALimit(sourceLine.replace(/\$?\s*\d[\d,]*(?:\.\d+)?\s*$/, "").trim(), mapped)) return "limit_not_fee";
   const rounded = Math.round(amount * 100) / 100;
+  // A bounded own-direction refusal cannot be overridden by the broad quoted-line
+  // fallback below. This shares the free reader and live two-look authority (#2021).
+  if (checkWireClausePrice(text, feeName, rounded, mapped, ".")?.ok === false) return "not_in_text";
 
   const haystack = comparable(text);
   const lineGrounded = sourceLine.length >= 4 && haystack.includes(comparable(sourceLine)) && lineHasAmount(sourceLine, rounded);
@@ -245,14 +255,18 @@ export function groundPaidRow(row: PaidFeeRow, text: string): AcceptedPaidFee | 
         text,
       )
     : null;
+  const ownUnit = ownFeeUnit(text, feeName, rounded, mapped);
+  const ownCondition = ownAdditiveCondition(text, feeName, rounded);
   return {
     feeName,
     canonicalKey: mapped,
     amount: rounded,
-    frequency: frequency && /^(monthly|annual|per_item|per_transaction|daily|one_time)$/.test(frequency) ? frequency : detectFrequency(sourceLine),
+    frequency: ownUnit?.frequency ?? (frequency && /^(monthly|annual|per_item|per_transaction|daily|one_time)$/.test(frequency) ? frequency : detectFrequency(sourceLine)),
     conditions,
     sourceLine: sourceLine || feeName,
     lineup,
+    ...(ownUnit ? { ownUnit } : {}),
+    ...(ownCondition ? { ownCondition } : {}),
   };
 }
 
@@ -368,6 +382,7 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
               AND paid.input_fingerprint = adt.text_hash
               AND paid.strategy = ${paidStrategy}
               AND paid.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
+              AND NOT ${providerRefusalSql("paid")}
          )
          -- An older copy of a page whose current copy has a text is history: the paid reader
          -- reads the current copy, as the free reader does.
@@ -500,6 +515,8 @@ export async function runKnoxPaidExtract(
   result.results.push(...skipResults);
 
   const model = PAID_PASS_MODELS.extract();
+  // Knox's role lessons ride every paid read as instructions (learning/lesson-reader.ts).
+  const roleLessons = lessonsForModel("knox", "extract-paid");
   for (const row of rows) {
     const startedAt = Date.now();
     const base = {
@@ -521,10 +538,11 @@ export async function runKnoxPaidExtract(
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: paidExtractPrompt(row.normalized_text) }],
         },
         create: options.create,
-        metadata: { document_text_id: Number(row.document_text_id), text_hash: row.text_hash },
+        metadata: { document_text_id: Number(row.document_text_id), text_hash: row.text_hash, lessons_applied: roleLessons.lessonIds },
       });
     } catch (error) {
       if (isStopError(error)) {
@@ -576,8 +594,9 @@ export async function runKnoxPaidExtract(
         ? await insertHeldCandidate(db, {
             runId: options.runId,
             row: textRow,
-            held: { shape: "zero", feeName: fee.feeName, amount: 0, amountMax: null, percent: null, frequency: fee.frequency, canonicalHint: fee.canonicalKey, excerpt },
+            held: { shape: "zero", feeName: fee.feeName, amount: 0, amountMax: null, percent: null, frequency: fee.frequency, canonicalHint: fee.canonicalKey, excerpt, ownUnit: fee.ownUnit, ownCondition: fee.ownCondition },
             extraFlags: [KNOX_PAID_FLAG],
+            assignedMonthlyProduct: fee.lineup?.productName,
           })
         : await insertCandidate(db, {
             runId: options.runId,
@@ -591,6 +610,8 @@ export async function runKnoxPaidExtract(
               excerpt,
               waivable: /\bwaiv/i.test(`${fee.conditions ?? ""} ${fee.sourceLine}`),
               lineup: fee.lineup,
+              ownUnit: fee.ownUnit,
+              ownCondition: fee.ownCondition,
             },
             extraFlags: [KNOX_PAID_FLAG],
             method: `paid extraction (${model})`,

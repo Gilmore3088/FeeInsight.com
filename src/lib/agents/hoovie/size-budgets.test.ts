@@ -57,4 +57,11 @@ describe("Hoovie table size budgets", () => {
     const held = sourcesHeldForSize({ area_statistics: 2_500 });
     expect([...held.keys()].sort()).toEqual([...writers].sort());
   });
+
+  it("allows measured financial history and holds all its writers only past the explicit cap", () => {
+    expect(sourcesHeldForSize({institution_financial_records:1167.5}).size).toBe(0);
+    expect(sourcesHeldForSize({institution_financial_records:1600}).size).toBe(0);
+    expect([...sourcesHeldForSize({institution_financial_records:1600.1}).keys()].sort())
+      .toEqual(["fdic-financials","ffiec-overdraft","ncua-financials"]);
+  });
 });

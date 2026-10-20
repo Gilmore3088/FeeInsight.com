@@ -51,3 +51,5 @@ These do not establish live authenticated browser or production-data acceptance.
 The branch preview currently redirects this browser to Vercel sign-in. Protected preview
 access and a Hamilton-authorized application session are required to complete live acceptance.
 No merge or production release is claimed by this implementation.
+
+**Guard:** `src/components/hamilton/landing/LandingResearchPicker.test.tsx:8` (the landing CTA links into Hamilton with the selected state, charter and categories, and that selection survives the login redirect)

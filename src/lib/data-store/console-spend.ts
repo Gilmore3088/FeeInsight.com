@@ -1,3 +1,4 @@
+import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { sql } from "./connection";
 
 /**
@@ -39,7 +40,7 @@ export async function getSpendSummary(): Promise<SpendSummary> {
              COALESCE(SUM(estimated_cost_microusd) FILTER (WHERE created_at >= date_trunc('day', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS today,
              COALESCE(SUM(estimated_cost_microusd), 0)::bigint AS month
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(sql)}
          AND created_at >= date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
        GROUP BY 1
     `,

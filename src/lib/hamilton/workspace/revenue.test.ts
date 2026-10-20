@@ -59,6 +59,15 @@ describe("feeRevenueLine", () => {
     expect(feeRevenueLine(cuRows, "wire_domestic_outgoing", "credit_union")).toBeNull();
     expect(feeRevenueLine(cuRows.slice(4), "overdraft", "credit_union")).toBeNull();
     expect(feeRevenueLine(cuRows.map((r) => ({ ...r, overdraft_revenue: null })), "overdraft", "credit_union")).toBeNull();
+    // #2034: a line the newest filing lacks is an older year's figure, not current revenue.
+    const stale = cuRows.map((r) => (r.report_date >= "2026-01-01" ? { ...r, overdraft_revenue: null, nsf_revenue: null } : r));
+    expect(feeRevenueLine(stale, "overdraft", "credit_union")).toBeNull();
+    expect(feeRevenueLine(stale, "nsf", "credit_union")).toBeNull();
+    // The bank line loads about three weeks after the quarter's service charges: one quarter behind is kept.
+    const fdic = (report_date: string, overdraft_revenue: number | null) => ({ report_date, source: "fdic", service_charge_income: 500, overdraft_revenue, nsf_revenue: null });
+    const lagging = ["2025-06-30", "2025-09-30", "2025-12-31", "2026-03-31"].map((d) => fdic(d, 250)).concat(fdic("2026-06-30", null));
+    expect(feeRevenueLine(lagging, "overdraft", "bank")).toMatchObject({ quarterEnd: "2026-03-31", annualIncome: 1_000_000 });
+    expect(feeRevenueLine(lagging.concat(fdic("2026-09-30", null)), "overdraft", "bank")).toBeNull();
   });
 });
 

@@ -68,6 +68,11 @@ function barsHtml(lines: string[], base: string): string {
   return `<figure style="margin:1.25rem 0">${title ? `<figcaption style="font-size:13px;font-weight:600;margin-bottom:0.5rem">${inline(title, base)}</figcaption>` : ""}${rows.map(bar).join("")}</figure>`;
 }
 
+/** One line of article text (a table cell, a chart label), escaped, with bold, italic and links. */
+export function renderInlineMarkdown(text: string, base: string = SITE_URL): string {
+  return inline(escapeHtml(text), base);
+}
+
 export function renderArticleMarkdown(content: string, base: string = SITE_URL): string {
   const blocks = escapeHtml(content.replace(/\r\n/g, "\n")).split(/\n{2,}/);
   return blocks

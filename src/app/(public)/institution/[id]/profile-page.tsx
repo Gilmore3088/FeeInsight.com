@@ -28,7 +28,7 @@ import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { buildPublicInstitutionProfileLinks } from "@/lib/institution-profile-links";
 import { formatAbsoluteDate } from "@/lib/public-stats";
 import { formatCompactDollars } from "@/lib/format";
-import { getCharterLabel, getSegmentLabel, toTitleCase } from "./enum-labels";
+import { getCharterLabel, getSegmentLabel, holdingCompanyName, placeName } from "./enum-labels";
 import { FeeFocusScroll } from "./fee-focus-scroll";
 import {
   FeeScheduleTable,
@@ -43,12 +43,11 @@ import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { RegistryCards } from "./registry-cards";
 import { assetSizeToDollars, feeIncomeTerms, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
-import { buildLedger, latestOf } from "./quarterly-ledger";
+import { buildLedger, connectedPanelSeries } from "./quarterly-ledger";
 import { buildCohortDistribution } from "./fee-share-cohort";
 import { buildObservations } from "./overview-observations";
 import { cohortLabel, ExecutiveOverview } from "./executive-overview";
 import { FinancialPerformanceSection } from "./financial-performance-section";
-import { ConnectedPanel, pickRelatedFees } from "./connected-panel";
 import { MIN_VERIFIED_FEES_FOR_OFFER } from "./profile-copy";
 import {
   buildProfileTitle,
@@ -65,14 +64,16 @@ import { InstitutionJsonLd } from "./profile-jsonld";
 import { ProfileHero, type HeroFact } from "./profile-hero";
 import { SERIF } from "./profile-serif";
 import { profileSerif } from "./profile-serif-font";
-import { createReadBudget } from "@/lib/read-deadline";
+import { createPublicReadBudget as createReadBudget } from "@/lib/public-read-budget";
 import { degradedMetadata, METADATA_READ_BUDGET_MS, PAGE_READ_BUDGET_MS } from "./profile-budget";
 import "./profile.css";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { FeeAlertIsland, FreeOnly, HamiltonLink, ProFinancialProfile, ProOnly } from "./viewer-islands";
 import { ProfileFootnote } from "./profile-footnote";
-import { HamiltonBand } from "./hamilton-band";
+import { HamiltonBand, type HamiltonInsight } from "./hamilton-band";
 import { CompareTable } from "./compare-table";
+import { ConnectedPanel } from "./connected-panel";
+import { buildConnectedPanel } from "./connected-panel-view";
 import {
   compareCounts,
   compareRows,
@@ -126,7 +127,7 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
   const budget = createReadBudget(METADATA_READ_BUDGET_MS, "Institution metadata");
   let inst: Awaited<ReturnType<typeof getPublicInstitutionForPage>>;
   try {
-    inst = await budget.required(getPublicInstitutionForPage(instId), "institution");
+    inst = await budget.required(() => getPublicInstitutionForPage(instId), "institution");
   } catch (error) {
     // A slow or failed database must not hold the page: a metadata read that never answers
     // left the stream to be cut at 300 seconds, which the browser showed as "Application error".
@@ -136,7 +137,7 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
   }
   if (!inst) notFound();
 
-  const fees = Number(inst.fee_count ?? 0) > 0 ? await budget.optional(getVisibleFeesForPage(instId), "fees", []) : [];
+  const fees = Number(inst.fee_count ?? 0) > 0 ? await budget.optional(() => getVisibleFeesForPage(instId), "fees", []) : [];
   if (budget.failed()) await shortenPageLife();
   const verifiedFees = fees.filter(isVerifiedFee);
   // The title quotes the same values as the comparison table (the index's own rule), so a tab or
@@ -149,7 +150,7 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
     return v.low === v.high ? v.amount : category === "overdraft" ? v.high : null;
   };
   const headline = { overdraft: valueOf("overdraft"), nsf: valueOf("nsf"), monthly: valueOf("monthly_maintenance") };
-  const city = toTitleCase(inst.city);
+  const city = placeName(inst.city);
   const place = [city, inst.state_code].filter(Boolean).join(", ");
   const stateName = inst.state_code ? STATE_NAMES[inst.state_code] : null;
   const kind = inst.charter_type === "bank" ? "bank" : "credit union";
@@ -177,7 +178,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   if (Number.isNaN(instId)) notFound();
 
   const budget = createReadBudget(PAGE_READ_BUDGET_MS, "Institution page");
-  const inst = await budget.required(getPublicInstitutionForPage(instId), "institution");
+  const inst = await budget.required(() => getPublicInstitutionForPage(instId), "institution");
   if (!inst) notFound();
 
   const catalogVisibleFeeCount = Number(inst.fee_count ?? 0);
@@ -186,31 +187,31 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
     Boolean(inst.fee_schedule_url || inst.latest_source_status || (inst.latest_extracted_fee_count ?? 0) > 0);
 
   const [visibleFees, rateFees, evidence, financials] = await Promise.all([
-    catalogVisibleFeeCount > 0 ? budget.required(getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
-    budget.required(getRateFeesForPage(instId), "rate fees"),
+    catalogVisibleFeeCount > 0 ? budget.required(() => getVisibleFeesForPage(instId), "fees") : Promise.resolve([]),
+    budget.required(() => getRateFeesForPage(instId), "rate fees"),
     shouldLoadPipelineEvidence
-      ? budget.optional(getInstitutionFeeScheduleEvidence(instId), "fee evidence", null)
+      ? budget.optional(() => getInstitutionFeeScheduleEvidence(instId), "fee evidence", null)
       : Promise.resolve(null),
     budget.optional(
-      getFinancialsByInstitution(instId, FINANCIAL_HISTORY_QUARTERS * FINANCIAL_SOURCES_PER_QUARTER),
+      () => getFinancialsByInstitution(instId, FINANCIAL_HISTORY_QUARTERS * FINANCIAL_SOURCES_PER_QUARTER),
       "financial context",
       [],
     ),
   ]);
 
-  // Call-report history and its asset-size cohort are public filings, read for every visitor (cached
-  // reads) for the overview and financial performance sections (James's brief, Oct 18). Peer ranks,
-  // peer medians and the regulatory watch stay Pro, read per request by ProFinancialProfile, never
-  // here: this page is cached for every visitor. The branch footprint, complaints, enforcement and
-  // holding company are public records every visitor sees.
+  // Call-report history and its asset-size cohort are public filings, read for every visitor
+  // through cached reads, for the overview, financial performance and the connected panel (James's
+  // brief, Oct 18). Peer ranks, peer medians and the regulatory watch stay Pro, read per request by
+  // ProFinancialProfile, never here: this page is cached for every visitor. The branch footprint,
+  // complaints, enforcement and holding company are public records every visitor sees.
   const [financialHistory, callItems, footprint, complaints, holdingCompany, enforcement, regulator] = await Promise.all([
-    budget.optional(getInstitutionFinancialHistoryCached(instId), "financial history", []),
-    budget.optional(getInstitutionCallItemHistoryCached(instId), "call-report lines", []),
-    budget.optional(getBranchFootprint(instId), "branch footprint", null),
-    budget.optional(getComplaintTrend(instId), "complaint trend", null),
-    budget.optional(getHoldingCompanyProfile(instId), "holding company", null),
-    budget.optional(getEnforcementRecord(instId), "enforcement actions", null),
-    budget.optional(getRegulatorInfo(instId), "regulator info", null),
+    budget.optional(() => getInstitutionFinancialHistoryCached(instId), "financial history", []),
+    budget.optional(() => getInstitutionCallItemHistoryCached(instId), "call-report lines", []),
+    budget.optional(() => getBranchFootprint(instId), "branch footprint", null),
+    budget.optional(() => getComplaintTrend(instId), "complaint trend", null),
+    budget.optional(() => getHoldingCompanyProfile(instId), "holding company", null),
+    budget.optional(() => getEnforcementRecord(instId), "enforcement actions", null),
+    budget.optional(() => getRegulatorInfo(instId), "regulator info", null),
   ]);
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
@@ -236,12 +237,12 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const hasFees = verifiedFees.length > 0;
   const [nationalIndex, stateIndex, districtIndex] = hasFees
     ? await Promise.all([
-        budget.optional(getComparableMarketIndexCached({ kind: "us" }), "national index", [] as IndexEntry[]),
+        budget.optional(() => getComparableMarketIndexCached({ kind: "us" }), "national index", [] as IndexEntry[]),
         stateCode
-          ? budget.optional(getComparableMarketIndexCached({ kind: "state", code: stateCode }), "state index", [] as IndexEntry[])
+          ? budget.optional(() => getComparableMarketIndexCached({ kind: "state", code: stateCode }), "state index", [] as IndexEntry[])
           : Promise.resolve([] as IndexEntry[]),
         district
-          ? budget.optional(getComparableMarketIndexCached({ kind: "district", district }), "district index", [] as IndexEntry[])
+          ? budget.optional(() => getComparableMarketIndexCached({ kind: "district", district }), "district index", [] as IndexEntry[])
           : Promise.resolve([] as IndexEntry[]),
       ])
     : [[] as IndexEntry[], [] as IndexEntry[], [] as IndexEntry[]];
@@ -294,8 +295,9 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const financialsAsOf = latestFinancial ? formatReportQuarter(latestFinancial.reportDate) : null;
   const assetsDollars = latestFinancial?.totalAssets ?? assetSizeToDollars(inst.asset_size);
 
-  const city = toTitleCase(inst.city);
+  const city = placeName(inst.city);
   const charterLabel = getCharterLabel(inst.charter_type);
+  const kind = inst.charter_type === "bank" ? "bank" : "credit union";
   const districtName = district ? DISTRICT_NAMES[district] : null;
   const segmentLabel = getSegmentLabel(inst.asset_size_tier, inst.charter_type);
   const collectedOn = formatAbsoluteDate(inst.latest_source_collected_at ?? null);
@@ -308,7 +310,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
 
   // The hero's details, one labelled cell each: where it is, what it is, how big, who supervises it.
   const holdingName = regulator?.holding_company_name
-    ? (toTitleCase(regulator.holding_company_name) ?? regulator.holding_company_name)
+    ? (holdingCompanyName(regulator.holding_company_name) ?? regulator.holding_company_name)
     : null;
   const heroFacts: HeroFact[] = [
     { label: "Headquarters", value: [city, stateName].filter(Boolean).join(", ") },
@@ -332,37 +334,60 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   // Rendered for every visitor and hidden for a Pro reader by FreeOnly.
   const showHamiltonBand = !sparse && published.length > 0;
 
-  // The overview and financial performance: one row per quarter from both call-report stores, and
-  // the asset-size cohort (same charter and tier, the newest quarter it filed) for its share.
+  // One row per quarter from both call-report stores (quarterly-ledger.ts), and the asset-size
+  // cohort (same charter and tier, the newest quarter it filed) its share is read against. The
+  // overview, financial performance and the connected panel all read these, so a quarter's figure
+  // is the same wherever it appears.
   const ledger = buildLedger(financialHistory, callItems);
-  const newestRecord = [...financialHistory]
-    .filter((row) => row.source === "fdic" || row.source === "ncua")
-    .sort((a, b) => b.report_date.localeCompare(a.report_date))[0];
+  const historyFinancials = selectFinancialsByQuarter(financialHistory);
+  const newestRecord = historyFinancials[0] ?? null;
   const terms = feeIncomeTerms(newestRecord?.source ?? (ledger.filer === "credit_union" ? "ncua" : "fdic"));
   const sizeRange = segmentLabel?.split(", ")[1] ?? null;
   const [cohortRows, sampleLive] = await Promise.all([
     newestRecord && inst.charter_type
       ? budget.optional(
-          getFeeShareCohortCached(inst.charter_type, inst.asset_size_tier ?? null, newestRecord.report_date, newestRecord.source),
+          () => getFeeShareCohortCached(inst.charter_type, inst.asset_size_tier ?? null, newestRecord.reportDate, newestRecord.source),
           "fee share cohort",
           null,
         )
       : Promise.resolve(null),
     showHamiltonBand || sparse
-      ? budget.optional(sampleReportAvailable(), "sample report", false)
+      ? budget.optional(() => sampleReportAvailable(), "sample report", false)
       : Promise.resolve(false),
   ]);
   const cohort = buildCohortDistribution(cohortRows, instId);
   const cohortName = cohort ? cohortLabel(inst.charter_type === "credit_union" ? "credit_union" : "bank", sizeRange) : null;
   const sampleHref = sampleLive ? "/reports/sample-competitive-fee-position" : null;
   const observations = buildObservations({ ledger, cohort, cohortName, counts, stateName, terms });
-  const latestServiceCharges = latestOf(ledger, "serviceCharges");
-  const latestRevenue = latestOf(ledger, "revenue");
-  const connectedFacts = [
-    latestServiceCharges && { label: terms.amount, value: latestServiceCharges.value.value, quarter: latestServiceCharges.quarter.quarter },
-    latestRevenue && { label: "Revenue", value: latestRevenue.value.value, quarter: latestRevenue.quarter.quarter },
-  ].filter((f): f is { label: string; value: number; quarter: string } => Boolean(f));
   const showOverview = ledger.quarters.length > 0 || Boolean(counts && !sparse);
+
+  // The one connected panel (#1984), fed from the ledger and cohort above (the Oct 19 reconcile
+  // plan): its bars are the ledger's standalone quarters, its share and median the cohort's.
+  const hamiltonInsight: HamiltonInsight | null =
+    showHamiltonBand && historyFinancials.length > 0
+      ? {
+          quarters: historyFinancials.slice(0, FINANCIAL_HISTORY_QUARTERS),
+          ownSharePct: cohort?.subject?.sharePct ?? null,
+          peerSharePct: cohort?.subject ? cohort.median : null,
+          peerCount: cohort?.subject ? cohort.peers.length : null,
+          filerCount: cohort?.filers ?? null,
+          sizeRange,
+          kind,
+        }
+      : null;
+
+  const connectedPanel = hamiltonInsight
+    ? buildConnectedPanel({
+        institutionId: instId,
+        institutionName: inst.institution_name,
+        insight: hamiltonInsight,
+        series: connectedPanelSeries(ledger, FINANCIAL_HISTORY_QUARTERS),
+        rows,
+        stateCode,
+        stateName,
+        city,
+      })
+    : null;
 
   const scheduleLink = inst.fee_schedule_url ? (
     <a href={inst.fee_schedule_url} target="_blank" rel="noopener noreferrer" className={LINK}>
@@ -421,7 +446,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
         />
 
         <div className="mx-auto max-w-page space-y-14 px-4 pb-16 pt-12 sm:space-y-16 sm:px-6 sm:pt-16">
-          {/* 2. The executive overview (James's brief, Oct 18): call-report cards, the service-charge trend, what stands out. */}
+          {/* The executive overview (James's brief, Oct 18): call-report cards, the service-charge trend, what stands out. */}
           {showOverview && (
             <ExecutiveOverview
               institutionName={inst.institution_name}
@@ -438,43 +463,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             />
           )}
 
-          {/* 3. Financial performance: any measure by quarter, the size cohort, income beside prices. */}
-          {ledger.quarters.length > 0 && (
-            <FinancialPerformanceSection
-              institutionId={instId}
-              institutionName={inst.institution_name}
-              ledger={ledger}
-              terms={terms}
-              cohort={cohort}
-              cohortName={cohortName}
-            >
-              <ConnectedPanel
-                institutionId={instId}
-                institutionName={inst.institution_name}
-                stateName={stateName}
-                stateShort={stateCode}
-                facts={connectedFacts}
-                share={cohort?.subject && cohortName ? { own: cohort.subject.sharePct, median: cohort.median, cohort: cohortName } : null}
-                fees={sparse ? [] : pickRelatedFees(rows)}
-                incomeName={terms.amount.toLowerCase()}
-              />
-            </FinancialPerformanceSection>
-          )}
-
-          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
-          {(footprint || complaints || enforcement || holdingCompany) && (
-            <section aria-labelledby="record-heading">
-              <h2 id="record-heading" className={H2} style={SERIF}>
-                Branches and public record
-              </h2>
-              <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
-              <div className="mt-6">
-                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
-              </div>
-            </section>
-          )}
-
-          {/* 5. Every published fee beside the state, district and U.S. medians. */}
+          {/* 2. Every published fee beside the state, district and U.S. medians. */}
           {published.length > 0 && (
             <section aria-labelledby="compare-heading" className="scroll-mt-20">
               <h2 id="compare-heading" className={H2} style={SERIF}>
@@ -547,12 +536,15 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </section>
           )}
 
-          {/* The fee position beside its call-report context: the band a visitor sees right after the comparison. */}
-          {showHamiltonBand && (
+          {/* Fee income beside fee prices, with Hamilton hand-offs that carry this comparison (James's brief, step 4).
+              Without call-report figures to connect, the Hamilton band stands in, as before. */}
+          {connectedPanel ? (
+            <ConnectedPanel panel={connectedPanel} sampleReportHref={sampleHref} />
+          ) : showHamiltonBand && (
             <FreeOnly>
               <HamiltonBand
                 institutionName={inst.institution_name}
-                insight={null}
+                insight={hamiltonInsight}
                 plansHref={links.plansHref}
                 reportOfferHref={links.reportOfferHref}
                 sampleReportHref={sampleHref}
@@ -560,7 +552,19 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </FreeOnly>
           )}
 
-          {/* 6. The whole schedule, grouped by type. */}
+          {/* Financial performance: any measure by quarter, and the share against its size cohort. */}
+          {ledger.quarters.length > 0 && (
+            <FinancialPerformanceSection
+              institutionId={instId}
+              institutionName={inst.institution_name}
+              ledger={ledger}
+              terms={terms}
+              cohort={cohort}
+              cohortName={cohortName}
+            />
+          )}
+
+          {/* 3. The whole schedule, grouped by type. */}
           {displayFees.length > 0 && (
             <section aria-labelledby="schedule-heading">
               <h2 id="schedule-heading" className={`${H2} scroll-mt-24`} style={SERIF}>
@@ -615,6 +619,18 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </ProOnly>
           )}
 
+          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
+          {(footprint || complaints || enforcement || holdingCompany) && (
+            <section aria-labelledby="record-heading">
+              <h2 id="record-heading" className={H2} style={SERIF}>
+                Branches and public record
+              </h2>
+              <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
+              <div className="mt-6">
+                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
+              </div>
+            </section>
+          )}
 
           <ProFinancialProfile institutionId={instId} institutionName={inst.institution_name} charterLabel={charterLabel} />
 

@@ -113,20 +113,16 @@ export function ProfileHero({
             <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-[#d9e2e9]">Compared with {place}</p>
             <p className="mt-3 text-[68px] font-medium leading-none tracking-[-0.02em] [font-variant-numeric:tabular-nums] sm:text-[92px]" style={SERIF}>
               {counts.above}
-              <span className="mx-3 font-normal text-white/70" aria-hidden="true">
-                /
-              </span>
+              {/* The slash is drawn with CSS so copied or extracted text reads "16 of 24", never "16/ of 24" (#1953). */}
+              <span className="mx-3 font-normal text-white/70 before:content-['/']" aria-hidden="true" />
               <span className="sr-only"> of </span>
               {counts.compared}
             </p>
-            <p className="mt-4 text-[18px] text-white sm:text-[20px]">compared fees above the median.</p>
+            <p className="mt-4 text-[18px] text-white sm:text-[20px]">compared fees are above the median.</p>
             <p className="mt-3 text-[15px] text-[#d9e2e9] sm:text-[16px]">
-              {counts.below} below
-              <span aria-hidden="true"> · </span>
-              <span className="sr-only">, </span>
-              {counts.same} about the same.
+              {counts.below} below, {counts.same} about the same.
             </p>
-            <p className="mt-1 text-[13px] text-[#d9e2e9]">About the same: within 1% of the median.</p>
+            {counts.same > 0 && <p className="mt-1 text-[13px] text-[#d9e2e9]">About the same: within 1% of the median.</p>}
           </div>
         )}
       </div>

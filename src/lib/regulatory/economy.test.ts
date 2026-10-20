@@ -38,7 +38,6 @@ import {
   publishedNumber,
   qcewGeo,
   readZipLines,
-  ruccClass,
   summariseShed,
   sumIndustry,
   BEA_LINES,
@@ -74,10 +73,6 @@ describe("RUCC", () => {
   it("reads a wide file and refuses one without the code column", () => {
     expect(parseRucc("FIPS,State,County_Name,RUCC_2023,Description\n1001,AL,Autauga County,2,Metro\n", "2023").rows[0].geo_code).toBe("01001");
     expect(parseRucc("FIPS,State,County_Name\n1001,AL,Autauga\n", "2023").emptyReason).toMatch(/RUCC_2023/);
-  });
-
-  it("maps codes 1-3 to urban and 4-9 to rural", () => {
-    expect([1, 3, 4, 9, 0, null].map(ruccClass)).toEqual(["urban", "urban", "rural", "rural", null, null]);
   });
 });
 

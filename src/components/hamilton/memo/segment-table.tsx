@@ -6,11 +6,14 @@
  */
 import { ANSWER_TYPE, More, fmtMoney } from "./memo";
 import { ExhibitFrame } from "./exhibit-view";
+import { feeScheduleUrls, ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
+import { formatPeerAssets } from "@/lib/hamilton/peer-list";
 
 export interface SegmentRow {
   institutionId: number;
   institutionName: string;
   amount: number;
+  several?: SeveralFees;
   stateCode: string | null;
   documentUrls: string[];
   /** Thousands of dollars. */
@@ -33,12 +36,7 @@ export interface SegmentData {
 
 /** Assets stored in thousands, shown as "$1.2T", "$48.3B" or "$950M"; missing assets say so. */
 export function fmtAssets(thousands: number | null): string {
-  if (thousands == null) return "Not available";
-  const dollars = thousands * 1000;
-  // "$750B", not "$750.0B": a trailing ".0" adds no precision.
-  if (dollars >= 1e12) return `$${(dollars / 1e12).toFixed(1).replace(/\.0$/, "")}T`;
-  if (dollars >= 1e9) return `$${(dollars / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
-  return `$${Math.round(dollars / 1e6)}M`;
+  return formatPeerAssets(thousands == null ? null : thousands * 1000);
 }
 
 const SHOWN = 15;
@@ -56,6 +54,8 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
       {rows.map((m, i) => {
         const width = max > 0 ? Math.max(2, (m.amount / max) * 100) : 0;
         const tone = own == null ? "bg-warm-400" : m.amount < own - 0.005 ? "bg-terra/70" : "bg-warm-400";
+        const urls = feeScheduleUrls(m.documentUrls);
+        const links = urls.map((url, i) => <a key={url} href={url} target="_blank" rel="noreferrer" className="text-xs text-terra-text underline">Schedule{urls.length > 1 ? ` ${i + 1}` : ""}</a>);
         return (
           <tr key={m.institutionId} className="border-b border-warm-100 last:border-0">
             <td className={`px-3 py-2 text-right text-xs text-warm-500 ${ANSWER_TYPE.num}`}>{start + i}</td>
@@ -65,12 +65,10 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
               {/* On a phone the assets, limit and source columns fold into one line here, so nothing scrolls sideways. */}
               <span className={`mt-0.5 block text-xs text-warm-600 sm:hidden ${ANSWER_TYPE.num}`}>
                 Assets {m.totalAssets == null ? "not available" : fmtAssets(m.totalAssets)} · Daily limit {dailyLimitText(m).toLowerCase()}
-                {m.documentUrls[0] ? (
+                {urls.length ? (
                   <>
                     {" · "}
-                    <a href={m.documentUrls[0]} target="_blank" rel="noreferrer" className="text-terra-text underline">
-                      Schedule
-                    </a>
+                    {links}
                   </>
                 ) : null}
               </span>
@@ -78,21 +76,19 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
             <td className={`hidden px-3 py-2 text-right sm:table-cell text-warm-700 ${ANSWER_TYPE.num}`}>{fmtAssets(m.totalAssets)}</td>
             <td className="px-3 py-2">
               <div className="flex items-center gap-2">
-                <span className={`w-14 shrink-0 text-right text-warm-900 ${ANSWER_TYPE.num}`}>{fmtMoney(m.amount)}</span>
-                <span className="hidden h-2 flex-1 rounded-full bg-warm-100 sm:block">
-                  <span className={`block h-2 rounded-full ${tone}`} style={{ width: `${width}%` }} />
+                <span className={`shrink-0 text-right text-warm-900 ${m.several ? "text-xs" : "w-14"} ${ANSWER_TYPE.num}`}>{statedFeeLabel(m.amount, m.several, fmtMoney)}</span>
+                <span className="relative hidden h-2 flex-1 rounded-full bg-warm-100 sm:block">
+                  {m.several ? <span className="absolute block h-2 rounded-full bg-warm-400" style={{ left: `${max > 0 ? m.several.low / max * 100 : 0}%`, width: `${max > 0 ? Math.max(1, (m.several.high - m.several.low) / max * 100) : 0}%` }} />
+                    : <span className={`block h-2 rounded-full ${tone}`} style={{ width: `${width}%` }} />}
                 </span>
               </div>
+              {m.several ? <span className="mt-0.5 block text-xs text-warm-600">{ownFeeList(m.several, fmtMoney)}</span> : null}
             </td>
             <td className={`hidden px-3 py-2 text-right sm:table-cell text-warm-700 ${ANSWER_TYPE.num}`} title={m.dailyFeeLimit?.line}>
               {dailyLimitText(m)}
             </td>
             <td className="hidden px-3 py-2 text-right sm:table-cell">
-              {m.documentUrls[0] ? (
-                <a href={m.documentUrls[0]} target="_blank" rel="noreferrer" className="text-xs text-terra-text underline">
-                  Schedule
-                </a>
-              ) : null}
+              <span className="flex flex-col gap-1">{links}</span>
             </td>
           </tr>
         );
@@ -141,7 +137,7 @@ export function SegmentTable({
 }) {
   // When the slice could not be built, the answer's first line already says why.
   if (data.problem || data.members.length === 0) return null;
-  const max = Math.max(own ?? 0, ...data.members.map((m) => m.amount));
+  const max = Math.max(own ?? 0, ...data.members.map((m) => m.several?.high ?? m.amount));
   const shown = data.members.slice(0, SHOWN);
   const rest = data.members.slice(SHOWN);
   // The bars only draw from sm up, so their key shows only there; the caption is about the data.
@@ -161,7 +157,7 @@ export function SegmentTable({
           <dd className={`text-lg text-warm-900 ${ANSWER_TYPE.num}`}>{data.members.length.toLocaleString("en-US")}</dd>
         </div>
         <div>
-          <dt className="text-xs text-warm-600">Charge $0</dt>
+          <dt className="text-xs text-warm-600">{data.members.some(m => m.amount === 0 && m.several) ? "Group values at $0" : "Charge $0"}</dt>
           <dd className={`text-lg text-warm-900 ${ANSWER_TYPE.num}`}>{data.zeroCount}</dd>
         </div>
         <div>

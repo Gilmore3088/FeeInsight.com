@@ -6,8 +6,6 @@
  * attempting (and logging) a blocked call on every page view.
  */
 
-import { sql } from "@/lib/data-store/connection";
-
 export const HAMILTON_WRITING_POLICY_KEYS = [
   "global:provider:default",
   "agent:hamilton",
@@ -34,31 +32,4 @@ export function evaluateHamiltonWritingPolicies(rows: PolicyRow[]): HamiltonWrit
     return !row || !row.enabled || !row.has_cap;
   });
   return { available: blockingPolicies.length === 0, blockingPolicies };
-}
-
-export async function getHamiltonWritingStatus(): Promise<HamiltonWritingStatus> {
-  try {
-    const rows = await sql`
-      SELECT policy_key,
-             enabled,
-             (hard_daily_microusd IS NOT NULL
-               OR hard_monthly_microusd IS NOT NULL
-               OR max_provider_calls_per_run IS NOT NULL
-               OR max_provider_calls_per_tick IS NOT NULL
-               OR max_estimated_cost_per_run_microusd IS NOT NULL
-               OR max_estimated_cost_per_tick_microusd IS NOT NULL) AS has_cap
-        FROM public.api_budget_policies
-       WHERE policy_key = ANY(${[...HAMILTON_WRITING_POLICY_KEYS]})
-    `;
-    return evaluateHamiltonWritingPolicies(
-      rows.map((row) => ({
-        policy_key: String(row.policy_key),
-        enabled: row.enabled === true,
-        has_cap: row.has_cap === true,
-      })),
-    );
-  } catch {
-    // Unknown: let the briefing try, as it did before; its own guard still blocks.
-    return { available: true, blockingPolicies: [] };
-  }
 }

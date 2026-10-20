@@ -1,4 +1,6 @@
 import type { RegistryDb } from "./partitions";
+import { sql } from "@/lib/data-store/connection";
+import { recordRegistryFailure } from "./failure";
 import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
@@ -62,6 +64,14 @@ import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRe
 import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNews } from "./state-reg-news";
 import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
 import { WIRE_RESEARCH_PARTITION, WIRE_RESEARCH_SOURCE, WIRE_RESEARCH_STEP_KEY, runRegistryWireResearch } from "./wire-research";
+import { BANK_ZELLE_PARTITION, BANK_ZELLE_SOURCE, runRegistryBankZelle } from "./bank-zelle";
+import {
+  CALL_REPORT_SUMMARIES_PARTITION,
+  CALL_REPORT_SUMMARIES_SOURCE,
+  CALL_REPORT_SUMMARY_TRIGGER_SOURCES,
+  markCallReportSummariesDue,
+  runRegistryCallReportSummaries,
+} from "./call-report-summaries";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
@@ -886,16 +896,18 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: GLEIF_SOURCE,
     stepKey: "registry-gleif",
-    title: "Pull GLEIF legal entities (level 1) and parent relationships (level 2) for tracked institutions",
+    title: "Link tracked institutions to GLEIF LEIs, then pull GLEIF legal entities (level 1) and parent relationships (level 2)",
     run: async (input) => {
       const r = await runRegistryGleif({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
       return {
         summary: r.empty
           ? `No GLEIF rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.leiMatch
+            ? `GLEIF LEI match ${r.partitionKey}: ${n(r.leiMatch.read)} ${r.leiMatch.basis === "name_state" ? "institutions searched" : "GLEIF records read"}, ${n(r.leiMatch.changes)} link changes, ${n(r.writtenRows)} written${r.leiMatch.remaining > 0 ? ", more next run" : ""}${r.leiMatch.coverage ? `; ${n(r.leiMatch.coverage.linked)} of ${n(r.leiMatch.coverage.institutions)} institutions linked` : ""}${dry(r.dryRun)}.`
           : r.partitionKey === "level2"
             ? `Magellan read ${n(r.relationships)} GLEIF parent relationships for ${n(r.seeds)} tracked LEIs (publish ${r.publishDate}), ${n(r.writtenRows)} written${dry(r.dryRun)}.`
             : `Magellan read ${n(r.entities)} GLEIF entities for ${r.partitionKey}: ${n(r.linked)} linked, ${n(r.unlinked)} unlinked, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
-        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, ...(r.leiMatch ? { lei_match: { basis: r.leiMatch.basis, proposals: r.leiMatch.proposals, changes: r.leiMatch.changes, remaining: r.leiMatch.remaining, coverage: r.leiMatch.coverage, ...r.leiMatch.detail } } : {}), empty: r.empty, empty_reason: r.emptyReason },
       };
     },
   },
@@ -1310,6 +1322,58 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   },
+  {
+    source: BANK_ZELLE_SOURCE,
+    stepKey: "registry-bank-zelle",
+    title: "Read whether each institution offers Zelle from its own documents",
+    fixedPartition: BANK_ZELLE_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryBankZelle({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const next = r.passFinished ? "the pass is finished and starts again in a week" : `the next run starts after institution ${r.cursorTo}`;
+      return {
+        summary: `Hoovie read ${n(r.documentsRead)} current documents of ${n(r.institutionsRead)} institutions for Zelle: ${n(r.documentsNamingZelle)} name it; ${n(r.offers)} institutions offer it, ${n(r.doesNotOffer)} say they do not, ${n(r.unclear)} unclear; ${n(r.written)} rows written, ${n(r.removed)} removed; ${next}${dry(r.dryRun)}.`,
+        detail: {
+          matcher_version: r.matcherVersion,
+          cursor_from: r.cursorFrom,
+          cursor_to: r.cursorTo,
+          pass_finished: r.passFinished,
+          institutions_read: r.institutionsRead,
+          documents_read: r.documentsRead,
+          documents_naming_zelle: r.documentsNamingZelle,
+          documents_skipped: r.documentsSkipped,
+          offers: r.offers,
+          does_not_offer: r.doesNotOffer,
+          unclear: r.unclear,
+          written: r.written,
+          removed: r.removed,
+        },
+      };
+    },
+  },
+  {
+    source: CALL_REPORT_SUMMARIES_SOURCE,
+    stepKey: "registry-call-report-summaries",
+    title: "Precompute call-report quarterly income for the readers",
+    fixedPartition: CALL_REPORT_SUMMARIES_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryCallReportSummaries({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const changed = r.groupsChanged.length + r.groupsRemoved.length;
+      return {
+        summary: changed === 0
+          ? `Hoovie checked ${n(r.filings)} call-report filings in ${r.groupsChecked} regulator-years; the quarterly summary is current${dry(r.dryRun)}.`
+          : `Hoovie ${r.dryRun ? "would rebuild" : "rebuilt"} the call-report quarterly summary for ${[...r.groupsChanged, ...r.groupsRemoved].join(", ")}: ${n(r.rowsWritten)} filings written, ${n(r.rowsRemoved)} replaced, ${n(r.summaryRows)} in the summary${dry(r.dryRun)}.`,
+        detail: {
+          groups_checked: r.groupsChecked,
+          groups_changed: r.groupsChanged,
+          groups_removed: r.groupsRemoved,
+          filings: r.filings,
+          rows_removed: r.rowsRemoved,
+          rows_written: r.rowsWritten,
+          summary_rows: r.summaryRows,
+        },
+      };
+    },
+  },
 ];
 
 export const REGISTRY_STEP_KEYS = REGISTRY_SOURCES.map((entry) => entry.stepKey);
@@ -1335,7 +1399,32 @@ export async function runRegistryStep(input: RegistryStepInput): Promise<Registr
       detail: { registry_source: definition.source, missing_partition: true },
     };
   }
-  const output = await definition.run({ ...input, partitionKey });
+  let output: WorkerOutput;
+  try {
+    output = await definition.run({ ...input, partitionKey });
+  } catch (error) {
+    if (!input.dryRun) {
+      try {
+        const receipt = await recordRegistryFailure(input.db ?? sql, {
+          source: definition.source, partitionKey, runId: input.runId, error,
+        });
+        if (receipt.blocked) return {
+          status: "skipped",
+          summary: `${definition.title}: publisher refused the request; no data loaded. ${receipt.message}`,
+          detail: { registry_source: definition.source, partition_key: partitionKey,
+            missing_source: true, failure_recorded: receipt.recorded },
+        };
+      } catch {
+        // Keep the original worker error; a failed receipt must not replace its cause.
+        console.error("Registry failure receipt could not be stored", { source: definition.source, partitionKey });
+      }
+    }
+    throw error;
+  }
+  // A load that changed the call-report filings makes the quarterly summary due at once.
+  if (!input.dryRun && !output.skipped && CALL_REPORT_SUMMARY_TRIGGER_SOURCES.has(definition.source)) {
+    await markCallReportSummariesDue(input.db ?? sql);
+  }
   return {
     status: output.skipped ? "skipped" : "completed",
     summary: output.summary,

@@ -61,7 +61,7 @@ function LeadCard({ lead, now }: { lead: LeadRow; now: Date }) {
 
 /** The Customers room: requests as a board by stage, plus who could get a report today. */
 export default async function CustomersRoomPage({ searchParams }: { searchParams?: Promise<{ stage?: string }> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const stageParam = (await searchParams)?.stage;
   const activeLane = LANES.find((lane) => lane.key === stageParam) ?? null;
   const [leads, markets, proAccounts, planWatch, proInstitutions] = await Promise.all([
@@ -250,9 +250,9 @@ function PlanWatch({ list: { rows, unread } }: { list: PlanWatchList }) {
 function ProAccounts({ accounts }: { accounts: ProAccount[] }) {
   const billed = accounts.filter((account) => account.hasStripeCustomer).length;
   return (
-    <section aria-label="Hamilton Pro accounts">
+    <section aria-label="Pro accounts">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="admin-section-title">Hamilton Pro accounts</p>
+        <p className="admin-section-title">Pro accounts</p>
         <p className="text-xs text-gray-500">
           {accounts.length} with Pro access · {billed} linked to a Stripe customer · {accounts.length - billed} granted without Stripe
         </p>

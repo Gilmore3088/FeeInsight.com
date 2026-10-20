@@ -174,6 +174,7 @@ describe("exact displayed peer-list continuation", () => {
     expect(result.peerList.status).toBe("needs_criteria");
     expect(result.shortAnswer).toMatch(/^No institution is linked to your account, so there is no "us" to compare\./);
     expect(result.shortAnswer).toContain("did not treat the institution you are researching as yours");
+    expect(result.shortAnswer).toContain("To link yours, open Settings & account.");
     expect(mocks.account).toHaveBeenCalledWith(user);
     for (const read of [mocks.subject, mocks.rows, mocks.fees, mocks.resolve]) expect(read).not.toHaveBeenCalled();
   });

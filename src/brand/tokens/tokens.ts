@@ -37,25 +37,6 @@ export const colors = {
   },
 } as const;
 
-/** CSS variable references, theme-aware at runtime. */
-export const cssVar = {
-  "paper": "var(--fi-paper)",
-  "surface-0": "var(--fi-surface-0)",
-  "surface-200": "var(--fi-surface-200)",
-  "ink": "var(--fi-ink)",
-  "on-ink": "var(--fi-on-ink)",
-  "muted": "var(--fi-muted)",
-  "border": "var(--fi-border)",
-  "control-border": "var(--fi-control-border)",
-  "brick": "var(--fi-brick)",
-  "on-brick": "var(--fi-on-brick)",
-  "brick-tint": "var(--fi-brick-tint)",
-  "brick-ink": "var(--fi-brick-ink)",
-  "above-market": "var(--fi-above-market)",
-  "in-range": "var(--fi-in-range)",
-  "below-market": "var(--fi-below-market)",
-} as const;
-
 export const space = {
   "1": "4px",
   "2": "8px",
@@ -88,6 +69,4 @@ export const typography = {
   "figure-lg": { family: "mono", fontSize: "40px", lineHeight: "44px", fontWeight: 600, letterSpacing: "-0.02em" },
   "figure": { family: "mono", fontSize: "14px", lineHeight: "20px", fontWeight: 500 },
 } as const;
-
-export type ColorToken = keyof typeof colors.light;
 export type Theme = keyof typeof colors;

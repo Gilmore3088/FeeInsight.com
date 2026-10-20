@@ -1,0 +1,11 @@
+{
+  "source_url": "https://www.oakwoodbank.net/webfiles/fnitools/documents/cra_accounts_and_fees.pdf",
+  "source_document_id": 17019,
+  "institution_id": 3381,
+  "artifact_id": 12534,
+  "source_sha256": "e8160b6a4c57816399cfe99fe441fb227dac9e0895c56423286feae80daa0bf3",
+  "stored_normalized_text_sha256": "9429c874685735f0f6e73ec0ac9ba1dccc84571bbefe7219945d820a065e9738",
+  "captured_date": "2026-10-19",
+  "physical_fee_page": 2,
+  "scope": "Exact stored source bytes and current stored interleaved artifact, used to reproduce Rosetta layout pairing and bounded repair selection. It does not certify every Knox candidate or authorize a production fee mutation."
+}

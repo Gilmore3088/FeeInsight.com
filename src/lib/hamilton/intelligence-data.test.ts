@@ -1,9 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+const readers = vi.hoisted(() => ({ segment: vi.fn() }));
+vi.mock("@/lib/data-store/fee-index", () => ({ getSegmentFeeValues: readers.segment, getPeerFeeValues: vi.fn() }));
 
 vi.mock("@/lib/data-store/connection", () => ({ getSql: () => { throw new Error("no database in unit tests"); } }));
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
-import { buildFeeMap, buildFeeSpread, median, joinSeries, loadComplaintTrend, percentChange, yearOverYear } from "./intelligence-data";
+import { buildFeeMap, buildFeeSpread, median, joinSeries, loadComplaintTrend, loadPeerTable, percentChange, yearOverYear } from "./intelligence-data";
+
+it("retains a segment's stated price range and every source in the Intelligence projection (#1993)", async () => {
+  const several = { low: 2.5, high: 3, fees: [{ name: "ATM A", amount: 2.5 }, { name: "ATM B", amount: 3 }] };
+  const urls = ["https://bank.test/a.pdf", "https://bank.test/b.pdf"];
+  readers.segment.mockResolvedValue({ institutionsInSegment: 4, values: [{ institution_id: 1, institution_name: "Bank", amount: 2.75, document_urls: urls, total_assets: 10, charter_type: "bank", published_at: null, several }] });
+  expect(await loadPeerTable(null, "all", "atm_non_network")).toMatchObject({ institutionsInScope: 4, rows: [{ amount: 2.75, several, documentUrls: urls, documentUrl: null }] });
+});
 
 describe("buildFeeMap", () => {
   it("counts charters that share one fee schedule once, as the landscape table does", () => {

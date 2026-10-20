@@ -18,7 +18,7 @@ describe("/subscribe demo links (growth OS review N3)", () => {
     render(<GatedOptions reportHref="/reports?report=institution&src=subscribe#request" />);
     expect(document.body.textContent).toContain("Want to see Hamilton first? Ask for a demo");
     const demo = screen.getByRole("link", { name: "Ask for a demo" });
-    expect(demo).toHaveAttribute("href", "/contact?source=demo");
+    expect(demo).toHaveAttribute("href", "/for-institutions#demo");
     expect(demo).toHaveAttribute("data-event", "contact_sales");
     expect(demo).toHaveAttribute("data-placement", "pricing_gated_demo");
     expect(screen.getByRole("link", { name: /Explore the/ })).toHaveAttribute(
@@ -30,7 +30,7 @@ describe("/subscribe demo links (growth OS review N3)", () => {
   it("direct visit: the demo row says Ask for a demo, never Request a demo", () => {
     render(<OtherOptions />);
     const demo = screen.getByRole("link", { name: "Ask for a demo" });
-    expect(demo).toHaveAttribute("href", "/contact?source=demo");
+    expect(demo).toHaveAttribute("href", "/for-institutions#demo");
     // Its own placement, apart from the Hamilton window's link (pricing_exhibit_demo).
     expect(demo).toHaveAttribute("data-placement", "pricing_demo");
     expect(document.body.textContent).not.toContain("Request a demo");
