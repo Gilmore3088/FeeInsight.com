@@ -42,6 +42,11 @@ import {
   isHomeMetroKey,
   peerSetChipKey,
   isPeerSetVariant,
+  gapRadius,
+  locationMarker,
+  locationMarkers,
+  locationGapLegend,
+  LOCATION_RADIUS,
   type ExplorerInstitution,
   type PeerExplorerSet,
 } from "./peer-explorer";
@@ -225,6 +230,81 @@ describe("locations", () => {
       ["Tallahassee, FL", [4, 1, 2]],
       ["Quincy, FL", [2]],
     ]);
+  });
+
+  describe("markers sized by the gap to the peer median", () => {
+    // Every peer the same size in assets (the case that made every circle look alike, #1811):
+    // the circles must still differ, because they follow the fee gap, not assets.
+    const alike: PeerExplorerSet = {
+      subject: inst(1, 2e9, { monthly_maintenance: { amount: 12 } }),
+      peers: [
+        inst(2, 2e9, { monthly_maintenance: { amount: 10 } }),
+        inst(3, 2e9, { monthly_maintenance: { amount: 14 } }),
+        inst(4, 2e9, { monthly_maintenance: { amount: 5 } }),
+        inst(5, 2e9, { monthly_maintenance: { amount: 10.05 } }),
+        inst(6, 2e9, {}),
+      ],
+      charterType: "bank",
+      medians: { monthly_maintenance: { median: 10, peers: 4 } },
+    };
+    const marker = (id: number) => locationMarker(alike, "monthly_maintenance", [alike.subject, ...alike.peers].find((i) => i.id === id)!);
+
+    it("should_size_by_absolute_dollar_gap_not_assets_when_every_peer_is_the_same_size", () => {
+      const radii = [2, 3, 4].map((id) => marker(id).r);
+      expect(new Set(radii).size).toBe(3);
+      // $5 below is the largest gap: the largest circle; $4 above is next; $0 the smallest.
+      expect(marker(4).r).toBe(LOCATION_RADIUS.max);
+      expect(marker(3).r).toBeGreaterThan(marker(2).r);
+      expect(marker(2).r).toBe(LOCATION_RADIUS.min);
+    });
+
+    it("should_colour_above_and_below_with_the_median_pair_and_about_the_same_neutral", () => {
+      expect(marker(3)).toMatchObject({ kind: "gap", band: "above", gap: 4 });
+      expect(marker(4)).toMatchObject({ kind: "gap", band: "below", gap: -5 });
+      // Within 1% of the median reads as about the same, never above.
+      expect(marker(5)).toMatchObject({ kind: "gap", band: "same" });
+      expect(marker(1)).toMatchObject({ kind: "gap", band: "above", gap: 2 });
+    });
+
+    it("should_draw_a_peer_that_does_not_publish_the_fee_as_a_small_hollow_marker", () => {
+      expect(marker(6)).toEqual({ kind: "not-published", r: LOCATION_RADIUS.empty });
+      expect(LOCATION_RADIUS.empty).toBeLessThan(LOCATION_RADIUS.min);
+    });
+
+    it("should_make_area_follow_the_gap", () => {
+      const area = (r: number) => r * r;
+      const { min, max } = LOCATION_RADIUS;
+      expect(area(gapRadius(2.5, 5)) - area(min)).toBeCloseTo((area(max) - area(min)) / 2, 6);
+      expect(gapRadius(0, 5)).toBe(min);
+      expect(gapRadius(5, 5)).toBe(max);
+      // Every gap the same size (all at the median): one size, the smallest, never NaN.
+      expect(gapRadius(0, 0)).toBe(min);
+    });
+
+    it("should_find_the_largest_gap_once_for_every_marker_in_a_view", () => {
+      let reads = 0;
+      const counted = { ...alike, get peers() { reads += 1; return alike.peers; } };
+      const markerFor = locationMarkers(counted, "monthly_maintenance");
+      const before = reads;
+      const all = [alike.subject, ...alike.peers].map((i) => markerFor(i));
+      expect(reads).toBe(before);
+      expect(all).toEqual([1, 2, 3, 4, 5, 6].map(marker));
+    });
+
+    it("should_keep_one_neutral_size_when_there_is_no_median", () => {
+      const thin = { ...alike, medians: {} };
+      expect(locationMarker(thin, "monthly_maintenance", alike.peers[1])).toEqual({ kind: "no-median", r: LOCATION_RADIUS.min });
+      expect(locationGapLegend(thin, "monthly_maintenance")).toEqual([]);
+    });
+
+    it("should_give_the_size_legend_in_dollars_from_the_largest_gap", () => {
+      expect(locationGapLegend(alike, "monthly_maintenance")).toEqual([
+        { gap: 5, r: LOCATION_RADIUS.max, label: "$5" },
+        { gap: 2.5, r: gapRadius(2.5, 5), label: "$2.50" },
+      ]);
+      const flat = { ...alike, subject: inst(1, 2e9, { monthly_maintenance: { amount: 10 } }), peers: alike.peers.slice(0, 1) };
+      expect(locationGapLegend(flat, "monthly_maintenance")).toEqual([]);
+    });
   });
 
   it("groups by city when the whole set is in one state", () => {

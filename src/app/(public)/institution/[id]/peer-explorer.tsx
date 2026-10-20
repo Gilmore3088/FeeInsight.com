@@ -15,7 +15,6 @@ import {
   EXPLORER_FEE_SHORT,
   LANDSCAPE_AXIS_LABELS,
   assetDifference,
-  assetRadius,
   assetScale,
   assetsLabel,
   cellShade,
@@ -37,7 +36,9 @@ import {
   landscapeAxes,
   landscapeValue,
   linearScale,
+  locationGapLegend,
   locationGroups,
+  locationMarkers,
   matrixSummary,
   publishingPeers,
   peerSnapshot,
@@ -53,6 +54,7 @@ import {
   type ExplorerInstitution,
   type ExplorerView,
   type LandscapeAxis,
+  type LocationMarker,
   type MatrixBand,
   type MatrixSortKey,
   type PeerExplorerSet,
@@ -1084,60 +1086,108 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
 
 const GROUPS_SHOWN = 12;
 const CIRCLES_PER_GROUP = 40;
+/** Every marker keeps at least this tap target, in pixels. */
+const MARKER_TARGET = 24;
+const GAP_TONE: Record<"above" | "below" | "same", string> = { above: ABOVE_TONE, below: BELOW_TONE, same: PEER };
 
-/** Where the set is: one cluster per city (or state), circles sized by total assets. */
+/** "Pine State Bank, $14.50, $4.50 above the peer median": what a marker says to a screen reader and on hover. */
+function markerWords(inst: ExplorerInstitution, fee: ExplorerFeeKey, marker: LocationMarker): { name: string; fee: string; gap: string | null } {
+  const value = feeOf(inst, fee);
+  if (marker.kind === "not-published" || value === undefined) return { name: inst.name, fee: `${EXPLORER_FEE_LABELS[fee].toLowerCase()} not published`, gap: null };
+  if (marker.kind === "no-median") return { name: inst.name, fee: money(value), gap: "no peer median: too few publish this fee" };
+  const median = value - marker.gap;
+  return { name: inst.name, fee: money(value), gap: gapText(value, median).text };
+}
+
+/**
+ * Where the set is: one cluster per city (or state). Each circle's area shows how far the
+ * institution's fee is from the peer median in dollars, its colour which side (the shared
+ * above/below pair), so the largest gaps stand out (James, 2026-10-20; tracker #1811). An
+ * institution that does not publish the fee is a small hollow marker. Hover, tap or keyboard
+ * focus names the institution and its fee.
+ */
 function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const { by, groups } = locationGroups(set);
   const [all, setAll] = useState(false);
+  const [pointed, setPointed] = useState<{ id: number; group: string } | null>(null);
   const shown = all ? groups : groups.slice(0, GROUPS_SHOWN);
-  const maxAssets = Math.max(1, ...[set.subject, ...set.peers].map((inst) => inst.assets ?? 0));
-  // The legend uses the set's own largest, middle and smallest total assets.
-  const sizes = [set.subject, ...set.peers].map((inst) => inst.assets ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
-  const legend = [...new Set([sizes[0], sizes[Math.floor(sizes.length / 2)], sizes[sizes.length - 1]])].filter((v): v is number => v !== undefined);
+  const median = set.medians[fee]?.median;
+  const sizes = locationGapLegend(set, fee);
+  const markerFor = locationMarkers(set, fee);
+  const where =
+    by === "branch"
+      ? `Grouped by the cities in the ${set.market?.name ?? "home"} metro where each institution has a branch, so one can appear in several.`
+      : `Grouped by headquarters ${by}.`;
+  const encoding =
+    median !== undefined
+      ? `Circle area shows how far each fee is from the peer median, in dollars. Colour shows whether it is above or below.`
+      : `Too few peers publish this fee for a median, so circles show no gap.`;
   return (
-    <div>
+    <div data-view="locations">
       <p className="text-[12px] text-ink-muted">
-        {by === "branch"
-          ? `Grouped by the cities in the ${set.market?.name ?? "home"} metro where each institution has a branch, so one can appear in several. Circle area shows total assets.`
-          : `Grouped by headquarters ${by}. Circle area shows total assets.`}
+        {where} {encoding}
       </p>
       <ul className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {shown.map((group) => {
           const hasSubject = group.members.some((m) => m.id === set.subject.id);
           const visible = group.members.slice(0, CIRCLES_PER_GROUP);
+          const pointedInst = pointed?.group === group.key ? group.members.find((m) => m.id === pointed.id) : undefined;
+          const named = pointedInst ? markerWords(pointedInst, fee, markerFor(pointedInst)) : null;
           return (
             <li key={group.key} className={`min-w-0 rounded-[18px] border p-3 ${hasSubject && by !== "branch" ? "border-ink/30 bg-ink/[0.04]" : "border-border bg-paper"}`}>
               <p className="flex items-baseline justify-between gap-2">
                 <span className="min-w-0 truncate text-[14px] font-semibold text-ink">{group.name}</span>
                 <span className="shrink-0 text-[12px] tabular-nums text-ink-muted">{group.members.length.toLocaleString("en-US")}</span>
               </p>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1">
                 {visible.map((inst) => {
-                  const r = assetRadius(inst.assets, maxAssets, 5, 20);
+                  const marker = markerFor(inst);
+                  const words = markerWords(inst, fee, marker);
                   const isSubject = inst.id === set.subject.id;
                   const isSelected = inst.id === selectedId;
-                  const value = feeOf(inst, fee);
+                  const tone = marker.kind === "gap" ? GAP_TONE[marker.band] : PEER;
+                  const hollow = marker.kind === "not-published";
+                  const d = marker.r * 2;
+                  const point = { id: inst.id, group: group.key };
                   return (
                     <button
                       key={inst.id}
                       type="button"
-                      onClick={() => onSelect(inst.id)}
-                      title={`${inst.name}: ${assetsLabel(inst.assets) ?? "assets not on record"}, ${EXPLORER_FEE_LABELS[fee].toLowerCase()} ${value !== undefined ? money(value) : "not published"}`}
-                      aria-label={`${inst.name}, ${value !== undefined ? money(value) : "not published"}`}
+                      data-mark={isSubject ? "location-subject" : "location-peer"}
+                      onClick={() => {
+                        onSelect(inst.id);
+                        setPointed(point);
+                      }}
+                      onMouseEnter={() => setPointed(point)}
+                      onMouseLeave={() => setPointed((now) => (now?.id === inst.id && now.group === group.key ? null : now))}
+                      onFocus={() => setPointed(point)}
+                      onBlur={() => setPointed((now) => (now?.id === inst.id && now.group === group.key ? null : now))}
+                      aria-label={[words.name, words.fee, words.gap].filter(Boolean).join(", ")}
                       aria-pressed={isSelected}
                       className="grid place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink"
-                      style={{ width: Math.max(24, r * 2), height: Math.max(24, r * 2), opacity: dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1 }}
+                      style={{ width: Math.max(MARKER_TARGET, d + 4), height: Math.max(MARKER_TARGET, d + 4), opacity: dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1 }}
                     >
                       {isSubject ? (
-                        <span className="block rotate-45" style={{ width: Math.max(10, r * 1.3), height: Math.max(10, r * 1.3), background: SUBJECT }} />
+                        <span
+                          data-shape={hollow ? "hollow" : "subject"}
+                          className="block rotate-45"
+                          style={{
+                            width: Math.max(8, d * 0.75),
+                            height: Math.max(8, d * 0.75),
+                            background: hollow ? "transparent" : SUBJECT,
+                            border: hollow ? `1.5px solid ${SUBJECT}` : undefined,
+                          }}
+                        />
                       ) : (
                         <span
+                          data-shape={hollow ? "hollow" : "filled"}
                           className="block rounded-full"
                           style={{
-                            width: r * 2,
-                            height: r * 2,
-                            background: isSelected || highlight?.ids.has(inst.id) ? SELECTED : PEER,
-                            boxShadow: isSelected ? `0 0 0 2px var(--fi-surface-0), 0 0 0 3.5px ${SELECTED}` : undefined,
+                            width: d,
+                            height: d,
+                            background: hollow ? "transparent" : tone,
+                            border: hollow ? "1.5px solid var(--fi-muted)" : undefined,
+                            boxShadow: isSelected || highlight?.ids.has(inst.id) ? `0 0 0 2px var(--fi-surface-0), 0 0 0 3.5px var(--fi-ink)` : undefined,
                           }}
                         />
                       )}
@@ -1148,14 +1198,24 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
                   <span className="text-[12px] text-ink-muted">+{(group.members.length - visible.length).toLocaleString("en-US")} more</span>
                 )}
               </div>
-              {(hasSubject || group.members.some((m) => m.id === selectedId)) && (
-                <p className="mt-2 truncate text-[12px] text-ink-soft">
-                  {[set.subject, ...set.peers]
-                    .filter((m) => (m.id === set.subject.id || m.id === selectedId) && group.members.includes(m))
-                    .map((m) => m.name)
-                    .join(", ")}
-                </p>
-              )}
+              {/* No aria-live: a focused marker's own label already names it, so a reader hears it once. */}
+              <p data-readout aria-hidden={named ? true : undefined} className="mt-2 min-h-[1.25rem] text-[12px] leading-snug text-ink-soft">
+                {named ? (
+                  <>
+                    <span className="font-semibold text-ink">{named.name}</span>: <span className={named.fee.startsWith("$") ? "tabular-nums" : undefined}>{named.fee}</span>
+                    {named.gap ? <span className="text-ink-muted">, {named.gap}</span> : null}
+                  </>
+                ) : (
+                  (hasSubject || group.members.some((m) => m.id === selectedId)) && (
+                    <span className="block truncate">
+                      {[set.subject, ...set.peers]
+                        .filter((m) => (m.id === set.subject.id || m.id === selectedId) && group.members.includes(m))
+                        .map((m) => m.name)
+                        .join(", ")}
+                    </span>
+                  )
+                )}
+              </p>
             </li>
           );
         })}
@@ -1165,17 +1225,39 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
           {all ? "Show fewer places" : `Show all ${groups.length.toLocaleString("en-US")} places`}
         </button>
       )}
-      <div className="mt-3 flex flex-wrap items-end gap-4 text-[11px] text-ink-muted" aria-hidden="true">
-        {legend.map((assets) => {
-          const r = assetRadius(assets, maxAssets, 5, 20);
-          return (
-            <span key={assets} className="inline-flex items-center gap-1.5">
-              <span className="inline-block rounded-full" style={{ width: r * 2, height: r * 2, background: PEER }} />
-              {assetsLabel(assets)}
-            </span>
-          );
-        })}
-      </div>
+      <ul aria-label="Locations legend" className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-ink-muted">
+        {sizes.map((size) => (
+          <li key={size.gap} className="inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="inline-block rounded-full" style={{ width: size.r * 2, height: size.r * 2, background: PEER }} />
+            {size.label} from the median
+          </li>
+        ))}
+        {median !== undefined && (
+          <>
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: ABOVE_TONE }} />
+              Above the median
+            </li>
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: BELOW_TONE }} />
+              Below the median
+            </li>
+            <li className="inline-flex items-center gap-1.5">
+              <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: PEER }} />
+              About the same
+            </li>
+          </>
+        )}
+        <li className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-block size-2 rounded-full border-[1.5px] border-ink-muted" />
+          Not published
+        </li>
+        <li className="inline-flex items-center gap-1.5">
+          <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
+          {set.subject.name}
+        </li>
+      </ul>
+      {median !== undefined && <p className="mt-1 text-[11px] text-ink-muted">{MEDIAN_TONE_NOTE}</p>}
     </div>
   );
 }

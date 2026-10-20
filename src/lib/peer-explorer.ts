@@ -386,10 +386,65 @@ export function locationGroups(set: PeerExplorerSet): { by: "branch" | "city" | 
   return { by, groups: sortGroups([...groups.values()]) };
 }
 
-/** A circle's radius for total assets: area follows assets, between the given bounds. */
-export function assetRadius(assets: number | null, maxAssets: number, minR = 5, maxR = 22): number {
-  if (!assets || assets <= 0 || maxAssets <= 0) return minR;
-  return Math.max(minR, maxR * Math.sqrt(assets / maxAssets));
+/**
+ * Locations circle sizes in pixels: a fee at the median gets `min`, the set's largest dollar gap
+ * gets `max`; a fee the institution does not publish is a smaller hollow marker (`empty`).
+ */
+export const LOCATION_RADIUS = { min: 5, max: 18, empty: 4 } as const;
+
+/** A circle's radius for a dollar gap: area grows with the gap above the smallest circle. */
+export function gapRadius(gap: number, maxGap: number): number {
+  const { min, max } = LOCATION_RADIUS;
+  if (maxGap <= 0 || gap <= 0) return min;
+  return Math.sqrt(min * min + (max * max - min * min) * Math.min(1, gap / maxGap));
+}
+
+export type LocationMarker =
+  | { kind: "gap"; band: "above" | "below" | "same"; gap: number; r: number }
+  | { kind: "no-median"; r: number }
+  | { kind: "not-published"; r: number };
+
+/** The largest dollar gap to the median among the institutions on the page, 0 without a median. */
+function largestGap(set: PeerExplorerSet, fee: ExplorerFeeKey): number {
+  const median = set.medians[fee]?.median;
+  if (median === undefined) return 0;
+  const gaps = [set.subject, ...set.peers].map((inst) => inst.fees[fee]?.amount).filter((v): v is number => v !== undefined).map((v) => Math.abs(v - median));
+  return Math.max(0, ...gaps);
+}
+
+/**
+ * One institution's Locations marker for a fee (James, 2026-10-20; tracker #1811): sized by its
+ * dollar gap to the peer median, coloured by side (the shared above/below pair; within 1% is
+ * about the same), hollow and small when it does not publish the fee, one neutral size when the
+ * set has too few publishing peers for a median.
+ */
+export function locationMarker(set: PeerExplorerSet, fee: ExplorerFeeKey, inst: ExplorerInstitution): LocationMarker {
+  return locationMarkers(set, fee)(inst);
+}
+
+/** Every marker of one view, scaled to the set's largest gap, which is found once, not per marker. */
+export function locationMarkers(set: PeerExplorerSet, fee: ExplorerFeeKey): (inst: ExplorerInstitution) => LocationMarker {
+  const median = set.medians[fee]?.median;
+  const maxGap = largestGap(set, fee);
+  return (inst) => {
+    const value = inst.fees[fee]?.amount;
+    if (value === undefined) return { kind: "not-published", r: LOCATION_RADIUS.empty };
+    if (median === undefined) return { kind: "no-median", r: LOCATION_RADIUS.min };
+    const band = matrixBand(value, median) as "above" | "below" | "same";
+    const gap = Math.round((value - median) * 100) / 100;
+    return { kind: "gap", band, gap, r: gapRadius(Math.abs(gap), maxGap) };
+  };
+}
+
+/** The size legend: the largest gap on the page and half of it, in dollars. Empty with no gap to show. */
+export function locationGapLegend(set: PeerExplorerSet, fee: ExplorerFeeKey): { gap: number; r: number; label: string }[] {
+  const max = Math.round(largestGap(set, fee) * 100) / 100;
+  if (max < 0.01) return [];
+  const half = Math.round((max / 2) * 100) / 100;
+  return [
+    { gap: max, r: gapRadius(max, max), label: money(max) },
+    ...(half >= 0.01 && half < max ? [{ gap: half, r: gapRadius(half, max), label: money(half) }] : []),
+  ];
 }
 
 /** The set's institutions for the matrix: the subject first, then the peers by total assets, largest first. */
