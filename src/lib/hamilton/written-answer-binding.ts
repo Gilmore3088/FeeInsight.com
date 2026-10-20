@@ -205,6 +205,13 @@ const STATE_BY_NAME = Object.entries(STATE_NAMES)
   .map(([code, name]) => ({ code, pattern: new RegExp(`\\b${name.replace(/ /g, "\\s+")}\\b`, "i"), length: name.length }))
   .sort((a, b) => b.length - a.length);
 
+// "National" inside a bank's name ("First National Bank", "National Bank of Commerce",
+// "Citizens National") names that bank, not the national index. A capitalised word other than a
+// sentence opener before it, or a capitalised word after it, makes it part of a name.
+const NAME_WORD = "(?!(?:The|A|An|And|At|Across|As|But|By|For|In|Its|On|Our|Than|That|This|To|While|With)\\b)[A-Z][\\w&'.-]*";
+const NATIONAL_IN_NAME = new RegExp(`(?:\\b${NAME_WORD}\\s+)+National\\b|\\bNational(?:\\s+(?:of\\s+)?[A-Z][\\w&'.-]*)+`, "g");
+const NATIONAL_SCOPE = /\b(?:national(?:ly)?|nationwide|across the (?:country|nation|u\.?s\.?))\b/i;
+
 /** The groups a sentence names: states, charters, Fed districts, or the nation as a whole. */
 function namedGroups(sentence: string) {
   let rest = sentence;
@@ -221,7 +228,7 @@ function namedGroups(sentence: string) {
   if (/\bbanks\b/i.test(sentence)) charters.add("bank");
   if (/\bcredit unions\b/i.test(sentence)) charters.add("credit_union");
   const districts = new Set((sentence.match(/\bdistrict\s+(\d{1,2})\b/gi) ?? []).map((m) => m.replace(/\D/g, "")));
-  const national = /\b(?:national(?:ly)?|nationwide|across the (?:country|nation|u\.?s\.?))\b/i.test(sentence);
+  const national = NATIONAL_SCOPE.test(sentence.replace(NATIONAL_IN_NAME, " "));
   return { states, charters, districts, national };
 }
 

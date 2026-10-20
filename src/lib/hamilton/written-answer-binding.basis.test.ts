@@ -140,6 +140,29 @@ describe("the basis line when two groups share a figure", () => {
     expect(indexBasisFor("The overdraft median is $29.", stats)).toBe("Basis: overdraft median from the national index, 3,120 institutions.");
   });
 
+  it("does not read \"National\" in a bank's name as the national index", () => {
+    const TEXAS_32 = { scope: "filtered", filters: { state: "TX" }, data: [{ category: "overdraft", median: 32, institution_count: 400 }] };
+    const nationalOnly = writtenAnswerIndexStats([NATIONAL_29, TEXAS_32]);
+    const both = writtenAnswerIndexStats([NATIONAL_29, TEXAS]);
+    for (const sentence of [
+      "First National Bank charges more than the Texas overdraft median of $29.",
+      "National Bank of Commerce sits above the Texas overdraft median of $29.",
+      "Citizens National is above the Texas overdraft median of $29.",
+    ]) {
+      expect(indexBasisFor(sentence, nationalOnly)).toBeNull();
+      expect(indexBasisFor(sentence, both)).toBe("Basis: overdraft median from the index for TX, 400 institutions.");
+    }
+  });
+
+  it("still reads \"national\" outside a bank's name, beside a state or opening the sentence", () => {
+    const TEXAS_32 = { scope: "filtered", filters: { state: "TX" }, data: [{ category: "overdraft", median: 32, institution_count: 400 }] };
+    const stats = writtenAnswerIndexStats([NATIONAL_29, TEXAS_32]);
+    const national = "Basis: overdraft median from the national index, 3,120 institutions.";
+    expect(indexBasisFor("First National Bank in Texas is above the national overdraft median of $29.", stats)).toBe(national);
+    expect(indexBasisFor("Nationally, the overdraft median is $29, below Texas.", stats)).toBe(national);
+    expect(indexBasisFor("National overdraft median: $29, below Texas.", stats)).toBe(national);
+  });
+
   it("does not read West Virginia as Virginia", () => {
     const virginia = writtenAnswerIndexStats([{ scope: "filtered", filters: { state: "VA" }, data: [{ category: "overdraft", median: 29, institution_count: 90 }] }]);
     expect(indexBasisFor("The West Virginia overdraft median is $29.", virginia)).toBeNull();
