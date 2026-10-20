@@ -306,7 +306,8 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     `;
     expect(peerCoverage).toMatchObject({ fees: 27, institutions: 9 });
     // Five peers publish "Returned Statement Fee" as account research: a name the store settles
-    // (a three-word name needs five banks, all of its live rows in one category here).
+    // (a three-word name needs five banks, all of its live rows in one category here). Since Knox
+    // v90 reads the name itself, the store's decision is no longer needed for it.
     await sql`
       WITH peers AS (
         SELECT id FROM institution_sources WHERE institution_name IN ('Peer Test Bank 1', 'Peer Test Bank 2', 'Peer Test Bank 3', 'Peer Test Bank 4', 'Peer Test Bank 5')
@@ -393,9 +394,10 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     };
     // Found from a homepage link, read from HTML.
     expect(published("Green Mountain Test Bank")).toEqual(tableFees);
-    // Known fee URL, read from HTML. The held "Returned Statement Fee" went to Darwin by its settled
-    // name and was published (returned mail while the research split is on, account research while
-    // it is off); "Lost Passbook Fee" has no decision and stays held.
+    // Known fee URL, read from HTML. Knox v90 reads "Returned Statement Fee" as returned mail itself
+    // (James, Oct 20, "File them"), so it is never held and needs no settled-name decision (returned
+    // mail while the research split is on, account research while it is off); "Lost Passbook Fee"
+    // has no decision and stays held.
     expect(published("Champlain Test Credit Union")).toEqual({
       ...tableFees,
       overdraft: 29,
@@ -410,7 +412,7 @@ describe.skipIf(!E2E_DATABASE_URL)("pipeline end to end (state lane)", () => {
     `;
     expect(champlainHeld.map((row) => [row.fee_name, row.filed, row.held])).toEqual([
       ["Lost Passbook Fee", false, true],
-      ["Returned Statement Fee", true, false],
+      ["Returned Statement Fee", false, false],
     ]);
     // Found from a homepage link, read from a text PDF (curly apostrophe in "Cashier’s").
     expect(published("Lakeside Test Bank")).toEqual({
