@@ -410,6 +410,7 @@ export async function refreshFeesFromCurrentCopy(
             fee_published_id: feePublishedId,
             in_place: true,
             moved_page: Boolean(candidate.moved_page),
+            prior_lineage_ref: candidate.prior_lineage_ref == null ? null : Number(candidate.prior_lineage_ref),
             prior_source_document_id: Number(candidate.prior_source_document_id),
             current_document_id: candidate.source_document_id == null ? null : Number(candidate.source_document_id),
           },

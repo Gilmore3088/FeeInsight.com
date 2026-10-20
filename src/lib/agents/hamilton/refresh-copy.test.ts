@@ -257,6 +257,7 @@ describe("moved pages (#1200)", () => {
     const attempt = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))!;
     expect(attempt).toContain(refreshCopyFingerprint(501, 9801));
     expect(JSON.stringify(attempt)).toContain('\\"moved_page\\":true');
+    expect(JSON.stringify(attempt)).toContain('\\"prior_lineage_ref\\":601');
   });
 
   it("holds a moved page's fee to the same line rules (name, audience, value)", () => {
