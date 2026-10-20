@@ -1,5 +1,9 @@
 import { sql } from "./connection";
 import { financialSourceFilter, type FinancialSource } from "./financial-sources";
+import { callReportQuartersReady } from "./call-report-quarters";
+import {
+  DEPOSIT_GROWTH_SUMMARY_SQL, INSTITUTION_COUNT_LEGACY_SQL, INSTITUTION_COUNT_SUMMARY_SQL, growthTrendLegacySql,
+} from "./call-report-derived-sql";
 
 export type { RichIndicator } from "./fed";
 
@@ -129,21 +133,10 @@ async function buildGrowthTrend(
   try {
     // Fetch quarterCount + 4 so we can compute YoY for each quarter
     const fetchCount = quarterCount + 4;
+    // Deposits are in the summary table; loans are not, so they always read the filings.
+    const summaryReady = column === "total_deposits" && (await callReportQuartersReady(sql as never));
     const rows = await sql.unsafe(
-      `SELECT
-         TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
-         MIN(inf.report_date::text)                                            AS quarter_date,
-         SUM(inf.${column})                                                    AS absolute
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       WHERE inf.${column} IS NOT NULL AND inf.${column} > 0
-         AND ${financialSourceFilter("inf")}
-         AND ((ct.charter_type = 'bank' AND inf.source = 'fdic')
-           OR (ct.charter_type = 'credit_union' AND inf.source = 'ncua'))
-         AND ($2::text IS NULL OR inf.source = $2)
-       GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
-       ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
-       LIMIT $1`,
+      summaryReady ? DEPOSIT_GROWTH_SUMMARY_SQL : growthTrendLegacySql(column),
       [fetchCount, source ?? null]
     ) as { quarter: string; quarter_date: string; absolute: number | string }[];
 
@@ -217,20 +210,9 @@ export async function getInstitutionCountTrends(
   source?: FinancialSource
 ): Promise<InstitutionCountTrend[]> {
   try {
+    const summaryReady = await callReportQuartersReady(sql as never);
     const rows = await sql.unsafe(
-      `SELECT
-         TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
-         COUNT(DISTINCT CASE WHEN ct.charter_type = 'bank' THEN inf.institution_id END)         AS bank_count,
-         COUNT(DISTINCT CASE WHEN ct.charter_type = 'credit_union' THEN inf.institution_id END) AS cu_count
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       WHERE ${financialSourceFilter("inf")}
-         AND ((ct.charter_type = 'bank' AND inf.source = 'fdic')
-           OR (ct.charter_type = 'credit_union' AND inf.source = 'ncua'))
-         AND ($2::text IS NULL OR inf.source = $2)
-       GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
-       ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
-       LIMIT $1`,
+      summaryReady ? INSTITUTION_COUNT_SUMMARY_SQL : INSTITUTION_COUNT_LEGACY_SQL,
       [quarterCount, source ?? null]
     ) as { quarter: string; bank_count: number | string; cu_count: number | string }[];
 
