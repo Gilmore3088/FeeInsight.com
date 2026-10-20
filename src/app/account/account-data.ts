@@ -1,7 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { getRecentHamiltonReports } from "@/lib/hamilton/pro-tables";
 
-import { createReportToken, reportPath } from "@/lib/custom-report/link";
+import { createPurchaseReportToken, reportPath } from "@/lib/custom-report/link";
 import type { AccountReport, OwnInstitution, PaidReport } from "./account-types";
 
 /** The user's own recent Hamilton reports, newest first. Empty when none or unreadable. */
@@ -67,7 +67,7 @@ export async function getPaidReports(email: string): Promise<PaidReport[]> {
        ORDER BY (to_jsonb(l.*) ->> 'paid_at') DESC
        LIMIT 10`;
     return rows.map((row) => {
-      const token = createReportToken(Number(row.institution_id));
+      const token = createPurchaseReportToken(Number(row.institution_id), Number(row.id));
       return {
         leadId: Number(row.id),
         institutionName: row.institution_name ?? "Your institution",

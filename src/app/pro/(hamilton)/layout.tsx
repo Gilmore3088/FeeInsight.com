@@ -16,7 +16,7 @@ import {
   resolveArtifactContextInstitutionId,
 } from "@/lib/hamilton/artifact-context";
 import { getHamiltonArtifactInstitutionId } from "@/lib/hamilton/artifact-context-store";
-import { subscribeReason } from "@/lib/subscribe-reason";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { getActivePeerSet } from "@/lib/hamilton/peer-index";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { sql } from "@/lib/data-store/connection";
@@ -62,7 +62,8 @@ async function HamiltonLayoutInner({
       "/pro/hamilton",
     );
     if (!user) redirect(`/login?from=${encodeURIComponent(returnTo)}`);
-    redirect(`/subscribe?from=${encodeURIComponent(returnTo)}&reason=${subscribeReason(user)}`);
+    // Same targets as the outer /pro layout: billing-issue, team-billing or /subscribe.
+    await redirectWithoutPremium(user, returnTo);
   }
 
   const isAdmin = user.role === "admin" || user.role === "analyst";

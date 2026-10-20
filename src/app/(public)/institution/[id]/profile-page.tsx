@@ -163,7 +163,8 @@ export async function institutionProfileMetadata(id: string): Promise<Metadata> 
 
   return {
     // Thin profiles (fewer verified fees than the page's own thin threshold), including those
-    // with financial data but no fees (decision D20), stay reachable but out of the index.
+    // with financial data but no fees (#1043, DECISIONS 2026-10-20), stay reachable but out of
+    // the index.
     robots: verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER ? { index: false, follow: true } : undefined,
     alternates: { canonical: `/institution/${instId}` },
     title: buildProfileTitle(inst.institution_name, headline),

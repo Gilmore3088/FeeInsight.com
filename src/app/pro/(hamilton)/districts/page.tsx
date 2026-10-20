@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import {
   getDistrictMetrics,
   getBeigeBookHeadlines,
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export default async function ProDistrictsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?from=/pro/districts");
-  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/districts");
+  await redirectWithoutPremium(user, "/pro/districts");
 
   const metrics = await getDistrictMetrics();
   const headlines = await getBeigeBookHeadlines();

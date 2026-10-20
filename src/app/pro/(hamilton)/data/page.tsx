@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { searchInstitutions } from "@/lib/data-store/search";
 import { getDataFreshnessCached, getPublicStatsCached } from "@/lib/data-store/public-cached-reads";
 import { getStatesWithFeeData } from "@/lib/data-store";
@@ -39,7 +39,7 @@ export default async function ProDataPage({ searchParams }: PageProps) {
 
   const user = await getCurrentUser();
   if (!user) redirect(`/login?from=${encodeURIComponent(returnPath)}`);
-  if (!canAccessPremium(user)) redirect(`/subscribe?from=${encodeURIComponent(returnPath)}`);
+  await redirectWithoutPremium(user, returnPath);
 
   const query = params.q || "";
   const stateCode = params.state || "";

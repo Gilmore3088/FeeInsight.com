@@ -1,5 +1,5 @@
 import { CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
-import { createReportToken, reportPath } from "@/lib/custom-report/link";
+import { createPurchaseReportToken, reportPath } from "@/lib/custom-report/link";
 import { buildProWelcomeEmail } from "@/lib/email/pro-welcome";
 import { reportPaidEmails } from "@/lib/email/report-payment";
 import { getLeadNotificationFromAddress, renderLeadEmailHtml, renderLeadEmailText, type LeadEmailContent } from "@/lib/email/lead-notification";
@@ -27,7 +27,7 @@ export async function stagePaymentEmails(tx: typeof sql, eventId: string, effect
   for (const paid of effects.reportPaid) {
     const [institution] = paid.institutionId
       ? await tx<{ id: number; institution_name: string }[]>`SELECT id,institution_name FROM institution_sources WHERE id=${paid.institutionId}` : [];
-    const token = institution ? createReportToken(Number(institution.id)) : null;
+    const token = institution ? createPurchaseReportToken(Number(institution.id), paid.leadId) : null;
     const reportUrl = token ? `${SITE_URL.replace(/\/$/, "")}${reportPath(token)}` : null;
     const content = reportPaidEmails({ ...paid, institution: institution?.institution_name ?? "your institution", reportUrl });
     // The internal message must not say delivery happened before the provider accepted it.
