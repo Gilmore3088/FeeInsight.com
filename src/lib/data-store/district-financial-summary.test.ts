@@ -80,7 +80,7 @@ describe("getDistrictFinancialGroups", () => {
     ]);
   });
 
-  it("logs a failed read and shows that regulator unavailable without hiding the other", async () => {
+  it("logs a failed read and marks that regulator failed, distinct from no filing", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.mocked(getDistrictFeeRevenue).mockImplementation(async (_district, _date, source) => {
       if (source === "ncua") throw new Error("boom");
@@ -89,8 +89,17 @@ describe("getDistrictFinancialGroups", () => {
 
     const groups = await getDistrictFinancialGroups(6);
 
-    expect(groups.map((g) => [g.source, g.status])).toEqual([["fdic", "reported"], ["ncua", "unavailable"]]);
+    expect(groups.map((g) => [g.source, g.status])).toEqual([["fdic", "reported"], ["ncua", "failed"]]);
+    expect(groups[1]).toMatchObject({ report_date: null, institution_count: 0, total_income_usd: null, mean_income_usd: null });
     expect(error).toHaveBeenCalledWith(expect.stringContaining("district 6 ncua"), expect.any(Error));
     error.mockRestore();
+  });
+
+  it("keeps a district with no filing unavailable, not failed", async () => {
+    vi.mocked(getDistrictFeeRevenue).mockResolvedValue(null);
+
+    const groups = await getDistrictFinancialGroups(6);
+
+    expect(groups.map((g) => g.status)).toEqual(["unavailable", "unavailable"]);
   });
 });

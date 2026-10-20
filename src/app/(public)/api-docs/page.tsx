@@ -1188,12 +1188,12 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
           method="GET"
           path="/revenue"
           summary="Market-wide fee revenue by quarter"
-          description="Call-report fee income in thousands of dollars per quarter, newest first, with one set of rows per regulator. FDIC rows are bank service charges on deposit accounts. NCUA rows are credit unions' broader fee income. The two measure different things, so we never add them together. Each regulator is dated by its own newest filing. The districts view gives one row per Fed district per regulator."
+          description="Call-report fee income in thousands of dollars per quarter, newest first. FDIC reports banks' service charges on deposit accounts. NCUA reports credit unions' broader fee income. The two measure different things. By default each row keeps its original fields, but service_charges, institutions, bank_service_charges and credit_union_service_charges are deprecated because they mix the two regulators. Read by_regulator instead, which gives each regulator's own figure. Ask for source=fdic or source=ncua to get only that regulator's rows. The districts view gives one row per Fed district per quarter."
           tierNote={API_ACCESS_LABEL}
           params={[
             { name: "view", type: "string", description: '"national" (default) or "districts"' },
-            { name: "quarters", type: "integer", description: "Quarters to return per regulator, back to 2010 (default: 8, max: 66)" },
-            { name: "source", type: "string", description: '"fdic" (banks) or "ncua" (credit unions). Default: both, as separate rows' },
+            { name: "quarters", type: "integer", description: "Quarters to return, back to 2010 (default: 8, max: 66)" },
+            { name: "source", type: "string", description: '"fdic" (banks) or "ncua" (credit unions): only that regulator\'s rows, each naming its source and measure' },
           ]}
           curlExample={`curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "${BASE}/revenue?quarters=4"`}

@@ -12,7 +12,8 @@ const THOUSANDS = 1_000;
  */
 export interface DistrictFinancialGroup extends Omit<ReturnType<typeof financialMeasureDefinition>, "unit"> {
   fed_district: number;
-  status: "reported" | "unavailable";
+  /** "unavailable": no filing on record; "failed": the read itself errored, so we don't know. */
+  status: "reported" | "unavailable" | "failed";
   report_date: string | null;
   /** Institutions with positive single-quarter income at report_date. */
   institution_count: number;
@@ -28,6 +29,7 @@ export function districtFinancialGroup(
   district: number,
   source: FinancialSource,
   row: DistrictFeeRevenue | null,
+  missingStatus: "unavailable" | "failed" = "unavailable",
 ): DistrictFinancialGroup {
   const base = {
     // The stored "thousands of dollars" unit is replaced: this group carries converted USD.
@@ -40,7 +42,7 @@ export function districtFinancialGroup(
   const usable = row !== null && row.source === source && row.institution_count > 0
     && Number.isFinite(row.total_sc_income);
   if (!usable) {
-    return { ...base, status: "unavailable", report_date: null, institution_count: 0, total_income_usd: null, mean_income_usd: null };
+    return { ...base, status: missingStatus, report_date: null, institution_count: 0, total_income_usd: null, mean_income_usd: null };
   }
   const totalUsd = row.total_sc_income * THOUSANDS;
   return {
@@ -59,7 +61,7 @@ export async function getDistrictFinancialGroups(district: number): Promise<Dist
       return districtFinancialGroup(district, source, await getDistrictFeeRevenue(district, undefined, source));
     } catch (error) {
       console.error(`[district-financial-summary] district ${district} ${source} read failed`, error);
-      return districtFinancialGroup(district, source, null);
+      return districtFinancialGroup(district, source, null, "failed");
     }
   }));
 }

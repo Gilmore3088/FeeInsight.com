@@ -272,7 +272,9 @@ const TOOLS: ToolDefinition[] = [
     name: "get_revenue_trend",
     title: "Fee revenue over time",
     description:
-      "Call-report fee income by quarter, newest first, in thousands of US dollars, with separate rows per regulator: FDIC bank service charges on deposit accounts and NCUA broader credit-union fee income. They are different measures: never add, average or rank them together. view=national gives the country; view=districts gives each Fed district. source limits it to one regulator.",
+      "Call-report fee income by quarter, newest first, in thousands of US dollars. FDIC reports bank service charges on deposit accounts; NCUA reports broader credit-union fee income. They are different measures: never add, average or rank them together. " +
+      "Without source, each row's service_charges, institutions, bank_service_charges and credit_union_service_charges are deprecated because they combine the two regulators; read by_regulator, which gives each regulator's own figure, and financial_groups, which dates each regulator by its own newest filing. " +
+      "source=fdic or source=ncua returns only that regulator's rows, each naming its source and measure. view=national gives the country; view=districts gives each Fed district.",
     inputSchema: {
       type: "object",
       properties: {
