@@ -5,7 +5,15 @@ import { checkValues, flaggedOnly, type KeyValueReport } from "./data-checks";
 import { FDIC_API_BASE } from "./fdic";
 import { eventKeyOf, historyDate } from "./fdic-history";
 import { htmlToText } from "./fed";
-import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
+import {
+  blockedHost,
+  registryFetch,
+  registryFetchJson,
+  RegistryHttpError,
+  RegistryUnreachableError,
+  type RegistryFetchOptions,
+  type RegistryPageTried,
+} from "./http";
 
 /**
  * Industry events from public lists: bank and credit union failures, credit union mergers and
@@ -474,7 +482,7 @@ const READABLE: readonly FileKind[] = ["csv", "xlsx", "zip"];
 export interface PublishedList<F extends string> {
   /** The page or file the rows came from. */
   sourceUrl: string | null;
-  pagesTried: Array<{ url: string; status: "ok" | "not_found" | "error"; error?: string }>;
+  pagesTried: RegistryPageTried[];
   /** Every matching data link seen, so a person can check the choice. */
   candidates: DataLink[];
   fileUrl: string | null;
@@ -487,6 +495,11 @@ export interface PublishedList<F extends string> {
 /**
  * A published list behind a landing page: the first readable data file the page links to
  * (matching `accept`), else the best-matching HTML table on the page itself.
+ *
+ * When no landing page answers at all (each one 404 or an error), it throws
+ * `RegistryUnreachableError` naming every page, so the partition is recorded failed with that
+ * reason instead of as an empty check (#2306). A page that refused the request (401/403) is
+ * thrown as itself, so it is recorded as the publisher's named block (#1806).
  */
 export async function fetchPublishedList<F extends string>(
   pages: readonly string[],
@@ -494,9 +507,12 @@ export async function fetchPublishedList<F extends string>(
   spec: HeaderSpec<F>,
   required: readonly F[],
   options: RegistryFetchOptions = {},
+  /** Most data files downloaded per page (a page listing one file per quarter, newest first, needs 1). */
+  maxFiles: number = Infinity,
 ): Promise<PublishedList<F>> {
   const result: PublishedList<F> = { sourceUrl: null, pagesTried: [], candidates: [], fileUrl: null, innerFile: null, table: null, reason: null };
   const reasons: string[] = [];
+  const errors: unknown[] = [];
   for (const page of pages) {
     let html: string;
     try {
@@ -511,11 +527,12 @@ export async function fetchPublishedList<F extends string>(
     } catch (error) {
       const notFound = error instanceof RegistryHttpError && error.status === 404;
       result.pagesTried.push({ url: page, status: notFound ? "not_found" : "error", error: notFound ? undefined : String(error) });
+      errors.push(error);
       continue;
     }
     const links = html ? findDataLinks(html, page, accept) : result.candidates.filter((c) => c.url === page);
     if (html) result.candidates.push(...links);
-    for (const link of links.filter((l) => READABLE.includes(l.kind))) {
+    for (const link of links.filter((l) => READABLE.includes(l.kind)).slice(0, maxFiles)) {
       const bytes = new Uint8Array(await (await registryFetch(link.url, { timeoutMs: 180_000, ...options })).arrayBuffer());
       const read = readTableFile(bytes, link.kind);
       if (!read.table) {
@@ -540,7 +557,16 @@ export async function fetchPublishedList<F extends string>(
     if (unread.length > 0) reasons.push(`${page}: only ${[...new Set(unread.map((l) => l.kind.toUpperCase()))].join("/")} files linked, which are not read`);
     else reasons.push(`${page}: no matching data file or table`);
   }
-  result.reason = reasons.join("; ") || "no landing page could be fetched";
+  if (!result.pagesTried.some((page) => page.status === "ok")) {
+    const refused = errors.find((error) => blockedHost(error));
+    if (refused) throw refused;
+    const statuses = errors.map((error) => (error instanceof RegistryHttpError ? error.status : null));
+    // Every page 404: the addresses are wrong (retried daily). Otherwise the first other error's
+    // status, or none for a transport error (retried within hours).
+    const status = statuses.length === 0 ? null : statuses.every((s) => s === 404) ? 404 : statuses.find((s) => s !== 404) ?? null;
+    throw new RegistryUnreachableError(result.pagesTried, status);
+  }
+  result.reason = reasons.join("; ") || "no matching data file or table";
   return result;
 }
 
@@ -639,11 +665,37 @@ export async function fetchFdicFailures(options: RegistryFetchOptions = {}): Pro
   };
 }
 
-/** NCUA pages that list mergers / P&As and liquidations (URLs unconfirmed: the run reports each page tried). */
-export const NCUA_MERGER_PAGES = [
-  "https://ncua.gov/analysis/credit-union-corporate-call-report-data/merger-activity-insurance-report",
-  "https://ncua.gov/support-services/credit-union-resources-expansion/resources/merger-activity",
-] as const;
+/**
+ * NCUA's quarterly Merger Activity and Insurance Report: the landing page links one ZIP per
+ * quarter (insurance-report-activity-<month>-<year>.zip), newest first; only the newest is read,
+ * so an unreadable layout costs one download, not one per quarter. The two addresses used
+ * before 2026-10-19 return 404 (registry run 8051, 2026-10-17). The run reports each page tried.
+ */
+export const NCUA_MERGER_PAGES = ["https://ncua.gov/analysis/chartering-mergers/merger-activity-insurance-report"] as const;
+/** Only the quarterly report files, so another merger link (a form, a guide) can't take the one slot. */
+const NCUA_MERGER_LINKS = /insurance-report-activity/i;
+
+/**
+ * NCUA's list of proposed credit union mergers put to a member vote, one HTML table (2024 to
+ * date): Merging Credit Union | Continuing Credit Union | Date of Member Vote | Comment URL
+ * (a regulations.gov docket id). Checked 2026-10-19. It names the credit unions but carries no
+ * charter number or state.
+ */
+export const NCUA_PROPOSED_MERGER_PAGES = ["https://ncua.gov/support-services/credit-union-merger-acquisition/comments-proposed-credit-union-mergers"] as const;
+export const NCUA_PROPOSED_MERGER_SPEC = {
+  name: [/^merging/i],
+  acquirerName: [/^continuing/i],
+  date: [/member vote/i, /date/i],
+  docket: [/comment|docket/i],
+} satisfies HeaderSpec<string>;
+type ProposedMergerField = keyof typeof NCUA_PROPOSED_MERGER_SPEC;
+export const NCUA_PROPOSED_MERGER_CODE = "proposed_merger";
+
+/** The regulations.gov docket page for an NCUA docket id ("NCUA-2026-1256"); null for anything else. */
+export function ncuaDocketUrl(value: string | null | undefined): string | null {
+  const id = value?.trim().match(/^NCUA-\d{4}-\d+$/i)?.[0];
+  return id ? `https://www.regulations.gov/docket/${id.toUpperCase()}` : null;
+}
 export const NCUA_LIQUIDATION_PAGES = ["https://ncua.gov/support-services/conservatorships-liquidations"] as const;
 
 export const NCUA_MERGER_SPEC = {
@@ -689,7 +741,7 @@ function listToEvents<F extends string>(
 }
 
 export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_MERGER_PAGES): Promise<FetchedEvents> {
-  const list = await fetchPublishedList<MergerField>(pages, /merg|p\s*&\s*a|purchase/i, NCUA_MERGER_SPEC, ["name", "date"], options);
+  const list = await fetchPublishedList<MergerField>(pages, NCUA_MERGER_LINKS, NCUA_MERGER_SPEC, ["name", "date"], options, 1);
   return listToEvents(list, (f, raw) => ({
     eventKey: `ncua-merger:${hashKey([idValue(f.charter), eventDate(f.date), exactNameKey(f.name), exactNameKey(f.acquirerName), f.type])}`,
     cert: idValue(f.charter),
@@ -703,6 +755,35 @@ export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages
     state: f.state,
     raw,
   }));
+}
+
+/**
+ * Proposed mergers from NCUA's member-vote list. The merging credit union is the row's
+ * institution and the continuing one its acquirer; effective_date is the member vote date. The
+ * key is the docket id when present, else the two names, so a rescheduled vote updates the same
+ * row either way (a docketless second proposal between the same two credit unions replaces the
+ * first).
+ */
+export async function fetchNcuaProposedMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_PROPOSED_MERGER_PAGES): Promise<FetchedEvents> {
+  // No data file is accepted: the list is the page's own table.
+  const list = await fetchPublishedList<ProposedMergerField>(pages, /(?!)/, NCUA_PROPOSED_MERGER_SPEC, ["name", "acquirerName", "date"], options);
+  return listToEvents(list, (f, raw) => {
+    const docket = f.docket?.trim().toUpperCase() || null;
+    const docketUrl = ncuaDocketUrl(docket);
+    return {
+      eventKey: `ncua-proposed-merger:${docketUrl ? docket : hashKey([exactNameKey(f.name), exactNameKey(f.acquirerName)])}`,
+      cert: null,
+      institutionName: f.name,
+      changeCode: NCUA_PROPOSED_MERGER_CODE,
+      changeDescription: "Proposed merger put to a member vote",
+      effectiveDate: eventDate(f.date),
+      acquirerCert: null,
+      acquirerName: f.acquirerName,
+      city: null,
+      state: null,
+      raw: { ...raw, docket_id: docket, docket_url: docketUrl },
+    };
+  });
 }
 
 export async function fetchNcuaLiquidations(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_LIQUIDATION_PAGES): Promise<FetchedEvents> {

@@ -53,10 +53,10 @@ const RR_ROWS = [
 ];
 
 describe("partitions", () => {
-  it("runs level 2 first, then eight level-1 shards", () => {
+  it("runs the four LEI matches first, then level 2, then eight level-1 shards", () => {
     const p = gleifPartitions();
-    expect(p[0]).toBe("level2");
-    expect(p).toHaveLength(9);
+    expect(p.slice(0, 5)).toEqual(["lei-match-rssd", "lei-match-fdic", "lei-match-ncua", "lei-match-name", "level2"]);
+    expect(p).toHaveLength(13);
     expect(level1ShardOf("level1-7")).toBe(7);
     expect(level1ShardOf("level1-8")).toBeNull();
   });

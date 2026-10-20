@@ -14,6 +14,7 @@ import {
   type AnswerKeyListRow,
 } from "@/lib/data-store/answer-key";
 import { importAnswerKeyAction } from "./actions";
+import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 function pct(value: number | null | undefined): string {
   return value == null ? "—" : `${(value * 100).toFixed(0)}%`;
@@ -45,11 +46,12 @@ export default async function AnswerKeyPage({
 }: {
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await answerKeySchemaReady().catch(() => false);
-  const [rows, latest] = ready
-    ? await Promise.all([listAnswerKeyInstitutions(), getLatestAnswerKeyScoreRun()])
+  const reference = ready ? await readReferenceEligibility() : null;
+  const [rows, latest] = ready && reference
+    ? await Promise.all([listAnswerKeyInstitutions(undefined, reference), getLatestAnswerKeyScoreRun(undefined, undefined, reference)])
     : [[] as AnswerKeyListRow[], null];
   const personChecked = rows.filter(isPersonChecked).length;
   const firstUnconfirmed = banksToCheck(rows)[0];
@@ -60,7 +62,7 @@ export default async function AnswerKeyPage({
         <Breadcrumbs items={[{ label: "Crew", href: "/admin" }, { label: "Scoreboard", href: "/admin/scoreboard" }, { label: "Answer key" }]} />
         <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">Answer key</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
-          Hand-checked fee documents and fees. Atlas scores the pipeline against every confirmed bank each day.
+          Confirmed fee documents and fees. Atlas scores only keys with current, priced consumer-document evidence.
         </p>
       </header>
 
@@ -82,6 +84,12 @@ export default async function AnswerKeyPage({
             <Stat label="Precision (end to end)" value={pct(latest?.precision)} />
             <Stat label="Recall (end to end)" value={pct(latest?.recall)} />
           </div>
+
+          <p className="text-sm text-gray-600 dark:text-gray-300" role="status">
+            {reference?.readError ? "Document eligibility unavailable; no current measurement." : `Document eligibility: ${reference?.cohort.eligibleBanks ?? 0} eligible, ${reference?.cohort.excludedBanks ?? rows.length} excluded.`}
+            {" "}Measurement: {(latest?.referenceState ?? "no_measurement").replaceAll("_", " ")}. Scorer v3 remains the default.
+            {" "}A changed document or confirmed fee snapshot starts a separate measurement cohort. Eligibility is automatic and does not change a person&apos;s confirmation.
+          </p>
 
           {firstUnconfirmed ? (
             <Link
@@ -112,6 +120,7 @@ export default async function AnswerKeyPage({
                       <Link href={`/admin/answer-key/${row.id}`} className="font-medium text-gray-900 hover:text-[var(--brand-primary)] dark:text-gray-100">
                         {row.institution_name}
                       </Link>
+                      <p className="text-xs text-gray-500">Document: {row.eligibility?.status ?? "unknown"} · {(row.eligibility?.reason ?? "eligibility_missing").replaceAll("_", " ")}</p>
                       <span className="ml-2 text-xs text-gray-400">
                         {row.state_code ?? ""} {row.charter_type === "credit_union" ? "CU" : "Bank"}
                       </span>

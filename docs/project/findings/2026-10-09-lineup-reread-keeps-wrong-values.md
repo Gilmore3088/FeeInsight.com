@@ -20,3 +20,5 @@ Knox re-read.
 
 **Rule:** a rules fix to a field written with `COALESCE` needs its own logged correction step for
 rows already stored, or the fix only reaches new rows.
+
+**Agent lesson:** knox/pr-827-fix-reaches-stored-rows

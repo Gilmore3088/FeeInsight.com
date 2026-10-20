@@ -9,18 +9,6 @@ export interface ExecutionBackendStatus {
   detail: string;
 }
 
-export class RetiredExecutionBlockedError extends Error {
-  readonly backend: ExecutionBackend;
-  readonly capability: string;
-
-  constructor(capability: string, backend = getExecutionBackend()) {
-    super(retiredExecutionBlockedMessage(capability, backend));
-    this.name = "RetiredExecutionBlockedError";
-    this.backend = backend;
-    this.capability = capability;
-  }
-}
-
 export function getExecutionBackend(): ExecutionBackend {
   const raw = process.env.EXECUTION_BACKEND?.trim();
   if (!raw) return "disabled";
@@ -47,18 +35,4 @@ export function getExecutionBackendStatus(): ExecutionBackendStatus {
     detail:
       "Agent execution is visible but blocked until EXECUTION_BACKEND=agentic_v1 is selected.",
   };
-}
-
-export function retiredExecutionBlockedMessage(
-  capability: string,
-  backend = getExecutionBackend(),
-): string {
-  if (backend === "agentic_v1") {
-    return `${capability} is still routed through a retired external launcher. Wire this capability through the agentic run API before enabling it.`;
-  }
-  return `${capability} is blocked because the agentic execution backend is disabled. Retired external launchers are intentionally unavailable.`;
-}
-
-export function blockRetiredExecution(capability: string): never {
-  throw new RetiredExecutionBlockedError(capability);
 }

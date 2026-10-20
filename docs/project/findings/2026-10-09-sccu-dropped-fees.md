@@ -24,3 +24,5 @@ Seven were lost for three reasons:
 
 Levies and Writs is live as per_item (53353). The frequency fill corrected it at 00:01 Oct 9, and
 only the raw row still says monthly.
+
+**Agent lesson:** darwin/pr-892-batch-key-own-line, knox/pr-892-sideways-box-table

@@ -12,10 +12,8 @@ vi.mock("./connection", () => {
 });
 
 import {
-  insertIntelligence,
   searchExternalIntelligence,
   listIntelligence,
-  deleteIntelligence,
 } from "./intelligence";
 import type { ExternalIntelligence, IntelligenceSearchResult } from "./intelligence";
 import { getSql } from "./connection";
@@ -37,50 +35,6 @@ const sampleIntelligence: ExternalIntelligence = {
   created_at: "2026-01-15T10:00:00Z",
   created_by: "admin",
 };
-
-describe("insertIntelligence", () => {
-  beforeEach(() => {
-    getMock().mockReset();
-    getMock().unsafe = vi.fn();
-  });
-
-  it("returns an object with id, source_name, created_at", async () => {
-    getMock().mockResolvedValueOnce([sampleIntelligence]);
-
-    const result = await insertIntelligence({
-      source_name: "CFPB Overdraft Fee Study",
-      source_date: "2024-12-01",
-      category: "research",
-      tags: ["overdraft", "cfpb"],
-      content_text: "Overdraft fee revenue declined 7.2% year-over-year.",
-      source_url: "https://www.consumerfinance.gov/data-research/overdraft",
-      created_by: "admin",
-    });
-
-    expect(result).toMatchObject({
-      id: 1,
-      source_name: "CFPB Overdraft Fee Study",
-      created_at: expect.any(String),
-    });
-  });
-
-  it("returns inserted record with all fields", async () => {
-    getMock().mockResolvedValueOnce([sampleIntelligence]);
-
-    const result = await insertIntelligence({
-      source_name: "CFPB Overdraft Fee Study",
-      source_date: "2024-12-01",
-      category: "research",
-      tags: ["overdraft", "cfpb"],
-      content_text: "Overdraft fee revenue declined 7.2% year-over-year.",
-    });
-
-    expect(result.id).toBe(1);
-    expect(result.source_name).toBe("CFPB Overdraft Fee Study");
-    expect(result.category).toBe("research");
-    expect(result.tags).toEqual(["overdraft", "cfpb"]);
-  });
-});
 
 describe("searchExternalIntelligence", () => {
   beforeEach(() => {
@@ -174,29 +128,6 @@ describe("listIntelligence", () => {
 
     expect(result.total).toBe(10);
     expect(result.items).toHaveLength(1);
-  });
-});
-
-describe("deleteIntelligence", () => {
-  beforeEach(() => {
-    getMock().mockReset();
-    getMock().unsafe = vi.fn();
-  });
-
-  it("removes the entry and returns true when ID exists", async () => {
-    getMock().mockResolvedValueOnce([{ id: 1 }]);
-
-    const result = await deleteIntelligence(1);
-
-    expect(result).toBe(true);
-  });
-
-  it("returns false when ID does not exist", async () => {
-    getMock().mockResolvedValueOnce([]);
-
-    const result = await deleteIntelligence(9999);
-
-    expect(result).toBe(false);
   });
 });
 

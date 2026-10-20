@@ -1,6 +1,13 @@
+import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { sql } from "@/lib/data-store/connection";
-import { getRegistryFeedFreshness, type RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
+import {
+  getRegistryFeedFreshness,
+  getRegistryPeriodPartitions,
+  type RegistryFeedFreshness,
+  type RegistryPeriodPartition,
+} from "@/lib/data-store/feed-freshness";
 import type { HoovieCadence, HoovieSourceContract } from "./contract";
+import { periodCompleteness, type PeriodCompleteness, type PeriodCompletenessState } from "./period-completeness";
 import { HOOVIE_SOURCES } from "./sources";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -22,7 +29,12 @@ import { inSavepoint } from "@/lib/agents/savepoint";
  *   fresh    otherwise
  *
  * A "success" is the registry's own: a partition that loaded rows, or a check that found the
- * publisher had nothing new (an empty partition that was not blocked).
+ * publisher had nothing new (an empty partition that was not blocked). A partition where no
+ * landing page answered is never a success; it fails the source (#2306).
+ *
+ * Status is fetch health only. Each source also carries its expected-period completeness
+ * (`period-completeness.ts`, #2228): whether the newest period the scheduler expects is loaded
+ * in full, so a fresh check or an old-period backfill never stands in for the newest data.
  */
 
 export type SourceHealthStatus = "fresh" | "stale" | "empty" | "failed" | "skipped";
@@ -45,6 +57,18 @@ export const STALE_AFTER_DAYS: Readonly<Record<HoovieCadence, number | null>> = 
   "one-time": null,
 };
 
+/**
+ * Days without a successful check after which a source is stale: its cadence's limit, or sooner
+ * when the loader re-checks on a set rhythm (`checkEveryHours`): three missed checks, at least
+ * three days. A daily-polled news or indicator feed is not left 90 days as "irregular" (#2228).
+ */
+export function staleAfterDays(contract: Pick<HoovieSourceContract, "cadence" | "checkEveryHours">): number | null {
+  const byCadence = STALE_AFTER_DAYS[contract.cadence];
+  if (!contract.checkEveryHours) return byCadence;
+  const byChecks = Math.max(STALE_AFTER_DAYS.daily ?? 3, Math.ceil((contract.checkEveryHours * 3) / 24));
+  return byCadence == null ? byChecks : Math.min(byCadence, byChecks);
+}
+
 /** Longest error text carried into a reason. */
 export const REASON_ERROR_CHARS = 160;
 
@@ -55,8 +79,15 @@ export interface SourceHealth {
   cadence: HoovieCadence;
   /** The registry's last success (rows loaded, or a check that found nothing new). */
   lastSuccessAt: string | null;
+  lastAttemptAt?: string | null;
+  lastLoadedAt?: string | null;
   /** Newest partition that loaded rows. */
   latestPeriod: string | null;
+  /**
+   * Whether the newest expected period is loaded in full (#2228), apart from `status`, which is
+   * fetch health: a fresh source can still be missing or partial for its newest period.
+   */
+  completeness?: PeriodCompleteness;
 }
 
 export interface SourceHealthReport {
@@ -72,7 +103,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : null);
 
 function clip(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = redactRegistrySecrets(text).replace(/\s+/g, " ").trim();
   return flat.length > REASON_ERROR_CHARS ? `${flat.slice(0, REASON_ERROR_CHARS - 1)}…` : flat;
 }
 
@@ -105,13 +136,23 @@ export function sourceHealth(
   now: Date,
 ): SourceHealth {
   const lastSuccessAt = feed?.lastSuccessAt ?? null;
-  const base = { source: contract.source, cadence: contract.cadence, lastSuccessAt, latestPeriod: feed?.latestPeriod ?? null };
+  const base = { source: contract.source, cadence: contract.cadence, lastSuccessAt, latestPeriod: feed?.latestPeriod ?? null,
+    lastAttemptAt: feed?.lastAttemptAt ?? null,
+    // Older snapshots did not separate check/load dates. Do not infer a load from an empty check.
+    lastLoadedAt: feed?.lastLoadedAt === undefined ? (feed?.succeeded ? lastSuccessAt : null) : feed.lastLoadedAt };
   const result = (status: SourceHealthStatus, reason: string): SourceHealth => ({ ...base, status, reason });
 
   if (skip) return result("skipped", skip);
-  if (!feed || (!lastSuccessAt && feed.failed === 0 && feed.blocked === 0)) {
+  if (!feed || (!lastSuccessAt && feed.failed === 0 && feed.blocked === 0 && !feed.unreachable)) {
     const due = feed?.scheduled ? `; ${feed.scheduled} partition${feed.scheduled === 1 ? "" : "s"} waiting` : "";
     return result("empty", `nothing loaded yet${due}`);
+  }
+  // No landing page answered (#2306): failed whatever other partitions of the source did since,
+  // so one dead family is not hidden by the others' successes. Named first: it is the partition.
+  if (feed.unreachable) {
+    const named = feed.unreachablePartition ? ` (${clip(feed.unreachablePartition)})` : "";
+    const pages = feed.unreachablePages ? `: ${clip(feed.unreachablePages)}` : "";
+    return result("failed", `${feed.unreachable} partition${feed.unreachable === 1 ? "" : "s"} reached no landing page${named}${pages}`);
   }
   if (feed.failed > 0 && after(feed.lastFailedAt, lastSuccessAt)) {
     const error = feed.lastError ? `: ${clip(feed.lastError)}` : "";
@@ -122,11 +163,18 @@ export function sourceHealth(
     const issue = contract.missingSource ? ` (#${contract.missingSource.issue})` : "";
     return result("empty", `${host} refused production's request${issue}`);
   }
-  if (feed.succeeded === 0) return result("empty", "every load so far came back empty");
-  const limit = STALE_AFTER_DAYS[contract.cadence];
+  if (feed.partial) return result("failed", `${feed.partial} partition${feed.partial === 1 ? "" : "s"} partially loaded${feed.partialReason ? `: ${clip(feed.partialReason)}` : "; unavailable upstream requests recorded"}`);
+  if (feed.succeeded === 0) {
+    const evidence = feed.emptyReason ? `; latest empty check${feed.emptyPartition ? ` ${clip(feed.emptyPartition)}` : ""}: ${clip(feed.emptyReason)}` : "";
+    return result("empty", `every load so far came back empty${evidence}`);
+  }
+  const limit = staleAfterDays(contract);
   if (limit != null && lastSuccessAt) {
     const age = Math.floor((now.getTime() - new Date(lastSuccessAt).getTime()) / DAY_MS);
-    if (age > limit) return result("stale", `last success ${age} days ago; a ${contract.cadence} source is stale after ${limit}`);
+    const rule = limit !== STALE_AFTER_DAYS[contract.cadence] && contract.checkEveryHours
+      ? `checked every ${contract.checkEveryHours} hours, it is stale after ${limit}`
+      : `a ${contract.cadence} source is stale after ${limit}`;
+    if (age > limit) return result("stale", `last success ${age} days ago; ${rule}`);
   }
   return result("fresh", `last success ${day(lastSuccessAt)}`);
 }
@@ -137,17 +185,29 @@ export function buildSourceHealthReport({
   feeds,
   skips,
   now,
+  planned,
+  periods = [],
 }: {
   contracts?: readonly HoovieSourceContract[];
   feeds: readonly RegistryFeedFreshness[];
   /** Each skipped source's reason (`skipReason`). */
   skips: ReadonlyMap<string, string>;
   now: Date;
+  /** The scheduler's partitions per source; when given, each source's period completeness is reported. */
+  planned?: ReadonlyMap<string, readonly string[]>;
+  /** Recorded period partitions (`getRegistryPeriodPartitions`). */
+  periods?: readonly RegistryPeriodPartition[];
 }): SourceHealthReport {
   const bySource = new Map(feeds.map((feed) => [feed.source, feed]));
   const known = new Set(contracts.map((contract) => contract.source));
+  const periodsBySource = new Map<string, RegistryPeriodPartition[]>();
+  for (const row of periods) periodsBySource.set(row.source, [...(periodsBySource.get(row.source) ?? []), row]);
   const sources = contracts
-    .map((contract) => sourceHealth(contract, bySource.get(contract.source), skips.get(contract.source) ?? null, now))
+    .map((contract) => {
+      const entry = sourceHealth(contract, bySource.get(contract.source), skips.get(contract.source) ?? null, now);
+      if (!planned) return entry;
+      return { ...entry, completeness: periodCompleteness(planned.get(contract.source) ?? [], periodsBySource.get(contract.source) ?? [], now) };
+    })
     .sort((a, b) => SOURCE_HEALTH_ORDER.indexOf(a.status) - SOURCE_HEALTH_ORDER.indexOf(b.status) || a.source.localeCompare(b.source));
   const counts = Object.fromEntries(SOURCE_HEALTH_ORDER.map((status) => [status, 0])) as Record<SourceHealthStatus, number>;
   for (const entry of sources) counts[entry.status] += 1;
@@ -188,7 +248,8 @@ export async function readSourceHealth({
     const reason = skipReason(contract, planned.get(contract.source) ?? [], { held: HELD_REGISTRY_SOURCES, sizeHeld, env });
     if (reason) skips.set(contract.source, reason);
   }
-  return buildSourceHealthReport({ feeds, skips, now });
+  const periods = await getRegistryPeriodPartitions(db);
+  return buildSourceHealthReport({ feeds, skips, now, planned, periods });
 }
 
 /** Most lines the morning brief gives stale and skipped sources; failed and empty ones are always named. */
@@ -198,7 +259,8 @@ function line(entry: SourceHealth): string {
   const text = `${entry.source}: ${entry.status}, ${entry.reason}`;
   // A stale or fresh reason already dates the last success.
   if (entry.status === "stale" || entry.status === "fresh") return text;
-  return `${text}; ${entry.lastSuccessAt ? `last success ${day(entry.lastSuccessAt)}` : "never succeeded"}`;
+  const loaded = entry.lastLoadedAt === undefined ? (entry.latestPeriod ? entry.lastSuccessAt : null) : entry.lastLoadedAt;
+  return `${text}; ${entry.lastAttemptAt ? `last attempt ${day(entry.lastAttemptAt)}; ` : ""}${loaded ? `last nonempty load ${day(loaded)}` : "no nonempty load recorded"}${entry.lastSuccessAt ? `; last successful check ${day(entry.lastSuccessAt)}` : ""}`;
 }
 
 /**
@@ -209,7 +271,8 @@ function line(entry: SourceHealth): string {
 export function sourceHealthLines(report: SourceHealthReport | null | undefined, limit = BRIEF_SOURCE_LINES): string[] {
   if (!report) return [];
   const notFresh = report.sources.filter((entry) => entry.status !== "fresh");
-  if (notFresh.length === 0) return [];
+  const gaps = completenessGapLines(report, limit);
+  if (notFresh.length === 0) return gaps;
   const urgent = notFresh.filter((entry) => entry.status === "failed" || entry.status === "empty");
   const rest = notFresh.filter((entry) => entry.status === "stale" || entry.status === "skipped");
   const shown = [...urgent, ...rest.slice(0, Math.max(0, limit - urgent.length))];
@@ -218,6 +281,25 @@ export function sourceHealthLines(report: SourceHealthReport | null | undefined,
     `Public data: ${notFresh.length} of ${report.sources.length} sources not fresh (${countsText(report)}).`,
     ...shown.map((entry) => `- ${line(entry)}`),
     ...(more > 0 ? [`- and ${more} more on /admin/data`] : []),
+    ...gaps,
+  ];
+}
+
+/**
+ * Completeness states that are gaps in the newest expected period. `awaiting_release` (nothing
+ * published yet) and `unchecked` are explicit unknowns, not gaps, so the brief does not list them.
+ */
+export const COMPLETENESS_GAPS: readonly PeriodCompletenessState[] = ["missing", "partial", "late"];
+
+/** Pure: sources whose newest expected period is missing, partial or late, apart from fetch health (#2228). */
+export function completenessGapLines(report: SourceHealthReport, limit = BRIEF_SOURCE_LINES): string[] {
+  const gaps = report.sources.filter((entry) => entry.completeness && COMPLETENESS_GAPS.includes(entry.completeness.state));
+  if (gaps.length === 0) return [];
+  const shown = gaps.slice(0, limit);
+  return [
+    `Newest-period completeness: ${gaps.length} source${gaps.length === 1 ? "" : "s"} missing, partial or late, whatever their fetch status.`,
+    ...shown.map((entry) => `- ${entry.source}: ${entry.completeness!.state.replace("_", " ")}, ${entry.completeness!.reason}`),
+    ...(gaps.length > shown.length ? [`- and ${gaps.length - shown.length} more on /admin/data`] : []),
   ];
 }
 
@@ -239,7 +321,9 @@ export function summarizeSourceHealth(report: SourceHealthReport): string {
     .slice(0, 5)
     .map((entry) => entry.source);
   const alarm = named.length > 0 ? `; ALARM: ${named.join(", ")}${urgentSourceCount(report) > named.length ? " and more" : ""}` : "";
-  return `Deming checked ${report.sources.length} public-data sources: ${report.counts.fresh} fresh${notFresh > 0 ? `, ${countsText(report)}` : ""}${alarm}.`;
+  const gaps = report.sources.filter((entry) => entry.completeness && COMPLETENESS_GAPS.includes(entry.completeness.state)).length;
+  const completeness = gaps > 0 ? `; newest period missing, partial or late for ${gaps}` : "";
+  return `Deming checked ${report.sources.length} public-data sources: ${report.counts.fresh} fresh${notFresh > 0 ? `, ${countsText(report)}` : ""}${alarm}${completeness}.`;
 }
 
 export function sourceHealthDetail(report: SourceHealthReport): Record<string, unknown> {
@@ -254,7 +338,25 @@ export function sourceHealthDetail(report: SourceHealthReport): Record<string, u
       reason: entry.reason,
       cadence: entry.cadence,
       last_success_at: entry.lastSuccessAt,
+      last_attempt_at: entry.lastAttemptAt ?? null,
+      last_loaded_at: entry.lastLoadedAt ?? null,
       latest_period: entry.latestPeriod,
+      ...(entry.completeness ? { completeness: completenessDetail(entry.completeness) } : {}),
     })),
+  };
+}
+
+function completenessDetail(c: PeriodCompleteness): Record<string, unknown> {
+  return {
+    state: c.state,
+    reason: c.reason,
+    expected_period: c.expectedPeriod,
+    completed_period: c.completedPeriod,
+    periods_behind: c.periodsBehind,
+    completed_period_age_days: c.completedPeriodAgeDays,
+    coverage: c.coverage,
+    missing_partitions: c.missingPartitions,
+    missing_count: c.missingCount,
+    awaiting_partitions: c.awaitingPartitions,
   };
 }

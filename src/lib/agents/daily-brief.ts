@@ -4,14 +4,16 @@ import { getPipelineFunnel, type PipelineFunnel } from "@/lib/data-store/pipelin
 import { escapeHtml, getTransactionalFromAddress, sendResendEmail, type EmailDeliveryStatus } from "@/lib/email/resend";
 import { pipelineHealthProblems, type PipelineHealth } from "@/lib/job-health";
 import { getPipelineHealth } from "@/lib/pipeline-health";
+import { STEP_OWNER } from "./narrate";
 import { CREW, getCrewFeed, type CrewFeedItem } from "./crew";
 import { getAtlasCommandCenter } from "@/lib/admin-command-center";
 import { getLeads } from "@/lib/admin-queries";
-import { buildNeedsYou, needsYouHeadline, type NeedsYouItem } from "@/lib/console/needs-you";
+import { buildNeedsYou, type NeedsYouItem } from "@/lib/console/needs-you";
 import { getSpendSummary, type SpendSummary } from "@/lib/data-store/console-spend";
 import { getFailureAlerts } from "./failure-alerts";
 import { goalBriefLines, readGoalScorecard, type GoalScorecard } from "./goal-scorecard";
 import { qualityLedgerLines, readQualityLedger, type QualityLedger } from "./quality-ledger";
+import { redactRegistrySecrets } from "@/lib/regulatory/http";
 import { STORAGE_STEP_KEY } from "./atlas/storage-retention";
 import { readSourceHealth, sourceHealthLines, urgentSourceCount, type SourceHealthReport } from "./hoovie/source-health";
 
@@ -39,6 +41,21 @@ export function briefRecipients(env: Record<string, string | undefined> = proces
 }
 
 const NEEDS_YOU_IN_EMAIL = 6;
+
+/** Bounded, single-line, redacted operator evidence. HTML is escaped by the email renderer. */
+function briefText(value: string, limit: number): string {
+  const flat = redactRegistrySecrets(value).replace(/\s+/g, " ").trim();
+  return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+}
+
+function needsYouLine(item: NeedsYouItem): string {
+  const detail = briefText(item.detail, 240);
+  // Only the application's admin paths can become action URLs in this email.
+  const href = /^\/admin(?:\/|$)/.test(item.href) && !/[\\\s]/.test(item.href) ? item.href : "/admin";
+  const stepKey = item.id.startsWith("failure:step:") ? item.id.slice("failure:step:".length) : null;
+  const owner = stepKey?.startsWith("registry-") ? "Hoovie" : CREW.find(member => member.agent === (stepKey ? STEP_OWNER[stepKey] : null))?.name;
+  return `- ${owner ? `${owner}: ` : ""}${briefText(item.title, 160)}${detail ? ` — ${detail}` : ""}. ${briefText(item.action, 64)}: ${SITE_URL}${redactRegistrySecrets(href)}`;
+}
 
 // "Documents downloaded" was an all-time count of distinct stored files, wrong pages
 // included (#1040); the goal lines below say what moved instead.
@@ -74,6 +91,24 @@ export interface StorageWarning {
  * 36 hours allows one late run without repeating a warning from two days back.
  */
 export const STORAGE_WARNING_MAX_AGE_HOURS = 36;
+
+/**
+ * No finished storage step inside the window is itself a warning: on Oct 19 the scoreboard run
+ * that carries the step sat queued all day, and the brief said nothing.
+ */
+export const STORAGE_MEASUREMENT_MISSING_ALERT =
+  `Atlas has not measured the database in over ${STORAGE_WARNING_MAX_AGE_HOURS} hours, so storage warnings and log trims are not running`;
+
+/** Pure: the newest storage step result inside the window, or the missing-measurement warning. */
+export function storageWarningFromLatest(
+  row: { alerts: unknown; created_at: string | Date } | null | undefined,
+  now: Date,
+): StorageWarning {
+  if (!row) return { alerts: [STORAGE_MEASUREMENT_MISSING_ALERT], at: now.toISOString() };
+  const raw = typeof row.alerts === "string" ? JSON.parse(row.alerts) : row.alerts;
+  const alerts = Array.isArray(raw) ? raw.filter((alert): alert is string => typeof alert === "string") : [];
+  return { alerts, at: new Date(row.created_at).toISOString() };
+}
 
 /** Pure: the brief's storage lines, one per warning; none when there is no warning. */
 export function storageWarningLines(storage: StorageWarning | null | undefined): string[] {
@@ -133,6 +168,7 @@ export function buildDailyBrief({
   const problems = pipelineHealthProblems(health);
   const completed = health.runs_completed_24h ?? 0;
   const failed = health.runs_failed_24h ?? 0;
+  const blocked = health.runs_blocked_24h ?? 0;
   const lines: string[] = [];
 
   const busiest = CREW
@@ -142,7 +178,7 @@ export function buildDailyBrief({
     .slice(0, 3)
     .map((member) => `${member.name} (${member.steps})`);
   lines.push(
-    `What ran: ${completed} run${completed === 1 ? "" : "s"} finished, ${failed} failed${busiest.length ? `. Busiest: ${busiest.join(", ")}` : ""}.`,
+    `What ran: ${completed} run${completed === 1 ? "" : "s"} finished, ${failed} failed, ${blocked} blocked${busiest.length ? `. Busiest by completed steps: ${busiest.join(", ")}` : ""}.`,
   );
 
   if (previous) {
@@ -167,7 +203,7 @@ export function buildDailyBrief({
   if (spend) {
     const caps = spend.total.dailyCapUsd !== null ? ` of the $${spend.total.dailyCapUsd} daily cap` : "";
     lines.push(
-      `Spend: $${spend.total.todayUsd.toFixed(2)} so far today${caps}; $${spend.total.monthUsd.toFixed(2)} this month${spend.total.monthlyCapUsd !== null ? ` of $${spend.total.monthlyCapUsd}` : ""}.`,
+      `Spend: $${spend.total.todayUsd.toFixed(2)} so far today${caps}; $${spend.total.monthUsd.toFixed(2)} this month${spend.total.monthlyCapUsd !== null ? ` of $${spend.total.monthlyCapUsd} ($${Math.abs(spend.total.monthlyCapUsd - spend.total.monthUsd).toFixed(2)} ${spend.total.monthUsd > spend.total.monthlyCapUsd ? "over cap" : "remaining"})` : ""}.`,
     );
   }
 
@@ -180,12 +216,12 @@ export function buildDailyBrief({
   const storageLines = storageWarningLines(storage);
 
   if (needsYou) {
-    const shown = needsYou.slice(0, NEEDS_YOU_IN_EMAIL).map((item) => `- ${item.title}`);
+    const shown = needsYou.slice(0, NEEDS_YOU_IN_EMAIL).map(needsYouLine);
     const more = needsYou.length > shown.length ? [`- and ${needsYou.length - shown.length} more in the console`] : [];
     const problemLines = [...problems, ...storageLines].map((problem) => `- ${problem}`);
-    const headline = needsYou.length === 0 && problems.length === 0
-      ? storageLines.length > 0 ? "Storage warning." : urgentSources > 0 ? "Public data warning." : "Nothing needs you."
-      : needsYouHeadline(needsYou);
+    const count = needsYou.length + problemLines.length;
+    const headline = count > 0 ? `${count} thing${count === 1 ? " needs" : "s need"} you.`
+      : urgentSources > 0 ? "Public data warning." : "Nothing needs you.";
     lines.unshift([headline, ...problemLines, ...shown, ...more].join("\n"));
     const storageSubject = storageLines.length > 0 && headline !== "Storage warning." ? ", storage warning" : "";
     return {
@@ -206,6 +242,31 @@ export function buildDailyBrief({
   return {
     subject: `Atlas daily brief: pipeline ${status}${storageLines.length > 0 ? ", storage warning" : ""}${sourceSubject}, ${funnel.sourcedInstitutions.toLocaleString("en-US")} institutions published`,
     lines,
+  };
+}
+
+/** The actual text/HTML sent by the brief. Only same-site admin URLs become links. */
+export function dailyBriefEmail(brief: DailyBrief): { text: string; html: string } {
+  const crewUrl = `${SITE_URL}/admin`;
+  const renderLine = (line: string) => {
+    let html = "", at = 0;
+    for (const match of line.matchAll(/https?:\/\/[^\s<>"']+/g)) {
+      html += escapeHtml(line.slice(at, match.index));
+      let safe = false;
+      try {
+        const url = new URL(match[0]);
+        safe = url.origin === new URL(SITE_URL).origin && /^\/admin(?:\/|$)/.test(url.pathname);
+      } catch { /* A malformed publisher URL remains escaped text. */ }
+      const escaped = escapeHtml(match[0]);
+      html += safe ? `<a href="${escaped}">${escaped}</a>` : escaped;
+      at = match.index! + match[0].length;
+    }
+    return (html + escapeHtml(line.slice(at))).replace(/\n/g, "<br>");
+  };
+  return {
+    text: `${brief.lines.join("\n\n")}\n\nOpen the console: ${crewUrl}\n\n— Atlas`,
+    html: `${brief.lines.map(line => `<p style="margin:0 0 12px">${renderLine(line)}</p>`).join("")}`
+      + `<p style="margin:16px 0 0"><a href="${escapeHtml(crewUrl)}">Open the console</a></p><p style="color:#6B6255">— Atlas</p>`,
   };
 }
 
@@ -235,8 +296,8 @@ async function previousBrief(now: Date): Promise<PreviousBrief | null> {
   return funnel ? { funnel, at: new Date(row.created_at as string | Date).toISOString() } : null;
 }
 
-/** Atlas's newest storage step result, when it ran within STORAGE_WARNING_MAX_AGE_HOURS. */
-async function latestStorageWarning(): Promise<StorageWarning | null> {
+/** Atlas's newest storage step result within STORAGE_WARNING_MAX_AGE_HOURS, else a warning that it is missing. */
+async function latestStorageWarning(now: Date): Promise<StorageWarning> {
   const [row] = await sql`
     SELECT e.detail->'alerts' AS alerts, e.created_at
       FROM agent_run_events e
@@ -248,10 +309,7 @@ async function latestStorageWarning(): Promise<StorageWarning | null> {
      ORDER BY e.created_at DESC, e.id DESC
      LIMIT 1
   `;
-  if (!row) return null;
-  const raw = typeof row.alerts === "string" ? JSON.parse(row.alerts) : row.alerts;
-  const alerts = Array.isArray(raw) ? raw.filter((alert): alert is string => typeof alert === "string") : [];
-  return { alerts, at: new Date(row.created_at as string | Date).toISOString() };
+  return storageWarningFromLatest(row ? { alerts: row.alerts, created_at: row.created_at as string | Date } : null, now);
 }
 
 /** Steps each agent finished in the last 24 hours, straight from the ledger (no feed cap). Registry steps under Magellan's name before #1865 are Hoovie's. */
@@ -306,7 +364,7 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief quality ledger read failed", error);
       return null;
     }),
-    latestStorageWarning().catch((error) => {
+    latestStorageWarning(now).catch((error) => {
       console.error("Morning brief storage read failed", error);
       return null;
     }),
@@ -332,10 +390,7 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
     return { brief, funnel, deliveryStatus: "not_configured", deliveryReason: "TRANSACTIONAL_EMAIL_FROM is not configured.", recipient, cc };
   }
 
-  const crewUrl = `${SITE_URL}/admin`;
-  const text = `${brief.lines.join("\n\n")}\n\nOpen the console: ${crewUrl}\n\n— Atlas`;
-  const html = `${brief.lines.map((line) => `<p style="margin:0 0 12px">${escapeHtml(line).replace(/\n/g, "<br>")}</p>`).join("")}`
-    + `<p style="margin:16px 0 0"><a href="${escapeHtml(crewUrl)}">Open the console</a></p><p style="color:#6B6255">— Atlas</p>`;
+  const { text, html } = dailyBriefEmail(brief);
   const result = await sendResendEmail(
     {
       from,

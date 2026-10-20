@@ -28,3 +28,5 @@ different problems:
 
 The seven-state gate (744 right / 42 wrong) and the Texas gate (509 / 14) are unchanged from main.
 The same name-noise class appears in the whole-record sample of 9 Oct (class 3).
+
+**Agent lesson:** knox/pr-838-name-not-sentence

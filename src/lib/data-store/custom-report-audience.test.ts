@@ -15,7 +15,9 @@ describe("competitive report consumer boundary", () => {
   it("applies audience/source eligibility before source validation without weakening cap or price guards", async () => {
     state.replies.push(
       [{ id: 47, institution_name: "Test Subject", city: "Nashville", state_code: "TN", charter_type: "bank", cert_number: "123", asset_size: null }],
+      [{ city: "NASHVILLE" }],
       [{ county_fips: "47037", city: "Nashville", state: "TN", year: 2026, basis: "branch_counties" }],
+      [{ kind: "branch", state: "TN", city: "NASHVILLE" }],
       [{ institution_id: 50, institution_name: "Test Peer", city: "Nashville", state_code: "TN", charter_type: "bank", market_deposits: "100", line: null, amount: null, fee_name: null, source_url: null, source_document_id: null, updated_at: null, takedown_pending: null }],
     );
     const result = await getCustomReportMarketData(47);
@@ -28,6 +30,7 @@ describe("competitive report consumer boundary", () => {
     expect(query).toContain("pf.kind = 'takedown_pending'");
     expect(result?.lines).toEqual([]);
     expect(result?.competitors[0].market_deposits).toBe(100000);
-    expect(state.queries).toHaveLength(3); // No alternate institution document is fetched to invent missing fees.
+    // The subject, its city spellings, its counties, the market cities, the fees.
+    expect(state.queries).toHaveLength(5); // No alternate institution document is fetched to invent missing fees.
   });
 });

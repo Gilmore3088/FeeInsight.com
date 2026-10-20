@@ -104,7 +104,7 @@ export async function loadFeeWorkspace(params: {
   const local: WorkspaceLocal | null =
     research?.localMarket ? { ...research.localMarket, competitors: research.localCompetitors ?? [] } : null;
   const layers = research
-    ? layersFromEngine(research.layers, ownAmount, research.localMarket)
+    ? layersFromEngine(research.layers, ownAmount, research.localMarket, research.layerStamps)
     : [summarizeLayer("national", "National", "Every institution with this fee published", [], null)];
 
   return { institution, ownFees, fee, feeName: feeName(fee), ownAmount, ownSeveral, research, local, layers, ownFeeRows, unavailable };

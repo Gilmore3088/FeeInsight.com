@@ -35,7 +35,10 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   },
   {
     // magellan/registry/gleif.ts, regulatory/gleif.ts (api.gleif.org level 1 API; goldencopy.gleif.org level 2 RR file;
-    // GLEIF_LICENSE_NOTE). Level 1 is the API; level 2 is a streamed golden-copy file.
+    // GLEIF_LICENSE_NOTE). Level 1 is the API; level 2 is a streamed golden-copy file. The lei-match-*
+    // partitions (magellan/registry/gleif-lei-match.ts, #1868) link institutions to LEIs by RSSD, FDIC cert,
+    // NCUA charter (the registered id under each regulator's GLEIF registration authority), else exact
+    // legal name plus state; unmatched and ambiguous institutions stay in institution_lei_links for review.
     source: "gleif",
     loader: "gleif",
     publisher: "Global Legal Entity Identifier Foundation (GLEIF)",
@@ -47,8 +50,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     connection: "rest-api",
     cadence: "irregular",
     grain: ["institution", "holding-company"],
-    linkKeys: ["lei", "rssd"],
-    tables: ["gleif_relationships", "gleif_entities"],
+    linkKeys: ["lei", "rssd", "fdic-cert", "ncua-charter", "institution-name", "state"],
+    tables: ["institution_lei_links", "gleif_relationships", "gleif_entities"],
   },
   {
     // magellan/registry/state-lists.ts (runRegistryStateNonbankLenders), regulatory/state-lists.ts (Socrata
@@ -140,6 +143,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // The source key keeps its FRED-era name so the step and its history stay joined.
     source: "fred",
     loader: "fed",
+    checkEveryHours: 24, // FRED_REFRESH_HOURS
     publisher: "US Bureau of Labor Statistics, US Bureau of Economic Analysis and the Federal Reserve Board (H.15)",
     licence: {
       status: "public-domain",
@@ -156,6 +160,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/fed.ts (runRegistryFomcMinutes), regulatory/fed.ts (federalreserve.gov FOMC calendar)
     source: "fomc-minutes",
     loader: "fed",
+    checkEveryHours: 24, // FOMC_REFRESH_HOURS
     publisher: "Board of Governors of the Federal Reserve System (FOMC)",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -168,6 +173,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/fed-publications.ts, regulatory/fed-banks.ts (fedinprint.org/rss, Reserve Banks' own feeds)
     source: "fed-publications",
     loader: "fed-publications",
+    checkEveryHours: 24, // FED_PUBLICATIONS_REFRESH_HOURS
     publisher: "The 12 regional Federal Reserve Banks (via Fed in Print)",
     licence: {
       status: "terms-unconfirmed",
@@ -183,6 +189,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/reg-news.ts, data-store/news.ts FEEDS (Fed, FDIC via govdelivery, OCC, CFPB press RSS)
     source: "reg-news",
     loader: "reg-news",
+    checkEveryHours: 24, // REG_NEWS_REFRESH_HOURS
     publisher: "Federal Reserve Board, FDIC, OCC and CFPB",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -196,6 +203,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // writes only when FEDERAL_REGISTER_TRACKER_LIVE=true)
     source: "federal-register",
     loader: "federal-register",
+    checkEveryHours: 24, // FEDERAL_REGISTER_REFRESH_HOURS
     publisher: "Office of the Federal Register (Federal Register)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -209,6 +217,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // writes only when FEDERAL_BILLS_TRACKER_LIVE=true)
     source: "federal-bills",
     loader: "federal-bills",
+    checkEveryHours: 24, // FEDERAL_BILLS_REFRESH_HOURS
     publisher: "Library of Congress (Congress.gov)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -240,6 +249,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // (feeds or news pages; writes only when STATE_NEWS_TRACKER_LIVE=true, source "state:XX")
     source: "state-reg-news",
     loader: "state-reg-news",
+    checkEveryHours: 24, // REFRESH_HOURS
     publisher: "State banking and credit union regulators (New York, North Carolina and Florida struck)",
     licence: {
       status: "terms-unconfirmed",
@@ -327,5 +337,38 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     grain: ["document"],
     linkKeys: [],
     tables: ["reg_wire_research"],
+  },
+  {
+    // magellan/registry/bank-zelle.ts, bank-zelle-match.ts (#1875): reads the current copy of each institution's own
+    // stored documents (source_documents, agent_source_texts); fetches nothing. Never Zelle's participant list (struck #1840).
+    source: "bank-zelle",
+    loader: "bank-zelle",
+    publisher: "Each institution's own website and fee schedule",
+    licence: {
+      status: "fee-insight",
+      note: "Fee Insight's own reading of the documents the published fees come from. Each row is one fact with one evidence sentence and the link to the institution's own document. Zelle's participant list is never read (struck 2026-10-17, #1840).",
+    },
+    connection: "derived",
+    cadence: "weekly",
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["institution_payment_features"],
+  },
+  {
+    // magellan/registry/call-report-summaries.ts: reads institution_financial_records (the fdic and ncua
+    // rows the financials loaders wrote) and stores each filing's standalone quarter; fetches nothing.
+    source: "call-report-summaries",
+    loader: "call-report-summaries",
+    publisher: "FDIC and NCUA call reports, as already loaded (each filing's own quarter, split once per load)",
+    licence: {
+      status: "public-domain",
+      note: "A recomputation of the FDIC and NCUA call-report figures already held; no new publisher data.",
+    },
+    connection: "derived",
+    cadence: "quarterly",
+    checkEveryHours: 24,
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["call_report_quarterly_income", "call_report_summary_groups"],
   },
 ];

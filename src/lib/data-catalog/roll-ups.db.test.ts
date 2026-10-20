@@ -11,13 +11,13 @@ describe.skipIf(!connection)("roll-up SQL in isolated PostgreSQL", () => {
 
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) throw new Error("Roll-up SQL tests require a loopback E2E database; production connections are forbidden");
-    db = postgres(connection, { max: 1, ssl: "require" });
+    db = postgres(connection, { max: 1 });
     // Temporary tables shadow any real ones for this connection only.
-    await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, state_code text, cbsa_code text)`;
+    await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, state_code text, cbsa_code text, charter_type text)`;
     await db`CREATE TEMP TABLE institution_hq_counties (institution_id bigint, county_fips text, basis text)`;
     await db`CREATE TEMP TABLE area_statistics (source text, geo_type text, geo_code text, geo_name text, period text, series_key text, value double precision, unit text, note text, source_url text, fetched_at timestamptz)`;
     await db`CREATE TEMP TABLE institution_call_report_items (institution_id bigint, source text, report_date date, item_code text, item_key text, item_description text, schedule text, value numeric, unit text, period_basis text, source_url text, fetched_at timestamptz)`;
-    await db`INSERT INTO institution_sources VALUES (1, 'TX', '26420'), (2, 'TX', '26420'), (3, 'TX', '19100'), (4, 'OK', NULL), (5, 'OK', NULL), (6, 'TX', NULL)`;
+    await db`INSERT INTO institution_sources VALUES (1, 'TX', '26420', 'bank'), (2, 'TX', '26420', 'bank'), (3, 'TX', '19100', 'credit_union'), (4, 'OK', NULL, 'credit_union'), (5, 'OK', NULL, 'credit_union'), (6, 'TX', NULL, 'bank')`;
     await db`INSERT INTO institution_hq_counties VALUES (1, '48201', 'sod_main_office'), (2, '48201', 'sod_main_office'), (3, '48113', 'sod_main_office'), (4, '40109', 'sod_main_office'), (5, '40143', 'sod_main_office')`;
     await db`INSERT INTO area_statistics VALUES
       ('bls-laus', 'county', '48201', 'Harris', '2026-09', 'rate', 4.0, 'percent', NULL, 'https://www.bls.gov/a', '2026-10-01'),
@@ -56,19 +56,58 @@ describe.skipIf(!connection)("roll-up SQL in isolated PostgreSQL", () => {
     expect(metro).toEqual([]);
   });
 
-  it("rolls a call-report line up in dollars across regulators, only for the allowed row sources", async () => {
+  it("keeps regulator rollups separate in dollars, using canonical identities and allowed row sources", async () => {
     const rows = await callPeerRollup(tx(), { itemKey: "svc", rowSources: ["ffiec", "ncua"], memberIds: [1, 2, 4, 5], from: null, to: null, limit: 10 });
-    expect(rows.map((r) => r.period)).toEqual(["2026-06-30", "2026-03-31"]);
-    // 100k and 300k (thousands) and 200,000 dollars: median 200,000; the 'held' row is left out.
-    expect(rows[0]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 3, period_basis: "ytd" });
-    expect([...(rows[0].sources ?? [])].sort()).toEqual(["ffiec", "ncua"]);
+    expect(rows.map((r) => r.period)).toEqual(["2026-06-30", "2026-06-30", "2026-03-31"]);
+    // Equal dollar medians still represent distinct measures and distinct populations.
+    expect(rows[0]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 2, reporting_institution_ids: [1, 2], reporter_ids_complete: true, period_basis: "ytd", sources: ["ffiec"] });
+    expect(rows[1]).toMatchObject({ unit: "USD", median: 200_000, institution_count: 1, reporting_institution_ids: [4], reporter_ids_complete: true, period_basis: "ytd", sources: ["ncua"] });
     const all = await callPeerRollup(tx(), { itemKey: "svc", rowSources: ["ffiec"], memberIds: null, from: "2026-04", to: "2026-06", limit: 10 });
     expect(all).toHaveLength(1);
     expect(all[0]).toMatchObject({ median: 200_000, institution_count: 2 });
   });
 
+  it("caps only the SQL reporter manifest and keeps the actual median and coverage count", async () => {
+    await db`INSERT INTO institution_sources (id, charter_type) SELECT id, 'bank' FROM generate_series(1000, 1512) AS id`;
+    await db`INSERT INTO institution_call_report_items (institution_id, source, report_date, item_key, value, unit, period_basis)
+      SELECT id, 'ffiec', '2026-06-30'::date, 'large_manifest', id - 1000, 'thousands', 'ytd' FROM generate_series(1000, 1512) AS id`;
+    const rows = await callPeerRollup(tx(), { itemKey: "large_manifest", rowSources: ["ffiec"], memberIds: null, from: null, to: null, limit: 10 });
+    expect(rows[0]).toMatchObject({ institution_count: 513, median: 256000, reporter_ids_complete: false });
+    expect(rows[0].reporting_institution_ids).toEqual(Array.from({ length: 512 }, (_, at) => at + 1000));
+  });
+
   it("reads one institution's own values, newest first", async () => {
     const rows = await callInstitutionSeries(tx(), { itemKey: "svc", rowSources: ["ffiec", "ncua"], institutionId: 1, from: null, to: null, limit: 10 });
     expect(rows.map((r) => [r.period, r.value, r.unit])).toEqual([["2026-06-30", 100_000, "USD"], ["2026-03-31", 50_000, "USD"]]);
+  });
+
+  it("does not pool stock, income and count figures for the same date", async () => {
+    await db`INSERT INTO institution_call_report_items (institution_id, source, report_date, item_key, value, unit, period_basis) VALUES
+      (1, 'ffiec', '2026-06-30', 'mixed_basis', 10, 'thousands', 'ytd'),
+      (2, 'ffiec', '2026-06-30', 'mixed_basis', 20, 'thousands', 'point_in_time'),
+      (3, 'ncua', '2026-06-30', 'mixed_basis', 3, 'count', 'point_in_time')`;
+    const rows = await callPeerRollup(tx(), { itemKey: "mixed_basis", rowSources: ["ffiec", "ncua"], memberIds: null, from: null, to: null, limit: 10 });
+    expect(rows).toHaveLength(3);
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ unit: "USD", period_basis: "ytd", median: 10_000, institution_count: 1 }),
+      expect.objectContaining({ unit: "USD", period_basis: "point_in_time", median: 20_000, institution_count: 1 }),
+      expect.objectContaining({ unit: "count", period_basis: "point_in_time", median: 3, institution_count: 1 }),
+    ]));
+  });
+
+  it("serves curated NCUA lines only from NCUA with the confirmed unit and period basis", async () => {
+    await db`INSERT INTO institution_call_report_items (institution_id, source, report_date, item_key, item_code, value, unit, period_basis) VALUES
+      (4, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 12, 'dollars', 'ytd'),
+      (5, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 18, 'dollars', 'ytd'),
+      (1, 'ffiec', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'dollars', 'ytd'),
+      (3, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'dollars', 'point_in_time'),
+      (4, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'count', 'ytd'),
+      (5, 'ncua', '2026-06-30', 'acct_131', 'ACCT_131', 900000, 'thousands', 'ytd'),
+      (6, 'ncua', '2026-06-30', 'acct_131', 'ACCT_380', 900000, 'dollars', 'ytd')`;
+    const args = { itemKey: "acct_131", rowSources: ["ffiec", "ncua"], from: null, to: null, limit: 10 };
+    const rows = await callPeerRollup(tx(), { ...args, memberIds: null });
+    expect(rows).toEqual([expect.objectContaining({ median: 15, institution_count: 2, unit: "USD", period_basis: "ytd", sources: ["ncua"] })]);
+    const own = await callInstitutionSeries(tx(), { ...args, institutionId: 4 });
+    expect(own).toEqual([expect.objectContaining({ value: 12, source: "ncua", unit: "USD", period_basis: "ytd" })]);
   });
 });

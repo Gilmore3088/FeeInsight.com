@@ -35,9 +35,11 @@ vi.mock("ai", async () => {
 
 vi.mock("@ai-sdk/anthropic", () => ({
   anthropic: (model: string) => ({ model }),
+  createAnthropic: () => (model: string) => ({ model }),
 }));
 
-vi.mock("@/lib/ai-provider-usage", () => ({
+vi.mock("@/lib/ai-provider-usage", async () => ({
+  observedProviderUsage: (await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage")).observedProviderUsage,
   estimateAnthropicCostMicrousd: () => 0,
   ProviderCircuitOpenError: class ProviderCircuitOpenError extends Error {},
   ProviderBudgetBlockedError: class ProviderBudgetBlockedError extends Error {},
@@ -126,7 +128,7 @@ describe("POST /api/research/hamilton with conversation context (#1273)", () => 
   });
 
   beforeEach(() => {
-    generateTextMock.mockReset().mockResolvedValue({ text: "No figures.", usage: { inputTokens: 1, outputTokens: 1 } });
+    generateTextMock.mockReset().mockResolvedValue({ finishReason: "stop", text: "No figures.", usage: { inputTokens: 1, outputTokens: 1 } });
     skillSpies.isSkillOptIn.mockClear();
     skillSpies.detectSkill.mockClear();
     skillSpies.buildSkillExecution.mockClear();

@@ -1,15 +1,11 @@
 export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
-import {
-  ensureResearchTables,
-  getUsageDashboard,
-} from "@/lib/research/history";
+import { getUsageDashboard } from "@/lib/research/history";
 import { AgentUsageTable, UserUsageTable, DailyUsageTable } from "@/components/usage-tables";
 
 export default async function ResearchUsagePage() {
-  await requireAuth("view");
-  await ensureResearchTables();
+  await requireAuth("operate");
 
   const dashboard = await getUsageDashboard();
 

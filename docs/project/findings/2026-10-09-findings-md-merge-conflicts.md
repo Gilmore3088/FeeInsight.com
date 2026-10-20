@@ -10,3 +10,4 @@ under the template. Any two PRs open at once edited the same lines.
 `scripts/ci-guards.sh findings-file-kill` (in `guard:legacy`) fails on a later-dated
 FINDINGS.md heading or a misnamed file. This PR.
 **Lesson:** a shared log that every PR appends to at the same spot needs one file per entry.
+**Guard:** `scripts/ci-guards.sh findings-file-kill`

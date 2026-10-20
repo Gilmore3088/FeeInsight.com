@@ -27,3 +27,5 @@ Dry read on prod data (08:40 UTC), using 1,200 characters of each document above
 
 Still blank: headers longer than 40 characters ("Lock Boxes: Rent charge assessed on an annual
 basis", 88369) and rows under a glued line with another fee's price.
+
+**Agent lesson:** knox/pr-880-table-header-period

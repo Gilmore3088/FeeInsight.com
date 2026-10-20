@@ -124,13 +124,6 @@ export interface JobQueueRow {
   count: number;
 }
 
-export interface IntegrityCheck {
-  name: string;
-  status: "pass" | "fail" | "warn";
-  detail: string;
-  count: number;
-}
-
 export interface CoverageFunnelData {
   total_institutions: number;
   with_website: number;
@@ -868,197 +861,6 @@ export async function getJobQueueStatus(): Promise<JobQueueRow[]> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Data Quality
-// ---------------------------------------------------------------------------
-
-export async function getIntegrityChecks(): Promise<IntegrityCheck[]> {
-  const checks: IntegrityCheck[] = [];
-
-  // 1. Orphaned fees
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt
-      FROM published_fee_catalog ef
-      LEFT JOIN institution_sources ct ON ef.institution_id = ct.id
-      WHERE ct.id IS NULL
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "No orphaned fees",
-      status: cnt === 0 ? "pass" : "fail",
-      detail: cnt === 0 ? "All fees linked to valid institutions" : `${cnt} fees with missing crawl_target`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "No orphaned fees", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 2. Negative amounts
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM published_fee_catalog
-      WHERE amount < 0
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "No negative amounts",
-      status: cnt === 0 ? "pass" : "fail",
-      detail: cnt === 0 ? "All fee amounts are non-negative" : `${cnt} fees with negative amounts`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "No negative amounts", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 3. Extreme amounts (> $10,000)
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM published_fee_catalog
-      WHERE amount > 10000
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "No extreme amounts (> $10k)",
-      status: cnt === 0 ? "pass" : "warn",
-      detail: cnt === 0 ? "No suspiciously large fee amounts" : `${cnt} fees exceed $10,000`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "No extreme amounts (> $10k)", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 4. Duplicate institution names
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM (
-        SELECT institution_name FROM institution_sources
-        GROUP BY institution_name HAVING COUNT(*) > 1
-      ) sub
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "No duplicate institution names",
-      status: cnt === 0 ? "pass" : "warn",
-      detail: cnt === 0 ? "All institution names are unique" : `${cnt} institution names appear more than once`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "No duplicate institution names", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 5. Uncategorized fees
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM published_fee_catalog
-      WHERE fee_category IS NULL
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "All fees categorized",
-      status: cnt === 0 ? "pass" : cnt < 50 ? "warn" : "fail",
-      detail: cnt === 0 ? "Every non-rejected fee has a category" : `${cnt} fees missing category`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "All fees categorized", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 6. Null amounts
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM published_fee_catalog
-      WHERE amount IS NULL
-        AND LOWER(fee_name) NOT LIKE '%free%'
-        AND LOWER(fee_name) NOT LIKE '%waived%'
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "All fees have amounts",
-      status: cnt === 0 ? "pass" : cnt < 100 ? "warn" : "fail",
-      detail: cnt === 0 ? "Every non-free fee has a dollar amount" : `${cnt} fees missing amount`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "All fees have amounts", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 7. Stale institutions
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM institution_sources
-      WHERE last_crawl_at < NOW() - INTERVAL '90 days' OR last_crawl_at IS NULL
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "Data freshness (90-day threshold)",
-      status: cnt === 0 ? "pass" : "warn",
-      detail: cnt === 0 ? "All institutions crawled within 90 days" : `${cnt} institutions not crawled in 90+ days`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "Data freshness (90-day threshold)", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 8. Missing financials
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt
-      FROM institution_sources ct
-      LEFT JOIN institution_financial_records ifin
-        ON ct.id = ifin.institution_id AND ifin.source IN ('fdic', 'ncua')
-      WHERE ifin.id IS NULL
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "Financial data linked",
-      status: cnt === 0 ? "pass" : "warn",
-      detail: cnt === 0 ? "All institutions have financial data" : `${cnt} institutions missing financials`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "Financial data linked", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 9. Stale agent runs
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM agent_runs
-      WHERE status = 'running'
-        AND started_at < NOW() - INTERVAL '2 hours'
-        AND run_kind IN ('workflow', 'workflow_lane', 'report', 'manual_repair', 'dry_run')
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "No stale agent runs",
-      status: cnt === 0 ? "pass" : "fail",
-      detail: cnt === 0 ? "No runs stuck in running state" : `${cnt} runs running for 2+ hours`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "No stale agent runs", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  // 10. Invalid state codes
-  try {
-    const [row] = await sql`
-      SELECT COUNT(*) as cnt FROM institution_sources
-      WHERE state_code IS NOT NULL AND LENGTH(state_code) != 2
-    `;
-    const cnt = Number(row.cnt);
-    checks.push({
-      name: "Valid state codes",
-      status: cnt === 0 ? "pass" : "fail",
-      detail: cnt === 0 ? "All state codes are valid format" : `${cnt} institutions with invalid state codes`,
-      count: cnt,
-    });
-  } catch {
-    checks.push({ name: "Valid state codes", status: "warn", detail: "Check failed", count: -1 });
-  }
-
-  return checks;
-}
-
 export async function getCoverageFunnelData(): Promise<CoverageFunnelData> {
   try {
     const [totalRow] = await sql`SELECT COUNT(*) as cnt FROM institution_sources`;
@@ -1225,7 +1027,8 @@ const INSTITUTION_QUALITY_CTE = `
       AND NOT EXISTS (
         SELECT 1
         FROM published_fee_catalog pfc
-        WHERE pfc.fee_verified_id = fv.fee_verified_id
+        WHERE pfc.institution_id = fv.institution_id
+          AND pfc.fee_verified_id = fv.fee_verified_id
           AND pfc.review_status <> 'rejected'
       )
     GROUP BY fv.institution_id
@@ -1890,7 +1693,8 @@ export async function getDataTrustQueueRows({
           AND NOT EXISTS (
             SELECT 1
             FROM published_fee_catalog pfc
-            WHERE pfc.fee_verified_id = fv.fee_verified_id
+            WHERE pfc.institution_id = fv.institution_id
+              AND pfc.fee_verified_id = fv.fee_verified_id
               AND pfc.review_status <> 'rejected'
           )
         GROUP BY fv.institution_id
@@ -2430,60 +2234,6 @@ export async function getDistrictOverview(): Promise<DistrictOverviewRow[]> {
 }
 
 // ---------------------------------------------------------------------------
-// National Fee Index
-// ---------------------------------------------------------------------------
-
-export interface NationalIndexRow {
-  fee_category: string;
-  display_name: string;
-  fee_family: string | null;
-  median: number | null;
-  p25: number | null;
-  p75: number | null;
-  min_amount: number | null;
-  max_amount: number | null;
-  institution_count: number;
-  observation_count: number;
-  approved_count: number;
-  bank_count: number;
-  cu_count: number;
-  maturity: string;
-}
-
-export async function getNationalIndexData(): Promise<NationalIndexRow[]> {
-  try {
-    // Through the shared reader: it ignores a stale or old-method cache and computes live.
-    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
-    const rows = await getNationalIndexCached();
-
-    const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
-
-    return rows.map((r) => {
-      const cat = String(r.fee_category);
-      return {
-        fee_category: cat,
-        display_name: DISPLAY_NAMES[cat] || cat.replace(/_/g, " "),
-        fee_family: r.fee_family ? String(r.fee_family) : null,
-        median: r.median_amount != null ? Number(Number(r.median_amount).toFixed(2)) : null,
-        p25: r.p25_amount != null ? Number(Number(r.p25_amount).toFixed(2)) : null,
-        p75: r.p75_amount != null ? Number(Number(r.p75_amount).toFixed(2)) : null,
-        min_amount: r.min_amount != null ? Number(Number(r.min_amount).toFixed(2)) : null,
-        max_amount: r.max_amount != null ? Number(Number(r.max_amount).toFixed(2)) : null,
-        institution_count: Number(r.institution_count),
-        observation_count: Number(r.observation_count),
-        approved_count: Number(r.approved_count),
-        bank_count: Number(r.bank_count),
-        cu_count: Number(r.cu_count),
-        maturity: String(r.maturity_tier),
-      };
-    });
-  } catch (e) {
-    console.error("getNationalIndexData failed:", e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Market Index (segment vs national)
 // ---------------------------------------------------------------------------
 
@@ -2500,6 +2250,7 @@ export async function getMarketData(filters: {
   charter_type?: string;
   asset_tier?: string;
   state_code?: string;
+  fed_district?: number;
 }): Promise<MarketIndexRow[]> {
   try {
     // National baseline through the shared cached reader
@@ -2516,7 +2267,7 @@ export async function getMarketData(filters: {
       });
     }
 
-    const hasFilters = !!(filters.charter_type || filters.asset_tier || filters.state_code);
+    const hasFilters = !!(filters.charter_type || filters.asset_tier || filters.state_code || filters.fed_district);
 
     if (!hasFilters) {
       return national.map((r) => {
@@ -2551,6 +2302,10 @@ export async function getMarketData(filters: {
     if (filters.state_code) {
       conditions.push(`ct.state_code = $${paramIdx++}`);
       params.push(filters.state_code);
+    }
+    if (filters.fed_district) {
+      conditions.push(`ct.fed_district = $${paramIdx++}`);
+      params.push(filters.fed_district);
     }
 
     const where = conditions.join(" AND ");
@@ -2599,100 +2354,6 @@ export async function getMarketData(filters: {
     return results;
   } catch (e) {
     console.error("getMarketData failed:", e);
-    return [];
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Peer Index
-// ---------------------------------------------------------------------------
-
-export interface PeerIndexRow {
-  fee_category: string;
-  display_name: string;
-  peer_median: number | null;
-  national_median: number | null;
-  delta_pct: number | null;
-  peer_count: number;
-  national_count: number;
-}
-
-export async function getPeerIndexData(filters: {
-  charter_type?: string;
-  asset_tier?: string;
-  fed_district?: number;
-}): Promise<PeerIndexRow[]> {
-  try {
-    const { getNationalIndexCached } = await import("@/lib/data-store/fee-index");
-    const national = await getNationalIndexCached();
-
-    const { DISPLAY_NAMES } = await import("@/lib/fee-taxonomy");
-
-    const nationalMap = new Map<string, { median: number | null; count: number }>();
-    for (const r of national) {
-      nationalMap.set(String(r.fee_category), {
-        median: r.median_amount != null ? Number(r.median_amount) : null,
-        count: Number(r.institution_count),
-      });
-    }
-
-    const conditions = [
-      "ef.fee_category IS NOT NULL",
-      "ef.amount IS NOT NULL",
-    ];
-    const params: (string | number | null)[] = [];
-    let paramIdx = 1;
-
-    if (filters.charter_type) {
-      conditions.push(`ct.charter_type = $${paramIdx++}`);
-      params.push(filters.charter_type);
-    }
-    if (filters.asset_tier) {
-      conditions.push(`ct.asset_size_tier = $${paramIdx++}`);
-      params.push(filters.asset_tier);
-    }
-    if (filters.fed_district) {
-      conditions.push(`ct.fed_district = $${paramIdx++}`);
-      params.push(filters.fed_district);
-    }
-
-    const where = conditions.join(" AND ");
-    const peerRows = await sql.unsafe(
-      `SELECT ef.fee_category,
-              PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ef.amount) as median,
-              COUNT(DISTINCT ct.id) as inst_count
-       FROM published_fee_catalog ef
-       JOIN institution_sources ct ON ef.institution_id = ct.id
-       WHERE ${where}
-       GROUP BY ef.fee_category`,
-      params,
-    );
-
-    const results: PeerIndexRow[] = [];
-    for (const r of peerRows) {
-      const cat = String(r.fee_category);
-      const nat = nationalMap.get(cat);
-      const peerMedian = Number(r.median);
-      const natMedian = nat?.median ?? null;
-      let deltaPct: number | null = null;
-      if (natMedian != null && natMedian !== 0) {
-        deltaPct = Number(((peerMedian - natMedian) / natMedian * 100).toFixed(1));
-      }
-      results.push({
-        fee_category: cat,
-        display_name: DISPLAY_NAMES[cat] || cat.replace(/_/g, " "),
-        peer_median: Number(peerMedian.toFixed(2)),
-        national_median: natMedian != null ? Number(natMedian.toFixed(2)) : null,
-        delta_pct: deltaPct,
-        peer_count: Number(r.inst_count),
-        national_count: nat?.count ?? 0,
-      });
-    }
-
-    results.sort((a, b) => b.peer_count - a.peer_count);
-    return results;
-  } catch (e) {
-    console.error("getPeerIndexData failed:", e);
     return [];
   }
 }

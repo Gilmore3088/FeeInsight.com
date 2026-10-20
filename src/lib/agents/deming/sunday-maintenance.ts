@@ -9,6 +9,7 @@ import { goalBriefLines, readGoalScorecard, type GoalScorecard } from "@/lib/age
 import { briefRecipients } from "@/lib/agents/daily-brief";
 import { hitRateLine, readChangeOutcomeReview, type ChangeOutcomeReview, type FlaggedChange } from "@/lib/agents/deming/change-outcomes";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { monthlyReviewSundayLine, readLatestMonthlyReview, type MonthlyReview } from "@/lib/agents/deming/monthly-review";
 
 type SqlTag = typeof sql;
 
@@ -44,6 +45,8 @@ export interface SundayEmailInputs {
   stuck: FailureAlert[] | null;
   /** Last week's 7-day change checks (#1106). Optional so older callers keep working. */
   outcomes?: ChangeOutcomeReview | null;
+  /** The newest monthly agent review (#1107); shown only the week after it ran. */
+  monthlyReview?: MonthlyReview | null;
   now: Date;
 }
 
@@ -161,6 +164,9 @@ export function buildSundayEmail(input: SundayEmailInputs): SundayEmail {
     lines.push(`The week in numbers: ${UNREAD}.${hitRateItem(input.outcomes)}`);
   }
 
+  const review = monthlyReviewSundayLine(input.monthlyReview, input.now);
+  if (review) lines.push(review);
+
   if (input.stuck == null) lines.push(`Anything stuck: ${UNREAD}.`);
   else if (input.stuck.length === 0) lines.push("Anything stuck: no failure alert is open.");
   else {
@@ -218,15 +224,16 @@ export async function runSundayMaintenance({
   if (!force && !isSundayUtc(now)) {
     return { ran: false, reason: "Not Sunday (UTC).", email: null, deliveryStatus: "skipped", deliveryReason: null };
   }
-  const [labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes] = await Promise.all([
+  const [labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview] = await Promise.all([
     read("fee-name labels", () => loadLabelQueue(db)),
     read("answer key", async () => ((await answerKeySchemaReady(db)) ? banksToCheck(await listAnswerKeyInstitutions(db)).length : 0)),
     read("data room", () => readDataRoomCounts(db)),
     read("scorecard", () => readGoalScorecard(db, now)),
     read("failure alerts", () => getFailureAlerts(db)),
     read("change outcomes", () => inSavepoint(db, (scope) => readChangeOutcomeReview(scope, now))),
+    read("monthly agent review", () => inSavepoint(db, (scope) => readLatestMonthlyReview(scope))),
   ]);
-  const email = buildSundayEmail({ labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, now });
+  const email = buildSundayEmail({ labels, answerKeyToCheck, dataRoom, goal, stuck, outcomes, monthlyReview, now });
 
   if (dryRun) return { ran: true, reason: null, email, deliveryStatus: "not_configured", deliveryReason: "dry run" };
   if (!sundayEmailLive()) {

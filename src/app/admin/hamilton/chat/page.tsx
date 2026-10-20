@@ -11,8 +11,8 @@ export default async function HamiltonChatPage({
 }: {
   searchParams: Promise<{ instId?: string; intent?: string }>;
 }) {
-  // "research" permission is held by analyst and admin roles
-  const user = await requireAuth("research");
+  // Internal chat is restricted to operator accounts.
+  const user = await requireAuth("operate");
   const params = await searchParams;
 
   const conversations = await listConversations(user.id, 30).catch(() => []);

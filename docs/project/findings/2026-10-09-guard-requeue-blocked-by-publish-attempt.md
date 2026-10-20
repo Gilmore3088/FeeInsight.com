@@ -15,3 +15,5 @@ Also: the step detail is in `agent_run_events` (`step.finished`, keys `guard_req
 row carries a `category_guard_requeued:` flag (`hamilton/publish.ts`). This PR.
 **Lesson:** a step that re-opens a row for another step has to check what that step's own
 selection reads, not only the row's status; and prove the hand-off on prod the same hour.
+
+**Agent lesson:** gutenberg/pr-767-rejudge-on-change

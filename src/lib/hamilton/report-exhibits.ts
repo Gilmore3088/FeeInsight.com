@@ -10,6 +10,7 @@ import { FINANCIAL_SOURCES, isFinancialSource } from "@/lib/data-store/financial
 import { formatAmount, formatCompactDollars } from "@/lib/format";
 import { FEE_MOVES_TRACKED_SINCE, type LocalFeeMove, type LocalMarket } from "@/lib/data-store/local-market";
 import type { SelectedInstitutionFeeDelta } from "./report-evidence";
+import { statedFeeText, type SeveralFees } from "@/lib/own-fee";
 import type { ReportExhibit, ReportSource } from "./types";
 
 /** A local median needs at least this many competitors publishing the fee. */
@@ -34,7 +35,12 @@ export interface LocalFeeComparison {
   local_max: number;
   local_competitor_count: number;
   position_vs_local: "above" | "below" | "at" | null;
-  competitors: Array<{ name: string; amount: number }>;
+  /**
+   * The named competitors. `amount` is the stated price, except where `several` is present:
+   * the competitor states several different fees, `amount` is their median (it counts toward
+   * the local median and range only) and `several` gives their range and each fee by name.
+   */
+  competitors: Array<{ name: string; amount: number; several?: SeveralFees }>;
   /** Every local competitor's amount for this fee, lowest first (for ranks). */
   local_amounts: number[];
 }
@@ -110,7 +116,10 @@ export function buildLocalComparisons(
   return fewFees(deltas).flatMap((delta) => {
     const competitors = market.competitors
       .filter((c) => c.fees[delta.fee_category] !== undefined)
-      .map((c) => ({ name: cleanName(c.institution_name), amount: c.fees[delta.fee_category] }));
+      .map((c) => {
+        const several = c.several?.[delta.fee_category];
+        return { name: cleanName(c.institution_name), amount: c.fees[delta.fee_category], ...(several ? { several } : {}) };
+      });
     if (competitors.length === 0) return [];
     const amounts = competitors.map((c) => c.amount).sort((a, b) => a - b);
     const median =
@@ -234,7 +243,7 @@ export function buildReportExhibits(params: {
         formatAmount(row.your_amount),
         row.local_median !== null ? formatAmount(row.local_median) : `n=${row.local_competitor_count}, too few`,
         row.local_min === row.local_max ? formatAmount(row.local_min) : `${formatAmount(row.local_min)} to ${formatAmount(row.local_max)}`,
-        row.competitors.map((c) => `${c.name} ${formatAmount(c.amount)}`).join("; "),
+        row.competitors.map((c) => `${c.name} ${statedFeeText(c.amount, c.several)}`).join("; "),
       ]),
       note:
         market.basis === "hq_city"

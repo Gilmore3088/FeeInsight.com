@@ -1,5 +1,6 @@
 "use client";
 
+import { PERCENTILE_METHOD } from "@/lib/percentile";
 import type { FeePosition } from "@/lib/hamilton/simulation";
 
 interface Props {
@@ -74,6 +75,13 @@ export function CurrentVsProposed({
           </div>
         </div>
 
+        <p className="mb-3 text-[11px] leading-snug" style={{ color: "rgb(120 113 108)" }}>
+          {currentPosition.method === "mid_rank"
+            ? PERCENTILE_METHOD
+            : currentPosition.amountsUnread
+              ? "Percentile estimated from the peer quartiles: the peer amounts could not be read."
+              : "Percentile estimated from the peer quartiles: fewer than 5 peer amounts are on file."}
+        </p>
         <div className="grid grid-cols-2 gap-4">
           <div className="border-t pt-3" style={{ borderColor: "rgb(245 245 244)" }}>
             <span className="font-label text-[9px] uppercase tracking-widest" style={{ color: "rgb(168 162 158)" }}>

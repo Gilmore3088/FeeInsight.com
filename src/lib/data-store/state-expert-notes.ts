@@ -13,7 +13,6 @@ import { sql } from "./connection";
 type SqlTag = typeof sql;
 
 export type StateExpertNoteKind = "document_type" | "state_fee_rule";
-export const STATE_EXPERT_NOTE_KINDS: readonly StateExpertNoteKind[] = ["document_type", "state_fee_rule"];
 
 export interface StateExpertNote {
   id: number;

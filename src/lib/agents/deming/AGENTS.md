@@ -4,6 +4,32 @@ Deming is the quality and evaluation tooling of the Agentic OS PRD (section 7). 
 pipeline's confirmed mistakes as test cases and checks that the deployed rules still catch them.
 It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model calls.
 
+## Answer-key reference boundary (2026-10-19, #1862)
+
+`score-answer-key` observes at most six official-path documents per due key through the pinned
+fee-source transport (8 seconds/request, 120 seconds total, three workers), then records dedicated
+`answer_key.eligibility` events under the real score run/step. Every score/training/replay/cache
+consumer uses one shared durable snapshot, never request-time bank fetches. Exact document,
+confirmed-fee and source inventory identities are checked again atomically before persistence.
+Unknown/missing/stale/malformed/persist-failed references are excluded; no older eligible fallback.
+
+Scorer v3 matching is unchanged. Protocol/cohort identities separate measurement history from
+reference edits, and all-excluded runs explicitly record no measurement. Historical unbound cases
+are retained, excluded and counted; they are not relabelled `key_fee_removed`. Only actually removed
+confirmed key fees retire cases. Frozen tuning/holdout provenance is a separate dataset, with no
+runtime judgment when its original document identity cannot be established. See
+[reference eligibility](REFERENCE-ELIGIBILITY.md); no additional James checks or confirmations.
+
+## Live-source diagnostic (#2061)
+
+`live-source-audit.ts` adds a separate, versioned diagnostic of an immutable daily sample against
+fresh official-path evidence. The queue-only daily route freezes the frame after its existing
+measurement/snapshot steps. Non-exempt finite tick work observes, records unknowns and positive
+contradictions, consumes exact-document Magellan side-copy requests, and archives late completion
+into the original dated snapshot. It changes no answer key or fee and cannot certify missing-fee
+recall or launch accuracy. See [LIVE-SOURCE-AUDIT.md](LIVE-SOURCE-AUDIT.md). James's weekly 50 whole
+institutions remains the only human launch workflow.
+
 ## What it owns
 
 - `eval_cases` (migration `20270110000036`): one labeled example per row, in five datasets
@@ -46,7 +72,7 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 ## Fresh audit (accuracy)
 
 - `fresh-audit.ts`: the `deming-fresh-audit` step in Atlas's daily run. It draws a seeded sample
-  of `FRESH_AUDIT_SAMPLE` (200) live dollar fees from `published_fee_catalog` and checks each one
+  of `FRESH_AUDIT_SAMPLE` (500) live dollar fees from `published_fee_catalog` and checks each one
   against the bank's own stored schedule. A fee is right only when the amount (`traceLiveFee`, the
   shared source check), the category (`checkFeeCategory`), the evidence (the bank's own document,
   not an article; a product-page fee only when the bank's schedule does not price the same fee
@@ -55,12 +81,13 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
   (applies after 60 days of inactivity)" (`nameQuality`), the fee line ($0 rows must be priced lines) and the name all
   hold. A fee with no stored text is unknown, never right or wrong. Below
   `FRESH_AUDIT_MIN_SCORABLE` scorable fees there is no percentage. The audit itself only reads.
-- This is the accuracy measure `CLAUDE.md` defines. The target is 99.5% (James, Oct 15; `ACCURACY_TARGET` in `src/lib/accuracy-target.ts`), averaged over a week.
+- This is an automated stored-copy support diagnostic. The launch accuracy measurement is the separate weekly live batch of 50 whole institutions (DECISIONS, 2026-10-19), covering every published fee plus missing tracked categories. The shared target value is 99.5%; this automated status cannot satisfy launch sign-off and creates no additional manual checks for James.
 - The step's detail (counts per check, up to 50 misses, the seed and sample ids) is in its
   `step.finished` event. `goal-scorecard.ts` pools the last 7 days of audits into the scorecard's
-  accuracy: right ÷ scorable, a 95% Wilson range (about ±3–4 points at 200 fees), misses per check,
+  accuracy: right ÷ unique scorable fees in the newest scoring series, a 95% Wilson range, misses per check,
   and one dated row per audit. Each daily scoreboard snapshot stores this in `detail.goal.accuracy`,
   so the dated results outlive the run history.
+- Confidence/history (#2071): [ACCURACY.md](ACCURACY.md) defines the 500/day request, 3,400 unique-scorable minimum and unrounded 95% lower-bound gate. Full per-fee receipts prevent retries or overlapping draws from inflating confidence; unknown versions stay legacy. Calendar-week history comes from existing daily snapshots, split at each reporting/audit/category/source/name version change. The admin scorecard and quality ledger distinguish this automated stored-copy diagnostic from independent live-source accuracy and missed-fee recall.
 - Each new miss (not one a Hamilton second look already holds) is kept and routed
   (`audit-misses.ts`, #1119, approved by James 2026-10-12; migration 20270110000045):
   - a `fresh_audit` eval case, `case_key` `fresh_audit:<fee_published_id>:<check>`, label
@@ -186,6 +213,27 @@ It runs as Atlas steps (agent `atlas`); it is deterministic and makes no model c
 - Read-only, deterministic, no model calls, pause-exempt: one SELECT over
   `registry_ingest_partitions` and one over Atlas's newest table sizes.
 
+## Monthly agent review (#1107)
+
+- `monthly-review.ts` (`MONTHLY_REVIEW_VERSION` v1): the `deming-monthly-review` step in Atlas's
+  daily scoreboard run, before `deming-sunday-maintenance`. It runs on the 1st of the month (UTC)
+  only, the same gate as the Sunday email. Each of the four agents reviewed on 2026-10-12
+  (Magellan, Rosetta, Knox, Hamilton the publisher; `docs/plans/*-review-2026-10-12.md`) has a
+  list of named read-only SQL measures, each with a direction (higher or lower is better) and a
+  move limit. A baseline is the review's own figure, or null where the review states none.
+- Each measure runs in its own savepoint with a 30-second statement timeout; a failed or timed-out
+  read is stored as unknown (null with its error), never 0. A measure starts only while it can
+  finish inside the step's 110-second budget at that timeout; the rest are unknown for the month.
+- The answer-key measures read the newest score through `getLatestAnswerKeyScoreRun`: a run on
+  another reference cohort is unknown, never a score. Each reading carries its basis (scorer
+  version and cohort), and a month or baseline on a different basis is shown but never compared
+  or alarmed against. The 2026-10-12 answer-key figures were scored at v1, so they never alarm.
+- A measure that moves the wrong way past its limit since last month (or, with no last month, since
+  the 2026-10-12 figure) is an ALARM in the step summary, on /admin/agents/health and in the next
+  Sunday email. The app has no GitHub access: an alarm is added to that agent's tracker by hand.
+- The step detail (`review`) is the history: last month is read back from the newest earlier
+  ledger row. Read-only, deterministic, no model calls, pause-exempt.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -199,9 +247,11 @@ fails a PR that changes one of these constants without updating its line here (#
 
 | Constant | Strategy | Version | File |
 |---|---|---|---|
-| `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
+| `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
+| `FRESH_AUDIT_VERSION` | — | v7 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
+| `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |

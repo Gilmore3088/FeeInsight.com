@@ -22,3 +22,5 @@ verified row rejected, never deleted. If the older line is no longer live, the d
 **Lesson:** a re-decision of old rows must be checked against the live catalog with the keys
 the rows have now, not the ones they had when first decided. Before a backlog re-select ships, take a
 spot check of what it would publish under the live keys, not only of the rule on the old pair.
+
+**Agent lesson:** gutenberg/pr-895-redecide-current-keys

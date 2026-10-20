@@ -3,3 +3,5 @@
 **Cause:** `/guides/[slug]` called the uncached `getDataFreshness`, `getFeeCategoryDetail` and `getCheapestAndMostExpensive`. Each rebuild of a guide page (every takedown refreshes the public cache tag) ran its own catalog reads instead of sharing them with the fee pages.
 **Fix:** this PR. Guides read the same cached reads as `/fees/[category]` (`public-cached-reads.ts`), on the same tag, so takedowns still show at once.
 **Lesson:** a public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions.
+
+**Guard:** `src/app/(public)/guides/[slug]/page.test.ts:22` (the guide page's only runtime data-store import is `public-cached-reads`)

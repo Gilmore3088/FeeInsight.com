@@ -53,8 +53,9 @@ const record = (lei: string, registeredAt: string, registeredAs: string) => ({
 });
 
 describe("registry gleif", () => {
-  it("lists level 2 first", () => {
-    expect(gleifRegistryPartitions(new Date())[0]).toBe("level2");
+  it("lists the LEI matches before level 2", () => {
+    const p = gleifRegistryPartitions(new Date());
+    expect(p.indexOf("lei-match-name")).toBeLessThan(p.indexOf("level2"));
   });
 
   it("level2 keeps our LEIs' parents and their families", async () => {
@@ -112,5 +113,124 @@ describe("registry gleif", () => {
 
   it("rejects an unknown partition", async () => {
     await expect(runRegistryGleif({ partitionKey: "level1-99", db: createDb().db })).rejects.toThrow(/Invalid GLEIF/);
+  });
+});
+
+describe("registry gleif LEI match", () => {
+  const NIC = "RA000602";
+  const universe = [
+    { id: 1, source: "fdic", lei: null, rssd_id: "12345", cert_number: "99", ncua_charter_id: null, institution_name: "First Bank", state_code: "TX" },
+    { id: 2, source: "fdic", lei: LEI_SIBLING, rssd_id: null, cert_number: null, ncua_charter_id: null, institution_name: "Second Bank", state_code: "TX" },
+  ];
+
+  function createMatchDb(opts: { rssdHasRun?: boolean; nameCandidates?: unknown[]; resume?: Record<string, number> } = {}) {
+    const statements: Array<{ text: string; values: unknown[] }> = [];
+    const fn = vi.fn((strings: unknown, ...values: unknown[]) => {
+      if (!Array.isArray(strings) || !("raw" in (strings as object))) return strings;
+      const text = (strings as string[]).join(" ");
+      statements.push({ text, values });
+      if (text.includes("walk_resume")) return Promise.resolve(opts.resume ? [{ resume: opts.resume }] : []);
+      if (text.includes("FROM registry_ingest_partitions")) return Promise.resolve(opts.rssdHasRun ? [{ found: 1 }] : []);
+      if (text.includes("LIMIT") && text.includes("LEFT JOIN institution_lei_links")) return Promise.resolve(opts.nameCandidates ?? []);
+      if (text.includes("GROUP BY")) return Promise.resolve([{ status: "linked", match_basis: "rssd", n: 1 }, { status: null, match_basis: null, n: 1 }]);
+      if (text.includes("FROM institution_sources s")) return Promise.resolve(universe);
+      if (text.includes("INSERT INTO institution_lei_links")) {
+        const payload = JSON.parse(values.find((v) => typeof v === "string" && v.startsWith("[")) as string);
+        return Promise.resolve(payload.map(() => ({})));
+      }
+      return Promise.resolve([]);
+    });
+    const db = Object.assign(fn, { begin: async (cb: (tx: unknown) => unknown) => cb(db), unsafe: (s: string) => s });
+    const linkRows = () =>
+      statements
+        .filter((s) => s.text.includes("INSERT INTO institution_lei_links"))
+        .flatMap((s) => JSON.parse(s.values.find((v) => typeof v === "string" && v.startsWith("[")) as string));
+    return { db: db as unknown as RegistryDb, statements, linkRows };
+  }
+
+  const authorities = () => json({ meta: { pagination: { lastPage: 1 } }, data: [{ id: NIC, attributes: { code: NIC, internationalName: "National Information Center" } }] });
+
+  it("links by RSSD and by an institution's own LEI, in bounded transactions", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      calls.push(url);
+      return url.includes("registration-authorities") ? authorities() : json({ meta: { pagination: { lastPage: 1 } }, data: [record(LEI_BANK, NIC, "0012345")] });
+    }) as unknown as typeof fetch;
+    const { db, statements, linkRows } = createMatchDb();
+    const r = await runRegistryGleif({ partitionKey: "lei-match-rssd", db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });
+    expect(r.leiMatch).toMatchObject({ changes: 2, remaining: 0 });
+    expect(linkRows()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ institution_id: 1, status: "linked", lei: LEI_BANK, match_basis: "rssd", match_key: "12345" }),
+        expect.objectContaining({ institution_id: 2, status: "linked", lei: LEI_SIBLING, match_basis: "own_lei" }),
+      ]),
+    );
+    expect(statements.some((s) => s.text.includes("statement_timeout"))).toBe(true);
+    expect(calls[1]).toContain("filter%5Bentity.registeredAt.id%5D=RA000602");
+    const { status, detail } = partition(statements);
+    expect(status).toBe("succeeded");
+    expect(detail).toMatchObject({ walk_complete: true, coverage: { institutions: 2, linked: 1, unchecked: 1 } });
+  });
+
+  it("stops a walk whose authority filter did not hold and links nothing by RSSD from it", async () => {
+    const fetchImpl = vi.fn(async (url: string) =>
+      url.includes("registration-authorities") ? authorities() : json({ meta: { pagination: { lastPage: 5000 } }, data: [record(LEI_BANK, "RA000111", "12345")] }),
+    ) as unknown as typeof fetch;
+    const { db, statements, linkRows } = createMatchDb();
+    await runRegistryGleif({ partitionKey: "lei-match-rssd", db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });
+    expect(linkRows().map((x: { match_basis: string }) => x.match_basis)).toEqual(["own_lei"]);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(partition(statements).detail).toMatchObject({ walk_complete: false, walk_problems: [expect.stringContaining("filter did not hold")] });
+  });
+
+  it("walks a long register over several runs and never clears links from a partial walk", async () => {
+    const pages: number[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes("registration-authorities")) return authorities();
+      pages.push(Number(/page%5Bnumber%5D=(\d+)/.exec(url)![1]));
+      return json({ meta: { pagination: { lastPage: 100 } }, data: [record(LEI_HOLDCO, NIC, "424242")] });
+    }) as unknown as typeof fetch;
+    const first = createMatchDb();
+    await runRegistryGleif({ partitionKey: "lei-match-rssd", db: first.db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });
+    expect(pages[0]).toBe(1);
+    expect(pages).toHaveLength(75);
+    expect(partition(first.statements).detail).toMatchObject({ walk_complete: false, walk_resume: { [NIC]: 76 } });
+
+    pages.length = 0;
+    const second = createMatchDb({ resume: { [NIC]: 76 } });
+    await runRegistryGleif({ partitionKey: "lei-match-rssd", db: second.db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });
+    expect(pages[0]).toBe(76);
+    expect(pages.at(-1)).toBe(100);
+    expect(partition(second.statements).detail).toMatchObject({ walk_complete: false, walk_resume: {} });
+  });
+
+  it("holds the name search until the RSSD match has run", async () => {
+    const fetchImpl = vi.fn() as unknown as typeof fetch;
+    const { db, statements } = createMatchDb({ rssdHasRun: false });
+    const r = await runRegistryGleif({ partitionKey: "lei-match-name", db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });
+    expect(r.empty).toBe(true);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(partition(statements).status).toBe("empty");
+  });
+
+  it("links by exact name and state, and records a miss for review", async () => {
+    const candidates = [
+      { ...universe[0], institution_id: null },
+      { ...universe[0], id: 3, institution_name: "Third Bank", institution_id: null },
+    ];
+    const fetchImpl = vi.fn(async (url: string) => {
+      const hit = record(LEI_BANK, "RA000111", "x");
+      hit.attributes.entity.legalName = { name: "FIRST BANK" };
+      return json({ data: url.includes("First%20Bank") && url.includes("US-TX") ? [hit] : [] });
+    }) as unknown as typeof fetch;
+    const { db, statements, linkRows } = createMatchDb({ rssdHasRun: true, nameCandidates: candidates });
+    await runRegistryGleif({ partitionKey: "lei-match-name", db, fetchOptions: { fetchImpl, backoffMs: 0 }, spacingMs: 0 });
+    expect(linkRows()).toEqual([
+      expect.objectContaining({ institution_id: 1, status: "linked", lei: LEI_BANK, match_basis: "name_state", match_key: "FIRST BANK|TX" }),
+      expect.objectContaining({ institution_id: 3, status: "unmatched", lei: null, match_basis: null }),
+    ]);
+    // The name pass never overwrites a key-based row.
+    expect(statements.find((s) => s.text.includes("INSERT INTO institution_lei_links"))!.text).toContain("match_basis = 'name_state'");
+    expect(partition(statements).status).toBe("succeeded");
   });
 });

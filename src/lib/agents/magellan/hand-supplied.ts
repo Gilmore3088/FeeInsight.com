@@ -30,7 +30,7 @@ type SqlTag = typeof sql;
  *
  * Nothing is replaced or deleted: the bank's fee link, its other documents and its live fees
  * stay as they are (a hand-found link never sets the fee link, so neither does this), and the
- * same bytes twice for one institution are a no-op. Every load is its own run in the ledger.
+ * same bytes twice for one institution are a no-op once that copy has been read. Every load is its own run in the ledger.
  */
 export const HAND_SUPPLIED_STRATEGY = { strategy: "supply.hand_supplied", version: 1 } as const;
 export const HAND_SUPPLIED_SOURCE = "magellan.hand_supplied";
@@ -149,18 +149,55 @@ export async function loadHandSuppliedDocument(options: LoadHandSuppliedOptions)
   base.runId = run.runId;
 
   try {
-    const [existing] = await db<Array<{ id: number | string }>>`
-      SELECT id FROM source_documents
-       WHERE institution_id = ${parsed.institutionId}
-         AND content_hash = ${contentHash}
-         AND status = 'success'
-       ORDER BY id ASC
+    // The same bytes already on file. A copy that was never read (Rosetta asked the bank's site
+    // for it and was refused, #1754: Alliant's 2026-02 copy, text "HTTP 403") is read now from the
+    // uploaded bytes, which also go to the vault; a copy already read stays as it is.
+    const [existing] = await db<Array<{ id: number | string; document_r2_key: string | null; read_ok: boolean }>>`
+      SELECT d.id, d.document_r2_key,
+             EXISTS (
+               SELECT 1 FROM agent_source_texts t
+                WHERE t.source_document_id = d.id AND t.status = 'completed' AND t.char_count > 0
+             ) AS read_ok
+        FROM source_documents d
+       WHERE d.institution_id = ${parsed.institutionId}
+         AND d.content_hash = ${contentHash}
+         AND d.status = 'success'
+       ORDER BY d.id ASC
        LIMIT 1
     `;
-    if (existing) {
+    if (existing?.read_ok) {
       const message = `Already loaded as document ${Number(existing.id)}; nothing changed`;
       await closeInlineAgentRun(run, { db, status: "completed", summary: message, detail: { outcome: "already_loaded", source_document_id: Number(existing.id) } });
       return { ...base, outcome: "already_loaded", message, sourceDocumentId: Number(existing.id) };
+    }
+    if (existing) {
+      const sourceDocumentId = Number(existing.id);
+      if (!existing.document_r2_key) {
+        const vaulted = await vault.store(options.bytes, contentHash, "application/pdf");
+        if (!vaulted.key) throw new Error(`Document vault store failed: ${vaulted.error ?? vaulted.status}`);
+        await db`
+          UPDATE source_documents
+             SET document_r2_key = ${vaulted.key}, content_type = 'application/pdf', byte_size = ${options.bytes.byteLength}
+           WHERE id = ${sourceDocumentId}
+        `;
+      }
+      const read: ReadResult | null = await (options.read ?? readHandSuppliedDocument)({
+        db,
+        runId: run.runId,
+        stepId: run.stepId,
+        sourceDocumentId,
+        bytes: options.bytes,
+        contentType: "application/pdf",
+      });
+      const readStatus = read?.status ?? null;
+      const message = `On file as document ${sourceDocumentId}, never read until now. ${READ_MESSAGE[readStatus ?? ""] ?? `Read: ${readStatus ?? "not read"}`}`;
+      await closeInlineAgentRun(run, {
+        db,
+        status: "completed",
+        summary: message,
+        detail: { outcome: "loaded", source_document_id: sourceDocumentId, reread_unread_copy: true, read_status: readStatus, read_error: read?.error ?? null, chars: read?.charCount ?? 0 },
+      });
+      return { ...base, outcome: "loaded", message, sourceDocumentId, readStatus };
     }
 
     const reason = `Consumer fee schedule hand-supplied by ${givenBy}: downloaded as a normal visitor from ${sourceUrl}${

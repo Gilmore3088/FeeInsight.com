@@ -60,12 +60,19 @@ async function specParams(): Promise<Map<string, Set<string>>> {
   return byPath;
 }
 
+function docsPageCards(route: string): string[] {
+  return DOCS_PAGE.split("<Endpoint").slice(1).filter((card) => {
+    const path = card.match(/path="([^"]+)"/)?.[1] ?? "";
+    return path.split("?")[0] === `/${route}`;
+  });
+}
+
 /** The parameter rows of every <Endpoint> card on /api-docs whose path is this route. */
 function docsPageParams(route: string): Set<string> {
   const names = new Set<string>();
-  for (const card of DOCS_PAGE.split("<Endpoint").slice(1)) {
-    const path = card.match(/path="([^"]+)"/)?.[1] ?? "";
-    if (path.split("?")[0] !== `/${route}`) continue;
+  for (const card of docsPageCards(route)) {
+    // A route with params={[]} still needs an endpoint card, but has no parameter rows.
+    if (!card.includes("params={[")) continue;
     const params = card.slice(card.indexOf("params={["), card.indexOf("curlExample="));
     for (const match of params.matchAll(/name: "([a-z_]+)"/g)) names.add(match[1]);
     if (params.includes("...PEER_GROUP_PARAMS")) for (const p of PEER_GROUP_PARAMS) names.add(p.name);
@@ -92,7 +99,7 @@ describe("API docs stay in step with the API", () => {
     const spec = (await specParams()).get(`/${route}`);
     expect(spec, `/${route} is missing from the OpenAPI spec`).toBeDefined();
     expect(read.filter((name) => !spec!.has(name)), `parameters /${route} reads but the spec leaves out`).toEqual([]);
-    expect(docsPageParams(route).size, `/${route} has no card on /api-docs`).toBeGreaterThan(0);
+    expect(docsPageCards(route).length, `/${route} has no card on /api-docs`).toBeGreaterThan(0);
     const onPage = docsPageParams(route);
     expect(read.filter((name) => !onPage.has(name)), `parameters /${route} reads but /api-docs leaves out`).toEqual([]);
   });

@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { describe, expect, it, vi } from "vitest";
 
-import { MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withRequestedUrl } from "./fetch";
+import { fetchAndRecordLink, MAGELLAN_FETCH_STRATEGY, MAGELLAN_STALE_LINK_REFETCH_DAYS, redirectedToHomepage, runMagellanFetch, sendsValidators, withRequestedUrl } from "./fetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -379,6 +379,42 @@ describe("Magellan agentic fetch", () => {
       expect(sqlText).toContain("last_checked_at = NOW()");
       const [attempt] = attemptValues(db);
       expect(attempt).toEqual(expect.arrayContaining([45, 900, "fetch", MAGELLAN_FETCH_STRATEGY.strategy, bodyHash, "unchanged", 201, 7]));
+    });
+
+    // saved-link-fetch.ts: a copy fetched beside the bank's own link changes nothing on the bank.
+    const sideContext = {
+      learning: true, vaultSchema: false, vault: { configured: false } as never, vaultOn: false, dryRun: false,
+      runId: 204, stepId: null, strategy: { strategy: "fetch.saved_link", version: 1 }, keepRemembered: true,
+    };
+    const saved = { ...candidate, profile_last_source_hash: null, profile_last_document_id: null, profile_canonical_source_url: null };
+
+    it("stores a side copy's new bytes as a document and leaves the bank's address and health alone", async () => {
+      const db = learningDb(null);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
+      const fetched = await fetchAndRecordLink(asFetchDb(db), saved, fetchImpl, sideContext);
+      expect(fetched).toMatchObject({ sourceDocumentId: 1001, result: { outcome: "success" } });
+      const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(sqlText).toContain("INSERT INTO source_documents");
+      expect(sqlText).not.toContain("UPDATE institution_sources");
+      expect(sqlText).not.toMatch(/(INSERT INTO|UPDATE) institution_source_profiles/);
+    });
+
+    it("matches a side copy's bytes the bank already has, and stores nothing for a gone link", async () => {
+      const matched = learningDb(null, { id: 900 });
+      const same = await fetchAndRecordLink(asFetchDb(matched), saved, vi.fn().mockResolvedValueOnce(response(body)), sideContext);
+      expect(same).toMatchObject({ sourceDocumentId: 900, result: { outcome: "unchanged", reusedDocument: true } });
+      const matchedText = matched.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(matchedText).not.toContain("INSERT INTO source_documents");
+      // Matched bytes belong to another page's stream: no copy of it is marked current or superseded.
+      expect(matchedText).not.toContain("superseded_by_id");
+
+      const gone = learningDb(null);
+      const missing = await fetchAndRecordLink(asFetchDb(gone), saved, vi.fn().mockResolvedValueOnce(response("Not found", "text/html", 404)), sideContext);
+      expect(missing).toMatchObject({ sourceDocumentId: null, result: { outcome: "failed", attemptOutcome: "http_404" } });
+      const goneText = gone.mock.calls.map((call) => templateText(call[0])).join("\n");
+      expect(goneText).not.toContain("INSERT INTO source_documents");
+      expect(goneText).not.toContain("UPDATE institution_sources");
+      expect(goneText).toContain("INSERT INTO pipeline_attempts");
     });
 
     it("sends another page's validators to no address, and a 304 without ours is not unchanged (Dupaco)", async () => {

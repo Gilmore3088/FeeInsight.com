@@ -1,18 +1,17 @@
 import Link from "next/link";
 import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
 import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
-import type { PublicStatsSummary } from "@/lib/public-stats";
+import { UNAVAILABLE_LABEL, type PublicStatsSummary } from "@/lib/public-stats";
 import { PrintButton } from "./print-button";
-import { HAMILTON_CANONICAL } from "@/app/for-institutions/hamilton-copy";
-import { SectionHeading } from "./research-hero";
+import { HubSection } from "./district/[id]/district-hub";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 
 const STEPS = [
-  { n: "01", title: "Find the schedule", body: "Locate each bank's and credit union's own published fee schedule or disclosure." },
-  { n: "02", title: "Read it", body: "Turn web pages and PDFs into clean text, one whole document at a time." },
-  { n: "03", title: "Extract each fee", body: "Pull every fee line with its amount and conditions, linked to the source document." },
-  { n: "04", title: "Verify, then publish", body: "Check each fee against its own schedule before it can be published. Only verified fees reach this page." },
+  { n: "1", title: "Find the schedule", body: "Locate each bank's and credit union's own published fee schedule or disclosure." },
+  { n: "2", title: "Read it", body: "Turn web pages and PDFs into clean text, one whole document at a time." },
+  { n: "3", title: "Extract each fee", body: "Pull every fee line with its amount and conditions, linked to the source document." },
+  { n: "4", title: "Verify, then publish", body: "Check each fee against its own schedule before it can be published. Only verified fees reach this page." },
 ];
 
 const VERIFIED_CHECKS = [
@@ -60,23 +59,34 @@ function Dots({ items }: { items: string[] }) {
 }
 
 /** Coverage counts, how the data is built and checked, and the PDF; after the findings, not before them. */
-export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: PublicStatsSummary; stateCount: number; coverageLabel: string }) {
+export function MethodFlow({
+  summary,
+  stateCount,
+  coverageLabel,
+}: {
+  summary: PublicStatsSummary;
+  /** Null when the coverage read failed: shown as unavailable, never "0". */
+  stateCount: number | null;
+  coverageLabel: string | null;
+}) {
   const stats = [
     { value: summary.observationsLabel, label: "published fee entries" },
-    { value: summary.institutionsLabel, label: `institutions with published fees, of ${summary.monitoredLabel} monitored` },
     { value: summary.categoriesLabel, label: "fee categories" },
-    { value: String(stateCount), label: "states with published fees" },
+    { value: stateCount == null ? UNAVAILABLE_LABEL : String(stateCount), label: "states with published fees" },
   ];
 
   return (
-    <section id="about-data" className="scroll-mt-28">
-      <SectionHeading eyebrow="About the data" title="Where the numbers come from">
-        Every figure starts as a line in a fee schedule the institution published itself, and is checked before it appears here.
-      </SectionHeading>
-
-      <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border lg:grid-cols-4">
+    <HubSection
+      id="about-data"
+      title="Methodology"
+      line={`${summary.institutionsLabel} of the ${summary.monitoredLabel} banks and credit unions monitored have verified published fees.`}
+      source={`${PRODUCT_NAME}, verified published fee schedules${coverageLabel ? `; coverage spans ${coverageLabel}` : ""}.`}
+    >
+      <div>
+      <p id="about-data-label" className="text-[13px] font-semibold text-ink sm:mx-0 sm:text-left">Coverage of the index today</p>
+      <dl aria-labelledby="about-data-label" className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-3">
         {stats.map((s) => (
-          <div key={s.label} className="bg-white px-4 py-4">
+          <div key={s.label} className="bg-white px-4 py-4 last:col-span-2 sm:last:col-span-1">
             <dt className="sr-only">{s.label}</dt>
             <dd>
               <span className="block text-[1.5rem] font-semibold leading-none tabular-nums text-ink" style={MONO_FIGURE}>
@@ -96,11 +106,24 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
             for one fee, so each institution counts once, at the median of its prices (overdraft: its highest).
           </p>
         </Note>
+        <Note title="Fees with no stated audience" id="audience">
+          <p>
+            Some schedules don&apos;t say whether a fee is for personal or business accounts. Those fees are counted as personal and
+            included in the medians on this page. Each benchmark row shows how many of its institutions this affects. A median
+            without them isn&apos;t published yet, so the size of the effect isn&apos;t shown.
+          </p>
+        </Note>
+        <Note title={"\u201cAll observed prices are $0\u201d"}>
+          <p>
+            An institution is counted when every price found for the fee on its own schedule is $0. Which account each price belongs
+            to isn&apos;t checked yet, so this doesn&apos;t show that every account at the institution is free.
+          </p>
+        </Note>
         <Note title="How a fee gets here">
           <ol className="space-y-3">
             {STEPS.map((s) => (
               <li key={s.n} className="flex gap-3">
-                <span className="text-[12px] font-bold tabular-nums text-brick">{s.n}</span>
+                <span className="w-4 shrink-0 text-[12px] font-bold tabular-nums text-ink-muted">{s.n}</span>
                 <span>
                   <span className="block font-semibold text-ink">{s.title}</span>
                   {s.body}
@@ -112,38 +135,57 @@ export function MethodFlow({ summary, stateCount, coverageLabel }: { summary: Pu
         <Note title="Sources and coverage">
           <Dots items={SOURCES} />
           <p className="mt-3 text-[12px] text-ink-muted">
-            Coverage: banks and credit unions of every asset size, all 12 Federal Reserve districts, {coverageLabel}.
+            Coverage: banks and credit unions of every asset size, all 12 Federal Reserve districts{coverageLabel ? `, ${coverageLabel}` : ""}.
             Each state and district report shows how many of its institutions have published fees so far.
           </p>
         </Note>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-3 text-[13px]">
-        <Link href="/methodology" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+        <Link href="/methodology" className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           Full methodology
         </Link>
-        <Link href="/research/national-fee-index" className="font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
+        <Link href="/research/national-fee-index" className="inline-flex min-h-11 items-center font-semibold text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
           The full {PRODUCT_NAME}
         </Link>
-        <PrintButton className="min-h-10 rounded-full border border-ink px-4 font-semibold text-ink hover:bg-ink hover:text-white print:hidden" />
+        <PrintButton className="min-h-11 rounded-full border border-ink px-4 font-semibold text-ink hover:bg-ink hover:text-white print:hidden" />
       </div>
 
-      <div className="mt-8 rounded-2xl bg-ink px-6 py-5 text-paper">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#e0716a]">{SITE_NAME} Pro · Hamilton</p>
-        <p className="mt-2 text-[18px] font-semibold leading-snug text-white" style={SERIF}>
-          Benchmark your institution against the peers you choose.
+      </div>
+    </HubSection>
+  );
+}
+
+/** The page's one paid-product band: Hamilton plans first, then the sample report (or the paid report while the sample is offline). */
+export function ProBand({ sampleLive }: { sampleLive: boolean }) {
+  const secondary = sampleLive
+    ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
+    : { href: "/for-institutions#report", label: REPORT_OFFER.institutionCtaLabel };
+  return (
+    <section
+      id="apply"
+      aria-labelledby="pro-heading"
+      className="scroll-mt-28 grid gap-5 rounded-2xl bg-ink px-6 py-7 text-on-ink print:hidden sm:px-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:gap-12 lg:px-10"
+    >
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-on-ink/70">For banks and credit unions</p>
+        <h2 id="pro-heading" className="mt-2 text-[22px] font-semibold leading-snug text-on-ink" style={SERIF}>
+          Apply this to your institution
+        </h2>
+        <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-on-ink/80">
+          Hamilton, the {SITE_NAME} workspace, sets your fees against a peer set you choose, from your own counties to the
+          nation, with the source for every figure.
         </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-paper/80">{HAMILTON_CANONICAL}</p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Link href={PRO_PLANS_HREF} className="inline-flex min-h-10 items-center rounded-full bg-brick px-4 text-[13px] font-semibold text-white hover:bg-brick-ink">
-            See Hamilton plans
-          </Link>
-          <Link href="/for-institutions#report" className="inline-flex min-h-10 items-center rounded-full border border-white/25 px-4 text-[13px] font-semibold text-white hover:bg-white/10">
-            {REPORT_OFFER.institutionCtaLabel}
-          </Link>
-        </div>
-        <p className="mt-2 text-[12px] text-paper/60">
-          Not ready for Pro? A one-time {REPORT_OFFER.name} is quoted per institution, {REPORT_PRICE_INLINE}.
+      </div>
+      <div className="flex flex-col gap-2 sm:flex-row lg:flex-col lg:items-stretch">
+        <Link href={PRO_PLANS_HREF} className="inline-flex min-h-11 items-center justify-center rounded-full bg-brick px-5 text-[14px] font-semibold text-on-brick hover:bg-brick-ink">
+          See Hamilton plans
+        </Link>
+        <Link href={secondary.href} className="inline-flex min-h-11 items-center justify-center rounded-full border border-on-ink/30 px-5 text-[14px] font-semibold text-on-ink hover:bg-on-ink/10">
+          {secondary.label}
+        </Link>
+        <p className="text-center text-[12px] text-on-ink/60">
+          {REPORT_OFFER.name}: one-time, quoted per institution, {REPORT_PRICE_INLINE}.
         </p>
       </div>
     </section>

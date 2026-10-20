@@ -10,3 +10,5 @@
 - No data is deleted.
 **Lesson:** a loader that can back-fill years of history needs a size limit before its first run, and a warning has to reach someone to count. Most budgets are not based on a measured size yet; tighten them once Atlas has recorded a week of sizes.
 - The call-report back-fill was not finished: NCUA 5300 extras ran back to 2020 and FFIEC call detail to 2015, about 4.9 GB more. Both now stop at the quarters already loaded (`NCUA_EXTRAS_FIRST` 2023 Q2; `FFIEC_CALL_DETAIL_FIRST` 2023 Q1, so 2023 Q4 still loads to finish that year).
+
+**Agent lesson:** hoovie/pr-1849-size-budget-hold

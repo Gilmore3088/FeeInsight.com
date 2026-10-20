@@ -342,11 +342,11 @@ function moveLine(move: { institutionName: string; category: string; previousAmo
   return `${move.institutionName}, ${plainLabel(move.category).toLowerCase()}: ${formatAmount(move.previousAmount)} to ${formatAmount(move.newAmount)} (${formatAmount(Math.abs(delta))} ${direction})`;
 }
 
-function moveSummary(moves: MarketMove[], place: string): string {
+function moveSummary(moves: MarketMove[]): string {
   const institutions = new Set(moves.map((move) => move.institutionId)).size;
   const higher = moves.filter((move) => move.newAmount > move.previousAmount).length;
   const lower = moves.length - higher;
-  return `${place}: ${moves.length} published fee change(s) at ${institutions} institution(s) this week, ${higher} higher and ${lower} lower.`;
+  return `${moves.length} published fee change(s) at ${institutions} institution(s) this week, ${higher} higher and ${lower} lower.`;
 }
 
 function largestFirst(moves: MarketMove[]): MarketMove[] {
@@ -364,53 +364,54 @@ export function buildProDigestEmail(
   const stateName = digest.reader.stateCode ? STATE_NAMES[digest.reader.stateCode] ?? digest.reader.stateCode : null;
   const districtName = digest.reader.fedDistrict ? DISTRICT_NAMES[digest.reader.fedDistrict] ?? `District ${digest.reader.fedDistrict}` : null;
 
-  const lines: string[] = [];
+  const sections: { heading: string; lines: string[] }[] = [];
   if (digest.positionChanges.length > 0 && digest.reader.own) {
-    lines.push(`${digest.reader.own.name} against ${stateName ?? "state"} peers`);
-    for (const change of digest.positionChanges) {
-      lines.push(
-        `${plainLabel(change.category)} ${formatAmount(change.now.amount)}: ${change.now.lower} of ${change.now.of} institutions charge less (last week ${formatAmount(change.before.amount)}, ${change.before.lower} of ${change.before.of}).`,
-      );
-    }
-    lines.push("");
+    sections.push({
+      heading: `${digest.reader.own.name} against ${stateName ?? "state"} peers`,
+      lines: digest.positionChanges.map(
+        (change) =>
+          `${plainLabel(change.category)} ${formatAmount(change.now.amount)}: ${change.now.lower} of ${change.now.of} institutions charge less (last week ${formatAmount(change.before.amount)}, ${change.before.lower} of ${change.before.of}).`,
+      ),
+    });
   }
   const starting = Object.entries(digest.startingPositions ?? {});
   if (starting.length > 0 && digest.reader.own) {
-    lines.push(`Where ${digest.reader.own.name} stands among ${stateName ?? "state"} institutions`);
-    for (const [category, entry] of starting.sort(([a], [b]) => plainLabel(a).localeCompare(plainLabel(b)))) {
-      lines.push(`${plainLabel(category)} ${formatAmount(entry.amount)}: ${entry.lower} of ${entry.of} institutions charge less.`);
-    }
-    lines.push("From next Monday, this section lists the fees where that count changed.");
-    lines.push("");
+    sections.push({
+      heading: `Where ${digest.reader.own.name} stands among ${stateName ?? "state"} institutions`,
+      lines: [
+        ...starting
+          .sort(([a], [b]) => plainLabel(a).localeCompare(plainLabel(b)))
+          .map(([category, entry]) => `${plainLabel(category)} ${formatAmount(entry.amount)}: ${entry.lower} of ${entry.of} institutions charge less.`),
+        "From next Monday, this section lists the fees where that count changed.",
+      ],
+    });
   }
   if (digest.competitorChanges.length > 0) {
-    lines.push("Your watched institutions");
-    for (const change of digest.competitorChanges.slice(0, MAX_MOVES_LISTED * 2)) lines.push(moveLine(change));
     const more = digest.competitorChanges.length - MAX_MOVES_LISTED * 2;
-    if (more > 0) lines.push(`and ${more} more on your watchlist: ${site}/pro/monitor`);
-    lines.push("");
+    sections.push({
+      heading: "Your watched institutions",
+      lines: [
+        ...digest.competitorChanges.slice(0, MAX_MOVES_LISTED * 2).map(moveLine),
+        ...(more > 0 ? [`and ${more} more on your watchlist: ${site}/pro/monitor`] : []),
+      ],
+    });
   }
   if (digest.stateMoves.length > 0 && stateName) {
-    lines.push(moveSummary(digest.stateMoves, stateName));
-    for (const move of largestFirst(digest.stateMoves).slice(0, MAX_MOVES_LISTED)) lines.push(moveLine(move));
-    lines.push("");
+    sections.push({
+      heading: stateName,
+      lines: [moveSummary(digest.stateMoves), ...largestFirst(digest.stateMoves).slice(0, MAX_MOVES_LISTED).map(moveLine)],
+    });
   }
   if (digest.districtMoves.length > 0 && districtName) {
-    lines.push(moveSummary(digest.districtMoves, `Rest of the ${districtName} Fed district`));
-    for (const move of largestFirst(digest.districtMoves).slice(0, MAX_MOVES_LISTED)) lines.push(moveLine(move));
-    lines.push("");
+    sections.push({
+      heading: `Rest of the ${districtName} Fed district`,
+      lines: [moveSummary(digest.districtMoves), ...largestFirst(digest.districtMoves).slice(0, MAX_MOVES_LISTED).map(moveLine)],
+    });
   }
   if (digest.wire && wireDigestHasItems(digest.wire)) {
-    lines.push(...wireDigestLines(digest.wire, site));
-    lines.push("");
+    const [heading, ...lines] = wireDigestLines(digest.wire, site);
+    sections.push({ heading, lines });
   }
-  lines.push(
-    "Figures are published dollar fees from each institution's own fee schedule; percentage fees are left out.",
-  );
-  lines.push("");
-  lines.push(
-    `You get this Monday digest with your Hamilton subscription. Stop the digest: ${urls.unsubscribePage}`,
-  );
 
   const totalMoves = digest.stateMoves.length + digest.districtMoves.length;
   let subject: string;
@@ -427,8 +428,14 @@ export function buildProDigestEmail(
   const content = {
     subject,
     eyebrow: "Monday digest",
-    lines,
+    lines: [],
+    sections,
     cta: { label: "Open Hamilton", href: `${site}/pro/monitor` },
+    closing: [
+      "Figures are published dollar fees from each institution's own fee schedule; percentage fees are left out.",
+      "",
+      `You get this Monday digest with your Hamilton subscription. Stop the digest: ${urls.unsubscribePage}`,
+    ],
   };
   return { subject, text: renderLeadEmailText(content), html: renderLeadEmailHtml(content) };
 }

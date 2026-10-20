@@ -1,6 +1,8 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { branchCitySpellings } from "./city-spellings";
+import { HIGHEST_TIER_CATEGORIES, statsRowFilter } from "./fee-stats";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { ownFeeFromRows, severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
 /**
  * Local competitors for a Hamilton report: the institutions with branches in the
@@ -14,8 +16,14 @@ export interface LocalMarketCompetitorRow {
   charter_type: string | null;
   /** Deposits held in the market counties, whole dollars; null for HQ-city matches. */
   market_deposits: number | null;
-  /** Sourced consumer value per category: median, or highest overdraft tier. */
+  /**
+   * Sourced consumer value per category under the statistics contract: median, or highest
+   * overdraft tier. For local medians and ranges; it is the stated price only where `several`
+   * lacks the category.
+   */
   fees: Record<string, number>;
+  /** Categories where the schedule states several different fees: their range and each by name (#1931). */
+  several?: Record<string, SeveralFees>;
   document_url: string | null;
   document_date: string | null;
 }
@@ -36,6 +44,19 @@ function num(value: unknown): number | null {
   if (value === null || value === undefined || value === "") return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Each catalog row's name and amount behind one competitor's category, as jsonb arrives (parsed or as text). */
+function feeLines(value: unknown): { fee_name?: string | null; amount: unknown }[] {
+  let parsed = value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(parsed) ? parsed.filter((l): l is { fee_name?: string | null; amount: unknown } => l !== null && typeof l === "object") : [];
 }
 
 async function marketFromOwnBranches(cert: number): Promise<{ counties: number[]; year: number; places: string[] } | null> {
@@ -60,12 +81,14 @@ async function marketFromOwnBranches(cert: number): Promise<{ counties: number[]
   };
 }
 
+/** The counties of the branches in the headquarters city, under every spelling the fold reads as that city (#2092). */
 async function marketFromHqCity(city: string, state: string): Promise<{ counties: number[]; year: number } | null> {
+  const spellings = await branchCitySpellings(city, state);
   const rows = await sql`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits WHERE state = ${state})
     SELECT DISTINCT b.county_fips, b.year
       FROM institution_branch_deposits b, latest
-     WHERE b.year = latest.y AND b.state = ${state} AND UPPER(b.city) = UPPER(${city})
+     WHERE b.year = latest.y AND b.state = ${state} AND UPPER(b.city) = ANY(${spellings}::text[])
        AND b.county_fips IS NOT NULL
      LIMIT ${MAX_MARKET_COUNTIES}
   `;
@@ -109,6 +132,7 @@ export async function getLocalMarketCompetitors(params: {
       SELECT c.institution_id, c.fee_category,
              CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
                   ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount,
+             jsonb_agg(jsonb_build_object('fee_name', c.fee_name, 'amount', c.amount)) AS lines,
              MAX(c.document_url) AS document_url,
              MAX(c.updated_at) AS document_date
         FROM published_fee_catalog c
@@ -120,7 +144,7 @@ export async function getLocalMarketCompetitors(params: {
        GROUP BY c.institution_id, c.fee_category
     )
     SELECT r.institution_id, r.deposits, s.institution_name, s.charter_type,
-           f.fee_category, f.amount, f.document_url, f.document_date
+           f.fee_category, f.amount, f.lines, f.document_url, f.document_date
       FROM rivals r
       JOIN fees f ON f.institution_id = r.institution_id
       JOIN institution_sources s ON s.id = r.institution_id
@@ -139,13 +163,18 @@ export async function getLocalMarketCompetitors(params: {
         charter_type: row.charter_type ? String(row.charter_type) : null,
         market_deposits: own ? (num(row.deposits) ?? 0) * SOD_THOUSANDS : null,
         fees: {},
+        several: {},
         document_url: row.document_url ? String(row.document_url) : null,
         document_date: row.document_date ? new Date(String(row.document_date)).toISOString().slice(0, 10) : null,
       };
       byInstitution.set(id, entry);
     }
     const amount = num(row.amount);
-    if (amount !== null) entry.fees[String(row.fee_category)] = Math.round(amount * 100) / 100;
+    if (amount === null) continue;
+    const category = String(row.fee_category);
+    entry.fees[category] = Math.round(amount * 100) / 100;
+    const several = severalFeesOf(ownFeeFromRows(category, feeLines(row.lines), amount, HIGHEST_TIER_CATEGORIES.has(category)));
+    if (several) (entry.several ??= {})[category] = several;
   }
 
   const countyCount = market.counties.length;

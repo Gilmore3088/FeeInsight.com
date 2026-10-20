@@ -6,6 +6,7 @@ import { getLocalMarketMembers } from "./custom-report-market";
 import { getDepositShareChange } from "./deposit-share-change";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
+import { identityCandidatesFor, loadIdentityIndex } from "@/lib/agents/magellan/registry/identity";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
@@ -704,7 +705,8 @@ export async function getIdentityLinksNeedingReview(limit = 25): Promise<Identit
       FROM institution_identity_links l
       LEFT JOIN institution_sources s ON s.id = l.institution_id
      WHERE l.status = 'needs_review'
-     ORDER BY (l.detail->>'candidates')::int DESC NULLS LAST, l.external_name
+     ORDER BY (SELECT MAX(value::numeric) FROM jsonb_each_text(l.detail) WHERE key ~ '^complaints_[0-9]{4}$') DESC NULLS LAST,
+              (l.detail->>'candidates')::numeric DESC NULLS LAST, l.external_name, l.id
      LIMIT ${limit}`;
   return rows.map((r) => ({
     link_type: String(r.link_type),
@@ -715,4 +717,167 @@ export async function getIdentityLinksNeedingReview(limit = 25): Promise<Identit
     method: String(r.method),
     confidence: Number(r.confidence),
   }));
+}
+
+/** The number of identity links waiting for a person, for the registry page's badge. */
+export async function countIdentityLinksNeedingReview(): Promise<number> {
+  const [row] = await sql<Array<{ n: number }>>`
+    SELECT COUNT(*)::int AS n FROM institution_identity_links WHERE status = 'needs_review'`;
+  return Number(row?.n ?? 0);
+}
+
+export const IDENTITY_LINK_STATUSES = ["needs_review", "accepted", "rejected"] as const;
+export type IdentityLinkStatus = (typeof IDENTITY_LINK_STATUSES)[number];
+export const IDENTITY_LINK_PAGE_SIZE = 25;
+
+/** An institution a link points at or could point at, as the reviewer sees it. */
+export interface IdentityInstitution {
+  id: number;
+  name: string;
+  city: string | null;
+  state: string | null;
+  charter: string | null;
+  /** Thousands of dollars. */
+  assets: number | null;
+  holdingCompany: string | null;
+  rssd: string | null;
+  cert: string | null;
+}
+
+export interface IdentityLinkRow {
+  id: number;
+  linkType: "cfpb_company" | "sec_cik";
+  externalKey: string;
+  externalName: string | null;
+  status: IdentityLinkStatus;
+  method: string;
+  confidence: number;
+  candidates: number | null;
+  /** CFPB: complaints in the latest year the matcher saw the company. */
+  complaints: { year: number; count: number } | null;
+  ticker: string | null;
+  exchange: string | null;
+  verifiedBy: string | null;
+  reviewNote: string | null;
+  institution: IdentityInstitution | null;
+}
+
+function institutionFrom(r: Record<string, unknown>, prefix = ""): IdentityInstitution | null {
+  const id = r[`${prefix}id`];
+  if (id === null || id === undefined) return null;
+  const text = (key: string) => (r[`${prefix}${key}`] ? String(r[`${prefix}${key}`]) : null);
+  return {
+    id: Number(id),
+    name: text("institution_name") ?? `#${id}`,
+    city: text("city"),
+    state: text("state_code"),
+    charter: text("charter_type"),
+    assets: numOrNull(r[`${prefix}asset_size`]),
+    holdingCompany: text("holding_company_name"),
+    rssd: text("rssd_id"),
+    cert: text("cert_number") ?? text("ncua_charter_id"),
+  };
+}
+
+/** The latest complaints_<year> count the CFPB matcher stored on the link. */
+export function latestComplaintCount(detail: Record<string, unknown> | null | undefined): { year: number; count: number } | null {
+  let best: { year: number; count: number } | null = null;
+  for (const [key, value] of Object.entries(detail ?? {})) {
+    const match = /^complaints_(\d{4})$/.exec(key);
+    const count = Number(value);
+    if (match && Number.isFinite(count) && (!best || Number(match[1]) > best.year)) best = { year: Number(match[1]), count };
+  }
+  return best;
+}
+
+/**
+ * One page of identity links for the review screen. Links waiting for review come by impact
+ * (complaints, then how many institutions share the name); decided ones newest first.
+ */
+export async function listIdentityLinks(filters: {
+  status: IdentityLinkStatus;
+  linkType: "cfpb_company" | "sec_cik" | null;
+  query: string | null;
+  page: number;
+}): Promise<{ rows: IdentityLinkRow[]; total: number }> {
+  const pattern = filters.query ? `%${filters.query.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  const where = () => sql`
+     WHERE l.status = ${filters.status}
+       AND (${filters.linkType}::text IS NULL OR l.link_type = ${filters.linkType})
+       AND (${pattern}::text IS NULL OR l.external_name ILIKE ${pattern} OR l.external_key ILIKE ${pattern})`;
+  const order =
+    filters.status === "needs_review"
+      ? sql`ORDER BY (SELECT MAX(value::numeric) FROM jsonb_each_text(l.detail) WHERE key ~ '^complaints_[0-9]{4}$') DESC NULLS LAST,
+                     (l.detail->>'candidates')::numeric DESC NULLS LAST, l.external_name, l.id`
+      : sql`ORDER BY l.updated_at DESC, l.id DESC`;
+  const offset = Math.max(0, filters.page - 1) * IDENTITY_LINK_PAGE_SIZE;
+  const [rows, [count]] = await Promise.all([
+    sql<Array<Record<string, unknown>>>`
+      SELECT l.id AS link_id, l.link_type, l.external_key, l.external_name, l.status, l.method, l.confidence,
+             l.detail, l.verified_by, s.id, s.institution_name, s.city, s.state_code, s.charter_type, s.asset_size,
+             s.holding_company_name, s.rssd_id, s.cert_number, s.ncua_charter_id
+        FROM institution_identity_links l
+        LEFT JOIN institution_sources s ON s.id = l.institution_id
+        ${where()}
+        ${order}
+       LIMIT ${IDENTITY_LINK_PAGE_SIZE} OFFSET ${offset}`,
+    sql<Array<{ n: number }>>`SELECT COUNT(*)::int AS n FROM institution_identity_links l ${where()}`,
+  ]);
+  return {
+    total: Number(count?.n ?? 0),
+    rows: rows.map((r) => {
+      const detail = (r.detail ?? {}) as Record<string, unknown>;
+      return {
+        id: Number(r.link_id),
+        linkType: r.link_type === "sec_cik" ? "sec_cik" : "cfpb_company",
+        externalKey: String(r.external_key),
+        externalName: r.external_name ? String(r.external_name) : null,
+        status: String(r.status) as IdentityLinkStatus,
+        method: String(r.method),
+        confidence: Number(r.confidence),
+        candidates: numOrNull(detail.candidates),
+        complaints: latestComplaintCount(detail),
+        ticker: typeof detail.ticker === "string" ? detail.ticker : null,
+        exchange: typeof detail.exchange === "string" ? detail.exchange : null,
+        verifiedBy: r.verified_by ? String(r.verified_by) : null,
+        reviewNote: typeof detail.review_note === "string" ? detail.review_note : null,
+        institution: institutionFrom(r),
+      };
+    }),
+  };
+}
+
+
+/**
+ * Every institution the link's name could belong to, recomputed with the matcher's own index and
+ * normalization (the link stores only how many there were). Largest first.
+ */
+export async function getIdentityLinkCandidates(linkId: number): Promise<IdentityInstitution[]> {
+  const [link] = await sql<Array<{ external_key: string; external_name: string | null }>>`
+    SELECT external_key, external_name FROM institution_identity_links WHERE id = ${linkId}`;
+  if (!link) return [];
+  const index = await loadIdentityIndex(sql);
+  const ids = identityCandidatesFor(link.external_name ?? link.external_key, index).map((c) => c.id);
+  if (ids.length === 0) return [];
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT id, institution_name, city, state_code, charter_type, asset_size, holding_company_name, rssd_id, cert_number, ncua_charter_id
+      FROM institution_sources WHERE id IN ${sql(ids)}
+     ORDER BY asset_size DESC NULLS LAST, institution_name`;
+  return rows.map((r) => institutionFrom(r)).filter((r): r is IdentityInstitution => r !== null);
+}
+
+/** Free search for the right institution when it is not a candidate: by name, or by cert, RSSD or NCUA charter number. */
+export async function searchInstitutionsForIdentityLink(query: string): Promise<IdentityInstitution[]> {
+  const q = query.trim().slice(0, 120);
+  if (q.length < 2) return [];
+  const byNumber = /^\d{1,15}$/.test(q);
+  const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT id, institution_name, city, state_code, charter_type, asset_size, holding_company_name, rssd_id, cert_number, ncua_charter_id
+      FROM institution_sources
+     WHERE regulatory_status IS DISTINCT FROM 'inactive'
+       AND ${byNumber ? sql`(cert_number = ${q} OR rssd_id = ${q} OR ncua_charter_id = ${q} OR id = ${Number(q)})` : sql`institution_name ILIKE ${pattern}`}
+     ORDER BY asset_size DESC NULLS LAST, institution_name
+     LIMIT 20`;
+  return rows.map((r) => institutionFrom(r)).filter((r): r is IdentityInstitution => r !== null);
 }

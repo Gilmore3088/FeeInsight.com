@@ -9,7 +9,7 @@
  * than a limit, and it names no internal system. Fee answers also pass the four-roles eval.
  */
 
-import { evaluateFourRoles, PIPELINE_TERMS, RECOMMENDATION } from "./four-roles";
+import { evaluateFourRoles, PIPELINE_TERMS, findUnrequestedAdvice } from "./four-roles";
 import type { AskResponse } from "./types";
 
 export interface QualityQuestion {
@@ -84,7 +84,7 @@ export function scoreResponse(item: QualityQuestion, response: AskResponse): Qua
   const all = lines.join("\n");
   if (response.kind === "clarifying_question") failures.push(`asked back instead of answering: "${response.shortAnswer}"`);
   if (!NUMBER.test(all)) failures.push("no figure in the answer");
-  const advice = all.match(RECOMMENDATION);
+  const advice = findUnrequestedAdvice(all);
   if (advice) failures.push(`reads as advice: "${advice[0]}"`);
   const cheap = all.match(CHEAP);
   if (cheap) failures.push(`says "${cheap[0]}" instead of lower or higher`);

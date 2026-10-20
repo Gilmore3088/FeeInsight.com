@@ -20,3 +20,5 @@ the link, run through the whole pipeline within the hour, with status shown to t
 
 **Lesson:** A form that writes to a table is not intake until an agent consumes the table. Check
 for a reader before calling a flow done.
+
+**Guard:** `src/app/admin/quality/actions.test.ts:50` (accepting a source submission adds the link as a hand-found schedule and leaves fee_schedule_url alone; customer PDF intake is not covered)

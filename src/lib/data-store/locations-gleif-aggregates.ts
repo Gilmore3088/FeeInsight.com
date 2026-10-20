@@ -309,7 +309,7 @@ export interface FamilyNode extends FamilyMemberRow {
 
 export interface CorporateFamily {
   institution_id: number;
-  /** The institution's own LEI(s) found in gleif_entities or institution_sources. */
+  /** The institution's own LEI(s) found in gleif_entities, institution_sources or institution_lei_links. */
   institution_leis: string[];
   ultimate_parent_lei: string | null;
   members: number;
@@ -346,6 +346,7 @@ export async function getCorporateFamily(institutionId: number): Promise<Corpora
     SELECT e.lei, e.ultimate_parent_lei FROM gleif_entities e
      WHERE e.institution_id = ${institutionId}
         OR e.lei = (SELECT UPPER(TRIM(lei)) FROM institution_sources WHERE id = ${institutionId})
+        OR e.lei = (SELECT l.lei FROM institution_lei_links l WHERE l.institution_id = ${institutionId} AND l.status = 'linked')
   `;
   const ownRows = [...own];
   const empty: CorporateFamily = { institution_id: institutionId, institution_leis: ownRows.map((r) => r.lei), ultimate_parent_lei: null, members: 0, linked_members: 0, unlinked_members: 0, tree: null, source_note: GLEIF_SOURCE_NOTE };
@@ -404,4 +405,60 @@ export async function getGleifLinkSummary(): Promise<GleifLinkSummary> {
            (SELECT MAX(last_seen_publish) FROM gleif_relationships) AS latest_publish
   `;
   return row;
+}
+
+// ---------------------------------------------------------------------------------------------
+// LEI links (institution_lei_links, #1868)
+
+export interface LeiLinkCoverage {
+  /** Active tracked banks and credit unions. */
+  institutions: number;
+  linked: number;
+  ambiguous: number;
+  unmatched: number;
+  /** Not checked yet: no row in institution_lei_links. */
+  unchecked: number;
+  /** linked / institutions, 0 to 1; null when there are no institutions. */
+  linked_share: number | null;
+  linked_by_basis: Record<string, number>;
+}
+
+/** The share of tracked institutions linked to an LEI, and the review queue's size (ambiguous + unmatched). */
+export async function getLeiLinkCoverage(db: typeof sql = sql): Promise<LeiLinkCoverage> {
+  const rows = await db<Array<{ status: string | null; match_basis: string | null; n: number }>>`
+    SELECT l.status, CASE WHEN l.status = 'linked' THEN l.match_basis END AS match_basis, COUNT(*)::int AS n
+      FROM institution_sources s
+      LEFT JOIN institution_lei_links l ON l.institution_id = s.id
+     WHERE s.source IN ('fdic', 'ncua') AND COALESCE(s.regulatory_status, 'active') <> 'inactive'
+     GROUP BY 1, 2
+  `;
+  const out: LeiLinkCoverage = { institutions: 0, linked: 0, ambiguous: 0, unmatched: 0, unchecked: 0, linked_share: null, linked_by_basis: {} };
+  for (const r of [...rows]) {
+    const n = Number(r.n);
+    out.institutions += n;
+    if (r.status === "linked") {
+      out.linked += n;
+      const basis = r.match_basis ?? "unknown";
+      out.linked_by_basis[basis] = (out.linked_by_basis[basis] ?? 0) + n;
+    } else if (r.status === "ambiguous") out.ambiguous += n;
+    else if (r.status === "unmatched") out.unmatched += n;
+    else out.unchecked += n;
+  }
+  out.linked_share = out.institutions > 0 ? out.linked / out.institutions : null;
+  return out;
+}
+
+export interface InstitutionLeiLink {
+  status: "linked" | "ambiguous" | "unmatched";
+  lei: string | null;
+  match_basis: string | null;
+  reason: string | null;
+}
+
+/** What the LEI match says about one institution; null when it has not been checked. */
+export async function getInstitutionLeiLink(institutionId: number): Promise<InstitutionLeiLink | null> {
+  const [row] = await sql<InstitutionLeiLink[]>`
+    SELECT status, TRIM(lei) AS lei, match_basis, reason FROM institution_lei_links WHERE institution_id = ${institutionId}
+  `;
+  return row ?? null;
 }

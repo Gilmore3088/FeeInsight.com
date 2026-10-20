@@ -70,7 +70,7 @@ describe("inFoldedCategory: a twin joins the row's split category only when its 
       institutionId: 7, canonicalFeeKey: "account_research", variantType: null, amount: 30, feeName: "Address Research",
       frequency: "per_item", feeAudience: "unknown", sourceDocumentId: 100,
     });
-    expect(keeper).toBeNull();
+    expect(keeper).toEqual({ state: "available", value: null });
   });
 });
 
@@ -82,14 +82,52 @@ describe("selectPageCopyKeeper", () => {
 
   it("reads no further when no other document has the line live", async () => {
     const db = vi.fn(async () => []);
-    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate)).toBeNull();
+    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate)).toEqual({ state: "available", value: null });
     expect(db).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses nothing when the read fails", async () => {
+  it("does not call a missing own document an available no-match after live candidates were found", async () => {
+    const replies = [[row({ fee_published_id: 5, source_document_id: 200 })], []];
+    const db = vi.fn(async () => replies.shift() ?? []);
+    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate))
+      .toEqual({ state: "unavailable", check: "page_copy_document" });
+    expect(db).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([null, "", " \t", "not a URL", "https://bank.com/%E0%A4%A"])("keeps unknown own document URL %j unavailable with live candidates", async (document_url) => {
+    const replies = [[row({ fee_published_id: 5, source_document_id: 200 })], [{
+      document_url, crawled_at: "2026-09-01", superseded: false, superseded_by_id: null,
+    }]];
+    const db = vi.fn(async () => replies.shift() ?? []);
+    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate))
+      .toEqual({ state: "unavailable", check: "page_copy_document" });
+    expect(db).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses a healthy own URL without inventing a requirement for its absent timestamp", async () => {
+    const replies = [[row({ fee_published_id: 5, source_document_id: 200, crawled_at: "2026-10-10" })], [{
+      document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: null, superseded: false, superseded_by_id: null,
+    }], [...both].map(([source_document_id, normalized_text]) => ({ source_document_id, normalized_text }))];
+    const db = vi.fn(async () => replies.shift() ?? []);
+    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate))
+      .toEqual({ state: "available", value: 5 });
+    expect(db).toHaveBeenCalledTimes(3);
+  });
+
+  it("marks absent text unavailable only for a pair the existing collapse needs to assess", async () => {
+    const replies = [[row({ fee_published_id: 5, source_document_id: 200 })], [{
+      document_url: "https://bank.com/fee-schedule.pdf?print=1", crawled_at: "2026-09-01", superseded: false, superseded_by_id: null,
+    }], []];
+    const db = vi.fn(async () => replies.shift() ?? []);
+    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate))
+      .toEqual({ state: "unavailable", check: "page_copy_text" });
+    expect(db).toHaveBeenCalledTimes(3);
+  });
+
+  it("exposes unavailable instead of a successful no-match when the read fails", async () => {
     const db = vi.fn(async () => { throw new Error("boom"); });
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate)).toBeNull();
+    expect(await selectPageCopyKeeper(db as unknown as Parameters<typeof selectPageCopyKeeper>[0], candidate)).toEqual({ state: "unavailable", check: "page_copy_live" });
     spy.mockRestore();
   });
 });

@@ -23,3 +23,5 @@ surfaces #1058's PR lists as not yet covered.
 
 **Lesson:** Before a rule narrows what counts, measure how much data passes it. A benchmark whose
 sample collapses should fail loudly on the scorecard (#1040), not quietly turn "insufficient".
+
+**Guard:** `src/lib/data-store/fee-stats.test.ts:161` (the statistics filter counts unknown-audience fees as personal, never business, and keeps real zeros)

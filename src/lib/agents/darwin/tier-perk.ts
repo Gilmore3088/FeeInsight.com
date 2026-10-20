@@ -28,6 +28,8 @@ const TIER_NAME = new RegExp(`\\b${TIER_NAME_WORDS}\\b`, "i");
 /** Postgres forms (`~*`) of the address and name tests, for Hamilton's product-page conflict check. */
 export const TIER_PATH_SQL = TIER_PATH_SOURCE;
 export const TIER_NAME_SQL = `\\y${TIER_NAME_WORDS}\\y`;
+/** The tier words alone, for a product page address ("/personal/checking/bankon"). */
+export const TIER_WORDS_SQL = TIER_WORDS;
 
 function pathOf(url: string | null | undefined): string {
   if (!url) return "";

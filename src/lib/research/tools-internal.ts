@@ -4,12 +4,15 @@ import { z } from "zod";
 import { getDistrictStats, getStateStats } from "@/lib/data-store/geographic";
 import { getLatestBeigeBook } from "@/lib/data-store/fed";
 import {
+  getFiledFeeIncomeData,
   getFeeRevenueData,
   getTierFeeRevenueSummary,
   getCharterFeeRevenueSummary,
 } from "@/lib/data-store/fee-revenue";
 import { getStats } from "@/lib/data-store/core";
 import { feeIncomeAgainstPeers } from "./fee-income-peers";
+import { FINANCIAL_SOURCES, type FinancialSource } from "@/lib/data-store/financial-sources";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { getCollectionHealth } from "@/lib/data-store/dashboard";
 import { sql } from "@/lib/data-store/connection";
 import { getKnoxReviewCounts } from "@/lib/data-store/knox-reviews";
@@ -33,7 +36,6 @@ import {
 } from "@/lib/data-store/fed";
 import {
   getIndustryHealthMetrics,
-  getHealthMetricsByCharter,
   getDepositGrowthTrend,
   getLoanGrowthTrend,
   getInstitutionCountTrends,
@@ -46,7 +48,8 @@ import {
   getOfrData,
 } from "@/lib/data-store/financial";
 import { getDistrictComplaintSummary, getNationalComplaintSummary } from "@/lib/data-store/complaints";
-import { getContractFeeRows, getIndexSnapshot, getPeerIndex } from "@/lib/data-store/fee-index";
+import { getContractFeeRows, getNationalIndexStamped, getPeerIndexStamped } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
 import { institutionPositions } from "@/lib/data-store/fee-stats";
 import {
   getRevenueConcentration,
@@ -97,7 +100,7 @@ export const queryStateData = tool({
 
 export const queryFeeRevenueCorrelation = tool({
   description:
-    "Returns correlation between published fee schedules and FDIC/NCUA service charge income. Views: peers (one institution's fee income against a peer group's median, same quarter and filer), institutions (per-institution), by_tier (asset tier summary), by_charter (bank vs CU). When: fee income compared with peers, revenue dependency questions, fee-to-income analysis. For peers, pass institution_id and the peer group's filters (the reader's saved peer set when there is one). Combine with: queryNationalData, queryNationalData(health) for ROA/efficiency context.",
+    "Returns filed income comparisons or correlation between published fee schedules and separately defined bank deposit service charges or NCUA broad credit-union fee income. Financial outputs are partitioned by canonical source and charter, never pooled. Views: peers (one institution's filed fee income against a same-quarter, same-source, same-charter peer group, without requiring a published fee schedule), institutions (per-institution price/income correlation), by_tier (asset tier correlation summary per source), by_charter (separate bank and CU correlation groups). The three correlation views require at least three eligible published fee categories per institution; peers does not. When: fee income compared with peers, revenue dependency questions, fee-to-income analysis. For peers, pass institution_id and the peer group's filters (the reader's saved peer set when there is one). Combine with: queryNationalData, queryNationalData(health) for ROA/efficiency context.",
   inputSchema: z.object({
     view: z
       .enum(["peers", "institutions", "by_tier", "by_charter"])
@@ -109,6 +112,7 @@ export const queryFeeRevenueCorrelation = tool({
       .optional()
       .default(20)
       .describe("Max institutions to return (only for 'institutions' view)"),
+    financial_source: z.enum(["fdic", "ncua"]).optional().describe("Only bank deposit service charges (fdic) or broad credit-union fee income (ncua); omit for separate groups, never a combined financial benchmark"),
     institution_id: z.number().int().positive().optional().describe("The institution compared (required for 'peers')"),
     peer_institution_ids: z.array(z.number().int().positive()).max(200).optional().describe("Exactly these peers (a hand-picked peer set)"),
     states: z.array(z.string().length(2)).max(60).optional().describe("Peers in any of these states"),
@@ -116,10 +120,14 @@ export const queryFeeRevenueCorrelation = tool({
     asset_tiers: z.array(z.string()).max(10).optional().describe("Peers in any of these asset tiers"),
     fed_districts: z.array(z.number().int().min(1).max(12)).max(12).optional().describe("Peers in any of these Fed districts"),
   }),
-  execute: async ({ view, limit, institution_id, peer_institution_ids, states, charter_type, asset_tiers, fed_districts }) => {
+  execute: async ({ view, limit, financial_source, institution_id, peer_institution_ids, states, charter_type, asset_tiers, fed_districts }) => {
+    const source = financial_source ?? financialSourceForCharter(charter_type) ?? undefined;
+    if (financial_source && charter_type && financialSourceForCharter(charter_type) !== financial_source) {
+      return { error: "financial_source conflicts with the canonical charter: bank requires fdic; credit_union requires ncua." };
+    }
     if (view === "peers") {
       if (!institution_id) return { view: "peers", error: "Pass institution_id for the institution being compared." };
-      return feeIncomeAgainstPeers(await getFeeRevenueData(), institution_id, {
+      return feeIncomeAgainstPeers(await getFiledFeeIncomeData(source), institution_id, {
         institutionIds: peer_institution_ids,
         states: states?.map((state) => state.toUpperCase()),
         charterType: charter_type,
@@ -127,18 +135,39 @@ export const queryFeeRevenueCorrelation = tool({
         fedDistricts: fed_districts,
       });
     }
-    if (view === "institutions") {
-      const data = await getFeeRevenueData();
-      return {
-        view: "institutions",
-        total: data.length,
-        data: data.slice(0, limit ?? 20),
-      };
-    }
-    if (view === "by_charter") {
-      return { view: "by_charter", data: await getCharterFeeRevenueSummary() };
-    }
-    return { view: "by_tier", data: await getTierFeeRevenueSummary() };
+    return {
+      view,
+      financial_groups: await Promise.all(financialSources(source).map(async (financialSource) => {
+        const data = view === "institutions" ? await getFeeRevenueData(financialSource)
+          : view === "by_charter" ? await getCharterFeeRevenueSummary(financialSource)
+            : await getTierFeeRevenueSummary(financialSource);
+        return {
+          ...financialGroup(financialSource),
+          population_basis: "fee_price_income_correlation",
+          eligibility: {
+            minimum_published_fee_categories: 3,
+            definition: "At least three distinct approved, sourced fee categories eligible under the published-fee statistics contract, with computable canonical standalone-quarter income",
+          },
+          income_per_10k_assets: {
+            fields: ["fee_income_ratio", "avg_fee_income_ratio"],
+            definition: "Standalone-quarter income divided by reported total assets, multiplied by 10,000; not fee income as a share of revenue",
+            unit: "USD income per 10,000 USD assets",
+            period_basis: "standalone_quarter",
+          },
+          fee_schedule_amount_unit: "USD",
+          units: "thousands of dollars",
+          ...(view === "institutions" ? { total: data.length } : {}),
+          data: (view === "institutions" ? data.slice(0, limit ?? 20) : data).map((row) => ({
+            ...row,
+            field_units: {
+              avg_fee: "USD", avg_fee_amount: "USD", median_overdraft: "USD",
+              fee_income_ratio: "USD income per 10,000 USD assets",
+              avg_fee_income_ratio: "USD income per 10,000 USD assets",
+            },
+          })),
+        };
+      })),
+    };
   },
 });
 
@@ -530,7 +559,9 @@ export const queryNationalData = tool({
     district: z.number().min(1).max(12).optional()
       .describe("Fed district number (for complaints, economic district view, fed_content)"),
     charter: z.enum(["bank", "credit_union"]).optional()
-      .describe("Charter type filter"),
+      .describe("Charter type filter; financial views select its canonical regulator"),
+    financial_source: z.enum(["fdic", "ncua"]).optional()
+      .describe("Financial views only: select bank deposit service charges (fdic) or NCUA broad credit-union fee income (ncua). Omit to return separate groups, never a pooled financial benchmark."),
     tiers: z.array(z.string()).optional()
       .describe("Asset size tier filter (for fee_index peer queries)"),
     top_n: z.number().optional().default(5)
@@ -540,20 +571,24 @@ export const queryNationalData = tool({
     seriesIds: z.array(z.string()).optional()
       .describe("BLS series IDs for labor view (defaults to unemployment, payroll, bank fee CPI)"),
   }),
-  execute: async ({ source, view, query, limit, quarters, district, charter, tiers, top_n, stateFips, seriesIds }) => {
+  execute: async ({ source, view, query, limit, quarters, district, charter, financial_source, tiers, top_n, stateFips, seriesIds }) => {
+    const financialSource = financial_source ?? financialSourceForCharter(charter) ?? undefined;
+    if (["call_reports", "health", "derived"].includes(source) && financial_source && charter && financialSourceForCharter(charter) !== financial_source) {
+      return { error: "financial_source conflicts with the canonical charter: bank requires fdic; credit_union requires ncua." };
+    }
     switch (source) {
       case "call_reports":
-        return handleCallReports(view, quarters, limit, district);
+        return handleCallReports(view, quarters, limit, district, financialSource);
       case "economic":
         return handleEconomic(view, district);
       case "health":
-        return handleHealth(view, quarters);
+        return handleHealth(view, quarters, financialSource);
       case "complaints":
         return handleComplaints(district);
       case "fee_index":
         return handleFeeIndex(charter, tiers, limit);
       case "derived":
-        return handleDerived(view, top_n, quarters);
+        return handleDerived(view, top_n, quarters, financialSource);
       case "fed_content":
         return handleFedContent(district, limit ?? 10);
       case "labor":
@@ -572,32 +607,47 @@ export const queryNationalData = tool({
   },
 });
 
+function financialSources(source?: FinancialSource): readonly FinancialSource[] {
+  return source ? [source] : FINANCIAL_SOURCES;
+}
+
+function financialGroup(source: FinancialSource) {
+  return {
+    source,
+    financial_source: source,
+    charter_type: source === "ncua" ? "credit_union" : "bank",
+    fee_income_definition: financialMeasureDefinition(source),
+    comparison_rule: "Financial measures are comparable only within this source and canonical charter. Do not rank, average, or combine bank deposit service charges with broader credit-union fee income. Time-series reporting populations can change; these aggregates do not establish constant-cohort or merger-adjusted growth.",
+  };
+}
+
 async function handleCallReports(
   view: string | undefined,
   quarters: number,
   limit: number,
-  district: number | undefined
+  district: number | undefined,
+  source?: FinancialSource,
 ) {
-  if (!view || view === "all") {
-    const [trend, top_institutions, by_tier] = await Promise.all([
-      getRevenueTrend(quarters),
-      getTopRevenueInstitutions(limit),
-      getRevenueByTier(),
+  if (view && !["all", "trend", "top_institutions", "by_tier", "by_district"].includes(view)) {
+    return { error: `Unknown call_reports view '${view}'. Valid: trend, top_institutions, by_tier, by_district` };
+  }
+  return { financial_groups: await Promise.all(financialSources(source).map(async (financialSource) => {
+    const all = !view || view === "all";
+    const [trend, topInstitutions, byTier, districtRevenue] = await Promise.all([
+      all || view === "trend" ? getRevenueTrend(quarters, financialSource) : undefined,
+      all || view === "top_institutions" ? getTopRevenueInstitutions(limit, financialSource) : undefined,
+      all || view === "by_tier" ? getRevenueByTier(undefined, financialSource) : undefined,
+      view === "by_district" ? getDistrictFeeRevenue(district ?? 1, undefined, financialSource) : undefined,
     ]);
-    return { trend, top_institutions, by_tier };
-  }
-  switch (view) {
-    case "trend":
-      return { trend: await getRevenueTrend(quarters) };
-    case "top_institutions":
-      return { top_institutions: await getTopRevenueInstitutions(limit) };
-    case "by_tier":
-      return { by_tier: await getRevenueByTier() };
-    case "by_district":
-      return { district_revenue: await getDistrictFeeRevenue(district ?? 1) };
-    default:
-      return { error: `Unknown call_reports view '${view}'. Valid: trend, top_institutions, by_tier, by_district` };
-  }
+    return {
+      ...financialGroup(financialSource),
+      units: "dollar amounts in thousands; historical groups are dated cross-sections; yoy_change_pct is withheld because comparable economic-cohort growth is not established",
+      ...(trend === undefined ? {} : { trend }),
+      ...(topInstitutions === undefined ? {} : { top_institutions: topInstitutions }),
+      ...(byTier === undefined ? {} : { by_tier: byTier }),
+      ...(districtRevenue === undefined ? {} : { district_revenue: districtRevenue }),
+    };
+  })) };
 }
 
 async function handleEconomic(view: string | undefined, district: number | undefined) {
@@ -624,31 +674,37 @@ async function handleEconomic(view: string | undefined, district: number | undef
   }
 }
 
-async function handleHealth(view: string | undefined, quarters: number) {
-  if (!view || view === "all") {
-    const [metrics, by_charter, deposits, loans, institution_counts] = await Promise.all([
-      getIndustryHealthMetrics(),
-      getHealthMetricsByCharter(),
-      getDepositGrowthTrend(quarters),
-      getLoanGrowthTrend(quarters),
-      getInstitutionCountTrends(quarters),
+async function handleHealth(view: string | undefined, quarters: number, source?: FinancialSource) {
+  if (view && !["all", "metrics", "by_charter", "deposits", "loans", "institution_counts"].includes(view)) {
+    return { error: `Unknown health view '${view}'. Valid: metrics, by_charter, deposits, loans, institution_counts` };
+  }
+  return { financial_groups: await Promise.all(financialSources(source).map(async (financialSource) => {
+    const all = !view || view === "all";
+    const [metrics, deposits, loans, institutionCounts] = await Promise.all([
+      all || view === "metrics" || view === "by_charter" ? getIndustryHealthMetrics(financialSource) : undefined,
+      all || view === "deposits" ? getDepositGrowthTrend(quarters, financialSource) : undefined,
+      all || view === "loans" ? getLoanGrowthTrend(quarters, financialSource) : undefined,
+      all || view === "institution_counts" ? getInstitutionCountTrends(quarters, financialSource) : undefined,
     ]);
-    return { metrics, by_charter, deposits, loans, institution_counts };
-  }
-  switch (view) {
-    case "metrics":
-      return { metrics: await getIndustryHealthMetrics() };
-    case "by_charter":
-      return { by_charter: await getHealthMetricsByCharter() };
-    case "deposits":
-      return { deposits: await getDepositGrowthTrend(quarters) };
-    case "loans":
-      return { loans: await getLoanGrowthTrend(quarters) };
-    case "institution_counts":
-      return { institution_counts: await getInstitutionCountTrends(quarters) };
-    default:
-      return { error: `Unknown health view '${view}'. Valid: metrics, by_charter, deposits, loans, institution_counts` };
-  }
+    return {
+      ...financialGroup(financialSource),
+      ...(metrics === undefined ? {} : { metrics: { ...metrics, unit: "percent" } }),
+      ...(deposits === undefined ? {} : { deposits: growthWithUnits(deposits) }),
+      ...(loans === undefined ? {} : { loans: growthWithUnits(loans) }),
+      ...(institutionCounts === undefined ? {} : { institution_counts: institutionCounts.map((row) => ({
+        ...row, unit: "count", field_units: { bank_change_pct: "percent", cu_change_pct: "percent" },
+      })) }),
+    };
+  })) };
+}
+
+function growthWithUnits(trend: Awaited<ReturnType<typeof getDepositGrowthTrend>>) {
+  if (!trend || !Array.isArray(trend.history)) return null;
+  return {
+    ...trend,
+    unit: "percent",
+    history: trend.history.map((row) => ({ ...row, field_units: { absolute: "thousands of dollars", yoy_pct: "percent" } })),
+  };
 }
 
 async function handleComplaints(district: number | undefined) {
@@ -661,38 +717,58 @@ async function handleFeeIndex(
   tiers: string[] | undefined,
   limit: number
 ) {
+  // #1924: each read's stamp travels with its figures, so an answer can cite it.
   if (charter || tiers) {
     const filters: { charter_type?: string; asset_tiers?: string[] } = {};
     if (charter) filters.charter_type = charter;
     if (tiers) filters.asset_tiers = tiers;
-    return { index: await getPeerIndex(filters) };
+    const { entries, stamp } = await getPeerIndexStamped(filters);
+    return { index: entries, dataset: datasetCitation(stamp) };
   }
-  return { index: await getIndexSnapshot(undefined, limit) };
+  const { entries, stamp } = await getNationalIndexStamped();
+  return { index: entries.slice(0, limit), dataset: datasetCitation(stamp) };
 }
 
 async function handleDerived(
   view: string | undefined,
   top_n: number,
-  quarters: number
+  quarters: number,
+  source?: FinancialSource,
 ) {
-  if (!view || view === "all") {
-    const [concentration, dependency, revenue_per_institution] = await Promise.all([
-      getRevenueConcentration(top_n),
-      getFeeDependencyTrend(quarters),
-      getRevenuePerInstitutionTrend(quarters),
-    ]);
-    return { concentration, dependency, revenue_per_institution };
+  if (view && !["all", "concentration", "dependency", "revenue_per_institution"].includes(view)) {
+    return { error: `Unknown derived view '${view}'. Valid: concentration, dependency, revenue_per_institution` };
   }
-  switch (view) {
-    case "concentration":
-      return { concentration: await getRevenueConcentration(top_n) };
-    case "dependency":
-      return { dependency: await getFeeDependencyTrend(quarters) };
-    case "revenue_per_institution":
-      return { revenue_per_institution: await getRevenuePerInstitutionTrend(quarters) };
-    default:
-      return { error: `Unknown derived view '${view}'. Valid: concentration, dependency, revenue_per_institution` };
-  }
+  const all = !view || view === "all";
+  // This is a fee-schedule aggregation, not call-report income: cross-charter prices remain comparable.
+  const concentration = all || view === "concentration" ? await getRevenueConcentration(top_n) : undefined;
+  return {
+    ...(concentration === undefined ? {} : { concentration, concentration_basis: "Published fee-schedule prices and institution prevalence; not realized fee income" }),
+    ...(view === "concentration" ? {} : { financial_groups: await Promise.all(financialSources(source).map(async (financialSource) => {
+      const [dependency, revenuePerInstitution] = await Promise.all([
+        all || view === "dependency" ? getFeeDependencyTrend(quarters, financialSource) : undefined,
+        all || view === "revenue_per_institution" ? getRevenuePerInstitutionTrend(quarters, financialSource) : undefined,
+      ]);
+      return {
+        ...financialGroup(financialSource),
+        ...(dependency === undefined ? {} : { dependency: {
+          ...dependency,
+          unit: "percent",
+          measure_definition: {
+            measure: "fee_income_share_of_total_revenue",
+            unit: "percent",
+            period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter",
+            definition: financialSource === "ncua" ? "Mean of each credit union's year-to-date broad fee income divided by year-to-date total revenue" : "Mean of each bank's quarterly deposit-account service charges divided by quarterly total revenue",
+          },
+        } }),
+        ...(revenuePerInstitution === undefined ? {} : { revenue_per_institution: {
+          ...revenuePerInstitution,
+          unit: "USD",
+          signals: { ...revenuePerInstitution.signals, unit: "percent" },
+          measure_definition: { ...financialMeasureDefinition(financialSource), unit: "USD", aggregation: "mean income per reporting institution" },
+        } }),
+      };
+    })) }),
+  };
 }
 
 // ── New source handlers (Phase 36) ───────────────────────────────────────────

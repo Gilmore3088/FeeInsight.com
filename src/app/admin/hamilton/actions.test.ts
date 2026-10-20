@@ -15,7 +15,7 @@ const m = vi.hoisted(() => ({
   outsideTx: 0,
 }));
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), revalidateTag: vi.fn(), unstable_cache: (read: unknown) => read }));
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn(), unstable_cache: (read: unknown) => read }));
 vi.mock("@/lib/auth", () => ({ requireAuth: vi.fn(async () => ({ id: 1 })) }));
 vi.mock("@/lib/agents/run-store", () => ({ cancelAgentRun: vi.fn() }));
 vi.mock("@/lib/report-agent-runs", () => ({ triggerReportJob: vi.fn() }));

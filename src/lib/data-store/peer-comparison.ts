@@ -19,11 +19,9 @@ import type { PeerMarket } from "./peer-markets";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import type { InstitutionOwnFee, OwnFeeLine } from "@/lib/own-fee";
+import { midRankPercentile as sharedMidRank, SAME_PRICE_TOLERANCE } from "@/lib/percentile";
 
 export { MAX_CHOSEN_PEERS } from "@/lib/peer-set-dimensions";
-
-/** Two amounts within half a cent are the same price. */
-const SAME_PRICE_TOLERANCE = 0.005;
 
 export interface PeerCategoryComparison {
   category: string;
@@ -94,18 +92,17 @@ export interface PeerComparison {
   rate_fees: PeerComparisonRateFee[];
 }
 
-/** Mid-rank percentile: share of values below, plus half of those equal, as 0 to 100. */
+/** The counts behind a price's place, and its percentile by the one shared method (#2048, #2101). */
 export function midRankPercentile(amount: number, values: readonly number[]): { lower: number; same: number; higher: number; percentile: number | null } {
   let lower = 0;
   let same = 0;
   let higher = 0;
   for (const value of values) {
-    if (Math.abs(value - amount) < SAME_PRICE_TOLERANCE) same++;
+    if (Math.abs(value - amount) <= SAME_PRICE_TOLERANCE) same++;
     else if (value < amount) lower++;
     else higher++;
   }
-  const n = values.length;
-  return { lower, same, higher, percentile: n === 0 ? null : Math.round((100 * (lower + same / 2)) / n) };
+  return { lower, same, higher, percentile: sharedMidRank(amount, values) };
 }
 
 /**
@@ -148,11 +145,6 @@ export function defaultPeerFilters(inst: { charter_type?: string | null; asset_s
   const district = Number(inst.fed_district);
   if (Number.isInteger(district) && district >= 1 && district <= 12) filters.fed_districts = [district];
   return filters;
-}
-
-/** "Banks with $300M to $1B in assets in Fed district 11 (Dallas)", or "3 chosen institutions". */
-export function describePeerGroup(filters: PeerFilterSet): string {
-  return describePeerSet(filters);
 }
 
 function byFamilyThenName(a: { family: string | null; display_name: string | null }, b: { family: string | null; display_name: string | null }): number {

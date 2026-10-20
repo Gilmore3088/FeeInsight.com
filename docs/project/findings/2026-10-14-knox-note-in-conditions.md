@@ -15,3 +15,5 @@ writes and keeps the bank's own text, every customer data-store reader uses it, 
 **Lesson:** a pattern over pipeline text needs a test against every live shape (query the
 distinct shapes first), and a field shared by pipeline and customers needs a test at the readers,
 not only at the helper.
+
+**Guard:** `src/lib/data-store/customer-fee-conditions.test.ts:112` (every customer fee reader drops Knox's extraction note from conditions and keeps the bank's own text)
