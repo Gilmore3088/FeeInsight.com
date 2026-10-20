@@ -12,7 +12,7 @@ function hero(same: number) {
       counts={{ above: 16, below: 5, same, compared: 21 + same, level: "state" }}
       finding=""
       source={null}
-      primary={{ href: "/reports", label: "Request a report" }}
+      primary={<span>Request a report</span>}
       schedulesHref="#schedule"
     />,
   );

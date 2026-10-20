@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { API_ATTRIBUTION, CONTACT_EMAIL, SITE_URL } from "@/lib/constants";
-import { getPublicCategorySummaries, getPublicStatsSummary } from "@/lib/public-stats";
-import { DEMO, overdraftExample } from "./api-docs-example";
+import { getPublicStatsSummary } from "@/lib/public-stats";
+import { DEMO } from "./api-docs-example";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT } from "@/lib/data-store/maturity";
 import { API_MONTHLY_CALLS_LABEL, API_PLANS_LABEL, BURST_CALLS_PER_MINUTE } from "@/lib/api-subscriber-access";
 import { PAST_DUE_GRACE_DAYS } from "@/lib/access";
@@ -270,11 +270,7 @@ const CLAUDE_CODE_CONFIG = JSON.stringify({
 }, null, 2);
 
 export default async function ApiDocsPage() {
-  const [summary, categories] = await Promise.all([
-    getPublicStatsSummary(),
-    getPublicCategorySummaries().catch(() => []),
-  ]);
-  const od = overdraftExample(categories.find((c) => c.fee_category === "overdraft"));
+  const summary = await getPublicStatsSummary();
   const categoriesLabel = summary.categoriesLabel;
   return (
     <div className="mx-auto max-w-4xl px-6 py-14">
@@ -650,12 +646,12 @@ export default async function ApiDocsPage() {
       "display_name": "Overdraft (OD)",
       "family": "Overdraft & NSF",
       "tier": "spotlight",
-      "median": ${od.median},
-      "p25": ${od.p25},
-      "p75": ${od.p75},
-      "min": ${od.min},
-      "max": ${od.max},
-      "institution_count": ${od.institutions}
+      "median": 35.00,
+      "p25": 30.00,
+      "p75": 36.00,
+      "min": 5.00,
+      "max": 40.00,
+      "institution_count": 842
     }
   ],
   "attribution": ${JSON.stringify(API_ATTRIBUTION)}
@@ -691,16 +687,22 @@ export default async function ApiDocsPage() {
   "family": "Overdraft & NSF",
   "tier": "spotlight",
   "summary": {
-    "institution_count": ${od.institutions},
-    "observation_count": ${od.observations}
+    "institution_count": 842,
+    "observation_count": 1156
   },
   "by_charter_type": [
-    { "dimension_value": "Bank", "count": ${od.bankCount}, "median_amount": ${od.bankMedian}, ... },
-    { "dimension_value": "Credit Union", "count": ${od.cuCount}, "median_amount": ${od.cuMedian}, ... }
+    { "dimension_value": "Bank", "count": 510, "min_amount": 5, "max_amount": 40, "avg_amount": 34, "median_amount": 36, "p25_amount": 33, "p75_amount": 36 },
+    { "dimension_value": "Credit Union", "count": 332, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
   ],
-  "by_asset_tier": [ ... ],
-  "by_fed_district": [ ... ],
-  "by_state": [ ... ],
+  "by_asset_tier": [
+    { "dimension_value": "community_large", "count": 200, "min_amount": 5, "max_amount": 40, "avg_amount": 30, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
+  ],
+  "by_fed_district": [
+    { "dimension_value": "District 6", "count": 75, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
+  ],
+  "by_state": [
+    { "dimension_value": "FL", "count": 44, "min_amount": 5, "max_amount": 38, "avg_amount": 29, "median_amount": 30, "p25_amount": 25, "p75_amount": 35 }
+  ],
   "attribution": ${JSON.stringify(API_ATTRIBUTION)}
 }`}
         />
@@ -908,7 +910,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
   "asset_size": ${DEMO.assetThousands},
   "asset_tier": "${DEMO.assetTier}",
   "fed_district": ${DEMO.fedDistrict},
-  "fee_count": ${DEMO.feeCount},
+  "fee_count": 2,
   "fees": [
     {
       "fee_name": "Overdraft Item Fee",
@@ -933,8 +935,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "confidence": 0.98,
       "source_url": "https://example.com/fee-schedule.pdf",
       "published_at": "2026-10-02T14:05:00.000Z"
-    },
-    ...
+    }
   ],
   "rate_fees": [],
   "call_reports": [],
@@ -1106,7 +1107,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \\
       "peers_lower": 30,
       "peers_same": 3,
       "peers_higher": 5,
-      "percentile": 79,
+      "percentile": 83,
       "maturity_tier": "strong"
     }
   ],
