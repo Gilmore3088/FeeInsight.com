@@ -599,6 +599,7 @@ async function executeAgenticStep(
                 tried: savedLinks.tried,
                 stored: savedLinks.stored,
                 matched: savedLinks.matched,
+                refused: savedLinks.refused,
                 failed: savedLinks.failed,
                 switch_live: savedLinks.live,
                 results: savedLinks.results.slice(0, 10),
