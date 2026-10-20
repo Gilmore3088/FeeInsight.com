@@ -11,6 +11,7 @@ vi.mock("./connection", () => ({
 }));
 
 import { getCharterFeeRevenueSummary, getFeeRevenueData, getFiledFeeIncomeData, getTierFeeRevenueSummary } from "./fee-revenue";
+import { buildFeeRevenueResearch } from "./fee-revenue-research";
 import { feeIncomeAgainstPeers } from "@/lib/research/fee-income-peers";
 import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 
@@ -87,11 +88,13 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     const allCharters = await getCharterFeeRevenueSummary();
     expect(allInstitutions.map((row) => Number(row.institution_id)).sort((a, b) => a - b)).toEqual([1, 2, 101, 102]);
     expect(allInstitutions.find((row) => Number(row.institution_id) === 1)).toMatchObject({
-      financial_source: "ncua", report_date: "2026-06-30", service_charge_income: "250",
+      financial_source: "ncua", report_date: "2026-06-30", service_charge_income: 250,
     });
     expect(allInstitutions.find((row) => Number(row.institution_id) === 2)).toMatchObject({
-      financial_source: "ncua", report_date: "2026-03-31", service_charge_income: "125",
+      financial_source: "ncua", report_date: "2026-03-31", service_charge_income: 125,
     });
+    expect(allInstitutions.every((row) => typeof row.institution_id === "number"
+      && typeof row.total_assets === "number" && typeof row.service_charge_income === "number")).toBe(true);
     for (const source of ["fdic", "ncua"] as const) {
       expect(ordered(await getFiledFeeIncomeData(source))).toEqual(ordered(allFinancials.filter((row) => row.financial_source === source)));
       expect(ordered(await getFeeRevenueData(source))).toEqual(ordered(allInstitutions.filter((row) => row.financial_source === source)));
@@ -195,6 +198,98 @@ describe.skipIf(!connection)("fee-revenue eligibility and source parity in isola
     expect(await getFiledFeeIncomeData("ncua")).toEqual([expect.objectContaining({
       institution_id: 1, service_charge_income: 250, total_assets: null, fee_income_ratio: null,
     })]);
+  });
+
+  it("normalizes real bigint/numeric correlation results while retaining zero prices, zero income and unknown assets", async () => {
+    await institution(1, "credit_union", "ncua", "2026-06-30", 100);
+    await institution(2, "bank", "fdic", "2026-06-30", 0);
+    for (const id of [1, 2]) {
+      for (const category of ["overdraft", "nsf", "wire_domestic_outgoing"]) await fee(id, category, 0);
+    }
+    await db`UPDATE pg_temp.institution_financial_records SET total_assets = NULL WHERE institution_id = 1 AND report_date = '2026-06-30'`;
+    await db`UPDATE pg_temp.institution_financial_records SET total_assets = 0 WHERE institution_id = 2`;
+    const rows = await getFeeRevenueData();
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ institution_id: 1, financial_source: "ncua", total_assets: null, service_charge_income: 0,
+        fee_income_ratio: null, avg_fee: 0, fee_count: 3, median_overdraft: null }),
+      expect.objectContaining({ institution_id: 2, financial_source: "fdic", total_assets: 0, service_charge_income: 0,
+        fee_income_ratio: null, avg_fee: 0, fee_count: 3, median_overdraft: null }),
+    ]));
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => typeof row.institution_id === "number" && typeof row.service_charge_income === "number"
+      && typeof row.avg_fee === "number" && typeof row.fee_count === "number")).toBe(true);
+    const model = buildFeeRevenueResearch(rows);
+    expect(model.groups.find((group) => group.source === "ncua")?.institutions).toEqual([
+      expect.objectContaining({ institution_id: 1, income_usd: 0, assets_usd: null, income_per_10k_assets: null,
+        listed_fee_usd: 0, asset_size_tier: "unknown" }),
+    ]);
+    expect(model.groups.find((group) => group.source === "fdic")?.institutions).toEqual([
+      expect.objectContaining({ institution_id: 2, income_usd: 0, assets_usd: 0, income_per_10k_assets: null, listed_fee_usd: 0 }),
+    ]);
+    expect(model.groups.every((group) => group.summary.mean_income_usd === null
+      && group.summary.mean_income_per_10k_assets === null && group.rankings.length === 0)).toBe(true);
+  });
+
+  it("feeds actual canonical source/date SQL cohorts into the shared research model without mixing units or collection eligibility (#2415)", async () => {
+    for (let index = 1; index <= 6; index++) {
+      await institution(index, "credit_union", "ncua", "2026-06-30", index === 1 ? 100 : 100 + index * 100);
+      await institution(100 + index, "bank", "fdic", "2026-09-30", index * 200);
+      await threeFees(index);
+      await threeFees(100 + index);
+    }
+    // Active and unknown statuses both remain eligible. Registry tier cannot relabel filed assets.
+    await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'active' WHERE id IN (6, 106)`;
+    await db`UPDATE pg_temp.institution_sources SET asset_size_tier = 'community_small'`;
+    await institution(7, "credit_union", "ncua", "2026-06-30", 999999);
+    await threeFees(7);
+    await db`UPDATE pg_temp.institution_sources SET regulatory_status = 'inactive' WHERE id = 7`;
+    await institution(8, "credit_union", "ncua", "2026-03-31", 999);
+    await threeFees(8);
+    await institution(201, "bank", "fdic", "2026-06-30", 999999);
+    await threeFees(201);
+    await institution(9, "credit_union", "ncua", "2026-06-30", 999999);
+    await threeFees(9);
+    await db`DELETE FROM pg_temp.institution_financial_records WHERE institution_id = 9 AND report_date = '2026-03-31'`;
+    await institution(10, "credit_union", "fdic");
+    await institution(11, "unknown", "ncua");
+    await institution(202, "bank", "ncua", "2026-09-30", 999999);
+    for (const id of [10, 11, 202]) await threeFees(id);
+    await institution(12, "credit_union", "ncua");
+    await fee(12, "overdraft", 20);
+    await fee(12, "nsf", 10); // Two categories never qualify for price/income correlation.
+    // A newer wrong regulator does not replace the CU's canonical June filing.
+    await db`INSERT INTO institution_financial_records VALUES (1, 'fdic', '2026-09-30', 99999999, 999999)`;
+
+    const rows = await getFeeRevenueData();
+    expect(rows.map((row) => row.institution_id).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 8, 101, 102, 103, 104, 105, 106, 201]);
+    expect(rows.find((row) => row.institution_id === 1)).toMatchObject({
+      financial_source: "ncua", report_date: "2026-06-30", service_charge_income: 0, total_assets: 20_000_000,
+    });
+    expect(rows.every((row) => typeof row.institution_id === "number" && typeof row.service_charge_income === "number"
+      && typeof row.total_assets === "number" && typeof row.fee_count === "number")).toBe(true);
+    const model = buildFeeRevenueResearch(rows);
+    expect(model).toMatchObject({ excluded_invalid_rows: 0, excluded_duplicate_rows: 0, conflicting_institution_count: 0 });
+    expect(model.groups).toHaveLength(2);
+    const creditUnions = model.groups.find((group) => group.source === "ncua")!;
+    const banks = model.groups.find((group) => group.source === "fdic")!;
+    expect(creditUnions).toMatchObject({ charter_type: "credit_union", report_date: "2026-06-30", unit: "USD",
+      stored_income_unit: "thousands of dollars", fee_price_unit: "USD", institution_count: 6,
+      stale_institution_count: 1, stale_report_dates: ["2026-03-31"], population_basis: "fee_price_income_correlation" });
+    expect(banks).toMatchObject({ charter_type: "bank", report_date: "2026-09-30", unit: "USD", institution_count: 6,
+      stale_institution_count: 1, stale_report_dates: ["2026-06-30"] });
+    expect(creditUnions.institutions.map((row) => row.institution_id)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(banks.institutions.map((row) => row.institution_id)).toEqual([101, 102, 103, 104, 105, 106]);
+    expect(creditUnions.institutions.find((row) => row.institution_id === 2)).toMatchObject({
+      income_usd: 200_000, assets_usd: 20_000_000_000, listed_fee_usd: 20,
+      published_fee_category_count: 3, asset_size_tier: "regional", income_per_10k_assets: 0.1,
+    });
+    expect(creditUnions.summary.mean_income_usd).toBeCloseTo(2_000_000 / 6);
+    expect(banks.summary.mean_income_usd).toBe(700_000);
+    expect(creditUnions.summary.mean_listed_fee_usd).toBe(20);
+    expect(creditUnions.rankings).toHaveLength(6);
+    expect(banks.rankings).toHaveLength(6);
+    expect(model.groups.every((group) => group.by_tier.length === 1 && group.by_tier[0].asset_size_tier === "regional"
+      && group.by_tier[0].institution_count === 6)).toBe(true);
   });
 
   it("compares PenFed's filed Q2 income with deliberately absent test-only schedule coverage", async () => {
