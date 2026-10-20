@@ -3,6 +3,7 @@ import { SOURCE_CHECK_NAME } from "./checkers";
 import { CATEGORY_GUARD_RULES } from "@/lib/fee-category-guard";
 import { releaseCategoryPattern } from "@/lib/agents/darwin/release-held";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 import {
   CASE_BYTE_CAP, CORRECTIVE_CHECK, CORRECTIVE_KIND, METADATA_BYTE_CAP, SOURCE_BYTE_CAP, SOURCE_CODEPOINT_CAP,
   SOURCE_PHASE_BYTE_CAP, evidenceHash, encodedBytes, fixtureArtifact, replayCorrective, validCorrectiveReceipt,
@@ -135,11 +136,13 @@ export async function captureCorrectiveSource(tx: Db, input: Parameters<typeof s
 // Shape/cheap text limits run before encoding/digest work. No full rejected body crosses the DB.
 // CASE avoids array_length/casts on JSON scalar/string packets. The single-document context is
 // deliberately different from the old generic bank-wide snapshots.
-const ADMITTED = `WITH admissible AS MATERIALIZED (
+// `rows` narrows the corrections before any per-row source work: the lateral cells below detoast,
+// serialise and hash every row they see, whatever later WHERE terms would have dropped.
+const admitted = (rows = "published_fee_corrections") => `WITH admissible AS MATERIALIZED (
  SELECT c.id,c.institution_id,c.source_document_id,c.previous_fee_published_id,
    packet->>'databaseDigest' AS database_digest,octet_length(encoded)+512 AS case_bytes,
    p->'origin' AS origin,docmeta AS document
- FROM published_fee_corrections c
+ FROM ${rows} c
  CROSS JOIN LATERAL(SELECT c.source_check->'deming_source_v2' AS packet OFFSET 0) packet_cell
  CROSS JOIN LATERAL(SELECT CASE WHEN jsonb_typeof(packet)='object' AND packet->'protocol'='2'::jsonb
    AND jsonb_typeof(packet->'payload')='object' THEN packet->'payload' END AS p OFFSET 0) payload_cell
@@ -183,6 +186,7 @@ const ADMITTED = `WITH admissible AS MATERIALIZED (
    AND CASE WHEN jsonb_typeof(p)='object' THEN NOT EXISTS(SELECT 1 FROM jsonb_object_keys(p) k WHERE k NOT IN('context','originalExtractionBinding','canonical','feeContext','documents','origin')) ELSE false END
    AND c.action='correct'
 )`;
+const ADMITTED = admitted();
 const ENROLLMENT = `${ADMITTED}, text_ids AS MATERIALIZED (
  SELECT DISTINCT document->>'astId' AS id FROM admissible
 ), current_texts AS MATERIALIZED (
@@ -215,12 +219,25 @@ async function loadEnrollmentPayload(db: Db, item: CorrectiveMetadata): Promise<
   const row = rows[0];
   return row && validCorrectiveReceipt(row.packet) ? { id: row.id, status: "candidate", receipt: row.packet } : null;
 }
+/** A read or write this run could not finish; its rows count as unknown, never as a verdict. */
+export type CorrectivePhase = "admission_read" | "enrollment" | "replay_read" | "replay_case" | "unavailable_census";
+export interface CorrectiveWarning { phase: CorrectivePhase; count: number; timedOut: boolean; error: string }
+const QUERY_CANCELED = "57014";
+function noteWarning(result: CorrectiveResult, phase: CorrectivePhase, error: unknown): void {
+  const message = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+  const timedOut = (error as { code?: unknown } | null)?.code === QUERY_CANCELED;
+  const prior = result.warnings.find((warning) => warning.phase === phase);
+  if (prior) { prior.count++; prior.timedOut ||= timedOut; return; }
+  result.warnings.push({ phase, count: 1, timedOut, error: message });
+}
 export interface CorrectiveResult {
+  /** One entry per phase that failed (first error kept); surfaced as step warnings by the runner. */
+  warnings: CorrectiveWarning[];
   promoted: number; admissionLimitReached: boolean; replayLimitReached: boolean; evaluated: number; caught: number; activated: number; regressions: number;
   regressionCases: Array<{ caseId: number; verdict: string }>;
   unavailable: { count: number | null; atLeast: boolean }; deferred: number; artifact: FixtureArtifact;
 }
-const empty = (): CorrectiveResult => ({ promoted: 0, admissionLimitReached: false, replayLimitReached: false, evaluated: 0, caught: 0, activated: 0, regressions: 0,
+const empty = (): CorrectiveResult => ({ warnings: [], promoted: 0, admissionLimitReached: false, replayLimitReached: false, evaluated: 0, caught: 0, activated: 0, regressions: 0,
   regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) });
 
 const DUE = `due AS MATERIALIZED (
@@ -238,13 +255,14 @@ const DUE = `due AS MATERIALIZED (
    AND x.institution_id=c.institution_id AND x.source_document_id=c.source_document_id AND x.fee_published_id=c.previous_fee_published_id
    AND x.source_text_hash IS NULL
 )`;
-// Replay validates only canonical keys that actually have a pending/current case. Keep this
-// cheap relational membership before source payload work; pending enrollment bodies must not
-// multiply replay's statement budget. DUE still rechecks every context before its own LIMIT.
-const REPLAY = `${ADMITTED.replace("AND c.action='correct'", `AND c.action='correct' AND EXISTS(
-  SELECT 1 FROM eval_cases member WHERE member.case_key='corrective:'||c.id::text||':source_snapshot_v2'
+// Replay validates only canonical keys that actually have a pending/current case. The cheap
+// relational membership runs in a fenced subquery before any source payload work (as a WHERE
+// term the planner applied it after hashing every stored body); pending enrollment bodies must
+// not multiply replay's statement budget. DUE still rechecks every member context before its LIMIT.
+const REPLAY = `${admitted(`(SELECT * FROM published_fee_corrections pc WHERE EXISTS(
+  SELECT 1 FROM eval_cases member WHERE member.case_key='corrective:'||pc.id::text||':source_snapshot_v2'
     AND member.dataset='regression' AND member.status IN('candidate','active')
-    AND member.check_name='${CORRECTIVE_CHECK}')`)}, ${DUE}`;
+    AND member.check_name='${CORRECTIVE_CHECK}') OFFSET 0)`)}, ${DUE}`;
 
 const replayForId = () => REPLAY.replace("AND c.action='correct'", "AND c.action='correct' AND c.id::text=(SELECT input->'receipt'->'payload'->'canonical'->>'id' FROM eval_cases WHERE id=$1)");
 
@@ -253,7 +271,7 @@ export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 30
 }): Promise<CorrectiveResult> {
   const result = empty();
   let metadata: CorrectiveMetadata[];
-  try { metadata = await loadCorrectiveCaseCandidates(db, promoteLimit); } catch { return result; }
+  try { metadata = await loadCorrectiveCaseCandidates(db, promoteLimit); } catch (error) { noteWarning(result, "admission_read", error); return result; }
   result.admissionLimitReached = metadata.length === promoteLimit && promoteLimit > 0;
   let budget = 0;
   for (const item of metadata) {
@@ -281,14 +299,17 @@ export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 30
         return rows.length;
       });
       result.promoted += inserted;
-    } catch { /* Retryable unavailable: no immutable key is consumed on a failed savepoint. */ }
+    } catch (error) {
+      // Retryable unavailable: no immutable key is consumed on a failed savepoint.
+      noteWarning(result, "enrollment", error);
+    }
   }
   let due: Array<{ case_id: number; case_status: string; case_bytes: number; database_digest: string }>;
   try {
     due = await scope(db, (sp) => sp.unsafe(`${REPLAY}
       SELECT case_id,case_status,case_bytes::int,database_digest FROM due
       ORDER BY last_checked_at NULLS FIRST,case_id LIMIT $1`, [replayLimit]));
-  } catch { return result; }
+  } catch (error) { noteWarning(result, "replay_read", error); return result; }
   result.replayLimitReached = due.length === replayLimit && replayLimit > 0;
   budget = 0;
   const fixtures: FixtureCase[] = [];
@@ -322,7 +343,10 @@ export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 30
         result.regressions++; result.regressionCases.push({ caseId: observed.caseId, verdict: observed.outcome.verdict });
       }
       fixtures.push({ caseId: observed.caseId, input: observed.input, outcome: observed.outcome });
-    } catch { /* Failed origin/context read is unknown, never a rule regression. */ }
+    } catch (error) {
+      // Failed origin/context read is unknown, never a rule regression.
+      noteWarning(result, "replay_case", error);
+    }
   }
   result.artifact = fixtureArtifact(fixtures);
   try {
@@ -340,8 +364,19 @@ export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 30
         AND NOT EXISTS(SELECT 1 FROM due d WHERE d.case_id=x.id)
       ) SELECT context_key FROM unknowns ORDER BY context_key LIMIT 1001`));
     result.unavailable = { count: Math.min(1000, unknown.length), atLeast: unknown.length > 1000 };
-  } catch { /* Unknown read remains count:null. */ }
+  } catch (error) {
+    // Unknown read remains count:null.
+    noteWarning(result, "unavailable_census", error);
+  }
   return result;
+}
+
+/** One `step.warning` run event per failed phase, so a timeout shows in the run ledger, not only in counts. */
+export async function recordCorrectiveWarnings(db: Db, runId: number, stepId: number, warnings: CorrectiveWarning[]): Promise<void> {
+  for (const warning of warnings) {
+    const what = `Corrective source ${warning.phase.replaceAll("_", " ")}${warning.timedOut ? " (statement timeout)" : ""}, ${warning.count} time${warning.count === 1 ? "" : "s"},`;
+    await recordStepWarning(db, { runId, stepId, check: `${CORRECTIVE_CHECK}.${warning.phase}`, what, error: warning.error });
+  }
 }
 
 /** Existing ledger only. Scope rollback prevents a failed optional chunk poisoning step completion. */

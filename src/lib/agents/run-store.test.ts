@@ -885,7 +885,7 @@ describe("agentic run store", () => {
     const regression = await import("./deming/regression");
     const source = await import("./deming/corrective-source-store");
     const { fixtureArtifact } = await import("./deming/corrective-source");
-    const observed = { promoted: 1, admissionLimitReached: false, replayLimitReached: false, evaluated: 1, caught: 1, activated: 1, regressions: 0,
+    const observed = { warnings: [{ phase: "replay_read" as const, count: 1, timedOut: true, error: "canceling statement due to statement timeout" }], promoted: 1, admissionLimitReached: false, replayLimitReached: false, evaluated: 1, caught: 1, activated: 1, regressions: 0,
       regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
     const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
       promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
@@ -904,6 +904,12 @@ describe("agentic run store", () => {
       expect(detail).toMatchObject({ replayed: 1, caught: 1, totals_scope: "historical_all_datasets", corrective_source: {
         protocol: 2, evaluated: 1, caught: 1, unavailable: { count: null }, fixture: { state: "unavailable", ciImport: "not_implemented" } } });
       expect(detail.corrective_source).not.toHaveProperty("artifact");
+      expect(detail.corrective_source.warnings).toEqual(observed.warnings);
+      const warned = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.warning'"));
+      expect(warned, "a swallowed replay timeout leaves a visible step warning").toHaveLength(1);
+      expect(JSON.parse(String(warned[0].at(-1)))).toMatchObject({ check: "admin.fee_correction.source_context.replay_read" });
+      expect(String(warned[0].at(-2))).toContain("statement timeout");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("Could not finish: replay read (statement timeout)");
       expect(narrateStepFinished("deming-regression",detail)).toContain("unavailable unknown");
       expect(narrateStepFinished("deming-regression",detail)).toContain("CI fixture import remains unimplemented");
     } finally { replay.mockRestore(); persist.mockRestore(); }

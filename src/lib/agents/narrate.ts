@@ -373,7 +373,9 @@ function narrateFinished(
       const source = isRecord(detail.corrective_source) ? detail.corrective_source as Detail : null;
       const sourceCount = (value: unknown): string => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? String(value) : "unknown";
       const sourceNote = source ? ` Corrective source contexts: ${sourceCount(source.evaluated)} evaluated, ${sourceCount(source.caught)} matched; unavailable ${isRecord(source.unavailable) && sourceCount(source.unavailable.count) !== "unknown" ? `${source.unavailable.atLeast === true ? "at least " : ""}${source.unavailable.count}` : "unknown"}. Original extraction binding is unknown; CI fixture import remains unimplemented.` : "";
-      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.${sourceNote}`;
+      const failed = source && Array.isArray(source.warnings) ? source.warnings.filter(isRecord).map((w) => `${String(w.phase).replaceAll("_", " ")}${w.timedOut === true ? " (statement timeout)" : ""}`) : [];
+      const warnNote = failed.length > 0 ? ` Could not finish: ${failed.join(", ")}; those rows are unknown.` : "";
+      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.${sourceNote}${warnNote}`;
     }
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;

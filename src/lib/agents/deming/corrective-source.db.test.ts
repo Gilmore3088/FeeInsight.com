@@ -2,7 +2,7 @@ import postgres from "postgres";
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { correctPublishedFee, resetCorrectionsReadyCache } from "@/lib/fee-corrections";
-import { loadCorrectiveCaseCandidates, runCorrectiveSource, persistCorrectiveArtifact, sealCorrectiveSource } from "./corrective-source-store";
+import { loadCorrectiveCaseCandidates, runCorrectiveSource, persistCorrectiveArtifact, recordCorrectiveWarnings, sealCorrectiveSource } from "./corrective-source-store";
 import { recordAdminFeeRun } from "@/lib/fee-admin-run";
 import { runDemingRegression } from "./regression";
 import { recordFeedback } from "@/lib/agents/learning/feedback";
@@ -453,10 +453,38 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
       }});
       const failed=await runCorrectiveSource({db:wrap(native as unknown as Db),runId:null,dryRun:false});
       expect(failed).toMatchObject({promoted:0,evaluated:0,caught:0,regressions:0,unavailable:{count:null}});
+      expect(failed.warnings).toEqual([expect.objectContaining({phase:"admission_read",count:1,timedOut:false,error:expect.stringContaining("division by zero")})]);
       expect((await native`SELECT 42 AS healthy`)[0].healthy).toBe(42);
       expect((await runCorrectiveSource({db:native as unknown as Db,runId:null,dryRun:false})).evaluated).toBe(1);
     });
   });
+  it("reports a real replay-read statement timeout as a visible step warning instead of an empty replay", async () => {
+    const c=await anotherCorrection();
+    try {
+      await runCorrectiveSource({db,runId:null,dryRun:false});
+      await raw.begin(async nativeTransaction=> {
+        const native = nativeTransaction as unknown as typeof raw;
+        const wrap=(real:Db):Db=>new Proxy(real,{get(target,key,receiver) {
+          if(key==="savepoint") return (fn:(tx:Db)=>Promise<unknown>)=>(target as unknown as {savepoint:(fn:(tx:Db)=>Promise<unknown>)=>Promise<unknown>}).savepoint(sp=>fn(wrap(sp)));
+          if(key==="unsafe") return (query:string,params:never[])=> {
+            // A real statement that outlives the unchanged 2 s replay cap, in its real savepoint.
+            if(query.includes("SELECT case_id,case_status,case_bytes::int,database_digest FROM due")) return real`SELECT pg_sleep(3)`;
+            return real.unsafe(query,params);
+          };
+          return Reflect.get(target,key,receiver);
+        }});
+        const result=await runCorrectiveSource({db:wrap(native as unknown as Db),runId:null,dryRun:false});
+        expect(result.evaluated).toBe(0);
+        expect(result.warnings).toEqual([expect.objectContaining({phase:"replay_read",count:1,timedOut:true})]);
+        const [run]=await native`INSERT INTO agent_runs(agent_name,run_kind,title,status) VALUES('atlas','workflow','Replay timeout witness','running') RETURNING id`;
+        const [step]=await native`INSERT INTO agent_run_steps(agent_run_id,agent_name,step_key,title,status) VALUES(${run.id},'atlas','deming-regression','Replay timeout witness','running') RETURNING id`;
+        await recordCorrectiveWarnings(native as unknown as Db,Number(run.id),Number(step.id),result.warnings);
+        const events=await native`SELECT event_type,message,detail->>'check' AS check FROM agent_run_events WHERE agent_run_id=${run.id}`;
+        expect(events).toEqual([expect.objectContaining({event_type:"step.warning",check:"admin.fee_correction.source_context.replay_read",message:expect.stringContaining("statement timeout")})]);
+        throw new Error("rollback replay timeout witness");
+      }).catch((error:unknown)=>{ if(!(error instanceof Error && error.message==="rollback replay timeout witness")) throw error; });
+    } finally { await removeCorrection(c); }
+  },20000);
   it("admits 300 maximum-codepoint one-document contexts under the unchanged native statement budget and transfers an ordered bounded prefix", async () => {
     const template = await anotherCorrection();
     await runCorrectiveSource({ db, runId: null, dryRun: false });
@@ -522,6 +550,7 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
         expect(inserted.map((r)=>Number(r.correction_id))).toEqual(ids.slice(0,result.promoted));
         const insertedBytes=inserted.reduce((n,r)=>n+Number(r.bytes),0);
         expect(insertedBytes).toBeLessThanOrEqual(8*1024*1024);
+        expect(result.warnings.filter((w)=>w.phase!=="unavailable_census"),"admission, enrollment and replay finish inside the 2 s cap").toEqual([]);
         expect(result.artifact.chunks.length).toBeGreaterThan(1);
         await native`CREATE FUNCTION pg_temp.reject_second_fixture_chunk() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN
           IF NEW.event_type='deming.fixture.v2' AND NEW.detail->>'index'='1' THEN RAISE EXCEPTION 'controlled second artifact chunk failure'; END IF; RETURN NEW; END$$`;

@@ -380,6 +380,8 @@ export function summarizeDemingRegression(result: DemingRegressionResult): strin
     ? "no regressions"
     : `${result.regressions.length} regression${result.regressions.length === 1 ? "" : "s"}: the deployed rules no longer catch ${result.regressions.length === 1 ? "a case" : "cases"} they used to`;
   const corrective = result.corrective ? ` Corrective source context: ${result.corrective.evaluated} evaluated, ${result.corrective.caught} matched, ${result.corrective.regressions} semantic regressions; unavailable ${result.corrective.unavailable.count == null ? "unknown" : `${result.corrective.unavailable.atLeast ? "at least " : ""}${result.corrective.unavailable.count}`}. Historical all-dataset totals are not a trusted source denominator. CI fixture import remains unimplemented.` : "";
+  const failed = result.corrective?.warnings ?? [];
+  const warned = failed.length === 0 ? "" : ` Corrective source could not finish: ${failed.map((w) => `${w.phase.replaceAll("_", " ")}${w.timedOut ? " (statement timeout)" : ""}`).join(", ")}; those rows are unknown, not verdicts.`;
   const history = result.corrective ? `${result.activeTotal} active history, ${result.candidateTotal} candidate history.` : `${result.activeTotal} active, ${result.candidateTotal} waiting for a replayer.`;
-  return `${added}Replayed ${result.replayed} cases on the deployed rules: ${result.caught} still caught, ${regressions}. ${history}${corrective}`;
+  return `${added}Replayed ${result.replayed} cases on the deployed rules: ${result.caught} still caught, ${regressions}. ${history}${corrective}${warned}`;
 }
