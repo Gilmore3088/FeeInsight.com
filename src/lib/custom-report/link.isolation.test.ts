@@ -4,7 +4,7 @@
  * src/lib/hamilton/customer-isolation.db.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createReportToken, LINK_LIFETIME_DAYS, verifyReportToken } from "./link";
+import { createPurchaseReportToken, createReportToken, LINK_LIFETIME_DAYS, verifyReportToken } from "./link";
 
 const NOW = new Date("2026-10-18T12:00:00Z");
 const DAY = 24 * 60 * 60 * 1000;
@@ -41,7 +41,8 @@ describe("market-report link guessability and scope", () => {
     expect(verifyReportToken(token, new Date(NOW.getTime() + (LINK_LIFETIME_DAYS + 1) * DAY))).toBeNull();
   });
 
-  it("is the same link for every buyer of one bank on one day (it names the bank, not the buyer)", () => {
+  it("is the same bank link for one bank on one day, which is why buyers get purchase links (#2000)", () => {
     expect(createReportToken(9922101, NOW)).toBe(createReportToken(9922101, new Date(NOW.getTime() + 60_000)));
+    expect(createPurchaseReportToken(9922101, 1, NOW)).not.toBe(createPurchaseReportToken(9922101, 2, NOW));
   });
 });

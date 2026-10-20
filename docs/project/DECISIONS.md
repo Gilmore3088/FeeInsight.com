@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**Paid market-report links are tied to their payment.** James, 2026-10-20 (#2000, found in the
+#1922 isolation review). Every report link sent to a buyer names the paid request (`leads.id`) it
+was issued for, in the signed link, and opens only while that payment is live: paid and not
+refunded (`createPurchaseReportToken` in `src/lib/custom-report/link.ts`, checked by
+`reportLinkOpens` in `link-access.ts`). A refund closes that buyer's link even when another buyer
+of the same bank has paid. Links already sent, one per bank per day, keep working until they
+expire (90 days) under the old rule. No migration: the payment state is the existing `leads`
+columns `paid_at` and `refunded_at`.
+
 **Institution pages with fewer than 5 verified fees stay out of search.** James, 2026-10-20,
 on #1043: keep fee-less and thin institution pages out of search until they have fees, rather
 than index pages that carry only financial data. A page with fewer than

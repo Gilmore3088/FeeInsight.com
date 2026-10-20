@@ -113,7 +113,7 @@ export default async function PayReportPage({ params, searchParams }: PageProps)
 
   const price = formatUsd(lead.quoteCents);
   const paid = Boolean(lead.paidAt) || (await stripeConfirmsPayment(query.paid, lead.id));
-  const reportUrl = paid ? privateReportUrl(institution.id) : null;
+  const reportUrl = paid ? privateReportUrl(institution.id, lead.id) : null;
   // Checked on every unpaid view (and again at checkout): no payment for a thin market.
   const buyable = paid || (await checkInstitutionReport({ institutionId: institution.id, institutionName: null })).status === "ready";
   // Puts the request back in James's queue (owed a reply), so the page's "we have been told" is true.
