@@ -613,6 +613,17 @@ export const UNCHECKED_WAKE_STATE_BATCH = 8;
 export const UNCHECKED_WAKE_BUDGET_MS = 120_000;
 /** No batch's statement timeout goes above the database's own 2-minute limit (#2424). */
 export const UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS = 120_000;
+/**
+ * The wake UPDATE touches a few lane rows by key, so it needs seconds, not the read's budget. It
+ * gets its own statement timeout, re-fitted to what the batch has left after the read, and a short
+ * lock timeout so a lane row held by a running pass fails this batch fast instead of waiting
+ * (#2498 review).
+ */
+export const UNCHECKED_WAKE_UPDATE_TIMEOUT_MS = 10_000;
+export const UNCHECKED_WAKE_LOCK_TIMEOUT_MS = 5_000;
+/** Postgres reads a statement_timeout of 0 as "no limit", so a spent budget still sets 1 ms. */
+const MIN_POSTGRES_TIMEOUT_MS = 1;
+
 /** A batch is not started with less than this left: it would only time out. */
 export const UNCHECKED_WAKE_MIN_BATCH_MS = 5_000;
 
@@ -680,10 +691,19 @@ export async function wakeLanesWithUncheckedLiveFees(
 
 /** One batch's read and wake, in one transaction whose statements stop when the budget does. */
 async function wakeUncheckedBatch(batch: readonly string[], timeoutMs: number): Promise<number> {
+  const batchDeadlineMs = Date.now() + timeoutMs;
   return withTransaction(async (tx) => {
     await tx`SELECT set_config('statement_timeout', ${String(Math.floor(timeoutMs))}, true)`;
     const states = (await uncheckedLiveFeeStates(batch, false, tx)).map((row) => String(row.state_code));
     if (states.length === 0) return 0;
+    const updateTimeoutMs = Math.max(
+      MIN_POSTGRES_TIMEOUT_MS,
+      Math.floor(Math.min(batchDeadlineMs - Date.now(), UNCHECKED_WAKE_UPDATE_TIMEOUT_MS)),
+    );
+    await tx`
+      SELECT set_config('statement_timeout', ${String(updateTimeoutMs)}, true),
+             set_config('lock_timeout', ${String(UNCHECKED_WAKE_LOCK_TIMEOUT_MS)}, true)
+    `;
     const updated = await tx`
       UPDATE public.agent_state_lanes
          SET next_run_after = NOW(),

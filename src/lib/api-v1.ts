@@ -18,7 +18,7 @@ export const API_V1_RATE_LIMIT_ROUTE = "api.v1";
  * The API's version, shown in /api/v1/openapi.json and the connector's serverInfo. Bump it in any PR
  * that changes the API; scripts/ci-guards.sh api-docs-kill enforces that (James, 2026-10-17).
  */
-export const API_VERSION = "1.14.0";
+export const API_VERSION = "1.14.1";
 
 export const API_ERROR_CODES = [
   "account_context_required",

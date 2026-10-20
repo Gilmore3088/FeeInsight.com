@@ -33,6 +33,21 @@ describe("isVisiblePath", () => {
     }
   });
 
+  it("treats the page-data loaders, brand kit and proxy that change what visitors see as visible (#2508 review)", () => {
+    for (const path of [
+      "src/lib/public-stats.ts",
+      "src/lib/guides/catalog-consumer.ts",
+      "src/lib/charts/style.ts",
+      "src/brand/tokens/colors.ts",
+      "src/proxy.ts",
+    ]) {
+      expect(isVisiblePath(path), path).toBe(true);
+    }
+    for (const path of ["src/lib/public-stats.test.ts", "src/lib/guides/guides.test.ts", "src/lib/public-read-budget.ts"]) {
+      expect(isVisiblePath(path), path).toBe(false);
+    }
+  });
+
   it("treats libraries, agents, scripts, docs, tests, migrations and tooling as not visible", () => {
     for (const path of [
       "src/lib/fees.ts",

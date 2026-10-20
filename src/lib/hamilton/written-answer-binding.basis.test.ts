@@ -163,6 +163,18 @@ describe("the basis line when two groups share a figure", () => {
     expect(indexBasisFor("National overdraft median: $29, below Texas.", stats)).toBe(national);
   });
 
+  it("reads title-case \"National Median\" and \"U.S. National median\" as the national index (#975)", () => {
+    const TEXAS_32 = { scope: "filtered", filters: { state: "TX" }, data: [{ category: "overdraft", median: 32, institution_count: 400 }] };
+    const stats = writtenAnswerIndexStats([NATIONAL_29, TEXAS_32]);
+    const national = "Basis: overdraft median from the national index, 3,120 institutions.";
+    expect(indexBasisFor("Overdraft National Median: $29, below Texas.", stats)).toBe(national);
+    expect(indexBasisFor("National Overdraft Median: $29, below Texas.", stats)).toBe(national);
+    expect(indexBasisFor("The U.S. National median for overdraft is $29, below Texas.", stats)).toBe(national);
+    expect(indexBasisFor("First National Bank sits above the Texas overdraft median of $32.", stats)).toBe(
+      "Basis: overdraft median from the index for TX, 400 institutions.",
+    );
+  });
+
   it("does not read West Virginia as Virginia", () => {
     const virginia = writtenAnswerIndexStats([{ scope: "filtered", filters: { state: "VA" }, data: [{ category: "overdraft", median: 29, institution_count: 90 }] }]);
     expect(indexBasisFor("The West Virginia overdraft median is $29.", virginia)).toBeNull();

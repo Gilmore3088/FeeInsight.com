@@ -295,7 +295,7 @@ describe("buildCommitteePacket: executive brief", () => {
         "Overdraft is compared at its highest tier. For any other fee, a peer that publishes several amounts is compared at the median of those amounts; Capital City Bank's own fee at several amounts is shown as a range and not placed. Fees stated as a rate are not in these tables.",
       );
       expect(packet.appendix.find((t) => t.id === "product_details")?.note).toBe(
-        "Overdraft is compared at its highest tier. Any other fee listed here at several amounts is shown as a range and not placed.",
+        "Overdraft is compared at its highest tier. Any other fee listed here at several amounts has one row per amount and is not placed against the peers.",
       );
       expect(packet.appendix.find((t) => t.id === "peer_fee_matrix")?.note).toContain(
         "A range in Capital City Bank's row means its schedule lists several amounts for the fee, so the fee is not placed.",

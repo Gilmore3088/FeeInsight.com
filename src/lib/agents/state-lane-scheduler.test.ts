@@ -54,6 +54,8 @@ import {
   UNCHECKED_WAKE_MIN_BATCH_MS,
   LANE_SYNC_UNCHECKED_DEADLINE_MS,
   UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS,
+  UNCHECKED_WAKE_LOCK_TIMEOUT_MS,
+  UNCHECKED_WAKE_UPDATE_TIMEOUT_MS,
 } from "./state-lane-scheduler";
 import { darwinDueSql } from "./darwin/verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
@@ -782,6 +784,49 @@ describe("state lane scheduler", () => {
       expect(sets).toHaveLength(2);
       expect(sets[0]).toBeLessThanOrEqual(100_000);
       expect(sets[1]).toBeLessThanOrEqual(90_000);
+    });
+
+    it("gives the wake UPDATE a short lock timeout and a statement timeout re-fitted after the read (#2498 review)", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(0);
+      sqlMock.mockImplementation((strings: unknown) => {
+        const text = templateText(strings);
+        if (isSleepingLaneRead(text)) return Promise.resolve([{ state_code: "TX" }]);
+        if (isUncheckedRead(text)) {
+          vi.setSystemTime(Date.now() + 97_000);
+          return Promise.resolve([{ state_code: "TX" }]);
+        }
+        return Promise.resolve(Object.assign([], { count: 1 }));
+      });
+
+      const result = await wakeLanesWithUncheckedLiveFees({ deadlineMs: 100_000 });
+
+      expect(result.woken).toBe(1);
+      const texts = sqlMock.mock.calls.map((entry) => templateText(entry[0]));
+      const updateAt = texts.findIndex((text) => text.includes("UPDATE public.agent_state_lanes"));
+      const refitAt = texts.findIndex((text) => text.includes("set_config('lock_timeout'"));
+      expect(refitAt).toBeGreaterThan(-1);
+      expect(refitAt).toBeLessThan(updateAt);
+      expect(refitAt).toBeGreaterThan(texts.findIndex(isUncheckedRead));
+      const [statementMs, lockMs] = sqlMock.mock.calls[refitAt].slice(1).map(Number);
+      expect(lockMs).toBe(UNCHECKED_WAKE_LOCK_TIMEOUT_MS);
+      expect(statementMs).toBeLessThanOrEqual(3_000);
+      expect(statementMs).toBeGreaterThan(0);
+      expect(UNCHECKED_WAKE_UPDATE_TIMEOUT_MS).toBeLessThan(UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS);
+    });
+
+    it("caps the wake UPDATE's statement timeout when the read was quick", async () => {
+      sqlMock.mockImplementation((strings: unknown) => {
+        const text = templateText(strings);
+        if (isSleepingLaneRead(text)) return Promise.resolve([{ state_code: "TX" }]);
+        if (isUncheckedRead(text)) return Promise.resolve([{ state_code: "TX" }]);
+        return Promise.resolve(Object.assign([], { count: 1 }));
+      });
+
+      await wakeLanesWithUncheckedLiveFees();
+
+      const refit = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("set_config('lock_timeout'"));
+      expect(Number(refit?.[1])).toBe(UNCHECKED_WAKE_UPDATE_TIMEOUT_MS);
     });
 
     it("starts no batch once the time budget is spent and names the states it skipped", async () => {
