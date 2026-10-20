@@ -9,7 +9,7 @@ import {
   getDistrictMetrics,
 } from "@/lib/data-store";
 import { getDistrictEconomicSummary, getBeigeBookThemes } from "@/lib/data-store/fed";
-import { getDistrictFeeRevenue } from "@/lib/data-store/call-reports";
+import { getDistrictFinancialGroups } from "@/lib/data-store/district-financial-summary";
 import { getDistrictComplaintSummary } from "@/lib/data-store/complaints";
 import { getDistrictFeeMedians } from "@/lib/data-store/fee-index";
 import { Breadcrumbs } from "@/components/breadcrumbs";
@@ -17,6 +17,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { timeAgo, formatAmount } from "@/lib/format";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { DistrictTabs } from "./district-tabs";
+import { DistrictFinancialCard } from "./district-financial-card";
 
 export default async function DistrictDetailPage({
   params,
@@ -40,17 +41,18 @@ export default async function DistrictDetailPage({
 
 async function DistrictDetailContent({ districtId }: { districtId: number }) {
   const districtName = DISTRICT_NAMES[districtId] ?? `District ${districtId}`;
-  const [beigeBook, content, indicators, metrics, econSummary, feeRevenue, complaints, themes, feeMedians] = await Promise.all([
+  const [beigeBook, content, indicators, metrics, econSummary, financialGroups, complaints, themes, feeMedians] = await Promise.all([
     getLatestBeigeBook(districtId),
     getDistrictContent(districtId, 15),
     getDistrictIndicators(districtId),
     getDistrictMetrics(),
     getDistrictEconomicSummary(districtId).catch(() => null),
-    getDistrictFeeRevenue(districtId).catch(() => null),
+    getDistrictFinancialGroups(districtId),
     getDistrictComplaintSummary(districtId).catch(() => null),
     getBeigeBookThemes().catch(() => []),
     getDistrictFeeMedians(districtId).catch(() => []),
   ]);
+  const hasFinancials = financialGroups.some((g) => g.status === "reported");
   const districtMetric = metrics.find((m) => m.district === districtId);
   const districtThemes = themes.filter((t: { fed_district: number }) => t.fed_district === districtId);
 
@@ -114,7 +116,7 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
           economy: (
             <div className="space-y-6">
               {/* Economic Summary */}
-              {(econSummary || feeRevenue) && (
+              {(econSummary || hasFinancials) && (
                 <div className="rounded-lg border bg-white dark:bg-white/[0.02]">
                   <div className="px-5 py-3 border-b bg-gray-50/80 dark:bg-white/[0.03]">
                     <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">
@@ -141,17 +143,7 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
                         )}
                       </div>
                     )}
-                    {feeRevenue && (
-                      <div className="rounded-lg border p-3">
-                        <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Fee Revenue</div>
-                        <div className="mb-1">
-                          <span className="text-lg font-bold tabular-nums text-gray-900 dark:text-gray-100">{formatAmount(feeRevenue.total_sc_income)}</span>
-                        </div>
-                        <div className="text-[11px] text-gray-400">
-                          {feeRevenue.institution_count} institutions | avg {formatAmount(feeRevenue.avg_sc_income)}/inst
-                        </div>
-                      </div>
-                    )}
+                    <DistrictFinancialCard groups={financialGroups} />
                   </div>
                 </div>
               )}
