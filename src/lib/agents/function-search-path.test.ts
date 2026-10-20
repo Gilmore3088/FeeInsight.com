@@ -31,12 +31,17 @@ function escape(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** True when the newest migration touching the function pins search_path, by ALTER or definition. */
+/**
+ * True when the newest migration touching the function pins search_path: a definition with the
+ * SET clause, or a signature listed in a DO block that runs ALTER FUNCTION ... SET search_path.
+ */
 function latestPinsSearchPath(name: string, args: string): boolean {
-  const alter = new RegExp(
-    `ALTER FUNCTION (?:IF EXISTS )?public\\.${name}\\(${escape(args)}\\)\\s+SET search_path = public, pg_catalog;`,
-    "i",
-  );
+  const listed = new RegExp(`'public\\.${name}\\(${escape(args)}\\)'`);
+  const alter = {
+    test: (text: string) =>
+      listed.test(text) &&
+      text.includes("ALTER FUNCTION %s SET search_path = public, pg_catalog"),
+  };
   const definition = new RegExp(
     `CREATE OR REPLACE FUNCTION (?:public\\.)?${name}\\s*\\([\\s\\S]*?(?:\\$function\\$|\\$\\$);`,
     "i",
