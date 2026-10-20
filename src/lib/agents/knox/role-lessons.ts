@@ -360,7 +360,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     agent: "knox",
     stage: "publish",
     lesson: "When a name tidy widens to more names, widen the step's due filter in the same change, so every institution holding such a name comes due. A web page's description cell glued after a fee's name (\"Overdraft Fee This fee applies to ...\", \"Dormant Account Fee Applies when ...\") is cut off at the description, never kept as part of the name.",
-    why: "Re-tidy v23 learned to take footnote marks off every category's name, but its due filter still flagged marks only on maintenance names, so \"Dormant fee¹\" and 40 more marked live names were never visited. First Bank of Pike's names carried their description sentences.",
+    why: "Re-tidy v23 learned to take footnote marks off every category's name, but its due filter still flagged marks only on maintenance names, so \"Dormant fee¹\" and 42 more marked live names were never visited (dry run, Oct 20). First Bank of Pike's names, and 14 more at other banks, carried their description sentences.",
     evidence: { issues: [1596, 1917], prs: [], files: ["src/lib/agents/knox/name-retidy.ts"] },
     // The re-tidy runs in Hamilton's publish sweeps, not in extraction, so it stays out of the extraction prompts.
     appliesTo: ["publish-sweeps"],
