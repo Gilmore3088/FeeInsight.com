@@ -85,7 +85,7 @@ describe("proxy", () => {
     const cases: Array<[string, string]> = [
       ["https://feeinsight.com/pricing", "https://feeinsight.com/subscribe"],
       ["https://feeinsight.com/districts", "https://feeinsight.com/research#districts"],
-      ["https://feeinsight.com/waitlist", "https://feeinsight.com/for-institutions#report"],
+      ["https://feeinsight.com/waitlist", "https://feeinsight.com/reports?report=institution#request"],
       ["https://feeinsight.com/consumer", "https://feeinsight.com/for-consumers"],
     ];
     for (const [from, to] of cases) {

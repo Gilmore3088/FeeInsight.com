@@ -1,7 +1,7 @@
 /**
  * What the city table says about the account behind a fee. A schedule line cut mid-sentence
  * ("Truist will charge you an Overdraft Fee, if applicable, of") is not an account condition,
- * so only text that reads as a condition is shown; the verbatim line goes in "Source wording".
+ * so only text that reads as a condition is shown; the verbatim line goes under SOURCE_WORDING.
  * Pure, with no server imports: the client table uses it.
  */
 
@@ -9,7 +9,10 @@
  * Shown when no account has been identified for the fee yet. Not "not stated": the schedule may
  * name the account where our reading has not picked it up.
  */
-export const ACCOUNT_NOT_IDENTIFIED = "Account not identified";
+export const ACCOUNT_NOT_IDENTIFIED = "Account not yet known";
+
+/** The toggle over the schedule's verbatim line (#1953: "Source wording" read as internal jargon). */
+export const SOURCE_WORDING = "The schedule's own words";
 
 /** Words a sentence cannot end on: the line was cut before its point. */
 const DANGLING_END =

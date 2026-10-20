@@ -464,6 +464,29 @@ is a bot wall on every spelling and stays with the paid fetch below; a person's 
 correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
 selected, tried, recovered and failed.
 
+## Pages live fees come from (`live-source-refetch.ts`)
+
+The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
+never looks at which document the bank's live fees cite. When the remembered address moved, or a
+single failure stopped a page being asked for, the page the live fees were read from was never
+fetched again, and superseding works only within one address, so its old copy stayed current
+(#1200: on 20 Oct 2026, 101 such pages at 101 banks, 1,219 live fees, had no copy in 30 days;
+Partner Colorado's and Railway's fee PDFs had answered 403 once in April and were never asked for
+again). After the saved-link pass in every `fetch` step, up to `LIVE_SOURCE_PAGES_PER_STEP` (10)
+pages within `LIVE_SOURCE_BUDGET_MS` (45 s) are fetched: a page live fees cite that is not a
+companion page, not the address the plain fetch asks for, and has no successful copy in
+`LIVE_SOURCE_REFETCH_DAYS` (30), oldest first, then the most live fees. Each goes through
+`fetchAndRecordLink` as a side copy (`keepRemembered`, attempt strategy `fetch.live_source`):
+the copy is stored under the page's own address and supersedes that page's old copy, so the usual
+read, verify, publish and current-copy checks judge the live fees against what the bank serves
+today; the bank's fetch address, failure count, saved link and playbook are left alone. When the
+bank still serves the same bytes, the cited documents' `last_checked_at` moves to now. Retries
+key on the attempt detail's `live_page`: after 1, 3, 7 and then every 30 days of failures in a
+row (`LIVE_SOURCE_RETRY_DAYS`), never given up. A person's locked correction, an offline profile
+and manual review are skipped. `LIVE_SOURCE_REFETCH_LIVE` is on: it fetches only pages live fees
+already come from, as the plain fetch re-fetches every bank's main page monthly. The `fetch`
+step's `live_sources` detail counts pages selected, tried, stored, matched and failed.
+
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
 A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
@@ -602,6 +625,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
+| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |

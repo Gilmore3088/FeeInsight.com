@@ -2,11 +2,13 @@ import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 /**
  * POST /api/pro/report-pdf
  *
- * Accepts: { type: "report", reportId } or { type: "analysis", analysisId }
+ * Accepts: { type: "report", reportId }, { type: "analysis", analysisId } or
+ * { type: "committee_packet", institutionId, yieldFee?, pageSize?: "LETTER" | "A4" }
  * Returns: PDF blob (application/pdf) as download
  *
  * The PDF is rendered only from records loaded on the server: the user's own saved
- * report or analysis, or a published report. Client-supplied report content is never
+ * report or analysis, a published report, or the pricing committee packet reloaded from the
+ * same readers as its screen (the browser sends only the selection). Client-supplied report content is never
  * rendered, so a branded PDF always reflects what Hamilton actually produced.
  *
  * Uses @react-pdf/renderer server-side only.
@@ -25,11 +27,29 @@ import { AnalysisPdfDocument } from "@/components/hamilton/reports/AnalysisPdfDo
 import { getHamiltonReportById } from "@/lib/hamilton/pro-tables";
 import { loadAnalysisRecord } from "@/app/pro/(hamilton)/analyze/actions";
 import { loadPublishedReport } from "@/app/pro/(hamilton)/reports/actions";
+import { resolveHamiltonInstitutionContext } from "@/lib/hamilton/workspace-context";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function recordId(value: unknown): string | null {
   return typeof value === "string" && UUID_PATTERN.test(value) ? value : null;
+}
+
+function feeKey(value: unknown): string | null {
+  return typeof value === "string" && /^[a-z0-9_]{1,64}$/.test(value) ? value : null;
+}
+
+function pdfResponse(buffer: Buffer | Uint8Array, filename: string): NextResponse {
+  const uint8 = new Uint8Array(buffer);
+  return new NextResponse(uint8, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/pdf",
+      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Length": uint8.byteLength.toString(),
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 async function handlePOST(req: NextRequest): Promise<NextResponse> {
@@ -56,6 +76,41 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
   }
 
   const pdfType = (body.type as string) || "report";
+
+  // ── Pricing committee packet ─────────────────────────────────────────────
+  if (pdfType === "committee_packet") {
+    const instId = typeof body.institutionId === "number" || typeof body.institutionId === "string" ? String(body.institutionId) : null;
+    if (!instId || !/^\d{1,12}$/.test(instId)) {
+      return NextResponse.json({ error: "institutionId is required" }, { status: 400 });
+    }
+    // The same institution rules as the packet screen; nothing is saved as the selection.
+    const { institution } = await resolveHamiltonInstitutionContext({ userId: user.id, instId, intent: "reports", persistUrlSelection: false })
+      .catch(() => ({ institution: null }));
+    if (!institution || String(institution.id) !== instId) {
+      return NextResponse.json({ error: "Institution not found" }, { status: 404 });
+    }
+    const pageSize = body.pageSize === "A4" ? "A4" : "LETTER";
+    // Loaded on demand: the packet's readers stay out of the saved-report branches' import graph.
+    const { loadCommitteePacket } = await import("@/lib/hamilton/committee-packet-data");
+    const packet = await loadCommitteePacket({
+      userId: user.id,
+      institutionId: institution.id,
+      institutionName: institution.name,
+      yieldFee: feeKey(body.yieldFee),
+    });
+    if (!packet) {
+      return NextResponse.json({ error: "The packet could not be read" }, { status: 503 });
+    }
+    try {
+      const { CommitteePacketPdf } = await import("@/components/hamilton/reports/CommitteePacketPdf");
+      const element = createElement(CommitteePacketPdf, { packet, pageSize }) as unknown as ReactElement<DocumentProps, string | JSXElementConstructor<unknown>>;
+      const buffer = await renderToBuffer(element);
+      return pdfResponse(buffer, `pricing-committee-brief-${packet.generatedAt.slice(0, 10)}${pageSize === "A4" ? "-a4" : ""}.pdf`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return NextResponse.json({ error: `PDF generation failed: ${message}` }, { status: 500 });
+    }
+  }
 
   // ── Analysis branch ──────────────────────────────────────────────────────
   if (pdfType === "analysis") {

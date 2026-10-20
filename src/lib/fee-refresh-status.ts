@@ -8,7 +8,7 @@
  *   by a retry or the next publish run. Readers memoise it for a minute.
  * - The public pages' read caches (Next cache tags): cleared after the action commits, and expire
  *   within the hour regardless.
- * - Hamilton Pro: reads the live fee list and the national index, so it has reached the change
+ * - Hamilton: reads the live fee list and the national index, so it has reached the change
  *   only when both have.
  *
  * The fee list is a view, so it cannot lag the commit; it is still read rather than assumed.
@@ -136,7 +136,7 @@ function pagesStatus(input: RefreshInput, actionAt: number, now: number): Surfac
 }
 
 function proStatus(feeList: SurfaceStatus, index: SurfaceStatus): SurfaceStatus {
-  const base = { surface: "pro" as const, label: "Hamilton Pro" };
+  const base = { surface: "pro" as const, label: "Hamilton" };
   if (feeList.state === "failed" || index.state === "failed") {
     return { ...base, state: "failed", detail: "Waits on the fee list and the national index (see their status)." };
   }

@@ -53,6 +53,7 @@ vi.mock("@/lib/agents/magellan/fetch", async (original) => ({
 }));
 vi.mock("@/lib/agents/magellan/address-variant-fetch", () => ({ runAddressVariantFetch: async () => null }));
 vi.mock("@/lib/agents/magellan/saved-link-fetch", () => ({ runSavedLinkFetch: async () => null }));
+vi.mock("@/lib/agents/magellan/live-source-refetch", () => ({ runLiveSourceRefetch: async () => null }));
 
 import { executeQueuedAgentRuns, startAgentRun } from "./run-store";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";

@@ -24,11 +24,8 @@ const HEADINGS: ContactHeadings = {
   },
 };
 
-export default async function ContactPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
+/** Prerendered once for everyone: the form reads the query in the browser (#1811). */
+export default function ContactPage() {
   return (
     <div className="mx-auto max-w-2xl px-6 py-14">
       <div className="flex items-center justify-center gap-2 mb-4 sm:justify-start">
@@ -38,7 +35,7 @@ export default async function ContactPage({
         </span>
       </div>
 
-      <ContactForm searchParamsPromise={searchParams} headings={HEADINGS} />
+      <ContactForm headings={HEADINGS} />
 
       <div className="mt-10 rounded-xl border border-border bg-paper/50 px-6 py-5">
         <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-ink-muted mb-2">

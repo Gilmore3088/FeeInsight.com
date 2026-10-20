@@ -14,6 +14,7 @@ import {
   type PaidMessageCreator,
   type PaidPassResult,
   type PaidStepOptions,
+  providerRefusalSql,
 } from "@/lib/agents/paid-pass";
 import { BUSINESS_SCHEDULE_RESTORED_KIND, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -719,6 +720,7 @@ async function selectReviewCandidates(
               AND done.strategy = $4
               AND done.strategy_version = $5
               AND done.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
+              AND NOT ${providerRefusalSql("done")}
          )
          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
        ORDER BY rel.created_at ASC, fr.fee_raw_id ASC

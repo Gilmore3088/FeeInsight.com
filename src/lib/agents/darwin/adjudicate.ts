@@ -13,6 +13,7 @@ import {
   type PaidMessageCreator,
   type PaidPassResult,
   type PaidStepOptions,
+  providerRefusalSql,
 } from "@/lib/agents/paid-pass";
 import { CANONICAL_KEY_MAP, DISPLAY_NAMES, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
@@ -273,6 +274,7 @@ async function selectCandidates(db: SqlTag, scan: number, stateCode?: string, st
                 AND done.strategy = ${adjudicateStrategy}
                 AND done.input_fingerprint = cm.input_fingerprint
                 AND done.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
+                AND NOT ${providerRefusalSql("done")}
                 AND (done.strategy_version >= ${version} OR done.outcome <> 'evidence_mismatch')
            )
          ORDER BY fr.fee_raw_id, cm.created_at DESC

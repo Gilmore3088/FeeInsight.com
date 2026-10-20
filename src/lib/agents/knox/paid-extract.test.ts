@@ -8,6 +8,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 
 import { KNOX_RULES_STRATEGY } from "./specialists";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
+import { providerRefusalSql } from "@/lib/agents/paid-pass";
 import {
   groundPaidRow,
   KNOX_PAID_FLAG,
@@ -337,6 +338,7 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(query).toContain(") AS no_fee_read_id");
     expect(query).toContain("prior.outcome = 'no_candidates'");
     expect(query).toContain("found.yield_count > 0");
+    expect(query).toContain(`AND NOT ${providerRefusalSql("paid")}`);
   });
 
   it("selects without calling the model on a dry run", async () => {

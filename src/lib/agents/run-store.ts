@@ -62,6 +62,7 @@ import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
 import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
+import { runLiveSourceRefetch, type RunLiveSourceRefetchResult } from "@/lib/agents/magellan/live-source-refetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
@@ -581,6 +582,22 @@ async function executeAgenticStep(
           console.error("Saved link fetch failed:", error);
         }
       }
+      // Pages live fees come from that nothing else fetches any more (their bank's address moved,
+      // or one failure long ago stopped it), oldest first (#1200). Free; never fails the step.
+      let liveSources: RunLiveSourceRefetchResult | null = null;
+      if (run.runKind !== "dry_run") {
+        try {
+          liveSources = await runLiveSourceRefetch({
+            db: sql,
+            fetchImpl: feeSourceFetch,
+            runId: run.id,
+            stepId: step.id,
+            institutionId: numericRunParam(params, ["institution_id"]) ?? null,
+          });
+        } catch (error) {
+          console.error("Live source refetch failed:", error);
+        }
+      }
       return {
         status: "completed",
         summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
@@ -605,6 +622,18 @@ async function executeAgenticStep(
                 switch_live: savedLinks.live,
                 results: savedLinks.results.slice(0, 10),
                 would_fetch: savedLinks.wouldFetch,
+              }
+            : null,
+          live_sources: liveSources
+            ? {
+                selected: liveSources.selected,
+                tried: liveSources.tried,
+                stored: liveSources.stored,
+                matched: liveSources.matched,
+                failed: liveSources.failed,
+                switch_live: liveSources.live,
+                results: liveSources.results.slice(0, 10),
+                would_fetch: liveSources.wouldFetch,
               }
             : null,
           selected_institutions: fetched.selected,
@@ -1871,6 +1900,7 @@ async function executeAgenticStep(
           },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
+          refresh_copy_moved_page: refreshCopy.movedPage ?? 0,
           refresh_copy_skipped: refreshCopy.skipped,
           refresh_copy_samples: refreshCopy.samples.slice(0, 10),
           current_copy: {

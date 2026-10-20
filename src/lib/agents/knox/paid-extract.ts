@@ -14,6 +14,7 @@ import {
   type PaidMessageCreator,
   type PaidPassResult,
   type PaidStepOptions,
+  providerRefusalSql,
 } from "@/lib/agents/paid-pass";
 import {
   insertCandidate,
@@ -381,6 +382,7 @@ async function selectPaidTexts(db: SqlTag, limit: number, stateCode?: string): P
               AND paid.input_fingerprint = adt.text_hash
               AND paid.strategy = ${paidStrategy}
               AND paid.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
+              AND NOT ${providerRefusalSql("paid")}
          )
          -- An older copy of a page whose current copy has a text is history: the paid reader
          -- reads the current copy, as the free reader does.

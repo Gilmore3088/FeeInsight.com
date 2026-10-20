@@ -147,7 +147,7 @@ describe("applying a binding to the answer view", () => {
   });
 
   it("leaves a legacy answer with no binding exactly as it was", () => {
-    expect(applyNarrativeBinding(sections, null)).toEqual({ sections, reading: [], notes: [] });
+    expect(applyNarrativeBinding(sections, null)).toEqual({ sections, reading: [], notes: [], basis: {} });
     expect(withoutOmitted(sections, undefined)).toBe(sections);
   });
 

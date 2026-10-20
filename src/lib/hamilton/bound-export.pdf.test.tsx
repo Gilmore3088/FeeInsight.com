@@ -43,7 +43,7 @@ describe("bound answer export parity", () => {
   it("matches the screen's sections: supported text inline, reading apart, left-out sentence gone", () => {
     const shown = exportedAnswer(analysis);
     const screen = applyNarrativeBinding(analysis, binding);
-    expect(shown).toEqual({ hamiltonView: screen.sections.hamiltonView, whatThisMeans: screen.sections.whatThisMeans, whyItMatters: screen.sections.whyItMatters, reading: screen.reading });
+    expect(shown).toEqual({ hamiltonView: screen.sections.hamiltonView, whatThisMeans: screen.sections.whatThisMeans, whyItMatters: screen.sections.whyItMatters, reading: screen.reading, readingBasis: screen.basis });
     expect(shown.hamiltonView).toBe(supported);
     expect(shown.whatThisMeans).toBe("That is the highest in its group.");
     expect(shown.reading).toEqual([reading]);

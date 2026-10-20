@@ -77,4 +77,14 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-15",
   },
+  {
+    id: "issue-1200-follow-moved-pages",
+    agent: "hamilton",
+    stage: "publish",
+    lesson: "When the page a live fee was read from stops answering at its own address, move the fee to the bank's newest current document that prints the same line (same category, amount, audience, product and name), in place, instead of skipping that line as a duplicate. A fee found again on a newer document should cite the newer document.",
+    why: "A line found again on a newer document was skipped as 'Identical fee already published', and the live fee kept citing the old copy. Fees only followed a newer copy of the same address, so when a bank moved its schedule to a new page the live fees stayed on the old one. On Oct 20, 86 live fees at 17 banks cited a page with no copy in 30 days while a newer document printed the same line; 20 of 20 sampled were on the newer document's own line.",
+    evidence: { issues: [1200], prs: [2463], files: ["docs/project/findings/2026-10-20-live-fees-stay-on-moved-pages.md", "src/lib/agents/hamilton/refresh-copy.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
