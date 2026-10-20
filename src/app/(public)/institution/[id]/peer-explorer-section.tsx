@@ -124,7 +124,7 @@ export function PeerExplorerSection({
         <summary className="inline-flex min-h-11 cursor-pointer items-center font-medium text-ink">How peers are chosen and counted</summary>
         <ul className="mt-1 list-disc space-y-1 pl-5 text-left">
           <li>Every set keeps the institution&apos;s own charter: banks against banks, credit unions against credit unions.</li>
-          <li>The set shown first is the narrowest that has a peer median for at least 80% of the institution&apos;s own compared fees. When none does, it is the set with the most.</li>
+          <li>The set shown first is the first in the list with a peer median for each overdraft and monthly maintenance fee this institution publishes. If none has them all, it is the set with the most.</li>
           <li>Closest in assets takes the institutions nearest its total assets among those that publish fees.</li>
           <li>Home metro counts institutions with a branch in the metro where it has the most branches (FDIC Summary of Deposits, NCUA).</li>
           <li>State and Fed district count institutions headquartered there. Size uses its asset-size band.</li>
