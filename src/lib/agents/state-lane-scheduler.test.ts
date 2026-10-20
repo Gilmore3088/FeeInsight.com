@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { sqlMock, withTransactionMock, startAgentRunMock, syncStateLaneProfilesMock } = vi.hoisted(() => ({
   // `sql.unsafe` fragments come back as their text, so a test can read them in the call's values.
@@ -51,6 +51,9 @@ import {
   wakeLanesWithPendingSecondLooks,
   wakeLanesWithUncheckedLiveFees,
   UNCHECKED_WAKE_STATE_BATCH,
+  UNCHECKED_WAKE_MIN_BATCH_MS,
+  LANE_SYNC_UNCHECKED_DEADLINE_MS,
+  UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS,
 } from "./state-lane-scheduler";
 import { darwinDueSql } from "./darwin/verify";
 import { CATEGORY_GUARD_VERSION } from "@/lib/fee-category-guard";
@@ -662,6 +665,17 @@ describe("state lane scheduler", () => {
     const isSleepingLaneRead = (text: string) => text.includes("FROM public.agent_state_lanes") && !text.includes("UPDATE");
     const isUncheckedRead = (text: string) => text.includes("rechecked AS");
     const states = (count: number) => Array.from({ length: count }, (_, i) => `S${String(i).padStart(2, "0")}`);
+    const timeoutSets = () => sqlMock.mock.calls
+      .filter((entry) => templateText(entry[0]).includes("set_config('statement_timeout'"))
+      .map((entry) => Number(entry[1]));
+
+    beforeEach(() => {
+      withTransactionMock.mockImplementation((work: (tx: typeof sqlMock) => unknown) => work(sqlMock));
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
     it("reads only sleeping lanes' states, in batches, so each read fits inside the statement timeout", async () => {
       const sleeping = states(UNCHECKED_WAKE_STATE_BATCH * 2 + 1);
@@ -680,7 +694,7 @@ describe("state lane scheduler", () => {
         const batch = read.slice(1).find(Array.isArray) as string[];
         expect(batch.length).toBeLessThanOrEqual(UNCHECKED_WAKE_STATE_BATCH);
       }
-      expect(result).toEqual({ woken: 3, checkedStates: sleeping.length, failedStates: [], error: null });
+      expect(result).toEqual({ woken: 3, checkedStates: sleeping.length, failedStates: [], skippedStates: [], error: null });
     });
 
     it("probes once per institution and once per document, never once per live fee", async () => {
@@ -745,6 +759,81 @@ describe("state lane scheduler", () => {
       const result = await runNationwideLaneSync({ runId: 77, stepId: 701 });
       expect(result.uncheckedError).toBeNull();
       expect(sqlMock.mock.calls.some((entry) => templateText(entry[0]).includes("'step.warning'"))).toBe(false);
+    });
+
+    it("fits each batch's statement timeout to the time left and keeps the normal path unchanged", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(0);
+      const sleeping = states(UNCHECKED_WAKE_STATE_BATCH * 2);
+      sqlMock.mockImplementation((strings: unknown) => {
+        const text = templateText(strings);
+        if (isSleepingLaneRead(text)) return Promise.resolve(sleeping.map((state_code) => ({ state_code })));
+        if (isUncheckedRead(text)) {
+          vi.setSystemTime(Date.now() + 10_000);
+          return Promise.resolve([]);
+        }
+        return Promise.resolve(Object.assign([], { count: 0 }));
+      });
+
+      const result = await wakeLanesWithUncheckedLiveFees({ deadlineMs: 100_000 });
+
+      expect(result).toEqual({ woken: 0, checkedStates: sleeping.length, failedStates: [], skippedStates: [], error: null });
+      const sets = timeoutSets();
+      expect(sets).toHaveLength(2);
+      expect(sets[0]).toBeLessThanOrEqual(100_000);
+      expect(sets[1]).toBeLessThanOrEqual(90_000);
+    });
+
+    it("starts no batch once the time budget is spent and names the states it skipped", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(0);
+      const sleeping = states(UNCHECKED_WAKE_STATE_BATCH * 3);
+      sqlMock.mockImplementation((strings: unknown, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (isSleepingLaneRead(text)) return Promise.resolve(sleeping.map((state_code) => ({ state_code })));
+        if (isUncheckedRead(text)) {
+          // The first read runs into its fitted statement timeout and uses the whole budget.
+          vi.setSystemTime(Date.now() + 60_000);
+          const batch = values.find(Array.isArray) as string[];
+          if (batch.includes("S00")) return Promise.reject(new Error("canceling statement due to statement timeout"));
+          return Promise.resolve([]);
+        }
+        return Promise.resolve(Object.assign([], { count: 0 }));
+      });
+
+      const result = await wakeLanesWithUncheckedLiveFees({ deadlineMs: 60_000 + UNCHECKED_WAKE_MIN_BATCH_MS - 1 });
+
+      const reads = sqlMock.mock.calls.filter((entry) => isUncheckedRead(templateText(entry[0])));
+      expect(reads).toHaveLength(1);
+      expect(result.failedStates).toEqual(sleeping.slice(0, UNCHECKED_WAKE_STATE_BATCH));
+      expect(result.skippedStates).toEqual(sleeping.slice(UNCHECKED_WAKE_STATE_BATCH));
+      expect(result.checkedStates).toBe(0);
+    });
+
+    it("stops the lane sync's unchecked wake inside its deadline and warns which states were not checked", async () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(0);
+      const sleeping = states(UNCHECKED_WAKE_STATE_BATCH * 2);
+      sqlMock.mockImplementation((strings: unknown) => {
+        const text = templateText(strings);
+        if (isSleepingLaneRead(text)) return Promise.resolve(sleeping.map((state_code) => ({ state_code })));
+        if (isUncheckedRead(text)) {
+          vi.setSystemTime(LANE_SYNC_UNCHECKED_DEADLINE_MS);
+          return Promise.resolve([]);
+        }
+        return Promise.resolve(Object.assign([], { count: 0 }));
+      });
+
+      const result = await runNationwideLaneSync({ runId: 77, stepId: 701 });
+
+      expect(timeoutSets()[0]).toBeLessThanOrEqual(Math.min(LANE_SYNC_UNCHECKED_DEADLINE_MS, UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS));
+      expect(result.uncheckedError).toBeNull();
+      expect(result.uncheckedSkippedStates).toEqual(sleeping.slice(UNCHECKED_WAKE_STATE_BATCH));
+      const warning = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("'step.warning'"));
+      expect(warning).toBeDefined();
+      const message = warning?.slice(1).find((value) => typeof value === "string" && value.includes("not checked this run"));
+      expect(message).toBeDefined();
+      for (const state of sleeping.slice(UNCHECKED_WAKE_STATE_BATCH)) expect(message).toContain(state);
     });
   });
 });

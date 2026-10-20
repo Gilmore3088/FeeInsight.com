@@ -473,8 +473,8 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
  * timeout on the nationwide read (#2424). The rules re-check fingerprint is one value shared by
  * every attempt at a version, so its checked documents are read once and anti-joined.
  */
-function uncheckedLiveFeeStates(stateCodes: readonly string[], firstOnly = false) {
-  return sql<{ state_code: string }[]>`
+function uncheckedLiveFeeStates(stateCodes: readonly string[], firstOnly = false, db: typeof sql = sql) {
+  return db<{ state_code: string }[]>`
     WITH live AS (
       SELECT fp.institution_id, upper(btrim(inst.state_code)) AS state_code, fp.fee_published_id,
              fr.source, fr.source_document_id, fr.outlier_flags, fp.rolled_back_at
@@ -526,7 +526,7 @@ function uncheckedLiveFeeStates(stateCodes: readonly string[], firstOnly = false
               WHERE rechecked.institution_id = docs.institution_id
                 AND rechecked.source_document_id = docs.source_document_id
            )
-     ${firstOnly ? sql`LIMIT 1` : sql``}
+     ${firstOnly ? db`LIMIT 1` : db``}
   `;
 }
 
@@ -605,6 +605,16 @@ export async function wakeLanesAfterRecovery(deploy: string | null = currentDepl
 
 /** States per unchecked-live-fee read, so each read ends well inside the statement timeout (#2424). */
 export const UNCHECKED_WAKE_STATE_BATCH = 8;
+/**
+ * The wake's own time budget when the caller sets no deadline. Each batch's statement timeout is
+ * fitted to what is left of it, so several slow batches can never add up past the route's
+ * maxDuration (PR #2487 review).
+ */
+export const UNCHECKED_WAKE_BUDGET_MS = 120_000;
+/** No batch's statement timeout goes above the database's own 2-minute limit (#2424). */
+export const UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS = 120_000;
+/** A batch is not started with less than this left: it would only time out. */
+export const UNCHECKED_WAKE_MIN_BATCH_MS = 5_000;
 
 export interface UncheckedLaneWake {
   woken: number;
@@ -612,6 +622,8 @@ export interface UncheckedLaneWake {
   checkedStates: number;
   /** States whose read failed: their lanes were not woken this hour, whatever they hold. */
   failedStates: string[];
+  /** States never read because the time budget was spent: not checked this run. */
+  skippedStates: string[];
   /** The first read error, or null when every read finished. Never reported as "nothing due". */
   error: string | null;
 }
@@ -627,7 +639,9 @@ function errorText(error: unknown): string {
  * that could be woken are read, UNCHECKED_WAKE_STATE_BATCH states at a time, so one slow
  * batch neither hides the others' wakes nor turns into "woke 0" (#2424).
  */
-export async function wakeLanesWithUncheckedLiveFees(): Promise<UncheckedLaneWake> {
+export async function wakeLanesWithUncheckedLiveFees(
+  { deadlineMs = Date.now() + UNCHECKED_WAKE_BUDGET_MS }: { deadlineMs?: number } = {},
+): Promise<UncheckedLaneWake> {
   let sleeping: string[];
   try {
     const rows = await sql<{ state_code: string }[]>`
@@ -639,31 +653,46 @@ export async function wakeLanesWithUncheckedLiveFees(): Promise<UncheckedLaneWak
     sleeping = rows.map((row) => String(row.state_code));
   } catch (error) {
     console.error("wakeLanesWithUncheckedLiveFees lane read failed:", error);
-    return { woken: 0, checkedStates: 0, failedStates: [], error: errorText(error) };
+    return { woken: 0, checkedStates: 0, failedStates: [], skippedStates: [], error: errorText(error) };
   }
   let woken = 0;
   const failedStates: string[] = [];
+  let skippedStates: string[] = [];
   let firstError: string | null = null;
   for (let index = 0; index < sleeping.length; index += UNCHECKED_WAKE_STATE_BATCH) {
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs < UNCHECKED_WAKE_MIN_BATCH_MS) {
+      skippedStates = sleeping.slice(index);
+      break;
+    }
     const batch = sleeping.slice(index, index + UNCHECKED_WAKE_STATE_BATCH);
     try {
-      const states = (await uncheckedLiveFeeStates(batch)).map((row) => String(row.state_code));
-      if (states.length === 0) continue;
-      const updated = await sql`
-        UPDATE public.agent_state_lanes
-           SET next_run_after = NOW(),
-               updated_at = NOW()
-         WHERE state_code = ANY(${states}::text[])
-           AND next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
-      `;
-      woken += updated.count;
+      woken += await wakeUncheckedBatch(batch, Math.min(remainingMs, UNCHECKED_WAKE_STATEMENT_TIMEOUT_MS));
     } catch (error) {
       console.error(`wakeLanesWithUncheckedLiveFees failed for ${batch.join(", ")}:`, error);
       failedStates.push(...batch);
       firstError = firstError ?? errorText(error);
     }
   }
-  return { woken, checkedStates: sleeping.length - failedStates.length, failedStates, error: firstError };
+  const checkedStates = sleeping.length - failedStates.length - skippedStates.length;
+  return { woken, checkedStates, failedStates, skippedStates, error: firstError };
+}
+
+/** One batch's read and wake, in one transaction whose statements stop when the budget does. */
+async function wakeUncheckedBatch(batch: readonly string[], timeoutMs: number): Promise<number> {
+  return withTransaction(async (tx) => {
+    await tx`SELECT set_config('statement_timeout', ${String(Math.floor(timeoutMs))}, true)`;
+    const states = (await uncheckedLiveFeeStates(batch, false, tx)).map((row) => String(row.state_code));
+    if (states.length === 0) return 0;
+    const updated = await tx`
+      UPDATE public.agent_state_lanes
+         SET next_run_after = NOW(),
+             updated_at = NOW()
+       WHERE state_code = ANY(${states}::text[])
+         AND next_run_after > NOW() + ${STATE_LANE_BACKLOG_RETRY_MINUTES} * INTERVAL '1 minute'
+    `;
+    return updated.count;
+  });
 }
 
 /**
@@ -1251,6 +1280,13 @@ export const LANE_SYNC_SOURCE = "atlas.lane_sync";
 export const LANE_SYNC_STEP_KEY = "lane-sync";
 /** The `check` on the lane-sync step's warning when the unchecked-live-fee read fails. */
 export const UNCHECKED_WAKE_CHECK = "atlas.lane_sync.unchecked_wake";
+/**
+ * The unchecked-live-fee wake stops starting batches this long after the sync starts. The route's
+ * maxDuration is 300 s; the rest is for the second-look wake, the priority refresh and recording
+ * the step, so a run of slow batches can no longer get the function killed before its warning is
+ * written (PR #2487 review).
+ */
+export const LANE_SYNC_UNCHECKED_DEADLINE_MS = 150_000;
 
 export interface NationwideLaneSyncResult {
   profiles: StateLaneMemorySyncResult;
@@ -1260,6 +1296,8 @@ export interface NationwideLaneSyncResult {
   uncheckedError: string | null;
   /** States whose unchecked-live-fee read failed, so their lanes were not woken. */
   uncheckedFailedStates: string[];
+  /** States not read because the sync's time budget was spent: not checked this run. */
+  uncheckedSkippedStates: string[];
   /** Lanes woken because a bank has a pending second look since its last fetch. */
   secondLookWoken: number;
   priorities: LanePriorityRefresh;
@@ -1290,8 +1328,9 @@ export async function runNationwideLaneSync(
   ledger?: { runId: number; stepId?: number | null },
 ): Promise<NationwideLaneSyncResult> {
   const ms: Record<string, number> = {};
+  const deadlineMs = Date.now() + LANE_SYNC_UNCHECKED_DEADLINE_MS;
   const profiles = await timed(ms, "profiles", () => syncStateLaneProfiles(sql));
-  const unchecked = await timed(ms, "unchecked", () => wakeLanesWithUncheckedLiveFees());
+  const unchecked = await timed(ms, "unchecked", () => wakeLanesWithUncheckedLiveFees({ deadlineMs }));
   if (unchecked.error && ledger) {
     const notRead = unchecked.failedStates.length > 0 ? ` for ${unchecked.failedStates.join(", ")}` : "";
     await recordStepWarning(sql, {
@@ -1303,6 +1342,16 @@ export async function runNationwideLaneSync(
       error: unchecked.error,
     });
   }
+  if (unchecked.skippedStates.length > 0 && ledger) {
+    await recordStepWarning(sql, {
+      runId: ledger.runId,
+      stepId: ledger.stepId,
+      check: UNCHECKED_WAKE_CHECK,
+      what: `Unchecked live fee wake for ${unchecked.skippedStates.join(", ")}`,
+      outcome: "not checked this run, those lanes were not woken",
+      error: `time budget of ${LANE_SYNC_UNCHECKED_DEADLINE_MS / 1000} s spent`,
+    });
+  }
   const secondLookWoken = await timed(ms, "second_looks", () => wakeLanesWithPendingSecondLooks());
   const priorities = await timed(ms, "priorities", () => refreshLanePriorities());
   if (priorities.error) await recordLanePriorityRefreshFailure(priorities.error, []);
@@ -1311,6 +1360,7 @@ export async function runNationwideLaneSync(
     uncheckedWoken: unchecked.woken,
     uncheckedError: unchecked.error,
     uncheckedFailedStates: unchecked.failedStates,
+    uncheckedSkippedStates: unchecked.skippedStates,
     secondLookWoken,
     priorities,
     ms: { profiles: ms.profiles ?? 0, unchecked: ms.unchecked ?? 0, second_looks: ms.second_looks ?? 0, priorities: ms.priorities ?? 0 },
