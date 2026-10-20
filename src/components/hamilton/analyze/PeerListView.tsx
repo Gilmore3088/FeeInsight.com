@@ -3,7 +3,7 @@
 import { hamiltonInstitutionHref, publicInstitutionHref } from "@/lib/hamilton/context-link";
 import { useMemo, useRef, useState } from "react";
 import { createPeerSet } from "@/app/pro/(hamilton)/settings/actions";
-import { formatPeerAssets, peerListPageOffsets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
+import { formatAssetBound, formatPeerAssets, peerListPageOffsets, type PeerListResponse, type PeerListContinuation } from "@/lib/hamilton/peer-list";
 import { peerListCsv, peerListCsvFilename } from "@/lib/hamilton/peer-list-export";
 import { defaultPeerSetName } from "@/lib/hamilton/peer-set-name";
 import { fmtMoney } from "@/components/hamilton/memo/memo";
@@ -159,7 +159,7 @@ function SelectablePeerList({ response, saveContext, onPage, paging = false, sav
       </div>
       {criteria ? (
         <details className="rounded-lg border border-warm-300 bg-warm-50 px-4 py-3">
-          <summary className="cursor-pointer text-sm font-semibold text-warm-900">Selection criteria: {criteria.charterType === "credit_union" ? "credit unions" : criteria.charterType === "bank" ? "banks" : "both types"} · {criteria.states.join(" / ") || "nationwide"}{criteria.minAssets ? ` · ${criteria.minAssets.inclusive ? "≥" : ">"} ${formatPeerAssets(criteria.minAssets.value)}` : ""}{criteria.maxAssets ? ` · ${criteria.maxAssets.inclusive ? "≤" : "<"} ${formatPeerAssets(criteria.maxAssets.value)}` : ""}{criteria.peerSetLabel ? ` · ${criteria.peerSetLabel}` : ""}</summary>
+          <summary className="cursor-pointer text-sm font-semibold text-warm-900">Selection criteria: {criteria.charterType === "credit_union" ? "credit unions" : criteria.charterType === "bank" ? "banks" : "both types"} · {criteria.states.join(" / ") || "nationwide"}{criteria.minAssets ? ` · ${criteria.minAssets.inclusive ? "≥" : ">"} ${formatAssetBound(criteria.minAssets.value)}` : ""}{criteria.maxAssets ? ` · ${criteria.maxAssets.inclusive ? "≤" : "<"} ${formatAssetBound(criteria.maxAssets.value)}` : ""}{criteria.peerSetLabel ? ` · ${criteria.peerSetLabel}` : ""}</summary>
           <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-warm-700">
             {criteria.descriptions.map((line, i) => <li key={i}>{line}</li>)}
           </ul>
