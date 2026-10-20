@@ -274,20 +274,30 @@ function printedPrice(amount: number): RegExp {
   return new RegExp(`\\$\\s*${whole}${tail}(?![\\d.,]*\\d)`);
 }
 
+const FIRST_PRICE = /\$\s*\d[\d,]*(?:\.\d+)?/;
+
 /**
- * Pure: does the fee's own document still print what the restore claims? The re-read must still
- * find the name (only `amount_not_the_fee`, never `name_not_in_text`) and print the price
- * somewhere in it. Lane speed's re-sample of restores (Oct 20) could not prove 8 of 20 from the
- * bank's document: names missing from the current text, or a run of names with no prices at all.
+ * Pure: does the fee's own document still print what the restore claims, on one row? The re-read
+ * must still find the whole name (only `amount_not_the_fee`, never `name_not_in_text`), ending at
+ * a word boundary, and the first price after it on the same line must be the fee's price. Lane
+ * speed's re-samples of restores (Oct 20) found the name and price printed apart: 21757 passed on
+ * another row's "$ 8.00", 59622 on the wire row's $30 above "Stop Payments | $35.00", and the cut
+ * sentence "See Safe Deposit Fee Schedul" on the next row's $25. A schedule read column by column,
+ * names in one run and prices in another, cannot prove its fees this way and stays down.
  */
 export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], reason: string): boolean {
   if (reason !== "amount_not_the_fee") return false;
   const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
   const own = texts.find((text) => Number(text.source_document_id) === ownId);
-  if (own == null) return false;
-  const text = (own.normalized_text ?? "").replace(/\s+/g, " ").toLowerCase();
-  const name = fee.fee_name.replace(/\s+/g, " ").trim().toLowerCase();
-  return name.length > 0 && text.includes(name) && printedPrice(Number(fee.amount)).test(own.normalized_text ?? "");
+  const name = fee.fee_name.trim().split(/\s+/).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  if (own == null || name.length === 0) return false;
+  const named = new RegExp(`(?<![a-z0-9])${name}(?![a-z0-9])`, "gi");
+  const price = new RegExp(`^${printedPrice(Number(fee.amount)).source}`);
+  return (own.normalized_text ?? "").split("\n").some((line) =>
+    [...line.matchAll(named)].some((match) => {
+      const next = line.slice((match.index ?? 0) + match[0].length).match(FIRST_PRICE);
+      return next != null && price.test(next[0]);
+    }));
 }
 
 const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;

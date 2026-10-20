@@ -356,4 +356,14 @@ export const GUTENBERG_LESSONS: AgentLesson[] = [
     appliesTo: ["publish", "publish-index", "publish-context"],
     since: "2026-10-20",
   },
+  {
+    id: "restore-same-row",
+    agent: "gutenberg",
+    stage: "source check",
+    lesson: "Put a fee back live only when the bank's current document prints its whole name and, first after it on the same line, its price. A price printed on another row, in another column or before the name proves nothing, and a name that stops mid-word is a cut sentence, not a fee.",
+    why: "After the still-printed rule, a re-sample of 20 restores found 4 wrong and 1 unprovable, each passing on a price printed elsewhere: $30 from the wire row above \"Stop Payments | $35.00\", $8 from \"Returned Wire\", and the cut sentence \"See Safe Deposit Fee Schedul\" taking the next row's $25.",
+    evidence: { issues: [978], prs: [2457], files: ["src/lib/agents/hamilton/source-check.ts"] },
+    appliesTo: ["publish", "publish-index", "publish-context"],
+    since: "2026-10-20",
+  },
 ];
