@@ -12,7 +12,8 @@ closed membership), Angelina Savings (district-11 overweight, lowest coverage).
 
 > **2026-08-17: Outreach kit rewritten after the executive-panel audit.** Drafts now use the
 > Fee Insight sender identity, a neutral "Prepared for …" subject, a priced 15-minute ask,
-> a hosted per-institution link (`hosted-reports.json`, expires 2026-11-14) and a form-only
+> a hosted per-institution link (tokens rotated 2026-10-20 and kept out of the repo, see
+> `docs/runbooks/hosted-report-tokens.md`; drafts carry `/r/NEW-TOKEN`) and a form-only
 > variant for the 14 form-only contacts. Regenerate `email-preview.html` with `node preview.mjs`.
 > The live institution count (1,183 on 2026-08-17) is baked into the drafts — re-fill before
 > sending if it changes. Still required before any send: LinkedIn research for a direct
