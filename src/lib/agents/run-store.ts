@@ -730,6 +730,7 @@ async function executeAgenticStep(
           reader_escalations: read.readerEscalations,
           reader_escalations_used: read.readerEscalationsUsed,
           formats_backfilled: read.formatsBackfilled,
+          document_kinds_backfilled: read.documentKindsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
