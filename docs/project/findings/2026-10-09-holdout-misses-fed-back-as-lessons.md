@@ -31,3 +31,5 @@ lessons were in the prompt and are not a clean holdout number.
 
 A held-out set is only held out if nothing downstream reads it. When a scorer and a learner
 share a store, mark the rows by set at write time and filter at every read.
+
+**Guard:** `src/lib/agents/darwin/verdict-score.test.ts` ("keeps holdout misses out of the lessons a review reads before its next call")

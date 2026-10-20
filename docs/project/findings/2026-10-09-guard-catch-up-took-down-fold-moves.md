@@ -12,3 +12,5 @@ top-50 type its fold split gives it (`restoreTarget`), when that type's guard an
 accept it, re-filed in place and logged to pipeline_feedback as a fold. 8 takedowns qualified.
 **Lesson:** a guard bump re-judges every live fee; a fee whose right type is a fold split
 should come back under that type, not stay down because the fold runs later or reads only live rows.
+
+**Agent lesson:** gutenberg/pr-954-refile-before-takedown

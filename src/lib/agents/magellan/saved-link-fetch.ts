@@ -247,7 +247,11 @@ export async function runSavedLinkFetch(options: {
       continue;
     }
     // The check fetched the page once; the store fetches it again, so the budget is checked between them.
-    if (Date.now() > deadline) break;
+    if (Date.now() > deadline) {
+      // Not stored and no attempt written: the bank is picked again next step, so it was not tried.
+      result.tried -= 1;
+      break;
+    }
     const fetched = await fetchAndRecordLink(db, { ...row, profile_canonical_source_url: null }, options.fetchImpl, {
       learning: true,
       vaultSchema,
