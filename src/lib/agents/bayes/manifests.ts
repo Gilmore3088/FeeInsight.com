@@ -504,6 +504,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v77 (Oct 19, #2388): a card that draws only on credit fails card replacement and rush card.
     // v78 (Oct 20, #2449): account verification is guarded by name; research and wires re-file, and
     // signature guarantees and other names fail.
+    // v79 (Oct 20, #1830): bill pay refuses a name its own line puts under a stop payment.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

@@ -283,6 +283,12 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v91 (Oct 20, #1829, #1830) reads a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic
+only)") as document reproduction (`FAX_SERVICE`, fold v19). "Domestic" there is where the fax
+goes, not a domestic wire sent by fax, so "Domestic incoming (fax)" stays where it is. A stop
+payment that lists what it stops is already read by its head on main (doc 36961). Guard v79 takes
+down the cut bill pay reads still live.
+
 v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
 other mailed-back statements file as returned mail, the type made for returned or undeliverable
 mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing
@@ -1736,7 +1742,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v90 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v91 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
