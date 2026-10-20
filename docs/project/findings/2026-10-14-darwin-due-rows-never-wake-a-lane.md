@@ -35,3 +35,5 @@ for its first decision (`waitingOver7d`, 0 today).
 **Lesson:** When a step's "what is due" test has exceptions, the scheduler and the health count
 must read the same test. A copy that drops the exceptions hides the work in exactly the quiet
 places where nothing else wakes the lane.
+
+**Agent lesson:** darwin/pr-1313-one-due-test

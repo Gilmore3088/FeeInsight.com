@@ -50,3 +50,5 @@ event, never for a delivery retry. Payment state remains the authoritative
 activation record; email retry is not a new sale.
 
 Provider contract: https://resend.com/docs/dashboard/emails/idempotency-keys
+
+**Guard:** `src/lib/billing/payment-delivery.integration.test.ts:64` (the payment event and its email obligations commit together and nothing is sent before commit; run with a disposable database in `.github/workflows/payment-acceptance.yml`)

@@ -37,3 +37,5 @@ queue, so the state row must change kind.
 
 A log row that records an event is never upserted into a different event. A row that carries
 current state may change, but each change appends its own row first.
+
+**Agent lesson:** gutenberg/pr-830-append-each-event
