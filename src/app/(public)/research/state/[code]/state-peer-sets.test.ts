@@ -51,4 +51,20 @@ describe("statePeerSetView", () => {
       "Matches the Texas median, within 1%.",
     );
   });
+
+  it("should_name_a_fee_from_the_rows_shown_by_default", () => {
+    const row = (key: string, median: number, stateMedian: number) => ({ key, name: key.toUpperCase(), median, institutions: 9, stateMedian, stateInstitutions: 90 });
+    // The sixth row has the widest gap but sits under "Show all".
+    const rows = [row("a", 10.5, 10), row("b", 10, 10), row("c", 10, 10), row("d", 10, 10), row("e", 10, 10), row("f", 20, 10)];
+    expect(peerSetStateFinding("Banks in TX", "Texas", rows)).toBe("A runs $0.50 above the Texas median.");
+  });
+
+  it("should_say_shown_under_show_all_when_only_a_hidden_row_compares", () => {
+    const none = { median: null, institutions: 3, stateMedian: 10, stateInstitutions: 90 };
+    const rows = [
+      ...["a", "b", "c", "d", "e"].map((key) => ({ key, name: key.toUpperCase(), ...none })),
+      { key: "f", name: "Wire", median: 20, institutions: 9, stateMedian: 10, stateInstitutions: 90 },
+    ];
+    expect(peerSetStateFinding("Banks in TX", "Texas", rows)).toBe("Wire (shown under Show all) runs $10 above the Texas median.");
+  });
 });

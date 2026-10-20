@@ -6,6 +6,9 @@ import Link from "next/link";
 import { useSessionChrome } from "@/components/use-session-chrome";
 import { TrackLink } from "@/components/track-link";
 import { displayCity } from "@/lib/format";
+import { PRODUCT_NAME, SITE_NAME } from "@/lib/constants";
+import { estimateTextWidth, labelBox, placePointLabel } from "@/lib/chart-label-placement";
+import { MEDIAN_TONE, MEDIAN_TONE_NOTE } from "@/components/public/peer-gap-chip";
 import {
   EXPLORER_FEE_KEYS,
   EXPLORER_FEE_LABELS,
@@ -55,19 +58,15 @@ import {
 } from "@/lib/peer-explorer";
 
 /**
- * The subject is ink: red and blue mean above and below the median on this site, so the subject
+ * The subject is ink: the above and below tones mean a side of the median, so the subject
  * never takes either. A selected peer is dark slate, the rest neutral slate.
  */
 export const SUBJECT = "var(--fi-ink)";
 const PEER = "var(--fi-viz-inside)";
 const SELECTED = "var(--fi-viz-bar)";
-/**
- * Against the peer median, below is blue and above is red, as in James's Oct 18 peer-set mockups
- * (the site tokens are named for the market pages, where the pair runs the other way). Every use
- * pairs the colour with a word or an arrow.
- */
-const BELOW_TONE = "var(--fi-viz-above)";
-const ABOVE_TONE = "var(--fi-viz-below)";
+/** Above and below the peer median: the shared, non-judgemental pair (peer-gap-chip.tsx). */
+const BELOW_TONE = MEDIAN_TONE.below;
+const ABOVE_TONE = MEDIAN_TONE.above;
 
 const VIEWS: { key: ExplorerView; label: string; icon: ReactNode }[] = [
   { key: "distribution", label: "Distribution", icon: <SlidersHorizontal aria-hidden="true" className="size-4" /> },
@@ -241,6 +240,9 @@ export function PeerExplorer({
           ))}
         </div>
         <p className="mt-1.5 text-[12px] text-ink-muted">{snapshot.caveat}</p>
+        <p data-source="snapshot" className="mt-1 text-[12px] text-ink-muted">
+          Source: {PRODUCT_NAME}, published fee schedules{set.asOf ? `, as of ${formatIsoDate(set.asOf)}` : ""}.
+        </p>
       </section>
 
       <div className="mt-4 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:gap-8">
@@ -310,6 +312,7 @@ export function PeerExplorer({
           Open {set.subject.name} in Hamilton
           <ArrowRight aria-hidden="true" className="size-4" />
         </button>
+        <p className="text-[13px] text-ink-muted sm:order-last sm:basis-full">Hamilton is the {SITE_NAME} workspace for pricing teams.</p>
         {setKey === "metro" && (
           <HamiltonLink isPro={isPro} href={href} placement="institution_peer_local_competitors">
             Compare local deposit competitors in Hamilton
@@ -507,7 +510,7 @@ function ProxyMark() {
   );
 }
 
-/** "▲ +$6.20 (+62%)": a difference from the median, red above and blue below, always with its mark. */
+/** "▲ +$6.20 (+62%)": a difference from the median in the shared above/below tone, always with its mark. */
 function GapCell({ gap }: { gap: { dollars: string; percent: string | null; band: MatrixBand } }) {
   const mark = gap.band === "above" ? "▲" : gap.band === "below" ? "▼" : "≈";
   const color = gap.band === "above" ? ABOVE_TONE : gap.band === "below" ? BELOW_TONE : undefined;
@@ -615,6 +618,9 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
   const several = ownPrices.length >= 2;
   const proxy = isComparisonProxy(ownFee);
   const median = set.medians[fee]?.median;
+  // The account-price row needs its labels to be read, so a narrow chart leaves it out; the side
+  // panel lists every price in full (James's Oct 20 review: an unlabelled row on a phone).
+  const priceRowShown = several && width >= PRICE_LABELS_MIN_WIDTH;
   if (publishing.length === 0) {
     return (
       <>
@@ -650,7 +656,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
   // The subject's label takes two lines when its value is a comparison price; the price row sits below.
   const labelRows = several ? 2 : 1;
   const priceRow = base + 40 + labelRows * 14 + 30;
-  const height = several ? priceRow + 34 : base + 40 + labelRows * 14;
+  const height = priceRowShown ? priceRow + 34 : base + 40 + labelRows * 14;
   const yOf = (level: number) => base - Math.min(level, 12) * 11;
   const hovered = hover !== null ? placed.find((p) => p.inst.id === hover) : null;
   const subjectValue = feeOf(set.subject, fee);
@@ -662,6 +668,9 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
 
   return (
     <figure className="m-0">
+      <p className="mb-1 text-[12px] text-ink-muted">
+        {EXPLORER_FEE_LABELS[fee]} fee in dollars, one mark per institution
+      </p>
       <div ref={ref} className="relative w-full">
         <svg width="100%" viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`${EXPLORER_FEE_LABELS[fee]} fees of ${publishing.length} institutions on one axis`} className="block overflow-visible">
           <line x1={DIST_MARGIN.left} x2={plotRight} y1={base + 8} y2={base + 8} stroke="var(--color-border)" strokeWidth={1} />
@@ -696,7 +705,10 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
                   className="cursor-pointer"
                   data-mark={isSubject ? (several ? "comparison-price" : "subject-price") : "peer"}
                   opacity={dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1}
-                  onClick={() => onSelect(inst.id)}
+                  onClick={() => {
+                    onSelect(inst.id);
+                    setHover(inst.id);
+                  }}
                   onMouseEnter={() => setHover(inst.id)}
                   onMouseLeave={() => setHover(null)}
                 >
@@ -734,7 +746,7 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
               )}
             </text>
           )}
-          {several && (
+          {priceRowShown && (
             <g aria-label={`${set.subject.name}'s account prices`}>
               <text x={DIST_MARGIN.left} y={priceRow - 18} className="fill-ink-muted text-[12px] font-medium">
                 {short(set.subject.name)}&apos;s account prices
@@ -769,11 +781,9 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
                     <circle cx={x} cy={priceRow} r={10} fill="transparent" />
                     <rect x={x - 5} y={priceRow - 5} width={10} height={10} transform={`rotate(45 ${x} ${priceRow})`} fill={SUBJECT} stroke="var(--fi-surface-0)" strokeWidth={1.5} />
                     {/* The account's short name ("Carefree Checking $7.95"); dropped on a narrow chart. */}
-                    {width >= PRICE_LABELS_MIN_WIDTH && (
-                      <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[12px] tabular-nums max-sm:hidden">
-                        {price.account ?? short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
-                      </text>
-                    )}
+                    <text x={lx} y={ly} textAnchor={anchor} className="fill-ink text-[12px] tabular-nums">
+                      {price.account ?? short(price.name ?? `Price ${i + 1}`)} {money(price.amount)}
+                    </text>
                   </g>
                 );
               })}
@@ -799,10 +809,12 @@ function Distribution({ set, fee, selectedId, highlight, onSelect, include, onIn
         <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {several ? (
             <>
-              <span className="inline-flex items-center gap-1.5">
-                <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
-                {short(set.subject.name)}: an account price on its schedule
-              </span>
+              {priceRowShown && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden="true" className="inline-block size-2.5 rotate-45" style={{ background: SUBJECT }} />
+                  {short(set.subject.name)}: an account price on its schedule
+                </span>
+              )}
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden="true" className="inline-block size-2.5 rotate-45 border-2" style={{ borderColor: SUBJECT }} />
                 {proxy ? `Its comparison price, the middle of its prices: ${PROXY_NOTE}` : `Its comparison price, ${which} of its prices`}
@@ -871,6 +883,28 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
   const hovered = hover !== null ? plotted.find((inst) => inst.id === hover) : null;
   const named = plotted.filter((inst) => (inst.id === set.subject.id || inst.id === selectedId) && inst.id !== hover);
   const order = [...plotted].sort((a, b) => Number(a.id === selectedId || a.id === set.subject.id) - Number(b.id === selectedId || b.id === set.subject.id));
+  const pointOf = (inst: ExplorerInstitution) => ({ x: px(landscapeValue(set, inst, axis) as number), y: py(feeOf(inst, fee) as number) });
+  const medianText = median !== undefined ? `Peer median ${money(median)}` : "";
+  // Each name label stays inside the plot and off the median line, its label, the other points
+  // and the label placed before it (James's Oct 20 review: it ran off a phone and over the median).
+  const taken =
+    median !== undefined ? [labelBox(width - MARGIN.right, py(median) - 6, "end", [estimateTextWidth(medianText)])] : [];
+  const labels = named.map((inst) => {
+    const point = pointOf(inst);
+    const text = `${short(inst.name)} · ${money(feeOf(inst, fee) as number)}`;
+    const proxy = comparisonTag(fee, inst.fees[fee]);
+    const widths = [estimateTextWidth(text), ...(proxy ? [estimateTextWidth(proxy)] : [])];
+    const place = placePointLabel({
+      ...point,
+      widths,
+      bounds: { left: MARGIN.left, right: width - 2, top: 0, bottom: height - MARGIN.bottom },
+      avoidBoxes: [...taken],
+      avoidLines: median !== undefined ? [py(median)] : [],
+      avoidPoints: plotted.filter((other) => other.id !== inst.id).map(pointOf),
+    });
+    taken.push(place.box);
+    return { inst, text, proxy, place };
+  });
 
   return (
     <figure className="m-0">
@@ -916,8 +950,8 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
             {median !== undefined && (
               <g>
                 <line x1={MARGIN.left} x2={width - MARGIN.right} y1={py(median)} y2={py(median)} stroke="var(--fi-ink)" strokeWidth={1.25} strokeDasharray="5 4" />
-                <text x={width - MARGIN.right} y={py(median) - 6} textAnchor="end" className="fill-ink text-[12px] font-semibold tabular-nums">
-                  Peer median {money(median)}
+                <text x={width - MARGIN.right} y={py(median) - 6} textAnchor="end" data-mark="median-label" className="fill-ink text-[12px] font-semibold tabular-nums">
+                  {medianText}
                 </text>
               </g>
             )}
@@ -931,7 +965,10 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
                   key={inst.id}
                   className="cursor-pointer"
                   opacity={dimmed(inst, highlight, [set.subject.id, selectedId]) ? 0.2 : 1}
-                  onClick={() => onSelect(inst.id)}
+                  onClick={() => {
+                    onSelect(inst.id);
+                    setHover(inst.id);
+                  }}
                   onMouseEnter={() => setHover(inst.id)}
                   onMouseLeave={() => setHover(null)}
                 >
@@ -945,34 +982,24 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
                 </g>
               );
             })}
-            {named.map((inst) => {
-              const cx = px(landscapeValue(set, inst, axis) as number);
-              const cy = py(feeOf(inst, fee) as number);
-              const right = cx < MARGIN.left + innerW * 0.7;
-              const isSubject = inst.id === set.subject.id;
-              const proxy = comparisonTag(fee, inst.fees[fee]);
-              // Below the point when the median line (and its label) runs just above it.
-              const below = median !== undefined && Math.abs(cy - py(median)) < 24;
-              const lx = cx + (right ? 10 : -10);
-              const ly = below ? cy + 20 : proxy ? cy - 24 : cy - 10;
-              return (
-                <text
-                  key={`l${inst.id}`}
-                  x={lx}
-                  y={ly}
-                  textAnchor={right ? "start" : "end"}
-                  className={`pointer-events-none text-[12px] tabular-nums ${isSubject ? "fill-ink font-semibold" : "fill-ink-soft font-semibold"}`}
-                  style={{ paintOrder: "stroke", stroke: "var(--fi-surface-0)", strokeWidth: 3 }}
-                >
-                  {short(inst.name)} · {money(feeOf(inst, fee) as number)}
-                  {proxy && (
-                    <tspan x={lx} dy="1.3em" className="fill-ink-soft font-normal">
-                      {proxy}
-                    </tspan>
-                  )}
-                </text>
-              );
-            })}
+            {labels.map(({ inst, text, proxy, place }) => (
+              <text
+                key={`l${inst.id}`}
+                x={place.x}
+                y={place.y}
+                textAnchor={place.anchor}
+                data-mark="point-label"
+                className={`pointer-events-none text-[12px] tabular-nums ${inst.id === set.subject.id ? "fill-ink font-semibold" : "fill-ink-soft font-semibold"}`}
+                style={{ paintOrder: "stroke", stroke: "var(--fi-surface-0)", strokeWidth: 3 }}
+              >
+                {text}
+                {proxy && (
+                  <tspan x={place.x} dy="1.25em" className="fill-ink-soft font-normal">
+                    {proxy}
+                  </tspan>
+                )}
+              </text>
+            ))}
           </svg>
           {hovered && (
             <Tooltip
@@ -992,7 +1019,7 @@ function Landscape({ set, fee, selectedId, highlight, onSelect, axis: chosenAxis
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="inline-block size-2.5 rounded-full" style={{ background: PEER }} />
-          Peer (hover for its name)
+          Peer (tap or hover for its name)
         </span>
         {median !== undefined ? (
           <span className="inline-flex items-center gap-1.5">
@@ -1116,7 +1143,7 @@ const BAND_WORDS: Record<MatrixBand, { mark: string; label: string }> = {
   none: { mark: "", label: "Not published" },
 };
 
-/** The cell fill: blue below, red above, deeper toward the cohort's tails; neutral when about the same; hatched when not published. */
+/** The cell fill: the shared below and above tones, deeper toward the cohort's tails; neutral when about the same; hatched when not published. */
 function cellBackground(band: MatrixBand, step: number): string {
   if (band === "none") return "repeating-linear-gradient(135deg, transparent 0 5px, color-mix(in srgb, var(--fi-ink) 8%, transparent) 5px 6px)";
   if (band === "same") return "color-mix(in srgb, var(--fi-ink) 6%, var(--fi-surface-0))";
@@ -1125,6 +1152,32 @@ function cellBackground(band: MatrixBand, step: number): string {
 }
 
 const ROWS_SHOWN = 30;
+
+/** Pixels of slack before the table counts as scrolled to its right edge. */
+const SCROLL_EDGE_SLACK = 4;
+
+/**
+ * Whether a wide table has columns past its right edge, for the "scroll for more" cue and edge
+ * shade (James's Oct 20 review: on a phone the fee columns sat off-screen with no sign of them).
+ */
+function useMoreToTheRight() {
+  const scroller = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState(false);
+  const measure = useCallback(() => {
+    const node = scroller.current;
+    if (!node) return;
+    setMore(node.scrollWidth - node.clientWidth - node.scrollLeft > SCROLL_EDGE_SLACK);
+  }, []);
+  useEffect(() => {
+    measure();
+    const node = scroller.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [measure]);
+  return { scroller, more, measure };
+}
 
 /**
  * Every institution against each fee's peer median, as an investigation table: sortable, the
@@ -1155,6 +1208,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
   const compare = checked.map((id) => rows.find((row) => row.id === id)).filter((row): row is ExplorerInstitution => row !== undefined);
   const headBtn = "inline-flex min-h-9 items-center gap-0.5 rounded px-1 font-medium hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink";
   const subjectStickyTop = "sticky top-[41px] z-[5]";
+  const { scroller, more, measure } = useMoreToTheRight();
 
   return (
     <div>
@@ -1174,13 +1228,19 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
             </button>
           ))}
         </div>
-        <p className="text-[12px] text-ink-muted">Click a cell for its evidence. Tick two or more rows to compare.</p>
+        <p className="text-[12px] text-ink-muted">Select a cell for its evidence. Tick two or more rows to compare.</p>
       </div>
       <div className="mt-3">
         <p className="text-[12px] font-medium text-ink-muted">{EXPLORER_FEE_LABELS[fee]} across the set</p>
         <DotStrip set={set} fee={fee} selectedId={selectedId} median={set.medians[fee]?.median} onSelect={onSelect} />
       </div>
-      <div className="relative mt-3 max-h-[36rem] max-w-full overflow-auto rounded-lg border border-border">
+      {more && (
+        <p data-scroll-cue className="mt-3 text-right text-[12px] font-medium text-ink-soft">
+          Scroll sideways for more fees&nbsp;<span aria-hidden="true">→</span>
+        </p>
+      )}
+      <div className={`relative ${more ? "mt-1" : "mt-3"}`}>
+        <div ref={scroller} onScroll={measure} className="max-h-[36rem] max-w-full overflow-auto rounded-lg border border-border">
         <table className="w-full min-w-[860px] border-separate border-spacing-0 text-[13px]">
           <caption className="sr-only">Each institution&apos;s fees against the peer median</caption>
           <thead className="sticky top-0 z-10 bg-surface-0">
@@ -1193,17 +1253,6 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                   Institution {sortIcon("name")}
                 </button>
               </th>
-              <th scope="col" aria-sort={ariaSort("state")} className="border-b border-border px-1 py-1">
-                <button type="button" onClick={() => sortBy("state")} className={headBtn}>
-                  State {sortIcon("state")}
-                </button>
-              </th>
-              <th scope="col" aria-sort={ariaSort("assets")} className="border-b border-border px-1 py-1 text-right">
-                <button type="button" onClick={() => sortBy("assets")} className={headBtn}>
-                  Assets {sortIcon("assets")}
-                </button>
-              </th>
-              <th scope="col" className="border-b border-border px-2 py-1 text-right font-medium">vs. this bank</th>
               {EXPLORER_FEE_KEYS.map((key) => (
                 <th key={key} scope="col" aria-sort={ariaSort(key)} className="border-b border-border px-1 py-1 text-center">
                   <button
@@ -1221,6 +1270,17 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                   </span>
                 </th>
               ))}
+              <th scope="col" aria-sort={ariaSort("state")} className="border-b border-border px-1 py-1">
+                <button type="button" onClick={() => sortBy("state")} className={headBtn}>
+                  State {sortIcon("state")}
+                </button>
+              </th>
+              <th scope="col" aria-sort={ariaSort("assets")} className="border-b border-border px-1 py-1 text-right">
+                <button type="button" onClick={() => sortBy("assets")} className={headBtn}>
+                  Assets {sortIcon("assets")}
+                </button>
+              </th>
+              <th scope="col" className="border-b border-border px-2 py-1 text-right font-medium">Assets vs. this bank</th>
             </tr>
           </thead>
           <tbody>
@@ -1245,7 +1305,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                         />
                       )}
                     </td>
-                    <th scope="row" className={`sticky left-0 z-[6] max-w-[9rem] border-t border-border p-0 text-left font-normal sm:max-w-[13rem] ${rowBg} ${isSubject ? "top-[41px]" : ""}`}>
+                    <th scope="row" className={`sticky left-0 z-[6] w-[8.5rem] min-w-[8.5rem] border-t border-border p-0 text-left font-normal shadow-[1px_0_0_var(--color-border)] sm:w-[13rem] sm:min-w-[13rem] ${rowBg} ${isSubject ? "top-[41px]" : ""}`}>
                       <button
                         type="button"
                         onClick={() => onSelect(inst.id)}
@@ -1254,12 +1314,11 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                           isSubject ? "border-ink font-semibold text-ink" : isSelected ? "border-[var(--fi-viz-bar)] font-semibold text-ink" : "border-transparent text-ink-soft hover:text-ink"
                         }`}
                       >
-                        <span className="min-w-0 truncate">{inst.name}</span>
+                        <span className="line-clamp-2 min-w-0 break-words py-1 leading-snug" title={inst.name}>
+                          {inst.name}
+                        </span>
                       </button>
                     </th>
-                    <td className={`border-t border-border px-2 text-ink-muted ${rowBg} ${sticky}`}>{inst.state ?? "Not on record"}</td>
-                    <td className={`border-t border-border px-2 text-right tabular-nums text-ink-muted ${rowBg} ${sticky}`}>{assetsLabel(inst.assets) ?? "Not on record"}</td>
-                    <td className={`border-t border-border px-2 text-right tabular-nums text-ink-muted ${rowBg} ${sticky}`}>{isSubject ? "This bank" : assetDifference(inst.assets, set.subject.assets)}</td>
                     {EXPLORER_FEE_KEYS.map((key) => {
                       const value = inst.fees[key]?.amount;
                       const median = set.medians[key]?.median;
@@ -1298,6 +1357,9 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
                         </td>
                       );
                     })}
+                    <td className={`border-t border-border px-2 text-ink-muted ${rowBg} ${sticky}`}>{inst.state ?? "Not on record"}</td>
+                    <td className={`border-t border-border px-2 text-right tabular-nums text-ink-muted ${rowBg} ${sticky}`}>{assetsLabel(inst.assets) ?? "Not on record"}</td>
+                    <td className={`border-t border-border px-2 text-right tabular-nums text-ink-muted ${rowBg} ${sticky}`}>{isSubject ? "This bank" : assetDifference(inst.assets, set.subject.assets)}</td>
                   </tr>
                   {open && evidence && (
                     <tr>
@@ -1311,6 +1373,14 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
             })}
           </tbody>
         </table>
+        </div>
+        {more && (
+          <span
+            aria-hidden="true"
+            data-scroll-shadow
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 rounded-r-lg bg-gradient-to-l from-[color-mix(in_srgb,var(--fi-ink)_14%,transparent)] to-transparent"
+          />
+        )}
       </div>
       {rows.length > ROWS_SHOWN && (
         <button type="button" onClick={() => setAll(!all)} className="mt-3 inline-flex min-h-11 items-center text-[13px] font-semibold text-ink underline underline-offset-2">
@@ -1326,7 +1396,7 @@ function Matrix({ set, fee, selectedId, highlight, onSelect, onFee }: ViewProps 
             {BAND_WORDS[band].label}
           </li>
         ))}
-        <li>Deeper colour: further from the middle of the set.</li>
+        <li>Deeper colour: further from the middle of the set. {MEDIAN_TONE_NOTE}</li>
         {rows.some((row) => EXPLORER_FEE_KEYS.some((key) => isComparisonProxy(row.fees[key]))) && <li>{PROXY_FOOTNOTE}</li>}
       </ul>
       {compare.length >= 2 && <Compare set={set} rows={[set.subject, ...compare]} onClear={() => setChecked([])} />}
@@ -1587,9 +1657,9 @@ function DotStrip({ set, fee, selectedId, median, onSelect }: { set: PeerExplore
         })}
       </div>
       <p className="mt-1 flex max-w-none justify-between text-[11px] tabular-nums text-ink-muted">
-        <span>{money(low)}</span>
+        <span>Lowest {money(low)}</span>
         {median !== undefined && <span>median {money(median)}</span>}
-        <span>{money(high)}</span>
+        <span>Highest {money(high)}</span>
       </p>
     </div>
   );

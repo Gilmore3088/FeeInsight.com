@@ -5,6 +5,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/components/use-session-chrome", () => ({ useSessionChrome: () => null }));
 vi.mock("@/app/landing-serif", () => ({ homeSerif: { variable: "serif-var" } }));
 
+import { MEDIAN_TONE } from "@/components/public/peer-gap-chip";
 import { PeerExplorerSection, peerSetChipLabel, peerSetHrefs } from "./peer-explorer-section";
 import type { InstitutionPeerSets } from "@/lib/data-store/peer-fee-rank";
 import type { ExplorerInstitution, PeerExplorerSet } from "@/lib/peer-explorer";
@@ -92,7 +93,7 @@ describe("PeerExplorerSection", () => {
     // Below the median is blue, as in the mockups; above is red.
     const gap = within(panel).getByText(/\$1\.55 below the peer median/);
     expect(gap.textContent).toBe("▼ $1.55 below the peer median");
-    expect(gap.style.color).toBe("var(--fi-viz-above)");
+    expect(gap.style.color).toBe(MEDIAN_TONE.below);
     expect(within(panel).getByText("Peers publishing")).toBeTruthy();
     expect(within(panel).getByText("Comparison price: middle of 2 account prices, not a fee anyone is charged")).toBeTruthy();
     expect(within(panel).getByText("Basic Checking Monthly Service Fee")).toBeTruthy();
@@ -104,7 +105,7 @@ describe("PeerExplorerSection", () => {
     fireEvent.click(screen.getByRole("button", { name: "Summit Bank" }));
     const panel = screen.getByRole("complementary");
     expect(within(panel).getByText("Selected peer")).toBeTruthy();
-    expect(within(panel).getByText(/\$6\.20 above the peer median/).style.color).toBe("var(--fi-viz-below)");
+    expect(within(panel).getByText(/\$6\.20 above the peer median/).style.color).toBe(MEDIAN_TONE.above);
     expect(window.location.search).toContain("peer=3");
     fireEvent.click(screen.getByRole("tab", { name: "Locations" }));
     expect(within(screen.getByRole("complementary")).getByText("Summit Bank")).toBeTruthy();
@@ -163,6 +164,63 @@ describe("PeerExplorerSection", () => {
     expect(screen.getByText("Tick one more institution to compare side by side.")).toBeTruthy();
     fireEvent.click(screen.getByRole("checkbox", { name: "Compare Pine State Bank" }));
     expect(screen.getByRole("region", { name: "Side-by-side comparison" })).toBeTruthy();
+  });
+
+  it("should_put_fee_columns_right_after_the_pinned_name_and_label_the_asset_gap", () => {
+    renderSection({ view: "matrix" });
+    const matrix = screen.getByRole("table", { name: "Each institution's fees against the peer median" });
+    const heads = within(matrix).getAllByRole("columnheader").map((th) => th.textContent ?? "");
+    const name = heads.findIndex((h) => h.startsWith("Institution"));
+    // A fee column carries its median (or "too few to compare") under the name.
+    const firstFee = heads.findIndex((h) => /median \$|too few to compare/.test(h));
+    const state = heads.findIndex((h) => h.startsWith("State"));
+    expect(firstFee).toBe(name + 1);
+    expect(state).toBeGreaterThan(firstFee);
+    expect(heads).toContain("Assets vs. this bank");
+    expect(heads.some((h) => h === "vs. this bank")).toBe(false);
+  });
+
+  it("should_use_device_neutral_words_for_tap_and_click", () => {
+    renderSection({ view: "matrix" });
+    expect(screen.getByText("Select a cell for its evidence. Tick two or more rows to compare.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Landscape" }));
+    expect(screen.getByText("Peer (tap or hover for its name)")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Click a cell|\(hover for its name\)/);
+  });
+
+  it("should_select_a_peer_and_show_its_name_when_its_point_is_tapped", () => {
+    const { container } = renderSection({ view: "landscape" });
+    const points = container.querySelectorAll("svg g.cursor-pointer");
+    // The first drawn point is a peer (the subject and selection are drawn last).
+    fireEvent.click(points[0]);
+    expect(within(screen.getByRole("complementary")).getByText("Selected peer")).toBeTruthy();
+  });
+
+  it("should_keep_landscape_name_labels_inside_the_chart", () => {
+    const { container } = renderSection({ view: "landscape" });
+    const svg = container.querySelector("svg[role=img]")!;
+    const [, , width] = (svg.getAttribute("viewBox") ?? "").split(" ").map(Number);
+    for (const label of container.querySelectorAll("text[data-mark=point-label]")) {
+      const x = Number(label.getAttribute("x"));
+      const chars = (label.firstChild?.textContent ?? "").length;
+      const anchor = label.getAttribute("text-anchor");
+      const right = anchor === "end" ? x : x + chars * 6.9;
+      const left = anchor === "end" ? x - chars * 6.9 : x;
+      expect(right).toBeLessThanOrEqual(width);
+      expect(left).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("should_explain_hamilton_beside_its_button_without_calling_it_pro", () => {
+    renderSection();
+    expect(screen.getByText("Hamilton is the Fee Insight workspace for pricing teams.")).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/Hamilton Pro/);
+  });
+
+  it("should_put_a_compact_source_line_under_the_snapshot_numbers", () => {
+    const { container } = renderSection();
+    const snapshot = container.querySelector("section[aria-labelledby=peer-snapshot-heading]")!;
+    expect(snapshot.querySelector("[data-source=snapshot]")?.textContent).toBe("Source: Bank Fee Index, published fee schedules, as of Oct 17, 2026.");
   });
 
   it("switches matrix cells to differences from the median", () => {
@@ -226,7 +284,7 @@ describe("PeerExplorerSection", () => {
     const summit = within(list).getByRole("row", { name: /Summit Bank/ });
     expect(within(summit).getByText("$16.20")).toBeTruthy();
     const gap = within(summit).getByText(/\+\$6\.20 \(\+62%\)/);
-    expect(gap.style.color).toBe("var(--fi-viz-below)");
+    expect(gap.style.color).toBe(MEDIAN_TONE.above);
     expect(gap.textContent).toContain("▲");
     expect(within(summit).getByRole("link", { name: "Fee schedule" }).getAttribute("href")).toBe("https://summit.example/fees.pdf");
     expect(within(summit).getByText(/Sep 2, 2026/)).toBeTruthy();
@@ -276,7 +334,8 @@ describe("PeerExplorerSection", () => {
     expect(screen.getByText("Banks with $1B to $10B in assets that publish fees")).toBeTruthy();
     expect(screen.getByText(/A pricing set: it is not the financial cohort under Financial performance, which is drawn from Call Report filings in the band\./)).toBeTruthy();
     expect(screen.getByText("Actual range: $2.1B to $7.3B")).toBeTruthy();
-    expect(screen.getByText(/published fee schedules, as of Oct 17, 2026\./)).toBeTruthy();
+    // The full source line and the compact one under the snapshot numbers.
+    expect(screen.getAllByText(/published fee schedules, as of Oct 17, 2026\./).length).toBe(2);
   });
 
   it("has short chip names", () => {

@@ -14,10 +14,19 @@ export function peerGap(value: number, median: number): { direction: "above" | "
   return { direction: gap > 0 ? "above" : "below", amount: Math.abs(gap) };
 }
 
-/** Above the median is blue and below is red, the site's above/below colors (James, Oct 16). */
+/**
+ * Above and below a median, one pair for every peer view (institution and state pages). Neither is
+ * red: a price above or below the median is a position, not a verdict (James, Oct 20 review). Above
+ * is the site's accent blue, below its neutral slate, and each is always paired with an arrow or word.
+ */
+export const MEDIAN_TONE = { above: "var(--fi-viz-above)", below: "var(--fi-viz-bar)" } as const;
+
+/** The legend line wherever the pair is used. */
+export const MEDIAN_TONE_NOTE = "Colour shows direction only: above or below the median is not good or bad.";
+
 const TONE = {
-  above: { color: "var(--fi-viz-above)", backgroundColor: "color-mix(in srgb, var(--fi-viz-above) 12%, transparent)" },
-  below: { color: "var(--fi-viz-below)", backgroundColor: "color-mix(in srgb, var(--fi-viz-below) 12%, transparent)" },
+  above: { color: MEDIAN_TONE.above, backgroundColor: `color-mix(in srgb, ${MEDIAN_TONE.above} 12%, transparent)` },
+  below: { color: MEDIAN_TONE.below, backgroundColor: `color-mix(in srgb, ${MEDIAN_TONE.below} 12%, transparent)` },
   same: { backgroundColor: "color-mix(in srgb, var(--fi-ink) 7%, transparent)" },
 } as const;
 
