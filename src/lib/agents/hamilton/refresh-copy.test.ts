@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   MOVED_PAGE_DAYS,
+  MOVED_PAGE_TRY_DAYS,
   REFRESH_COPY_REASON_PREFIX,
   selectMovedPageDocuments,
   moveRowsToIdenticalCopy,
@@ -230,8 +231,15 @@ describe("moved pages (#1200)", () => {
     expect(text).toContain("sd.superseded_by_id IS NULL");
     expect(text).toContain("sd.companion_source_id IS NULL");
     expect(text).toContain("fp.rolled_back_at IS NULL");
-    expect(text).toContain("COALESCE(copy.last_checked_at, copy.crawled_at) >= NOW() - make_interval(days => ");
+    expect(text).toContain("newest.copy_at < NOW() - make_interval(days => ");
     expect(text).toContain("pa.detail->>'live_page' = cited.page");
+    // Tried recently and after the newest copy: a try that confirmed the page moved its check date past it.
+    expect(text).toContain("pa.created_at >= NOW() - make_interval(days => ");
+    expect(text).toContain("tried.tried_at > COALESCE(newest.copy_at, '-infinity'::timestamptz) + interval '1 hour'");
+    // A document checked since the page's last try waits for the next try; recent tries first.
+    expect(text).toContain("checked.created_at > tried.tried_at");
+    expect(text).toContain("ORDER BY tried.tried_at DESC, cited.id");
+    expect(call).toContain(MOVED_PAGE_TRY_DAYS);
     expect(text).toContain(`pa.strategy = '${LIVE_SOURCE_REFETCH_STRATEGY.strategy}'`);
     expect(call).toContain(MOVED_PAGE_DAYS);
   });
@@ -246,6 +254,7 @@ describe("moved pages (#1200)", () => {
     expect(text).toContain("JOIN raw_fee_observations nr ON nr.source_document_id = targets.document_id");
     expect(text).toContain("nd.crawled_at > stale.document_crawled_at");
     expect(text).toContain("nd.superseded_by_id IS NULL");
+    expect(text).toContain("nd.companion_source_id IS NULL");
     expect(text).toContain("ORDER BY nd.crawled_at DESC, nd.id DESC");
     expect(text).toContain("ORDER BY stale.fee_published_id, targets.rank, nv.fee_verified_id");
   });

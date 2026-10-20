@@ -11,7 +11,8 @@ published" (`decidePriorFee`, `hamilton/publish.ts`) and keeps the live fee on i
 Only `refreshFeesFromCurrentCopy` moves a live fee to a newer document, and it followed only
 `superseded_by_id`, which links copies of one address. A page that moved never gets superseded.
 **Fix:** this PR. `refresh-copy.ts` also selects documents whose page Magellan's live-source pass
-has tried and that still have no copy under 30 days old (`selectMovedPageDocuments`). Their live fees
+tried in the last 37 days, after the page's newest copy, without bringing a copy back under the
+page's own address, so the page still has no copy under 30 days old (`selectMovedPageDocuments`). Their live fees
 move in place to the newest current document of the bank read after them that states the same line,
 under the same publish rules and once-per-pair attempt record as a superseded copy. Switched on
 under the sampled-clean rule. Nothing moves until the live-source pass has tried a page.

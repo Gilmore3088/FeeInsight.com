@@ -44,7 +44,9 @@ export const REFRESH_COPY_STRATEGY = { strategy: "hamilton.refresh_copy", versio
 export const MOVED_PAGE_REFRESH_LIVE = true;
 /** Same window as Magellan's LIVE_SOURCE_REFETCH_DAYS: a page fetched within it is not moved. */
 export const MOVED_PAGE_DAYS = 30;
-export const MOVED_PAGE_DOCUMENT_LIMIT = 200;
+export const MOVED_PAGE_DOCUMENT_LIMIT = 500;
+/** A page counts as moved only while the live-source pass's last try is this recent (its retry wait tops out at 30 days). */
+export const MOVED_PAGE_TRY_DAYS = MOVED_PAGE_DAYS + 7;
 
 /** One check per (live fee, current-copy row) pair. */
 export function refreshCopyFingerprint(feePublishedId: number | string, feeVerifiedId: number | string): string {
@@ -146,8 +148,12 @@ const PAGE_KEY = (column: string) =>
 
 /**
  * Documents live fees cite whose page moved (see MOVED_PAGE_REFRESH_LIVE): not superseded, not a
- * companion page, no successful copy of the page within MOVED_PAGE_DAYS, and tried by Magellan's
- * live-source pass. A page that pass never tried (the plain fetch's own address) never counts.
+ * companion page, no successful copy of the page within MOVED_PAGE_DAYS, and Magellan's live-source
+ * pass tried the page within MOVED_PAGE_TRY_DAYS, after its newest copy, without bringing a copy
+ * back under its own address (a failure, or a redirect stored at the final address). A try that
+ * confirmed the page moves its check date past the try, so that page never counts. A page that
+ * pass never tried (the plain fetch's own address) never counts. A document already checked since
+ * the page's last try waits for the next try; the most recently tried pages come first.
  */
 export async function selectMovedPageDocuments(
   db: SqlTag,
@@ -172,21 +178,32 @@ export async function selectMovedPageDocuments(
     )
     SELECT cited.id
       FROM cited
-     WHERE NOT EXISTS (
-             SELECT 1 FROM source_documents copy
-              WHERE copy.institution_id = cited.institution_id
-                AND copy.status = 'success'
-                AND COALESCE(copy.last_checked_at, copy.crawled_at) >= NOW() - make_interval(days => ${MOVED_PAGE_DAYS}::int)
-                AND ${db.unsafe(PAGE_KEY("copy.document_url"))} = cited.page
+      CROSS JOIN LATERAL (
+        SELECT max(COALESCE(copy.last_checked_at, copy.crawled_at)) AS copy_at
+          FROM source_documents copy
+         WHERE copy.institution_id = cited.institution_id
+           AND copy.status = 'success'
+           AND ${db.unsafe(PAGE_KEY("copy.document_url"))} = cited.page
+      ) newest
+      JOIN LATERAL (
+        SELECT max(pa.created_at) AS tried_at
+          FROM pipeline_attempts pa
+         WHERE pa.institution_id = cited.institution_id
+           AND pa.stage = 'fetch'
+           AND pa.strategy = 'fetch.live_source'
+           AND pa.detail->>'live_page' = cited.page
+           AND pa.created_at >= NOW() - make_interval(days => ${MOVED_PAGE_TRY_DAYS}::int)
+      ) tried ON tried.tried_at IS NOT NULL
+     WHERE (newest.copy_at IS NULL OR newest.copy_at < NOW() - make_interval(days => ${MOVED_PAGE_DAYS}::int))
+       AND tried.tried_at > COALESCE(newest.copy_at, '-infinity'::timestamptz) + interval '1 hour'
+       AND NOT EXISTS (
+             SELECT 1 FROM pipeline_attempts checked
+              WHERE checked.source_document_id = cited.id
+                AND checked.stage = 'publish'
+                AND checked.strategy = ${REFRESH_COPY_STRATEGY.strategy}
+                AND checked.created_at > tried.tried_at
            )
-       AND EXISTS (
-             SELECT 1 FROM pipeline_attempts pa
-              WHERE pa.institution_id = cited.institution_id
-                AND pa.stage = 'fetch'
-                AND pa.strategy = 'fetch.live_source'
-                AND pa.detail->>'live_page' = cited.page
-           )
-     ORDER BY cited.id
+     ORDER BY tried.tried_at DESC, cited.id
      LIMIT ${options.limit ?? MOVED_PAGE_DOCUMENT_LIMIT}
   `;
   return rows.map((row) => Number(row.id));
@@ -219,7 +236,7 @@ export async function refreshFeesFromCurrentCopy(
   let candidates: RefreshCopyCandidate[];
   try {
     const movedDocuments = MOVED_PAGE_REFRESH_LIVE || options.dryRun
-      ? await inSavepoint(db, (scope) => selectMovedPageDocuments(scope as SqlTag, options)).catch((error) => {
+      ? await inSavepoint(db, (scope) => selectMovedPageDocuments(scope as SqlTag, { institutionId: options.institutionId, stateCode: options.stateCode })).catch((error) => {
         console.error("refreshFeesFromCurrentCopy moved-page select failed:", error);
         return [] as number[];
       })
@@ -258,6 +275,7 @@ export async function refreshFeesFromCurrentCopy(
           JOIN source_documents nd ON nd.institution_id = stale.institution_id
          WHERE stale.moved_page
            AND nd.id <> stale.source_document_id
+           AND nd.companion_source_id IS NULL
            AND nd.status = 'success'
            AND nd.superseded_by_id IS NULL
            AND nd.crawled_at > stale.document_crawled_at
