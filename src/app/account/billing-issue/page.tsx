@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
+import { ACCOUNT_REPORTS_PATH } from "@/lib/report-access";
 import { canAccessPremium, PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { activateIfPaid } from "@/lib/subscription-activation";
@@ -27,10 +28,13 @@ export default async function BillingIssuePage() {
         <p className="text-[15px] leading-relaxed text-ink-soft">
           We couldn&apos;t charge the card on file for your Hamilton subscription, and the {PAST_DUE_GRACE_DAYS}-day
           grace period has ended. Update your payment method to restore your workspace, saved reports and analyses.
-          Nothing has been deleted.
+          Nothing has been deleted, and the reports you already have are still yours to view and download.
         </p>
         <div className="flex flex-wrap items-center gap-4">
           <ManageBillingButton label="Update payment method" variant="primary" />
+          <Link href={ACCOUNT_REPORTS_PATH} className={`text-[14px] ${UTILITY_QUIET_LINK}`}>
+            Your reports
+          </Link>
           <Link href="/account" className={`text-[14px] ${UTILITY_QUIET_LINK}`}>
             Account settings
           </Link>

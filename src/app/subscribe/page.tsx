@@ -221,6 +221,14 @@ export default async function SubscribePage({
               {reasonLine}
             </p>
           )}
+          {user?.subscription_status === "canceled" && !canAccessPremium(user) && (
+            <p className="mx-auto mb-6 max-w-3xl text-center text-sm text-ink-soft">
+              Your earlier Hamilton reports are still yours.{" "}
+              <Link href="/account/reports" className="font-medium text-brick hover:underline">
+                View and download them
+              </Link>
+            </p>
+          )}
           {inviteMode && (
             <div className="mx-auto mb-6 max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <p className="font-semibold">Workspace invitation pending</p>

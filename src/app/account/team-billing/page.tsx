@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
+import { ACCOUNT_REPORTS_PATH } from "@/lib/report-access";
 import { canAccessPremium, isPaymentLapsed, PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { BILLING_ISSUE_PATH, findLapsedTeam, teamBillingContact } from "@/lib/team-billing";
@@ -37,7 +38,8 @@ export default async function TeamBillingPage() {
       <div className={`${UTILITY_CARD} space-y-5`}>
         <p className="text-[15px] leading-relaxed text-ink-soft">
           {capitalised(contact.who)} pays for Hamilton for {teamLabel}. The last payment didn&apos;t go through and
-          the {PAST_DUE_GRACE_DAYS}-day grace period has ended, so your seat is paused. Nothing has been deleted.
+          the {PAST_DUE_GRACE_DAYS}-day grace period has ended, so your seat is paused. Nothing has been deleted, and the reports you already have are still yours
+          to view and download.
         </p>
         <p className="text-[15px] leading-relaxed text-ink-soft">
           Ask {contact.who} to update the payment method. Your access comes back as soon as the payment goes
@@ -47,6 +49,9 @@ export default async function TeamBillingPage() {
           <a href={contact.href} className={utilityButton("primary")}>
             {contact.linkLabel}
           </a>
+          <Link href={ACCOUNT_REPORTS_PATH} className={`text-[14px] ${UTILITY_QUIET_LINK}`}>
+            Your reports
+          </Link>
           <Link href="/account" className={`text-[14px] ${UTILITY_QUIET_LINK}`}>
             Account settings
           </Link>

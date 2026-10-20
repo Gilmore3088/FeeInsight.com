@@ -11,6 +11,7 @@ vi.mock("@/components/hamilton/intelligence/market-board-brief", () => ({ market
 import { createMarketBoardBrief, saveBoardBrief } from "./board-actions";
 import { encodeLandingResearch } from "@/lib/hamilton/landing-research-handoff";
 import { boardBriefFromAnalysis } from "@/lib/hamilton/board-brief";
+import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
 const edits = { title: "Board review", teamNote: "Our note", includeEvidence: true };
 const response = { title: "Saved answer", confidence: { level: "medium" as const, basis: ["Limited"] }, hamiltonView: "Original answer", whatThisMeans: "Original context", whyItMatters: [], evidence: { metrics: [{ label: "Fee", value: "$0.00", note: "Published schedule · 2026-06-30" }] }, exploreFurther: ["Inspect terms"] };
 beforeEach(() => { vi.clearAllMocks(); mocks.user.mockResolvedValue({ id: 7, role: "user", subscription_status: "active", subscription_tier: "pro" }); mocks.save.mockResolvedValue("report-id"); mocks.run.mockResolvedValue(undefined); });
@@ -19,6 +20,12 @@ describe("private board brief writes", () => {
     mocks.user.mockResolvedValue(null);
     expect(await saveBoardBrief({ analysisId: "other", edits })).toMatchObject({ success: false });
     expect(mocks.analysis).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
+  });
+  it("should_block_new_or_edited_board_briefs_when_cancelled (#1999)", async () => {
+    mocks.user.mockResolvedValue({ id: 7, role: "user", subscription_status: "canceled" });
+    expect(await saveBoardBrief({ analysisId: "mine", edits })).toEqual({ success: false, error: REPORT_START_BLOCKED_MESSAGE });
+    expect(await saveBoardBrief({ reportId: "mine", edits })).toEqual({ success: false, error: REPORT_START_BLOCKED_MESSAGE });
+    expect(mocks.analysis).not.toHaveBeenCalled(); expect(mocks.report).not.toHaveBeenCalled(); expect(mocks.save).not.toHaveBeenCalled();
   });
   it("refuses a missing/inaccessible source without accepting browser evidence", async () => {
     mocks.analysis.mockResolvedValue(null);
@@ -53,6 +60,7 @@ describe("Build board brief from a market view", () => {
   beforeEach(() => { mocks.load.mockResolvedValue({}); mocks.input.mockReturnValue(marketInput); });
 
   it("sends a non-subscriber to /subscribe before loading data", async () => {
+    mocks.sql.mockResolvedValue([]); // not a seat on a lapsed team
     mocks.user.mockResolvedValue({ id: 7, role: "user", subscription_status: "none" });
     await expect(createMarketBoardBrief(form({ research: encodeLandingResearch(florida) }))).rejects.toThrow("REDIRECT /subscribe");
     expect(mocks.load).not.toHaveBeenCalled();
