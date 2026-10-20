@@ -12,7 +12,6 @@ export const MARKETING_TOUCH_ENDPOINT = "/api/track/touch";
 export const FIRST_TOUCH_STORAGE_KEY = "fi_first_touch";
 
 export const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
-export type UtmKey = (typeof UTM_KEYS)[number];
 
 export interface MarketingTouch {
   utm_source: string | null;

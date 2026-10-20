@@ -7,6 +7,16 @@ import type { AgentLesson } from "@/lib/agents/learning/lesson-types";
  */
 export const ROSETTA_LESSONS: AgentLesson[] = [
   {
+    id: "issue-1053",
+    agent: "rosetta",
+    stage: "fee-page check",
+    lesson: "An account or product page that shows a monthly fee or two is not the bank's fee schedule: reject it at the fee-page check, before Knox reads it, so the bank goes back to Magellan for the real schedule.",
+    why: "The fee-page check let product pages through as fee documents: of 1,235 institutions held by the 3-fee minimum, 1,041 sat on a product or account URL, and 137 institutions' only fees were later taken down as product-page fees (Oct 12 review).",
+    evidence: { issues: [1053, 1050], prs: [1150], files: ["docs/plans/rosetta-review-2026-10-12.md", "src/lib/agents/learning/fee-page.ts"] },
+    appliesTo: ["read"],
+    since: "2026-10-13",
+  },
+  {
     id: "issue-2325",
     agent: "rosetta",
     stage: "paid read",

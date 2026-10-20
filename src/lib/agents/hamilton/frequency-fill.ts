@@ -3,6 +3,7 @@ import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { recordFeedback, type FeedbackRow } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { printsAmount } from "@/lib/fee-evidence";
+import { notAdminCorrectedSql } from "@/lib/fee-correction-guard";
 import {
   boxTableAnnualHeader,
   continuousOverdraftPeriodCheck,
@@ -240,6 +241,7 @@ export async function fillBlankFrequencies(
          LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         WHERE fp.rolled_back_at IS NULL
+          AND ${notAdminCorrectedSql("fp")}
           AND fp.amount_kind = 'flat'
           AND fp.amount IS NOT NULL
           AND COALESCE(fr.extraction_note, fr.conditions) LIKE '%excerpt=%'
@@ -266,6 +268,7 @@ export async function fillBlankFrequencies(
          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
          JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         WHERE fp.rolled_back_at IS NULL
+          AND ${notAdminCorrectedSql("fp")}
           AND fp.amount_kind = 'flat'
           AND fp.amount IS NOT NULL
           AND fp.frequency IS NULL
