@@ -8,6 +8,7 @@ import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { hasLeadingFootnoteShape, stripFootnoteMarks, usableName, withoutLeadingFootnoteMark } from "@/lib/agents/knox/rules";
 import { traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { classifyFeeText } from "@/lib/agents/knox/rules";
 import {
@@ -696,8 +697,13 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * Card Rush Order", "Reconveyance .. Actual Cost: Returned payment") comes off the front: the name
  * starts after it (`tidyFeeName`). Dry run on 2026-10-20: 2 live names carry one; 1 takes the rename
  * (60770), and 36649 ("... Varies | IRA") is left because "IRA" names no fee.
+ * v25 (#1596, #1917): v23's marks on every category's name were never reached, because the due
+ * filter still looked for marks only on maintenance names; it now flags them on every name. A "^"
+ * standing before a name comes off ("^ Research Fee"), never before a sentence ("^^ If your ...").
+ * A description cell glued after the name is cut off (`descriptionFreeName`: "Overdraft Fee This
+ * fee applies to overdrafts ...", "Dormant Account Fee Applies when ...", First Bank of Pike).
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 24 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 25 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -718,6 +724,8 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   8511, 6272, 219, 5647, 8445, 1484, 206, 6512, 4802, 6048, 1445, 699, 887, 4769, 568, 8024, 3397,
   // v21 (#1450): the institutions with a marked maintenance or minimum balance name on Oct 17.
   68, 229, 745, 1141, 2193, 2341, 2524, 2993, 4818, 6133, 7911, 8221, 8448,
+  // v25 (#1596, #1917): First Bank of Pike's glued descriptions and the marked names the v23 pass never reached.
+  3842, 227, 1977, 2228, 2612, 2777, 3431, 4589, 5140, 5632, 5649, 5651, 5730, 5994, 7926, 8183, 8347, 8578,
 ];
 
 /** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
@@ -729,6 +737,10 @@ const GLUED_MARK_BEFORE_PUNCTUATION =
 const PRODUCT_CODE = /\s*\([A-Z]{1,4}-?\d{1,4}\)\*?/g;
 /** A footnote number glued to a plain word of a monthly fee's name ("Monthly2", "Account5", "Checking09"). */
 const GLUED_WORD_MARK = /\b(monthly|account|checking|savings|maintenance|service|charge)\d{1,2}(?=[\s,:;)]|$)/gi;
+/** v25 (#1596): a "^", "*" or "∞" mark standing alone in front of the name ("^ Research Fee", 1977). */
+const LEADING_MARK = /^[\^*∞]+\s+/u;
+/** What follows a leading mark when it is a name: a capital, not a sentence opener ("^^ If your account ..."). */
+const NAME_AFTER_MARK = /^(?!(?:If|When|Unless|There|This|These|That|Please|Note|See|All|Any|Each|Every|IF|WHEN|UNLESS|THERE|THIS|PLEASE|NOTE|SEE)\b)[A-Z]/;
 /** The words a name opens with, in the bank's quotes, after an article ("A “maintenance service charge”"). */
 const QUOTED_OPENING = /^(?:(?:a|an|the)\s+)?[“"]([^“”"]+)[”"]/i;
 
@@ -744,13 +756,15 @@ export function footnoteMarkFreeName(name: string, canonicalKey?: string): strin
   const accountNamed = canonicalKey == null || ACCOUNT_NAMED_KEYS.has(canonicalKey);
   if (/^[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]/u.test(current)) return null;
   // v23: a mark standing alone before words ("^^ If your account balance ...") opens a footnote's sentence.
-  if (/^[\^*∞]+\s/u.test(current)) return null;
+  // v25 (#1596): unless a name follows it ("^ Stop Payment Fee (Per item)"): a capital, no sentence opener.
+  const leadingMark = current.match(LEADING_MARK);
+  if (leadingMark && !NAME_AFTER_MARK.test(current.slice(leadingMark[0].length))) return null;
   // v23: so does a mark glued to the next word mid-name ("ATM Withdrawals§ §Non-TEFCU owned ATMs only").
   if (/\s[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]+[A-Za-z]/u.test(current)) return null;
   // v23: "^" or "*" between numbers or standing alone between words is arithmetic ("2^3", "$25 * hours").
   if (/\d\s*[\^*]+\s*\d/.test(current) || /\S\s+[\^*]+\s+[^\s†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]/u.test(current)) return null;
   // v23: a web page's footnote link ("Inactive Account Fee[4](#disclaimer4)").
-  let next = current.replace(/\[\d{1,2}\]\(#[^)\s]*\)/g, "");
+  let next = current.replace(LEADING_MARK, "").replace(/\[\d{1,2}\]\(#[^)\s]*\)/g, "");
   if (accountNamed) next = next.replace(PRODUCT_CODE, "");
   next = next.replace(FOOTNOTE_GLYPHS, "");
   if (accountNamed) next = next.replace(GLUED_WORD_MARK, "$1");
@@ -765,6 +779,58 @@ export function footnoteMarkFreeName(name: string, canonicalKey?: string): strin
   if (!next || next === current) return null;
   if (/^[a-z]/.test(next) || NOT_A_NAME.test(next) || CONDITION_TAIL.test(next) || SENTENCE_VERB.test(next) || next.includes("|") || /[“”"]/.test(next)) return null;
   return next;
+}
+
+/**
+ * v25 (#1917): a web page's description cell glued after the fee's name, opening with what the
+ * fee applies to ("Overdraft Fee This fee applies to overdrafts created by check, ...",
+ * "Dormant Account Fee Applies when demand deposit account balance is bel", First Bank of Pike).
+ * The description opens with a capital, mid-name, where no name goes on: a name's own words
+ * never start a new sentence about the fee.
+ */
+const DESCRIPTION_START =
+  /\s+(?:[Tt]his\s+(?:fee|charge|service\s+charge)\s+(?:applies|is\s+(?:charged|assessed|applied|imposed))|(?:Applies|Charged|Assessed|Applied|Imposed)\s+(?:when|if|after|whenever))\b/u;
+/** The longest name a description cut keeps; a longer head is a sentence of its own. */
+const DESCRIPTION_HEAD_MAX_WORDS = 7;
+
+/**
+ * v25 (#1917): the name before a description cell glued onto it, or null. The name kept must name
+ * a fee on its own, open in capitals, carry no condition or sentence, and keep the fee's category.
+ */
+export function descriptionFreeName(name: string, canonicalKey: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  const start = current.search(DESCRIPTION_START);
+  if (start <= 0) return null;
+  const head = current.slice(0, start).replace(/[\s,;:–—-]+$/u, "").trim();
+  const words = head.split(/\s+/).length;
+  if (!head || !/^[A-Z0-9]/.test(head) || words > DESCRIPTION_HEAD_MAX_WORDS) return null;
+  // One word names a fee only when it is the fee noun's own word ("Closing" alone is a heading).
+  if (words < 2 && !/\b(?:fees?|charges?)$/i.test(head)) return null;
+  if (!(FEE_NOUN.test(head) || NSF_NAME.test(head)) || NOT_A_NAME.test(head)) return null;
+  if (CONDITION_TAIL.test(head) || SENTENCE_VERB.test(head) || PRONOUN.test(head) || head.includes("|")) return null;
+  if (checkFeeCategory(canonicalKey, current).ok && !checkFeeCategory(canonicalKey, head).ok) return null;
+  return head;
+}
+
+/**
+ * v25: whether `checkFeeAgainstSource`, the one accuracy check, matches the stored name on the fee's
+ * own document but not the new one ("Dormant Account Fee" alone reads the line's $500.00 threshold).
+ */
+function losesSourceMatch(fee: LiveFeeRow, newName: string, texts: InstitutionText[]): boolean {
+  if (fee.amount == null || fee.source_document_id == null) return false;
+  const amount = Number(fee.amount);
+  const own = texts.filter((text) => Number(text.source_document_id) === Number(fee.source_document_id)).map((text) => text.normalized_text);
+  const matches = (name: string) => own.some((text) => checkFeeAgainstSource(text, name, amount, ".", fee.canonical_fee_key).ok);
+  return own.length > 0 && matches(fee.fee_name) && !matches(newName);
+}
+
+/**
+ * The name `planRetidy` gives a fee whose only flaws are a glued description (v25) and the
+ * footnote marks around its words (v21/v23), or null when neither applies.
+ */
+export function markFreeName(name: string, canonicalKey: string): string | null {
+  const cut = descriptionFreeName(name, canonicalKey);
+  return footnoteMarkFreeName(cut ?? name, canonicalKey) ?? cut;
 }
 
 /**
@@ -1537,7 +1603,7 @@ export function planRetidy(
   const claim = (key: string, id: number) => namedBy.set(key, (namedBy.get(key) ?? new Set()).add(id));
   for (const fee of liveFees) {
     claim(nameKey(fee, fee.fee_name), Number(fee.fee_published_id));
-    const off = footnoteMarkFreeName(fee.fee_name, fee.canonical_fee_key);
+    const off = markFreeName(fee.fee_name, fee.canonical_fee_key);
     if (off) claim(nameKey(fee, off), Number(fee.fee_published_id));
   }
   const shared = sharedNameFeeIds(liveFees);
@@ -1546,8 +1612,8 @@ export function planRetidy(
     // v16: or a condition publish cut off Knox's name.
     const last = logged.get(Number(stored.fee_published_id)) ?? publishCutName(stored);
     // v21 (#1450): a maintenance name whose only flaw is its footnote marks loses them, and nothing else.
-    // v23: in every category.
-    const marksOff = footnoteMarkFreeName(stored.fee_name, stored.canonical_fee_key);
+    // v23: in every category. v25 (#1917): and a description cell glued after the name comes off.
+    const marksOff = markFreeName(stored.fee_name, stored.canonical_fee_key);
     // v22 (#1810): an all-caps name reads in title case, and nothing else changes.
     const markFree = capsCasedName(marksOff ?? stored.fee_name) ?? marksOff;
     if (markFree) {
@@ -1567,6 +1633,11 @@ export function planRetidy(
         continue;
       }
       if (traceLiveFee(stored, texts).kind !== "untraceable" && traceLiveFee({ ...stored, fee_name: markFree }, texts).kind === "untraceable") {
+        skipped.would_not_trace += 1;
+        continue;
+      }
+      // v25: a rename never turns a fee the shared accuracy check matches on its own page into one it misses.
+      if (losesSourceMatch(stored, markFree, texts)) {
         skipped.would_not_trace += 1;
         continue;
       }
@@ -1875,6 +1946,12 @@ export function retidyDueInstitutions(
                             OR fp.fee_name ~ '\\([A-Z]{1,4}-?[0-9]{1,4}\\)'
                             OR fp.fee_name ~* '(monthly|account|checking|savings|maintenance|service|charge)[0-9]{1,2}([[:space:],:;)]|$)'
                             OR fp.fee_name ~ '^((A|An|The)[[:space:]]+)?[“"]'))
+                   -- v25 (#1596): v23 took footnote marks off every category's name, but this filter
+                   -- still looked for them only on maintenance names, so no other name's institution
+                   -- came due (footnoteMarkFreeName decides).
+                   OR fp.fee_name ~ '[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^∞*]'
+                   -- v25 (#1917): a description cell glued after the name (descriptionFreeName decides).
+                   OR fp.fee_name ~ '[[:space:]]([Tt]his[[:space:]]+(fee|charge|service charge)[[:space:]]+(applies|is[[:space:]]+(charged|assessed|applied|imposed))|(Applies|Charged|Assessed|Applied|Imposed)[[:space:]]+(when|if|after|whenever))\\M'
                    -- v22 (#1810): an all-caps name (capsCasedName decides).
                    OR (fp.fee_name ~ '[A-Z]{4}' AND fp.fee_name !~ '[a-z]')
                  )
@@ -2032,8 +2109,10 @@ export async function retidyLiveFeeNames(
     const messy = fees.filter(
       (fee) =>
         isMessyName(fee.fee_name) ||
-        // v21 (#1450): a maintenance name with footnote marks.
+        // v21 (#1450): a maintenance name with footnote marks. v23/v25 (#1596, #1917): in every
+        // category, or a description cell glued after the name.
         footnoteMarkFreeName(fee.fee_name) != null ||
+        markFreeName(fee.fee_name, fee.canonical_fee_key) != null ||
         // v22 (#1810): an all-caps name.
         capsCasedName(fee.fee_name) != null ||
         shared.has(Number(fee.fee_published_id)) ||
