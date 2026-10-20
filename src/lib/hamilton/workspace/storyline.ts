@@ -367,7 +367,7 @@ function structurePiece(research: FeeResearch): Piece | null {
   const shown = [set.rows.find((r) => r.own), ...group.slice(0, MAX_LISTED_ROWS)].filter((r): r is NonNullable<typeof r> => !!r);
   return {
     key: "structure",
-    actionTitle: `Of ${count(group.length)} ${label}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
+    actionTitle: `Of ${countedGroup(group.length, label)}: ${count(nsf)} charge an NSF fee, ${count(transfer)} a transfer fee, ${count(cap)} a daily cap.`,
     exhibit: {
       kind: "structure_matrix",
       title: `Overdraft and NSF structure: ${subjectName(research)} and ${label}`,
@@ -412,8 +412,8 @@ function lineupPiece(research: FeeResearch): Piece | null {
         : `${subjectPossessive(research)} lowest monthly fee is ${money(ownLowest)}`;
   const actionTitle =
     group.length >= MIN_PEERS_FOR_POSITION
-      ? `${ownLead}; ${count(withFree)} of ${count(group.length)} ${label} offer a no-fee account.`
-      : `${ownLead}; too few ${label} publish their lineup to compare.`;
+      ? `${ownLead}; ${count(withFree)} of ${countedGroup(group.length, label)} offer a no-fee account.`
+      : `${ownLead}; too few ${label.startsWith("the ") ? `of ${label}` : label} publish their lineup to compare.`;
   const shown = [own, ...group.slice(0, MAX_LISTED_ROWS)];
   return {
     key: "lineup",
