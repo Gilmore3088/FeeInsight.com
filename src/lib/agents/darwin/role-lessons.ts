@@ -120,7 +120,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     id: "pr-1489-document-names-the-bank",
     agent: "darwin",
     stage: "document owner",
-    lesson: "A document on a shared host or a website vendor's download path is the bank's own only when it prints the bank's name and its city or state; a stored website host does not prove whose document it is.",
+    lesson: "Whose document a shared-host or vendor-path file is comes from its text, not its host: it is this bank's when the text names this bank (a full name form, its credit union acronym, its website, its city or its FDIC or NCUA number), and another bank's only when it names an unrelated linked institution instead; a stored website host proves neither.",
     why: "The registry seed stored another bank's website for three institutions, and credit union website vendors serve one CU's file on every member domain, so the host-based other-bank check passed wrong-bank schedules (52 live fees in #1455). Darwin's check that reads the printed name shipped in shadow until James sees its count.",
     evidence: { issues: [1455], prs: [1489], files: ["docs/project/findings/2026-10-15-document-owner-trusts-stored-website.md", "src/lib/agents/darwin/document-owner.ts"] },
     appliesTo: "all",

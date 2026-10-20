@@ -100,7 +100,7 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     id: "pr-1293-plain-fetch-outcome",
     agent: "magellan",
     stage: "fetch",
-    lesson: "Judge a failing link by the plain fetch's own outcome, not by the status a paid-fetch error was mapped to. When the bank's own link keeps failing, ask for the same address at the bank's other spellings of its host (its website's host and scheme, with or without www, plain http) before searching again.",
+    lesson: "Judge a failing link by the plain fetch's own outcome, not by the status a paid-fetch error was mapped to. When the bank's own link keeps failing with no answer (a network or TLS error, a timeout or a 5xx), ask for the same address at the bank's other spellings of its host (its website's host and scheme, with or without www, plain http) before searching again; a 403 or 404 is not fixed by another spelling.",
     why: "The paid fetch's own url_not_allowed refusal was stored as an HTTP 502 from the bank, so 12 thin banks carried magellan_fetch_http_5xx although their latest plain fetch was a 403 or a network error. State Department FCU's fees.pdf failed every plain fetch from Oct 3 while its stored website is http://www.sdfcu.org.",
     evidence: { issues: [1051], prs: [1293], files: ["docs/project/findings/2026-10-14-paid-fetch-errors-read-as-bank-502s.md", "docs/project/findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md", "src/lib/agents/magellan/address-variant-fetch.ts"] },
     appliesTo: "all",
