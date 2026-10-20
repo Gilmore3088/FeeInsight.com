@@ -91,3 +91,5 @@ native end-to-end fixture cases exercise registration, reset, long legacy upgrad
 subsequent login without mocking the cryptography. Validation receipts record the exact
 review head and full local/CI results; no production authentication or browser session
 was exercised.
+
+**Guard:** `src/lib/passwords.test.ts:29` (a legacy verifier matches the full UTF-8 input and only a successful one is upgraded); `src/lib/auth-password-lifecycle.db.test.ts:100`, in CI's `E2E_TESTS`, commits the upgrade and the session together before the cookie

@@ -29,3 +29,5 @@ Item Fee".
 **Lesson.** A unique key that leaves out a field the pipeline treats as identity (here, category)
 drops rows silently. Tests of an extraction rule should assert on the stored rows
 (`reread.db.test.ts`), not only on the candidates.
+
+**Agent lesson:** knox/pr-2126-store-each-twin

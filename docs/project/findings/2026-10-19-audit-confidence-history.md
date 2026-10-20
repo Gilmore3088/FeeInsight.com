@@ -9,3 +9,5 @@ Calendar-week history is reconstructed from the existing scoreboard snapshots' d
 This is an automated diagnostic of published dollar fees against stored documents. Correlated sources, shared validators, source currency, missing fees and rate fees limit what it establishes. James's separate weekly live batch of 50 whole institutions remains the launch accuracy measurement and requires no additional manual confirmations. This change does not close #1923, #1862 or #2061.
 
 Verification includes full and focused unit suites, a real loopback PostgreSQL history query in CI, checker/receipt/rounding boundary cases and operator authorization. It introduces no migration, fee mutation, new service or provider activation. Data accuracy has not been declared 99.5% by merging this reporting fix.
+
+**Agent lesson:** deming/pr-2119-bound-not-point

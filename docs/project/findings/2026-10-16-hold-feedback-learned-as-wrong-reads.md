@@ -26,3 +26,5 @@ that introduces the reason.
 - The scorecard counts it as housekeeping.
 - A step behind `ACCOUNT_TYPE_HOLD_FEEDBACK_REPAIR_ON` (off) sets the written rows to weight 0. Turning
   it on waits for James.
+
+**Guard:** `src/lib/agents/learning/feedback.test.ts:196` (the feedback sync learns nothing from an account type hold, as a takedown or a restore; `src/lib/agents/goal-scorecard.test.ts:124` counts it as housekeeping, not a wrong fee. A new policy reason still has to be added to both lists by hand)

@@ -136,4 +136,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "pr-1769-judge-owner-before-live",
+    agent: "darwin",
+    stage: "document owner",
+    lesson: "Judge a document's owner before its fees go live: read first the pairs with rows verified in the last 14 days that are not live yet, so the other_bank verdict is on record before publish decides those rows. A re-read is only for a pair with live fees.",
+    why: "The document-owner check judged only pairs that already had live fees, so fees from another bank's schedule went live before the verdict: by Oct 17, 246 fees on the 20 pairs judged other_bank.",
+    evidence: { issues: [1741], prs: [1769], files: ["docs/project/findings/2026-10-17-takedowns-at-source.md", "src/lib/agents/darwin/document-owner.ts"] },
+    appliesTo: "all",
+    since: "2026-10-17",
+  },
 ];

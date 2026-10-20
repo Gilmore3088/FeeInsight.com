@@ -34,3 +34,5 @@ under the wrong type (#1788):
 **Lesson:** A section heading is not the fee type. When a line names a place (another country), a
 direction (in, out) or a duration (N days overdrawn), that word decides the type, even when the
 heading says otherwise.
+
+**Guard:** `src/lib/fee-category-guard.test.ts:1811` (an ATM used outside the U.S. fails the non-network ATM type and re-files to International ATM; the cases after it cover add-ons refused as monthly maintenance, sustained overdrafts re-filed to the continuous overdraft fee and incoming wires re-filed to incoming)

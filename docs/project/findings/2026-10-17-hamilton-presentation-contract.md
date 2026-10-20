@@ -123,3 +123,5 @@ overflow was 0 before and after.
    market and Monitor screens.
 3. Accept stacked cards for tables on phones (peer list below 768px).
 4. Accept one numeral face (Geist Sans) for every figure in the workspace.
+
+**Guard:** `src/components/hamilton/memo/answer-primitives.test.tsx:47` (the memo, storyline and research answers set their lead through the shared primitives; the cases after it cover one key-figure strip, one section heading, one exhibit frame, one findings list, one date format and the phone matrix)
