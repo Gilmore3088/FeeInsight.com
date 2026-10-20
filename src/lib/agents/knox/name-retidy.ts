@@ -801,7 +801,8 @@ export function descriptionFreeName(name: string, canonicalKey: string): string 
   const current = name.replace(/\s+/g, " ").trim();
   const start = current.search(DESCRIPTION_START);
   if (start <= 0) return null;
-  const head = current.slice(0, start).replace(/[\s,;:–—-]+$/u, "").trim();
+  // The sentence's own full stop goes with it ("... fee (per item). This fee applies to").
+  const head = current.slice(0, start).replace(/[\s,;:.–—-]+$/u, "").trim();
   const words = head.split(/\s+/).length;
   if (!head || !/^[A-Z0-9]/.test(head) || words > DESCRIPTION_HEAD_MAX_WORDS) return null;
   // One word names a fee only when it is the fee noun's own word ("Closing" alone is a heading).

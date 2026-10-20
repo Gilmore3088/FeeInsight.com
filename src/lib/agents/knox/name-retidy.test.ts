@@ -1200,6 +1200,9 @@ describe("name retidy v25: leading marks, every category's marks come due, glued
     expect(descriptionFreeName("Overdraft Fee This fee applies to overdrafts created by check, in person withdrawal, or other electronic means that are", "overdraft")).toBe("Overdraft Fee");
     expect(descriptionFreeName("Returned Item Fee This fee applies to overdrafts created by check, in person withdrawal, or other electronic means that", "nsf")).toBe("Returned Item Fee");
     expect(descriptionFreeName("Dormant Account Fee Applies when demand deposit account balance is below $500.00 and the account has no activity for twe", "dormant_account")).toBe("Dormant Account Fee");
+    // Live 42560 and 97164 (Oct 20): the sentence's full stop or colon goes with it.
+    expect(descriptionFreeName("Returned/Non-Sufficient Funds (NSF) fee (per item). This fee applies to", "nsf")).toBe("Returned/Non-Sufficient Funds (NSF) fee (per item)");
+    expect(descriptionFreeName("Dormant Account Fee: Assessed after two years of no activity on a transaction account", "dormant_account")).toBe("Dormant Account Fee");
   });
 
   it("leaves names whose words only look like a description", () => {
