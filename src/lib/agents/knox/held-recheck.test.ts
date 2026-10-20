@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { runFreeSpecialists } from "./specialists";
-import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE } from "./rules";
+import { classifyFeeText, KNOX_HELD_NAME_RULES_LIVE, withHeldNameRules } from "./rules";
 import { researchSplitTarget } from "@/lib/fee-fold";
 
 import {
@@ -569,9 +569,9 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
   it.each([
     [stopPay, "stop_payment"],
     [held(295678, "5.00", "Early closure fee (90 days)", "Early closure fee (90 days) | $5.00"), "early_closure"],
-    // Returned mail is account research (fee-fold.ts), tracing the new address too; v77: its own type once the research split is on.
-    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), researchSplitTarget("returned_mail")],
-    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), researchSplitTarget("returned_mail")],
+    // Returned statements stay held (James's call since v26): the held-name rules no longer file them (v89).
+    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), null],
+    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), null],
     [held(678207, "5.00", "Printed / Mailed Monthly Statement Fee", "Printed / Mailed Monthly Statement Fee | $5.00"), "paper_statement"],
     [held(472697, "95.00", "7″x10″ Rental", "7″x10″ Rental | $95.00 annual charge (Eldersburg Location Only)"), "safe_deposit_box"],
     // A HELOC's early closure fee (Great Southern Bank) and a mortgage's 36-month one stay held.
@@ -602,20 +602,27 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
     expect(heldNameRelease(row)).toBeNull();
   });
 
-  it("is switched off: today's rules and the held re-check read these names as before", () => {
-    expect(KNOX_HELD_NAME_RULES_LIVE).toBe(false);
-    expect(classifyFeeText("Stop Pay Fee")).toBeNull();
-    expect(recategorizeHeld(stopPay)).toBeNull();
+  it("ships switched on (v89, sampled clean Oct 20): today's rules file these names, returned statements stay held", () => {
+    expect(KNOX_HELD_NAME_RULES_LIVE).toBe(true);
+    expect(classifyFeeText("Stop Pay Fee")).toBe("stop_payment");
+    expect(recategorizeHeld(stopPay)?.canonicalHint).toBe("stop_payment");
+    expect(classifyFeeText("Returned Statement Fee")).toBeNull();
+    // Off, today's rules read these names as before.
+    expect(withHeldNameRules(false, () => classifyFeeText("Stop Pay Fee"))).toBeNull();
   });
 
-  it("counts what would go to Darwin and writes nothing", async () => {
+  it("previews nothing once on, since the held re-check sends these lines itself, and writes nothing", async () => {
     const db = createDb([stopPay, heloc, courtesyPay]);
     const result = await previewHeldNameRules(db as never);
-    expect(result).toMatchObject({
-      live: false, candidates: 3, wouldRelease: 1, passChecks: 1, setAside: 1, institutions: 1, byCategory: { stop_payment: 1 },
-      examples: [{ feeRawId: 265119, feeName: "Stop Pay Fee", amount: 30, category: "stop_payment" }],
-    });
+    expect(result).toMatchObject({ live: true, candidates: 0, wouldRelease: 0, passChecks: 0 });
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
+  });
+
+  it("drops page markup from a promoted name", () => {
+    const row = held(928156, "35.00", "Miscellaneous Fees and Charges<br> Stop Pay Order or Renewal", "Miscellaneous Fees and Charges<br> Stop Pay Order or Renewal | $35.00");
+    const candidate = withHeldNameRules(true, () => recategorizeHeld(row));
+    expect(candidate?.canonicalHint).toBe("stop_payment");
+    expect(promotedName(row, candidate!)).not.toMatch(/</);
   });
 });
 
