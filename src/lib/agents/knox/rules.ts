@@ -2610,6 +2610,16 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     if (feeSchedule) keep(held);
     else countDrop(result, "not_fee_schedule");
   }
+  // v91 (#1100): a checking account's own free row is its monthly fee at $0, so it is named as
+  // one ("Free Checking (CK02) Maintenance Fee"), as the priced account rows are. Under its
+  // bare product name the category guard refused every one ("Fee name does not support its
+  // category"). Named only after the heading filters above, which test the bare row.
+  result.held = result.held.map((read) =>
+    read.shape === "zero" && read.canonicalHint === "monthly_maintenance" && FREE_CHECKING_ROW.test(read.feeName) &&
+    !passesDarwinChecks("monthly_maintenance", read.feeName, 0)
+      ? { ...read, feeName: `${read.feeName.trim()} Maintenance Fee` }
+      : read,
+  );
   return result;
 }
 
