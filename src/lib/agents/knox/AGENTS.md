@@ -1264,7 +1264,9 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
-- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, off until James switches it on): a held
+- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, on since Oct 20 under James's sampled-clean rule, #2442: the dry run
+  picked 4,091 candidates at 482 banks, the first 2,000 read all passed the band test, and a
+  random 20 were all rate bands): a held
   range line with no category that is a deposit or loan rate band ("Tier 3 | $25,000.00 –
   $49,999.99 | 0.75%", "$3,500 to $20,000 | 11.25% | 48 months"). It asks for positive evidence,
   since two reviews found fees a negative test missed. A line is a band only when:
@@ -1313,7 +1315,7 @@ more rules versions without moving them:
 |---|---|---|
 | `unclassified` | Knox's held re-check and name filing; James labels the weekly name queue | today's rules, a settled name or a label |
 | `range` (with a category) | James: a range needs storage first (#1060) | none yet |
-| `range_no_category` | Knox's range-band pass (off) | bands set aside as not fees once on |
+| `range_no_category` | Knox's range-band pass (on since Oct 20) | bands set aside as not fees |
 | `range_band` | Knox's range-band pass | set aside, kept |
 | `percentage` | Knox's rate re-check | to Darwin as a rate fee |
 | `untraced` | Knox's untraced re-check; then Rosetta | traced by today's rules; a Rosetta re-read is the next slice |
