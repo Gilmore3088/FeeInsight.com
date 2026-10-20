@@ -856,7 +856,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // or spending account or a positive pay name fails and goes to the second look, and once the
 // category is guarded the borrowed-direction rule also fails a verification glued to a wire's
 // direction row ("Account Verification NC: Domestic"). Counts in the PR.
-export const CATEGORY_GUARD_VERSION = 78;
+// v79 (Oct 20, #1830): bill pay also refuses a name whose own source line puts a stop payment just
+// before it ("Stop Payment (includes ACH, Bill Pay) | $10.00" read as "ACH, Bill Pay"): it is the stop
+// payment fee. 9 live fees on Oct 20, each with a live stop payment twin at its bank and price, go to
+// the second look and come down. A fax-led line is document reproduction by the fold (v19, #1829).
+export const CATEGORY_GUARD_VERSION = 79;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -1509,9 +1513,23 @@ function overdraftOrNsfBillPay(
   const channels = new Set((name.match(PAYMENT_CHANNEL) ?? []).map((word) => word.toLowerCase().replace(/\s+/g, " ")));
   const heading = (channels.size >= 2 ? cells.slice(-2) : cells.slice(-1)).join("|");
   const words = heading.match(OVERDRAFT_OR_NSF);
-  if (!words) return null;
-  return {
-    code: "schedule_contradicts",
-    reason: `the source line prices "${name}" under "${heading.replace(/^["\s|]+|[\s|]+$/g, "")}", the overdraft or NSF fee, not bill pay`,
-  };
+  if (words) {
+    return {
+      code: "schedule_contradicts",
+      reason: `the source line prices "${name}" under "${heading.replace(/^["\s|]+|[\s|]+$/g, "")}", the overdraft or NSF fee, not bill pay`,
+    };
+  }
+  // v79 (#1830): a stop payment that lists what it stops ("Stop payment order (one free per calendar
+  // year) Bill Payment, ACH, or Check | $35.00", "Stop Payment (includes ACH, Bill Pay) | $10.00") is
+  // the stop payment fee, however Knox cut the name. Read within the name's cell or the one before it.
+  const stopped = cells.slice(-2).join("|").match(STOP_PAYMENT_HEAD);
+  return stopped
+    ? {
+        code: "schedule_contradicts",
+        reason: `the source line prices "${name}" under "${stopped[0].trim()}", the stop payment fee, not bill pay`,
+      }
+    : null;
 }
+
+/** v79 (#1830): a stop payment heading before a bill pay name on its own line. */
+const STOP_PAYMENT_HEAD = /\bstop[\s-]*pay(?:ments?)?\b(?:\s+(?:orders?|fees?))?/i;

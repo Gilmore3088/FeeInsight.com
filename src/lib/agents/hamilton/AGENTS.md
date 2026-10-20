@@ -1,5 +1,16 @@
 # Hamilton Agent Guide
 
+## Prospective source-owned paid/returned events (#1918)
+
+Before publishing v1 action rows, bind their exact original artifact/hash and positive own
+price/unit/scope, acquiring existing source-prefix locks before published→verified→raw locks.
+Recheck selected raw applicability, source pointer and event identity after suffix waits, plus
+the existing whole verified-state guard. A new current eligibility hold or unavailable/changed
+proof leaves the attempt undecided with no movement, supersession or negative teaching. Only
+RETURNING counts publication. This selected-row protection is not serializable phantom
+isolation or current-official/PDF-byte certification. No publish/source/rules-recheck version,
+historical selector, switch or held-row release changes.
+
 ## Prospective international wire direction (#2278)
 
 An unpublished international wire must bind its actual verified/raw lineage to the current
@@ -722,7 +733,7 @@ id>'` and the run's batch id, and their verified row is rejected; a later copy t
 the fee again restores it. Fees still named at a new price stay live: the price change
 belongs to the publish step once Knox reads the newer copy. Each pair is checked once
 (attempt log, stage `publish`, strategy `hamilton.newer_copy_check`, fingerprint
-`v1:<older>:<newer>`). The shared learning store skips these takedowns, since the bank
+`v2:<older>:<newer>`; v2 judged every v1 pair again, #2477). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
@@ -772,7 +783,8 @@ flag/count and says the restoration proposals remain pending. Neither a pair dec
 restored lineage/source-check receipt survives rollback; the normal next check can retry the
 still-pending pair. This adds no retry subsystem or historical replay.
 
-These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
+v2 (#2477, James 2026-10-20) reopened every v1 pair under these guards; prod dry run: 772 pairs,
+8 fees retired at 2 institutions, 0 restores. Before v2 these fixes kept v1 fingerprints; they applied to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
 can retire more. Bayes records the explicit no-replay policy in
 `VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
@@ -1315,7 +1327,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
-| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
+| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v2 (every v1 pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |

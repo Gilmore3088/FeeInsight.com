@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-181 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+182 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — Newer-copy check v2 reopens every settled pair. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Legacy event-log partitions are dropped, not trimmed. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Call-report quarterly summaries are computed once per load. — [decision](DECISIONS.md#2026-10-20)
@@ -202,10 +203,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-247 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+249 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (31)
+### Extraction and fee reading (32)
 
+- 2026-10-19 — One literal "NSF Paid/Returned" row publishes two events only when the source owns the pair; a separate overdraft or item price for the same audience holds it. — [finding](findings/2026-10-19-compressed-paid-returned-events.md) — Guard: `src/lib/custom-report/paid-returned-events.test.ts` (+2 more)
 - 2026-10-19 — Wrapped fee bullets lost their title or their own price. — [finding](findings/2026-10-19-wrapped-fee-bullets.md) — Agent lesson: knox/pr-2162-wrapped-bullet-unit
 - 2026-10-19 — A printed bound can be source-supported while the actual charge remains symbolic. — [finding](findings/2026-10-19-symbolic-lesser-of-charge.md) — Guard: The hash-bound full Woodlawn source has a retained functional OLD-red. Pure controls...
 - 2026-10-19 — A queue that re-reads on every version bump needs a guarantee that untouched work still drains. — [finding](findings/2026-10-19-stale-reread-backlog-starved.md) — Guard: `extract.test.ts`
@@ -275,8 +277,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (43)
+### Verification and publication (44)
 
+- 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
 - 2026-10-20 — Agent checks could take down a fee an admin had corrected. — [finding](findings/2026-10-20-agent-checks-undo-admin-corrections.md) — Guard: `src/lib/fee-corrections.db.test.ts`
@@ -343,8 +346,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A blank HTML page from a bank that blocks our fetcher is a wall, not a script page. — [finding](findings/2026-10-09-hand-found-bot-challenge-read-as-js.md) — Agent lesson: magellan/pr-850-held-means-readable
 - 2026-10-09 — Two fee links our fetcher can't open but a Mac can. — [finding](findings/2026-10-09-fetcher-refused-where-a-browser-is-not.md) — Agent lesson: magellan/pr-1293-plain-fetch-outcome
 
-### Public and regulatory data (9)
+### Public and regulatory data (10)
 
+- 2026-10-20 — When a publisher's page answers silently with itself, try the other formats and products it offers: the format may be withdrawn (FFIEC serves the single-period UBPR file only as XBRL, #2473). — [finding](findings/2026-10-20-ffiec-ubpr-single-period-xbrl-only.md) — Guard: `src/lib/agents/magellan/registry/ubpr-peer-groups.test.ts` (+1 more)
 - 2026-10-19 — NCUA credit union mergers never loaded: both addresses were dead. — [finding](findings/2026-10-19-ncua-merger-list-dead.md) — Guard: `src/lib/agents/magellan/registry/industry-events.test.ts`
 - 2026-10-19 — Only rows actually loaded can show that data is there. — [finding](findings/2026-10-19-hoovie-finished-is-not-loaded.md) — Guard: `src/lib/regulatory/industry-events.test.ts` (+4 more)
 - 2026-10-19 — Verify that a publisher still supplies the identity input before interpreting successful aggregate ingestion as institution readiness. — [finding](findings/2026-10-19-hmda-canonical-matching.md) — Guard: HMDA/FDIC/GLEIF parser, resolver, loader and manual-route tests, cron exclusion...

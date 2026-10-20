@@ -27,6 +27,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # Prospective paid/returned proof uses native constraints; keep it outside unit shards.
+  PAID_RETURNED_EVENT_TEST: src/lib/agents/knox/paid-returned-events.db.test.ts
+
   # Only the recheck producer settlement suite; independent of the shared SQL list.
   DARWIN_RECHECK_TEST: src/lib/agents/darwin/verified-recheck.db.test.ts
 
@@ -108,7 +111,7 @@ jobs:
       - name: Unit tests (shard ${{ matrix.shard }} of 2)
         run: |
           excludes=""
-          for file in $KNOX_GATES $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
+          for file in $KNOX_GATES $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST src/lib/agents/deming/hard-documents.test.ts src/lib/agents/deming/regression-gate.test.ts src/lib/fee-category-guard.test.ts src/lib/fee-taxonomy.test.ts src/lib/fee-fold.test.ts; do
             excludes="$excludes --exclude $file"
           done
           npx vitest run --shard=${{ matrix.shard }}/2 $excludes
@@ -152,7 +155,7 @@ jobs:
           # HMDA fixtures share the real year-lock namespace across isolated schemas, so files run serially.
           # These shared-schema suites use transactional DDL/failure triggers;
           # serialize files so another reader cannot observe a temporary fixture.
-          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST --maxWorkers=1
+          E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST $PAID_RETURNED_EVENT_TEST --maxWorkers=1
 
   app-tests:
     # The one required check: green only when every job above passed.

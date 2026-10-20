@@ -112,7 +112,8 @@ export interface HoovieSourceContract {
   /** Tables the loader writes, besides `registry_ingest_partitions`. */
   tables: string[];
   /**
-   * The publisher's host refuses production's requests, so the source is a named gap: the loader
+   * The publisher's host refuses production's requests, or no longer serves the file the loader
+   * reads (#2473), so the source is a named gap: the loader
    * records an empty partition naming the host (`detail.missing_source`) instead of failing.
    */
   missingSource?: HoovieMissingSource;
@@ -127,4 +128,6 @@ export interface HoovieMissingSource {
   fallback: string | null;
   /** The GitHub issue tracking the gap. */
   issue: number;
+  /** How the host answers, when it does not simply refuse; health reads "<host> <answer>". */
+  answer?: string;
 }

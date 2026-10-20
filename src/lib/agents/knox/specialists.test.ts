@@ -659,3 +659,17 @@ describe("v93: a row priced in words closes its line (#1828)", () => {
     expect(tidyFeeName("Wire Transfer: Domestic Outgoing")).toBe("Wire Transfer: Domestic Outgoing");
   });
 });
+
+describe("v91: fax services and cut stop payments (#1829, #1830)", () => {
+  it("reads a fax-led line as document reproduction (Open Bank, PromiseOne Bank)", () => {
+    expect(fees("Fax (Domestic & International) | $1")).toEqual([["Fax (Domestic & International)", 1, "document_reproduction"]]);
+    expect(fees("Faxes (Domestic only) | $2.00")).toEqual([["Faxes (Domestic only)", 2, "document_reproduction"]]);
+    expect(fees("Domestic incoming (fax) | $26.00").map(([, , hint]) => hint)).not.toContain("document_reproduction");
+  });
+
+  it("names a stop payment by its head, not the list after it (The Southern FCU, doc 36961)", () => {
+    const line = "Stop Payment Order for Bill Payment, ACH, or Check (one free per calendar year) | $35.00 per stop payment";
+    expect(fees(line).map(([, amount, hint]) => [amount, hint])).toEqual([[35, "stop_payment"]]);
+    expect(fees("Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00").map(([, , hint]) => hint)).toEqual(["stop_payment"]);
+  });
+});

@@ -309,6 +309,7 @@ export function rosettaReaderManifests(versions: RosettaVersions): ReplayManifes
  * in a manifest above.
  */
 export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
+  PAID_RETURNED_EVENT_VERSION: "v1 is prospective source-owned paired-action proof and fresh raw lineage only. Existing same-unit, judged and held histories cannot be bypassed by projected names or line_share; mixed/unknown scope stays eligibility-held. Extract88/stale78/lineup73/twin82/verify3/source-check2/recheck5/publish3 remain settled. No selector, global category-guard version, historical replay, recovery, provider or source work is queued.",
   // #2265: implementation versions cannot authorize the broader identity rollout.
   HMDA_PARSER_VERSION: "Implementation v3 is prepared, but the default-off ordinary identity gate leaves HMDA_SCHEDULED_PARSER_VERSION at2. Registry replay counts use that effective scheduled selector; the explicit ten-bank repair is manual-only and creates no automatic replay. Any ordinary activation requires separate review, including #2266.",
   FDIC_UNIVERSE_PARSER_VERSION: "Implementation v3 is prepared, but own-LEI propagation is default off and FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION stays2. Registry replay counts use the effective scheduled selector. Enabling broader source identity writes is a separate reviewed release; the ten-bank repair does not authorize it.",
@@ -376,10 +377,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   REFRESH_COPY_STRATEGY: "Refreshes matching-audience/product stale fees in place on normal publish steps. The audience/product safety restrictions keep v2 decisions closed; no historical correction or replay is queued.",
   // #2117/#2118/#2121 deliberately retain v1 pair fingerprints. Tightening a positive witness can
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
-  // Previously settled pairs require a separately reviewed impact/official-source decision.
-  // #1674 also treats an exact account-type-held twin as present in planning/final restore;
-  // it prevents future hold bypasses without reopening any settled v1 pair.
-  NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
+  // v2 reopened settled v1 pairs after a prod dry-run impact count (#2477, DECISIONS 2026-10-20).
+  // #1674 also treats an exact account-type-held twin as present in planning/final restore.
+  NEWER_COPY_STRATEGY: "v2 (#2477, James 2026-10-20) judges every v1 pair again through the publish step's own 25-document sweep under the current identity, restore and hold guards. Prod dry run 2026-10-20: 772 pairs, 8 fees retired at 2 institutions, 0 restores. No separate backfill or correction is queued.",
   // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
   // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
   // #1055: a v3 refusal for low confidence is decided once more when the row's confidence now
@@ -504,6 +504,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v77 (Oct 19, #2388): a card that draws only on credit fails card replacement and rush card.
     // v78 (Oct 20, #2449): account verification is guarded by name; research and wires re-file, and
     // signature guarantees and other names fail.
+    // v79 (Oct 20, #1830): bill pay refuses a name its own line puts under a stop payment.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",

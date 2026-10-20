@@ -556,3 +556,26 @@ describe("guard v72 fold splits (#1788)", () => {
     expect(splitLiveCategory("wire_domestic_outgoing", "Wire Transfer (In or Out)")).toBeNull();
   });
 });
+
+describe("fold v19: a fax-led line names where the fax goes (#1829)", () => {
+  it("moves fax services that name their destination out of account research", () => {
+    // Live 152977 and 152288 (re-filed by hand, Oct 17) and the 5 live on Oct 20.
+    for (const name of [
+      "Fax (Domestic & International)",
+      "Faxes (Domestic only)",
+      "Domestic Faxes",
+      "Fax (per page, domestic only)",
+      "Fax Service In/Outgoing: Domestic",
+      "Fax (In or Out) Domestic Only",
+      "Fax charge (domestic)",
+    ]) {
+      expect(splitLiveCategory("account_research", name)?.to, name).toBe("document_reproduction");
+    }
+  });
+
+  it("keeps fax as the way something else is sent where it is", () => {
+    for (const name of ["Domestic incoming (fax)", "Fax Request", "Fax Payoff Request", "Fax/Email Charge", "Car Fax", "Fax Request Outgoing Wire - Domestic", "Wire Confirmation Fax"]) {
+      expect(splitLiveCategory("account_research", name)?.to, name).not.toBe("document_reproduction");
+    }
+  });
+});

@@ -2136,3 +2136,23 @@ describe("guard v76 (#2037, James's \"Split\"): International ATM is its own typ
     expect(checkFeeCategory("atm_international", "International ATM withdrawal 1% of amount", { amount: 1 }).ok).toBe(false);
   });
 });
+
+describe("guard v79: a stop payment cut to its list is not bill pay (#1830)", () => {
+  const onLine = (name: string, amount: number, line: string) =>
+    checkFeeCategory("bill_pay", name, { amount, conditions: `knox; excerpt="${line}"` });
+
+  it("refuses a bill pay name its own line puts under a stop payment", () => {
+    // The Southern FCU, live 152306 (taken down Oct 17), and the 9 live on Oct 20.
+    expect(onLine("Bill Payment, ACH, or Check", 35, "Stop payment order (one free per calendar year) Bill Payment, ACH, or Check | $35.00").ok).toBe(false);
+    expect(onLine("ACH, Bill Pay", 10, "Stop Payment (includes ACH, Bill Pay) | $10.00 Per Item").ok).toBe(false);
+    expect(onLine("Bill Payment Service", 35, "Stop Payment (For payments issued via our Bill Payment Service)1........$35").ok).toBe(false);
+    expect(onLine("Bill Pay", 15, "Stop payment on Bill Pay: $15.00 per occurrence").ok).toBe(false);
+    expect(onLine("Online Banking, Mobile, Bill Pay and ACH", 30, "Stop Payment – One or more checks, Online Banking, Mobile, Bill Pay and ACH / $30.00").ok).toBe(false);
+  });
+
+  it("keeps a bill pay row whose stop payment belongs to another price", () => {
+    expect(onLine("Bill Pay", 5, "Stop Payment | $30.00 | Bill Pay | $5.00").ok).toBe(true);
+    expect(onLine("Expedited Bill Pay", 25, "Bill Pay FREE Expedited Bill Pay $25.00").ok).toBe(true);
+    expect(checkFeeCategory("bill_pay", "Bill Pay").ok).toBe(true);
+  });
+});

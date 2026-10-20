@@ -14,9 +14,11 @@ contract in `sources.ts` (type in `contract.ts`) that records:
 - connection kind, plus the env key when one is needed, and any optional keys;
 - cadence and grain;
 - link keys and the tables it writes;
-- `missingSource`, when the publisher's host refuses production: the host, what it answered,
-  the official fallback (or none) and the issue. The loader then records an empty partition with
-  `detail.missing_source` instead of failing. Today: `nic-structure` and `fr-y9c` (#1806).
+- `missingSource`, when the publisher's host refuses production or no longer serves the file the
+  loader reads: the host, what it answered, the official fallback (or none), the issue and, when it
+  does not simply refuse, how it answers (`answer`). The loader then records an empty partition with
+  `detail.missing_source` instead of failing. Today: `nic-structure` and `fr-y9c` (403 to
+  production, #1806) and `ubpr-peer-groups` (single-period file only as XBRL, #2473).
 
 `sources.test.ts` fails when a source has no contract, names a table no migration creates, names
 a table that no INSERT, UPDATE or DELETE in its loader writes, or names a key its loader never
@@ -161,7 +163,7 @@ read over `registry_ingest_partitions` (`getRegistryFeedFreshness`) and the sche
 | Status | When |
 |---|---|
 | skipped | the scheduler plans no partition: held licence, a table over its own size budget, or the API key not set |
-| empty | nothing loaded yet; the host refused production since the last success (`missing_source`); or every load came back empty |
+| empty | nothing loaded yet; the host refused production or stopped serving the file since the last success (`missing_source`); or every load came back empty |
 | failed | a partition failed after the last success (newest error is the reason) |
 | stale | the last success is older than the cadence allows: daily 3, weekly 14, monthly 45, quarterly 120, annual 400, irregular 90 days; one-time never |
 | fresh | otherwise |
