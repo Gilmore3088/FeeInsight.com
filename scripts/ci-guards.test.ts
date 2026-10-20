@@ -194,6 +194,16 @@ describe("lesson-kill", () => {
     expect(output).toContain('since: "Oct 19"');
   });
 
+  it("fails a Hamilton lesson that names an internal agent, since it reaches customer answers", () => {
+    const leaky = entry("issue-6", "hamilton").replace("Read the per-item price.", "Trust what Knox extracted.");
+    const { status, output } = lessonRepo({
+      "src/lib/agents/hamilton/role-lessons.ts": file(leaky, entry("issue-7", "hamilton")),
+    }, 'import { H } from "@/lib/agents/hamilton/role-lessons";\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("a Hamilton lesson names an internal agent");
+    expect(output).not.toContain("issue-7");
+  });
+
   it("fails an agent file the registry does not import, and a folder that is not a pipeline agent", () => {
     const { status, output } = lessonRepo({
       "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox")),

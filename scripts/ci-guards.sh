@@ -936,6 +936,13 @@ lesson_kill() {
     while IFS= read -r line; do
       [[ -n "$line" ]] && problems+="${file}: empty or malformed ${line}"$'\n'
     done < <(grep -E '^[[:space:]]+(stage|lesson|why): ""|^[[:space:]]+since: ' "$file" | grep -vE 'since: "[0-9]{4}-[0-9]{2}-[0-9]{2}",' | sed -E 's/^[[:space:]]+//' || true)
+    if [[ "$agent" == "hamilton" ]]; then
+      # Hamilton's lessons go into the instructions for answers customers read, and internal
+      # agent names are never shown to customers.
+      while IFS= read -r line; do
+        [[ -n "$line" ]] && problems+="${file}: a Hamilton lesson names an internal agent (${line## }); describe the behaviour instead"$'\n'
+      done < <(grep -E '^[[:space:]]+lesson: ' "$file" | grep -iE '\b(atlas|magellan|hoovie|rosetta|knox|darwin|gutenberg|deming)\b' | sed -E 's/^[[:space:]]+//' || true)
+    fi
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
       [[ "$line" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || problems+="${file}: lesson id '${line}' must be lower-case words joined by hyphens, e.g. issue-2306"$'\n'

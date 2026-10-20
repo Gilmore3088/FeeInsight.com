@@ -9,7 +9,8 @@ type SqlTag = typeof sql;
  * copies the repo's role lessons (`lesson-registry.ts`) into `agent_lessons`, upserting on
  * (agent_name, lesson_name). A lesson removed from the repo is retired, never deleted: its
  * `superseded_by` points at its own `lesson_id` (retired with no successor). Only rows this sync
- * wrote (`evidence_refs.source = 'repo'`) are ever retired. A lesson whose agent has no
+ * wrote (`evidence_refs.source = 'repo'`) are ever retired or updated: a row older code wrote under
+ * the same name is left as it is and reported as a clash. A lesson whose agent has no
  * `agent_registry` row is skipped and reported (the table's foreign key would refuse it).
  */
 
@@ -23,6 +24,8 @@ export interface LessonSyncResult {
   inserted: number;
   updated: number;
   unchanged: number;
+  /** "agent:lesson" keys held by a row this sync did not write; left untouched. */
+  clashes: string[];
   /** "agent:lesson" keys retired this run because the repo no longer has them. */
   superseded: string[];
   /** Agents with lessons but no agent_registry row, and how many lessons each had. */
@@ -63,7 +66,7 @@ export async function syncAgentLessons({
 }): Promise<LessonSyncResult> {
   const result: LessonSyncResult = {
     ready: false, dryRun, repoLessons: lessons.length, inserted: 0, updated: 0, unchanged: 0,
-    superseded: [], skippedAgents: [], perAgent: {},
+    clashes: [], superseded: [], skippedAgents: [], perAgent: {},
   };
   if (!(await agentLessonsReady(db))) return result;
   result.ready = true;
@@ -99,12 +102,20 @@ export async function syncAgentLessons({
          SET description = EXCLUDED.description,
              evidence_refs = EXCLUDED.evidence_refs,
              superseded_by = NULL
-       WHERE agent_lessons.description IS DISTINCT FROM EXCLUDED.description
+       WHERE agent_lessons.evidence_refs->>'source' = ${LESSON_SOURCE}
+         AND (agent_lessons.description IS DISTINCT FROM EXCLUDED.description
           OR agent_lessons.evidence_refs IS DISTINCT FROM EXCLUDED.evidence_refs
-          OR agent_lessons.superseded_by IS NOT NULL
+          OR agent_lessons.superseded_by IS NOT NULL)
       RETURNING (xmax = 0) AS inserted
     `;
-    if (rows.length === 0) result.unchanged += 1;
+    if (rows.length === 0) {
+      const [held] = await db`
+        SELECT (evidence_refs->>'source') IS DISTINCT FROM ${LESSON_SOURCE} AS foreign_row
+          FROM agent_lessons WHERE agent_name = ${lesson.agent} AND lesson_name = ${lesson.id}
+      `;
+      if (held?.foreign_row === true) result.clashes.push(`${lesson.agent}:${lesson.id}`);
+      else result.unchanged += 1;
+    }
     else if (rows[0].inserted === true) result.inserted += 1;
     else result.updated += 1;
   }
@@ -128,7 +139,10 @@ export function summarizeLessonSync(result: LessonSyncResult): string {
   if (result.dryRun) {
     return `Dry run: would sync ${result.repoLessons - skipped.reduce((sum, entry) => sum + entry.lessons, 0)} role lessons and retire ${result.superseded.length}; nothing written.${skippedLine}`;
   }
-  return `Synced the agents' role lessons: ${result.inserted} new, ${result.updated} updated, ${result.unchanged} unchanged, ${result.superseded.length} retired.${skippedLine}`;
+  const clashLine = result.clashes.length
+    ? ` Left ${result.clashes.length} untouched because an older row already uses the name (${result.clashes.join(", ")}); rename the repo lesson.`
+    : "";
+  return `Synced the agents' role lessons: ${result.inserted} new, ${result.updated} updated, ${result.unchanged} unchanged, ${result.superseded.length} retired.${skippedLine}${clashLine}`;
 }
 
 export function lessonSyncDetail(result: LessonSyncResult): Record<string, unknown> {
@@ -139,6 +153,7 @@ export function lessonSyncDetail(result: LessonSyncResult): Record<string, unkno
     inserted: result.inserted,
     updated: result.updated,
     unchanged: result.unchanged,
+    clashes: result.clashes,
     superseded: result.superseded,
     skipped_agents: result.skippedAgents,
     per_agent: result.perAgent,

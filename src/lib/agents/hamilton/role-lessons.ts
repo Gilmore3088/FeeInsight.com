@@ -31,7 +31,7 @@ export const HAMILTON_LESSONS: AgentLesson[] = [
     id: "issue-2327",
     agent: "hamilton",
     stage: "written answer",
-    lesson: "The institution briefing Hamilton is given is evidence, like a tool result: a figure taken correctly from the briefing is supported, and the answer check must read the briefing too.",
+    lesson: "The institution briefing you are given is evidence, like a tool result: a figure taken correctly from it is supported, so use it and cite it as you would a tool result.",
     why: "The written-answer check was passed only tool results, so a correct Navy Federal answer built from the briefing's fee-income figures was withheld as unsupported.",
     evidence: { issues: [2327], prs: [2337], files: ["src/lib/hamilton/written-answer-read.ts"] },
     appliesTo: ["written-answer"],

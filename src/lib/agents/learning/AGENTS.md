@@ -165,12 +165,13 @@ root cause was in that agent.
 | `src/lib/agents/<agent>/role-lessons.ts` | The agent's lessons, as reviewed code: `{ id, agent, stage, lesson, why, evidence: { issues, prs, files }, appliesTo, since }`. `appliesTo` is step keys or `"all"`. Agents: atlas, magellan, hoovie, rosetta, knox, darwin, gutenberg, hamilton, deming. |
 | `lesson-types.ts`, `lesson-registry.ts` | The shared type and `ALL_AGENT_LESSONS`. |
 | `lesson-reader.ts` | `lessonsFor(agent, stepKey)` (newest first) and `lessonsForStep`, which charges `deming-*` steps to Deming and uses `STEP_OWNER` for publish (Gutenberg) and registry (Hoovie) steps. `lessonsForModel` builds the instructions block, at most `PROMPT_LESSON_LIMIT` (10) lessons. |
-| `lesson-sync.ts` | `atlas-lesson-sync`, a deterministic step in Atlas's daily scoreboard run. It upserts each lesson into `agent_lessons` on (agent_name, lesson_name), with `description` = the lesson and `evidence_refs` = `{ source: "repo", stage, why, applies_to, since, issues, prs, files }`. A repo lesson that is gone gets `superseded_by` = its own `lesson_id` (retired, no successor); rows it did not write are never touched; nothing is deleted. An agent with no `agent_registry` row (Deming, which runs as Atlas) is skipped and reported. Step detail: `inserted`, `updated`, `unchanged`, `superseded`, `skipped_agents`, `per_agent`. `readAgentLessons` feeds "What this agent has learned" on each agent page (`src/app/admin/agent-frame.tsx`). |
+| `lesson-sync.ts` | `atlas-lesson-sync`, a deterministic step in Atlas's daily scoreboard run. It upserts each lesson into `agent_lessons` on (agent_name, lesson_name), with `description` = the lesson and `evidence_refs` = `{ source: "repo", stage, why, applies_to, since, issues, prs, files }`. A repo lesson that is gone gets `superseded_by` = its own `lesson_id` (retired, no successor); rows it did not write are never touched (a name clash is left alone and reported in `clashes`); nothing is deleted. An agent with no `agent_registry` row (Deming, which runs as Atlas) is skipped and reported. Step detail: `inserted`, `updated`, `unchanged`, `clashes`, `superseded`, `skipped_agents`, `per_agent`. `readAgentLessons` feeds "What this agent has learned" on each agent page (`src/app/admin/agent-frame.tsx`). |
 
 Where lessons are used:
 - Every step: `finishAgenticStep` records the ids that apply as `detail.lessons_applied` (left out
   when none apply).
-- Model calls send them as `system` instructions and log their ids in the usage metadata:
+- Model calls send them as `system` instructions (the pipeline's paid steps also log their ids in
+  the usage metadata; Hamilton's answer path does not):
   Magellan `discover-paid` (paid find, link pick, schedule search, website find), Rosetta
   `read-paid`, Knox `extract-paid`, Darwin `verify-paid` (adjudication and release review), and
   Hamilton's written answer (`written-answer`). Darwin's per-key review lessons from verdict scoring

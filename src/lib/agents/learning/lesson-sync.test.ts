@@ -36,6 +36,7 @@ function fakeDb(registry: string[], rows: Row[] = []) {
         rows.push({ lesson_id: nextId++, agent_name: agent, lesson_name: name, description, evidence_refs: refs, superseded_by: null });
         return [{ inserted: true }];
       }
+      if (Array.isArray(existing.evidence_refs) || existing.evidence_refs.source !== "repo") return [];
       const changed = existing.description !== description || JSON.stringify(existing.evidence_refs) !== JSON.stringify(refs) || existing.superseded_by !== null;
       if (!changed) return [];
       Object.assign(existing, { description, evidence_refs: refs, superseded_by: null });
@@ -44,6 +45,10 @@ function fakeDb(registry: string[], rows: Row[] = []) {
     const repoRows = (keys: string[]) => rows.filter((row) =>
       !Array.isArray(row.evidence_refs) && row.evidence_refs.source === "repo" && row.superseded_by === null
       && !keys.includes(`${row.agent_name}:${row.lesson_name}`));
+    if (text.startsWith("SELECT (evidence_refs->>'source') IS DISTINCT FROM")) {
+      const held = rows.find((row) => row.agent_name === values[1] && row.lesson_name === values[2]);
+      return held ? [{ foreign_row: Array.isArray(held.evidence_refs) || held.evidence_refs.source !== "repo" }] : [];
+    }
     if (text.startsWith("UPDATE agent_lessons SET superseded_by = lesson_id")) {
       const retired = repoRows(values[1] as string[]);
       for (const row of retired) row.superseded_by = row.lesson_id;
@@ -99,6 +104,15 @@ describe("syncAgentLessons", () => {
     const result = await syncAgentLessons({ db, lessons: [lesson("issue-1")] });
     expect(result.superseded).toEqual([]);
     expect(rows.find((row) => row.lesson_id === 50)?.superseded_by).toBeNull();
+  });
+
+  it("never overwrites an older row that already uses a repo lesson's name, and reports the clash", async () => {
+    const legacy: Row = { lesson_id: 60, agent_name: "knox", lesson_name: "issue-1", description: "older text", evidence_refs: [], superseded_by: null };
+    const { db, rows } = fakeDb(["knox"], [legacy]);
+    const result = await syncAgentLessons({ db, lessons: [lesson("issue-1")] });
+    expect(result).toMatchObject({ inserted: 0, updated: 0, unchanged: 0, clashes: ["knox:issue-1"] });
+    expect(rows.find((row) => row.lesson_id === 60)).toMatchObject({ description: "older text", evidence_refs: [] });
+    expect(summarizeLessonSync(result)).toContain("knox:issue-1");
   });
 
   it("skips and reports lessons whose agent has no agent_registry row", async () => {
