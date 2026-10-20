@@ -14,6 +14,18 @@ of the same bank has paid. Links already sent, one per bank per day, keep workin
 expire (90 days) under the old rule. No migration: the payment state is the existing `leads`
 columns `paid_at` and `refunded_at`.
 
+**Institution pages with fewer than 5 verified fees stay out of search.** James, 2026-10-20,
+on #1043: keep fee-less and thin institution pages out of search until they have fees, rather
+than index pages that carry only financial data. A page with fewer than
+`MIN_VERIFIED_FEES_FOR_OFFER` (5) verified fees is `noindex, follow` (`institutionProfileMetadata`
+in `src/app/(public)/institution/[id]/profile-page.tsx`) and left out of `src/app/sitemap.ts`; it
+stays reachable by link and joins search on its own once it has the fees. Why: a large share of
+near-empty pages can weigh on how search engines treat the whole site, and #1043 counted 4,687 of
+8,522 active institutions without live fees. No code change was needed;
+`src/app/(public)/institution/[id]/metadata-robots.test.ts` and `src/app/sitemap.test.ts` pin the
+rule. Indexing pages on financial data alone would need a new decision and a minimum-content rule
+in code.
+
 **Previews build only for PRs that change visible files.** James, 2026-10-20: previews build only
 for PRs that change visible files (src/app, src/components, styles, public, build config,
 dependencies); a build failure in a non-visible PR surfaces at the production deploy, which keeps
