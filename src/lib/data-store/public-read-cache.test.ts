@@ -22,6 +22,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { DEGRADED_PAGE_SECONDS, cachedPublicRead, shortenPageLife } from "./public-read-cache";
+import { STATS_METHOD_VERSION } from "./fee-stats";
 
 beforeEach(() => {
   store.clear();
@@ -81,6 +82,14 @@ describe("cachedPublicRead", () => {
 
     expect(await cached()).toEqual([7]);
     expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  // 2026-10-18-public-cache-ignores-stats-rules: after #1816 changed what the medians count, the
+  // cached snapshot kept serving counts made under the old rule, since nothing in its key changed.
+  it("keys every entry by the statistics rules' version", () => {
+    cachedPublicRead("test-stats-key", async () => [1]);
+    const entry = registered.find((e) => e.keyParts.includes("test-stats-key"));
+    expect(entry?.keyParts).toContain(`stats-v${STATS_METHOD_VERSION}`);
   });
 });
 

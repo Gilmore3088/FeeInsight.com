@@ -17,3 +17,5 @@ disappear, so the error shows up or vanishes depending on unrelated code.
 `postgres.Sql<{ numeric: number; json: unknown; text: string }>`. These match the custom types
 `src/lib/data-store/connection.ts` registers. New database tests should do the same rather than use
 `ReturnType<typeof postgres>` with custom `types`.
+
+**Guard:** `src/lib/data-store/db-test-handles.test.ts:20` (no test file declares `ReturnType<typeof postgres>` beside custom `types`)
