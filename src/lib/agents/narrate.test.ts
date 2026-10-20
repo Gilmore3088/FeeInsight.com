@@ -3,6 +3,17 @@ import { narrateEvent, narrateStepFinished, STEP_OWNER } from "./narrate";
 import { verifiedRecheckReceipt } from "./darwin/verified-recheck-receipt";
 
 describe("narrateStepFinished", () => {
+  it("says the lane sync's unchecked-live-fee read failed instead of narrating it as nothing woken (#2424)", () => {
+    const line = narrateStepFinished("lane-sync", {
+      priorities_updated: 52,
+      unchecked_woken: 0,
+      unchecked_wake_error: "canceling statement due to statement timeout",
+      unchecked_failed_states: ["CA", "TX"],
+    });
+    expect(line).toContain("could not read unchecked live fees for 2 states");
+    expect(narrateStepFinished("lane-sync", { priorities_updated: 52, unchecked_woken: 0 })).not.toContain("could not read");
+  });
+
   it("attributes bounded HMDA repair to Hoovie and separates preview, apply and receipt replay", () => {
     expect(STEP_OWNER["hmda-identity-repair"]).toBe("hoovie");
     expect(narrateStepFinished("hmda-identity-repair", { mode: "preview", writes: 0 })).toBe("Reviewed the bounded HMDA identity scope; no source or identity data changed.");
