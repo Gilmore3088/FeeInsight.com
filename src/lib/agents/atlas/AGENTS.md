@@ -118,6 +118,21 @@ extract, verify and publish stages that have an identical twin both before and a
 and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
 pause holds it.
 
+### Document vault (`vault-retention.ts`, #1041)
+
+The same step measures the R2 document vault from `source_documents` (one object per distinct
+vault key, its recorded `byte_size`): files and MB, the HTML/PDF/other split, and what was first
+stored in the last 7 days, in `detail.vault` and the step summary. Above 10,240 MB stored or
+5,120 MB added in 7 days it adds a warning to `alerts`, which the morning brief emails; James sets
+the real thresholds by PR. It also counts, every run, the objects the retention rule would delete:
+every row holding the bytes (by key or content hash) was judged `wrong_document` by Rosetta over 30
+days ago, has no other text, extracted no fees and was not fetched or re-checked in 30 days, and no
+fee lineage reaches it (`FEE_LINEAGE_REFS`: raw, verified and published fee tiers by document and
+key, corrections, archives, snapshots, eval cases, feedback, witnesses, profile pointers, and
+live-fee audit captures). A missing fee tier stops the count. Deletion (at most 500 objects a run,
+clearing `document_r2_key` on their rows) runs only while `VAULT_RETENTION_LIVE` is true, which a
+PR sets after James's yes; it is off. Storing cleaned text instead of large raw HTML is not done.
+
 ## Direct state re-search (`priority-state-research.ts`)
 
 A state on `PRIORITY_STATE_RESEARCH_REQUESTS` gets a `manual_repair` run (source
