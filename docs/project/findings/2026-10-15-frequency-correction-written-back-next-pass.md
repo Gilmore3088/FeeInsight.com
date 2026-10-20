@@ -20,3 +20,5 @@ this was not written: #1344's tests ran each rule once.
 **Lesson:**
 - A fill that corrects must be idempotent: test it by running a second pass on its own output.
 - A ledger keyed without a version is not a history, because an upsert on an old key rewrites it.
+
+**Agent lesson:** gutenberg/pr-1355-fill-fixed-point

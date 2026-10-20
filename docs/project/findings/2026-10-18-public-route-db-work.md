@@ -38,3 +38,5 @@ so a role-level `statement_timeout` also binds the agent pipeline.
 **Lesson.** A public route that reads the database needs three bounds before it ships: who may call
 it, how much one call may read (escaped, length-capped input and a row cap), and whether a repeat
 call reaches the database at all (a cache).
+
+**Guard:** `src/app/api/institutions/[id]/evidence/route.test.ts:45` (anonymous and non-staff callers are refused before any database read); `src/lib/api-hardening/query-caps.test.ts:5` and `:20` make LIKE wildcards literal and refuse search terms with fewer than two letters or digits

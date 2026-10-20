@@ -36,3 +36,5 @@ outstanding; no additional checking or confirmation from James is introduced.
 
 **Lesson:** A public health endpoint needs a stable failure contract. Keep operational details
 in bounded server diagnostics and never serialize arbitrary exceptions into the response.
+
+**Guard:** `src/app/api/health/route.test.ts:55` (a failed database ping or live-fee count answers the fixed generic 503 and logs no exception details)

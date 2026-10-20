@@ -29,3 +29,5 @@ The production build runs against an owned loopback-only TLS PostgreSQL fixture 
 A dated production dependency scan changes from **13 to 12 affected package entries**, with critical entries **1 to 0** and no remaining MapLibre advisory. The other 12 entries remain: these are package counts, not counts of exploitable application paths. Full dependency hygiene, source egress #2136, legacy-password migration and health exception disclosure remain separate work.
 
 No browser, real WebGL context, live tile/style request, screenshot or visual acceptance was performed or is claimed under the authorized code-and-data-only scope. The tests and build do not certify GPU/device behavior, tile rendering, keyboard/visual presentation or live provider availability. No application migration, production database mutation, paid provider, production exploit request or permission/security-setting change occurred. Exact-head local gate and independent review/CI receipts accompany the PR.
+
+**Guard:** `src/lib/geo/maplibre-runtime.test.ts:24` (the installed MapLibre attribution control strips consecutive dangerous attributes, which the 5.24.0 sanitizer kept)

@@ -19,3 +19,5 @@ the restriction only prevents future unsafe matches. The Hamilton guide and Baye
 no-replay contract document why this does not bump a version or queue historical work.
 
 No production correction, replay, takedown switch, migration or provider activation is included.
+
+**Agent lesson:** knox/pr-2112-enrich-within-audience, gutenberg/pr-2112-refresh-same-audience
