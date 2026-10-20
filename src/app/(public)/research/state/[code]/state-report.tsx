@@ -332,7 +332,8 @@ export async function StateReport({ code, user }: { code: string; user: User | n
         freshnessLabel={summary.freshnessLabel}
       />
 
-      <div className="mx-auto max-w-page px-4 pb-12 sm:px-6 sm:pb-16">
+      {/* Anchored sections land below the header and the sticky section row (globals.css). */}
+      <div className="mx-auto max-w-page px-4 pb-12 [--fi-anchor-offset:calc(var(--fi-state-sticky-h)_+_0.75rem)] sm:px-6 sm:pb-16">
         <LayerNav layers={layers} />
         <div className="mt-10 space-y-16 sm:mt-12 sm:space-y-24">
         {/* Layer 1, local: one market against the state, its district and the U.S., inside the page. */}
@@ -383,7 +384,7 @@ export async function StateReport({ code, user }: { code: string; user: User | n
             source={
               <>
                 Institutions headquartered in {stateName} with verified fees, {PRODUCT_NAME}; size, regulator and charter from FDIC and NCUA
-                records. A group median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN} institutions.
+                records. A group median needs at least {MIN_PEERS_FOR_PEER_SET_MEDIAN} institutions.{asOf ? ` Data as of ${asOf}.` : ""}
               </>
             }
           >

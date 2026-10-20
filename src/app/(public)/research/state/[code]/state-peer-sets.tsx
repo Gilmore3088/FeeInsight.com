@@ -1,6 +1,6 @@
 import { Users } from "lucide-react";
 import { PeerSetPicker } from "@/components/public/peer-set-picker";
-import { PeerGapChip, peerGap } from "@/components/public/peer-gap-chip";
+import { MEDIAN_TONE_NOTE, PeerGapChip, peerGap } from "@/components/public/peer-gap-chip";
 import "@/app/landing-motion.css";
 import { formatFeeAmount } from "@/lib/format";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "@/lib/data-store/peer-fee-rank";
@@ -77,20 +77,29 @@ function rowsFor(set: PeerSetIndex, fees: StateFee[]): PeerSetRow[] {
 /**
  * One short line under the group's name: the fee where the group sits furthest from the whole
  * state, by share, and the dollar gap ("Overdraft runs $1.75 above the Florida median."). The
- * rows carry the amounts and counts. Within 1% on every fee reads as matching.
+ * rows carry the amounts and counts. Within 1% on every fee reads as matching. The fee named is
+ * one of the rows shown before "Show all"; only when none of those compares is a hidden one named,
+ * and then the line says where it is (James's Oct 20 review).
  */
 export function peerSetStateFinding(label: string, stateName: string, rows: PeerSetRow[]): string {
-  const compared = rows
-    .filter((r): r is PeerSetRow & { median: number; stateMedian: number } => r.median !== null && r.stateMedian !== null && r.stateMedian > 0)
-    .map((r) => ({ r, gap: peerGap(r.median, r.stateMedian), share: Math.abs(r.median - r.stateMedian) / r.stateMedian }))
-    .sort((a, b) => b.share - a.share);
+  const visible = compare(rows.slice(0, ROWS_SHOWN));
+  const compared = visible.length > 0 ? visible : compare(rows.slice(ROWS_SHOWN));
+  const hidden = visible.length === 0;
   const top = compared[0];
   if (!top) return `Too few ${label.charAt(0).toLowerCase()}${label.slice(1)} publish these fees for a median.`;
   if (top.gap.direction === "same") {
     return compared.length === 1 ? `Matches the ${stateName} median, within 1%.` : `Matches the ${stateName} median on all ${compared.length} fees.`;
   }
   const fee = top.r.name.replace(/\s*\([^)]*\)/g, "");
-  return `${fee} runs ${money(top.gap.amount)} ${top.gap.direction} the ${stateName} median.`;
+  return `${fee}${hidden ? " (shown under Show all)" : ""} runs ${money(top.gap.amount)} ${top.gap.direction} the ${stateName} median.`;
+}
+
+/** The rows with both medians, widest gap by share first. */
+function compare(rows: PeerSetRow[]) {
+  return rows
+    .filter((r): r is PeerSetRow & { median: number; stateMedian: number } => r.median !== null && r.stateMedian !== null && r.stateMedian > 0)
+    .map((r) => ({ r, gap: peerGap(r.median, r.stateMedian), share: Math.abs(r.median - r.stateMedian) / r.stateMedian }))
+    .sort((a, b) => b.share - a.share);
 }
 
 /**
@@ -147,7 +156,9 @@ function Cell({ label, value, institutions }: { label: string; value: number | n
       ) : (
         <p className="text-[13px] leading-snug text-ink-muted">Too few to compare</p>
       )}
-      <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">of {count(institutions)}</p>
+      <p className="mt-0.5 text-[12px] leading-snug text-ink-muted">
+        of {count(institutions)} {institutions === 1 ? "institution" : "institutions"} publishing
+      </p>
     </div>
   );
 }
@@ -199,6 +210,7 @@ export function StatePeerSets({
             ))}
           </ul>
         </div>
+        <p className="mt-2 text-[12px] text-ink-muted">Difference: the group median against the {stateName} median, up arrow above, down arrow below. {MEDIAN_TONE_NOTE}</p>
         {rest.length > 0 && (
           <details className="mt-1">
             <summary className="inline-flex min-h-11 cursor-pointer items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4">
