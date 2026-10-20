@@ -43,11 +43,9 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
     await raw`DELETE FROM raw_fee_observations WHERE fee_raw_id=${c.rawId}`;
     await raw`DELETE FROM agent_runs WHERE id=${c.result.runId}`;
   }
-  beforeAll(async () => {
-    if (!connection || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connection).hostname)) throw new Error("Loopback fixture required");
-    raw = postgres(connection, { ssl: "require", max: 1, debug: (_id,query) => { if(query.includes("SELECT id,case_bytes::int,database_digest FROM eligible ORDER BY id LIMIT")) metadataSql=query; }, types: { json: JSON_TEXT_PASSTHROUGH, numeric: NUMERIC_AS_NUMBER, text: TEXT_WITHOUT_NUL } });
-    db = raw as unknown as Db;
-    resetCorrectionsReadyCache();
+  // The e2e job shares one database across files; a live corrected fee left here is read by later
+  // suites that scan every older live row (Darwin's older-live shadow), so clear it on both ends.
+  async function clearFixture() {
     await raw`DELETE FROM eval_cases WHERE institution_id=${INST}`;
     await raw`DELETE FROM published_fee_corrections WHERE institution_id=${INST}`;
     await raw`DELETE FROM pipeline_feedback WHERE institution_id=${INST}`;
@@ -57,6 +55,13 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
     await raw`DELETE FROM agent_source_texts WHERE institution_id=${INST}`;
     await raw`DELETE FROM source_documents WHERE institution_id=${INST}`;
     await raw`DELETE FROM institution_sources WHERE id=${INST}`;
+  }
+  beforeAll(async () => {
+    if (!connection || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connection).hostname)) throw new Error("Loopback fixture required");
+    raw = postgres(connection, { ssl: "require", max: 1, debug: (_id,query) => { if(query.includes("SELECT id,case_bytes::int,database_digest FROM eligible ORDER BY id LIMIT")) metadataSql=query; }, types: { json: JSON_TEXT_PASSTHROUGH, numeric: NUMERIC_AS_NUMBER, text: TEXT_WITHOUT_NUL } });
+    db = raw as unknown as Db;
+    resetCorrectionsReadyCache();
+    await clearFixture();
     await raw`INSERT INTO institution_sources(id,institution_name,charter_type,source,state_code) VALUES(${INST},'Corrective Context Fixture','bank','fdic','TX')`;
     await raw`INSERT INTO source_documents(id,institution_id,status,document_url,content_hash) VALUES(${DOC},${INST},'success','https://fixture.invalid/fees','fixture-byte-edition')`;
     await raw`INSERT INTO agent_source_texts(source_document_id,institution_id,status,normalized_text,text_hash,source_hash) VALUES(${DOC},${INST},'completed',${TEXT},${createHash("sha256").update(TEXT).digest("hex")},'fixture-byte-edition')`;
@@ -81,7 +86,7 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
         ELSE '{"protocol":2,"payload":{"documents":[{},{},{},{},{},{},{},{}]}}'::jsonb END),
       'Controlled unavailable prefix',1,'James','invalid-prefix:'||${INST}::text||':'||n::text FROM numbered`;
   });
-  afterAll(async () => { if (raw) await raw.end(); });
+  afterAll(async () => { if (!raw) return; try { await clearFixture(); } finally { await raw.end(); } });
   it("seals the real authorized correction with a complete source-bound canonical receipt", async () => {
     const result = await correctPublishedFee(db, { feePublishedId: oldId, expectedVersion: 0, idempotencyKey: "corrective-v2-real-authorized-2064", canonicalFeeKey: "stop_payment", feeName: "Stop Payment Fee", amount: "35", frequency: "per_item", conditions: "", sourceDocumentId: DOC, sourceExcerpt: "Stop Payment Fee | $35.00", sourceLocation: "Other services row 2", reason: "Correct the adjacent row amount" }, { id: 1, name: "James", role: "admin" });
     expect(result.ok).toBe(true);
