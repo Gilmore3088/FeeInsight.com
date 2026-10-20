@@ -325,6 +325,9 @@ export function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
+/** The refusal reason for a row below the publish confidence floor (re-selected once it clears it). */
+export const BELOW_CONFIDENCE_REASON = "Below publish confidence threshold";
+
 export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
   if (!flags.includes("agentic_darwin_verified")) return "Not verified by the agentic Darwin path";
@@ -381,7 +384,7 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const limit = isPercentFee(row) ? null : limitGuardVerdict(row);
   if (limit) return `Transaction limit, not a price: ${limit.detail}`;
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
-    return "Below publish confidence threshold";
+    return BELOW_CONFIDENCE_REASON;
   }
   return null;
 }
@@ -439,10 +442,12 @@ export async function rejectVerifiedFee(db: SqlTag, feeVerifiedId: number, flag:
  * has since passed under a newer guard, whose guard rejection does not count. Without the
  * second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
  */
-function undecidedAtThisVersionSql(params: Array<number | string | number[]>): string {
+function undecidedAtThisVersionSql(params: Array<number | string | number[]>, minConfidence: number): string {
   const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
   const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
   const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
+  const confidenceParam = `$${params.push(minConfidence)}`;
+  const confidenceReasonParam = `$${params.push(BELOW_CONFIDENCE_REASON)}`;
   return `AND NOT EXISTS (
          SELECT 1
            FROM pipeline_attempts pa
@@ -496,6 +501,14 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>): s
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
+            -- A row refused only for low confidence is decided once more when its confidence
+            -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
+            -- 0.5 placeholder (#1055). A row still below the floor stays decided.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail->>'reason' = ${confidenceReasonParam}
+              AND COALESCE(fv.extraction_confidence, 0) >= ${confidenceParam}
+            )
        )`;
 }
 
@@ -559,7 +572,7 @@ async function selectVerifiedFees(
       ),`;
     filters.push(`AND fv.institution_id IN (SELECT deep.institution_id FROM deep)`);
   }
-  if (learning) filters.push(undecidedAtThisVersionSql(params));
+  if (learning) filters.push(undecidedAtThisVersionSql(params, minConfidence));
   return db.unsafe<VerifiedFeeRow[]>(
     `
       WITH ${deepCte} eligible AS (
@@ -657,7 +670,7 @@ async function institutionFeeDepth(
   const depth = new Map<number, Set<string>>();
   if (institutionIds.length === 0) return new Map();
   const params: Array<number | string | number[]> = [institutionIds];
-  const undecided = learning ? undecidedAtThisVersionSql(params) : "";
+  const undecided = learning ? undecidedAtThisVersionSql(params, minConfidence) : "";
   const rows = await db.unsafe<InstitutionDepthRow[]>(
     `
       -- institution_fee_depth
