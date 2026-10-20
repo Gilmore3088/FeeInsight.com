@@ -29,6 +29,23 @@ export function peerSetHrefs(institutionId: number, focusFee: string | null): (k
   };
 }
 
+/** The set's peers, the whole set's when the page shows only its closest. */
+export function peerCount(set: PeerExplorerSet): number {
+  return set.whole?.peers ?? set.peers.length;
+}
+
+/**
+ * The selected set's title. A nearest set names the peers it holds, not the number asked for, so
+ * the title and its chip agree ("The 24 banks closest in assets", "24 closest in assets"). An
+ * asset-band set counts only banks that publish fees; the title says so, so its count is not read
+ * as the financial cohort's for the same band.
+ */
+export function peerSetTitle(selected: { key: string; label: string }, count: number): string {
+  if (selected.key === "size") return `${selected.label} that publish fees`;
+  if (selected.key === "nearest") return selected.label.replace(/^The \d[\d,]* /, `The ${count} `);
+  return selected.label;
+}
+
 /** Short names for the choices; the full plain-words name is the set's caption. */
 export function peerSetChipLabel(option: { key: string; label: string; count?: number }): string {
   switch (option.key) {
@@ -65,14 +82,14 @@ export function PeerExplorerSection({
   initial: { peer?: string | null; fee?: string | null; view?: string | null };
 }) {
   const { selected } = sets;
+  // One count for the chip and the title: the peers the set actually holds.
+  const count = peerCount(set);
   const options = sets.options.map((option) =>
-    option.key === selected.key && option.key === "nearest" ? { ...option, count: set.peers.length } : option,
+    option.key === selected.key && option.key === "nearest" ? { ...option, count } : option,
   );
   const assets = assetsLabel(set.subject.assets);
   const why = whyThesePeers(set, selected.key);
-  // An asset-band set counts only banks that publish fees; the title says so, so its count is not
-  // read as the financial cohort's for the same band.
-  const title = selected.key === "size" ? `${selected.label} that publish fees` : selected.label;
+  const title = peerSetTitle(selected, count);
   const asOf = set.asOf ? formatIsoDate(set.asOf) : null;
   const purpose = purposeLine(selected.key, set);
   const shown = shownLine(set);
