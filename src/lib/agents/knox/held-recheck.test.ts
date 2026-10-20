@@ -24,6 +24,7 @@ import {
   promotionWithdrawnFlag,
   recategorizeHeld,
   recheckHeldRows,
+  HELD_NAME_RULE_FLAG,
   recheckPromotedRows,
   recheckSupersededRows,
   recheckUntracedRows,
@@ -616,6 +617,18 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
     const result = await previewHeldNameRules(db as never);
     expect(result).toMatchObject({ live: true, candidates: 0, wouldRelease: 0, passChecks: 0 });
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
+  });
+
+  it("marks a line only the held-name rules file, so the release can be counted and reversed", async () => {
+    const db = createDb([stopPay, courtesyPay]);
+    const result = await recheckHeldRows(db as unknown as Db, { stateCode: "tx", runId: 7 });
+    expect(result.promoted).toBe(2);
+    const promotions = db.mock.calls.map((call) => ({ text: templateText(call[0]), json: JSON.stringify(call) }))
+      .filter((call) => call.text.includes("RETURNING fr.fee_raw_id"));
+    const stop = promotions.find((call) => call.json.includes("canonical_hint:stop_payment"));
+    const overdraft = promotions.find((call) => call.json.includes("canonical_hint:overdraft"));
+    expect(stop?.json).toContain(HELD_NAME_RULE_FLAG);
+    expect(overdraft?.json).not.toContain(HELD_NAME_RULE_FLAG);
   });
 
   it("drops page markup from a promoted name", () => {

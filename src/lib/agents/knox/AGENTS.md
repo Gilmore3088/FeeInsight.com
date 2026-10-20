@@ -1269,8 +1269,8 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   all printed on the bank's document. Switching on took a rules version bump (v89): new reads
   file these names, `recheckHeldRows` sends the held lines to Darwin with
   `knox_held_name_rule`, and Hamilton's rules re-check reads them the same way. With the
-  switch on, the answer-key gates read Texas 520 right / 15 wrong (511 / 14 off) and seven
-  states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
+  switch on and the returned-statement rule still in (14 Oct), the answer-key gates read Texas
+  520 right / 15 wrong (511 / 14 off) and seven states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
 - `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, on since Oct 20 under James's sampled-clean rule, #2442: the dry run
