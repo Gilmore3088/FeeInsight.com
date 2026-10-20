@@ -29,6 +29,7 @@ import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
 import { internationalWireEligibility } from "./international-wire-eligibility";
+import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-report/paid-returned-events";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -480,6 +481,30 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       selfCheckFailed,
       candidates: found.candidates,
     });
+  }
+
+  // #1918: source-owned compressed actions are two observations, not one invented
+  // category name. Keep the original complete row as evidence for unchanged guards.
+  // Run this against physical source, before any normalized legacy fragment can own it.
+  for (const unit of paidReturnedUnits(sourceText)) {
+    if (unit.eligibility === "admit" ? candidates.length + 2 > MAX_FEES_PER_DOCUMENT
+      : held.filter(row => !unpricedHalf(row)).length + 2 > MAX_HELD_PER_DOCUMENT) continue;
+    for (let at = candidates.length - 1; at >= 0; at--) {
+      const row = candidates[at];
+      if (belongsToPaidReturnedUnit(unit, row.feeName, row.amount, row.excerpt)) candidates.splice(at, 1);
+    }
+    for (let at = held.length - 1; at >= 0; at--) {
+      const row = held[at];
+      if (row.amount !== null && belongsToPaidReturnedUnit(unit, row.feeName, row.amount, row.excerpt)) held.splice(at, 1);
+    }
+    for (const event of unit.events) {
+      const facts = { feeName: event.name, amount: unit.amount, canonicalHint: event.canonicalKey,
+        frequency: unit.frequency, excerpt: unit.ownText, ownedPolicy: true as const,
+        lineShare: event.lineShare, linkedConditions: [unit.heading, unit.followingContext].filter(Boolean).join("\n") || undefined,
+        feeAudience: unit.audience, audienceEvidence: unit.heading, feeTreatment: "charged" as const };
+      if (unit.eligibility === "hold") held.push({ ...facts, shape: "eligibility", amountMax: null, percent: null });
+      else candidates.push({ ...facts, confidence: .94, waivable: false, strategy: "extract.paid_returned" });
+    }
   }
 
   // v27: one priced line that names both an NSF item and an overdraft ("Non-sufficient
