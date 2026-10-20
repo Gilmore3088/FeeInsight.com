@@ -119,7 +119,7 @@ describe("hand amount corrections (#1334)", () => {
     expect(planHandAmountCorrections([elsewhere]).skipped).toContainEqual({ feePublishedId: 102971, reason: "wrong read traces to another line" });
   });
 
-  it("#1827: Valley Strong's box rents take their own row's price, and each wrong read traces only to the next row", () => {
+  it("#1827: Valley Strong's box rents take their own row's price, and no wrong read traces any more", () => {
     const rents = HAND_AMOUNT_CORRECTIONS.filter((fix) => fix.issue === 1827);
     expect(rents.map((fix) => [fix.feePublishedId, fix.from, fix.to])).toEqual([
       [151737, 55, 45], [151738, 80, 55], [151739, 100, 80], [151740, 120, 100], [151741, 175, 120],
@@ -127,15 +127,19 @@ describe("hand amount corrections (#1334)", () => {
     for (const fix of rents) {
       expect(checkFeeAgainstSource(VALLEY_STRONG_BOXES, fix.feeName, fix.to, ".", fix.canonicalFeeKey))
         .toEqual({ ok: true, sourceLine: `| **$${fix.to}** | ${fix.feeName} |` });
+      // The shared check used to trace each wrong read to the next row (`wrongReadTracesTo`); since
+      // #1827's own-row and size rules it does not trace at all.
       expect(checkFeeAgainstSource(VALLEY_STRONG_BOXES, fix.feeName, fix.from, ".", fix.canonicalFeeKey))
-        .toEqual({ ok: true, sourceLine: fix.wrongReadTracesTo });
+        .toEqual({ ok: false, reason: "amount_not_the_fee" });
     }
     // No two corrected rents share a price, and none takes the price of a rent that stays.
     expect(new Set(rents.map((fix) => fix.to)).size).toBe(rents.length);
-    // A page whose wrong read traces elsewhere is left alone.
+    // A page where the wrong read still traces, to a line other than the one labelled, is left alone.
     const row = liveRows.find((live) => live.fee_published_id === 151737)!;
-    const moved = { ...row, normalized_text: "| **$45** | Rental of 3 × 5 Box Annual Fee |\n| **$55** | Rental of 3 × 5 Box Annual Fee (rush) |\n" };
-    expect(planHandAmountCorrections([moved]).skipped).toContainEqual({ feePublishedId: 151737, reason: "wrong read traces to another line" });
+    const moved = { ...row, normalized_text: "| **$45** | Rental of 3 × 5 Box |\n| **$55** | Rental of 3 × 5 Box Annual Fee (rush) |\n" };
+    const plan = planHandAmountCorrections([moved]);
+    expect(plan.corrected.map((fix) => fix.feePublishedId)).not.toContain(151737);
+    expect(plan.skipped.find((skip) => skip.feePublishedId === 151737)?.reason).toMatch(/does not trace|traces to another line/);
   });
 
   it("is a fixed list that leaves a changed, corrected or untraceable row alone", () => {

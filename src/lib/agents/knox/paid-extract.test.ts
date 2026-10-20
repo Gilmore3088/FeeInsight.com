@@ -7,6 +7,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 }));
 
 import { KNOX_RULES_STRATEGY } from "./specialists";
+import { lessonsFor } from "@/lib/agents/learning/lesson-reader";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
 import { providerRefusalSql } from "@/lib/agents/paid-pass";
 import {
@@ -174,12 +175,14 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(prompt).toContain("wire_domestic_outgoing (Wire Transfer (Domestic Out))");
     expect(prompt).toContain("Domestic wires you send cost $27.50 per wire.");
     // Knox's role lessons ride the request as instructions, at most ten (learning/lesson-reader.ts).
+    // The newest lesson always rides; a fixed id would drop out once ten newer ones land.
+    const newest = lessonsFor("knox", "extract-paid")[0].id;
     const system = String((create.mock.calls[0] as unknown as [{ system?: string }])[0].system);
     expect(system).toContain("LESSONS FOR YOUR ROLE");
-    expect(system).toContain("[issue-2286]");
+    expect(system).toContain(`[${newest}]`);
     expect(system.split("\n").filter((line) => line.startsWith("- [")).length).toBeLessThanOrEqual(10);
     expect(trackAnthropicRequest).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining(["issue-2286"]) }) }),
+      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining([newest]) }) }),
       expect.any(Function),
     );
 

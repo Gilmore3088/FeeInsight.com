@@ -366,4 +366,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["publish-sweeps"],
     since: "2026-10-20",
   },
+  {
+    id: "issue-1827-each-row-keeps-its-own-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "In a list where each line opens with its price and then names its fee (\"$14.00 Safe Deposit Box 3x5x22/Year\"), every price belongs to the name after it on the same line, never to the line above. A range row (\"$5-$15 | Levy\") never lends its name to the row under it.",
+    why: "Colby's box list (doc 37839) went live with each box at the next size's price, and doc 2491's levy took the garnishment row's $20. The fix for price-first rows with cells (#1838) did not cover lists without cells.",
+    evidence: { issues: [1827], prs: [1838, 2465], files: ["docs/project/findings/2026-10-20-reader-fixes-never-reach-live-fees.md", "src/lib/agents/knox/layout.ts", "src/lib/agents/knox/families.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
