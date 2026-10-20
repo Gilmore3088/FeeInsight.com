@@ -7,6 +7,7 @@
 import { sql } from "./connection";
 import { getPeerFeeValues, peerInstitutionIds, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
 import { computeStats } from "./fees";
+import { activeInstitutionFilter } from "./fee-stats";
 import { getPeerSubject, resolvePeerInstitutionIds } from "./peer-sets";
 import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-markets";
 import { MIN_PEERS_FOR_PEER_SET_MEDIAN } from "./peer-fee-rank";
@@ -124,7 +125,8 @@ export function buildPeerExplorerSet(
  * One peer set for the explorer. `filters` is the set as public-peer-sets.ts resolved it: chosen
  * institutions (nearest, metro, regulator) or a plain filter (state, Fed district, size), whose
  * members peer-sets.ts finds. Members are the institutions that publish at least one approved fee,
- * the same rule the nearest set uses, so every listed peer has a schedule to compare.
+ * the same rule the nearest set uses, so every listed peer has a schedule to compare. A peer the
+ * regulator marks inactive is left out, as in every public median (activeInstitutionFilter, #2190).
  */
 export async function getPeerExplorerSet(
   institutionId: number,
@@ -142,7 +144,8 @@ export async function getPeerExplorerSet(
       FROM institution_sources s
      WHERE s.id = ANY(${ids}::bigint[])
        AND (s.id = ${institutionId}
-            OR EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved'))
+            OR (${sql.unsafe(activeInstitutionFilter("s"))}
+                AND EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved')))
   `) as FactRow[];
   const set = await readCappedSet(institutionId, facts);
   if (!set || !homeMarket) return set;

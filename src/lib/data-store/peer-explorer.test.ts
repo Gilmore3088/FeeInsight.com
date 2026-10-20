@@ -7,6 +7,9 @@ import { sql } from "./connection";
 import { getHomeMarket, getMarketBranchCities, getMarketPresence } from "./peer-markets";
 import type { PeerFeeValue } from "./fee-index";
 import { buildPeerExplorerSet, explorerFee, getPeerExplorerSet, groupBranchCities } from "./peer-explorer";
+import { activeInstitutionFilter } from "./fee-stats";
+
+const ACTIVE_RULE = "<active institution rule>";
 
 const value = (institution_id: number, amount: number, records: [number, number, string | null, string | null][] = []): PeerFeeValue => ({
   institution_id,
@@ -80,10 +83,12 @@ describe("getPeerExplorerSet", () => {
     const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
     db.mockResolvedValueOnce([{ id: 1, charter_type: "bank", asset_size: 4_447_362 }]);
     db.mockResolvedValueOnce([fact(1, "Capital City Bank", 4_447_362), fact(2, "Peer 2", 2_000_000)]);
-    db.unsafe.mockResolvedValueOnce([]);
+    db.unsafe.mockReturnValueOnce(ACTIVE_RULE).mockResolvedValueOnce([]);
     const set = await getPeerExplorerSet(1, { institutionIds: [2, 3] });
     expect(set?.peers.map((p) => p.id)).toEqual([2]);
-    const [query, params] = db.unsafe.mock.calls[0];
+    // The facts read leaves out institutions the regulator marks inactive, except the page's own.
+    expect(db.unsafe.mock.calls[0]).toEqual([activeInstitutionFilter("s")]);
+    const [query, params] = db.unsafe.mock.calls[1];
     expect(query).toContain("ef.conditions");
     expect(query).toContain("ef.institution_id = ANY($2::bigint[])");
     expect(params[1]).toEqual([1, 2]);
@@ -98,16 +103,16 @@ describe("getPeerExplorerSet for a large set", () => {
     const ids = Array.from({ length: 3000 }, (_, i) => i + 2);
     db.mockResolvedValueOnce([{ id: 1, charter_type: "bank", asset_size: 1_000_000 }]);
     db.mockResolvedValueOnce([fact(1, "Capital City Bank", 1_000_000), ...ids.map((id) => fact(id, `Peer ${id}`, id * 1_000))]);
-    db.unsafe.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    db.unsafe.mockReturnValueOnce(ACTIVE_RULE).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
     const set = await getPeerExplorerSet(1, { institutionIds: ids });
     expect(set?.peers).toHaveLength(50);
     expect(set?.whole?.peers).toBe(3000);
     // Closest to $1B: 1,000 (=$1.0B) first, then 999 and 1,001, and so on.
     expect(set?.peers[0].id).toBe(1000);
-    const [wholeQuery, wholeParams] = db.unsafe.mock.calls[0];
+    const [wholeQuery, wholeParams] = db.unsafe.mock.calls[1];
     expect(wholeQuery).not.toContain("ef.conditions");
     expect(wholeParams[1]).toHaveLength(3001);
-    const [shownQuery, shownParams] = db.unsafe.mock.calls[1];
+    const [shownQuery, shownParams] = db.unsafe.mock.calls[2];
     expect(shownQuery).toContain("ef.conditions");
     expect(shownParams[1]).toHaveLength(51);
   });
@@ -118,7 +123,7 @@ describe("getPeerExplorerSet for the home metro", () => {
     const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
     db.mockResolvedValueOnce([{ id: 1, charter_type: "bank", asset_size: 4_447_362 }]);
     db.mockResolvedValueOnce([fact(1, "Capital City Bank", 4_447_362), fact(2, "Peer 2", 2_000_000)]);
-    db.unsafe.mockResolvedValueOnce([]);
+    db.unsafe.mockReturnValueOnce(ACTIVE_RULE).mockResolvedValueOnce([]);
     vi.mocked(getHomeMarket).mockResolvedValue({ code: 45220, name: "Tallahassee, FL" });
     vi.mocked(getMarketBranchCities).mockResolvedValue([{ institution_id: 2, city: "QUINCY", state: "FL" }]);
     vi.mocked(getMarketPresence).mockResolvedValue({ totalDeposits: 1e10, rows: [{ institution_id: 2, branches: 3, deposits: 5e8 }] });
