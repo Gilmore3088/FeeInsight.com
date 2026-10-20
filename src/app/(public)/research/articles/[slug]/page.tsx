@@ -11,7 +11,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getArticleBySlug, getPublishedArticles } from "@/lib/data-store/articles";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
-import { SITE_NAME } from "@/lib/constants";
+import { REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
 import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
@@ -120,7 +120,7 @@ export default async function ArticlePage({
               Work at a bank or credit union?
             </p>
             <p className="mt-1 text-[13px] text-ink-muted">
-              Request a competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
+              The {REPORT_OFFER.name} sets every fee you publish against named local competitors, with a source for every figure. {REPORT_OFFER.priceLabel}; we reply within one business day with scope and price.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Link
