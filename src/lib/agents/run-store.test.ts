@@ -1221,18 +1221,29 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
-  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
-    sqlMock.mockResolvedValue([]);
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("keeps report-review ordering $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockResolvedValue([]);
 
-    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+      await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
 
-    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
-    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
-    const retry = order.indexOf("= 'failed') DESC");
-    const review = order.indexOf("::text[])) DESC");
-    expect(review).toBeGreaterThan(retry);
-    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
-    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+      const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+      const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+      const retry = order.indexOf("= 'failed') DESC");
+      const review = order.indexOf("::text[])) DESC");
+      expect(review).toBeGreaterThan(retry);
+      expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("AND upper(btrim(r.state_code)) = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {

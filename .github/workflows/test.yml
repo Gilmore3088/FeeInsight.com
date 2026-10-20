@@ -146,6 +146,8 @@ jobs:
           sudo -u postgres psql -q -c "ALTER USER postgres PASSWORD 'postgres'"
           sudo -u postgres createdb e2e
           PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f tests/e2e/production-schema.sql
+          # Deming corrective replay uses the existing canonical case-store schema.
+          PGPASSWORD=postgres psql -h localhost -U postgres -d e2e -q -v ON_ERROR_STOP=1 -f supabase/migrations/20270110000037_deming_eval_cases.sql
           # These shared-schema suites use transactional DDL/failure triggers;
           # serialize files so another reader cannot observe a temporary fixture.
           E2E_DATABASE_URL=postgres://postgres:postgres@localhost:5432/e2e npx vitest run $E2E_TESTS $PUBLIC_FEE_APPLICABILITY_TEST $DARWIN_RECHECK_TEST $ROSETTA_BYTE_IDENTITY_TEST --maxWorkers=1
