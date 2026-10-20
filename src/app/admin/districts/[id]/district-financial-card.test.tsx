@@ -41,4 +41,20 @@ describe("DistrictFinancialCard", () => {
 
     expect(html).toBe("");
   });
+
+  it("says a failed read couldn't load, distinct from no filing", () => {
+    const html = renderToStaticMarkup(<DistrictFinancialCard groups={[fdic, districtFinancialGroup(6, "ncua", null, "failed")]} />);
+
+    expect(html).toContain("Couldn&#x27;t load NCUA figures for this district");
+    expect(html).not.toContain("No NCUA filing on record");
+  });
+
+  it("still shows the card when every read failed, so the failure is visible", () => {
+    const html = renderToStaticMarkup(<DistrictFinancialCard groups={[
+      districtFinancialGroup(6, "fdic", null, "failed"), districtFinancialGroup(6, "ncua", null, "failed"),
+    ]} />);
+
+    expect(html).toContain("Couldn&#x27;t load FDIC figures for this district");
+    expect(html).toContain("Couldn&#x27;t load NCUA figures for this district");
+  });
 });

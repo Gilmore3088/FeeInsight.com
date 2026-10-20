@@ -17,7 +17,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { timeAgo, formatAmount } from "@/lib/format";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { DistrictTabs } from "./district-tabs";
-import { DistrictFinancialCard } from "./district-financial-card";
+import { DistrictFinancialCard, hasDistrictFinancialsToShow } from "./district-financial-card";
 
 export default async function DistrictDetailPage({
   params,
@@ -52,7 +52,7 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
     getBeigeBookThemes().catch(() => []),
     getDistrictFeeMedians(districtId).catch(() => []),
   ]);
-  const hasFinancials = financialGroups.some((g) => g.status === "reported");
+  const hasFinancials = hasDistrictFinancialsToShow(financialGroups);
   const districtMetric = metrics.find((m) => m.district === districtId);
   const districtThemes = themes.filter((t: { fed_district: number }) => t.fed_district === districtId);
 

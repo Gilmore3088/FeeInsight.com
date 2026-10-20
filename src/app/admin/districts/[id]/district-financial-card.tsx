@@ -13,7 +13,20 @@ function quarterEnding(reportDate: string): string {
   return Number.isNaN(parsed.getTime()) ? reportDate : DATE_FORMAT.format(parsed);
 }
 
+/** A failed read is shown, so a broken query never looks like a district with no filings. */
+export function hasDistrictFinancialsToShow(groups: readonly DistrictFinancialGroup[]): boolean {
+  return groups.some((g) => g.status !== "unavailable");
+}
+
 function GroupRow({ group }: { group: DistrictFinancialGroup }) {
+  if (group.status === "failed") {
+    return (
+      <div>
+        <div className="text-[11px] font-medium text-gray-500">{LABELS[group.source]}</div>
+        <div className="text-[11px] text-red-600">Couldn&apos;t load {group.source.toUpperCase()} figures for this district</div>
+      </div>
+    );
+  }
   if (group.status === "unavailable" || group.report_date === null) {
     return (
       <div>
@@ -43,7 +56,7 @@ function GroupRow({ group }: { group: DistrictFinancialGroup }) {
  * different measures filed on their own dates, so they are never added together.
  */
 export function DistrictFinancialCard({ groups }: { groups: readonly DistrictFinancialGroup[] }) {
-  if (!groups.some((g) => g.status === "reported")) return null;
+  if (!hasDistrictFinancialsToShow(groups)) return null;
   return (
     <div className="rounded-lg border p-3">
       <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">
