@@ -20,6 +20,7 @@ export interface PipelineHealth {
   provider_failure_count_24h: number;
   runs_completed_24h?: number;
   runs_failed_24h?: number;
+  runs_blocked_24h?: number;
 }
 
 /** Cron fires every 5 minutes; three missed ticks is an outage. */

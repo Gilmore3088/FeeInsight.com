@@ -18,7 +18,7 @@ import { checkProAiQuota, quotaExceededMessage } from "@/lib/hamilton/quota";
 import { checkConsultantReportCap, reportCapMessage } from "@/lib/hamilton/report-cap";
 import { recordProRequest } from "@/lib/agents/run-store";
 import { logUsage } from "@/lib/research/history";
-import { estimateAnthropicCostMicrousd } from "@/lib/ai-provider-usage";
+import { estimateAnthropicCostMicrousd, incompleteProviderResponse, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { getHamiltonModel, isProviderLimitError } from "@/lib/ai-provider";
 import { HAMILTON_PAUSED_MESSAGE } from "@/lib/hamilton/provider-paused";
 import type { SectionInput } from "@/lib/hamilton/types";
@@ -184,6 +184,7 @@ export async function generateReport(
     return { success: false, error: "Choose a research institution before writing this report." };
   }
 
+  let recordPaidFailure: ((summary: string) => Promise<void>) | undefined;
   try {
     // 1-4. The institution's data and the three section inputs (report-inputs.ts, shared with the paid eval).
     const assembled = await assembleReportInputs({
@@ -258,18 +259,33 @@ export async function generateReport(
     const partnerReview = { problems: [] as string[], rewritten: false, remaining: 0 };
     // Drafts the partner review replaced or rejected: billed, so counted in usage.
     const billedDrafts: VerifiedSectionOutput[] = [];
+    const providerResponses: Array<{ usage: ProviderUsage | undefined; model: string }> = [];
+    const tracking = { onProviderResponse: (usage: ProviderUsage | undefined, model: string) => {
+      providerResponses.push({ usage, model });
+    } };
+    let outcomeRecorded = false;
     const recordReportOutcome = async (
       status: "completed" | "failed",
       summary: string,
       sections: VerifiedSectionOutput[],
       extra: Record<string, unknown> = {},
     ) => {
+      if (outcomeRecorded) return;
+      outcomeRecorded = true;
       sections = [...sections, ...billedDrafts];
-      const inputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.inputTokens ?? 0), 0);
-      const outputTokens = sections.reduce((sum, item) => sum + (item.section.usage?.outputTokens ?? 0), 0);
-      const model = sections[0]?.section.model ?? getHamiltonModel();
-      const costMicrousd = estimateAnthropicCostMicrousd(model, { inputTokens, outputTokens }) ?? 0;
-      await logUsage(user.id, null, "hamilton-report", inputTokens, outputTokens, Math.round(costMicrousd / 10_000)).catch(() => {});
+      // Returned sections omit discarded figure drafts and failed partner rewrites.
+      // The request-owned observer includes each returned generation response once after siblings settle.
+      const inputTokens = providerResponses.reduce((sum, item) => sum + (item.usage?.inputTokens ?? 0), 0);
+      const outputTokens = providerResponses.reduce((sum, item) => sum + (item.usage?.outputTokens ?? 0), 0);
+      const model = providerResponses[0]?.model ?? getHamiltonModel();
+      const estimates = providerResponses.map((item) => item.usage ? estimateAnthropicCostMicrousd(item.model, item.usage) : null);
+      const costMicrousd = estimates.every((estimate) => estimate !== null)
+        ? estimates.reduce<number>((sum, estimate) => sum + (estimate ?? 0), 0) : null;
+      // Denial before a returned response consumes no user model-call quota. The ledger
+      // remains authoritative for unknown charges; zero here is a legacy column placeholder.
+      if (providerResponses.length > 0) {
+        await logUsage(user.id, null, "hamilton-report", inputTokens, outputTokens, Math.round((costMicrousd ?? 0) / 10_000)).catch(() => {});
+      }
       await recordProRequest({
         ...ledgerBase,
         operation: "report",
@@ -281,6 +297,9 @@ export async function generateReport(
           input_tokens: inputTokens,
           output_tokens: outputTokens,
           estimated_cost_microusd: costMicrousd,
+          provider_response_events: providerResponses.length,
+          unknown_usage_response_events: providerResponses.filter((item) => !item.usage).length,
+          token_counts_include_unknown_placeholders: providerResponses.some((item) => !item.usage),
           sections: sections.map((item) => ({ words: item.section.wordCount, status: item.status })),
           partner_review: partnerReview,
           ...extra,
@@ -291,22 +310,23 @@ export async function generateReport(
     // One retry per section, so a provider hiccup never discards (and re-bills) the
     // sections that worked.
     const verifiedSections: VerifiedSectionOutput[] = [];
+    recordPaidFailure = (summary) => recordReportOutcome("failed", summary, verifiedSections);
     // A usage or billing limit at the provider: no retry, and the reader is told it is paused.
     let providerPaused = false;
     const generateWithRetry = async (input: SectionInput): Promise<VerifiedSectionOutput | null> => {
       try {
-        return await generateVerifiedSection(input);
+        return await generateVerifiedSection(input, tracking);
       } catch (firstError) {
         if (isProviderLimitError(firstError)) {
           providerPaused = true;
-          await recordReportOutcome("failed", `Section "${input.title}" refused: provider usage limit.`, verifiedSections);
           return null;
         }
+        // A successful HTTP response with unfinished generation is not a transport hiccup.
+        if (incompleteProviderResponse(firstError)) return null;
         try {
-          return await generateVerifiedSection(input);
+          return await generateVerifiedSection(input, tracking);
         } catch (retryError) {
-          providerPaused = isProviderLimitError(retryError);
-          await recordReportOutcome("failed", `Section "${input.title}" failed after a retry.`, verifiedSections);
+          providerPaused ||= isProviderLimitError(retryError);
           return null;
         }
       }
@@ -321,7 +341,10 @@ export async function generateReport(
     // The answer page comes first; the other two sections explain and stress-test
     // its decisions, so they receive it as context and run together.
     let answerResult = await generateWithRetry(sectionInputs[0]);
-    if (!answerResult) return sectionFailed(sectionInputs[0]);
+    if (!answerResult) {
+      await recordReportOutcome("failed", `Section "${sectionInputs[0].title}" could not finish. Report not saved.`, verifiedSections);
+      return sectionFailed(sectionInputs[0]);
+    }
     // Partner review: a draft that fails the checklist goes back once with the
     // problems named; the rewrite is kept only if it fixes more than it breaks.
     const reviewInput = {
@@ -336,7 +359,7 @@ export async function generateReport(
       const rewrite = await generateVerifiedSection({
         ...sectionInputs[0],
         context: `${sectionInputs[0].context ?? ""}\n\n${partnerReviewContext(firstProblems, answerResult.section.narrative)}`.trim(),
-      }).catch(() => null);
+      }, tracking).catch(() => null);
       if (rewrite) {
         const remaining = reviewAnswerPage({ ...reviewInput, narrative: rewrite.section.narrative });
         if (remaining.length < firstProblems.length && rewrite.status !== "needs_review") {
@@ -356,9 +379,12 @@ export async function generateReport(
         generateWithRetry({ ...input, context: `${input.context ?? ""}\n\n${answerContext}`.trim() }),
       ),
     );
-    for (const [index, result] of followUps.entries()) {
-      if (!result) return sectionFailed(sectionInputs[index + 1]);
-      verifiedSections.push(result);
+    // All started work has settled; include successful siblings before the one final receipt.
+    for (const result of followUps) if (result) verifiedSections.push(result);
+    const failedFollowUp = followUps.findIndex((result) => result === null);
+    if (failedFollowUp >= 0) {
+      await recordReportOutcome("failed", "A report section could not finish. Report not saved.", verifiedSections);
+      return sectionFailed(sectionInputs[failedFollowUp + 1]);
     }
 
     // Every $ and % in the narrative must trace to the data the model was given.
@@ -403,6 +429,8 @@ export async function generateReport(
     const report: ReportSummaryResponse = {
       title: reportTitle,
       identityContext,
+      // #1924: the stamp of the peer index read behind the report's medians, saved with it.
+      datasetStamps: [{ label: peerIndex.label, stamp: peerIndex.stamp }],
       ...(answer ? { answer: { ...answer, goal: params.clientGoal && params.clientGoal !== "balanced" ? reportGoal(params.clientGoal).label : null } } : {}),
       exhibits: [
         ...exhibitSet.exhibits,
@@ -501,6 +529,7 @@ export async function generateReport(
     await recordReportOutcome("completed", `Report saved (${reportId}).`, verifiedSections, { report_id: reportId });
     return { success: true, reportId, report, artifactMetadata };
   } catch (err) {
+    await recordPaidFailure?.("Report generation or saving failed. Report was not completed.").catch(() => {});
     if (isProviderLimitError(err)) return { success: false, error: HAMILTON_PAUSED_MESSAGE };
     const message = err instanceof Error ? err.message : String(err);
     return { success: false, error: `Report generation failed: ${message}` };
@@ -512,7 +541,7 @@ export async function generateReport(
  */
 export async function loadRecentReports() {
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
   return getRecentHamiltonReports(user.id);
 }
 
@@ -521,7 +550,7 @@ export async function loadRecentReports() {
  */
 export async function loadActiveScenarios() {
   const user = await getCurrentUser();
-  if (!user) return [];
+  if (!user || !canAccessPremium(user)) return [];
   return getActiveScenarios(user.id);
 }
 
@@ -540,7 +569,7 @@ export async function loadReport(reportId: string) {
  */
 export async function loadScenarioById(scenarioId: string) {
   const user = await getCurrentUser();
-  if (!user) return null;
+  if (!user || !canAccessPremium(user)) return null;
   return getHamiltonScenarioById(scenarioId, user.id);
 }
 

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { NON_INSTITUTION_TIER, PRO_TIERS, annualMonthsFree, annualSavingsLabel, tierAmountLabel } from "@/lib/pro-tiers";
+import { NON_INSTITUTION_TIER, PRO_TIERS, annualMonthsFree, tierAmountLabel } from "@/lib/pro-tiers";
 
 const track = vi.fn();
 vi.mock("@/lib/analytics", () => ({ trackEvent: (...args: unknown[]) => track(...args) }));
@@ -32,6 +32,7 @@ import {
   ProPlanBoard,
   RECOMMENDED_PLAN,
   SELECT_INSTITUTION_LABEL,
+  monthsFreeWords,
 } from "./pro-plan-cards";
 import { OPEN_LOOKUP_EVENT } from "./pricing-jump";
 
@@ -70,7 +71,7 @@ describe("/subscribe plan board", () => {
     PRO_TIERS.forEach((tier, i) => {
       expect(cards()[i].textContent).toContain(tier.assetsLabel);
       expect(cards()[i].textContent).toContain(tierAmountLabel(tier.key, "annual"));
-      expect(cards()[i].textContent).toContain(`save ${annualSavingsLabel(tier.key)}`);
+      expect(cards()[i].textContent).toContain(`billed yearly: ${monthsFreeWords(annualMonthsFree(tier.key))}`);
     });
   });
 

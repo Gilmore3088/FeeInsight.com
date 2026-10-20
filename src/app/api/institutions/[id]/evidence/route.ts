@@ -16,6 +16,7 @@ import {
   getInstitutionSubmissionState,
 } from "@/lib/data-store/institution";
 import { getAutomationControl } from "@/lib/automation-control";
+import { getCurrentUser, hasPermission } from "@/lib/auth";
 
 interface RouteProps {
   params: Promise<{ id: string }>;
@@ -33,7 +34,17 @@ function withTimeout<T>(promise: Promise<T>, fallback: T, ms = 3500): Promise<T>
   });
 }
 
+/**
+ * One institution's whole evidence record: every live fee, the pipeline's unpublished verified and
+ * raw rows, financials and peer ranking, in seven reads. Staff only (analyst or admin): anonymous,
+ * a walk over ids pulled the cleaned database as JSON, and nothing on the public site calls it.
+ */
 async function handleGET(_request: Request, { params }: RouteProps) {
+  const user = await getCurrentUser().catch(() => null);
+  if (!user || !hasPermission(user, "operate")) {
+    return NextResponse.json({ error: "Sign in with a staff account to read this." }, { status: 401 });
+  }
+
   const { id } = await params;
   const institutionId = Number(id);
   if (!Number.isInteger(institutionId) || institutionId <= 0) {

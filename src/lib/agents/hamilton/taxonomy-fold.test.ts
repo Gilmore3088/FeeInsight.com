@@ -68,6 +68,12 @@ const PAGE_LINES: Record<number, string> = {
   37068: "primary account. 8Up to 5 copies, then $25/hr research fee. 9As of July 25, 2025, new safe deposit box agreements will not be accepted.",
   44516: "(if balance falls below minimum daily balance) • Excessive transaction fee is $25/transaction",
   91458: "*unlimited 1st National ATM access / $5.00 monthly maintenance fee",
+  // #2018 (read-only, Oct 19): each line as its stored text prints it.
+  154438: "A service charge fee of $3.00 will be charged for each withdrawal in excess of six during a quarter.",
+  154181: "eStatements² | Optional | Yes Paper Statements available for $3 per month | Yes Paper Statements available for $3 per month",
+  154214: "Maintenance Fee | $10 per month with eStatements¹ Paper Statements available for an additional $3 per month",
+  123514: "Wire Out/Wire In | $15.00 Per Transaction Outgoing/$5 Per Transaction Incoming",
+  153002: "Foreign Returned Item | Varies | ACH Loan Payment on Website | $2 per transaction",
   95142: "• Stop Payment Fee - $30.00\n• Account Research Fee (minimum 1 hour) - $25.00/hour | • Money Order Research Fee - $10.00/money order\nSHARE & SHARE DRAFT FEES",
   58050: "Foreign Currency Order or Foreign Currency deposited item | $20.00\nInactive Account (no activity for 365 days, balances under $50) - monthly fee | $2.00\nLevy attachment | $50.00",
   59464: "• Stop Payment Fee:\no Customer Checking | $10.00\no Bank Issued (Restricted) | $25.00\no Money Order | $10.00",
@@ -186,7 +192,9 @@ describe("hand re-files of misread live fees (retidy v15 review, Oct 9)", () => 
       expect(RETIRED_CATEGORY_KEYS.has(refile.to), `${refile.feePublishedId}`).toBe(false);
       // Guard v70 (#1765) answers 70319's open question: a gift card's inactivity is not a dormant
       // account, so its rename no longer applies (the row has been down since Oct 16, #1196).
-      if (refile.feePublishedId === 70319) {
+      // Guard v74 (#2018) does the same for 131129: a withdrawal at DFCU's own ATM is not a
+      // non-network ATM fee (that row has been down since Oct 16, #1196).
+      if (refile.feePublishedId === 70319 || refile.feePublishedId === 131129) {
         expect(passesDarwinChecks(refile.to, refile.name, refile.amount)).toBe(false);
         continue;
       }

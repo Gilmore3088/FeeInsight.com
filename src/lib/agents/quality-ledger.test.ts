@@ -10,18 +10,25 @@ describe("readQualityLedger", () => {
       Promise.resolve(
         strings.join("").includes("answer_key_score_runs")
           ? [{ id: 9, agent_run_id: null, scorer_version: 2, scored_at: "2026-10-14T16:53:00Z", banks_scored: 62, fees_expected: 2320, precision: "0.874", recall: "0.575" }]
+          : strings.join("").includes("pipeline_scoreboard_snapshots") || strings.join("").includes("FROM agent_run_events") ? []
           : [{ live_fees: 76629, stored_notes: 0, per_item_periods: 6, no_source_link: 13 }],
       ),
-    ), { unsafe: vi.fn((text: string) => text) });
+    ), { unsafe: vi.fn((text: string) => text.includes("FROM answer_key_institutions") ? [] : text) });
     const ledger = await readQualityLedger(db as never);
-    expect(ledger).toEqual({
-      answerKey: { precision: 0.874, recall: 0.575, scoredAt: "2026-10-14T16:53:00Z", scorerVersion: 2 },
+    expect(ledger).toMatchObject({
+      answerKey: { precision: null, recall: null, referenceState:"legacy_ungated", scoredAt: "2026-10-14T16:53:00Z", scorerVersion: 2 },
       liveFees: 76629, storedNotes: 0, perItemPeriods: 6, noSourceLink: 13,
     });
+    expect(qualityLedgerLines(ledger)[0]).toContain("no current measurement (legacy ungated)");
     const perItem = String(db.unsafe.mock.calls[0]?.[0]);
     expect(perItem).toContain("(fee_category = 'nsf' AND frequency IN ('monthly', 'annual', 'daily'))");
     expect(perItem).toContain("(fee_category = 'overdraft' AND frequency IN ('monthly', 'annual', 'quarterly', 'daily'))");
     expect(perItem).toContain("(fee_category = 'continuous_od' AND frequency IN ('monthly', 'quarterly', 'annual'))");
+  });
+
+  it("does not present unavailable reference counts as zeros", () => {
+    const line=qualityLedgerLines({answerKey:{precision:null,recall:null,scoredAt:"2026-10-19",scorerVersion:3,referenceState:"unavailable"},liveFees:0,storedNotes:0,perItemPeriods:0,noSourceLink:0})[0];
+    expect(line).toContain("Reference counts unavailable");expect(line).not.toContain("0 eligible");
   });
 
   it("says so when the answer key has no score", () => {

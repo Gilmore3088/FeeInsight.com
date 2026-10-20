@@ -14,7 +14,9 @@ const executeQueuedAgentRunsMock = vi.fn();
 const schedulePriorityInstitutionRunsMock = vi.fn();
 const assertCronTickBudgetAllowedMock = vi.fn();
 const scheduleGuardCatchUpRunMock = vi.fn();
+const schedulePublishSweepsRunMock = vi.fn();
 const scheduleStaleOutreachWithdrawalMock = vi.fn();
+const scheduleLiveSourceAuditMock=vi.fn();
 
 vi.mock("@/lib/auth", () => ({
   getCurrentUser: getCurrentUserMock,
@@ -47,6 +49,12 @@ vi.mock("@/lib/agents/hamilton/guard-catch-up", () => ({
   scheduleGuardCatchUpRun: scheduleGuardCatchUpRunMock,
 }));
 
+vi.mock("@/lib/agents/hamilton/publish-sweeps-schedule", () => ({
+  schedulePublishSweepsRun: schedulePublishSweepsRunMock,
+}));
+
+vi.mock("@/lib/agents/deming/live-source-schedule",()=>({scheduleLiveSourceAudit:scheduleLiveSourceAuditMock}));
+
 vi.mock("@/lib/agents/growth/withdraw", () => ({
   scheduleStaleOutreachWithdrawal: scheduleStaleOutreachWithdrawalMock,
 }));
@@ -68,6 +76,7 @@ function request(url = "https://feeinsight.com/api/admin/agents/tick") {
 describe("/api/admin/agents/tick", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    scheduleLiveSourceAuditMock.mockResolvedValue({scheduled:0,reused:0,runId:null});
     matchesConfiguredCronSecretMock.mockReturnValue(true);
     hasQueuedProviderStepsMock.mockResolvedValue(false);
     reapStaleAgentStepsMock.mockResolvedValue({ requeued: [], dead: [], orphanRunsRequeued: [] });
@@ -107,6 +116,7 @@ describe("/api/admin/agents/tick", () => {
     scheduleStaleOutreachWithdrawalMock.mockResolvedValue({
       scheduled: true, runId: 126, due: 23, reason: null,
     });
+    schedulePublishSweepsRunMock.mockResolvedValue({ scheduled: true, runId: 127, live: false, reason: null });
     executeQueuedAgentRunsMock.mockResolvedValue({
       selected: 1,
       results: [{ runId: 123, status: "queued", terminal: false, executedSteps: 1 }],
@@ -265,7 +275,7 @@ describe("/api/admin/agents/tick", () => {
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(expect.objectContaining({ allowProviderSteps: false }));
   });
 
-  it("does not schedule or drain while both the pipeline and marketing are paused", async () => {
+  it("continues only the existing daily scoreboard while both controls are paused", async () => {
     getPipelineControlMock.mockResolvedValue({
       enabled: false,
       reason: "Operator pause for maintenance",
@@ -280,6 +290,8 @@ describe("/api/admin/agents/tick", () => {
       changedAt: "2026-10-08T00:00:00.000Z",
       revision: 1,
     });
+    // A paid run elsewhere must not even cause a budget read on this narrow path.
+    hasQueuedProviderStepsMock.mockResolvedValue(true);
     const { GET } = await import("./route");
 
     const response = await GET(request());
@@ -288,13 +300,25 @@ describe("/api/admin/agents/tick", () => {
     expect(response.status).toBe(200);
     expect(body.ok).toBe(true);
     expect(body.paused).toBe(true);
-    expect(body.pauseReason).toBe("Operator pause for maintenance");
+    expect(body.measurementOnly).toBe(true);
+    expect(body.pauseReason).toContain("only queued daily scoreboard measurements");
     expect(body.marketing).toMatchObject({ enabled: false, reason: "Holding marketing" });
-    expect(reapStaleAgentStepsMock).not.toHaveBeenCalled();
+    const scope = { agent: "atlas", kind: "workflow", source: "atlas.scoreboard" };
+    expect(reapStaleAgentStepsMock).toHaveBeenCalledExactlyOnceWith({ scope });
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
+    expect(scheduleLiveSourceAuditMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
     expect(scheduleStaleOutreachWithdrawalMock).not.toHaveBeenCalled();
-    expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
+    expect(scheduleGuardCatchUpRunMock).not.toHaveBeenCalled();
+    expect(schedulePublishSweepsRunMock).not.toHaveBeenCalled();
+    expect(hasQueuedProviderStepsMock).not.toHaveBeenCalled();
+    expect(assertCronTickBudgetAllowedMock).not.toHaveBeenCalled();
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledExactlyOnceWith({
+      runLimit: 10, maxStepsPerRun: 10, allowProviderSteps: false,
+      deadlineAt: expect.any(Number), paused: { pipeline: true, marketing: true }, scope,
+      pauseExemptOnly: true,
+    });
+    expect(body.results).toEqual([{ runId: 123, status: "queued", terminal: false, executedSteps: 1 }]);
   });
 
   it("queues a re-check of every live fee once per deployed guard and frequency version, before draining", async () => {
@@ -307,6 +331,22 @@ describe("/api/admin/agents/tick", () => {
     expect(scheduleGuardCatchUpRunMock.mock.invocationCallOrder[0]).toBeLessThan(
       executeQueuedAgentRunsMock.mock.invocationCallOrder[0],
     );
+  });
+
+  it("queues the publish-sweeps run before draining, and still drains when it cannot be scheduled", async () => {
+    const { GET } = await import("./route");
+
+    const body = await (await GET(request())).json();
+
+    expect(body.publishSweeps).toMatchObject({ scheduled: true, runId: 127, live: false });
+    expect(schedulePublishSweepsRunMock.mock.invocationCallOrder[0]).toBeLessThan(
+      executeQueuedAgentRunsMock.mock.invocationCallOrder[0],
+    );
+
+    schedulePublishSweepsRunMock.mockRejectedValue(new Error("db down"));
+    const failed = await (await GET(request())).json();
+    expect(failed.publishSweeps).toEqual({ error: "db down" });
+    expect(executeQueuedAgentRunsMock).toHaveBeenCalledTimes(2);
   });
 
   it("still drains queued runs when the guard catch-up cannot be scheduled", async () => {
@@ -356,8 +396,10 @@ describe("/api/admin/agents/tick", () => {
     expect(body.paused).toBeUndefined();
     expect(body.partlyPaused).toBe("pipeline");
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
+    expect(scheduleLiveSourceAuditMock).not.toHaveBeenCalled();
     expect(schedulePriorityInstitutionRunsMock).not.toHaveBeenCalled();
     expect(scheduleGuardCatchUpRunMock).not.toHaveBeenCalled();
+    expect(schedulePublishSweepsRunMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).toHaveBeenCalledWith(
       expect.objectContaining({ paused: { pipeline: true, marketing: false } }),
     );
@@ -402,6 +444,7 @@ describe("/api/admin/agents/tick", () => {
     expect(body.paused).toBe(true);
     expect(body.pauseReason).toBe("Agent execution is blocked.");
     expect(scheduleDueStateLaneRunsMock).not.toHaveBeenCalled();
+    expect(scheduleLiveSourceAuditMock).not.toHaveBeenCalled();
     expect(executeQueuedAgentRunsMock).not.toHaveBeenCalled();
   });
 });

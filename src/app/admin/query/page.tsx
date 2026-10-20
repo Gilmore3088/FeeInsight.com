@@ -4,7 +4,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { QueryClient } from "./query-client";
 
 export default async function QueryPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   return (
     <div className="space-y-6">

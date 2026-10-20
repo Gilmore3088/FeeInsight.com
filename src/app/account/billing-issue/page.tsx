@@ -6,6 +6,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium, PAST_DUE_GRACE_DAYS } from "@/lib/access";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { activateIfPaid } from "@/lib/subscription-activation";
+import { UtilityHeading, UtilityShell } from "@/components/utility/utility-shell";
+import { UTILITY_CARD, UTILITY_LINK, UTILITY_QUIET_LINK } from "@/components/utility/form-style";
 import { ManageBillingButton } from "../manage-billing-button";
 
 export const metadata: Metadata = { title: "Payment issue" };
@@ -19,20 +21,28 @@ export default async function BillingIssuePage() {
   if (await activateIfPaid(user)) redirect("/pro/hamilton");
 
   return (
-    <main className="mx-auto max-w-lg px-6 py-20">
-      <h1 className="text-2xl font-semibold text-ink">Your payment didn&apos;t go through</h1>
-      <p className="mt-4 text-sm text-ink-muted">
-        We couldn&apos;t charge the card on file for your Hamilton subscription, and the {PAST_DUE_GRACE_DAYS}-day
-        grace period has ended. Update your payment method and your workspace, saved reports and analyses come back
-        right away. Nothing has been deleted.
-      </p>
-      <div className="mt-8 flex flex-wrap items-center gap-4">
-        <ManageBillingButton label="Update payment method" />
-        <Link href="/account" className="text-sm underline text-ink">
-          Account settings
-        </Link>
+    <UtilityShell>
+      <UtilityHeading title={<>Your payment didn&apos;t go through</>} />
+      <div className={`${UTILITY_CARD} space-y-5`}>
+        <p className="text-[15px] leading-relaxed text-ink-soft">
+          We couldn&apos;t charge the card on file for your Hamilton subscription, and the {PAST_DUE_GRACE_DAYS}-day
+          grace period has ended. Update your payment method to restore your workspace, saved reports and analyses.
+          Nothing has been deleted.
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          <ManageBillingButton label="Update payment method" variant="primary" />
+          <Link href="/account" className={`text-[14px] ${UTILITY_QUIET_LINK}`}>
+            Account settings
+          </Link>
+        </div>
       </div>
-      <p className="mt-8 text-xs text-ink-muted">Questions? Email {CONTACT_EMAIL}.</p>
-    </main>
+      <p className="mt-5 text-center text-[13px] text-ink-muted">
+        Questions? Email{" "}
+        <a href={`mailto:${CONTACT_EMAIL}`} className={UTILITY_LINK}>
+          {CONTACT_EMAIL}
+        </a>
+        .
+      </p>
+    </UtilityShell>
   );
 }

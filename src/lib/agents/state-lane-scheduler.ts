@@ -4,11 +4,12 @@ import type {
   AgentRunStepDefinition,
   AgentRunTriggerSource,
 } from "@/lib/agents/types";
-import { normalizeStateCode, syncStateLaneProfiles } from "./state-lane-memory";
+import { normalizeStateCode, syncStateLaneProfiles, type StateLaneMemorySyncResult } from "./state-lane-memory";
 import { KNOX_REEXTRACT_MAX_FEES } from "./knox/extract";
 import { thinRereadKindSql } from "./thin-document";
 import { KNOX_RULES_STRATEGY } from "./knox/specialists";
-import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION } from "./rosetta/read";
+import { REREAD_MAX_KNOX_FEES, ROSETTA_READ_VERSION, pdfStackedRepairsPendingQuery } from "./rosetta/read";
+import { pdfStackedRepairSchemaReady, PDF_STACKED_REPAIR_STRATEGY } from "./rosetta/pdf-stacked-repair";
 import { DARWIN_VERIFY_MAX_LIMIT, darwinDueSql } from "./darwin/verify";
 import { HAMILTON_PUBLISH_MAX_LIMIT } from "./hamilton/publish";
 import { knoxFreeSignature, RULES_RECHECK_STRATEGY } from "./hamilton/rules-recheck";
@@ -241,8 +242,6 @@ export interface DueStateLaneScheduleResult {
   /** States whose failed lane was woken because the step that broke it works again. */
   recovered?: string[];
   failed: Array<{ stateCode: string; error: string }>;
-  /** The hourly priority refresh, on the ticks that run it; `error` set when it failed (#1264). */
-  priorities?: LanePriorityRefresh;
   results: Array<{
     stateCode: string;
     runId: number;
@@ -321,6 +320,13 @@ function isMissingStateLaneSchemaError(error: unknown): boolean {
  */
 export async function stateHasDocumentBacklog(stateCode: string): Promise<boolean> {
   try {
+    // Use Rosetta's actual current-copy/profile/access/attempt selection, rather
+    // than a second approximation that can keep a lane awake after it settles.
+    if (await pdfStackedRepairSchemaReady(sql)) {
+      const repairQuery = pdfStackedRepairsPendingQuery(stateCode);
+      const [repair] = await sql.unsafe<Array<{ repair_due: boolean }>>(repairQuery.query, repairQuery.params);
+      if (repair?.repair_due === true) return true;
+    }
     const [row] = await sql<{ backlog: boolean }[]>`
       SELECT EXISTS (
         SELECT 1
@@ -368,6 +374,7 @@ export async function stateHasDocumentBacklog(stateCode: string): Promise<boolea
                AND NOT EXISTS (
                  SELECT 1 FROM pipeline_attempts pa
                   WHERE pa.stage = 'read'
+                    AND pa.strategy <> ${PDF_STACKED_REPAIR_STRATEGY}
                     AND pa.institution_id = adt.institution_id
                     AND pa.input_fingerprint = adt.source_hash
                     AND pa.strategy_version >= ${ROSETTA_READ_VERSION}
@@ -1183,14 +1190,53 @@ export async function startStateLaneRun(
   return { ...result, stateCode, idempotencyKey, mode, recheck };
 }
 
+/** Where the hourly lane sync's run comes from (`/api/admin/crew/lane-sync`, its own cron). */
+export const LANE_SYNC_SOURCE = "atlas.lane_sync";
+export const LANE_SYNC_STEP_KEY = "lane-sync";
+
+export interface NationwideLaneSyncResult {
+  profiles: StateLaneMemorySyncResult;
+  /** Lanes woken because their state has live fees Hamilton has not checked. */
+  uncheckedWoken: number;
+  /** Lanes woken because a bank has a pending second look since its last fetch. */
+  secondLookWoken: number;
+  priorities: LanePriorityRefresh;
+  /** Milliseconds per part, so a slow hour names its slow query. */
+  ms: { profiles: number; unchecked: number; second_looks: number; priorities: number };
+}
+
+async function timed<T>(ms: Record<string, number>, key: string, run: () => Promise<T>): Promise<T> {
+  const started = Date.now();
+  try {
+    return await run();
+  } finally {
+    ms[key] = Date.now() - started;
+  }
+}
+
 /**
- * The nationwide profile and lane sync scans every institution, which takes close to a
- * minute on the production database, so the 5-minute tick runs it only on the first
- * tick of each hour. Each lane still syncs its own state when it is launched and in its
- * enhance step.
+ * The hourly nationwide sync: every state's profile and lane rows, the two lane wakes and the
+ * priority refresh. It scans every institution. The first tick of each hour ran it before any
+ * step and started its first step p50 80 s, max 200 s in, against 6 s for other ticks (2026-10-18
+ * finding, tick loses budget before steps), so it now runs as the `lane-sync` step of its own hourly run from its own cron route,
+ * never inside the tick. Each lane still syncs its own state when it is launched and in its
+ * enhance step. A failed priority refresh goes on the newest lane run's ledger (#1264) as well as
+ * on this step's detail.
  */
-export function shouldRunNationwideLaneSync(now: Date = new Date()): boolean {
-  return now.getUTCMinutes() < 5;
+export async function runNationwideLaneSync(): Promise<NationwideLaneSyncResult> {
+  const ms: Record<string, number> = {};
+  const profiles = await timed(ms, "profiles", () => syncStateLaneProfiles(sql));
+  const uncheckedWoken = await timed(ms, "unchecked", () => wakeLanesWithUncheckedLiveFees());
+  const secondLookWoken = await timed(ms, "second_looks", () => wakeLanesWithPendingSecondLooks());
+  const priorities = await timed(ms, "priorities", () => refreshLanePriorities());
+  if (priorities.error) await recordLanePriorityRefreshFailure(priorities.error, []);
+  return {
+    profiles,
+    uncheckedWoken,
+    secondLookWoken,
+    priorities,
+    ms: { profiles: ms.profiles ?? 0, unchecked: ms.unchecked ?? 0, second_looks: ms.second_looks ?? 0, priorities: ms.priorities ?? 0 },
+  };
 }
 
 /** State lanes launched per 5-minute tick (36 an hour). Raised from 2 on 2026-10-06 after load checks. */
@@ -1208,20 +1254,14 @@ export const MAX_ACTIVE_STATE_LANE_RUNS = 3;
 export async function scheduleDueStateLaneRuns({
   limit = STATE_LANE_LIMIT_PER_TICK,
   triggeredBy = "atlas.scheduler",
-  now = new Date(),
 }: {
   limit?: number;
   triggeredBy?: string;
+  /** Unused since the hourly sync left the tick (`runNationwideLaneSync`); kept for callers. */
   now?: Date;
 } = {}): Promise<DueStateLaneScheduleResult> {
   const safeLimit = boundedLaneLimit(limit);
-  let priorities: LanePriorityRefresh | undefined;
-  if (shouldRunNationwideLaneSync(now)) {
-    await syncStateLaneProfiles(sql);
-    await wakeLanesWithUncheckedLiveFees();
-    await wakeLanesWithPendingSecondLooks();
-    priorities = await refreshLanePriorities();
-  }
+  // The hourly nationwide sync runs from its own route now (`runNationwideLaneSync`).
   // Every tick: a fixed break should rerun its failed lanes within minutes, not an hour.
   const recovered = await wakeLanesAfterRecovery();
 
@@ -1233,7 +1273,6 @@ export async function scheduleDueStateLaneRuns({
     failed: [],
     results: [],
     recovered,
-    ...(priorities ? { priorities } : {}),
   };
   let dueRows: Array<{ state_code: string }>;
   try {
@@ -1244,7 +1283,7 @@ export async function scheduleDueStateLaneRuns({
          AND status IN ('queued', 'running', 'cancel_requested')
     `;
     const slots = Math.min(safeLimit, MAX_ACTIVE_STATE_LANE_RUNS - Number(active?.runs ?? 0));
-    if (slots <= 0) return await withPriorityFailureRecorded(emptyResult);
+    if (slots <= 0) return emptyResult;
     dueRows = await withTransaction(async (tx) => tx<{ state_code: string }[]>`
       WITH due AS (
         SELECT state_code
@@ -1297,7 +1336,6 @@ export async function scheduleDueStateLaneRuns({
     failed: [],
     results: [],
     recovered,
-    ...(priorities ? { priorities } : {}),
   };
 
   for (const row of dueRows) {
@@ -1332,13 +1370,5 @@ export async function scheduleDueStateLaneRuns({
     }
   }
 
-  return await withPriorityFailureRecorded(output);
-}
-
-/** Puts a failed priority refresh on the ledger before the tick reports its schedule. */
-async function withPriorityFailureRecorded(result: DueStateLaneScheduleResult): Promise<DueStateLaneScheduleResult> {
-  if (!result.priorities?.error) return result;
-  const started = result.results.filter((row) => !row.reused).map((row) => row.runId);
-  await recordLanePriorityRefreshFailure(result.priorities.error, started);
-  return result;
+  return output;
 }

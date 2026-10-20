@@ -192,8 +192,9 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
 export const READER_LOSS_REASONS: ReadonlySet<string> = new Set(["name_not_in_text", "amount_not_the_fee"]);
 
 /**
- * Off until UAT passes a 10-row check of the fees this would put back. While off, a fee
- * already taken down whose line a re-read lost stays down; one still live stays live.
+ * Off until an automatic sample of the fees this would put back comes back clean against the
+ * bank's own document. While off, a fee already taken down whose line a re-read lost stays
+ * down; one still live stays live.
  */
 export const READER_LOSS_RESTORES_ON = false;
 
@@ -226,6 +227,67 @@ export function readerLostLine(fee: LiveFeeRow, texts: InstitutionText[], reason
   return excerpt
     .split(/\s+\/\s+/)
     .some((line) => checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok);
+}
+
+/** A price on its own: "$30", "$ 8.00" or a bare "6.25". */
+const PRICE = /\$\s*\d|\b\d+\.\d{2}\b/;
+/** A name that says the fee is free cannot also carry a price ("Notary Fee Free for members" $5). */
+const FREE_WORDS = /\b(?:free|no charge|waived)\b/i;
+
+/**
+ * Pure: is the line Knox stored strong enough to put a fee back live on its own? The current
+ * text no longer pairs the name with the price, so the stored line is the only evidence left,
+ * and it must read name first. Lane speed's sample of 159 restores (Oct 20) found 6 of 20
+ * wrong, and in four the line opened on a price ("$30 Replacement Credit Card Rush | $25
+ * Replace Key", "$10 Non-Member Check Cashing Fee" where the bank charges $5): a table read
+ * price-first binds each price to the wrong row. A fifth was "Notary Fee Free for members" at
+ * the $5 non-member price. Keeping a live fee live (`readerLostLine`) does not use this.
+ */
+export function restorableExcerpt(fee: Pick<LiveFeeRow, "fee_name" | "amount" | "conditions" | "canonical_fee_key">): boolean {
+  if (FREE_WORDS.test(fee.fee_name)) return false;
+  const excerpt = excerptOf(fee.conditions);
+  if (!excerpt) return false;
+  const name = fee.fee_name.trim().toLowerCase();
+  const firstWord = name.match(/[a-z]{3,}/)?.[0];
+  if (!firstWord) return false;
+  return excerpt.split(/\s+\/\s+/).some((line) => {
+    if (!checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok) return false;
+    // Where the whole name is printed, or else where its first word is as a word: a heading
+    // that repeats the first word ("Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer
+    // International") must not count as the name, and "card" inside "Discard" is not "Card".
+    const lower = line.toLowerCase();
+    const whole = lower.lastIndexOf(name);
+    const at = whole >= 0 ? whole : lower.search(new RegExp(`\\b${firstWord}\\b`));
+    // "$25.00 for Incoming – Foreign Wires / $50.00 for Outgoing" puts each price before "for":
+    // a line that reaches the name through "for" carries the next row's price (pub 90951).
+    return at >= 0 && !PRICE.test(line.slice(0, at)) && !/\bfor\s*$/i.test(line.slice(0, at));
+  });
+}
+
+/**
+ * The amount as the document would print it: "$25", "$25.00", "$ 25.00"; cents when it has them.
+ * Never "$25,000" or "$25.50". "$1,000.00" is not found for a $1,000 fee, which refuses the restore.
+ */
+function printedPrice(amount: number): RegExp {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const tail = cents === "00" ? "(?:\\.00)?" : `\\.${cents}`;
+  return new RegExp(`\\$\\s*${whole}${tail}(?![\\d.,]*\\d)`);
+}
+
+/**
+ * Pure: does the fee's own document still print what the restore claims? The re-read must still
+ * find the name (only `amount_not_the_fee`, never `name_not_in_text`) and print the price
+ * somewhere in it. Lane speed's re-sample of restores (Oct 20) could not prove 8 of 20 from the
+ * bank's document: names missing from the current text, or a run of names with no prices at all.
+ */
+export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], reason: string): boolean {
+  if (reason !== "amount_not_the_fee") return false;
+  const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
+  const own = texts.find((text) => Number(text.source_document_id) === ownId);
+  if (own == null) return false;
+  const text = (own.normalized_text ?? "").replace(/\s+/g, " ").toLowerCase();
+  const name = fee.fee_name.replace(/\s+/g, " ").trim().toLowerCase();
+  return name.length > 0 && text.includes(name) && printedPrice(Number(fee.amount)).test(own.normalized_text ?? "");
 }
 
 const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
@@ -438,7 +500,7 @@ export async function takeDownUntraceableFees(
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
     const verdict = traceLiveFee(fee, institutionTexts);
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
-    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name)))) {
+    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
       result.readerLost += 1;
       counts.checked += 1;

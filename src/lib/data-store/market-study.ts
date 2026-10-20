@@ -1,5 +1,6 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER } from "./fee-stats";
+import { HIGHEST_TIER_CATEGORIES, STATS_ROW_FILTER } from "./fee-stats";
+import { feeScheduleUrls, ownFeeFromRows, severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
 /**
  * Data behind Hamilton's new market study: a bank looking at a county where it may not have
@@ -51,7 +52,9 @@ export interface MarketStudyMember {
 export interface MarketStudyFee {
   category: string;
   subject: number | null;
-  competitors: { institution_id: number; amount: number }[];
+  subjectSeveral?: SeveralFees;
+  subjectDocumentUrls?: string[];
+  competitors: { institution_id: number; amount: number; several?: SeveralFees; documentUrls?: string[] }[];
 }
 
 export interface MarketStudyHousehold {
@@ -100,7 +103,7 @@ export interface MarketStudyRows {
   /** Deposits per institution (or negative certificate) SHARE_LOOKBACK_YEARS before, in thousands. */
   earlier: { key: unknown; deposits: unknown }[];
   subjectBranches: { cert: number; branch_name: string | null; city: string | null; county_fips: unknown; latitude: unknown; longitude: unknown; deposits: unknown }[];
-  fees: { institution_id: number; fee_category: string; amount: unknown }[];
+  fees: { institution_id: number; fee_category: string; amount: unknown; lines?: { fee_name: string | null; amount: unknown; document_url?: string | null }[] }[];
   demographics: { geo_id: string; geo_name: string; median_household_income: unknown; total_population: unknown; poverty_count: unknown; year: number }[];
 }
 
@@ -150,7 +153,8 @@ export async function getMarketStudyData(institutionId: number, countyFips: stri
     sql<MarketStudyRows["fees"]>`
       SELECT ef.institution_id, ef.fee_category,
              CASE WHEN ef.fee_category = 'overdraft' THEN MAX(ef.amount)
-                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount
+                  ELSE percentile_cont(0.5) WITHIN GROUP (ORDER BY ef.amount) END AS amount,
+             jsonb_agg(jsonb_build_object('fee_name', ef.fee_name, 'amount', ef.amount, 'document_url', ef.document_url)) AS lines
         FROM published_fee_catalog ef
        WHERE ef.institution_id = ANY(${feeIds}::bigint[]) AND ef.fee_category = ANY(${categories}::text[])
          AND ef.amount IS NOT NULL AND ef.amount >= 0
@@ -231,14 +235,21 @@ export function assembleMarketStudy(rows: MarketStudyRows): MarketStudyData | nu
   const fees: MarketStudyFee[] = MARKET_STUDY_FEES.map((category) => {
     const feeRows = rows.fees.filter((r) => r.fee_category === category);
     const own = feeRows.find((r) => Number(r.institution_id) === institutionId);
+    const ownAmount = own ? num(own.amount) : null;
+    const range = (r: MarketStudyRows["fees"][number], amount: number) => severalFeesOf(ownFeeFromRows(category, r.lines ?? [{ amount, fee_name: null }], amount, HIGHEST_TIER_CATEGORIES.has(category)));
+    const subjectSeveral = own && ownAmount !== null ? range(own, ownAmount) : undefined;
+    const urls = (r: MarketStudyRows["fees"][number]) => feeScheduleUrls(r.lines?.flatMap(line => line.document_url ? [line.document_url] : []));
     return {
       category,
-      subject: own ? num(own.amount) : null,
+      subject: ownAmount,
+      ...(subjectSeveral ? { subjectSeveral } : {}),
+      ...(own?.lines ? { subjectDocumentUrls: urls(own) } : {}),
       competitors: feeRows
         .filter((r) => Number(r.institution_id) !== institutionId)
         .flatMap((r) => {
           const amount = num(r.amount);
-          return amount === null ? [] : [{ institution_id: Number(r.institution_id), amount }];
+          const several = amount === null ? undefined : range(r, amount);
+          return amount === null ? [] : [{ institution_id: Number(r.institution_id), amount, ...(several ? { several } : {}), ...(r.lines ? { documentUrls: urls(r) } : {}) }];
         }),
     };
   });
@@ -271,13 +282,6 @@ export function assembleMarketStudy(rows: MarketStudyRows): MarketStudyData | nu
     fees,
     households,
   };
-}
-
-/** The counties holding most of a bank's branch deposits, largest first. */
-export function topCounties(branches: MarketStudyBranch[], n: number): string[] {
-  const by = new Map<string, number>();
-  for (const b of branches) by.set(b.county_fips, (by.get(b.county_fips) ?? 0) + b.deposits);
-  return [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([f]) => f);
 }
 
 export interface MarketCandidate {

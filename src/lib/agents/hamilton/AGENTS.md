@@ -1,8 +1,83 @@
 # Hamilton Agent Guide
 
+## Prospective international wire direction (#2278)
+
+An unpublished international wire must bind its actual verified/raw lineage to the current
+exact original artifact and prove its own geography and direction after normal Darwin
+classification. Generic, opposite or unavailable source scope stays pending; a literal price
+alone does not prove applicability. The source-only document/artifact prefix precedes the
+existing published/verified/raw identity suffix, with nonwaiting acquisitions and fresh full
+candidate/peer checks inside a rollback-capable savepoint. Direct insertions derive actual
+identity and category; normal ordinary rows retain their existing complete verified-state CAS.
+
+A differing-price, market-comparable same-product/audience live peer with unproven scope
+also defers the prospective international insertion. Catalog overlay facts decide whether a
+peer participates, independently of original-body availability. This prevents an unresolved
+old generic $35 and a new explicit outgoing $45 from creating a spurious $40 comparison.
+The exact verified input remains selectable without a primary publish.rules settlement or
+negative lesson; finite pending counts/reasons are separate from required-evidence failures.
+Supported operator holds and corrections retain authority. Normal advisory serialization
+and fresh membership checks bound automatic writes; external/manual phantom writers are not
+claimed to be serializable. No history cleanup, price authority, median or replay epoch changes.
+
+## Literal charging units and comparisons (#2248)
+
+Prospective source-owned hourly, page, document, image, statement, half-hour, quarter-hour
+and minute rows retain their literal numeric price, frequency and full readable conditions
+through publication and frequency fill. No amount is converted or unit inferred from a blank
+or legacy `per_item` value. Existing category-period/per-event checks still apply; an explicit
+paper-statement `per_statement` unit is preserved without inferring a calendar month.
+
+Those finite known special units stay visible on evidence surfaces but are excluded from
+legacy category medians, ranges, counts and numeric subject comparisons until same-unit
+cohorts exist. `fee-unit.ts` defines the exact SQL/client normalized predicate; report deltas,
+local-competitor own prices and profile comparison eligibility use it. Statistics method
+17/18, population stamp descriptions and national summary cache keys change together.
+Historical metadata recovery and the live hourly recheck switch remain separate.
+
 Hamilton is the last agent in the pipeline and the one people meet. It has four faces,
 all built on the same live published fees, and one rule across them: every output can be
 retraced without asking Hamilton (see Audit trail).
+
+## Ancillary product ownership (#1911 code phase, 2026-10-19)
+
+A bounded single-primary-deposit-product document can assign its own ancillary priced fee
+rows to the literal product. `ANCILLARY_PRODUCT_VERSION` is v1 (Knox's evidence format,
+`ancillary_product:v1`); this is not a re-read selector or permission to repair old metadata.
+The title and printed applicability clause stay with the bank's own fee conditions; frequency
+comes only from the fee's own price line. Mixed sections/columns, generic guides, unsupported
+headings and exceeded budgets remain unassigned. The general U.S. Bank $3 ATM/$5 money-order
+rows keep their existing unassigned scope; the Safe Debit exceptions belong to Safe Debit.
+
+Only newly inserted ancillary raw rows receive v1 ownership. A same-document raw insert
+conflict, including an ordinary due read or held takeover, keeps the existing row unchanged.
+Monthly-maintenance/minimum-balance lineup behavior is unchanged. Therefore simply re-running
+existing rows cannot recover missing ownership. Existing NULL metadata, numeric pooling policy
+and any exact metadata/rejudge recovery remain separate unchecked work in #1911.
+
+Shared `fee-product.ts` identity folds ASCII case and explicit transport whitespace (including
+NBSP). Unsupported Unicode case/separators stay distinct. Null/blank is one unassigned identity,
+never every product. Represented distinct products and represented/unassigned pairs cannot
+supply one another's duplicate, refresh or source-applicability witness. Holds and admin
+correction blockers keep their conservative broader overlap rules.
+
+Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
+refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
+policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
+records the exception; old settled decisions need a separately designed and authorized path.
+
+Actual matching consumers retain raw product identity through prior/same-line/exact/in-step,
+near-name/page-copy, refresh and current/newer-copy checks. Selected mutation pairs lock only
+their published members, current verified lineage and raw rows in stable ID order, then compare
+the selected full published state, exact raw lineage and normalized product after waits. Changed
+pairs are skipped visibly; only UPDATE RETURNING rows count as changes. This is a selected-row
+Read Committed guard, not serializable phantom-insertion isolation. Refresh also rechecks the
+selected new raw/product, audience, verification and scalar/rate identity. Publication compares
+the complete selected verified PostgreSQL JSON after its lock. identityDeferred rows emit a
+visible guard event/count/reason, leave the v3 fingerprint undecided and teach no negative lesson;
+a stable ordinary retry remains eligible. Parent summaries distinguish them from ineligible fees. Existing closure,
+full-precision timestamp, target hold and conservative restore-twin guards remain in force.
 
 ## Hamilton's faces (James, 2026-10-06 00:08 UTC)
 
@@ -154,8 +229,11 @@ Hamilton supports the decision; it does not make it.
   income with a peer group's median on the same quarter and filer, `research/fee-income-peers.ts`),
   `queryDistrictData` and `queryStateData` (#1084), and the data catalog through `listData` and
   `queryData` (shared with chat, `research/tool-query-data.ts`, #1855): listData names the servable
-  public-data series and fee measures for a question, queryData reads one at one scope through
-  `data-catalog/query-data.ts` and returns its citation or a refusal. The reader's saved default peer set
+  public-data series, fee measures and bank call-report lines for a question, queryData reads one at one scope through
+  `data-catalog/query-data.ts` and returns its citation or a refusal. A `peer_set` scope resolves the
+  group through the shared `data-store/peer-sets.ts` definition; public data and call-report lines roll
+  up over its members when read (`data-catalog/roll-ups.ts`: median, spread, `institution_count`, no
+  median under 5 institutions), with nothing stored. The reader's saved default peer set
   (`getActivePeerSet`) is in its prompt; the answer's identity snapshot names it as the peer
   baseline only when a tool call used it (the `peers` view with the set's filters).
 - The bank's own numbers arrive by answer or upload. `POST /api/hamilton/uploads` reads a
@@ -254,6 +332,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - Persist selected-institution source/source-label metadata on reports, scenarios, and watchlist rows.
 - Emit publication, refresh, and fee-movement Monitor signals with canonical institution IDs.
 - A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
+- An admin correction is the newest truth about a fee. No check takes down a live fee with a current correction, however its old document reads; only a new correction or a reversal replaces it. Corrected rows keep their original Knox lineage, so a check that reads live Knox rows will see them; the `keep_admin_corrected_fee_live` trigger (migration 20270110000068, #978) skips such a takedown, and a new check should leave these rows out itself rather than lean on it.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
 ## Publishing (publish.rules version 3)
@@ -332,6 +411,34 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - A fee line the bank removed from a newer copy of its page comes down (Newer-copy
   check below).
 
+## Unavailable publication evidence (#1069)
+
+The three existing enabled prepublication gates (exact copies, shared sweep rules and page
+copies) distinguish an available no-match from an unavailable read. The same boundary covers
+prior live rows and document/listed-line evidence needed by a publication or supersession
+decision. Only required branch inputs gate that decision. Already-proved identical/older
+outcomes and positive independent refusals retain their existing meanings; off/shadow controls
+stay diagnostic.
+
+A candidate whose required evidence is unavailable stays pending: no insertion, supersession,
+fee rejection, negative lesson or settled publish.rules v3 fingerprint. Its ordinary next
+healthy run can decide the same input. This does not reopen historical settled tuples or
+change any rule version, switch, recovery or clearing authority. Shared historical consumers
+keep their existing healthy contracts and conservative fallbacks.
+
+The saved publish detail carries publication_evidence_check (publish.evidence.v1), finite
+check codes, affected/deferred counts and at most 20 sampled verified IDs. Raw exceptions,
+SQL, source text and stacks are not copied into that receipt. An unavailable read is not a
+zero-match complete validation; summary/narration distinguish pending evidence deferrals from
+known refusals. A completed run step can report incomplete evidence.
+With live copy candidates, the own document row and a URL accepted by the existing page-key
+parser are required; missing, blank or unparseable own URLs stay unavailable. This does not
+require timestamps or text for unrelated copies and does not change the historical collapse.
+This is a bounded publication-read receipt; it does not certify whole-pipeline validation,
+source fidelity, successfully returned fields outside required prospective branch inputs,
+or the completeness of the primary selector or other maintenance producers.
+The original #1069 weekly below-1% takedown target remains a separate measured acceptance.
+
 ## Publish step order
 
 Every `publish`, `publish-index` and `publish-context` step (`src/lib/agents/run-store.ts`)
@@ -339,6 +446,25 @@ takes the `agents.hamilton.publish` advisory lock, then runs these sweeps in thi
 transaction. A takedown is a soft rollback (`rolled_back_at`, batch `agentic-run-<run id>`
 unless named, the reason below); a dry run reports and writes nothing. Sections below give
 the detail.
+
+The publish-sweeps split (`hamilton/publish-sweeps.ts`, off: `PUBLISH_SWEEPS_SPLIT_LIVE`;
+turning it on is James's call). Of the step's 51 timed calls, 40 are scoped only by
+institution or not at all (`MOVED_PUBLISH_SWEEPS`), so in a state lane they run over every
+state's live fees. With the switch on, a state lane's `publish` skips those 40 and keeps its 11
+state-scoped and own-row calls (`KEPT_PUBLISH_CALLS`); a `publish-sweeps` step runs the 40 in
+this same order under the same lock, from a `hamilton.publish_sweeps` run queued by the tick
+at most one at a time and only after a lane publish completed. A Read-now or hand-found
+publish keeps every sweep it can scope to its institution, and leaves the seven that take no
+institution id (`GLOBAL_ONLY_PUBLISH_SWEEPS`: the four hand lists, the extraction-note move and
+the two learning-store sweeps) to `publish-sweeps`. `accountTypeHold` stays in the Read-now
+publish, scoped to the bank, so the bank's own non-checking monthly fees are held before its
+rows publish. While
+the switch is off, every publish still runs all 51, and the `publish-sweeps` step is a dry run
+at most hourly. That dry run passes `dryRun: true` to every sweep, runs inside a savepoint that
+is always rolled back, takes no lock, and records `dry_run_write_check`. It writes
+`sweep_counts` and `would_take_down_ids` beside the lanes' own `sweep_counts`. Its takedown ids
+hold only rows coming down: category-guard first looks and fees awaiting their second look
+go in `second_look_candidate_ids` (`confirmedFeeIds` on the guard's result).
 
 The step must end inside the tick's 300 s function limit (2026-10-17 finding, steps overrun
 the tick budget). Its row loop (`runHamiltonPublish`) stops `PUBLISH_ROW_DEADLINE_MS` (120 s)
@@ -435,12 +561,18 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 12a. Product page against the schedule (`product-page-conflict.ts`, James 2026-10-13): a live
     dollar fee from a product page whose bank's schedule documents list the same category only
     at other prices; the schedule wins. Per-account and multi-item categories are left out
-    (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
-    nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
+    (`PER_ACCOUNT_CATEGORIES`). On since Oct 20 (`PRODUCT_PAGE_CONFLICT_LIVE`), after an automatic
+    sample of its dry run against the banks' stored documents checked clean (2 takedowns, 1 right,
+    0 wrong, 1 doubtful): a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
     A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
     name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending
     flag the check no longer raises on a live fee is cleared (`takedown_cleared`).
+    The schedule must price the same item, not only the same category (`isSameItemConflict`,
+    Oct 20): a category holds several items, and 12 of 20 sampled takedowns paired different ones
+    (an HSA closing fee against a Christmas Club penalty). A product price named as a discount,
+    and a tier's own product page or fee (`/checking/bankon`), are never conflicts. Lesson: judge
+    a fee against the same line of the schedule, never against its category's prices.
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
@@ -480,6 +612,15 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     (`hamilton.frequency_fill:v<N>:fix:<id>:<from>:<to>`), because `pipeline_feedback` upserts
     on its key and an old key was silently overwritten. The excerpt is read from
     `COALESCE(extraction_note, conditions)`.
+    v15 (#1901): Knox cuts its stored line at 180 characters, so a blank fee's line can end
+    before its price ("Dormant Checking fee: Assessed ... no other Navy Fede", Navy Federal
+    80997). A blank whose stored line is at least `CUT_EXCERPT_CHARS` long and does not print
+    its price is read on the one line of its own stored document that holds the cut line's
+    opening and prints the price (`fullStoredLine`; "... | $3.00 per quarter" fills quarterly).
+    The lines are found in SQL, so only lines holding the opening come back and every cut row is
+    read on every step; a flattened document (no line breaks) gives no line. A line holding
+    another fee's price can still lend its period when Knox's amount came from that fee. The fill logs it with basis `full_stored_line`; without a full
+    line the row is read only if it was a pre-v15 candidate.
     Overdraft plan hold (#1360, no version change, `OVERDRAFT_PLAN_HOLD_LIVE` on since Oct 16,
     James 04:53 UTC: "Retire wrong copy"): an overdraft program the keep above leaves monthly was,
     in every case checked on the bank's own page, an optional plan, not the overdraft fee. It is
@@ -498,12 +639,28 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
     v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    Both rows must keep the same audience (#2109): missing legacy audience means `unknown`,
+    never a wildcard for consumer, business or both. The selector, pure plan and final write
+    enforce it; an audience changed since selection leaves the live row where it was. This
+    safety restriction stays in v2, so already-decided pairs are not reopened. It repairs no
+    prior audience change and creates no replay or backfill; Bayes records that no-replay
+    contract in `VERSIONS_WITHOUT_REPLAY.REFRESH_COPY_STRATEGY`.
 22. Current-copy check (`current-copy.ts`): a fee the current copy no longer states, on its
     second look (confirmations off while `CURRENT_COPY_CONFIRM_LIVE` is false),
     `not_on_current_copy:#<current document id>`.
 23. Rules re-check (`rules-recheck.ts`, state-lane or single-institution steps only): a Knox
     fee today's rules no longer read from its text, on its second look,
     `rules_recheck_unreproduced`; it also restores its own past takedowns.
+    #2209's explicit fee-count-total refusal participates through the Knox v84 signature:
+    already-passed documents are selected again at that signature, and their own source trace
+    must independently fail before the shared 12-hour second look can confirm a takedown.
+    General source-check v18 and its historical decisions are not reopened for this change.
+    #2240/#2241/#2246 use the v85 signature for their bounded physical-price refusal. This
+    exact refusal is checked before accepting a category/amount reproduction, because another
+    service may own the same figure. It then follows the unchanged original-source independent
+    check and 12-hour second look. No broader recheck epoch or selector changes. A full own-source
+    read-only impact scan at 14:38:38 UTC found zero current live matches; the ordinary v85
+    reread cohort still grows by two on the separately recorded same-snapshot due counter.
 24. Name retidy (`retidyLiveFeeNames`, `knox/name-retidy.ts`): a run-on live name takes its
     tidy name, up to 100 banks a step; the old name is a `name_retidied` feedback row. No
     rollback.
@@ -564,6 +721,60 @@ belongs to the publish step once Knox reads the newer copy. Each pair is checked
 `v1:<older>:<newer>`). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
+
+The Knox-row witness preserves the fee's normalized name, institution, audience (missing
+legacy values mean `unknown`), frequency, amount kind/rate basis, and available raw product
+scope (#2117). Price alone never identifies a fee; absent or incompatible witnesses follow
+the existing stored-source verdict and recognition gates. Quarantined rows are excluded from
+selection and planning, and retirement/restoration writes re-check the hold (#2118). A retirement
+or restore also requires the selected lineage to remain unchanged. Only the publication rows returned by
+the guarded update can reject verified lineage; returned results, attempt counts and events
+describe actual changes, with planned counts retained separately in attempts. A hold or closure
+committed after selection cannot reject unchanged lineage.
+
+A restore must still refer to the exact selected closure (reason and rollback timestamp),
+so an intervening newer-copy closure with the same lineage is never cleared. The selector
+reads and binds that timestamp as text; only the server casts it to `timestamptz`, preserving
+PostgreSQL microseconds that the driver's timestamp-array serializer would truncate through Date.
+
+The restore duplicate check compares the same audience, frequency, variant, amount kind,
+rate basis and rate values as well as the institution/category/name/amount (#2121). A live
+consumer sibling cannot block a distinct business fee; unstated applicability is equal only
+to the same normalized unstated value, never a wildcard. An equivalent live twin still blocks
+restoration. Percentage fees have no dollar amount, so the existing planner does not select
+them for retirement or restoration; rate comparisons are defensive identity boundaries.
+
+An otherwise equivalent twin held as `account_type_hold:%` also counts as present (#1674),
+as in the cross-page and business-schedule restores. One controlled SQL fragment supplies
+the complete identity and presence predicate to both selection and the final restoration
+UPDATE. Source-stated rows still count in schedule recognition; a known twin instead
+excludes them from the restoration proposal, with `existing_twin` or
+`account_type_hold_twin` recorded as the reason. Other closure reasons and distinct
+audience/frequency/variant/price/rate identities do not block a legitimate restore.
+
+`proposedRestores` counts eligible proposals; `blockedRestores` and `restoreBlockReasons`
+count source-stated retired rows excluded during planning. `restored` counts only actual
+UPDATE RETURNING rows and is zero in dry-run/shadow results; preview wording uses proposals.
+`notUpdatedRestores` counts eligible proposals skipped by the final selected-state/twin guard,
+including a held twin committed after selection. It does not claim which guard changed.
+Attempts and events retain these separate numbers, and only actually restored lineage is
+re-verified or queued for its source check. Dry runs write nothing. The read-only Oct 19
+08:47 UTC impact snapshot found zero retired rows with a same-identity account-type-held twin;
+it is a dated candidate count, not a source verdict or recovery receipt.
+
+A failed mutation savepoint returns `writeFailed` and `failedRestores` separately from
+guard no-ops, with actual restored count zero. The parent publish receipt carries the failure
+flag/count and says the restoration proposals remain pending. Neither a pair decision nor a
+restored lineage/source-check receipt survives rollback; the normal next check can retry the
+still-pending pair. This adds no retry subsystem or historical replay.
+
+These fixes deliberately keep v1 fingerprints. They apply to pending pairs and future copies,
+without reopening settled decisions; unlike the earlier text guards, tightening the witness
+can retire more. Bayes records the explicit no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
+list of wrong fees or approved takedowns. Any historical replay needs its own impact review and
+applicable official-source evidence. Different-URL editions (#1945/#1911) remain a separate
+source/product provenance problem.
 
 ## Current-copy check
 
@@ -688,10 +899,28 @@ another name is a different printed line.
 ## Duplicate Collapse
 
 Before each publish step, `duplicate-collapse.ts` closes live rows that repeat another
-live row exactly (same institution, canonical key, variant, frequency, amount and fee
+live row exactly (same institution, canonical key, audience, variant, compatible frequency, amount and fee
 name). The newest copy stays live; the others get `rolled_back_reason = 'duplicate of
 #<kept id>'`, the run's batch id, and a `hamilton.duplicates_collapsed` run event. Rows
 that differ in name or amount are separate fee lines and are left alone.
+
+Exact applicability (#2131) keeps `consumer`, `business`, `both` and `unknown` separate;
+legacy null means `unknown` only. Neither `both` nor `unknown` is a wildcard. The old
+known-over-unknown preference no longer applies to exact copies: an uncertain scope is
+retained rather than silently relabelled or erased. Amount kind, rate basis, rate bounds
+and rate value also belong to the exact key. Within one identity the existing frequency
+classes/unstated-frequency preference remain, then the newest copy wins. The live-copy
+selector, pure decision, batch grouping and in-step map use this same identity. Quarantined
+rows are neither collapse candidates nor exact-copy witnesses. The final UPDATE locks both
+members of every selected pair in ID order and compares the complete locked target/keeper
+states against their selected states, including lineage and operator actions. Any intervening
+change skips that pair; only actual UPDATE RETURNING rows count. The separate operator-hold insert guard retains its
+conservative overlapping-audience policy; near-name and page-copy rules are unchanged.
+
+Publish retains v3 fingerprints, so previously skipped rows and closed duplicate history
+are not replayed or restored automatically. Bayes records this no-replay policy in
+`VERSIONS_WITHOUT_REPLAY.HAMILTON_PUBLISH_STRATEGY`. Preventing the cause is not a claim
+of end-to-end recovery of historical missing fees.
 
 **Near names (#1302).** Two live rows of one document, category, variant and amount whose names
 differ only by punctuation, case, a plural, a leading article or a trailing "fee" ("Stop
@@ -769,16 +998,16 @@ exact and near-name collapses still have this gap.
 
 **At publish (#1069 step 1, live).** Each row the publish step is about to publish is checked
 against its live copies with the exact collapse's own test (`exact-duplicate.ts`: institution,
-category, variant, value and name; frequency classes that agree; the copy kept states its
-audience, then its frequency, then is newest). A row the collapse would close is counted as
+category, audience, variant, value/basis/bounds and name; frequency classes that agree;
+within that scope the copy kept states its frequency, then is newest). A row the collapse would close is counted as
 `would_refuse`, and a row it would keep, closing the older copy, as `would_replace`. Both are
 reported in the step's `publish_duplicate_check`, with `closed_by_late_collapse` for agreement.
 `PUBLISH_REFUSE_DUPLICATES_LIVE` is on (James's OK, 2026-10-17): a `would_refuse` row is skipped
 before insert (skip reason `Exact duplicate of live fee #<id>`), so it is never published only for
 the late collapse to close it. Set it back to false to count only.
 Two gaps let 14 of the first 16 such rows through on Oct 17 (#1069). Twins read in one step: the
-step now takes each collapse line's rows best first (`collapseKeepOrder`: stated audience, then
-frequency, then the row it would insert last, which the collapse keeps). A later twin is refused
+step now takes each collapse line's rows best first (`collapseKeepOrder`: stated frequency,
+then the row it would insert last, which the collapse keeps). A later twin is refused
 against the copy already published in the step (`in_step`), so one copy goes live. A dry run
 tracks the copies it would have published. Before this, 13 rows of step 42289 went live and were
 closed at the same instant. A category the fold's live split moves: copies are looked up under the
@@ -795,7 +1024,7 @@ its category (`businessScheduleFeesSql`; a footnote-only business fee stays the 
 needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
 the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
 is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
-when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+when a read failed; an enabled unavailable check leaves an otherwise publishable row pending). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
 on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
 take it down: <the sweep's reason>`). Set it back to false to count only.
 
@@ -805,7 +1034,7 @@ institution, category, variant and amount from other documents. A row the collap
 behind a live copy of the same page is counted in the step's `page_copy_check` and, while
 `PUBLISH_REFUSE_PAGE_COPIES_LIVE` is on, skipped (`Copy of the page of live fee #<kept id>`). A row
 the collapse would keep (the newer edition) publishes as before. The collapse stays the live
-re-check; this check takes nothing down, and a failed read refuses nothing. Dry count: 51 of the 53
+re-check; this check takes nothing down. An enabled unavailable read leaves the candidate pending. Dry count: 51 of the 53
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
 
@@ -1080,7 +1309,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `ACCOUNT_NAME_STRATEGY` | `hamilton.account_names` | v3 | `hamilton/account-names.ts` |
 | `CURRENT_COPY_STRATEGY` | `hamilton.current_copy_check` | v2 | `hamilton/current-copy.ts` |
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
-| `FREQUENCY_FILL_VERSION` | — | v14 | `hamilton/frequency-fill.ts` |
+| `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
 | `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v1 | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
@@ -1092,3 +1321,11 @@ fails a PR that changes one of these constants without updating its line here (#
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
 | `INFERRED_VOLUME_VERSION` | — | v2 | `hamilton/studies/inferred-volume.ts` |
+
+The shared figure gate and paid eval use the same explicit monetary-unit normalization
+(`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,
+including financial container captions and compacted JSON evidence. Explicit rates/counts and
+unsupported currencies do not become dollar candidates; fee-catalog exclusions in the eval stay.
+Named financial ratios retain their ratio interpretation. This remains numerical consistency,
+not institution/category/period/direction claim verification. FDIC/NCUA readers preserve stored
+thousands as documented in `data-store/financial-sources.ts`; no stored values are rewritten.

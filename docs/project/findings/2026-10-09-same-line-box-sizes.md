@@ -116,3 +116,5 @@ After PR 930, 56431 published as 107240 under the name "Minimum Balance Fee". Th
 which trims the "(if ...)" condition. Publish now refuses any repair that `dropsCondition` flags,
 which is the same bar retidy v15 uses. The live name of 107240 needs a logged rename back to the
 verified name.
+
+**Agent lesson:** gutenberg/pr-920-what-sets-lines-apart

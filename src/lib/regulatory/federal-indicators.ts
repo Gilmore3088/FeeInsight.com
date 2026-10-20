@@ -1,7 +1,7 @@
 import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
 import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
-import { BLS_SERIES_TITLES, BLS_YEARS, CPI_BANK_SERVICES_SERIES, CPI_FINANCIAL_SERVICES_SERIES, type IndicatorObservation } from "./fed";
+import { BLS_SERIES_TITLES, BLS_YEARS, type IndicatorObservation } from "./fed";
 import { FRB_XML_PACKAGES, periodStartDate, scaleSdmxValue, type SdmxSeries } from "./fed-board-data";
 
 /**
@@ -123,9 +123,6 @@ export const PUBLISHER_INDICATORS: PublisherIndicator[] = [
     bea: { table: "T20600", frequency: "M", line: /saving as a percentage of disposable personal income/i, scaleTo: 1 },
   },
 ];
-
-/** Kept for readers and tests that name the bank-services CPI series. */
-export const BANK_CPI_SERIES = [CPI_BANK_SERVICES_SERIES, CPI_FINANCIAL_SERVICES_SERIES] as const;
 
 // ---------------------------------------------------------------------------
 // BLS: many series per request

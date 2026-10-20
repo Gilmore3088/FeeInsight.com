@@ -188,12 +188,16 @@ export async function teardownHamiltonFixtures(db: FixtureDb): Promise<void> {
     { table: "users", column: "id" },
     { table: "institution_sources", column: "id" },
   ];
-  // Foreign keys decide the order; retry what a dependent row still blocks.
+  // Foreign keys decide the order; retry what a dependent row still blocks. A table with no
+  // fixture rows gets no DELETE at all: append-only tables refuse any DELETE statement (#2170).
+  // So a journey must never write a normalized witness (agent_source_text_witnesses) for a
+  // fixture institution: teardown could not remove it, and the database would need a rebuild.
   for (let pass = 0; pass < 6 && pending.length; pass += 1) {
     for (let i = pending.length - 1; i >= 0; i -= 1) {
       const { table, column } = pending[i];
       try {
-        await db.unsafe(`DELETE FROM public.${table} WHERE ${column}::text = ANY($1::text[])`, [ids]);
+        const held = await db.unsafe(`SELECT 1 FROM public.${table} WHERE ${column}::text = ANY($1::text[]) LIMIT 1`, [ids]);
+        if (held.length) await db.unsafe(`DELETE FROM public.${table} WHERE ${column}::text = ANY($1::text[])`, [ids]);
         pending.splice(i, 1);
       } catch (error) {
         if (pass === 5) throw error;

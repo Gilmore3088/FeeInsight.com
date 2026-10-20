@@ -30,7 +30,7 @@ function lastLine(lastAt: string | null, status: string | null): { text: string;
 
 /** The Publishing room: what goes out, to whom, when it last went and when it's next due. */
 export default async function PublishingRoomPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [reports, emails] = await Promise.all([
     getReportFreshness().catch((error): ReportFreshness[] | null => {
       console.error("Publishing room report freshness failed", error);

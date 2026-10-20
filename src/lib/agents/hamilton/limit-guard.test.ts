@@ -88,6 +88,7 @@ describe("rollBackLimitsPublishedAsFees", () => {
       if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 1 }]);
       return Promise.resolve([]);
     });
+    Object.assign(db, { unsafe: (text: string) => text });
     return db as unknown as Parameters<typeof rollBackLimitsPublishedAsFees>[0] & typeof db;
   }
   const writes = (db: ReturnType<typeof createDb>) => db.mock.calls.map((call) => templateText(call[0]));

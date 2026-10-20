@@ -210,7 +210,7 @@ export default async function InstitutionsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const params = await searchParams;
   const query = typeof params.q === "string" ? params.q : undefined;

@@ -9,9 +9,11 @@ vi.mock("@/lib/ai-provider", async (importOriginal) => ({
   getHamiltonModel: () => "test-model",
   hasAnthropicApiKey: () => false,
 }));
-vi.mock("@/lib/ai-provider-usage", () => ({ trackAnthropicRequest: vi.fn() }));
+vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/ai-provider-usage")>(), trackAnthropicRequest: vi.fn(),
+}));
 
-import { MEMO_ROUTE_ID, memoPayload, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
+import { MEMO_ROUTE_ID, memoPayload, memoProblems, parseMemo, writeStorylineMemo, type MemoClient } from "./memo";
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildFeeResearchEvidence } from "./evidence-contract";
 import { INTERPRETATION_LIMITATION } from "./narrative-bound";
@@ -242,5 +244,32 @@ describe("storyline memo", () => {
     expect(payload.stated_amounts.map((a) => a.amount)).toEqual(expect.arrayContaining([32, 29.5]));
     expect(payload.fact_evidence).toEqual(evidence);
     expect(memoPayload(storyline)).not.toHaveProperty("fact_evidence");
+  });
+});
+
+describe("pointing-back sentences (#2036)", () => {
+  const data = { fee: 10 };
+  it("flags a sentence that points back instead of naming its subject", () => {
+    const { problems } = memoProblems({ summary: "One competitor charges less. That one is Bank of America at $10.", board: "Board.", market: "Market.", questions: [] }, data);
+    expect(problems.some((p) => p.startsWith('"That one is Bank of America at $10" points back'))).toBe(true);
+  });
+  it("catches one after a semicolon or at the start of a later section, and leaves one-time fees alone", () => {
+    const flagged = (summary: string, market = "Market.") => memoProblems({ summary, board: "Board.", market, questions: [] }, data).problems.some((p) => p.includes("points back"));
+    expect(flagged("One bank charges less; that one is Bank of America at $10.")).toBe(true);
+    expect(flagged("Bank of America charges $10.", "That one sits lowest.")).toBe(true);
+    expect(flagged("This one-time fee is $10.")).toBe(false);
+    expect(flagged("Fees rose. This one-time charge is $10.")).toBe(false);
+  });
+
+  it("gives the memo the rows the page shows first, not the folded ones", () => {
+    const story = buildFeeAnswer(overdraftResearch()).storyline!;
+    const local = { id: "local", actionTitle: "t", exhibit: { kind: "competitor_range" as const, title: "t", unit: "dollars" as const, own: 5, ownLabel: "X", items: [{ name: "A", amount: 9, url: null }], rest: [{ name: "Folded Bank", amount: 7, url: null }], sources: [] } };
+    const payload = memoPayload({ ...story, exhibits: [...story.exhibits, local] as typeof story.exhibits });
+    expect(JSON.stringify(payload.storyline)).not.toContain("Folded Bank");
+  });
+
+  it("leaves named subjects alone", () => {
+    const { problems } = memoProblems({ summary: "Bank of America charges $10. These 14 banks set the local range.", board: "Board.", market: "Market.", questions: [] }, data);
+    expect(problems.some((p) => p.includes("points back"))).toBe(false);
   });
 });

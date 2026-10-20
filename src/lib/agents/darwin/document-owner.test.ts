@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  documentOwnerDetail,
+  documentOwnerLinksSql,
+  DOCUMENT_OWNER_LINK_FAILURE,
+  releaseOwnerLinks,
   buildNameDirectory,
   DARWIN_DOCUMENT_OWNER_TAKEDOWN,
   documentOwnerCountSql,
@@ -595,7 +599,7 @@ function createDb(pairs?: unknown[], lastEvent: Record<string, unknown> | null =
     return Promise.resolve([]);
   });
   const db = query as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
-  db.unsafe = vi.fn(() => Promise.resolve(pairs ?? [
+  db.unsafe = vi.fn((text: string) => text.includes("WITH down AS") ? Promise.resolve([]) : Promise.resolve(pairs ?? [
     { institution_id: 5756, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 2, other_ids: [6729], text_hash: "h1", reread: false },
     { institution_id: 6729, source_document_id: 17191, document_url: "https://ukcreditunion.org/Schedule-of-Fees-2026-03.pdf", live_fees: 23, other_ids: [5756], text_hash: "h1", reread: false },
     { institution_id: 1319, source_document_id: 900, document_url: "https://ibc.com/fees.pdf", live_fees: 30, other_ids: [160], text_hash: "h2", reread: false },
@@ -702,5 +706,62 @@ describe("recheckDocumentOwners (takedown on)", () => {
     const calls = JSON.stringify(db.mock.calls);
     expect(calls).toContain("hamilton.second_look:darwin.document_owner:pub:71");
     expect(calls).toContain("owner:5756:17191:h1");
+  });
+});
+
+describe("releaseOwnerLinks (#2018 item 13)", () => {
+  const UK_PDF = "https://www.ukcreditunion.org/Schedule-of-Fees-2026-03.pdf";
+  function linkDb(rows: unknown[], options: { fail?: boolean; updated?: boolean } = {}) {
+    const query = vi.fn((strings: TemplateStringsArray) => {
+      const text = templateText(strings);
+      if (options.fail && text.includes("UPDATE institution_sources")) return Promise.reject(new Error("boom"));
+      if (text.includes("UPDATE institution_sources")) return Promise.resolve(options.updated === false ? [] : [{ id: 5756 }]);
+      return Promise.resolve([]);
+    });
+    const db = query as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    return db as unknown as Parameters<typeof releaseOwnerLinks>[0] & typeof db;
+  }
+
+  it("reads only links whose document's fees for that bank all came down as another bank's, and never locked ones", () => {
+    const text = documentOwnerLinksSql();
+    expect(text).toContain("fp.rolled_back_reason LIKE 'document_owner:%'");
+    expect(text).toContain("btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url");
+    expect(text).toContain("profile.locked_by_correction IS TRUE");
+    expect(text).toContain("live.rolled_back_at IS NULL");
+    expect(text).not.toMatch(/\b(INSERT|UPDATE|DELETE)\b/);
+  });
+
+  it("sends Bluegrass's UK FCU link back to discovery: rejected, off the fee link and canonical source", async () => {
+    const db = linkDb([{ institution_id: 5756, source_document_id: 17191, document_url: UK_PDF, other_institution_id: "6729" }]);
+    expect(await releaseOwnerLinks(db)).toEqual([5756]);
+    const writes = db.mock.calls.map((call) => [templateText(call[0]), call.slice(1)] as const);
+    const profile = writes.find(([text]) => text.includes("UPDATE institution_source_profiles"))!;
+    expect(profile[0]).toContain("canonical_source_url = CASE");
+    expect(JSON.stringify(profile[1])).toContain(UK_PDF);
+    expect(JSON.stringify(profile[1])).toContain("document_owner");
+    const inst = writes.find(([text]) => text.includes("UPDATE institution_sources"))!;
+    expect(inst[0]).toContain("SET fee_schedule_url = NULL");
+    expect(inst[1]).toEqual(expect.arrayContaining([DOCUMENT_OWNER_LINK_FAILURE, 5756, UK_PDF]));
+    expect(JSON.stringify(inst[1])).toContain("institution 6729's schedule");
+    expect(writes.some(([text]) => text.includes("published_fee_records") || text.includes("verified_fee_observations"))).toBe(false);
+  });
+
+  it("reports nothing released when the link changed meanwhile, and a failed write changes nothing", async () => {
+    const row = { institution_id: 5756, source_document_id: 17191, document_url: UK_PDF, other_institution_id: "6729" };
+    expect(await releaseOwnerLinks(linkDb([row], { updated: false }))).toEqual([]);
+    expect(await releaseOwnerLinks(linkDb([row], { fail: true }))).toEqual([]);
+    expect(await releaseOwnerLinks(linkDb([]))).toEqual([]);
+  });
+
+  it("runs on every live step and lands in the step detail; the shadow path never runs it", async () => {
+    const live = createDb([]);
+    const result = await recheckDocumentOwners(live, { runId: 77, takedown: true });
+    expect(result.linksReleased).toEqual([]);
+    expect(live.unsafe.mock.calls.some((call) => String(call[0]).includes("WITH down AS"))).toBe(true);
+    expect(documentOwnerDetail(result)).toMatchObject({ links_released: [] });
+    const shadow = createDb([]);
+    await recheckDocumentOwners(shadow, { runId: 77, takedown: false });
+    expect(shadow.unsafe.mock.calls.some((call) => String(call[0]).includes("WITH down AS"))).toBe(false);
   });
 });

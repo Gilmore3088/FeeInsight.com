@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { layoutDocumentText, layoutPageText, type PdfTextItem } from "./pdf-layout";
+import { extractPdfDocumentText } from "./pdf-document-text";
+import { runFreeSpecialists } from "../knox/specialists";
 
 function item(str: string, x: number, y: number, width: number, height = 10): PdfTextItem {
   return { str, transform: [height, 0, 0, height, x, y], width, height };
@@ -170,5 +172,75 @@ describe("Rosetta read.pdf_layout", () => {
       item("$30.00", 300, 686, 30),
     ];
     expect(layoutPageText(items)).toBe("Overdraft fee .......... | $35.00\nStop payment .......... | $30.00");
+  });
+
+  it("preserves own prices in two independent stacked fee columns (Oakwood #2219)", async () => {
+    // Current source bytes: e8160b6a4c57816399cfe99fe441fb227dac9e0895c56423286feae80daa0bf3.
+    // Physical p2: left reconciliation35/hour and card15; right incoming15 and outgoing30.
+    const bytes = readFileSync(join(__dirname, "test-fixtures", "oakwood-fees.pdf"));
+    const { text } = await extractPdfDocumentText(new Uint8Array(bytes));
+    expect(text).toContain("Account Reconciliation\n• $35.00 per hour");
+    expect(text).toContain("Wire Transfer Incoming\n• $15.00 per wire");
+    expect(text).toContain("Wire Transfer Outgoing\n• $30.00 per wire");
+    expect(text).toContain("ATM/Debit Card Replacement\n• $15.00 per card");
+    const { candidates } = runFreeSpecialists(text, { institutionName: "Oakwood Bank" });
+    const prices = (key: string) => candidates.filter((fee) => fee.canonicalHint === key).map((fee) => fee.amount);
+    expect(prices("wire_domestic_incoming")).toContain(15);
+    expect(prices("wire_domestic_outgoing")).toContain(30);
+    expect(prices("wire_domestic_outgoing")).not.toContain(35);
+    expect(prices("card_replacement")).toContain(15);
+    expect(prices("card_replacement")).not.toContain(30);
+    expect(candidates.some((fee) => fee.feeName === "Account Reconciliation" && fee.amount === 35)).toBe(true);
+    expect(candidates.some((fee) => fee.feeName === "Account Reconciliation" && fee.amount === 15)).toBe(false);
+  });
+
+  it("keeps a name/amount table with bullet price cells paired by row", () => {
+    const items = Array.from({ length: 20 }, (_, i) => [
+      item(`Service ${i}`, 36, 700 - i * 12, 140, 9),
+      item(`• $${i + 1}.00`, 330, 700 - i * 12, 90, 9),
+    ]).flat();
+    expect(layoutPageText(items).split("\n")).toEqual(
+      Array.from({ length: 20 }, (_, i) => `Service ${i} | • $${i + 1}.00`),
+    );
+  });
+
+  it("keeps table rows paired when independent stacked lists share the page", () => {
+    const table = Array.from({ length: 12 }, (_, i) => [
+      item(`Table Service ${i}`, 36, 740 - i * 12, 150, 9),
+      item(`• $${i + 1}.00`, 330, 740 - i * 12, 100, 9),
+    ]).flat();
+    const lists = [36, 330].flatMap((x, column) => Array.from({ length: 4 }, (_, i) => [
+      item(`Standalone Service ${column}-${i}`, x, 560 - i * 25, 150, 9),
+      item(`• $${40 + column * 10 + i}.00 per item`, x, 548 - i * 25, 145, 9),
+    ]).flat());
+    const text = layoutPageText([...table, ...lists]);
+    for (let i = 0; i < 12; i += 1) expect(text).toContain(`Table Service ${i} | • $${i + 1}.00`);
+  });
+
+  it("preserves baseline order when a priced line crosses the stacked lists' gutter", () => {
+    const crossing = [
+      item("Money Order", 36, 660, 150, 9),
+      item("• $3.00 per item, with additional service terms", 36, 648, 270, 9),
+      item("Wire Transfer Outgoing", 330, 648, 150, 9),
+      item("• $30.00 per wire", 330, 636, 145, 9),
+    ];
+    const lists = [36, 330].flatMap((x, column) => Array.from({ length: 8 }, (_, i) => [
+      item(`Standalone Service ${column}-${i}`, x, 560 - i * 25, 150, 9),
+      item(`• $${40 + column * 10 + i}.00 per item`, x, 548 - i * 25, 145, 9),
+    ]).flat());
+    const text = layoutPageText([...crossing, ...lists]);
+    expect(text).toContain("• $3.00 per item, with additional service terms | Wire Transfer Outgoing\n• $30.00 per wire");
+    expect(text.indexOf("• $30.00 per wire")).toBeLessThan(text.indexOf("Standalone Service 0-0"));
+  });
+
+  it("refuses a stacked split when a waiver clause crosses the gutter without a price", () => {
+    const waiver = item("Waived for qualifying students", 36, 648, 270, 9);
+    const lists = [36, 330].flatMap((x, column) => Array.from({ length: 8 }, (_, i) => [
+      item(`Standalone Service ${column}-${i}`, x, 560 - i * 25, 150, 9),
+      item(`• $${40 + column * 10 + i}.00 per item`, x, 548 - i * 25, 145, 9),
+    ]).flat());
+    const text = layoutPageText([waiver, ...lists]);
+    expect(text).toContain("Standalone Service 0-0 | Standalone Service 1-0");
+    expect(text).toContain("• $40.00 per item | • $50.00 per item");
   });
 });

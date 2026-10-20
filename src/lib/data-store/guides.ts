@@ -173,17 +173,6 @@ export async function listGuidesForAdmin(): Promise<StoredGuide[]> {
   return hydrate(rows);
 }
 
-export async function getGuidesAwaitingReview(): Promise<StoredGuide[]> {
-  const rows = (await sql`
-    SELECT * FROM consumer_guides
-    WHERE status IN ('draft', 'in_review', 'regulatory_review')
-    ORDER BY
-      CASE status WHEN 'regulatory_review' THEN 0 WHEN 'in_review' THEN 1 ELSE 2 END,
-      updated_at DESC
-  `) as unknown as GuideRow[];
-  return hydrate(rows);
-}
-
 export interface GuideUpsertInput extends Guide {
   status?: GuideStatus;
   generatedBy?: string | null;
@@ -327,53 +316,5 @@ export async function setGuideStatus(
     UPDATE consumer_guides
     SET status = ${status}, updated_at = NOW()
     WHERE id = ${guideId}
-  `;
-}
-
-/** Flag a guide for re-check after a benchmark move. Does not unpublish it. */
-export async function markGuideStale(
-  primaryCategory: string,
-  reason: string,
-): Promise<number> {
-  const rows = (await sql`
-    UPDATE consumer_guides
-    SET stale_since = COALESCE(stale_since, NOW()),
-        stale_reason = ${reason},
-        updated_at = NOW()
-    WHERE status = 'published'
-      AND primary_category = ${primaryCategory}
-      AND stale_since IS NULL
-    RETURNING id
-  `) as unknown as { id: number }[];
-  return rows.length;
-}
-
-export async function getGuideRevisions(
-  guideId: number,
-  limit = 25,
-): Promise<
-  {
-    id: number;
-    snapshot: StoredGuide;
-    changed_by: string;
-    change_note: string | null;
-    regulatory_approved_by: string | null;
-    regulatory_approved_at: string | null;
-    created_at: string;
-  }[]
-> {
-  return (await sql`
-    SELECT id, snapshot, changed_by, change_note,
-           regulatory_approved_by, regulatory_approved_at, created_at
-    FROM consumer_guide_revisions
-    WHERE guide_id = ${guideId}
-    ORDER BY created_at DESC
-    LIMIT ${Math.max(1, Math.min(100, limit))}
-  `) as never;
-}
-
-export async function incrementGuideView(slug: string): Promise<void> {
-  await sql`
-    UPDATE consumer_guides SET view_count = view_count + 1 WHERE slug = ${slug}
   `;
 }

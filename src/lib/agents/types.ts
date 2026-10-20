@@ -1,4 +1,4 @@
-export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "gutenberg" | "growth";
+export type AdminAgent = "atlas" | "magellan" | "rosetta" | "darwin" | "knox" | "hamilton" | "gutenberg" | "hoovie" | "growth";
 
 export type AgentRunStatus =
   | "queued"
@@ -93,12 +93,16 @@ export interface AgentRunEventSnapshot {
  * provider budget policy and the global (provider) automation stop. Every other step
  * is deterministic and is paused only by the separate pipeline control.
  */
-/** Pass-3 steps: paid model calls for what the free passes left, under the budget caps. */
-export const PROVIDER_STEP_KEYS: readonly string[] = [
+/** Optional pass-3 work in state lanes; a cap must not strand the free steps behind it. */
+export const OPTIONAL_PAID_PASS_STEP_KEYS: readonly string[] = [
   "discover-paid",
   "read-paid",
   "extract-paid",
   "verify-paid",
+];
+
+export const PROVIDER_STEP_KEYS: readonly string[] = [
+  ...OPTIONAL_PAID_PASS_STEP_KEYS,
   "report-render",
   "marketing-write",
   // Magellan's Regulatory Wire research notes; shadow mode until REG_WIRE_SUMMARIES_LIVE=true.
@@ -134,8 +138,10 @@ export const PAUSE_EXEMPT_STEP_KEYS: readonly string[] = [
   "deming-data-quality",
   "deming-fresh-audit",
   "deming-knox-misses",
+  "deming-monthly-review",
   "deming-playbook-check",
   "deming-regression",
+  "deming-source-health",
   "deming-sunday-maintenance",
   "fee-alert-dispatch",
   "lead-watch",

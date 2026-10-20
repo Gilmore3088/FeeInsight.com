@@ -1,5 +1,5 @@
 import { strFromU8, Unzip, UnzipInflate } from "fflate";
-import { cells, FFIEC_BULK_URL, periodOptionValue, readFormState } from "./ffiec";
+import { cells, describeFfiecPage, downloadButtonName, FFIEC_BULK_URL, formatFfiecPage, periodOptionValue, readFormState } from "./ffiec";
 import { REGISTRY_USER_AGENT, RegistryHttpError, type RegistryFetchOptions } from "./http";
 import { quarterEndDate, type Quarter } from "./quarters";
 
@@ -25,11 +25,17 @@ import { quarterEndDate, type Quarter } from "./quarters";
  *
  * The zip is read as a stream and each file is cut down to the columns that might matter while
  * it inflates, so a UBPR zip with thousands of columns never sits whole in memory.
+ *
+ * In prod (2026Q2, #1806) the final Download post came back as the HTML form page, not the zip.
+ * When that happens the error names the page's title, any message it shows and its form fields,
+ * so the next run says what the form wants. That page has not been seen from here either.
  */
 
 export const UBPR_BULK_URL = FFIEC_BULK_URL;
 const FIELD = "ctl00$MainContentHolder$";
 const FORMAT = "TSVRadioButton";
+/** The call-report page's Download control; used only when the UBPR page names none. */
+const DOWNLOAD_BUTTON = `${FIELD}TabStrip1$Download_0`;
 
 /** Bulk-page product labels. Matched against the option text, never a remembered option value. */
 export const UBPR_RATIO_PRODUCT = /UBPR\s*Ratio\s*-+\s*Single\s*Period/i;
@@ -685,6 +691,31 @@ function postBack(state: ReturnType<typeof readFormState>, target: string, extra
   };
 }
 
+interface TsvFormatControl {
+  name: string;
+  value: string;
+  target: string | null;
+  argument: string;
+}
+
+/** Follow the published radio's browser behavior; never invent an ASP.NET event target. */
+function tsvFormatControl(html: string): TsvFormatControl {
+  const attribute = (tag: string, name: string): string | null => {
+    const found = new RegExp(`\\s${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(tag);
+    return found ? (found[1] ?? found[2] ?? found[3] ?? "").replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&amp;", "&") : null;
+  };
+  for (const input of html.matchAll(/<input\b[^>]*>/gi)) {
+    if (attribute(input[0], "type")?.toLowerCase() !== "radio") continue;
+    const name = attribute(input[0], "name"), value = attribute(input[0], "value");
+    if (name !== `${FIELD}FormatType` || value?.toLowerCase() !== FORMAT.toLowerCase()) continue;
+    const onclick = (attribute(input[0], "onclick") ?? "").replace(/\\(['"])/g,"$1").trim();
+    const event = /__doPostBack\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]\s*\)/.exec(onclick);
+    if (onclick && !event) throw new RegistryHttpError(`FFIEC TSV radio has an unsupported handler; no guessed format postback sent. Page: ${formatFfiecPage(describeFfiecPage(html))}`, UBPR_BULK_URL, null);
+    return {name, value, target:event?.[1] ?? null, argument:event?.[2] ?? ""};
+  }
+  throw new RegistryHttpError(`FFIEC page has no tab-delimited format radio; no guessed format postback sent. Page: ${formatFfiecPage(describeFfiecPage(html))}`, UBPR_BULK_URL, null);
+}
+
 export interface UbprBulkDownload {
   zip: ProjectedZip | null;
   fileName: string | null;
@@ -718,18 +749,35 @@ export async function fetchUbprBulk(
 
   const base = { [`${FIELD}ListBox1`]: value, [`${FIELD}DatesDropDownList`]: period };
   const periodPage = await request(options, cookies, postBack(state, `${FIELD}DatesDropDownList`, base));
-  state = readFormState(await periodPage.text(), cookies);
-  const formatPage = await request(options, cookies, postBack(state, `${FIELD}${FORMAT}`, { ...base, [`${FIELD}FormatType`]: FORMAT }));
-  state = readFormState(await formatPage.text(), cookies);
+  let formatHtml = await periodPage.text();
+  state = readFormState(formatHtml, cookies);
+  const format = tsvFormatControl(formatHtml);
+  if (format.target) {
+    const formatPage = await request(options, cookies, postBack(state, format.target,
+      { ...base, [format.name]: format.value, __EVENTARGUMENT: format.argument }));
+    formatHtml = await formatPage.text();
+    state = readFormState(formatHtml, cookies);
+  }
+  const selectedFormat = tsvFormatControl(formatHtml);
 
+  // The Download control's name is read from the page; the call-report page's name is the fallback.
+  const button = downloadButtonName(formatHtml) ?? DOWNLOAD_BUTTON;
   const download = await request(options, cookies, {
-    ...postBack(state, "", { ...base, [`${FIELD}FormatType`]: FORMAT }),
-    [`${FIELD}TabStrip1$Download_0`]: "Download",
+    ...postBack(state, "", { ...base, [selectedFormat.name]: selectedFormat.value }),
+    [button]: "Download",
   });
   const type = download.headers.get("content-type") ?? "";
   const disposition = download.headers.get("content-disposition") ?? "";
   if (!/octet-stream|zip/i.test(type) && !/attachment/i.test(disposition)) {
-    throw new RegistryHttpError(`FFIEC returned ${type || "no content type"} instead of the UBPR bulk zip`, UBPR_BULK_URL, download.status);
+    // Name what FFIEC showed instead of the file (#1806), so the next run says what the form wants.
+    const answer = /html/i.test(type) ? formatFfiecPage(describeFfiecPage(await download.text())) : "no page read";
+    const formatOffered = /value="TSVRadioButton"/.test(formatHtml) ? "offered" : "not offered on the format page";
+    throw new RegistryHttpError(
+      `FFIEC returned ${type || "no content type"} instead of the UBPR bulk zip for "${label ?? "?"}" ${quarterEndDate(q)} ` +
+        `(posted ${button}; format field ${selectedFormat.name}; format target ${format.target ?? "none (submit only)"}; tab-delimited format ${formatOffered}). Page: ${answer}`,
+      UBPR_BULK_URL,
+      download.status,
+    );
   }
   if (!download.body) throw new RegistryHttpError("FFIEC sent an empty UBPR bulk download", UBPR_BULK_URL, download.status);
   const fileName = /filename="?([^";]+)"?/i.exec(disposition)?.[1] ?? null;

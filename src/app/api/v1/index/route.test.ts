@@ -120,7 +120,7 @@ describe("/api/v1/index", () => {
     );
 
     await expect(response.json()).resolves.toEqual({
-      error: "CSV export requires a Pro or Enterprise API key",
+      error: "CSV export requires a Hamilton API key or a paid partner key",
       code: "plan_required",
       upgrade_url: "/subscribe",
     });

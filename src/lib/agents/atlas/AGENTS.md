@@ -14,6 +14,12 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Every operator action needs a durable run/event receipt.
 - Every blocked state needs a concrete next safe action.
 - Scheduled advancement must remain deterministic and idempotent.
+- A state lane with no finished step for 15 minutes gets a fresh tick ahead of maintenance,
+  longest idle first. Customer reports remain first. Finishing any step resets that priority;
+  old launch dates alone do not promote a busy lane. Deadlines and publish serialization still apply.
+- A capped state lane whose next step is an optional paid pass still enters the tick when
+  deterministic work follows: the executor records the paid skip and advances the free work.
+  Mandatory paid jobs and paid-only lanes stay queued; operator pauses and scope guards still apply.
 - If provider automation is unavailable, Atlas can queue, label, or route manual validation, but cannot silently resume provider work.
 
 ## Boundaries
@@ -22,12 +28,41 @@ Atlas is the orchestration and operator-visibility agent. Atlas-specific code ma
 - Do not use free-text institution names as execution identity. Use canonical numeric institution IDs.
 - Do not collapse data trust states into generic success/failure labels; preserve source, extraction, verification, publication, and refresh states separately.
 
+## Daily scoreboard execution (#2177)
+
+The 60-second daily route creates or reuses the UTC day's `atlas.scoreboard` workflow and
+reports its actual pending/running/terminal state. It runs no steps inline. Opt-in whole-key
+idempotency locks only lookup/create and its step inserts in a short ledger transaction; terminal
+failed/cancelled runs are returned as such, and the earliest pre-existing duplicate is canonical
+without deleting history. Other callers retain active-only idempotency.
+
+The existing 300-second tick consumes the workflow over bounded passes. Its first reference-score
+step is priced at 150 seconds and must fit an explicit tick deadline even when selected first;
+other runs retain their existing first-step progress behavior. Both controls paused permits only
+recovery and already pause-exempt execution in Atlas `workflow` runs with source `atlas.scoreboard`.
+That path schedules no runs, consults no provider budget, and leaves unrelated alerts/digests,
+marketing/data runs and other sources untouched. The new live-source draw and city repair/storage remain queued until the
+pipeline control permits them; backend disabled still does nothing. Run/step/events expose every
+completion, deferral and held tail. The narrow continuation's opt-in ceiling checks the existing
+exempt list in selection, before each step and on the actual step under the ledger claim lock,
+so a control change or concurrent progression cannot carry it into the held tail. No new
+exception is added to `PAUSE_EXEMPT_STEP_KEYS`; normal callers have no new ceiling.
+
+## Separate live-source diagnostic (#2061)
+
+The daily workflow has 13 steps. After all ten existing pause-exempt measurements and their
+snapshot, `deming-live-source-draw` freezes a capped current-dollar catalog frame without network
+I/O. This draw and all subsequent observation/capture/archive work obey the pipeline pause.
+The existing tick admits at most one finite `deming.live_source_audit` workflow per UTC ten-minute
+bucket, alternating fresh oldest-draw work and due capture episodes. Magellan's capture workflow
+has its own Atlas archive tail. No provider, R2 activation, extra pause exception or inline daily
+execution is introduced. See [the diagnostic contract](../deming/LIVE-SOURCE-AUDIT.md).
+
 ## Answer-key relabels (`answer-key-relabels.ts`, #1099)
 
 The score step of Atlas's daily scoreboard run (`score-answer-key`) first applies James's category
 decisions to a fixed list of answer-key lines, then scores, so the day's score reads the corrected key.
-The relabel has no step of its own, so the score can never run before it (the scoreboard runs in
-passes since #1579).
+The relabel has no step of its own, so the score can never run before it (the scoreboard advances in tick passes; its daily route only queues work, #2177).
 `score-answer-key` is pause-exempt, since it writes only the answer key and score rows, never a fee
 row, so a pipeline pause does not hold the score. A failed relabel runs in its own savepoint, is
 reported in the step detail (`answer_key_relabel`), and never stops the score.
@@ -55,6 +90,22 @@ by the same guarded update only while the stored city is still the cut. On by Ja
 (Oct 15). The cut city's public page redirects permanently to the full one once no institution
 keeps the cut (`fullCityForCut`). It is a data step, so the pipeline pause holds it.
 
+Hand-checked fee links (`hand-link-repair.ts`, #2022) ride the same step: each `HAND_LINK_REPAIRS`
+entry (Natbank 2675 on Oct 19: from National Bank of Canada's business accounts page to Natbank's
+own U.S. accounts page) writes the website and fee link only while the fee link is still the listed
+old one, moves the profile's canonical link unless a correction locked it, takes the bank's own
+pages off `rejected_source_urls` and sets the wrong pages aside there. Step detail `hand_links`.
+On by James's decision (Oct 19, "Do all three"). Add later checks to the list, never edit a past one.
+
+## Role lesson sync (`learning/lesson-sync.ts`)
+
+`atlas-lesson-sync`, before the city repair in the daily scoreboard run, copies every agent's role
+lessons (`src/lib/agents/<agent>/role-lessons.ts`) into `agent_lessons` and retires, never
+deletes, a lesson the repo no longer has. It writes only that table, makes no model call and
+reports new, updated, unchanged and retired counts and any agent skipped for having no
+`agent_registry` row. Atlas's own lessons are in `atlas/role-lessons.ts`; the design is in
+`src/lib/agents/learning/AGENTS.md` ("Role lessons").
+
 ## Storage watch and retention (`storage-retention.ts`)
 
 `atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database
@@ -75,6 +126,38 @@ per step and any with a cost) and `attempt_repeats` (attempt-log rows over 30 da
 extract, verify and publish stages that have an identical twin both before and after them; first
 and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
 pause holds it.
+
+Legacy event-log partitions (`legacy-event-partitions.ts`, James, Oct 19, 2026): before the row
+trim, every `public.agent_events_YYYY_MM` partition whose whole month ends before the 60-day
+cutoff is dropped whole, which returns its disk (a row delete does not). It is found through
+`pg_inherits`; the default partition, `*_archived` tables, the month the cutoff falls in (its
+old rows stay with the row trim) and current or future months are never selected, and
+`agent_auth_log` is not in scope. Each partition goes in its own committed transaction on a
+connection outside the step's (3 s lock timeout): lock the parent, count, refuse (roll back) if
+any row is newer than the cutoff, record an `atlas.storage.partition_dropped` run event on the
+step, then call `public.drop_expired_legacy_event_partition` (migration 20270110000072), which
+re-checks the scope in the database (direct child, not default or archived, upper bound before
+the cutoff) and detaches and drops it. No DDL lives in `src` (`runtime-ddl-kill`).
+A dry run, or the switch off, only lists and measures them in the step detail
+(`trims[].partitions`). It is a deterministic step, not a provider step.
+
+### Document vault (`vault-retention.ts`, #1041)
+
+The same step measures the R2 document vault from `source_documents` (one object per distinct
+vault key, its recorded `byte_size`): files and MB, the HTML/PDF/other split, and what was first
+stored in the last 7 days, in `detail.vault` and the step summary. Above 10,240 MB stored or
+5,120 MB added in 7 days it adds a warning to `alerts`, which the morning brief emails; James sets
+the real thresholds by PR. It also counts, every run, the objects the retention rule would delete:
+every row holding the bytes (by key or content hash) was judged `wrong_document` by Rosetta over 30
+days ago, has no other text, extracted no fees and was not fetched or re-checked in 30 days, and no
+fee lineage reaches it (`FEE_LINEAGE_REFS`: raw, verified and published fee tiers by document and
+key, corrections, archives, snapshots, eval cases, feedback, pipeline attempts, witnesses, profile
+pointers, answer-key documents by content hash and by bank and URL, answer-key eligibility checks,
+and live-fee audit captures). A missing fee tier stops the count. Deletion (at most 500 objects a
+run) runs only while `VAULT_RETENTION_LIVE` is true, which a PR sets after James's yes; it is off.
+When on, each object is re-checked and its rows' `document_r2_key` cleared in a committed
+transaction first, then checked again for any new row or citation of the bytes, and only then
+deleted; a failed delete puts the key back. Storing cleaned text instead of large raw HTML is not done.
 
 ## Direct state re-search (`priority-state-research.ts`)
 
@@ -132,6 +215,10 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   free work left (`stateHasDocumentBacklog`, which must use the same filters as those steps'
   selectors); otherwise it sleeps until its next full pass, checking again at least every 12
   hours (`STATE_LANE_IDLE_RECHECK_HOURS`).
+- Scoped stacked-PDF repair readiness (#2219) calls Rosetta's exact owner query with
+  LIMIT1/EXISTS. It respects the same current-copy, vault/source-hash and versioned
+  attempt guards as the four-per-step free repair dispatch; it does not raise global
+  reader or prose replay floors. Bayes and Rosetta's health number count that same pool.
 - A state runs daily full passes instead of monthly while more than
   `DAILY_FULL_PASS_MISSING_LINKS` (50) of its banks have no fee link and a search can still
   find them (website on file, not offline or manual-review, last search not `dead` or
@@ -142,6 +229,11 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   `magellan/website-find.ts` picks), or while any market leader is among them. A state with
   fewer of them due runs a weekly full pass until they are tried. The paid caps still bound
   the spend.
+- The hourly nationwide sync (`runNationwideLaneSync`: every state's lane and profile rows, the
+  unchecked-live-fee and second-look wakes, the priority refresh) is the `lane-sync` step of its own
+  run (`atlas.lane_sync`), started by `/api/admin/crew/lane-sync` at minute 6 of each hour. The tick
+  never runs it: inside the first tick of each hour it held that tick's first step back p50 80 s,
+  max 200 s (2026-10-18 finding, tick loses budget before steps).
 - Which lane goes next (James, 2026-10-06: schedule by where the work is): the hourly
   nationwide sync sets each lane's `priority_score` (`refreshLanePriorities`) to the number of
   banks in the state with open work or a recent error: due a search, a fee link not fetched
@@ -196,6 +288,12 @@ hand-found link or paid-fetched document starts a new run even inside the retry 
   carries the run id. Every non-dry pass records a `state_expert.notes` event; before the
   migration (20270110000052) it is `skipped` and nothing is written. A dry run writes nothing.
   `/admin/states/<ST>/expert` lists the notes, newest first.
+
+The morning brief counts health/storage warnings alongside console items, includes bounded
+redacted reasons and admin action URLs, separates failed from blocked runs, and labels agent
+activity as completed steps. Spend includes the remaining monthly budget. Source dates distinguish
+successful checks from nonempty loads and attempts; answer evals show planned/completed samples
+when recorded and identify small paid samples. Historical snapshots may lack these fields.
 
 ## Goal scorecard (#1040)
 

@@ -4,6 +4,7 @@ export type { CategoryChargeBasis };
 import { institutionValue, MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
 import { frequencyFamily } from "@/lib/fee-frequency";
+import { isSpecialUnitFrequency, specialUnitReason, UNIT_LABELS } from "@/lib/fee-unit";
 
 export interface SelectedInstitutionFeeDelta {
   fee_name: string;
@@ -73,6 +74,7 @@ export interface UnlikeFeeComparison {
 }
 
 const BASIS_WORDS: Record<string, string> = {
+  ...UNIT_LABELS,
   per_item: "per item",
   monthly: "monthly",
   annual: "annually",
@@ -203,18 +205,24 @@ export function compareSelectedInstitutionFees(params: SelectedFeeComparisonPara
       );
       continue;
     }
+    const special = consumer.filter(fee => isSpecialUnitFrequency(fee.frequency));
+    if (special.length > 0) {
+      for (const fee of special) unlike("different_charge_basis", specialUnitReason(fee.frequency)!, [fee]);
+    }
+    const eligible = consumer.filter(fee => !isSpecialUnitFrequency(fee.frequency));
+    if (eligible.length === 0) continue;
     const sameBasis = basis
-      ? consumer.filter((fee) => {
+      ? eligible.filter((fee) => {
           const family = frequencyFamily(fee.frequency);
           return family === null || family === basis.family;
         })
-      : consumer;
+      : eligible;
     if (sameBasis.length === 0) {
-      const family = frequencyFamily(consumer[0].frequency) as string;
+      const family = frequencyFamily(eligible[0].frequency) as string;
       unlike(
         "different_charge_basis",
         `Charged ${basisWords(family)}; peers charge it ${basisWords(basis!.family)}.`,
-        consumer,
+        eligible,
       );
       continue;
     }

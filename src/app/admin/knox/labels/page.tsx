@@ -12,7 +12,7 @@ export default async function KnoxLabelsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const params = await searchParams;
   const queue = await loadLabelQueue(sql);
 

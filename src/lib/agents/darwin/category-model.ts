@@ -1,4 +1,5 @@
 import type { sql } from "@/lib/data-store/connection";
+import { eligibleReferenceFeedbackSql, readReferenceEligibility, type ReferenceEligibilitySnapshot } from "@/lib/data-store/answer-key-reference-store";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 
@@ -122,7 +123,7 @@ export function categoryOpinion(model: CategoryModel, name: string, categoryKey:
   };
 }
 
-let cached: { model: CategoryModel; loadedAt: number } | null = null;
+let cached: { model: CategoryModel; loadedAt: number; referenceRevision: string } | null = null;
 
 type ExampleRow = { name: string; category_key: string; count: number | string };
 
@@ -130,17 +131,18 @@ type ExampleRow = { name: string; category_key: string; count: number | string }
  * Hand-checked answer-key fees from the shared learning store (`pipeline_feedback`),
  * each at full weight. Empty when the store is not there yet or cannot be read.
  */
-async function loadAnswerKeyExamples(db: SqlTag): Promise<ExampleRow[]> {
+async function loadAnswerKeyExamples(db: SqlTag, reference: ReferenceEligibilitySnapshot): Promise<ExampleRow[]> {
   try {
     if (!(await inSavepoint(db, (scope) => feedbackSchemaReady(scope)))) return [];
     return await inSavepoint(db, (scope) => scope<ExampleRow[]>`
       SELECT LOWER(evidence->>'source_line') AS name, canonical_fee_key AS category_key, ${MAX_NAME_WEIGHT} AS count
-        FROM pipeline_feedback
+        FROM pipeline_feedback f
        WHERE kind = 'answer_key'
          AND signal = 'right'
          AND weight >= 1
          AND canonical_fee_key IS NOT NULL
          AND evidence->>'source_line' IS NOT NULL
+         AND ${eligibleReferenceFeedbackSql(scope, "f", reference)}
        GROUP BY 1, 2`);
   } catch (error) {
     console.error("loadAnswerKeyExamples failed:", error);
@@ -153,7 +155,8 @@ async function loadAnswerKeyExamples(db: SqlTag): Promise<ExampleRow[]> {
  * answer-key fees in the shared learning store. Cached for an hour per instance.
  */
 export async function loadCategoryModel(db: SqlTag, now = Date.now()): Promise<CategoryModel | null> {
-  if (cached && now - cached.loadedAt < CACHE_MS) return cached.model;
+  const reference = await readReferenceEligibility(db, new Date(now));
+  if (cached && now - cached.loadedAt < CACHE_MS && cached.referenceRevision === reference.revision) return cached.model;
   const rows: ExampleRow[] = await db`
     SELECT LOWER(fee_name) AS name, canonical_fee_key AS category_key, COUNT(*) AS count
       FROM published_fee_catalog
@@ -161,11 +164,11 @@ export async function loadCategoryModel(db: SqlTag, now = Date.now()): Promise<C
        AND fee_name IS NOT NULL
      GROUP BY 1, 2`;
   if (rows.length === 0) return null;
-  const answerKey = await loadAnswerKeyExamples(db);
+  const answerKey = await loadAnswerKeyExamples(db, reference);
   const model = trainCategoryModel(
     [...rows, ...answerKey].map((row) => ({ name: row.name, categoryKey: row.category_key, count: Number(row.count) })),
   );
-  cached = { model, loadedAt: now };
+  cached = { model, loadedAt: now, referenceRevision: reference.revision };
   return model;
 }
 

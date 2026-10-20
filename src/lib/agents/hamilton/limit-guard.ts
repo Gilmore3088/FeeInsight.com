@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { captureTakedownWitness, MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES, TAKEDOWN_ORIGINAL_TEXT_JOIN, TAKEDOWN_WITNESS_COLUMNS, type TakedownWitness, type TakedownWitnessRow } from "@/lib/agents/knox/takedown-witness";
 import { DAILY_CAP_CATEGORIES } from "@/lib/custom-report/source-check";
 import { secondLook } from "@/lib/agents/hamilton/second-look";
 import { namesAWorkedExample, WORKED_EXAMPLE_PG } from "@/lib/agents/knox/layout";
@@ -184,7 +185,7 @@ export function limitGuardReason(verdict: LimitGuardVerdict): string {
   return `${LIMIT_GUARD_REASON}:${verdict.code}: ${verdict.detail}`;
 }
 
-interface LiveLimitRow {
+interface LiveLimitRow extends TakedownWitnessRow {
   fee_published_id: number | string;
   institution_id: number | string;
   canonical_fee_key: string;
@@ -201,6 +202,9 @@ export interface LimitRollback {
   amount: number | null;
   code: LimitGuardCode;
   reason: string;
+  sourceDocumentId?: number | null;
+  /** Captured from this actual selected input before limitGuardVerdict, never joined later. */
+  takedownWitness?: TakedownWitness;
 }
 
 /**
@@ -221,15 +225,26 @@ export async function rollBackLimitsPublishedAsFees(
   let candidates: LiveLimitRow[];
   try {
     candidates = await inSavepoint(db, (scope) => scope<LiveLimitRow[]>`
-      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions
+      WITH selected AS MATERIALIZED (
+      SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
+             ${scope.unsafe(TAKEDOWN_WITNESS_COLUMNS)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        ${scope.unsafe(TAKEDOWN_ORIGINAL_TEXT_JOIN)}
        WHERE fp.rolled_back_at IS NULL
          AND (fp.amount >= ${LIMIT_GUARD_MIN_AMOUNT} OR fp.fee_name ~* ${WORKED_EXAMPLE_PG}
               OR fp.fee_name ~* ${CONDITION_SENTENCE_PG} OR COALESCE(fr.extraction_note, fr.conditions) ~* ${TRANSACTION_AMOUNT_PG})
          ${options.institutionId ? scope`AND fp.institution_id = ${options.institutionId}` : scope``}
-       ORDER BY fp.fee_published_id
+      ), budgeted AS (
+        SELECT selected.*,sum(COALESCE(octet_length(witness_payload::text),0)) OVER
+          (ORDER BY fee_published_id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS witness_transfer_bytes
+          FROM selected
+      )
+      SELECT fee_published_id,institution_id,canonical_fee_key,fee_name,amount,conditions,
+        CASE WHEN witness_transfer_bytes<=${MAX_TAKEDOWN_WITNESS_TRANSFER_BYTES}
+             THEN witness_payload END AS witness_payload
+        FROM budgeted ORDER BY fee_published_id
     `);
   } catch (error) {
     // A failed sweep must never block publishing new verified rows.
@@ -240,6 +255,7 @@ export async function rollBackLimitsPublishedAsFees(
   const failing: LimitRollback[] = [];
   const passing: number[] = [];
   for (const row of candidates) {
+    const witness = captureTakedownWitness(row, options);
     const verdict = limitGuardVerdict(row);
     if (!verdict) {
       passing.push(Number(row.fee_published_id));
@@ -253,6 +269,8 @@ export async function rollBackLimitsPublishedAsFees(
       amount: dollars(row.amount),
       code: verdict.code,
       reason: limitGuardReason(verdict),
+      sourceDocumentId: witness?.source.sourceDocumentId ?? null,
+      ...(witness ? { takedownWitness: witness } : {}),
     });
   }
   await restorePassingLimitTakedowns(db, options);

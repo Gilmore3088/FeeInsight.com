@@ -85,6 +85,34 @@ export async function recordAttempt(db: SqlTag, attempt: AttemptRecord): Promise
   await persistPlaybook(db, attempt.institutionId, applyAttempt(playbook, attempt));
 }
 
+/** Strict recheck-only insert. The caller owns its effect/feedback savepoint; no best-effort fold. */
+export async function recordAttestedAttempt(db: SqlTag, attempt: AttemptRecord): Promise<number> {
+  if (attempt.foldIntoPlaybook !== false || attempt.skipRepeat) throw new Error("Invalid strict attempt contract");
+  const rows = await db<{ id: number | string; matches: boolean }[]>`
+    INSERT INTO pipeline_attempts (
+      institution_id, source_document_id, stage, strategy, strategy_version,
+      input_fingerprint, outcome, yield_count, cost_microusd, duration_ms,
+      agent_run_id, agent_run_step_id, detail
+    ) VALUES (
+      ${attempt.institutionId}, ${attempt.sourceDocumentId ?? null}, ${attempt.stage},
+      ${attempt.strategy}, ${attempt.version}, ${attempt.fingerprint}, ${attempt.outcome},
+      ${Math.max(0, Math.floor(attempt.yieldCount))}, ${Math.max(0, Math.floor(attempt.costMicrousd))},
+      ${attempt.durationMs == null ? null : Math.max(0, Math.round(attempt.durationMs))},
+      ${attempt.runId ?? null}, ${attempt.stepId ?? null}, ${JSON.stringify(attempt.detail ?? {})}::jsonb
+    ) RETURNING id, (
+      institution_id IS NOT DISTINCT FROM ${attempt.institutionId} AND source_document_id IS NOT DISTINCT FROM ${attempt.sourceDocumentId ?? null}
+      AND stage=${attempt.stage} AND strategy=${attempt.strategy} AND strategy_version=${attempt.version}
+      AND input_fingerprint=${attempt.fingerprint} AND outcome=${attempt.outcome}
+      AND yield_count=${Math.max(0,Math.floor(attempt.yieldCount))} AND cost_microusd=${Math.max(0,Math.floor(attempt.costMicrousd))}
+      AND agent_run_id IS NOT DISTINCT FROM ${attempt.runId ?? null} AND agent_run_step_id IS NOT DISTINCT FROM ${attempt.stepId ?? null}
+      AND detail=${JSON.stringify(attempt.detail ?? {})}::jsonb
+    ) AS matches
+  `;
+  const id = Number(rows[0]?.id);
+  if (rows.length !== 1 || rows[0].matches !== true || !Number.isSafeInteger(id) || id <= 0) throw new Error("Strict attempt was not persisted");
+  return id;
+}
+
 const readyCache = new WeakMap<object, boolean>();
 
 /**

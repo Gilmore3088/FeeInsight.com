@@ -377,6 +377,20 @@ describe("Hamilton Settings revoke actions", () => {
     });
   });
 
+  it("refuses self-revocation when the membership's bigint user_id arrives as text (#1970)", async () => {
+    const { revokeWorkspaceAccess } = await import("./actions");
+    mocks.getActiveInstitutionMembershipMock.mockResolvedValue({ role: "admin", institutionId: 2945, userId: 7 });
+    mocks.state.queuedRows.push([{ user_id: "7", membership_role: "admin" }]);
+
+    const result = await revokeWorkspaceAccess(
+      { success: false },
+      form({ institution_id: "2945", membership_id: "51" }),
+    );
+
+    expect(result).toEqual({ success: false, error: "You cannot revoke your own active workspace access here." });
+    expect(mocks.revokeInstitutionWorkspaceMembershipMock).not.toHaveBeenCalled();
+  });
+
   it("blocks revoke attempts from users without active Pro access", async () => {
     const { revokeWorkspaceAccess } = await import("./actions");
     mocks.getCurrentUserMock.mockResolvedValue(proUser({ subscription_status: "none" }));

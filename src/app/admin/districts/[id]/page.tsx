@@ -23,7 +23,7 @@ export default async function DistrictDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { id } = await params;
   const districtId = parseInt(id, 10);
 
@@ -491,10 +491,10 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
       {/* Quick link to peer segmentation */}
       <div className="text-sm mt-6">
         <Link
-          href={`/admin/peers?district=${districtId}`}
+          href={`/admin/fees/catalog?district=${districtId}`}
           className="text-gray-500 hover:text-blue-600 transition-colors"
         >
-          View peer segmentation for District {districtId}
+          Compare District {districtId} fees with the national median
         </Link>
       </div>
     </>

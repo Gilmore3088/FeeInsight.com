@@ -4,6 +4,7 @@
  */
 import type { BriefingLocalMarket } from "@/lib/hamilton/workspace/types";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
+import { ownFeeList, statedFeeLabel } from "@/lib/own-fee";
 
 const MAX_COLUMNS = 4;
 const MIN_PUBLISHING = 2;
@@ -82,7 +83,17 @@ export function LocalCompetitors({
                 ) : null}
                 {columns.map((c) => (
                   <td key={c} className="px-4 py-2 text-right">
-                    {r.values[c] != null ? money(r.values[c]) : <span className="text-warm-500">–</span>}
+                    {r.several?.[c] ? (
+                      // Several different fees: their range, each by name beneath (#1931).
+                      <>
+                        {statedFeeLabel(r.values[c] ?? r.several[c].low, r.several[c], money)}
+                        <span className="block text-xs font-normal text-warm-600">{ownFeeList(r.several[c], money)}</span>
+                      </>
+                    ) : r.values[c] != null ? (
+                      money(r.values[c])
+                    ) : (
+                      <span className="text-warm-500">–</span>
+                    )}
                   </td>
                 ))}
               </tr>

@@ -5,6 +5,9 @@ import * as maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { BranchPoint } from "@/lib/data-store";
 
+// v6's ESM worker is separate. Next emits this installed-version asset at build time.
+maplibregl.setWorkerUrl(new URL("maplibre-gl/dist/maplibre-gl-worker.mjs", import.meta.url).toString());
+
 /** Free, keyless vector tiles (OpenFreeMap, OpenMapTiles schema); restyled below in Fee Insight's neutrals. */
 export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const ATTRIBUTION =
@@ -15,7 +18,7 @@ const LOAD_TIMEOUT_MS = 15_000;
 function webglSupported(): boolean {
   try {
     const canvas = document.createElement("canvas");
-    return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+    return Boolean(canvas.getContext("webgl2"));
   } catch {
     return false;
   }
@@ -45,7 +48,12 @@ function blend(a: string, b: string, t: number): string {
   return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
 }
 
-function setPaint(map: maplibregl.Map, id: string, prop: string, value: unknown) {
+function setPaint(
+  map: maplibregl.Map,
+  id: string,
+  prop: Parameters<maplibregl.Map["setPaintProperty"]>[1],
+  value: Parameters<maplibregl.Map["setPaintProperty"]>[2],
+) {
   try {
     map.setPaintProperty(id, prop, value);
   } catch {

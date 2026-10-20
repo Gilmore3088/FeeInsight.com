@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   UNAVAILABLE_LABEL,
@@ -21,8 +23,14 @@ describe("public stats formatting", () => {
   });
 
   it("formats absolute dates and tolerates bad input", () => {
-    expect(formatAbsoluteDate("2026-08-12T00:00:00.000Z")).toMatch(/Aug 1[12], 2026/);
+    // A calendar date keeps its own day.
+    expect(formatAbsoluteDate("2026-08-12T00:00:00.000Z")).toBe("Aug 12, 2026");
+    expect(formatAbsoluteDate("2026-08-12")).toBe("Aug 12, 2026");
+    // A U.S. evening publish (01:00 UTC) keeps the U.S. date.
+    expect(formatAbsoluteDate("2026-10-18T01:00:00.000Z")).toBe("Oct 17, 2026");
     expect(formatAbsoluteDate(null)).toBeNull();
+    // Read in U.S. Eastern time: 02:00 UTC on Oct 18 is still Oct 17 there.
+    expect(formatAbsoluteDate("2026-10-18T02:00:00.000Z")).toBe("Oct 17, 2026");
     expect(formatAbsoluteDate("not a date")).toBeNull();
   });
 
@@ -40,5 +48,18 @@ describe("benchmarkBasis", () => {
     expect(benchmarkBasis({ median_amount: null, institution_count: 1, total_observations: 1 }, null)).toBe(
       "1 institution · 1 published fee entry",
     );
+  });
+});
+
+describe("national counts use the states' institution rule (#1980)", () => {
+  const source = readFileSync(join(process.cwd(), "src/lib/public-stats.ts"), "utf8");
+  const body = (name: string) => {
+    const start = source.indexOf(`async function ${name}`);
+    return source.slice(start, source.indexOf("\n}\n", start));
+  };
+
+  it("counts monitored and fee-publishing institutions only where the regulator has not marked them inactive", () => {
+    expect(body("countMonitoredInstitutions")).toContain('activeInstitutionFilter("ct")');
+    expect(body("readHeadlineCounts")).toContain('activeInstitutionFilter("ct")');
   });
 });

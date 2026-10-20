@@ -3161,6 +3161,12 @@ CREATE INDEX IF NOT EXISTS source_documents_companion_source_idx
   ON public.source_documents (companion_source_id, id DESC)
   WHERE companion_source_id IS NOT NULL;
 
+-- #2219: exercise the production companion-read capability, including account_name.
+-- A source_documents column alone silently leaves Rosetta's companion schema gate off.
+-- The enabled companion finder also reads the existing report-request institution link.
+\ir ../../supabase/migrations/20270110000003_lead_report_payment.sql
+\ir ../../supabase/migrations/20270109000000_companion_fee_pages.sql
+
 
 -- 2026-10-10 audience repair: roles are metadata-only in the throwaway CI database.
 DO $$ BEGIN
@@ -3202,3 +3208,64 @@ ALTER TABLE public.fee_change_records
 
 -- Usage per API key: which issued key made each /api/v1 call.
 \ir ../../supabase/migrations/20270110000057_usage_events_api_key_id.sql
+
+-- #2123: line_share joins the Knox raw dedupe key, so a combined line's twin is stored.
+\ir ../../supabase/migrations/20270110000065_raw_line_share.sql
+
+-- #2127 / #978: current admin correction conditions and evidence on public dollar fees.
+\ir ../../supabase/migrations/20270110000066_published_fee_correction_catalog_overlay.sql
+
+-- #978: an agent takedown never closes a fee with a current admin correction.
+\ir ../../supabase/migrations/20270110000068_keep_admin_corrected_fees_live.sql
+
+-- Atlas drops expired monthly partitions of the retired agent_events log through this function.
+\ir ../../supabase/migrations/20270110000072_drop_expired_legacy_event_partition.sql
+
+-- #2170: prod has the fee alert functions from 20260813062152_physical_institution_data_contracts.sql,
+-- which skips a database built without the legacy tables, so the snapshot carries them here.
+CREATE OR REPLACE FUNCTION public.upsert_institution_fee_alert_subscription(
+  p_user_id BIGINT,
+  p_institution_id BIGINT,
+  p_fee_categories TEXT[] DEFAULT NULL
+)
+RETURNS BIGINT
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  subscription_id BIGINT;
+BEGIN
+  INSERT INTO public.institution_fee_alert_subscriptions (user_id, institution_id, fee_categories)
+  VALUES (p_user_id, p_institution_id, p_fee_categories)
+  ON CONFLICT (user_id, institution_id) DO UPDATE
+  SET is_active = TRUE,
+      fee_categories = EXCLUDED.fee_categories
+  RETURNING id INTO subscription_id;
+
+  RETURN subscription_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.deactivate_institution_fee_alert_subscription(
+  p_user_id BIGINT,
+  p_institution_id BIGINT
+)
+RETURNS INTEGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+  affected_count INTEGER;
+BEGIN
+  UPDATE public.institution_fee_alert_subscriptions
+  SET is_active = FALSE
+  WHERE user_id = p_user_id
+    AND institution_id = p_institution_id;
+
+  GET DIAGNOSTICS affected_count = ROW_COUNT;
+  RETURN affected_count;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.upsert_institution_fee_alert_subscription(BIGINT, BIGINT, TEXT[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.deactivate_institution_fee_alert_subscription(BIGINT, BIGINT) FROM PUBLIC, anon, authenticated;

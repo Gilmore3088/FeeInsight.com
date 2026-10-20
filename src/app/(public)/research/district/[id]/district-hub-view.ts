@@ -300,13 +300,28 @@ export interface OpeningFee {
 /** Gaps under this share of the U.S. median read as about the same (the heading's "above" rule). */
 const MATCH_SHARE = 0.01;
 
-function gapOf(f: OpeningFee): number {
+/** A fee's gap to the U.S. median in dollars; 0 when it is within 1% (about the same). */
+export function nationalGap(f: OpeningFee): number {
   const gap = f.median - f.us!.median;
   return Math.abs(gap) < f.us!.median * MATCH_SHARE ? 0 : gap;
 }
 
+const gapOf = nationalGap;
+
 function gapWords(gap: number): string {
   return `${formatFeeAmount(Math.abs(gap))} ${gap > 0 ? "above" : "below"}`;
+}
+
+/** The fees openingFinding names, by the same rules, so the report doesn't list them again. */
+export function openingKeys(fees: OpeningFee[], minInstitutions: number): string[] {
+  const solid = fees.filter((f) => f.us && f.us.median > 0 && f.institutions >= minInstitutions);
+  const od = solid.find((f) => f.key === "overdraft");
+  const nsf = solid.find((f) => f.key === "nsf");
+  if (od && nsf && (gapOf(od) !== 0 || gapOf(nsf) !== 0)) return ["overdraft", "nsf"];
+  const widest = [...solid]
+    .filter((f) => gapOf(f) !== 0)
+    .sort((x, y) => Math.abs(gapOf(y)) / y.us!.median - Math.abs(gapOf(x)) / x.us!.median)[0];
+  return [...(od && nsf ? ["overdraft", "nsf"] : []), ...(widest ? [widest.key] : [])];
 }
 
 /**

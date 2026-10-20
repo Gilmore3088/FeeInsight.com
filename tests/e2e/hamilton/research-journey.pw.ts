@@ -16,7 +16,7 @@ import { ask, signIn } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-const peerTable = (page: Page) => page.getByRole("region", { name: "Peer table; scroll horizontally" }).last();
+const peerTable = (page: Page) => page.getByRole("table", { name: "Peer table" }).last();
 const peerRows = (page: Page) => peerTable(page).locator("tbody tr");
 const feeTable = (page: Page) => page.locator("table[aria-label^='Published']").last();
 
@@ -49,10 +49,10 @@ test("H07-AC2 H02-AC1 H02-AC3 H02-AC4 H05-AC1 H06-AC3 H04-AC1: ask, ten peers, r
   await expect(page.getByRole("heading", { name: `10 of 12 matching institutions for ${HOME.name}.` })).toBeVisible();
   await expect(peerRows(page)).toHaveCount(10);
   for (const row of await peerRows(page).all()) {
-    await expect(row).toContainText(/\$\d{1,3}(,\d{3})+/);
+    await expect(row).toContainText(/Total assets:\$\d+(\.\d)?[MBT]/);
     await expect(row).toContainText("Jun 2026");
   }
-  await expect(page.getByText(/Selection criteria: credit unions · nationwide · ≥ \$4,500,000,000 · ≤ \$18,000,000,000/)).toBeVisible();
+  await expect(page.getByText(/Selection criteria: credit unions · nationwide · ≥ \$4\.5B · ≤ \$18B/)).toBeVisible();
   for (const left of EXCLUDED) await expect(peerTable(page)).not.toContainText(left.name);
   await expect(peerTable(page)).not.toContainText(HOME.name);
   // Criteria and rows lead; the save control follows the table (H05-AC1).
@@ -222,7 +222,7 @@ test("H01-AC1: a linked home is the account institution, and \"with us\" adds it
   // Found by this journey on 2026-10-17: the bigint user id arrived as a string and never matched.
   await signIn(page, FIXTURE_USERS.pro.email, `/pro/analyze?instId=${HOME.id}`);
   await page.goto(`/pro/analyze?instId=${HOME.id}`);
-  await expect(page.getByText(`Your institution: ${HOME.name}`)).toBeVisible();
+  await expect(page.getByText(`Researching: ${HOME.name} (your institution)`)).toBeVisible();
   await ask(page, "List ten similarly sized credit unions");
   await expect(peerRows(page)).toHaveCount(10);
   await ask(page, "Compare their NSF fees with us");

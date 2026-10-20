@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { requireAuth } from "@/lib/auth";
 import { createArticle, getArticles } from "@/lib/data-store/articles";
-import { ensureResearchTables } from "@/lib/research/history";
 import { toISO } from "@/lib/pg-helpers";
 
 const MAX_DRAFTS_PER_DAY = 5;
@@ -15,8 +14,6 @@ export async function saveArticleFromChat(
   if (!markdownContent || markdownContent.length < 100) {
     return { success: false, error: "Content too short to save as article" };
   }
-
-  await ensureResearchTables();
 
   // Safety: limit drafts per day
   const { articles: todayArticles } = await getArticles({ status: "draft" });

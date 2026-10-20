@@ -16,10 +16,16 @@ import {
   extractInstitutionCommand,
   markInstitutionOfflineCommand,
   setInstitutionFeeUrl,
+  setInstitutionWebsiteUrl,
 } from "@/lib/institution-commands";
 
 export async function updateFeeUrl(institutionId: number, url: string) {
   const result = await setInstitutionFeeUrl(institutionId, url);
+  return result.success ? { ok: true } : { error: result.error };
+}
+
+export async function updateWebsiteUrl(institutionId: number, url: string) {
+  const result = await setInstitutionWebsiteUrl(institutionId, url);
   return result.success ? { ok: true } : { error: result.error };
 }
 

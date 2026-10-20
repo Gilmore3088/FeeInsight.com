@@ -1,10 +1,15 @@
 import { sql } from "@/lib/data-store/connection";
-import { ANSWER_KEY_SCORER_VERSION, answerKeySchemaReady, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
+import { ANSWER_KEY_SCORER_VERSION, answerKeySchemaReady, getLatestAnswerKeyScoreRun, scoreboardSchemaReady } from "@/lib/data-store/answer-key";
+import { eligibleReferences, readReferenceEligibility, type ReferenceEligibilitySnapshot } from "@/lib/data-store/answer-key-reference-store";
+import type { ReferenceScoreCohort } from "@/lib/data-store/answer-key-eligibility";
 import { learningSchemaReady } from "@/lib/agents/learning/attempts";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@/lib/agents/agent-health";
 import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
+import { readHistoricalLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { readQueueBoard, summarizeQueueBoard, type QueueBoard } from "@/lib/agents/queue-board";
+import { PIPELINE_QUEUES } from "@/lib/agents/queue-registry";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -28,6 +33,9 @@ import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agent
  *   report-ready         institutions passing the report rule (state peers, or Fed
  *                        district peers where the state has too few). Stored in
  *                        `detail.report_ready`; /admin/leads shows it week over week.
+ *   piles                every queue in queue-registry.ts with its owner, size, oldest item and
+ *                        alarms (#1108). Stored in `detail.queues`; growth is judged against
+ *                        the stored days before it.
  */
 
 type SqlTag = typeof sql;
@@ -40,7 +48,8 @@ export interface ScoreboardNumbers {
   rightDocument: { rate: number | null; numerator: number; denominator: number; windowDays: number } | null;
   knoxYield: { yield: number | null; fees: number; pricedLines: number; sampleSize: number } | null;
   depth: { median: number | null; liveInstitutions: number };
-  accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null; scorerVersion: number } | null;
+  accuracy: { precision: number | null; recall: number | null; scoreRunId: number | null; scoredAt: string | null; scorerVersion: number;
+    reference?: ReferenceScoreCohort | null; referenceState?: string } | null;
   freshness: { medianDays: number | null; liveFees: number };
   knoxSurvival: KnoxSurvival;
   /** Null when the count could not be read; the other numbers are still stored. */
@@ -105,14 +114,16 @@ async function readRightDocument(db: SqlTag): Promise<ScoreboardNumbers["rightDo
   return { rate: rate(numerator, denominator), numerator, denominator, windowDays: RIGHT_DOCUMENT_WINDOW_DAYS };
 }
 
-async function readKnoxYield(db: SqlTag): Promise<ScoreboardNumbers["knoxYield"]> {
+async function readKnoxYield(db: SqlTag, eligibility: ReferenceEligibilitySnapshot): Promise<ScoreboardNumbers["knoxYield"]> {
   if (!(await answerKeySchemaReady(db))) return null;
+  const textIds = eligibleReferences(eligibility).flatMap(({ input }) => input.sources
+    .filter((source) => source.contentHash === input.key.contentHash && source.textStatus === "completed" && source.textId != null)
+    .map((source) => source.textId!));
   const [row] = await db`
     WITH sample AS (
       SELECT DISTINCT ON (t.institution_id) t.institution_id, t.source_document_id, t.normalized_text
         FROM agent_source_texts t
-        JOIN answer_key_institutions ak ON ak.institution_id = t.institution_id
-       WHERE t.status = 'completed'
+       WHERE t.status = 'completed' AND t.id = ANY(${textIds}::bigint[])
        ORDER BY t.institution_id, t.updated_at DESC, t.id DESC
     )
     SELECT COUNT(*)::int AS sample_size,
@@ -151,23 +162,18 @@ async function readDepth(db: SqlTag): Promise<ScoreboardNumbers["depth"]> {
   return { median: numberOrNull(row?.median), liveInstitutions: Number(row?.live_institutions ?? 0) };
 }
 
-async function readAccuracy(db: SqlTag): Promise<ScoreboardNumbers["accuracy"]> {
+async function readAccuracy(db: SqlTag, eligibility: ReferenceEligibilitySnapshot): Promise<ScoreboardNumbers["accuracy"]> {
   if (!(await answerKeySchemaReady(db))) return null;
-  const [row] = await db`
-    SELECT id, precision, recall, scored_at
-      FROM answer_key_score_runs
-     WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
-     ORDER BY scored_at DESC, id DESC
-     LIMIT 1
-  `;
-  if (!row) return { precision: null, recall: null, scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION };
+  const row = await getLatestAnswerKeyScoreRun(db, ANSWER_KEY_SCORER_VERSION, eligibility);
+  if (!row) return { precision: null, recall: null, scoreRunId: null, scoredAt: null, scorerVersion: ANSWER_KEY_SCORER_VERSION,
+    reference: eligibility.cohort, referenceState: "no_measurement" };
   return {
     // Scores from different scorer versions are never one series (#1354).
     scorerVersion: ANSWER_KEY_SCORER_VERSION,
     precision: numberOrNull(row.precision, 4),
     recall: numberOrNull(row.recall, 4),
     scoreRunId: Number(row.id),
-    scoredAt: row.scored_at instanceof Date ? row.scored_at.toISOString() : String(row.scored_at),
+    scoredAt: row.scored_at, reference: row.reference, referenceState: row.referenceState,
   };
 }
 
@@ -223,12 +229,13 @@ async function readReportReady(db: SqlTag): Promise<ReportReadyCount | null> {
 }
 
 export async function readScoreboardNumbers(db: SqlTag = sql): Promise<ScoreboardNumbers> {
+  const eligibility = await readReferenceEligibility(db);
   const [coverage, rightDocument, knoxYield, depth, accuracy, freshness, knoxSurvival] = await Promise.all([
     readCoverage(db),
     readRightDocument(db),
-    readKnoxYield(db),
+    readKnoxYield(db, eligibility),
     readDepth(db),
-    readAccuracy(db),
+    readAccuracy(db, eligibility),
     readFreshness(db),
     readKnoxSurvival(db),
   ]);
@@ -246,6 +253,8 @@ export interface ScoreboardSnapshotResult {
   agentHealth?: AgentHealthReport | null;
   /** The goal scorecard (#1040), stored in `detail.goal`. */
   goal?: GoalScorecard | null;
+  /** Every registered pile with its owner and alarms (#1108), stored in `detail.queues`. */
+  queues?: QueueBoard | null;
 }
 
 /** Reads the six numbers and stores today's snapshot (one row per UTC day; reruns replace it). */
@@ -275,8 +284,48 @@ export async function runScoreboardSnapshot({
         return null;
       })
     : null;
-  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth, goal };
-  await db`
+  // Growth is judged against stored days, so the board needs the scoreboard table too.
+  const queues = schemaReady
+    ? await readQueueBoard(db, PIPELINE_QUEUES, now).catch((error) => {
+        console.error("readQueueBoard failed:", error);
+        return null;
+      })
+    : null;
+  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth, goal, queues };
+  await writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal,queues});
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal, queues };
+}
+
+/** Validate retained finals under a row lock; archive-field presence alone is never trust. */
+export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal,queues=null}:{db:SqlTag;snapshotDate:string;runId:number|null;
+  numbers:ScoreboardNumbers;agentHealth:AgentHealthReport|null;goal:GoalScorecard|null;queues?:QueueBoard|null}):Promise<void>{
+  const write=async(scope:SqlTag)=>{
+    // Serializes absent-row inserts too. Archive writers only update existing rows.
+    await scope`SELECT pg_advisory_xact_lock(hashtextextended(${`atlas.scoreboard.snapshot:${snapshotDate}`},0))`;
+    const [previous]=await scope<{detail:unknown}[]>`SELECT detail FROM pipeline_scoreboard_snapshots WHERE snapshot_date=${snapshotDate}::date FOR UPDATE`;
+    const retained=readHistoricalLiveSourceAudit(previous?.detail);
+    const detail={
+        right_document_window_days: numbers.rightDocument?.windowDays ?? null,
+        accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
+        accuracy_scorer_version: numbers.accuracy?.scorerVersion ?? null,
+        accuracy_reference: numbers.accuracy?.reference ?? null,
+        accuracy_reference_state: numbers.accuracy?.referenceState ?? null,
+        knox_survival: numbers.knoxSurvival,
+        ...(numbers.reportReady
+          ? {
+              report_ready: {
+                institutions: numbers.reportReady.institutions,
+                via_district: numbers.reportReady.viaDistrict,
+                markets_ready: numbers.reportReady.marketsReady,
+              },
+            }
+          : {}),
+        ...(agentHealth ? { agent_health: agentHealth } : {}),
+        ...(goal ? { goal } : {}),
+        ...(queues ? { queues } : {}),
+      };
+    if(retained?.archive)detail.goal={...(goal??{}),liveSourceAudit:retained} as GoalScorecard;
+  await scope`
     INSERT INTO pipeline_scoreboard_snapshots (
       snapshot_date, agent_run_id,
       coverage_rate, coverage_numerator, coverage_denominator,
@@ -293,23 +342,7 @@ export async function runScoreboardSnapshot({
       ${numbers.depth.median}, ${numbers.depth.liveInstitutions},
       ${numbers.accuracy?.precision ?? null}, ${numbers.accuracy?.recall ?? null}, ${numbers.accuracy?.scoreRunId ?? null},
       ${numbers.freshness.medianDays}, ${numbers.freshness.liveFees},
-      ${JSON.stringify({
-        right_document_window_days: numbers.rightDocument?.windowDays ?? null,
-        accuracy_scored_at: numbers.accuracy?.scoredAt ?? null,
-        accuracy_scorer_version: numbers.accuracy?.scorerVersion ?? null,
-        knox_survival: numbers.knoxSurvival,
-        ...(numbers.reportReady
-          ? {
-              report_ready: {
-                institutions: numbers.reportReady.institutions,
-                via_district: numbers.reportReady.viaDistrict,
-                markets_ready: numbers.reportReady.marketsReady,
-              },
-            }
-          : {}),
-        ...(agentHealth ? { agent_health: agentHealth } : {}),
-        ...(goal ? { goal } : {}),
-      })}::jsonb
+      ${JSON.stringify(detail)}::jsonb
     )
     ON CONFLICT (snapshot_date) DO UPDATE SET
       agent_run_id = EXCLUDED.agent_run_id,
@@ -333,7 +366,9 @@ export async function runScoreboardSnapshot({
       detail = EXCLUDED.detail,
       updated_at = NOW()
   `;
-  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal };
+  };
+  if(typeof (db as unknown as {savepoint?:unknown}).savepoint==='function')await inSavepoint(db,write);
+  else await db.begin(tx=>write(tx as unknown as SqlTag));
 }
 
 function pct(value: number | null | undefined): string {
@@ -362,5 +397,6 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
       : `Atlas read the scoreboard (not stored: the scoreboard migration is not applied yet)`;
   const health = result.agentHealth ? ` ${summarizeAgentHealth(result.agentHealth)}` : "";
   const goal = result.goal ? ` Goal: ${goalHeadline(result.goal)}.` : "";
-  return `${prefix}: ${parts.join(", ")}.${goal}${health}`;
+  const piles = result.queues ? ` ${summarizeQueueBoard(result.queues)}` : "";
+  return `${prefix}: ${parts.join(", ")}.${goal}${piles}${health}`;
 }

@@ -34,3 +34,5 @@ per prompt version. The release review went v11 to v17 in a day and each version
 A provider refusal that stops every call is a billing failure whatever the Console calls it; the
 circuit matches the message text, so each new wording must be added when first seen. A metric gated
 on a count per prompt version starves when the version moves faster than the count fills.
+
+**Guard:** `src/lib/ai-provider-usage.test.ts` ("engages the emergency stop when the key hits its Console usage limit") and `src/lib/agents/darwin/verdict-score.test.ts` ("closes a retired review version's open chunk as partial")

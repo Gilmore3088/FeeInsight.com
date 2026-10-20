@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ user: vi.fn(), headers: vi.fn(), resolve: vi.fn(), artifact: vi.fn(), account: vi.fn() }));
+const mocks = vi.hoisted(() => ({ user: vi.fn(), headers: vi.fn(), resolve: vi.fn(), artifact: vi.fn(), account: vi.fn(), pendingLink: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: mocks.user }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
 vi.mock("next/headers", () => ({ headers: mocks.headers, cookies: async () => new Map() }));
@@ -9,6 +9,8 @@ vi.mock("@/components/hamilton/layout/HamiltonShell", () => ({ HamiltonShell: ()
 vi.mock("@/lib/hamilton/workspace-context", () => ({ resolveHamiltonInstitutionContext: mocks.resolve }));
 vi.mock("@/lib/hamilton/artifact-context-store", () => ({ getHamiltonArtifactInstitutionId: mocks.artifact }));
 vi.mock("@/lib/hamilton/account-context-store", () => ({ loadHamiltonAccountContext: mocks.account }));
+vi.mock("@/lib/data-store/connection", () => ({ sql: "db" }));
+vi.mock("@/lib/pro-institution-link", () => ({ getPendingInstitutionLink: mocks.pendingLink }));
 import HamiltonLayout from "./layout";
 
 beforeEach(() => {
@@ -16,6 +18,7 @@ beforeEach(() => {
   mocks.user.mockResolvedValue({ id: 25, role: "premium", subscription_status: "active", institution_name: "Unverified profile name" });
   mocks.account.mockResolvedValue({ status: "identified", institution: { id: 8109, name: "Space Coast Federal Credit Union" } });
   mocks.headers.mockResolvedValue(new Headers({ "x-invoke-path": "/pro/reports?report_id=saved-a&instId=1535" }));
+  mocks.pendingLink.mockResolvedValue(null);
   mocks.artifact.mockImplementation(async ({ lookup }) => lookup?.kind === "report" ? "8109" : null);
   mocks.resolve.mockImplementation(async ({ instId }) => ({ institution: { id: Number(instId ?? 1535), name: instId === "8109" ? "Original saved A" : "Addition research preference" }, source: "artifact", isWorkspaceBank: false }));
 });
@@ -48,4 +51,20 @@ it("does not show profile text as unresolved canonical research metadata", async
   mocks.resolve.mockResolvedValue({ institution: null, source: "none", isWorkspaceBank: false });
   const value = await props();
   expect(value.institutionContext).toMatchObject({ name: null, type: null, assetTier: null, fedDistrict: null, selectedSource: "none" });
+});
+
+it("names a pending link request in the bar when the account has no membership (id as text)", async () => {
+  // postgres.js returns users.id (bigint) as a string.
+  mocks.user.mockResolvedValue({ id: "26", role: "premium", subscription_status: "active", institution_name: "Capital City Bank" });
+  mocks.account.mockResolvedValue({ status: "unlinked", institution: null });
+  mocks.pendingLink.mockResolvedValue({ institutionName: "Capital City Bank", emailConfirmed: true, needsInfo: false });
+  const value = await props();
+  expect(mocks.pendingLink).toHaveBeenCalledWith("db", "26");
+  expect(value.pendingInstitution).toEqual({ name: "Capital City Bank", needsInfo: false });
+});
+
+it("does not read a pending request once a membership links the account", async () => {
+  const value = await props();
+  expect(mocks.pendingLink).not.toHaveBeenCalled();
+  expect(value.pendingInstitution).toBeNull();
 });

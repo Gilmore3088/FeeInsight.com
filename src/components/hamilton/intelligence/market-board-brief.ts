@@ -7,6 +7,7 @@ import type { AssetSize } from "@/lib/hamilton/asset-size";
 import type { MarketBriefInput } from "@/lib/hamilton/board-brief";
 import type { ReportExhibit } from "@/lib/hamilton/types";
 import { readFindings, type Loaded } from "./IntelligenceWorkspace";
+import { feeScheduleUrls, statedFeeText } from "@/lib/own-fee";
 
 const CHARTER_LABEL: Record<LandingResearchHandoff["charter"], string> = { all: "Banks & credit unions", bank: "Banks", credit_union: "Credit unions" };
 const dollars = (v: number | null | undefined) => v == null ? "Unavailable" : new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(v);
@@ -44,18 +45,20 @@ export function marketBoardBriefInput(selection: LandingResearchHandoff, data: L
     exhibits.push({
       id: "local_market", title: `Largest institutions in ${place}: ${getDisplayName(primary)}`, subtitle: `${Math.min(10, data.peers.rows.length)} of ${data.peers.institutionsInScope.toLocaleString()} in scope, largest by assets`,
       columns: ["Institution", "Assets", getDisplayName(primary), "Fee schedule"],
-      rows: data.peers.rows.slice(0, 10).map(r => [r.name, formatAssets(r.totalAssets), dollars(r.amount), r.documentUrl ?? "No link"]),
-      note: "Assets from FDIC and NCUA filings. Each amount links to the schedule it was read from.",
+      rows: data.peers.rows.slice(0, 10).map(r => [r.name, formatAssets(r.totalAssets), statedFeeText(r.amount, r.several, dollars), feeScheduleUrls(r.documentUrls, r.documentUrl).join("; ") || "No link"]),
+      note: "Assets from FDIC and NCUA filings. Named rows show stated prices or their range and fee names, with the stored schedule links behind them.",
     });
   }
-  if (lenses.includes("financials") && data.revenue?.quarters.length) {
+  if (lenses.includes("financials")) for (const group of data.financialGroups ?? []) {
+    if (!group.revenue?.quarters.length) continue;
+    const label = group.source === "ncua" ? "Broad credit-union fee income" : "Bank deposit service-charge income";
     exhibits.push({
-      id: "fee_income_trend", title: "Deposit service-charge income, United States", subtitle: "Latest four quarters, USD billions",
-      columns: ["Quarter", "All filers", "Banks", "Credit unions", "Year over year"],
-      rows: data.revenue.quarters.slice(0, 4).map(q => [q.quarter, `$${(q.total_service_charges / 1_000_000).toFixed(2)}B`, `$${(q.bank_service_charges / 1_000_000).toFixed(2)}B`, `$${(q.cu_service_charges / 1_000_000).toFixed(2)}B`, q.yoy_change_pct == null ? "Unavailable" : `${q.yoy_change_pct > 0 ? "+" : ""}${q.yoy_change_pct.toFixed(1)}%`]),
-      note: state ? "A state total is not available yet; this is the national figure." : null,
+      id: `fee_income_trend_${group.source}`, title: `${label}, United States`, subtitle: "Latest four standalone quarters, USD billions",
+      columns: ["Quarter", label, "Year over year", "Reporting institutions"],
+      rows: group.revenue.quarters.slice(0, 4).map(q => [q.quarter, `$${(q.total_service_charges / 1_000_000).toFixed(2)}B`, q.yoy_change_pct == null ? "Unavailable" : `${q.yoy_change_pct > 0 ? "+" : ""}${q.yoy_change_pct.toFixed(1)}%`, String(q.total_institutions)]),
+      note: `${group.definition.definition}. Reporting populations can change. ${state ? "A state total is not available; this is national." : ""}`,
     });
-    sources.push({ label: "FDIC Call Reports (RIAD 4080) and NCUA 5300 filings", detail: `Latest quarter: ${data.revenue.quarters[0].quarter}`, url: null });
+    sources.push({ label: group.definition.publisher, detail: `Latest quarter: ${group.revenue.quarters[0].quarter}; standalone quarterly income, all asset sizes, canonical ${group.definition.charter_type} filers`, url: null });
   }
 
   const findings = readFindings(data, state ? place : "the United States", state, primary).filter(f => lenses.includes(f.lens));

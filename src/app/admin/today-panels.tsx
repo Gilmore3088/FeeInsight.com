@@ -3,6 +3,7 @@ import type { NeedsYouItem } from "@/lib/console/needs-you";
 import type { SpendLine } from "@/lib/data-store/console-spend";
 import type { ScoreboardSnapshotRow } from "@/lib/data-store/answer-key";
 import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
+import { accuracyStatusLabel } from "@/lib/agents/deming/accuracy-measure";
 
 const SEVERITY_STRIPE: Record<NeedsYouItem["severity"], string> = {
   critical: "bg-red-500",
@@ -147,9 +148,9 @@ export function todayVitals(snapshot: ScoreboardSnapshotRow | null, spend: Vital
   const wrong = goal?.wrongAfterPublish;
   return [
     {
-      label: "Accuracy, 7 days",
+      label: "Stored-copy audit, 7 days",
       value: pct(accuracy?.accuracy),
-      note: accuracy?.accuracy != null ? `target ${ACCURACY_TARGET_LABEL}, ${accuracy.scorable.toLocaleString("en-US")} fees audited${asOf}` : missing,
+      note: accuracy?.accuracy != null ? `target ${ACCURACY_TARGET_LABEL}: ${accuracyStatusLabel(accuracy)}${asOf}` : missing,
       href: "/admin/scoreboard",
     },
     {
