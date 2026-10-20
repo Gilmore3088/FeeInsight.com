@@ -388,9 +388,13 @@ async function executeAgenticStep(
     const uncheckedPart = synced.uncheckedError
       ? `woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees, but the read failed for ${synced.uncheckedFailedStates.length > 0 ? `${synced.uncheckedFailedStates.length} state(s) (${synced.uncheckedFailedStates.join(", ")})` : "every state"} (${synced.uncheckedError})`
       : `woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees`;
+    // States the time budget left unread are named as not checked this run, never as nothing due.
+    const skippedPart = synced.uncheckedSkippedStates.length > 0
+      ? ` (${synced.uncheckedSkippedStates.length} state(s) not checked this run, time budget spent: ${synced.uncheckedSkippedStates.join(", ")})`
+      : "";
     return {
       status: "completed",
-      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); ${uncheckedPart} and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
+      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); ${uncheckedPart}${skippedPart} and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
       detail: {
         lanes_touched: synced.profiles.lanesTouched,
         profiles_touched: synced.profiles.profilesTouched,
@@ -398,6 +402,7 @@ async function executeAgenticStep(
         unchecked_woken: synced.uncheckedWoken,
         unchecked_wake_error: synced.uncheckedError,
         unchecked_failed_states: synced.uncheckedFailedStates,
+        unchecked_skipped_states: synced.uncheckedSkippedStates,
         second_look_woken: synced.secondLookWoken,
         priorities_updated: synced.priorities.updated,
         priorities_error: synced.priorities.error,
