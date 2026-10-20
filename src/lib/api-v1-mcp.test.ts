@@ -73,6 +73,15 @@ describe("MCP connector", () => {
     expect(body.result.instructions).toContain("do not infer it from conversation history or memory");
   });
 
+  it("tells the connector the combined revenue fields are deprecated and names by_regulator", async () => {
+    const response = await handleMcpPost(rpc({ jsonrpc: "2.0", id: 1, method: "initialize" }), handlers());
+    const { instructions } = (await response.json()).result;
+
+    expect(instructions).toMatch(/combined[^.]*fields[^.]*deprecated/);
+    expect(instructions).toContain("by_regulator");
+    expect(instructions).toContain("never to be added together");
+  });
+
   it("answers an initialized notification with 202 and no body", async () => {
     const response = await handleMcpPost(rpc({ jsonrpc: "2.0", method: "notifications/initialized" }), handlers());
 

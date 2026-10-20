@@ -12,9 +12,12 @@
 // build failure there surfaces at the production deploy, which keeps the last good version.
 import { spawnSync } from "node:child_process";
 
-const VISIBLE_DIRS = ["src/app/", "src/components/", "public/"];
+// Library code that only feeds public pages (page-data loaders, guide content, chart styling) and
+// the brand kit change what a visitor sees as surely as a page does (#2508 review). Agents and the
+// data store stay out: they reach pages only through these loaders or the database.
+const VISIBLE_DIRS = ["src/app/", "src/components/", "public/", "src/brand/", "src/lib/guides/", "src/lib/charts/"];
 const VISIBLE_SUFFIXES = [".css", ".scss"];
-const VISIBLE_ROOT_FILES = ["package.json", "package-lock.json", "vercel.json"];
+const VISIBLE_ROOT_FILES = ["package.json", "package-lock.json", "vercel.json", "src/proxy.ts", "src/lib/public-stats.ts"];
 const VISIBLE_ROOT_CONFIG = /^(next|tailwind|postcss)\.config\.[a-z]+$/;
 const NEVER_VISIBLE_SUFFIXES = [".md", ".test.ts", ".test.tsx"];
 const MAIN_REF = "refs/remotes/origin/main";
