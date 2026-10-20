@@ -9,7 +9,9 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 clean up data". Hamilton's newer-copy check judges every pair it decided under v1 again under the
 current guards (#2477). Prod dry run before merge, read-only: 772 pairs, 8 live fees retired at 2
 institutions, 0 restores; a proposed re-price rule was dropped after it retired 0 in the same dry
-run and review found it could take down prices a page still states. Retired fees keep the existing restore path.
+run and review found it could take down prices a page still states. Retired fees keep the existing restore path. **Reverted the same day before any fee retired:** a hand check
+showed Jeanne D'Arc FCU's current copy is a fee-changes notice page whose full schedule is a linked PDF, and
+two of the six fees v2 would retire there (64221, 93814) are still charged; v1 pairs stay closed again.
 
 **One front door for decisions and lessons.** James, 2026-10-20: "we need one central doc". One
 front door, `docs/project/LESSONS.md`, indexes every decision and lesson: one line per entry here,
