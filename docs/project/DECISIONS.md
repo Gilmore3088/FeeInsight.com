@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**Previews build only for PRs that change visible files.** James, 2026-10-20: previews build only
+for PRs that change visible files (src/app, src/components, styles, public, build config,
+dependencies); a build failure in a non-visible PR surfaces at the production deploy, which keeps
+the last good version. The allowlist is `isVisiblePath` in `scripts/vercel-ignore-build-lib.mjs`;
+production, a missing merge-base and any error still build. CLAUDE.md's "Vercel builds a preview
+for every PR" line changed to match, with James's approval.
+
 **Newer-copy check v2 reopens every settled pair.** James, 2026-10-20: "complete all steps and
 clean up data". Hamilton's newer-copy check judges every pair it decided under v1 again under the
 current guards (#2477). Prod dry run before merge, read-only: 772 pairs, 8 live fees retired at 2

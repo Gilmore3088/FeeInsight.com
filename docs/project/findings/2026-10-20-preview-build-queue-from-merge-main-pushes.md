@@ -26,8 +26,16 @@ push into a PR that changes pages still builds, since the preview has to show ma
 Draft PRs still build: Vercel's ignore step has no draft flag and no GitHub token; that stays on
 #1048. The sitemap was moved to on-request rendering in #2480.
 
+**Update (James, 2026-10-20, DECISIONS.md):** previews build only for PRs that change what someone
+sees. `isVisiblePath` in `scripts/vercel-ignore-build-lib.mjs` is the one allowlist: `src/app/`,
+`src/components/`, `public/`, any `.css`/`.scss`, `next`/`tailwind`/`postcss` config,
+`package.json`, `package-lock.json` and `vercel.json` (tests and `.md` files excluded). Library,
+agent, script, doc, test, migration and CI changes skip the preview; a build failure in such a PR
+surfaces at the production deploy, which keeps the last good version. Production, a missing
+merge-base and any error still build.
+
 **Lesson:** Merge `main` into a branch only when CLAUDE.md says to (a conflict, a dependency, a
 new migration); each merge push into a PR that ships code costs a full preview build.
 
-**Guard:** `scripts/vercel-ignore-build.test.ts:181` (a merge-main push into a docs-only PR skips;
-`:189` an empty retry after a failed page build builds; `:214` production always builds)
+**Guard:** `scripts/vercel-ignore-build.test.ts:233` (a merge-main push into a docs-only PR skips;
+`:241` an empty retry after a failed page build builds; `:290` production always builds)

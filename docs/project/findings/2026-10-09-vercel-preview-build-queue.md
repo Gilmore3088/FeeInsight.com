@@ -30,4 +30,4 @@ next merge of `origin/main`.
 Not visible from GitHub: Vercel's own queue, its concurrency setting, and whether "Prioritize
 Production Builds" is on. Those live in the Vercel dashboard.
 
-**Guard:** `scripts/vercel-ignore-build.test.ts:70` (a push that changes only docs or tests since the last successful deployment skips; `:214` production always builds)
+**Guard:** `scripts/vercel-ignore-build.test.ts:91` (a push that changes only docs or tests since the last successful deployment skips; `:290` production always builds)

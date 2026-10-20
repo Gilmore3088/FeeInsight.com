@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { decideBuild, exitCodeFor, isShippedPath } from "./vercel-ignore-build-lib.mjs";
+import { decideBuild, exitCodeFor, isVisiblePath } from "./vercel-ignore-build-lib.mjs";
 
 /**
  * 2026-10-20-preview-build-queue-from-merge-main-pushes: the old ignoreCommand diffed HEAD^..HEAD,
@@ -12,28 +12,49 @@ import { decideBuild, exitCodeFor, isShippedPath } from "./vercel-ignore-build-l
  * skipped (and showed as a pass). The skip now depends on the PR's own change against its
  * merge-base with main and on what changed since the branch's last successful deployment.
  */
-describe("isShippedPath", () => {
-  it("treats docs, tests, agent code, scripts and tooling folders as not shipped", () => {
+describe("isVisiblePath", () => {
+  it("treats pages, components, styles, public files, build config and dependencies as visible", () => {
     for (const path of [
+      "src/app/(public)/about/page.tsx",
+      "src/app/api/v1/fees/route.ts",
+      "src/components/site-header.tsx",
+      "src/app/globals.css",
+      "Reports/studio/print.css",
+      "src/styles/x.scss",
+      "public/logo.svg",
+      "next.config.ts",
+      "postcss.config.mjs",
+      "tailwind.config.ts",
+      "package.json",
+      "package-lock.json",
+      "vercel.json",
+    ]) {
+      expect(isVisiblePath(path), path).toBe(true);
+    }
+  });
+
+  it("treats libraries, agents, scripts, docs, tests, migrations and tooling as not visible", () => {
+    for (const path of [
+      "src/lib/fees.ts",
+      "src/lib/agents/knox/read.ts",
+      "src/lib/data-store/search.ts",
       "docs/project/findings/2026-10-20-x.md",
       "README.md",
       "src/app/(public)/about/notes.md",
-      "src/lib/fees.test.ts",
+      "src/app/(public)/about/page.test.tsx",
       "src/components/x.test.tsx",
-      "src/lib/agents/knox/read.ts",
       "scripts/ci-guards.sh",
       "supabase/migrations/20270101000000_x.sql",
       ".github/workflows/ci.yml",
       ".claude/settings.json",
       "handoff/notes.txt",
+      "tests/e2e/home.spec.ts",
+      "vitest.config.ts",
+      "tsconfig.json",
+      "growth-os/package.json",
+      "docs/next.config.ts",
     ]) {
-      expect(isShippedPath(path), path).toBe(false);
-    }
-  });
-
-  it("treats pages, libraries, config and vercel.json as shipped", () => {
-    for (const path of ["src/app/(public)/about/page.tsx", "src/lib/fees.ts", "package.json", "vercel.json", "docsite/x.ts"]) {
-      expect(isShippedPath(path), path).toBe(true);
+      expect(isVisiblePath(path), path).toBe(false);
     }
   });
 });
@@ -50,13 +71,13 @@ describe("decideBuild", () => {
     expect(decideBuild({ vercelEnv: "preview", prFiles: null, sinceLastDeployFiles: [] }).build).toBe(true);
   });
 
-  it("skips a preview whose PR changes nothing that ships, even right after merging main", () => {
+  it("skips a preview whose PR changes nothing visible, even right after merging main", () => {
     // A merge-main push into a docs-only PR: main's new pages are in HEAD^..HEAD but not in the PR.
     expect(decideBuild({ vercelEnv: "preview", prFiles: [doc, "src/lib/x.test.ts"], sinceLastDeployFiles: null }).build).toBe(false);
     expect(decideBuild({ vercelEnv: "preview", prFiles: [], sinceLastDeployFiles: null }).build).toBe(false);
   });
 
-  it("builds a PR that ships code when the branch has no successful deployment yet", () => {
+  it("builds a PR with a visible change when the branch has no successful deployment yet", () => {
     // VERCEL_GIT_PREVIOUS_SHA is unset (first push, or every earlier build failed).
     expect(decideBuild({ vercelEnv: "preview", prFiles: [page], sinceLastDeployFiles: null }).build).toBe(true);
   });
@@ -72,8 +93,39 @@ describe("decideBuild", () => {
     expect(decideBuild({ vercelEnv: "preview", prFiles: [page], sinceLastDeployFiles: [] }).build).toBe(false);
   });
 
-  it("builds a page PR when a push brings shipped code, from the branch or from main", () => {
-    expect(decideBuild({ vercelEnv: "preview", prFiles: [page], sinceLastDeployFiles: [doc, "src/lib/fees.ts"] }).build).toBe(true);
+  it("builds a page PR when a push brings a visible change, from the branch or from main", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: [page], sinceLastDeployFiles: [doc, "src/components/x.tsx"] }).build).toBe(true);
+  });
+
+  // James, 2026-10-20: previews build only for PRs that change visible files.
+  const lib = "src/lib/fees.ts";
+
+  it("skips a PR that changes only library or agent code", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: [lib, "src/lib/agents/knox/read.ts"], sinceLastDeployFiles: null }).build).toBe(false);
+  });
+
+  it("builds a PR that changes a page under src/app", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: [page], sinceLastDeployFiles: null }).build).toBe(true);
+  });
+
+  it("builds a PR that changes only a stylesheet", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: ["src/app/globals.css"], sinceLastDeployFiles: null }).build).toBe(true);
+  });
+
+  it("builds a library PR that changes package.json", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: [lib, "package.json"], sinceLastDeployFiles: null }).build).toBe(true);
+  });
+
+  it("builds a PR that mixes library and page changes", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: [lib, page], sinceLastDeployFiles: null }).build).toBe(true);
+  });
+
+  it("skips a page PR whose push since the last successful deployment changes only library code", () => {
+    expect(decideBuild({ vercelEnv: "preview", prFiles: [page, lib], sinceLastDeployFiles: [lib] }).build).toBe(false);
+  });
+
+  it("always builds production, even for a library-only change", () => {
+    expect(decideBuild({ vercelEnv: "production", prFiles: [lib], sinceLastDeployFiles: [] }).build).toBe(true);
   });
 
   it("explains every decision", () => {
@@ -183,7 +235,7 @@ describe("vercel-ignore-build.mjs", () => {
     commit(work, "docs/a.md");
     commit(origin, "src/app/(public)/new/page.tsx");
     git(work, "pull", "-q", "--no-rebase", "--no-edit", "origin", "main");
-    expect(runInVercelClone(work, { VERCEL_ENV: "preview" })).toMatch(/^0 .*changes nothing that ships/);
+    expect(runInVercelClone(work, { VERCEL_ENV: "preview" })).toMatch(/^0 .*changes nothing visible/);
   });
 
   it("builds an empty retry commit after a page commit whose build failed", () => {
@@ -192,7 +244,7 @@ describe("vercel-ignore-build.mjs", () => {
     commit(work, "src/app/(public)/about/page.tsx");
     git(work, "commit", "-q", "--allow-empty", "-m", "retry");
     expect(runInVercelClone(work, { VERCEL_ENV: "preview", VERCEL_GIT_PREVIOUS_SHA: lastGood })).toMatch(
-      /^1 .*1 shipped file\(s\) changed since the last successful deployment/,
+      /^1 .*1 visible file\(s\) changed since the last successful deployment/,
     );
   });
 
@@ -201,8 +253,32 @@ describe("vercel-ignore-build.mjs", () => {
     const lastGood = commit(work, "src/app/(public)/about/page.tsx");
     commit(work, "docs/b.md");
     expect(runInVercelClone(work, { VERCEL_ENV: "preview", VERCEL_GIT_PREVIOUS_SHA: lastGood })).toMatch(
-      /^0 .*nothing that ships changed since the last successful deployment/,
+      /^0 .*nothing visible changed since the last successful deployment/,
     );
+  });
+
+  it("skips a library-only PR end to end", () => {
+    const { work } = setup();
+    commit(work, "src/lib/fees.ts");
+    expect(runInVercelClone(work, { VERCEL_ENV: "preview" })).toMatch(/^0 .*changes nothing visible/);
+  });
+
+  it("builds a library PR that also changes package.json", () => {
+    const { work } = setup();
+    commit(work, "src/lib/fees.ts");
+    commit(work, "package.json");
+    expect(runInVercelClone(work, { VERCEL_ENV: "preview" })).toMatch(/^1 .*no readable successful deployment/);
+  });
+
+  it("builds a library-only PR when main cannot be fetched", () => {
+    const { work } = setup();
+    commit(work, "src/lib/fees.ts");
+    git(work, "push", "-q", "origin", "feature");
+    const clone = join(dir, "no-remote");
+    git(dir, "clone", "-q", "--depth", "1", "--single-branch", "--branch", "feature", `file://${join(dir, "origin")}`, clone);
+    git(clone, "remote", "remove", "origin");
+    const run = spawnSync("node", [SCRIPT], { cwd: clone, env: { ...env, VERCEL_ENV: "preview" }, encoding: "utf8" });
+    expect(`${run.status} ${run.stdout}`).toMatch(/^1 .*merge-base with main not found/);
   });
 
   it("builds a page PR whose branch has no successful deployment", () => {
@@ -232,7 +308,7 @@ describe("vercel-ignore-build.mjs", () => {
   it("still decides when run through a symlinked path", () => {
     const { work } = setup();
     commit(work, "docs/a.md");
-    expect(runInVercelClone(work, { VERCEL_ENV: "preview" }, symlinkedScript())).toMatch(/^0 .*changes nothing that ships/);
+    expect(runInVercelClone(work, { VERCEL_ENV: "preview" }, symlinkedScript())).toMatch(/^0 .*changes nothing visible/);
   });
 
   it("builds a page PR run through a symlinked path", () => {
