@@ -122,8 +122,9 @@ export const HAND_AMOUNT_CORRECTIONS: readonly HandAmountCorrection[] = [
   },  // #1827 (read-only, Oct 17): Valley Strong CU's safe deposit box table (doc 36716, text 34862)
   // prints the price before the name ("| **$45** | Rental of 3 × 5 Box Annual Fee |"), and Knox gave
   // each rent the next row's price. Each is corrected in place to its own row's price. The shared
-  // check matches a box size loosely, so the wrong read still traces, to the next row's line; the
-  // correction applies only while that exact line is the one it traces to. The five new prices are
+  // check matched a box size loosely, so the wrong read traced, to the next row's line; the
+  // correction applied only while that exact line was the one it traced to. Since #1827's own-row
+  // and size rules (source-check.ts `ownRowRefusal`, `sizeMismatch`) the wrong read does not trace. The five new prices are
   // distinct and no other box rent is live there, so no correction makes a duplicate.
   {
     feePublishedId: 151737, institution: "Valley Strong Credit Union", institutionId: 8637, sourceDocumentId: 36716,

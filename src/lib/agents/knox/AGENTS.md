@@ -291,7 +291,18 @@ read at the next row's $4.95 (raw 851289, 851314, 851354; live 152591 came down 
 was 18 raw rows at 10 banks, 11 of them verified and none live. Name re-tidy v24 renames the live
 names it left: 1 of 2 on Oct 20 (60770). The family pass reads the row the same way, so
 Gunnison's "Wire Fee.......$25.00" under "Incoming Wire.......Free" stays held as unclassified and
-never borrows the incoming direction (doc 17871). v93 follows #2465's v92 and #2470's v91.
+never borrows the incoming direction (doc 17871). v93 follows #2470's v91; #2465 follows it as v94.
+
+v94 (Oct 20, #1827; numbered v92 until #2467 took v93) reads a price-first list with no cells ("$14.00 Safe Deposit Box 3”x5”x22”/Year")
+one fee per line, in the family and table passes (`inPriceFirstListRun`, table v8). The list must
+run two lines or more and must not end in a bare price, so a stacked page ("Overdraft Fee" /
+"$30.00 Stop Payment Fee" / ... / "$5.00") is still read as stacked. A range row ("$5-$15 | Levy")
+no longer names the row under it. A heading never takes the price of a price-first line that names
+its own fee. Before this, each Colby box took the next size's price (doc 37839, live 99157 and
+99158) and the levy took the garnishment's $20 (doc 2491). The stale-read floor stays at v78.
+Source check v19 refuses the Colby boxes and most of doc 2491's live reads, so they come down
+through Hamilton's source check. The levy (141206) stays live: on its full page the check reads
+"$5-$15" as a tiered fee, which traces.
 
 v91 (Oct 20, #1829, #1830) reads a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic
 only)") as document reproduction (`FAX_SERVICE`, fold v19). "Domestic" there is where the fax
@@ -1752,7 +1763,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v24 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v93 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v94 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

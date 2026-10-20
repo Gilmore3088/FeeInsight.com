@@ -13,6 +13,7 @@ import {
 import {
   cleanFeeName,
   composableTail,
+  inPriceFirstListRun,
   inPriceFirstRun,
   STOP_PAYMENT_ITEM_WORDS,
   LEADING_VALUE,
@@ -40,7 +41,9 @@ import {
 
 // v7 (#1827): a price-first cell row ("$10 | Replacement Debit Card") under a name line, or a
 // price-first line under a name that says its price varies, is the row of the name after its price.
-export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 7 } as const;
+// v8 (#1827): a cell-less price-first list in a run of two lines or more ("$14.00 Safe Deposit Box
+// 3”x5”x22”/Year") is read one fee per line, so no box takes the next size's price.
+export const KNOX_TABLE_STRATEGY = { strategy: "extract.table", version: 8 } as const;
 
 export interface KnoxTableRow {
   cells: string[];
@@ -89,8 +92,11 @@ export function tableRowsFromText(text: string): KnoxTableRow[] {
     // Cross-border transaction fee": a two-column page), and so does a line with a second price.
     // A lone price-first cell row under a name line keeps the old reading: a two-column page's right
     // column or a description cell ("Overdraft Fee" / "$35.00 | Stop Payment Fee" / "Per item | $30.00").
+    // v8: a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
+    // Deposit Box 3”x5”x22”/Year") is read the same way when it runs two lines or more (`inPriceFirstListRun`).
     if (lead && pendingName && !runsOn(pendingName) && amountsIn(line).length === 1 &&
-      ((line.includes(CELL_SEPARATOR) && inPriceFirstRun(lines, index)) || statesItsPriceVaries(pendingName))) {
+      ((line.includes(CELL_SEPARATOR) && inPriceFirstRun(lines, index)) ||
+        (!line.includes(CELL_SEPARATOR) && inPriceFirstListRun(lines, index)) || statesItsPriceVaries(pendingName))) {
       const rest = line.slice(lead[0].length);
       const qualifier = rest.match(QUALIFIER)?.[0] ?? "";
       const own = nameAfterPrice(rest.slice(qualifier.length));

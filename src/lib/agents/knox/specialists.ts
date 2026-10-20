@@ -159,9 +159,15 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // the row under it, in the rules or the family passes, and a name never runs on from it
 // ("Reconveyance .. Actual Cost: Returned payment" was read at the next row's $4.95, Oregon
 // Community FCU, doc 19849; Gunnison's "Wire Fee" $25 never borrows the free incoming wire's
-// direction). Follows #2465's v92 and #2470's v91. The stale-read floor stays at v78; name re-tidy
+// direction). Follows #2470's v91; #2465 is v94. The stale-read floor stays at v78; name re-tidy
 // v24 renames the live names it left.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 93 } as const;
+// v94 (#1827; numbered v92 until #2467 took v93): a cell-less price-first list ("$100.00 Safe
+// Deposit Box Drilling/Per Box" / "$14.00 Safe Deposit Box 3”x5”x22”/Year") is read one fee per line when it runs two lines or more and no bare
+// price closes it, a range row ("$5-$15 | Levy") never names the row under it, and a heading never
+// takes the price of a price-first line that names its own fee. Before, each box took the next
+// size's price (Colby, doc 37839) and the levy took the garnishment's $20 (doc 2491). The stale-read
+// floor stays at v78; the shared source check (v19) takes the wrong live reads down.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 94 } as const;
 
 export interface SpecialistRun {
   strategy: string;
