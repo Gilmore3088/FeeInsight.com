@@ -73,8 +73,9 @@ import {
   deletePeerSet, getDefaultPeerSets, getSavedPeerSetById, getSavedPeerSets, savePeerSet, setDefaultPeerSet, updatePeerSet,
 } from "@/lib/data-store/saved-peers";
 import { addAlertSubscription, getAlertSubscriptions } from "@/lib/data-store/alerts";
-import { isReportRevoked } from "@/lib/data-store/report-payments";
-import { createReportToken, verifyReportToken } from "@/lib/custom-report/link";
+import { isPurchaseLive, isReportRevoked } from "@/lib/data-store/report-payments";
+import { createPurchaseReportToken, createReportToken, verifyReportToken } from "@/lib/custom-report/link";
+import { reportLinkOpens } from "@/lib/custom-report/link-access";
 import { getPaidReports } from "@/app/account/account-data";
 import { getHamiltonReportById, getHamiltonScenarioById, getRecentHamiltonReports, saveHamiltonReport } from "./pro-tables";
 import { appendMessage, createConversation, listConversations, loadConversationHistory } from "./chat-memory";
@@ -442,7 +443,7 @@ describe.skipIf(!env.url)("Hamilton customer data isolation in isolated PostgreS
       expect(await getPaidReports(`iso${B}@example.test`)).toEqual([]);
     });
 
-    it("closes a refunded link, but keeps it open while another buyer of the same bank has paid (link is per bank, not per buyer)", async () => {
+    it("closes a refunded legacy bank link, but keeps it open while another buyer of the same bank has paid (it names the bank, not the buyer)", async () => {
       await db`DELETE FROM leads WHERE email LIKE 'iso99220%@example.test'`;
       const [first] = await db`INSERT INTO leads (name, email, source, quote_institution_id, quote_amount_cents, paid_at, refunded_at)
                                VALUES ('Buyer A', ${`iso${A}@example.test`}, 'report', ${X}, 30000, NOW(), NOW()) RETURNING id`;
@@ -455,6 +456,25 @@ describe.skipIf(!env.url)("Hamilton customer data isolation in isolated PostgreS
       expect(verifyReportToken(token)?.institutionId).toBe(X);
       expect(await getPaidReports(`iso${A}@example.test`)).toEqual([]);
       await db`DELETE FROM leads WHERE id = ${first.id}`;
+    });
+
+    it("closes a refunded buyer's purchase link even while another buyer of the same bank has paid (#2000)", async () => {
+      await db`DELETE FROM leads WHERE email LIKE 'iso99220%@example.test'`;
+      const [refunded] = await db`INSERT INTO leads (name, email, source, quote_institution_id, quote_amount_cents, paid_at, refunded_at)
+                                  VALUES ('Buyer A', ${`iso${A}@example.test`}, 'report', ${X}, 30000, NOW(), NOW()) RETURNING id`;
+      const [live] = await db`INSERT INTO leads (name, email, source, quote_institution_id, quote_amount_cents, paid_at)
+                              VALUES ('Buyer B', ${`iso${B}@example.test`}, 'report', ${X}, 30000, NOW()) RETURNING id`;
+      const refundedLink = verifyReportToken(createPurchaseReportToken(X, Number(refunded.id)) as string);
+      const liveLink = verifyReportToken(createPurchaseReportToken(X, Number(live.id)) as string);
+      expect(refundedLink && (await reportLinkOpens(refundedLink))).toBe(false);
+      expect(liveLink && (await reportLinkOpens(liveLink))).toBe(true);
+      // A live payment for one bank does not open a link signed for another bank.
+      expect(await isPurchaseLive(Number(live.id), Y)).toBe(false);
+      // The account page lists the live buyer's purchase link only.
+      const [listed] = await getPaidReports(`iso${B}@example.test`);
+      expect(listed.href).toContain(`-p${live.id}-`);
+      expect(await getPaidReports(`iso${A}@example.test`)).toEqual([]);
+      await db`DELETE FROM leads WHERE id IN (${refunded.id}, ${live.id})`;
     });
 
     it("is not tied to a Pro subscription: cancelling one leaves a paid link open until it expires", async () => {
