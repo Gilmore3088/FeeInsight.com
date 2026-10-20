@@ -1161,3 +1161,11 @@ describe("brandCased (v20)", () => {
     expect(brandCased("MyChance Checking fee", "2A MyChance Checking fee")).toBeNull();
   });
 });
+
+describe("v24: a name that runs on from a row priced in words (#1828)", () => {
+  it("starts the name after the row, and leaves a remainder that names no fee", () => {
+    // Live 60770 (doc 18014) and 36649 (doc 2990), Oct 20.
+    expect(retidiedFeeName("Check Collection...............................................................Varies | Plastic Card Rush Order", "rush_card")).toBe("Plastic Card Rush Order");
+    expect(retidiedFeeName("Check Orders ...............................................................................................Varies | IRA", "ira_termination")).toBeNull();
+  });
+});
