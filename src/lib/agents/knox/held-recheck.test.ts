@@ -821,14 +821,17 @@ describe("held range lines that are deposit or loan rate bands, not fees (#1102)
     expect(isRangeBand(row)).toBe(band);
   });
 
-  it("is switched off: counts the bands and writes nothing", async () => {
-    expect(RANGE_BAND_SET_ASIDE_LIVE).toBe(false);
+  it("ships switched on (sampled clean, Oct 20)", () => {
+    expect(RANGE_BAND_SET_ASIDE_LIVE).toBe(true);
+  });
+
+  it("switched off: counts the bands and writes nothing", async () => {
     const db = createDb([tier, apy, range(5, "Tier 1 | $50.00 - $149.99 | $2.00")]);
-    const result = await setAsideRangeBands(db as never, { stateCode: "tx" });
+    const result = await setAsideRangeBands(db as never, { stateCode: "tx", live: false });
     expect(result).toMatchObject({ live: false, dryRun: true, checked: 3, bands: 2, institutions: 2, setAside: 0 });
     // The uncapped lane count comes from the query itself, not from the rows read.
     const counted = createDb([{ ...tier, candidates: "5047" }]);
-    expect(await setAsideRangeBands(counted as never)).toMatchObject({ candidates: 5047, checked: 1 });
+    expect(await setAsideRangeBands(counted as never, { live: false })).toMatchObject({ candidates: 5047, checked: 1 });
     expect(result.examples.map((example) => example.feeRawId)).toEqual([1, 3]);
     expect(db.mock.calls.some(([strings]) => /UPDATE|INSERT/.test(templateText(strings)))).toBe(false);
   });
