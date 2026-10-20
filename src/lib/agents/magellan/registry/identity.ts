@@ -262,33 +262,147 @@ export async function upsertIdentityLinks(
   `;
 }
 
+/**
+ * Every institution a name could belong to: the banks whose own or parent's short name matches,
+ * and the banks of a parent whose full name matches. The reviewer's candidate list for a link
+ * (the matcher stores only how many there were), largest first.
+ */
+export function identityCandidatesFor(name: string, index: IdentityIndex): IdentityCandidate[] {
+  const found = new Map<number, IdentityCandidate>();
+  for (const list of [index.byName.get(normalizeCompanyName(name)), index.byHoldingName?.get(fullCompanyKey(name))]) {
+    for (const candidate of list ?? []) if (!found.has(candidate.id)) found.set(candidate.id, candidate);
+  }
+  return [...found.values()].sort((a, b) => b.assetSize - a.assetSize);
+}
+
 /** Registry source whose past partitions must re-run when a link of this type is accepted by hand. */
 const BACKFILL_SOURCE: Record<IdentityLinkType, string> = { cfpb_company: "cfpb", sec_cik: "sec-filings" };
 
+export type IdentityDecision = "accept" | "reject" | "reset";
+
+/** Most links one bulk accept or reject on the review screen may decide. */
+export const IDENTITY_REVIEW_BULK_LIMIT = 50;
+
+export interface IdentityDecisionInput {
+  linkId: number;
+  decision: IdentityDecision;
+  /** Accept only: point the link at this institution instead of the matcher's guess. */
+  institutionId?: number | null;
+  note?: string | null;
+  reviewer: { id: number; username: string };
+}
+
+export interface IdentityDecisionResult {
+  linkId: number;
+  linkType: IdentityLinkType;
+  externalKey: string;
+  before: { institutionId: number | null; status: string };
+  after: { institutionId: number | null; status: string };
+}
+
+const NEXT_STATUS: Record<IdentityDecision, "accepted" | "rejected" | "needs_review"> = {
+  accept: "accepted",
+  reject: "rejected",
+  reset: "needs_review",
+};
+
 /**
- * A person accepts or rejects a link waiting for review. verified_by keeps matcher runs from
- * changing it later. Accepting makes that source's loaded partitions due again, so the next
- * ticks backfill the company's history (past CFPB years are otherwise not re-pulled for months).
+ * A person accepts (optionally re-pointing), rejects or resets one identity link. Run it inside a
+ * transaction: it locks the link, writes the decision and an audit row in agent_events (the
+ * record the Knox review screens kept), and keeps what the link drives in step:
+ * - verified_by is set on accept and reject, so matcher runs never change the link again; reset
+ *   clears it and hands the link back to the matcher as needs_review.
+ * - An SEC link moves institution_sources.sec_cik with it: off every institution that carried
+ *   this CIK, then (accept only) onto the chosen bank and the banks sharing its parent, the same
+ *   spread the SEC links worker uses. The holding-company card follows sec_cik.
+ * - Accepting makes that source's loaded partitions due again, so the next ticks backfill the
+ *   company's history (past CFPB years are otherwise not re-pulled for months).
+ * Complaint rows already written through a link stay on reject; removing them is undecided.
+ * Returns null when the link does not exist; throws when an accept has no institution to point at.
  */
-export async function decideIdentityLink(
-  db: RegistryDb,
-  input: { linkType: IdentityLinkType; externalKey: string; decision: "accepted" | "rejected"; verifiedBy: string },
-): Promise<boolean> {
-  const updated = await db`
-    UPDATE institution_identity_links
-       SET status = ${input.decision}, verified_by = ${input.verifiedBy}, updated_at = NOW()
-     WHERE link_type = ${input.linkType} AND external_key = ${input.externalKey} AND status = 'needs_review'
-    RETURNING id
+export async function applyIdentityDecision(db: RegistryDb, input: IdentityDecisionInput): Promise<IdentityDecisionResult | null> {
+  const [link] = await db<Array<{ id: number; link_type: IdentityLinkType; external_key: string; institution_id: number | null; status: string }>>`
+    SELECT id, link_type, external_key, institution_id, status
+      FROM institution_identity_links
+     WHERE id = ${input.linkId}
+     FOR UPDATE
   `;
-  if ([...updated].length === 0) return false;
-  if (input.decision === "accepted") {
+  if (!link) return null;
+  const status = NEXT_STATUS[input.decision];
+  const beforeInstitution = link.institution_id === null ? null : Number(link.institution_id);
+  let institutionId = beforeInstitution;
+  if (input.decision === "accept") {
+    institutionId = input.institutionId ?? beforeInstitution;
+    if (institutionId === null) throw new Error("Choose an institution before accepting this link.");
+    const [target] = await db<Array<{ id: number }>>`SELECT id FROM institution_sources WHERE id = ${institutionId}`;
+    if (!target) throw new Error(`Institution #${institutionId} was not found.`);
+  }
+  const note = input.note?.trim() || null;
+  const review = JSON.stringify({
+    review_decision: input.decision,
+    review_note: note,
+    reviewed_by: input.reviewer.username,
+    reviewed_at: new Date().toISOString(),
+  });
+
+  if (input.decision === "accept") {
+    await db`
+      UPDATE institution_identity_links
+         SET status = 'accepted', institution_id = ${institutionId}, confidence = 1, method = 'manual',
+             verified_by = ${input.reviewer.username}, detail = detail || ${review}::jsonb, updated_at = NOW()
+       WHERE id = ${link.id}
+    `;
+  } else {
+    await db`
+      UPDATE institution_identity_links
+         SET status = ${status}, verified_by = ${input.decision === "reset" ? null : input.reviewer.username},
+             detail = detail || ${review}::jsonb, updated_at = NOW()
+       WHERE id = ${link.id}
+    `;
+  }
+
+  if (link.link_type === "sec_cik") {
+    await db`UPDATE institution_sources SET sec_cik = NULL WHERE sec_cik = ${link.external_key}`;
+    if (input.decision === "accept") {
+      await db`
+        UPDATE institution_sources s SET sec_cik = ${link.external_key}
+          FROM institution_sources anchor
+         WHERE anchor.id = ${institutionId}
+           AND (s.id = anchor.id OR (anchor.holding_company_rssd IS NOT NULL AND s.holding_company_rssd = anchor.holding_company_rssd))
+      `;
+    }
+  }
+  if (input.decision === "accept") {
     await db`
       UPDATE registry_ingest_partitions
          SET next_attempt_after = NOW(), updated_at = NOW()
-       WHERE source = ${BACKFILL_SOURCE[input.linkType]} AND status IN ('succeeded', 'empty')
+       WHERE source = ${BACKFILL_SOURCE[link.link_type]} AND status IN ('succeeded', 'empty')
     `;
   }
-  return true;
+
+  const result: IdentityDecisionResult = {
+    linkId: Number(link.id),
+    linkType: link.link_type,
+    externalKey: link.external_key,
+    before: { institutionId: beforeInstitution, status: link.status },
+    after: { institutionId, status },
+  };
+  const audit = JSON.stringify({
+    reviewer_id: input.reviewer.id,
+    reviewer: input.reviewer.username,
+    decision: input.decision,
+    link_type: link.link_type,
+    external_key: link.external_key,
+    before: result.before,
+    after: result.after,
+    note,
+  });
+  await db`
+    INSERT INTO agent_events (agent_name, action, tool_name, entity, entity_id, status, input_payload)
+    VALUES ('_human_review', ${`identity_link_${input.decision}`}, 'registry_identity_review_ui',
+            'institution_identity_links', ${String(link.id)}, 'success', ${audit}::jsonb)
+  `;
+  return result;
 }
 
 /** external_key -> institution_id for links that may be used for data. */

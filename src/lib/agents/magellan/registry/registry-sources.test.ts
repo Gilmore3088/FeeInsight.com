@@ -7,7 +7,7 @@ import { beigeEmptyRetryHours, expectedLatestPeriod, FED_INDICATORS_PARSER_VERSI
 import { STRUCK_FRED_SERIES } from "@/lib/data-store/struck-sources";
 import { sdmxPackage } from "@/lib/regulatory/fed-board-fixtures";
 import { PUBLISHER_INDICATORS } from "@/lib/regulatory/federal-indicators";
-import { decideIdentityLink, matchCompany, type IdentityIndex } from "./identity";
+import { applyIdentityDecision, identityCandidatesFor, matchCompany, upsertIdentityLinks, type IdentityIndex } from "./identity";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
 import { runRegistryNcuaFinancials } from "./ncua-financials";
 import type { RegistryDb } from "./partitions";
@@ -169,20 +169,97 @@ describe("identity matching", () => {
     expect(matchCompany("Progressive Financial Services, Inc.", idx)).toMatchObject({ status: "accepted" });
   });
 
-  it("records a person's decision and re-queues the source's past partitions only on accept", async () => {
-    const accept = createDb([["UPDATE institution_identity_links", () => [{ id: 1 }]]]);
-    await expect(decideIdentityLink(accept.db, { linkType: "cfpb_company", externalKey: "COMMERCE BANK", decision: "accepted", verifiedBy: "james" })).resolves.toBe(true);
-    expect(accept.statements[0].values).toEqual(["accepted", "james", "cfpb_company", "COMMERCE BANK"]);
-    expect(accept.statements[1]).toMatchObject({ text: expect.stringContaining("UPDATE registry_ingest_partitions"), values: ["cfpb"] });
+  it("lists every candidate a name could belong to, by short name and by parent's full name, largest first", () => {
+    const bank = (id: number, name: string, assets: number, via: "institution_name" | "holding_company_name" = "institution_name") =>
+      ({ id, name, holdingCompanyRssd: null, assetSize: assets, via });
+    const idx: IdentityIndex = {
+      byName: new Map([["COMMERCE", [bank(1, "Commerce Bank", 30_000_000), bank(2, "Commerce Bank of Oregon", 500_000)]]]),
+      byHoldingName: new Map([["COMMERCE BANCSHARES", [bank(1, "Commerce Bank", 30_000_000, "holding_company_name"), bank(3, "Commerce Trust", 900_000, "holding_company_name")]]]),
+    };
+    expect(identityCandidatesFor("Commerce Bank", idx).map((c) => c.id)).toEqual([1, 2]);
+    expect(identityCandidatesFor("COMMERCE BANCSHARES", idx).map((c) => c.id)).toEqual(expect.arrayContaining([1, 3]));
+    expect(identityCandidatesFor("Nobody Federal", idx)).toEqual([]);
+  });
+});
 
-    const reject = createDb([["UPDATE institution_identity_links", () => [{ id: 2 }]]]);
-    await decideIdentityLink(reject.db, { linkType: "sec_cik", externalKey: "0000123", decision: "rejected", verifiedBy: "james" });
-    expect(reject.statements).toHaveLength(1);
+describe("identity link review decisions", () => {
+  const reviewer = { id: 7, username: "james" };
+  const linkRow = (overrides: Record<string, unknown> = {}) => ({ id: 41, link_type: "cfpb_company", external_key: "COMMERCE BANK", institution_id: 1, status: "needs_review", ...overrides });
+  const reviewDb = (row: Record<string, unknown> | null, institutionExists = true) =>
+    createDb([
+      ["FROM institution_identity_links", () => (row ? [row] : [])],
+      ["SELECT id FROM institution_sources", () => (institutionExists ? [{ id: 1 }] : [])],
+    ]);
+  const auditOf = (statements: Array<{ text: string; values: unknown[] }>) => {
+    const insert = statements.find((s) => s.text.includes("INSERT INTO agent_events"));
+    return insert ? { action: insert.values[0], entityId: insert.values[1], payload: JSON.parse(String(insert.values[2])) } : null;
+  };
 
-    // Already decided (no needs_review row): nothing else happens.
-    const stale = createDb([]);
-    await expect(decideIdentityLink(stale.db, { linkType: "cfpb_company", externalKey: "X", decision: "accepted", verifiedBy: "james" })).resolves.toBe(false);
-    expect(stale.statements).toHaveLength(1);
+  it("never lets a matcher run overwrite a link a person decided", async () => {
+    const { db, statements } = createDb([]);
+    await upsertIdentityLinks(db, "cfpb_company", [{ externalKey: "X", externalName: "X", match: { institutionId: 1, confidence: 0.5, method: "ambiguous_name", status: "needs_review", candidates: 2 } }], 9);
+    expect(statements[0].text).toContain("ON CONFLICT (link_type, external_key) DO UPDATE");
+    expect(statements[0].text).toMatch(/WHERE institution_identity_links\.verified_by IS NULL\s*$/);
+  });
+
+  it("accepts a CFPB link re-pointed by hand, re-queues past years, and audits before and after", async () => {
+    const { db, statements } = reviewDb(linkRow());
+    const result = await applyIdentityDecision(db, { linkId: 41, decision: "accept", institutionId: 5, note: "Missouri parent", reviewer });
+    expect(result).toEqual({
+      linkId: 41,
+      linkType: "cfpb_company",
+      externalKey: "COMMERCE BANK",
+      before: { institutionId: 1, status: "needs_review" },
+      after: { institutionId: 5, status: "accepted" },
+    });
+    expect(statements[0].text).toContain("FOR UPDATE");
+    const update = statements.find((s) => s.text.includes("UPDATE institution_identity_links"))!;
+    expect(update.text).toContain("method = 'manual'");
+    expect(update.text).toContain("confidence = 1");
+    expect(update.values.slice(0, 2)).toEqual([5, "james"]);
+    expect(JSON.parse(String(update.values[2]))).toMatchObject({ review_note: "Missouri parent", review_decision: "accept" });
+    expect(statements.find((s) => s.text.includes("UPDATE registry_ingest_partitions"))?.values).toEqual(["cfpb"]);
+    expect(statements.some((s) => s.text.includes("sec_cik"))).toBe(false);
+    expect(auditOf(statements)).toMatchObject({
+      action: "identity_link_accept",
+      entityId: "41",
+      payload: { reviewer_id: 7, reviewer: "james", before: { institutionId: 1, status: "needs_review" }, after: { institutionId: 5, status: "accepted" }, note: "Missouri parent" },
+    });
+  });
+
+  it("moves sec_cik with an accepted SEC link and takes it off on reject", async () => {
+    const accept = reviewDb(linkRow({ link_type: "sec_cik", external_key: "0000123" }));
+    await applyIdentityDecision(accept.db, { linkId: 41, decision: "accept", reviewer });
+    const secWrites = accept.statements.filter((s) => s.text.includes("sec_cik"));
+    expect(secWrites[0]).toMatchObject({ text: expect.stringContaining("SET sec_cik = NULL WHERE sec_cik ="), values: ["0000123"] });
+    expect(secWrites[1].text).toContain("holding_company_rssd = anchor.holding_company_rssd");
+    expect(secWrites[1].values).toEqual(["0000123", 1]);
+
+    const reject = reviewDb(linkRow({ link_type: "sec_cik", external_key: "0000123", status: "accepted" }));
+    await applyIdentityDecision(reject.db, { linkId: 41, decision: "reject", note: "Different bank", reviewer });
+    expect(reject.statements.filter((s) => s.text.includes("sec_cik"))).toHaveLength(1);
+    expect(reject.statements.some((s) => s.text.includes("registry_ingest_partitions"))).toBe(false);
+    expect(auditOf(reject.statements)?.payload).toMatchObject({ before: { status: "accepted" }, after: { institutionId: 1, status: "rejected" }, note: "Different bank" });
+  });
+
+  it("resets a decided link back to the matcher by clearing verified_by", async () => {
+    const { db, statements } = reviewDb(linkRow({ status: "rejected" }));
+    await applyIdentityDecision(db, { linkId: 41, decision: "reset", reviewer });
+    const update = statements.find((s) => s.text.includes("UPDATE institution_identity_links"))!;
+    expect(update.values.slice(0, 2)).toEqual(["needs_review", null]);
+    expect(auditOf(statements)?.action).toBe("identity_link_reset");
+  });
+
+  it("writes nothing for a missing link, and refuses an accept with no institution to point at", async () => {
+    const missing = reviewDb(null);
+    await expect(applyIdentityDecision(missing.db, { linkId: 99, decision: "reject", reviewer })).resolves.toBeNull();
+    expect(missing.statements).toHaveLength(1);
+
+    const noTarget = reviewDb(linkRow({ institution_id: null }));
+    await expect(applyIdentityDecision(noTarget.db, { linkId: 41, decision: "accept", reviewer })).rejects.toThrow(/Choose an institution/);
+    const gone = reviewDb(linkRow(), false);
+    await expect(applyIdentityDecision(gone.db, { linkId: 41, decision: "accept", institutionId: 404, reviewer })).rejects.toThrow(/not found/);
+    expect(gone.statements.some((s) => /\bSET\b|INSERT/.test(s.text))).toBe(false);
   });
 });
 
