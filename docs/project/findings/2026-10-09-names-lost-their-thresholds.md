@@ -19,3 +19,4 @@ copies (`KNOX_STALE_READ_BELOW_VERSION` is 26), so Knox v57 and v60 change new r
   209 renames. Leading-sentence names that are still sentences are left as they are.
 
 **Rule:** a Knox name-rule fix ships with a retidy version, or it only reaches new reads.
+**Agent lesson:** knox/pr-838-name-not-sentence, knox/pr-827-fix-reaches-stored-rows

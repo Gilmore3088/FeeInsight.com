@@ -26,3 +26,5 @@ keys file under document_reproduction where the taxonomy maps fax to account_res
 floors carry those six with the reason written beside them; the keys want re-filing to the taxonomy.
 **Lesson:** every hand-set rule Darwin holds on needs a re-check exception keyed to the rule's
 own value, as the guard version has, or a change to the rule is a change for new reads only.
+
+**Agent lesson:** darwin/pr-883-rule-version-recheck

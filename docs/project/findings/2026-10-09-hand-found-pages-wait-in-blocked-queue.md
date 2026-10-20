@@ -11,3 +11,5 @@ main-link fetches for banks with no main link, not these pages.
 orders the rest by asset size.
 **Lesson:** a page a person found and checked is the surest link Magellan has. When it is
 blocked, it goes to the front of the paid queue, not into the asset-size line.
+
+**Agent lesson:** magellan/pr-795-hand-found-first

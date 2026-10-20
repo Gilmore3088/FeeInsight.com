@@ -179,7 +179,8 @@ export function promotedConditions(conditions: string, candidate: ExtractedFeeCa
  * the same excerpt, so Darwin's category guard can check it.
  */
 export function promotedName(row: HeldRow, candidate: ExtractedFeeCandidate): string {
-  const name = row.fee_name?.trim();
+  // Page markup left in a held name ("Miscellaneous Fees and Charges<br> Stop Pay Order") never publishes.
+  const name = row.fee_name?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   return name && classifyFeeText(name) === candidate.canonicalHint ? name : candidate.feeName;
 }
 

@@ -122,6 +122,38 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
       expect(sameItem("", "Stop Payment")).toBe(false);
     });
 
+    it("pairs only the same item: one extra word is another item (re-sample, 2026-10-20)", () => {
+      expect(sameItem("Rush Card", "International Rush Card")).toBe(false);
+      expect(sameItem("Cashing Money Orders", "Money Orders")).toBe(false);
+      expect(sameItem("Early closing fee", "Early Closing Fees")).toBe(true);
+      expect(sameItem("Check copy", "Check Copies")).toBe(true);
+      expect(sameItem("Cashier's Checks", "Cashiers Check Fee")).toBe(true);
+    });
+
+    describe("counts only schedule lines that can speak against the page", () => {
+      const at = (feeName: string, amount: number, host: string, readAt: string, lines: Array<[string, number, string, string]>) => ({
+        ...row(feeName, amount, []),
+        product_host: host,
+        product_read_at: readAt,
+        schedule_amounts: lines.map(([, a]) => a),
+        schedule_lines: lines.map(([name, a, h, r]) => ({ name, amount: a, host: h, read_at: r })),
+      });
+
+      it("never another host's schedule (Popular: populardirect.com is another division's)", () => {
+        expect(isSameItemConflict(at("Overdraft fee", 34, "popularbank.com", "2026-10-09", [["Overdraft Fee", 10, "populardirect.com", "2026-10-09"]]))).toBe(false);
+        expect(isSameItemConflict(at("Overdraft fee", 34, "popularbank.com", "2026-10-09", [["Overdraft Fee", 10, "popularbank.com", "2026-10-09"]]))).toBe(true);
+      });
+
+      it("never a $0 benefits line", () => {
+        expect(isSameItemConflict(at("Domestic Wire", 20, "ffcu.test", "2026-10-09", [["Domestic Wire", 0, "ffcu.test", "2026-10-10"]]))).toBe(false);
+      });
+
+      it("never a copy older than the page (GTE: the newer page is itself the full schedule)", () => {
+        expect(isSameItemConflict(at("NSF Fee", 37, "gte.test", "2026-10-09", [["NSF Fee", 35, "gte.test", "2026-10-03"]]))).toBe(false);
+        expect(isSameItemConflict(at("NSF Fee", 37, "gte.test", "2026-10-09", [["NSF Fee", 35, "gte.test", "2026-10-12"]]))).toBe(true);
+      });
+    });
+
     it("leaves a tier's own product page or fee out (two BankOn $0s in the sample)", () => {
       const text = productPageConflictSql("all");
       expect(text).toContain("bank[\\s_-]?on");
