@@ -400,6 +400,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // v1 (#1881, Oct 19): a new fetch route. Its selector picks every never-fetched saved fee link
   // (10 a step, switch off until James says yes), so the backlog is worked by the route itself.
   SAVED_LINK_FETCH_STRATEGY: "A new free fetch route; every fetch step selects the never-fetched saved links it works through, so there is nothing to replay.",
+  LIVE_SOURCE_REFETCH_STRATEGY: "A new free fetch route (#1200); every fetch step selects the stale pages live fees cite, oldest first, so there is nothing to replay.",
   // v3 / v2 (#1326): the re-searches no longer accept the link they replace. Their selectors pick
   // every bank not yet searched at the new version, so the discover steps re-search them themselves.
   UPGRADE_SEARCH_VERSION: "Its selector re-searches every product-page link not yet searched at v3; there is nothing to replay.",
