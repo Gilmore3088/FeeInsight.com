@@ -1,58 +1,39 @@
-import { getSql, type withTransaction } from "./connection";
-import { readCallCohortHistory, MAX_COHORT_REPORTERS, type CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
-import { financialSourceFilter, type FinancialSource } from "./financial-sources";
-import { canonicalFinancialSourceSql, financialSourceForCharter, financialPeerComparison, type FinancialPeerComparison } from "./financial-peer-contract";
+import { getSql } from "./connection";
+import { readCallCohortHistory, type CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
+import type { FinancialSource } from "./financial-sources";
+import { financialSourceForCharter, financialPeerComparison, type FinancialPeerComparison } from "./financial-peer-contract";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "./fee-stats";
 import { FDIC_TIER_BREAKPOINTS, getTierForAssets } from "../fed-districts";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { dateText, historyRead } from "./call-report-sql";
+import { callReportQuartersReady } from "./call-report-quarters";
+import * as legacy from "./call-reports-legacy";
+import * as summary from "./call-reports-summary";
 
 /**
- * fdic and ncua rows report dollars in thousands. ffiec rows duplicate the fdic
- * quarters in other units (whole-dollar balances, service charges over-scaled
- * further; see financial-units.ts), so mixing them into one series or one peer
- * group produces fake drops and wrong ranks. Every query here reads the
- * thousands-scale sources only (see financial-sources.ts).
+ * Call-report income readers. Each one reads call_report_quarterly_income, where every
+ * filing's standalone quarter is computed once per quarterly load (call-report-quarters.ts),
+ * and falls back to recomputing it from institution_financial_records per request
+ * (call-reports-legacy.ts) only while that table is missing or empty. Both paths return the
+ * same numbers (call-report-quarters.db.test.ts).
  */
-const SAME_SCALE_SOURCES = financialSourceFilter("inf");
+export { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-report-sql";
 
-/** Canonical charter identity and the regulator's measure must agree. */
-const COMPARABLE_CHARTER_SOURCE = canonicalFinancialSourceSql("inf", "ct");
-function sourceScope(source?: FinancialSource): string {
-  if (source === undefined) return "TRUE";
-  // Runtime fail-closed as well as the TypeScript boundary.
-  return source === "fdic" || source === "ncua" ? `inf.source = '${source}'` : "FALSE";
+type Sql = ReturnType<typeof getSql>;
+type Variant = typeof legacy;
+
+/** The SQL set to use for this request: the summary table, or the per-request fallback. */
+async function variant(sql: Sql): Promise<Variant> {
+  return (await callReportQuartersReady(sql as never)) ? summary : legacy;
 }
 
-async function latestScopedDate(source: FinancialSource): Promise<string | null> {
-  const rows = await getSql().unsafe(
-    `SELECT inf.report_date::text AS latest_date
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-      WHERE inf.service_charge_income > 0 AND ${SAME_SCALE_SOURCES}
-        AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-      ORDER BY inf.report_date DESC LIMIT 1`,
-  );
-  const date = rows[0]?.latest_date;
-  return date == null ? null : date instanceof Date ? date.toISOString().slice(0, 10) : String(date);
+/** The newest filing date with positive income, in `source` or across both regulators. */
+async function latestDate(sql: Sql, sqls: Variant, source?: FinancialSource): Promise<string | null> {
+  const rows = source
+    ? await sql.unsafe(sqls.latestScopedDateSql(source))
+    : await sqls.latestAnyDate(sql as unknown as legacy.LatestDateSql);
+  return dateText(rows[0]?.latest_date);
 }
-
-/**
- * NCUA 5300 income lines are year-to-date; FDIC rows are already quarterly. Single-quarter
- * reads join each NCUA row to the same credit union's prior quarter in the same year
- * (`prev`), and QUARTER_SC is that quarter's own service-charge income: the YTD minus the
- * prior YTD (Q1 stands alone), or NULL when the prior quarter is missing. Reading the raw
- * YTD as a quarter doubled Q2 credit-union income (Q2 2026: $5.16B YTD vs $2.64B in the quarter).
- */
-export const PRIOR_QUARTER_JOIN = `LEFT JOIN institution_financial_records prev
-       ON inf.source = 'ncua'
-      AND prev.institution_id = inf.institution_id
-      AND prev.source = inf.source
-      AND EXTRACT(QUARTER FROM inf.report_date::date) > 1
-      AND prev.report_date = TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date)::date - 1, 'YYYY-MM-DD')`;
-export const QUARTER_SC = `(CASE
-       WHEN inf.source <> 'ncua' OR EXTRACT(QUARTER FROM inf.report_date::date) = 1 THEN inf.service_charge_income
-       WHEN prev.service_charge_income IS NOT NULL THEN inf.service_charge_income - prev.service_charge_income
-     END)`;
 
 export interface RevenueSnapshot {
   quarter: string;
@@ -81,10 +62,6 @@ export interface PeerIncomeHistory {
   cohort_history?: CallCohortHistory;
 }
 
-// Optional identity/lifecycle reads use the same connection owner as the financial reader.
-// A missing registry field or timed-out diagnostic read cannot erase valid filing statistics.
-const historyRead: typeof withTransaction = (callback) => getSql().begin((tx) => callback(tx as unknown as ReturnType<typeof getSql>)) as ReturnType<typeof callback>;
-
 /**
  * Median quarterly deposit service charges for one charter and asset tier, newest quarter
  * first. NCUA year-to-date figures are split into quarters the same way as getRevenueTrend;
@@ -99,41 +76,9 @@ export async function getPeerServiceChargeMedians(
   const source = financialSourceForCharter(charterType);
   if (!source) return { quarters: [] };
   const sql = getSql();
+  const sqls = await variant(sql);
   const rows = (await sql.unsafe(
-    `WITH filed AS (
-       SELECT inf.institution_id,
-              inf.source,
-              inf.report_date::date AS rd,
-              inf.service_charge_income AS amount,
-              LAG(inf.service_charge_income) OVER w AS prior_amount,
-              LAG(inf.report_date::date) OVER w AS prior_rd
-         FROM institution_financial_records inf
-         JOIN institution_sources ct ON ct.id = inf.institution_id
-        WHERE ${SAME_SCALE_SOURCES}
-          AND ct.charter_type = $1
-          AND ct.asset_size_tier = $2
-          AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
-                    ORDER BY inf.report_date::date)
-     ),
-     quarterly AS (
-       SELECT institution_id, source, rd,
-              CASE
-                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
-                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
-                ELSE NULL
-              END AS income
-         FROM filed
-     )
-     SELECT TO_CHAR(rd, 'YYYY-MM-DD') AS quarter_end,
-            CASE WHEN COUNT(*) >= $4 THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY income) END AS median_thousands,
-            COUNT(*)::int AS institutions,
-            (ARRAY_AGG(DISTINCT institution_id ORDER BY institution_id))[1:${MAX_COHORT_REPORTERS}] AS reporting_institution_ids
-       FROM quarterly
-      WHERE income > 0
-      GROUP BY rd
-      ORDER BY rd DESC
-      LIMIT $3`,
+    sqls.peerMediansSql(source),
     [charterType, assetTier, quarterCount, MIN_INSTITUTIONS_FOR_MEDIAN],
   )) as { quarter_end: string; median_thousands: string | number | null; institutions: number; reporting_institution_ids?: (number | string)[] }[];
   return {
@@ -158,110 +103,56 @@ export interface TopRevenueInstitution {
   total_assets: number | null;
 }
 
+/**
+ * Quarterly service-charge income nationally, newest quarter first. NCUA 5300 income lines are
+ * year-to-date: a credit union's quarter is its YTD minus the prior quarter's YTD in the same
+ * year (Q1 stands alone); FDIC rows are already quarterly. Summing NCUA YTD as quarters inflated
+ * Q2-Q4 credit union income up to 4x. Only the years the newest quarters fall in are read (plus
+ * four spare quarters for a missing filing period).
+ */
 export async function getRevenueTrend(quarterCount = 8, source?: FinancialSource): Promise<RevenueTrend> {
   const sql = getSql();
 
   try {
-  // institution_financial_records has institution_id, not cert_number/charter_type directly.
-  // JOIN to institution_sources for charter_type and cert_number.
-  // report_date is TEXT (e.g. '2024-12-31') — cast to date for DATE_TRUNC.
-  // NCUA 5300 income lines are year-to-date: a credit union's quarter is its YTD minus
-  // the prior quarter's YTD in the same year (Q1 stands alone). FDIC rows are already
-  // quarterly. Summing NCUA YTD as quarters inflated Q2-Q4 credit union income up to 4x.
-  // Only the years the newest quarters fall in are read (plus four spare quarters for a
-  // missing filing period). Whole years, because the NCUA split looks back within a year.
-  // Reading all 768,000 filings since 2010 took 10 s on average, up to 38 s, on Oct 8.
-  const rows = await sql.unsafe(
-    `WITH bounds AS (
-       SELECT TO_CHAR(DATE_TRUNC('year', MAX(inf.report_date)::date - MAKE_INTERVAL(months => 3 * ($1::int + 4))),
-                      'YYYY-MM-DD') AS from_date
-         FROM institution_financial_records inf
-         JOIN institution_sources ct ON ct.id = inf.institution_id
-        WHERE ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-     ),
-     filed AS (
-       SELECT inf.institution_id,
-              inf.source,
-              inf.report_date,
-              inf.report_date::date AS rd,
-              inf.service_charge_income AS amount,
-              LAG(inf.service_charge_income) OVER w AS prior_amount,
-              LAG(inf.report_date::date) OVER w AS prior_rd
-         FROM institution_financial_records inf
-         JOIN institution_sources ct ON ct.id = inf.institution_id
-         CROSS JOIN bounds
-        WHERE ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-          AND inf.report_date >= bounds.from_date
-       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
-                    ORDER BY inf.report_date::date)
-     ),
-     quarterly AS (
-       SELECT institution_id, source, report_date, rd,
-              CASE
-                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
-                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
-                ELSE NULL
-              END AS service_charge_income
-         FROM filed
-     )
-     SELECT
-       TO_CHAR(DATE_TRUNC('quarter', inf.rd), 'YYYY-"Q"Q')       AS quarter,
-       MIN(inf.report_date)                                     AS quarter_date,
-       SUM(inf.service_charge_income)                           AS total_service_charges,
-       COUNT(DISTINCT ct.id)                                    AS total_institutions,
-       SUM(CASE WHEN ct.charter_type = 'bank' THEN inf.service_charge_income ELSE 0 END)
-                                                                 AS bank_service_charges,
-       SUM(CASE WHEN ct.charter_type = 'credit_union' THEN inf.service_charge_income ELSE 0 END)
-                                                                 AS cu_service_charges,
-       COUNT(DISTINCT inf.institution_id) FILTER (WHERE inf.source = 'fdic') AS bank_reporters,
-       COUNT(DISTINCT inf.institution_id) FILTER (WHERE inf.source = 'ncua') AS cu_reporters,
-       (ARRAY_AGG(DISTINCT inf.institution_id ORDER BY inf.institution_id) FILTER (WHERE inf.source = 'fdic'))[1:${MAX_COHORT_REPORTERS}] AS bank_reporting_ids,
-       (ARRAY_AGG(DISTINCT inf.institution_id ORDER BY inf.institution_id) FILTER (WHERE inf.source = 'ncua'))[1:${MAX_COHORT_REPORTERS}] AS cu_reporting_ids
-     FROM quarterly inf
-     JOIN institution_sources ct ON ct.id = inf.institution_id
-     WHERE inf.service_charge_income > 0
-     GROUP BY DATE_TRUNC('quarter', inf.rd)
-     ORDER BY DATE_TRUNC('quarter', inf.rd) DESC
-     LIMIT $1`,
-    [quarterCount]
-  ) as {
-    quarter: string;
-    quarter_date: string;
-    total_service_charges: string;
-    total_institutions: string;
-    bank_service_charges: string;
-    cu_service_charges: string;
-    bank_reporters?: string;
-    cu_reporters?: string;
-    bank_reporting_ids?: (number | string)[];
-    cu_reporting_ids?: (number | string)[];
-  }[];
+    const sqls = await variant(sql);
+    const rows = await sql.unsafe(sqls.revenueTrendSql(source), [quarterCount]) as {
+      quarter: string;
+      quarter_date: string;
+      total_service_charges: string;
+      total_institutions: string;
+      bank_service_charges: string;
+      cu_service_charges: string;
+      bank_reporters?: string;
+      cu_reporters?: string;
+      bank_reporting_ids?: (number | string)[];
+      cu_reporting_ids?: (number | string)[];
+    }[];
 
-  const snapshots: RevenueSnapshot[] = rows.map((row) => ({
-    quarter: row.quarter,
-    total_service_charges: Number(row.total_service_charges),
-    total_institutions: Number(row.total_institutions),
-    bank_service_charges: Number(row.bank_service_charges),
-    cu_service_charges: Number(row.cu_service_charges),
-    // No reviewed constant economic-cohort basis has been established.
-    yoy_change_pct: null,
-  }));
+    const snapshots: RevenueSnapshot[] = rows.map((row) => ({
+      quarter: row.quarter,
+      total_service_charges: Number(row.total_service_charges),
+      total_institutions: Number(row.total_institutions),
+      bank_service_charges: Number(row.bank_service_charges),
+      cu_service_charges: Number(row.cu_service_charges),
+      // No reviewed constant economic-cohort basis has been established.
+      yoy_change_pct: null,
+    }));
 
-  // Cross-sectional arithmetic cannot establish growth of a stable economic cohort.
-  // Equal charter IDs still do not account for acquisitions or other perimeter changes.
-  const cohort_history = await readCallCohortHistory({ requestedIds: null,
-    eligibility_basis: "positive_standalone_quarter_income",
-    periods: rows.flatMap((row) => (["fdic", "ncua"] as const).filter((family) => source === undefined || source === family).map((family) => ({
-      period: row.quarter_date, sources: [family], unit: "thousands of dollars", period_basis: "standalone_quarter",
-      institution_count: Number((family === "fdic" ? row.bank_reporters : row.cu_reporters) ?? (source === family ? row.total_institutions : 0)),
-      reporting_institution_ids: family === "fdic" ? row.bank_reporting_ids : row.cu_reporting_ids,
-    }))) }, historyRead);
+    // Cross-sectional arithmetic cannot establish growth of a stable economic cohort.
+    // Equal charter IDs still do not account for acquisitions or other perimeter changes.
+    const cohort_history = await readCallCohortHistory({ requestedIds: null,
+      eligibility_basis: "positive_standalone_quarter_income",
+      periods: rows.flatMap((row) => (["fdic", "ncua"] as const).filter((family) => source === undefined || source === family).map((family) => ({
+        period: row.quarter_date, sources: [family], unit: "thousands of dollars", period_basis: "standalone_quarter",
+        institution_count: Number((family === "fdic" ? row.bank_reporters : row.cu_reporters) ?? (source === family ? row.total_institutions : 0)),
+        reporting_institution_ids: family === "fdic" ? row.bank_reporting_ids : row.cu_reporting_ids,
+      }))) }, historyRead);
 
-  return {
-    quarters: snapshots,
-    latest: snapshots[0] ?? null,
-    cohort_history,
-  };
+    return {
+      quarters: snapshots,
+      latest: snapshots[0] ?? null,
+      cohort_history,
+    };
   } catch {
     return { quarters: [], latest: null };
   }
@@ -274,39 +165,11 @@ export async function getTopRevenueInstitutions(
   const sql = getSql();
 
   try {
-    // Find the latest report_date in institution_financial_records
-    const [latestRow] = source ? [{ latest_date: await latestScopedDate(source) }] : await sql`
-      SELECT MAX(report_date) AS latest_date
-      FROM institution_financial_records
-      WHERE service_charge_income > 0
-        AND source IN ('fdic', 'ncua')
-    `;
+    const sqls = await variant(sql);
+    const latest = await latestDate(sql, sqls, source);
+    if (!latest) return [];
 
-    if (!latestRow?.latest_date) return [];
-
-    const latestDate = latestRow.latest_date instanceof Date
-      ? latestRow.latest_date.toISOString().slice(0, 10)
-      : String(latestRow.latest_date);
-
-    const rows = await sql.unsafe(
-      `SELECT
-         ct.cert_number,
-         ct.institution_name,
-         COALESCE(ct.charter_type, 'unknown') AS charter_type,
-         inf.report_date::text                                   AS report_date,
-         ${QUARTER_SC}                                           AS service_charge_income,
-         inf.total_assets
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       ${PRIOR_QUARTER_JOIN}
-       WHERE inf.report_date = $1
-         AND ${QUARTER_SC} > 0
-         AND ${SAME_SCALE_SOURCES}
-         AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-       ORDER BY ${QUARTER_SC} DESC
-       LIMIT $2`,
-      [latestDate, limit]
-    ) as {
+    const rows = await sql.unsafe(sqls.topRevenueSql(source), [latest, limit]) as {
       cert_number: string;
       institution_name: string | null;
       charter_type: string;
@@ -343,33 +206,10 @@ export async function getInstitutionRevenueTrend(
   const sql = getSql();
 
   try {
+    const sqls = await variant(sql);
     const rows = await sql.unsafe(
-      `SELECT
-         quarter,
-         service_charge_income,
-         fee_income_ratio
-       FROM (
-         SELECT
-           TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
-           inf.report_date::date AS report_date,
-           ${QUARTER_SC} AS service_charge_income,
-           inf.fee_income_ratio,
-           ROW_NUMBER() OVER (
-             PARTITION BY DATE_TRUNC('quarter', inf.report_date::date)
-             ORDER BY inf.report_date::date DESC, inf.id DESC
-           ) AS quarter_rank
-         FROM institution_financial_records inf
-         JOIN institution_sources ct ON ct.id = inf.institution_id
-         ${PRIOR_QUARTER_JOIN}
-         WHERE inf.institution_id = $1
-           AND ${QUARTER_SC} IS NOT NULL
-           AND ${SAME_SCALE_SOURCES}
-           AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-       ) ranked
-       WHERE quarter_rank = 1
-       ORDER BY report_date DESC
-       LIMIT $2`,
-      [targetId, quarterCount]
+      sqls.institutionRevenueTrendSql(source),
+      [targetId, quarterCount],
     ) as { quarter: string; service_charge_income: string; fee_income_ratio: string | null }[];
 
     return rows.map((row, idx) => {
@@ -412,18 +252,8 @@ export async function getInstitutionPeerRanking(
   targetId: number
 ): Promise<PeerRanking | null> {
   const sql = getSql();
-  const instRows = await sql.unsafe(
-    `SELECT ct.institution_name, ct.charter_type, inf.source, inf.total_assets,
-            ${QUARTER_SC} AS service_charge_income, inf.fee_income_ratio, inf.report_date
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       ${PRIOR_QUARTER_JOIN}
-      WHERE inf.institution_id = $1
-        AND ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE}
-      ORDER BY inf.report_date DESC, inf.id DESC
-      LIMIT 1`,
-    [targetId]
-  ) as {
+  const sqls = await variant(sql);
+  const instRows = await sql.unsafe(sqls.PEER_SUBJECT_SQL, [targetId]) as {
     institution_name: string;
     charter_type: string;
     source: string;
@@ -447,31 +277,12 @@ export async function getInstitutionPeerRanking(
   const [tierMinDollars, tierMaxDollars] = FDIC_TIER_BREAKPOINTS[tier];
   const tierMin = tierMinDollars / 1_000;
   const tierMax = Number.isFinite(tierMaxDollars) ? tierMaxDollars / 1_000 : Number.MAX_SAFE_INTEGER;
-  const scope = `inf.report_date = $1
-        AND inf.total_assets >= $2 AND inf.total_assets < $3
-        AND ct.charter_type = $4 AND inf.source = $5`;
   const parameters = [inst.report_date, tierMin, tierMax, inst.charter_type, source];
-  const statsRows = await sql.unsafe(
-    `SELECT COUNT(DISTINCT inf.institution_id)::int AS eligible_count,
-            COUNT(DISTINCT inf.institution_id) FILTER (WHERE ${QUARTER_SC} > 0)::int AS peer_count,
-            COUNT(DISTINCT inf.institution_id) FILTER (WHERE ${QUARTER_SC} > 0 AND inf.fee_income_ratio IS NOT NULL)::int AS ratio_reported_count,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${QUARTER_SC}) FILTER (WHERE ${QUARTER_SC} > 0) AS median_sc,
-            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.fee_income_ratio) FILTER (WHERE ${QUARTER_SC} > 0 AND inf.fee_income_ratio IS NOT NULL) AS median_fee_ratio
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       ${PRIOR_QUARTER_JOIN}
-      WHERE ${scope} AND ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE}`,
-    parameters
-  ) as { eligible_count: string; peer_count: string; ratio_reported_count: string; median_sc: string | null; median_fee_ratio: string | null }[];
-  const rankRows = await sql.unsafe(
-    `SELECT COUNT(DISTINCT inf.institution_id)::int AS better_count
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       ${PRIOR_QUARTER_JOIN}
-      WHERE ${scope} AND ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE}
-        AND ${QUARTER_SC} > $6`,
-    [...parameters, scIncome]
-  ) as { better_count: string }[];
+  const statsRows = await sql.unsafe(sqls.PEER_STATS_SQL, parameters) as {
+    eligible_count: string; peer_count: string; ratio_reported_count: string;
+    median_sc: string | null; median_fee_ratio: string | null;
+  }[];
+  const rankRows = await sql.unsafe(sqls.PEER_RANK_SQL, [...parameters, scIncome]) as { better_count: string }[];
   const stats = statsRows[0];
   const peerCount = Number(stats?.peer_count ?? 0);
   const ratioCount = Number(stats?.ratio_reported_count ?? 0);
@@ -513,45 +324,10 @@ export interface DistrictIncomeQuarter {
 export async function getDistrictIncomeTrend(quarterCount = 20, source?: FinancialSource): Promise<DistrictIncomeQuarter[]> {
   const sql = getSql();
   try {
-    const rows = await sql.unsafe(
-      `WITH filed AS (
-         SELECT inf.institution_id,
-                inf.source,
-                inf.report_date::date AS rd,
-                inf.service_charge_income AS amount,
-                LAG(inf.service_charge_income) OVER w AS prior_amount,
-                LAG(inf.report_date::date) OVER w AS prior_rd
-           FROM institution_financial_records inf
-           JOIN institution_sources ct ON ct.id = inf.institution_id
-          WHERE ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-         WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
-                      ORDER BY inf.report_date::date)
-       ),
-       quarterly AS (
-         SELECT institution_id, rd,
-                CASE
-                  WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
-                  WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
-                  ELSE NULL
-                END AS income
-           FROM filed
-       ),
-       recent AS (
-         SELECT DISTINCT DATE_TRUNC('quarter', rd) AS q FROM quarterly ORDER BY 1 DESC LIMIT $1
-       )
-       SELECT TO_CHAR(DATE_TRUNC('quarter', q.rd), 'YYYY-"Q"Q') AS quarter,
-              ct.fed_district,
-              SUM(q.income) AS total_service_charges,
-              COUNT(DISTINCT q.institution_id) AS institutions
-         FROM quarterly q
-         JOIN institution_sources ct ON ct.id = q.institution_id
-        WHERE q.income > 0
-          AND ct.fed_district IS NOT NULL
-          AND DATE_TRUNC('quarter', q.rd) IN (SELECT q FROM recent)
-        GROUP BY 1, 2
-        ORDER BY 1 DESC, 2`,
-      [quarterCount],
-    ) as { quarter: string; fed_district: string | number; total_service_charges: string; institutions: string }[];
+    const sqls = await variant(sql);
+    const rows = await sql.unsafe(sqls.districtIncomeTrendSql(source), [quarterCount]) as {
+      quarter: string; fed_district: string | number; total_service_charges: string; institutions: string;
+    }[];
     return rows.map((r) => ({
       quarter: r.quarter,
       fed_district: Number(r.fed_district),
@@ -577,40 +353,13 @@ export async function getDistrictFeeRevenue(
   source?: FinancialSource,
 ): Promise<DistrictFeeRevenue | null> {
   const sql = getSql();
+  const sqls = await variant(sql);
 
   // Find latest report date if not specified
-  let date: string;
-  if (reportDate) {
-    date = reportDate;
-  } else {
-    const [row] = source ? [{ latest_date: await latestScopedDate(source) }] : await sql`
-      SELECT MAX(report_date)::text AS latest_date
-      FROM institution_financial_records
-      WHERE service_charge_income > 0
-        AND source IN ('fdic', 'ncua')
-    `;
-    if (!row?.latest_date) return null;
-    date = String(row.latest_date);
-  }
+  const date = reportDate || await latestDate(sql, sqls, source);
+  if (!date) return null;
 
-  const rows = await sql.unsafe(
-    `SELECT
-       ct.fed_district,
-       COUNT(DISTINCT inf.institution_id)::int  AS institution_count,
-       COALESCE(SUM(${QUARTER_SC}), 0)::bigint AS total_sc_income,
-       COALESCE(AVG(${QUARTER_SC}), 0)::bigint AS avg_sc_income,
-       COALESCE(SUM(inf.other_noninterest_income), 0)::bigint AS total_other_noninterest
-     FROM institution_financial_records inf
-     JOIN institution_sources ct ON ct.id = inf.institution_id
-     ${PRIOR_QUARTER_JOIN}
-     WHERE inf.report_date = $1
-       AND ct.fed_district = $2
-       AND ${QUARTER_SC} > 0
-       AND ${SAME_SCALE_SOURCES}
-       AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-     GROUP BY ct.fed_district`,
-    [date, district]
-  ) as {
+  const rows = await sql.unsafe(sqls.districtFeeRevenueSql(source), [date, district]) as {
     fed_district: string;
     institution_count: string;
     total_sc_income: string;
@@ -641,43 +390,12 @@ export async function getRevenueByTier(
   source?: FinancialSource,
 ): Promise<TierRevenue[]> {
   const sql = getSql();
+  const sqls = await variant(sql);
 
-  let date = reportDate;
-  if (!date) {
-    const [row] = source ? [{ latest_date: await latestScopedDate(source) }] : await sql`
-      SELECT MAX(report_date)::text AS latest_date
-      FROM institution_financial_records
-      WHERE service_charge_income > 0
-        AND source IN ('fdic', 'ncua')
-    `;
-    if (!row?.latest_date) return [];
-    date = row.latest_date as string;
-  }
+  const date = reportDate || await latestDate(sql, sqls, source);
+  if (!date) return [];
 
-  const rows = await sql.unsafe(
-    `SELECT
-       CASE
-         WHEN inf.total_assets < 100000                THEN 'micro'
-         WHEN inf.total_assets < 1000000               THEN 'community'
-         WHEN inf.total_assets < 10000000              THEN 'midsize'
-         WHEN inf.total_assets < 250000000             THEN 'regional'
-         ELSE                                               'mega'
-       END AS tier,
-       COUNT(DISTINCT inf.institution_id)::int        AS institution_count,
-       SUM(${QUARTER_SC})::bigint                      AS total_sc_income,
-       AVG(${QUARTER_SC})::bigint                      AS avg_sc_income
-     FROM institution_financial_records inf
-     JOIN institution_sources ct ON ct.id = inf.institution_id
-     ${PRIOR_QUARTER_JOIN}
-     WHERE inf.report_date = $1
-       AND ${QUARTER_SC} > 0
-       AND inf.total_assets > 0
-       AND ${SAME_SCALE_SOURCES}
-       AND ${COMPARABLE_CHARTER_SOURCE} AND ${sourceScope(source)}
-     GROUP BY 1
-     ORDER BY MIN(inf.total_assets)`,
-    [date]
-  ) as {
+  const rows = await sql.unsafe(sqls.revenueByTierSql(source), [date]) as {
     tier: string;
     institution_count: string;
     total_sc_income: string;
@@ -707,36 +425,9 @@ export interface IntensityQuarter {
  */
 export async function getServiceChargeIntensityTrend(institutionId: number): Promise<IntensityQuarter[]> {
   const sql = getSql();
+  const sqls = await variant(sql);
   const rows = (await sql.unsafe(
-    `WITH subject AS (
-       SELECT id, charter_type, asset_size_tier FROM institution_sources
-        WHERE id = $1 AND charter_type IN ('bank', 'credit_union') AND asset_size_tier IS NOT NULL
-     ),
-     filed AS (
-       SELECT inf.institution_id,
-              inf.source,
-              inf.report_date::date AS rd,
-              inf.service_charge_income AS amount,
-              inf.total_deposits AS deposits,
-              LAG(inf.service_charge_income) OVER w AS prior_amount,
-              LAG(inf.report_date::date) OVER w AS prior_rd
-         FROM institution_financial_records inf
-         JOIN institution_sources ct ON ct.id = inf.institution_id
-         JOIN subject s ON ct.charter_type = s.charter_type AND ct.asset_size_tier = s.asset_size_tier
-        WHERE ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE}
-          AND inf.report_date::date >= CURRENT_DATE - INTERVAL '30 months'
-       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
-                    ORDER BY inf.report_date::date)
-     ),
-     quarterly AS (
-       SELECT institution_id, rd, deposits,
-              CASE
-                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
-                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
-                ELSE NULL
-              END AS income
-         FROM filed
-     ),
+    `WITH ${sqls.INTENSITY_QUARTERS_SQL},
      latest AS (SELECT MAX(rd) AS rd FROM quarterly),
      qratio AS (
        SELECT q.institution_id, q.rd, q.income * 4000.0 / q.deposits AS r
@@ -776,36 +467,9 @@ export interface ServiceChargeIntensity {
  */
 export async function getServiceChargeIntensity(institutionId: number): Promise<ServiceChargeIntensity | null> {
   const sql = getSql();
+  const sqls = await variant(sql);
   const rows = (await sql.unsafe(
-    `WITH subject AS (
-       SELECT id, charter_type, asset_size_tier FROM institution_sources
-        WHERE id = $1 AND charter_type IN ('bank', 'credit_union') AND asset_size_tier IS NOT NULL
-     ),
-     filed AS (
-       SELECT inf.institution_id,
-              inf.source,
-              inf.report_date::date AS rd,
-              inf.service_charge_income AS amount,
-              inf.total_deposits AS deposits,
-              LAG(inf.service_charge_income) OVER w AS prior_amount,
-              LAG(inf.report_date::date) OVER w AS prior_rd
-         FROM institution_financial_records inf
-         JOIN institution_sources ct ON ct.id = inf.institution_id
-         JOIN subject s ON ct.charter_type = s.charter_type AND ct.asset_size_tier = s.asset_size_tier
-        WHERE ${SAME_SCALE_SOURCES} AND ${COMPARABLE_CHARTER_SOURCE}
-          AND inf.report_date::date >= CURRENT_DATE - INTERVAL '30 months'
-       WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
-                    ORDER BY inf.report_date::date)
-     ),
-     quarterly AS (
-       SELECT institution_id, rd, deposits,
-              CASE
-                WHEN source <> 'ncua' OR EXTRACT(QUARTER FROM rd) = 1 THEN amount
-                WHEN prior_rd IS NOT NULL AND rd - prior_rd BETWEEN 80 AND 100 THEN amount - prior_amount
-                ELSE NULL
-              END AS income
-         FROM filed
-     ),
+    `WITH ${sqls.INTENSITY_QUARTERS_SQL},
      latest AS (SELECT MAX(rd) AS rd FROM quarterly),
      ttm AS (
        SELECT q.institution_id,
