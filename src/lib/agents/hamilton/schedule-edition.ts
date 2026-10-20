@@ -91,3 +91,75 @@ export function mayBeSameSchedule(oldUrl: string | null | undefined, newUrl: str
   if (!oldUrl || !newUrl) return false;
   return scheduleAudience(oldUrl) === scheduleAudience(newUrl) ? null : false;
 }
+
+/**
+ * How far into a schedule's text its own edition line is read. A schedule states its edition in
+ * its heading ("AVIDIA BANK\nSCHEDULE OF FEES – CONSUMER ACCOUNTS\nEffective December 1, 2026");
+ * a date further down is a change it announces for one line ("will be effective on August 1"),
+ * which Knox reads with the line, not the whole document.
+ */
+export const EDITION_HEAD_CHARS = 400;
+
+/**
+ * An "effective" sentence that dates something other than the schedule: a privacy policy in a
+ * page's banner (South Story's "The effective date is November 1, 2026"), or only the fees a
+ * schedule marks ("Highlighted fees will be effective February 1, 2027": the rest are current).
+ */
+const NOT_THE_EDITION = /\b(?:privacy|policy|policies|terms of use|highlighted|marked|indicated|shaded|bolded)\b/i;
+
+/** The edition a schedule's heading states (its earliest "effective" date there), YYYY-MM-DD; null when none. */
+export function editionStarts(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const head = text.slice(0, EDITION_HEAD_CHARS);
+  let first: string | null = null;
+  for (const m of head.matchAll(/effective/gi)) {
+    const at = m.index ?? 0;
+    if (NOT_THE_EDITION.test(head.slice(Math.max(0, at - 60), at + 60))) continue;
+    const date = effectiveDate(head.slice(at, at + 60));
+    if (date && (first == null || date < first)) first = date;
+  }
+  return first;
+}
+
+/** The calendar day of `now` in UTC, YYYY-MM-DD. */
+export function isoDay(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+/**
+ * The date a schedule takes effect when that is after `today` (#1915: Avidia's December 1, 2026
+ * schedule went live beside its March 2024 one in October); null for a schedule in effect or one
+ * whose heading states no edition. Its prices are not charged yet, so its rows stay out of the live
+ * catalog until that day, when this returns null and they publish.
+ */
+export function notYetEffective(text: string | null | undefined, today: string): string | null {
+  const starts = editionStarts(text);
+  return starts != null && starts > today ? starts : null;
+}
+
+/**
+ * On its effective date an announced edition takes over: the older edition's line of the same fee
+ * comes down. True when `newer` is a later edition than `older` for the same audience, both headings
+ * state their edition, the newer one was first read before it took effect (`newerFirstRead`, so it
+ * is an edition announced ahead, the #1915 case) and it is in effect by `today`. Two copies of one
+ * page, or two undated schedules, are left to the page-copy collapse and the same-page supersede.
+ * An older edition left live beside one first read after it took effect is #1911's, not this rule's:
+ * on prod (Oct 20) that wider pairing also paired one bank's schedules for two products (PNC).
+ */
+export function editionTakesOver(input: {
+  olderUrl: string | null | undefined;
+  newerUrl: string | null | undefined;
+  olderText: string | null | undefined;
+  newerText: string | null | undefined;
+  /** The day the newer document was first read, YYYY-MM-DD. */
+  newerFirstRead: string | null | undefined;
+  today: string;
+}): boolean {
+  if (!input.olderUrl || !input.newerUrl || !input.newerFirstRead) return false;
+  // "ScheduleofFeesPersonal-2024-1.pdf" names its audience once its words are split.
+  const audience = (url: string) => scheduleAudience(url.replace(/([a-z])([A-Z])/g, "$1-$2"));
+  if (audience(input.olderUrl) !== audience(input.newerUrl)) return false;
+  const older = editionStarts(input.olderText);
+  const newer = editionStarts(input.newerText);
+  return older != null && newer != null && older < newer && input.newerFirstRead < newer && newer <= input.today;
+}
