@@ -19,3 +19,5 @@ the same content hash), and report the other documents' rows as their own count.
 v62 PR does not touch the scorer.
 **Lesson:** before tuning a category against the answer key, split its misses by document. A
 miss from another document is a scope question for the key, not a category error.
+
+**Agent lesson:** atlas/pr-1324-score-key-document

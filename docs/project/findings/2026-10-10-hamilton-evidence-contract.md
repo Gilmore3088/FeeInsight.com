@@ -56,3 +56,5 @@ older high ratings that lack structured evidence, but this patch does not mutate
 
 No production data, schema, permissions, provider settings or model calls are changed.
 No whole-dataset accuracy or consulting-readiness claim follows from these tests.
+
+**Agent lesson:** hamilton/pr-995-record-bound-evidence

@@ -23,3 +23,5 @@ of one line claim separately. Restores use the same claims.
 ## Lesson
 A fee's identity is its line in its source (name, audience, document), not its category and
 price. Two real fees at one bank often share a price.
+
+**Agent lesson:** gutenberg/pr-1022-recheck-claims-lines
