@@ -259,6 +259,15 @@ describe("findings-file-kill guard or lesson", () => {
     expect(output).toContain(`${FINDINGS}/2026-10-01-old-unguarded.md`);
   });
 
+  it("fails an empty agent lesson line and a lesson id that only matches as a pattern", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-empty.md`]: "# e\n**Agent lesson:**\n",
+      [`${FINDINGS}/2026-10-21-dot.md`]: "# f\n**Agent lesson:** knox/issue.2209\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toMatch(/2026-10-21-empty\.md|2026-10-21-dot\.md: knox\/issue\.2209/);
+  });
+
   it("fails an agent lesson that does not exist", () => {
     const { status, output } = findingsRepo({
       [`${FINDINGS}/2026-10-21-wrong.md`]: "# d\n**Agent lesson:** darwin/issue-2209, knox/issue-9999\n",

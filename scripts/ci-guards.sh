@@ -729,7 +729,7 @@ findings_file_kill() {
   # agent's role-lessons.ts (James, 2026-10-20). Compares the PR with its base, like api-docs-kill;
   # findings already on main are only counted (src/lib/findings-audit.ts lists them).
   local guard_re='^\*\*Guard:\*\*[[:space:]]*[^[:space:]]'
-  local lesson_re='^\*\*Agent lesson:\*\*'
+  local lesson_re='^\*\*Agent lesson:\*\*[[:space:]]*[^[:space:]]'
   local base_ref="" changed unguarded="" unknown="" old f ref agent id
   # Every lesson a finding names must exist, changed in this PR or not.
   while IFS= read -r line; do
@@ -739,7 +739,7 @@ findings_file_kill() {
       agent="${ref%%/*}"
       id="${ref#*/}"
       if [[ "$ref" != */* || ! -f "src/lib/agents/${agent}/role-lessons.ts" ]] \
-        || ! grep -qE "^[[:space:]]+id: \"${id}\"," "src/lib/agents/${agent}/role-lessons.ts"; then
+        || ! grep -qF "id: \"${id}\"," "src/lib/agents/${agent}/role-lessons.ts"; then
         unknown+="${f}: ${ref}"$'\n'
       fi
     done
