@@ -12,7 +12,8 @@ type SqlTag = typeof sql;
  * Current copy of a page = status 'success' AND duplicate_of_id IS NULL AND
  * superseded_by_id IS NULL. Knox reads the current copy and Rosetta, Knox and the
  * source check share it. A failed fetch never supersedes a good copy, and neither does a
- * copy Rosetta read as a bot check, a script shell or a bare title (`thin copy`): the page's
+ * copy Rosetta read as a bot check, a script shell or a bare title (`thin copy`), or judged not
+ * a fee document at all (`wrong_document`, a landing page served at the schedule's address): the page's
  * latest copy with a readable text stays current until a readable newer copy arrives.
  */
 
@@ -79,7 +80,7 @@ async function readableCopyFor(db: SqlTag, sourceDocumentId: number): Promise<nu
       JOIN agent_source_texts thin
         ON thin.source_document_id = cur.id
        AND thin.status <> 'completed'
-       AND COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS}
+       AND (COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS} OR thin.status = 'wrong_document')
        AND thin.source_hash = cur.content_hash
       JOIN source_documents keep
         ON keep.institution_id = cur.institution_id
@@ -160,7 +161,7 @@ export async function restoreReadableCopies(
       JOIN agent_source_texts thin
         ON thin.source_document_id = cur.id
        AND thin.status <> 'completed'
-       AND COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS}
+       AND (COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS} OR thin.status = 'wrong_document')
        AND thin.source_hash = cur.content_hash
      WHERE cur.status = 'success'
        AND cur.duplicate_of_id IS NULL
@@ -220,7 +221,7 @@ export async function supersedeSamePageCopies(
                SELECT 1 FROM agent_source_texts thin
                 WHERE thin.source_document_id = doc.id
                   AND thin.status <> 'completed'
-                  AND COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS}
+                  AND (COALESCE(thin.char_count, 0) < ${THIN_COPY_MAX_CHARS} OR thin.status = 'wrong_document')
                   AND thin.source_hash = doc.content_hash
              ) AS thin,
              substring(lower(doc.document_url) from ${PAGE_HOST_SQL})
