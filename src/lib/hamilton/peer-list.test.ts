@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPeerAssets, isPeerListContinuationQuestion, isPeerListQuestion, makePeerListContinuation, parsePeerListQuestion, peerListFeeFollowUp, peerListPageOffsets, peerListRefinementState, planPeerList, readPeerListOffset, validatePeerListContinuation, type PeerListSubject } from "./peer-list";
+import { formatAssetBound, formatPeerAssets, isPeerListContinuationQuestion, isPeerListQuestion, makePeerListContinuation, parsePeerListQuestion, peerListFeeFollowUp, peerListPageOffsets, peerListRefinementState, planPeerList, readPeerListOffset, validatePeerListContinuation, type PeerListSubject } from "./peer-list";
 import type { ActivePeerSet } from "./active-peer-set";
 
 export const subject: PeerListSubject = { institutionId: 101, name: "Synthetic Home CU", charterType: "credit_union", city: "Orlando", stateCode: "FL", totalAssetsUsd: 10_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 1 };
@@ -79,6 +79,13 @@ describe("explicit, similar-size and saved selection", () => {
     expect(formatPeerAssets(950_000_000)).toBe("$950M");
     expect(formatPeerAssets(1_200_000_000_000)).toBe("$1.2T");
     expect(formatPeerAssets(250_000)).toBe("$250,000");
+  });
+  it("shows a selection bound exactly as applied, never rounded across a row's value (#980)", () => {
+    expect(formatAssetBound(1_250_000_000)).toBe("$1.25B");
+    expect(formatAssetBound(4_449_000_000)).toBe("$4.449B");
+    expect(formatAssetBound(18_000_000_000)).toBe("$18B");
+    expect(formatAssetBound(1_206_938_000)).toBe("$1,206,938,000");
+    expect(formatAssetBound(500_000)).toBe("$500,000");
   });
 });
 

@@ -429,6 +429,18 @@ export function formatPeerAssets(value: number | null): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value);
 }
 
+/** A selection bound, shown exactly as applied: "$1.25B" when that is exact, else every dollar, so a
+ * row never seems to break the rule its rounded figure sits beside. */
+export function formatAssetBound(value: number): string {
+  for (const [unit, suffix] of [[1e12, "T"], [1e9, "B"], [1e6, "M"]] as const) {
+    if (value < unit) continue;
+    const scaled = Number((value / unit).toFixed(3));
+    if (scaled * unit === value) return `$${scaled}${suffix}`;
+    break;
+  }
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: Number.isInteger(value) ? 0 : 2 }).format(value);
+}
+
 /**
  * Uses explicit filters ahead of defaults. A requested saved group is never replaced. With no saved
  * group, "list my peers" lists half to twice the subject's assets (#1716); James kept that on Oct 19
@@ -474,8 +486,8 @@ export function planPeerList(intent: PeerListIntent, subject: PeerListSubject, a
   if (!useSaved && (intent.peerBased || intent.similarSize) && !charterType && !intent.bothTypes) return { criteria: null, problem: "Choose banks, credit unions, or both; the subject's institution type is unavailable." };
   if (useSaved) descriptions.push(`Saved peer group: ${active!.label}. Its filters remain in force.`);
   descriptions.push(`${charterType === "bank" ? "Banks" : charterType === "credit_union" ? "Credit unions" : "Banks and credit unions"}; ${states.length ? states.map(s => STATE_NAMES[s] ?? s).join(" or ") + " (headquarters state)" : "nationwide"}.`);
-  if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatPeerAssets(minAssets.value)}.`);
-  if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatPeerAssets(maxAssets.value)}.`);
+  if (minAssets) descriptions.push(`Assets ${minAssets.inclusive ? "at least" : "greater than"} ${formatAssetBound(minAssets.value)}.`);
+  if (maxAssets) descriptions.push(`Assets ${maxAssets.inclusive ? "at most" : "less than"} ${formatAssetBound(maxAssets.value)}.`);
   if (filters?.asset_tiers?.length) descriptions.push(`Saved registry asset tiers: ${filters.asset_tiers.join(", ")}; displayed dollar assets come from dated filings.`);
   if (filters?.fed_districts?.length) descriptions.push(`Saved Federal Reserve districts: ${filters.fed_districts.join(", ")}.`);
   // A capped list keeps the institutions the question is about: closest in size for "similar",
