@@ -80,7 +80,7 @@ export function HubSection({
     </>
   );
   return (
-    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-20 space-y-8">
+    <section id={id} aria-labelledby={`${id}-heading`} className="scroll-mt-[var(--fi-anchor-offset,5rem)] space-y-8">
       {collapse ? (
         <PhoneCollapse summary={head} label={collapse}>
           {body}
