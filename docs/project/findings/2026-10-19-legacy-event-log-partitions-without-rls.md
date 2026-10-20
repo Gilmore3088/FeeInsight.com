@@ -11,7 +11,7 @@ written 55,966 `review_tick` rows into the retired `agent_events` table, and not
 `CREATE TABLE ... PARTITION OF` with no `ENABLE ROW LEVEL SECURITY`. A partition does not inherit
 its parent's RLS setting. The four cron jobs were created by hand, outside the migrations, so no
 cleanup of the old crawler and review loop removed them.
-**Fix:** migration `20270110000068_legacy_event_log_rls_and_cron_pause.sql`, held for James's yes.
+**Fix:** migration `20270110000069_legacy_event_log_rls_and_cron_pause.sql`, held for James's yes.
 It turns on RLS on both parents and every partition, makes both maintainers turn on RLS for each
 partition they create and pins their `search_path`, removes `service_role`'s EXECUTE on them,
 and pauses the four jobs with `cron.alter_job(active := false)`.
