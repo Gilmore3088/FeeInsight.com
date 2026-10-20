@@ -203,7 +203,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-249 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+250 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (32)
 
@@ -383,8 +383,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (14)
+### Migrations, deploys and builds (15)
 
+- 2026-10-20 — A page or route that reads the database must not be prerendered at build; render it on request and cache the data, so the database's load never decides whether a deploy succeeds. — [finding](findings/2026-10-20-sitemap-build-time-db-reads.md) — Guard: `src/app/sitemap-cache.test.ts` (+1 more)
 - 2026-10-20 — A migration number is claimed when any open PR uses it, not when it reaches `main`, so check open PRs before taking one. — [finding](findings/2026-10-20-migration-number-collisions-across-open-prs.md) — Guard: Foundation tracker #1048 line "guard for migration numbers claimed by open PRs"; until then, merge `main` and re-run `migration-version-kill`
 - 2026-10-20 — Agents never run deploy-capable `vc`/`vercel` commands and never write a Vercel token to disk. — [finding](findings/2026-10-20-vercel-env-run-deploys.md) — Guard: Foundation tracker #1048 line "ban deploy-capable vercel commands for agents"
 - 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: Foundation tracker #1048 lines "ignoreCommand diffs against the PR merge-base and skips drafts" and "sitemap rendered on request with caching"
