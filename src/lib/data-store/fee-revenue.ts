@@ -1,16 +1,38 @@
 import { sql } from "./connection";
 import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
+import { CALL_REPORT_QUARTERS_TABLE, callReportQuartersReady } from "./call-report-quarters";
 import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
 import type { FinancialSource } from "./financial-sources";
 
 /**
- * #1245: each institution's financial rows with service-charge income for the quarter itself.
+ * #1245: each institution's latest filing with service-charge income for the quarter itself.
  * NCUA 5300 income is year-to-date and FDIC is quarterly, so reading the raw NCUA column beside
  * FDIC's doubled credit-union income in Q2 (and up to 4x in Q4). The quarter is the YTD minus
  * the prior quarter's YTD (Q1 stands alone), the same split call-reports.ts uses; a credit union
  * whose prior quarter is missing has no quarterly figure and is left out, never guessed.
+ *
+ * #1048: call_report_quarterly_income stores that exact figure per filing as
+ * prior_quarter_end_income, so the readers take the latest summary row instead of recomputing
+ * the split per institution on every request (fee-revenue-quarters.db.test.ts proves the rows
+ * are identical).
  */
-const QUARTERLY_FINANCIALS = `(
+const SUMMARY_QUARTERLY_FINANCIALS = `(
+    SELECT q.institution_id, q.report_date, q.source, q.total_assets,
+           q.prior_quarter_end_income AS service_charge_income
+      FROM ${CALL_REPORT_QUARTERS_TABLE} q
+     WHERE q.institution_id = ct.id AND q.source IN ('fdic', 'ncua')
+       AND ((ct.charter_type = 'bank' AND q.source = 'fdic')
+         OR (ct.charter_type = 'credit_union' AND q.source = 'ncua'))
+     ORDER BY q.report_date DESC, q.record_id DESC
+     LIMIT 1
+  )`;
+
+/**
+ * The per-request fallback while the summary table is missing or empty (before its first
+ * build, or while the pipeline is paused): the same figure from the raw filings, more slowly.
+ * callReportQuartersReady logs the slow path when this is used.
+ */
+const LEGACY_QUARTERLY_FINANCIALS = `(
     SELECT inf.institution_id, inf.report_date, inf.source, inf.total_assets,
            ${QUARTER_SC} AS service_charge_income
       FROM (
@@ -24,6 +46,10 @@ const QUARTERLY_FINANCIALS = `(
       ${PRIOR_QUARTER_JOIN}
      WHERE inf.source IN ('fdic', 'ncua')
   )`;
+
+async function quarterlyFinancials(): Promise<string> {
+  return (await callReportQuartersReady(sql as never)) ? SUMMARY_QUARTERLY_FINANCIALS : LEGACY_QUARTERLY_FINANCIALS;
+}
 
 /** Filed financial income, independent of whether a published fee schedule is available. */
 export interface FiledFeeIncome {
@@ -85,6 +111,7 @@ function financialNumbers<T extends FiledFeeIncome>(row: T) {
  * The peer adapter applies the subject's exact quarter and saved filters before aggregation.
  */
 export async function getFiledFeeIncomeData(source?: FinancialSource): Promise<FiledFeeIncome[]> {
+  const quarterly = await quarterlyFinancials();
   const rows = await sql`
     SELECT ct.id AS institution_id, ct.institution_name, ct.charter_type, ct.regulatory_status,
            ct.state_code, ct.asset_size_tier, ct.fed_district,
@@ -94,7 +121,7 @@ export async function getFiledFeeIncomeData(source?: FinancialSource): Promise<F
                 THEN ROUND((ifin.service_charge_income * 1.0 / ifin.total_assets * 10000)::numeric, 2)
                 ELSE NULL END AS fee_income_ratio
     FROM institution_sources ct
-    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(quarterly)} ifin ON ct.id = ifin.institution_id
       AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
@@ -109,6 +136,7 @@ export async function getFiledFeeIncomeData(source?: FinancialSource): Promise<F
 }
 
 export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRevenueCorrelation[]> {
+  const quarterly = await quarterlyFinancials();
   const rows = await sql`
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
@@ -163,7 +191,7 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef ON ct.id = ef.institution_id
-    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(quarterly)} ifin ON ct.id = ifin.institution_id
       AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
@@ -195,6 +223,7 @@ export interface TierFeeRevenueSummary {
 }
 
 export async function getTierFeeRevenueSummary(source?: FinancialSource): Promise<TierFeeRevenueSummary[]> {
+  const quarterly = await quarterlyFinancials();
   const rows = await sql`
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
@@ -240,7 +269,7 @@ export async function getTierFeeRevenueSummary(source?: FinancialSource): Promis
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(quarterly)} ifin ON ct.id = ifin.institution_id
       AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
@@ -271,6 +300,7 @@ export interface CharterFeeRevenueSummary {
 }
 
 export async function getCharterFeeRevenueSummary(source?: FinancialSource): Promise<CharterFeeRevenueSummary[]> {
+  const quarterly = await quarterlyFinancials();
   const rows = await sql`
     -- Scope the semantic catalog through canonical institution IDs before category
     -- aggregation, retaining every catalog and fee eligibility predicate.
@@ -316,7 +346,7 @@ export async function getCharterFeeRevenueSummary(source?: FinancialSource): Pro
       GROUP BY institution_id
       HAVING COUNT(*) >= 3
     ) ef_avg ON ct.id = ef_avg.institution_id
-    JOIN LATERAL ${sql.unsafe(QUARTERLY_FINANCIALS)} ifin ON ct.id = ifin.institution_id
+    JOIN LATERAL ${sql.unsafe(quarterly)} ifin ON ct.id = ifin.institution_id
       AND ((ct.charter_type = 'bank' AND ifin.source = 'fdic')
         OR (ct.charter_type = 'credit_union' AND ifin.source = 'ncua'))
       AND (${source ?? null}::text IS NULL OR ifin.source = ${source ?? null})
