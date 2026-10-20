@@ -1,8 +1,10 @@
--- Drop eleven indexes that another valid index on the same table already covers, either as an
+-- Drop ten indexes that another valid index on the same table already covers, either as an
 -- exact duplicate or as its leading columns (DB review LOW-2). Waits for James's yes before merge.
 -- Index DDL only: no row is inserted, updated or deleted. None of these backs a constraint, and
 -- the covering index (named per line) stays. Re-checked read-only against prod on 2026-10-20.
 -- Undo: the CREATE INDEX statements are in the PR body.
+-- Kept on purpose: institution_financial_records_institution_report_idx (136.5M scans, 36 MB;
+-- James chose to keep it, 2026-10-20).
 
 SET lock_timeout = '5s';
 
@@ -19,9 +21,6 @@ DROP INDEX IF EXISTS public.idx_articles_slug;
 -- Leading-column prefixes of a wider index.
 DROP INDEX IF EXISTS public.institution_branch_deposits_cert_year_idx;
 -- covered by institution_branch_deposits_cert_year_branch_number_key (cert, year, branch_number)
-DROP INDEX IF EXISTS public.institution_financial_records_institution_report_idx;
--- covered by institution_financial_records_institution_report_source_key
---   (institution_id, report_date, source)
 DROP INDEX IF EXISTS public.historical_fee_observation_archive_institution_review_idx;
 -- covered by historical_fee_observation_archive_institution_status_idx
 --   (institution_id, review_status, fee_category, amount)

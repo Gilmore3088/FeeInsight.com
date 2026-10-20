@@ -19,8 +19,6 @@ const DROPPED_TO_COVERING: Record<string, string> = {
   idx_articles_slug: "articles_slug_key",
   institution_branch_deposits_cert_year_idx:
     "institution_branch_deposits_cert_year_branch_number_key",
-  institution_financial_records_institution_report_idx:
-    "institution_financial_records_institution_report_source_key",
   historical_fee_observation_archive_institution_review_idx:
     "historical_fee_observation_archive_institution_status_idx",
   idx_hamilton_refresh_jobs_signal: "hamilton_refresh_jobs_source_signal_id_job_type_key",
@@ -41,7 +39,7 @@ describe("redundant index drop migration", () => {
     expect(statements[0]).toBe("SET lock_timeout = '5s';");
   });
 
-  it("drops exactly the eleven reviewed indexes, each with IF EXISTS", () => {
+  it("drops exactly the ten reviewed indexes, each with IF EXISTS", () => {
     const dropped = statements
       .filter((line) => line.startsWith("DROP INDEX"))
       .map((line) => line.match(/^DROP INDEX IF EXISTS public\.(\w+);$/)?.[1]);
