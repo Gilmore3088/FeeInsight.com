@@ -150,10 +150,10 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 // v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
 // statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
 // v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
-// v93 (#1829): a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic only)") reads as
+// v91 (#1829): a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic only)") reads as
 // document reproduction (`FAX_SERVICE`, fold v19); "domestic" there is where the fax goes, not a
-// wire. Follows #2467's v92. The stale-read floor stays at v78; the fold moves the live ones.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 93 } as const;
+// wire. The stale-read floor stays at v78; the fold moves the live ones.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 91 } as const;
 
 export interface SpecialistRun {
   strategy: string;

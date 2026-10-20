@@ -619,7 +619,7 @@ describe("v81: two fees named together at one price", () => {
   });
 });
 
-describe("v93: fax services and cut stop payments (#1829, #1830)", () => {
+describe("v91: fax services and cut stop payments (#1829, #1830)", () => {
   it("reads a fax-led line as document reproduction (Open Bank, PromiseOne Bank)", () => {
     expect(fees("Fax (Domestic & International) | $1")).toEqual([["Fax (Domestic & International)", 1, "document_reproduction"]]);
     expect(fees("Faxes (Domestic only) | $2.00")).toEqual([["Faxes (Domestic only)", 2, "document_reproduction"]]);

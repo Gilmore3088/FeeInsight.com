@@ -156,4 +156,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1830-stop-payment-cut-to-its-list",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "Judge a bill pay fee by its own source line as well as its name. When a stop payment heads the name's cell or the cell before it (\"Stop Payment (includes ACH, Bill Pay) | $10.00\"), the fee is the stop payment, however short the name was cut.",
+    why: "The Southern FCU's \"Stop payment order ... Bill Payment, ACH, or Check | $35.00\" went live as bill pay under the cut name \"Bill Payment, ACH, or Check\". On Oct 20, 9 live bill pay fees were stop payments cut the same way, each a twin of the bank's live stop payment fee.",
+    evidence: { issues: [1830], prs: [2470], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
