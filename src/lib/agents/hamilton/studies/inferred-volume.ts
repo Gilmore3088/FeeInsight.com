@@ -20,10 +20,12 @@ import type { Placement, StudyRecord } from "./store";
  *                  newest bank quarter count: a bank whose H032 stopped earlier (it fell
  *                  under $1B, merged or closed) would mix years into one peer group.
  *
- * Either charter's income counts only when it ends within one quarter of that charter's
- * newest call report filing, as feeRevenueLine does (#2034, #2052): today's fee divided by
- * an older year's income mixes years. NCUA stopped the lines after 2024, so credit unions
- * are left out until a current filing carries them, and the findings say so.
+ * Income counts only when it is current against that charter's newest call report filing
+ * (#2034, #2052): today's fee divided by an older year's income mixes years. Bank income must
+ * end within one quarter of the newest FDIC filing, as feeRevenueLine does. Credit union income
+ * is December year to date, so a June or September NCUA filing never carries a newer year: the
+ * most recent December, within four quarters of the newest NCUA filing, counts. While NCUA's
+ * lines stop at 2024, credit unions are left out, and the findings say so.
  *
  * Rows keep their study_id; read them through the current study (is_current), since
  * an institution that drops out keeps its older row under the older study.
@@ -143,9 +145,27 @@ export interface InferredVolumeResult {
   placements: Placement[];
 }
 
-/** Income that ends within one quarter of the charter's newest filing; an older year is not current. */
-export function isCurrentIncome(row: Pick<IncomeFeeRow, "period" | "newestFiling">): boolean {
-  return !row.newestFiling || row.period >= previousQuarterEnd(row.newestFiling);
+const QUARTERS_IN_YEAR = 4;
+
+function quartersBefore(date: string, quarters: number): string {
+  let out = date;
+  for (let i = 0; i < quarters; i += 1) out = previousQuarterEnd(out);
+  return out;
+}
+
+/**
+ * Bank income must end within one quarter of the newest FDIC filing. Credit union income is
+ * December year to date, so it counts when it is the most recent December: after the date four
+ * quarters before the newest NCUA filing.
+ */
+export function isCurrentIncome(row: Pick<IncomeFeeRow, "charter" | "period" | "newestFiling">): boolean {
+  if (!row.newestFiling) return true;
+  if (row.charter === "credit_union") return row.period > quartersBefore(row.newestFiling, QUARTERS_IN_YEAR);
+  return row.period >= previousQuarterEnd(row.newestFiling);
+}
+
+function staleWindow(charter: Charter): string {
+  return charter === "bank" ? "more than a quarter" : "more than a year";
 }
 
 /**
@@ -162,7 +182,7 @@ export interface IncomePeriod {
   /** Quarter end of the income used, or null when none was current. */
   income_period: string | null;
   newest_filing: string | null;
-  /** Institutions read but left out because their income was older than one quarter before the newest filing. */
+  /** Institutions read but left out because their income was not current against the newest filing (isCurrentIncome). */
   left_out: number;
   stale_income_period: string | null;
 }
@@ -253,7 +273,7 @@ export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
   }
   const staleNotes = periodsUsed
     .filter((p) => p.left_out > 0 && p.income_period === null)
-    .map((p) => `${p.charter === "bank" ? "Banks" : "Credit unions"} are left out: their newest overdraft and NSF income is for the period to ${p.stale_income_period}, more than a quarter before their newest call report (${p.newest_filing}), so it cannot be set against today's fees.`);
+    .map((p) => `${p.charter === "bank" ? "Banks" : "Credit unions"} are left out: their newest overdraft and NSF income is for the period to ${p.stale_income_period}, ${staleWindow(p.charter)} before their newest call report (${p.newest_filing}), so it cannot be set against today's fees.`);
   const lead = parts.length
     ? `Inferred: ${parts.join("; ")}.`
     : "No institution has both current overdraft income and a published fee yet.";
@@ -278,7 +298,7 @@ export function buildInferredVolume(all: IncomeFeeRow[]): InferredVolumeResult {
         label: "inferred",
         by_category: summary,
         income_periods: periodsUsed,
-        method: "Reported income (net of waivers and refunds) divided by the published fee. Range: highest published amount gives the low count, lowest gives the high count. The schedule is current; income counts only when it ends within one quarter of its charter's newest call report filing, and income_periods names the quarter used.",
+        method: "Reported income (net of waivers and refunds) divided by the published fee. Range: highest published amount gives the low count, lowest gives the high count. The schedule is current; bank income counts only when it ends within one quarter of the newest FDIC filing, credit union December year-to-date income only when it is the most recent December within four quarters of the newest NCUA filing, and income_periods names the period used.",
       },
     },
   };
