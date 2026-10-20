@@ -3,9 +3,9 @@
  * The page reads no session, cookies or search params: the header's signed-in parts and the
  * report link's query pass-through are client islands. A render with a failed read is cached
  * for one minute instead (`shortenPageLife`, #1572), so a database blip never pins a page
- * with hidden exhibits for the full 15. `next build` renders it without the database
- * (`readOnRequest`), as such a render: a busy database held its build-time reads past Next's
- * 60-second page limit (#1048).
+ * with hidden exhibits for the full 15. During `next build` its reads get 15 s
+ * (`readOnRequest`) before it renders as such a render: a busy database held its build-time
+ * reads past Next's 60-second page limit (#1048).
  */
 export const revalidate = 900;
 

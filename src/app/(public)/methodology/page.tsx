@@ -1,8 +1,8 @@
 /**
  * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
- * the public read cache its reads carry. `next build` renders it without the database
+ * the public read cache its reads carry. During `next build` its reads get 15 s
  * (`readOnRequest`): a busy database held its build-time reads past Next's 60-second page limit
- * (#1048). A render with a failed read, the build copy included, is cached for a minute
+ * (#1048). A render with a failed read, a late build read included, is cached for a minute
  * (`shortenPageLife`), so the first request after a deploy brings back the live figures.
  */
 export const revalidate = 3600;

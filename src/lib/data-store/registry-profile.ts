@@ -6,6 +6,7 @@ import { getLocalMarketMembers } from "./custom-report-market";
 import { getDepositShareChange } from "./deposit-share-change";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
+import { isExcludedName } from "@/lib/market-position";
 import { identityCandidatesFor, loadIdentityIndex } from "@/lib/agents/magellan/registry/identity";
 
 /**
@@ -141,7 +142,7 @@ async function otherOfficesIn(
      WHERE c.latitude BETWEEN ${box.south} AND ${box.north}
        AND c.longitude BETWEEN ${box.west} AND ${box.east}
        AND c.institution_id IS DISTINCT FROM ${institutionId}`;
-  return [...rows];
+  return rows.filter((r) => !isExcludedName(r.name));
 }
 
 /** "Leon", "Leon and Wakulla", "Leon, Alachua and Gadsden". */
@@ -177,7 +178,7 @@ async function marketCompetitors(
   const total = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
   const share = (deposits: number | null) =>
     deposits === null || total <= 0 ? null : Math.round((deposits / total) * 1000) / 10;
-  const rivals = market.members.filter((m) => !m.is_subject);
+  const rivals = market.members.filter((m) => !m.is_subject && !isExcludedName(m.institution_name));
   const subject = market.members.find((m) => m.is_subject);
   return {
     nearby: rivals.slice(0, NEARBY_LIMIT).map((m) => ({
@@ -249,7 +250,7 @@ async function withMarketShares(institutionId: number, year: number, markets: Br
     if (!summary || !own) return m;
     const rows = summary.rows as Array<(typeof summary.rows)[number] & { name?: string | null }>;
     const competitors = rows
-      .filter((r) => r.institution_id !== institutionId && r.name)
+      .filter((r) => r.institution_id !== institutionId && r.name && !isExcludedName(r.name))
       .sort((a, b) => b.share - a.share)
       .slice(0, MARKET_COMPETITORS)
       .map((r) => ({ name: institutionDisplayName(r.name ?? ""), sharePct: Math.round(r.share * 10) / 10 }));

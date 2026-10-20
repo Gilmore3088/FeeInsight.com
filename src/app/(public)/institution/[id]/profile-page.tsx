@@ -24,6 +24,7 @@ import {
   getInstitutionFinancialHistoryCached,
   getInstitutionPeerSetsCached,
   getPeerExplorerSetCached,
+  getMarketPositionCached,
 } from "@/lib/data-store/public-cached-reads";
 import { PeerExplorerSection, peerSetHrefs } from "./peer-explorer-section";
 import { PeerExplorerIsland } from "./peer-explorer-island";
@@ -217,15 +218,20 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   // brief, Oct 18). Peer ranks, peer medians and the regulatory watch stay Pro, read per request by
   // ProFinancialProfile, never here: this page is cached for every visitor. The branch footprint,
   // complaints, enforcement and holding company are public records every visitor sees.
-  const [financialHistory, callItems, footprint, complaints, holdingCompany, enforcement, regulator] = await Promise.all([
-    budget.optional(() => getInstitutionFinancialHistoryCached(instId), "financial history", []),
-    budget.optional(() => getInstitutionCallItemHistoryCached(instId), "call-report lines", []),
-    budget.optional(() => getBranchFootprint(instId), "branch footprint", null),
-    budget.optional(() => getComplaintTrend(instId), "complaint trend", null),
-    budget.optional(() => getHoldingCompanyProfile(instId), "holding company", null),
-    budget.optional(() => getEnforcementRecord(instId), "enforcement actions", null),
-    budget.optional(() => getRegulatorInfo(instId), "regulator info", null),
-  ]);
+  const [financialHistory, callItems, footprint, complaints, holdingCompany, enforcement, regulator, marketPosition] =
+    await Promise.all([
+      budget.optional(() => getInstitutionFinancialHistoryCached(instId), "financial history", []),
+      budget.optional(() => getInstitutionCallItemHistoryCached(instId), "call-report lines", []),
+      budget.optional(() => getBranchFootprint(instId), "branch footprint", null),
+      budget.optional(() => getComplaintTrend(instId), "complaint trend", null),
+      budget.optional(() => getHoldingCompanyProfile(instId), "holding company", null),
+      budget.optional(() => getEnforcementRecord(instId), "enforcement actions", null),
+      budget.optional(() => getRegulatorInfo(instId), "regulator info", null),
+      // Deposit market share is FDIC Summary of Deposits data: banks only.
+      inst.charter_type === "credit_union"
+        ? Promise.resolve(null)
+        : budget.optional(() => getMarketPositionCached(instId), "market position", null),
+    ]);
 
   const verifiedFees = visibleFees.filter(isVerifiedFee);
   const catalogRows = [...toDisplayFees(visibleFees), ...toRateDisplayFees(rateFees)];
@@ -269,6 +275,10 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
 
   const sparse = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
+  // The market card's link lands on the explorer's home metro set: its count, or null (no link)
+  // when the page shows no explorer or does not offer that set.
+  const metroOption = !sparse && peerExplorerSet ? peerSets?.options.find((option) => option.key === "metro") : undefined;
+  const metroPeerCount = metroOption ? metroOption.count : null;
   const schedule = scheduleState({ publishedFees: verifiedFees.length, hasSchedule: Boolean(inst.fee_schedule_url) });
   const categories = [...new Set(verifiedFees.map((fee) => fee.fee_category).filter((c): c is string => Boolean(c)))];
   const rawRows = compareRows(
@@ -644,15 +654,25 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
             </ProOnly>
           )}
 
-          {/* 4. Where it operates and its public record: FDIC, NCUA, CFPB and SEC data, for every visitor. */}
-          {(footprint || complaints || enforcement || holdingCompany) && (
+          {/* 4. Where it operates, its deposit market position and its public record: FDIC, NCUA, CFPB
+              and SEC data, for every visitor. The market position card sits under the footprint card. */}
+          {(footprint || complaints || enforcement || holdingCompany || marketPosition) && (
             <section aria-labelledby="record-heading">
               <h2 id="record-heading" className={H2} style={SERIF}>
                 Branches and public record
               </h2>
               <p className={FINDING}>Where {inst.institution_name} operates, and what regulators and customers have on file.</p>
               <div className="mt-6">
-                <RegistryCards footprint={footprint} complaints={complaints} enforcement={enforcement} holdingCompany={holdingCompany} />
+                <RegistryCards
+                  footprint={footprint}
+                  complaints={complaints}
+                  enforcement={enforcement}
+                  holdingCompany={holdingCompany}
+                  market={marketPosition}
+                  institutionId={instId}
+                  institutionName={inst.institution_name}
+                  metroPeerCount={metroPeerCount}
+                />
               </div>
             </section>
           )}

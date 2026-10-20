@@ -11,22 +11,32 @@ queued behind a busy pool fails only when its own deadline passes, so a slow poo
 push a render past 60 seconds.
 
 **Fix:** The pages stay ISR, so visitors are still served a cached page. During `next build`
-(`NEXT_PHASE` is `phase-production-build`) each page skips its reads (`readOnRequest` in
-`src/lib/build-phase.ts`) and renders its failed-read fallback, which calls `shortenPageLife`. The
-build copy therefore lives one minute; the first request after a deploy is served that copy
-while the page regenerates in the background from the cached public reads (`cachedPublicRead`,
-which keeps the last good value). `/methodology` gained the explicit hourly `revalidate` and the
-`shortenPageLife` call the other three already had. A local `next build` with no `DATABASE_URL`
-lists the four as `○ ... 1m 1y` and logs no read from them. They did not become `force-dynamic`:
-the homepage left per-request rendering because cached reads that missed made p75 TTFB 3.8 s
-(#1168).
+(`NEXT_PHASE` is `phase-production-build`) each page still tries its real reads, but
+`readOnRequest` in `src/lib/build-phase.ts` races them against a 15-second deadline
+(`BUILD_READ_DEADLINE_MS`, well under the 60-second page limit). A read in time gives the live
+page, so a healthy database ships `/for-institutions` with its competitor board, market ladder,
+price tester and sample report. A read that throws or passes the deadline gives the page's
+failed-read fallback, which calls `shortenPageLife`: that build copy lives one minute and the
+first request after the deploy regenerates it in the background from the cached public reads
+(`cachedPublicRead`, which keeps the last good value). The losing read is not awaited; its result
+and any later error are dropped, so it cannot hold the render or raise an unhandled rejection.
+On request nothing changed. `/methodology` gained the explicit hourly `revalidate` and the
+`shortenPageLife` call the other three already had. They did not become `force-dynamic`: the
+homepage left per-request rendering because cached reads that missed made p75 TTFB 3.8 s (#1168).
 
-**Trade-off:** For about a minute after each deploy, until the first regeneration, these pages
-show their figures as unavailable, as they would after a failed read.
+A first version skipped the reads during the build entirely. Review blocked it: every deploy then
+served the fallback to the first visitor of each page, which on `/for-institutions`, the main
+conversion page, drops every live exhibit.
 
-**Lesson:** A page that reads the database and is prerendered at build must skip those reads
-during the build (`readOnRequest`) or render on request; the database's load must never decide
-whether a deploy succeeds.
+**Trade-off:** Only when the database is slow or down at build time, these pages show their
+figures as unavailable for about a minute after the deploy, as they would after a failed read.
+The build waits at most 15 seconds per page for it.
 
-**Guard:** `src/app/build-time-reads.test.ts` (each page makes no read with `NEXT_PHASE` set to
-the build phase, shortens its life, and reads on request).
+**Lesson:** A page that reads the database and is prerendered at build gives those reads a
+deadline well under Next's page limit (`readOnRequest`) and renders its short-lived fallback past
+it, or renders on request; the database's load must never decide whether a deploy succeeds.
+
+**Guard:** `src/lib/build-phase.test.ts` (the deadline, a late or failing read gives the
+fallback, a late rejection is dropped, the request path is unchanged) and
+`src/app/build-time-reads.test.ts` (with `NEXT_PHASE` set to the build phase each page renders
+live data from fast reads, and falls back and shortens its life when its reads never finish).

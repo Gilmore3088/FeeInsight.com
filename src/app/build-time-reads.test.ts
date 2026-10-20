@@ -5,9 +5,9 @@ import { PHASE_PRODUCTION_BUILD } from "next/constants";
  * #1048: /methodology, /research/data-sources, /about and /for-institutions are ISR pages, so
  * `next build` prerendered them and their reads ran against the database. A busy pool held
  * those reads past Next's 60-second page limit (#2483's build, 2026-10-20). During the build
- * they now render without reading the database, with a one-minute life, and the first
- * regeneration on request reads the cached public data
- * (findings/2026-10-20-sitemap-build-time-db-reads.md).
+ * each page now tries its reads for BUILD_READ_DEADLINE_MS: in time, it renders the live page;
+ * past the deadline, it renders its failed-read fallback with a one-minute life
+ * (findings/2026-10-20-isr-pages-build-time-db-reads.md).
  */
 const reads = vi.hoisted(() => ({
   snapshot: vi.fn(),
@@ -47,6 +47,7 @@ vi.mock("@/components/customer-footer", () => ({ CustomerFooter: () => null }));
 vi.mock("@/components/public/search-modal", () => ({ SearchModal: () => null }));
 
 import { UNAVAILABLE_PUBLIC_STATS } from "@/lib/public-stats";
+import { BUILD_READ_DEADLINE_MS } from "@/lib/build-phase";
 import MethodologyPage from "./(public)/methodology/page";
 import DataSourcesPage from "./(public)/research/data-sources/page";
 import AboutPage from "./(public)/about/page";
@@ -73,8 +74,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
 });
+
+const READS = [reads.snapshot, reads.summary, reads.categories, reads.stats, reads.coverage, reads.sample,
+  reads.sampleAvailable];
 
 function dataReadCount(): number {
   return [reads.snapshot, reads.summary, reads.categories, reads.stats, reads.coverage, reads.sample,
@@ -82,10 +88,27 @@ function dataReadCount(): number {
 }
 
 describe("database-backed ISR pages during next build", () => {
-  it.each(PAGES)("%s reads nothing during the build and keeps the build copy for a minute", async (_path, Page) => {
+  it.each(PAGES)("%s renders the live page when its build-time reads finish in time", async (_path, Page) => {
     vi.stubEnv("NEXT_PHASE", PHASE_PRODUCTION_BUILD);
+    reads.snapshot.mockResolvedValue({ summary: LIVE_SUMMARY, categories: [{ fee_category: "overdraft", institution_count: 40 }] });
     await Page();
-    expect(dataReadCount()).toBe(0);
+    expect(dataReadCount()).toBeGreaterThan(0);
+    expect(reads.shortenPageLife).not.toHaveBeenCalled();
+  });
+
+  it.each(PAGES)("%s falls back under the deadline when its build-time reads never finish", async (_path, Page) => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.stubEnv("NEXT_PHASE", PHASE_PRODUCTION_BUILD);
+    for (const read of READS) read.mockReturnValue(new Promise(() => undefined));
+    let rendered = false;
+    const render = Page().then((page) => {
+      rendered = true;
+      return page;
+    });
+    await vi.advanceTimersByTimeAsync(BUILD_READ_DEADLINE_MS);
+    await render;
+    expect(rendered).toBe(true);
     expect(reads.shortenPageLife).toHaveBeenCalled();
   });
 

@@ -364,6 +364,19 @@ describe("storyline", () => {
     expect(local.actionTitle).not.toContain("$150");
   });
 
+  it("counts a 'the N largest' group as 'n of the N largest' in the structure exhibit (#2028)", () => {
+    const largest = { ...structure!, groupLabel: "the 25 largest $1B to $10B credit unions" };
+    const story = buildFeeAnswer(research({ structure: largest }), { story: { structure: true } }).storyline!;
+    const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
+    expect(matrix.actionTitle).toBe("Of 6 of the 25 largest $1B to $10B credit unions: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    const whole = { ...structure!, groupLabel: "the 6 largest credit unions in Tennessee" };
+    const all = buildFeeAnswer(research({ structure: whole }), { story: { structure: true } }).storyline!;
+    expect(all.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!.actionTitle).toBe(
+      "Of the 6 largest credit unions in Tennessee: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.",
+    );
+    expect(JSON.stringify([story, all])).not.toMatch(/\d the \d/);
+  });
+
   it("shows a structure cell with several fees as their range and names, a single fee as its price (#1931)", () => {
     const rows = structure!.rows.map((r) =>
       r.institutionId === 2 && !r.own ? { ...r, several: { nsf: { low: 20, high: 30, fees: [{ name: "NSF item", amount: 20 }, { name: "NSF ACH", amount: 30 }] } } } : r,
@@ -561,6 +574,18 @@ describe("storyline: checking lineup", () => {
     const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
     expect(piece.actionTitle).toBe("Your lineup includes a no-fee account; 2 of 6 peers offer a no-fee account.");
     expect(piece.exhibit.note).toBe("A blank balance means the schedule states none.");
+  });
+
+  it("counts a 'the N largest' group as 'n of the N largest' in the lineup exhibit (#2028)", () => {
+    const largest = { ...lineup!, groupLabel: "the 25 largest $1B to $10B credit unions" };
+    const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: largest, structure: null })).storyline!;
+    const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
+    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 6 of the 25 largest $1B to $10B credit unions offer a no-fee account.");
+    const few = { ...largest, rows: largest.rows.slice(0, 3) };
+    const thin = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: few, structure: null })).storyline!;
+    const thinPiece = thin.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
+    expect(thinPiece.actionTitle).toBe("Your lowest monthly fee is $5; too few of the 25 largest $1B to $10B credit unions publish their lineup to compare.");
+    expect(JSON.stringify([story, thin])).not.toMatch(/\d the \d/);
   });
 
   it("shows no lineup when the bank publishes none", () => {

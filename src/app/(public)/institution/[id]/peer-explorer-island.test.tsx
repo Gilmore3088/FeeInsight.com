@@ -75,4 +75,65 @@ describe("PeerExplorerIsland (#1811: the cached page never reads ?peers=)", () =
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
     expect(screen.getByText("default set")).toBeTruthy();
   });
+
+  it("should_scroll_to_peers_and_keep_the_hash_when_a_link_swaps_the_set", async () => {
+    action.mockResolvedValue(<p>metro set</p>);
+    at("");
+    const scrolled = vi.fn();
+    const { rerender } = render(
+      <div id="peers">
+        <PeerExplorerIsland institutionId={323} defaultSet="nearest">
+          <p>default set</p>
+        </PeerExplorerIsland>
+      </div>,
+    );
+    document.getElementById("peers")!.scrollIntoView = scrolled;
+    // A client navigation that changed ?peers= but dropped #peers from the address.
+    at("peers=metro");
+    rerender(
+      <div id="peers">
+        <PeerExplorerIsland institutionId={323} defaultSet="nearest">
+          <p>default set</p>
+        </PeerExplorerIsland>
+      </div>,
+    );
+    expect(await screen.findByText("metro set")).toBeTruthy();
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect(window.location.hash).toBe("#peers");
+    expect(window.location.search).toBe("?peers=metro");
+  });
+
+  it("should_not_scroll_on_first_render", () => {
+    at("");
+    const scrolled = vi.fn();
+    Element.prototype.scrollIntoView = scrolled;
+    render(
+      <div id="peers">
+        <PeerExplorerIsland institutionId={323} defaultSet="nearest">
+          <p>default set</p>
+        </PeerExplorerIsland>
+      </div>,
+    );
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+
+  it("should_reveal_peers_when_a_link_lands_on_the_default_set", async () => {
+    at("peers=nearest");
+    action.mockResolvedValue(<p>nearest set</p>);
+    const tree = () => (
+      <div id="peers">
+        <PeerExplorerIsland institutionId={323} defaultSet="metro">
+          <p>default set</p>
+        </PeerExplorerIsland>
+      </div>
+    );
+    const { rerender } = render(tree());
+    const scrolled = vi.fn();
+    document.getElementById("peers")!.scrollIntoView = scrolled;
+    at("peers=metro");
+    rerender(tree());
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect(screen.getByText("default set")).toBeTruthy();
+    expect(window.location.hash).toBe("#peers");
+  });
 });
