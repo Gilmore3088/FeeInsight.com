@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatAdminDateTime } from "@/lib/admin-time";
+import { hoovieSourceContract } from "@/lib/agents/hoovie/sources";
 import type { FeedFreshness } from "@/lib/data-store/feed-freshness";
 
 const FEED_LABELS: Record<string, string> = {
@@ -324,7 +325,8 @@ export function DataFeedsPanel({ freshness, now }: { freshness: FeedFreshness; n
                             </span>
                           ) : feed.blocked > 0 ? (
                             <span className={warn}>
-                              Blocked: {feed.blockedHost ?? "the publisher's host"} refuses our requests ({feed.blocked}{" "}
+                              Blocked: {feed.blockedHost ?? "the publisher's host"}{" "}
+                              {hoovieSourceContract(feed.source)?.missingSource?.answer ?? "refuses our requests"} ({feed.blocked}{" "}
                               {feed.blocked === 1 ? "period" : "periods"} not loaded)
                             </span>
                           ) : feed.scheduled > 0 ? (

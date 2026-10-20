@@ -31,7 +31,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 export const UBPR_PEER_GROUPS_SOURCE = "ubpr-peer-groups";
 /** v3 (#2204): follow the actual TSV radio postback handler, or submit a non-postback radio with Download. */
-export const UBPR_PEER_GROUPS_PARSER_VERSION = 4;
+export const UBPR_PEER_GROUPS_PARSER_VERSION = 3;
 const EMPTY_RETRY_HOURS = 24;
 /** A withdrawn format is re-checked weekly, not every tick (#2473). */
 const FORMAT_NOT_SERVED_RETRY_HOURS = 24 * 7;

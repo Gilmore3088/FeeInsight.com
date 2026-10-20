@@ -115,14 +115,24 @@ describe("registry ubpr-peer-groups", () => {
     expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 
-  it("names the withdrawn format instead of failing when FFIEC echoes the form back silently (#2473)", async () => {
+  /** FFIEC's answer to the tab-delimited Download (#2473): its own form, still holding the request. */
+  const answeredForm = (product = 'selected="selected" ', date = 'selected="selected" ') => `<title>Download Bulk Data</title>
+    <input name="__VIEWSTATE" value="v" /><input name="__VIEWSTATEGENERATOR" value="g" />
+    <select name="ctl00$MainContentHolder$ListBox1"><option ${product}value="P0">UBPR Ratio -- Single Period</option></select>
+    <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="0">03/31/2026</option><option ${date}value="1">06/30/2026</option></select>
+    <input type="radio" name="ctl00$MainContentHolder$FormatType" value="TSVRadioButton" />
+    <input type="radio" name="ctl00$MainContentHolder$FormatType" value="XBRLRadiobutton" />
+    <input type="submit" name="ctl00$MainContentHolder$TabStrip1$Download_0" value="Download" />`;
+  /** The bulk page until the Download post, then `answer` in place of the file. */
+  const answering = (answer: string) => vi.fn(async (_url: string, init?: RequestInit) => {
+    const body = new URLSearchParams(String(init?.body ?? ""));
+    const html = body.has("ctl00$MainContentHolder$TabStrip1$Download_0") ? answer : page(["UBPR Ratio -- Single Period"]);
+    return new Response(html, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+  }) as unknown as typeof fetch;
+
+  it("names the withdrawn format instead of failing when FFIEC answers with its own form, silent (#2473)", async () => {
     const { db, statements } = createDb();
-    const formPage = `<title>Download Bulk Data</title>${page(["UBPR Ratio -- Single Period"])}
-      <input type="radio" name="ctl00$MainContentHolder$FormatType" value="XBRLRadiobutton" />
-      <input type="submit" name="ctl00$MainContentHolder$TabStrip1$Download_0" value="Download" />`;
-    const fetchImpl = vi.fn(async () =>
-      new Response(formPage, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } })) as unknown as typeof fetch;
-    const r = await runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl } });
+    const r = await runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl: answering(answeredForm()) } });
     expect(r.empty).toBe(true);
     expect(r.emptyReason).toMatch(/tab-delimited "UBPR Ratio -- Single Period" .*2026-06-30.*form page.*XBRL.*#2473/);
     const detail = partitionDetail(statements);
@@ -131,6 +141,17 @@ describe("registry ubpr-peer-groups", () => {
     const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
     expect(partition.values).toContain("empty");
     expect(statements.some((s) => s.text.includes("INSERT INTO ubpr_"))).toBe(false);
+  });
+
+  it.each([
+    ["a silent page that is not the form", "<title>Session Expired</title><h2>Your session has timed out.</h2>"],
+    ["the form reset to its defaults", answeredForm("", "")],
+    ["the form holding another quarter", answeredForm('selected="selected" ', "")],
+  ])("still fails loudly on %s", async (_label, answer) => {
+    const { db, statements } = createDb();
+    await expect(runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl: answering(answer) } }))
+      .rejects.toThrow(/instead of the UBPR bulk zip/);
+    expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 
   it("records an empty partition when the ratio product is not listed", async () => {

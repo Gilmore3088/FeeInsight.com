@@ -665,7 +665,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
 | `FR_Y9C_PARSER_VERSION` | — | v1 | `magellan/registry/fr-y9c.ts` |
 | `NIC_STRUCTURE_PARSER_VERSION` | — | v1 | `magellan/registry/nic-structure.ts` |
-| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v4 (the form page answered to a tab-delimited Download with no message is recorded empty with `detail.missing_source`, retried weekly: FFIEC serves the single-period file only as XBRL, #2473; v3 read the TSV radio from the page; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
+| `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v3 (TSV radio name/value and postback handler read from the page, or submit-only without a handler; no guessed target; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
 | `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
 | `FDIC_UNIVERSE_PARSER_VERSION` | — | v3 (prepared own-LEI collection; default-off gate holds scheduled version2 and all LEI propagation, #2265; ordinary release waits on durable identity holds #2266) | `magellan/registry/fdic-universe.ts` |
