@@ -132,6 +132,20 @@ describe("Magellan companion finder", () => {
     expect(selects[1].slice(1)).not.toContain("MT");
   });
 
+  it("runs the stored-text tests only on banks that pass the cheap filters", async () => {
+    const db = createDb(true, [], []);
+    await runSecondDocumentFind({ db: asDb(db), fetchImpl: vi.fn(async () => notFound()), runId: 5, stateCode: "MT", deadline: Date.now() + 60_000, learning: true, dryRun: true });
+
+    const [, topUp] = db.mock.calls.filter(([strings]) => templateText(strings).includes("FROM published_fee_records"));
+    const text = templateText(topUp[0]);
+    // Run on every bank first, the national top-up scanned 5,141 banks' texts to keep 65 (17 Oct 2026).
+    const candidates = text.slice(text.indexOf("candidates AS MATERIALIZED"), text.indexOf("scoped AS"));
+    expect(candidates).toContain("pipeline_attempts");
+    expect(candidates).toContain("COALESCE(thin.categories, 0) <");
+    expect(candidates).not.toContain("agent_source_texts");
+    expect(text).toContain("FROM candidates inst");
+  });
+
   it("skips the top-up when the state fills every slot, or with no state", async () => {
     const full = createDb(true, Array.from({ length: 6 }, (_, index) => ({ ...thinBank, id: index + 1 })), [thinBank]);
     await runSecondDocumentFind({ db: asDb(full), fetchImpl: vi.fn(async () => notFound()), runId: 5, stateCode: "MT", deadline: Date.now() + 60_000, learning: true, dryRun: true });
@@ -287,8 +301,121 @@ describe("Magellan site search for fee schedules and agreements", () => {
     expect(byQuery("account agreement")[7]).toBe("ok");
     expect(detailOf(byQuery("member agreement")).kept).toBe(0);
     expect(byQuery("member agreement")[7]).toBe("rejected");
+    expect(JSON.parse(String(byQuery("member agreement")[13]))).toMatchObject({ candidates: 1, checked: 1, unchecked: 0, rejected: 1 });
     expect(byQuery("fee schedule")[7]).toBe("no_candidates");
     expect(attempts.filter((call) => call[4] === SECOND_DOCUMENT_FINDER.strategy)).toHaveLength(1);
+  });
+
+  it("records timeout instead of rejection when result hits were never validated before the deadline", async () => {
+    let now = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const db = createDb();
+    const originalFetch = agreementFetch();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "https://www.triangle.example/search?q=member+agreement") now = 1001;
+      return originalFetch(input);
+    });
+    try {
+      const result = await runSecondDocumentFind({ db: asDb(db), fetchImpl, runId: 9, deadline: 1000, learning: true, searchRotation: 0 });
+
+      expect(result.results[0].outcome).toBe("timeout");
+      expect(result.results[0].searches.find((search) => search.query === "account agreement")).toMatchObject({
+        outcome: "timeout", status: 200, candidates: 1, kept: 0, checked: 0, unchecked: 1, rejected: 0,
+      });
+      expect(result.results[0].searches.find((search) => search.query === "member agreement")?.outcome).toBe("timeout");
+      expect(result.results[0].searches.find((search) => search.query === "fee schedule")?.outcome).toBe("no_candidates");
+      const searchAttempt = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts") && call[4] === SITE_SEARCH_STRATEGY.strategy && String(call[6]).includes("q=account+agreement"))!;
+      expect(searchAttempt[5]).toBe(SITE_SEARCH_STRATEGY.version);
+      expect(searchAttempt[7]).toBe("timeout");
+      expect(JSON.parse(String(searchAttempt[13]))).toMatchObject({ query: "account agreement", candidates: 1, kept: 0, checked: 0, unchecked: 1, rejected: 0 });
+      expect(fetchImpl.mock.calls.map((call) => String(call[0]))).not.toContain("https://www.triangle.example/disclosures/deposit-account-agreement");
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("preserves a kept query hit when the deadline leaves another query's candidates unchecked", async () => {
+    let now = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const feeUrl = "https://www.triangle.example/files/schedule-of-fees";
+    let feeReads = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://www.triangle.example/") return html(AGREEMENT_HOME);
+      if (url === thinBank.fee_schedule_url) return html("<p>Incoming wire fee $10.00</p>");
+      if (url === "https://www.triangle.example/search?q=fee+schedule") return html('<a href="/files/schedule-of-fees">Fee Schedule</a>');
+      if (url === "https://www.triangle.example/search?q=account+agreement") return html('<a href="/disclosures/deposit-account-agreement">Deposit Account Agreement</a>');
+      if (url.includes("/search?")) return html("<p>No results</p>");
+      if (url === feeUrl) {
+        feeReads += 1;
+        // The hub read completes first; the fee check then finishes as the budget expires.
+        if (feeReads === 2) now = 1001;
+        return html(COURTESY_PAY);
+      }
+      if (url === "https://www.triangle.example/disclosures/deposit-account-agreement") return html(ACCOUNT_AGREEMENT);
+      return notFound();
+    });
+    try {
+      const result = await runSecondDocumentFind({ db: asDb(createDb()), fetchImpl, runId: 10, deadline: 1000, learning: true, searchRotation: 0 });
+
+      expect(result.found).toBe(1);
+      expect(result.results[0].searches.find((search) => search.query === "fee schedule")).toMatchObject({ outcome: "ok", candidates: 1, kept: 1, checked: 1, unchecked: 0, rejected: 0 });
+      expect(result.results[0].searches.find((search) => search.query === "account agreement")).toMatchObject({ outcome: "timeout", candidates: 1, kept: 0, checked: 0, unchecked: 1, rejected: 0 });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("treats a duplicate hit already kept by an earlier query as unchanged", async () => {
+    const originalFetch = agreementFetch();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "https://www.triangle.example/search?q=member+agreement") {
+        return html('<a href="/disclosures/deposit-account-agreement">Deposit Account Agreement</a>');
+      }
+      return originalFetch(input);
+    });
+    const result = await runSecondDocumentFind({ db: asDb(createDb()), fetchImpl, runId: 11, deadline: Date.now() + 60_000, learning: true, searchRotation: 0 });
+
+    expect(result.results[0].searches.find((search) => search.query === "account agreement")?.outcome).toBe("ok");
+    expect(result.results[0].searches.find((search) => search.query === "member agreement")).toMatchObject({ outcome: "unchanged", candidates: 1, kept: 0, checked: 1, unchecked: 0, rejected: 0 });
+  });
+
+  it("keeps a completed rejection when its final check finishes after the deadline", async () => {
+    let now = 0;
+    let membershipReads = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const originalFetch = agreementFetch();
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "https://www.triangle.example/disclosures/membership-agreement") {
+        membershipReads += 1;
+        if (membershipReads === 2) now = 1001;
+      }
+      return originalFetch(input);
+    });
+    try {
+      const result = await runSecondDocumentFind({ db: asDb(createDb()), fetchImpl, runId: 12, deadline: 1000, learning: true, searchRotation: 0 });
+
+      expect(result.results[0].searches.find((search) => search.query === "member agreement")).toMatchObject({ outcome: "rejected", candidates: 1, kept: 0, checked: 1, unchecked: 0, rejected: 1 });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("does not claim capped, unchecked hits were rejected", async () => {
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "https://www.triangle.example/") return html(AGREEMENT_HOME);
+      if (url === thinBank.fee_schedule_url) return html("<p>Incoming wire fee $10.00</p>");
+      if (url === "https://www.triangle.example/search?q=member+agreement") {
+        return html([1, 2, 3, 4].map((id) => `<a href="/disclosures/member-agreement-${id}">Membership Agreement ${id}</a>`).join(""));
+      }
+      if (url.includes("/search?")) return html("<p>No results</p>");
+      if (url.includes("/disclosures/member-agreement-")) return html(MEMBERSHIP_AGREEMENT);
+      return notFound();
+    });
+    const result = await runSecondDocumentFind({ db: asDb(createDb()), fetchImpl, runId: 13, deadline: Date.now() + 60_000, learning: true, searchRotation: 0 });
+
+    expect(result.results[0].searches.find((search) => search.query === "member agreement")).toMatchObject({ outcome: "no_candidates", candidates: 4, kept: 0, checked: 3, unchecked: 1, rejected: 3 });
   });
 
   it("requests at most MAX_SEARCH_PAGES_PER_BANK search pages per bank", async () => {

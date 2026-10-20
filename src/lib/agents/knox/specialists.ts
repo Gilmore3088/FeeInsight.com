@@ -2,6 +2,7 @@ import { feeApplicability } from "@/lib/fee-audience";
 import {
   billPayByHeading,
   extractCandidatesFromText,
+  recognizedFeeBullets,
   isUnpricedHeldShape,
   MAX_FEES_PER_DOCUMENT,
   withBoxSizeCellsSplit,
@@ -22,6 +23,12 @@ import { checkFeeAgainstSource, joinLabeledFeeCardText } from "@/lib/custom-repo
 import { rateFeeFromHeld, type RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { contextFees, NO_LONGER_CHARGED } from "@/lib/agents/knox/context-names";
 import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
+import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
+import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
+import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
+import { internationalWireEligibility } from "./international-wire-eligibility";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -111,7 +118,39 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 // a checking account's own free row is its monthly fee at $0; and the next name families the 62-bank
 // key held (`V78_RECALL_PATTERNS`; statement printouts fold to document reproduction). Every current
 // copy read before v78 is read once more (`KNOX_STALE_READ_BELOW_VERSION`).
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 78 } as const;
+// v79 (#1827): a price-first row keeps its own price. A table row that opens with its price ("| **$20** |
+// Key Deposit |", Valley Strong CU; "$10 | Replacement Debit Card") is the name after it, not the line
+// above, so the rows no longer each take the next row's price; under a name that says its price varies
+// ("Mortgage satisfaction fee (varies)", Citadel FCU) a price with a name after it is that name's. A
+// bare price still goes to the name above, and so does any price under a name that runs on ("...
+// Savings Account per"). The stale-read floor stays at v78: no page is read again for this alone.
+// v81 (#1830): a later specialist's read of an earlier find's line at its price, named by a part of
+// that find's name, is that fee read from its tail and is not kept (`tailOfEarlierRead`): "ACH or Bill
+// Pay" from "Stop Payment (check, ACH or Bill Pay) | $25" is no bill pay fee. The stale-read floor
+// stays at v78: no page is read again for this alone.
+// v82 (round 2 live check, #2123): a combined NSF/overdraft line's twin is stored as its own raw row
+// (`line_share`, migration 20270110000065); before, the raw key (document, name, price, audience)
+// dropped it. The joined name also matches with the abbreviation in brackets ("Non-sufficient funds
+// (NSF) or Overdraft (OD)") and with a returned item for NSF ("Overdraft/Return Item Fee"). The
+// stale-read floor stays at v78; only pages with a combined row and no twin are read again
+// (`KNOX_TWIN_READ_BELOW_VERSION`).
+// v83 (#2151): explicitly labeled, bounded wrapped bullets keep their own terminal price and
+// complete conditions. All readers and the source witness share physical ownership, so a
+// neighboring paid/returned row cannot donate its price. Stale-read floor remains v78.
+// v84 (#2209): bounded returned/paid-item policy paragraphs keep literal tier/exception scope;
+// dollar totals of a fee count fail the shared source check. Existing re-read floors stay settled.
+// v85 (#2240/#2241): explicit stacked fee labels own their prices; an own annual
+// overdraft-program charge stays held instead of losing its period on the paid-item path.
+// v86 (#2259): repeated monthly price prose without one literal account owner stays
+// eligibility-held; paid and minimal-row callers share the source-bearing writer gate.
+// v87 (#2248): new raw lineage keeps literal own charging units and full conditions;
+// known special units leave mixed-unit comparisons. Historical raw metadata stays settled.
+// v88 (#2021/#2284/#2286): explicit domestic post-price directions bind paired wire
+// prices; the same bounded own-price refusal applies to free, paid and live rechecks.
+// v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
+// statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
+// v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 90 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -138,10 +177,15 @@ export interface FreeExtractionResult extends ExtractionRulesResult {
 const MAX_HELD_PER_DOCUMENT = 40;
 /** v76: a $0 or "prices vary" hold, untraced $0 rows included, counts in the unpriced half of the held cap. */
 const unpricedHalf = (row: HeldFeeCandidate): boolean => isUnpricedHeldShape(row.shape) || (row.shape === "untraced" && row.amount === 0);
-/** NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item". */
-const NSF_TERM = String.raw`(?:nsfs?|non[-\s]?sufficient funds?|insufficient funds?)`;
+/**
+ * NSF and overdraft joined as one item's name: "NSFs/Overdrafts", "Overdraft or NSF Item".
+ * v82: also with the abbreviation in brackets ("Non-sufficient funds (NSF) or Overdraft (OD) per
+ * item") and a returned item for NSF ("Overdraft/Return Item Fee", "Returned Item/Overdraft fee").
+ */
+const NSF_TERM = String.raw`(?:(?:non[-\s]?sufficient|insufficient) funds?(?:\s*\(nsfs?\))?|nsfs?|return(?:ed)? items?)`;
+const OD_TERM = String.raw`(?:overdrafts?(?:\s*\(od\))?|OD)`;
 const NSF_AND_OVERDRAFT = new RegExp(
-  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*(?:overdrafts?|OD)\b|\b(?:overdrafts?|OD)\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}`,
+  String.raw`\b${NSF_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*${OD_TERM}(?![\w-])|\b${OD_TERM}\s*(?:\/|\bor\b|\band\b|&)\s*${NSF_TERM}\b`,
   "i",
 );
 const MAX_UNCLASSIFIED_PER_DOCUMENT = 10;
@@ -170,6 +214,41 @@ export function sameFee(a: ExtractedFeeCandidate, b: ExtractedFeeCandidate): boo
   const nameB = words(b.feeName);
   if (nameA === nameB || words(a.excerpt).includes(nameB) || words(b.excerpt).includes(nameA)) return true;
   return nameA.split(" ").slice(0, 2).join(" ") === nameB.split(" ").slice(0, 2).join(" ");
+}
+
+/**
+ * v81 (#1830): one source line at one price read twice, the second time by its tail. A family
+ * expert reads the words nearest a price, so "Stop Payment (check, ACH or Bill Pay) | $25" came back
+ * as "ACH or Bill Pay" filed as bill pay, beside the rules pass's stop payment. On prod (Oct 19, read-only) 38
+ * live fees at 35 banks were a later specialist's tail of another live fee read from the same line of
+ * the same document at the same price, under another category: "Fax Fee" of "Verification of Deposit by Fax Fee", "Teller Check" of "Copy of a
+ * draft or a Teller Check". The earlier find already names the whole row, so the tail adds nothing.
+ * Only a strictly shorter name made of whole words of the earlier one counts. Two fees named
+ * together at one price ("Returned Check & Stop Payment Fee $30") are both kept: a part the earlier
+ * name joins with "&", "and", "or", "/" or "+" outside any parenthesis is a fee of its own
+ * (`joinedFeeName`), while one inside a parenthesis or after "on" or "including" is not.
+ */
+export function tailOfEarlierRead(prior: ExtractedFeeCandidate, later: ExtractedFeeCandidate): boolean {
+  if (prior.amount !== later.amount || prior.excerpt.trim() !== later.excerpt.trim()) return false;
+  const whole = words(prior.feeName);
+  const part = words(later.feeName);
+  if (part === "" || part.length >= whole.length || !` ${whole} `.includes(` ${part} `)) return false;
+  return !joinedFeeName(prior.feeName, part);
+}
+
+/** v81: the part (already in `words` form) follows a top-level "&", "and", "or", "/" or "+" in the name. */
+export function joinedFeeName(rawName: string, part: string): boolean {
+  const name = rawName.replace(/&amp;/gi, "&");
+  for (let index = 0; index < name.length; index += 1) {
+    if (index > 0 && /[a-z0-9]/i.test(name[index - 1]!)) continue;
+    const rest = words(name.slice(index));
+    if (rest !== part && !rest.startsWith(`${part} `)) continue;
+    const before = name.slice(0, index);
+    const depth = (before.match(/\(/g) ?? []).length - (before.match(/\)/g) ?? []).length;
+    if (depth > 0) continue;
+    if (/(?:[&/+]|\b(?:and|or))\s*$/i.test(before)) return true;
+  }
+  return false;
 }
 
 /** The shared accuracy check, as Darwin reads it: a tiered price is the bank's real price for its band. */
@@ -228,13 +307,15 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
   // v63: a safe deposit box size glued after a fee's name starts its own line (`withBoxSizeCellsSplit`).
   // v64: a box table printed sideways, sizes over prices, becomes one line per box (`withSidewaysBoxTable`).
   const text = withSidewaysBoxTable(withBoxSizeCellsSplit(withoutBusinessOnlyFees(joinLabeledFeeCardText(sourceText))));
-  const windows = priceWindows(text);
+  const legacyText = withoutFeeBullets(text, recognizedFeeBullets(text));
+  const windows = priceWindows(legacyText);
+  const stackedPrices = stackedFeePrices(text);
   const specialists: Array<{ strategy: string; version: number; pass: 1 | 2; run: () => ExtractionRulesResult }> = [
-    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(text, extractCandidatesFromText(text)) },
+    { ...KNOX_RULES_STRATEGY, pass: 1, run: () => withContextFees(legacyText, extractCandidatesFromText(text)) },
     // v62: the table pass reads a fee-change table at its newest column too, as the self-check does.
-    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(text)) },
+    { ...KNOX_TABLE_STRATEGY, pass: 2, run: () => extractTableCandidates(newestColumnText(legacyText)) },
     // #1100 gap 3: each product's monthly fee in an account comparison table, read by its column.
-    { ...KNOX_ACCOUNT_TABLE_STRATEGY, pass: 2, run: () => extractAccountTableCandidates(newestColumnText(text)) },
+    { ...KNOX_ACCOUNT_TABLE_STRATEGY, pass: 2, run: () => extractAccountTableCandidates(newestColumnText(legacyText)) },
     ...FAMILY_EXPERTS.map((expert) => ({
       strategy: expert.strategy,
       version: expert.version,
@@ -277,6 +358,26 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
       // that stops at the price ("... four (4) OD fees per day ... | $17.00 | per item" is per item).
       // v74: a footnote number glued to the front of the name comes off (`withoutLeadingFootnoteMark`).
       const feeName = tidyUnmarkedName(read.feeName, text, institutionName);
+      const ownPrices = exclusiveStackedPrices(text, stackedPrices, feeName).filter(row => row.amount === read.amount);
+      if (read.canonicalHint === "overdraft" && ownPrices.length > 0 && ownPrices.every(row => row.annualProgram)) {
+        const row: HeldFeeCandidate = {
+          shape: "periodic_program",
+          feeName,
+          amount: read.amount,
+          amountMax: null,
+          percent: null,
+          frequency: "annual",
+          canonicalHint: read.canonicalHint,
+          excerpt: ownPrices[0].ownText,
+          ownedPolicy: true,
+        };
+        const key = heldKey(row);
+        if (!seenHeld.has(key) && held.filter(prior => !unpricedHalf(prior)).length < MAX_HELD_PER_DOCUMENT) {
+          seenHeld.add(key);
+          held.push(row);
+        }
+        continue;
+      }
       const checked = selfCheck(text, feeName, read.amount, read.canonicalHint);
       const rowFrequency = checked.row ? frequencyFromLine(checked.row, read.amount) : null;
       const frequency = rowFrequency
@@ -318,6 +419,9 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
           )
         : candidates.some((prior) => sameFee(prior, candidate));
       if (duplicate) continue;
+      // v81 (#1830): a later specialist's read of an earlier find's own line at its price, named by
+      // a part of that find's name, is that fee read from its tail, whatever category the tail names.
+      if (specialist.pass === 2 && candidates.some((prior) => tailOfEarlierRead(prior, candidate))) continue;
       // v78 (#1304): a later specialist's read of a row the rules pass already filed by its heading
       // is that fee again: bill pay under an overdraft or NSF heading ("Courtesy Pay: Check/ACH/Bill
       // Pay Payment"), a bare late fee among a safe deposit box's lines ("Safe Deposit Box Late Payment").
@@ -379,9 +483,49 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     if (!twin || !NSF_AND_OVERDRAFT.test(candidate.feeName)) continue;
     if (candidates.some((prior) => prior.canonicalHint === twin && prior.feeAudience === candidate.feeAudience && prior.amount === candidate.amount)) continue;
     if (candidates.length >= MAX_FEES_PER_DOCUMENT || !passesDarwinChecks(twin, candidate.feeName, candidate.amount)) continue;
-    candidates.push({ ...candidate, canonicalHint: twin });
+    // v82: the twin has the line's own name and price, so it needs its own raw key (`line_share`).
+    candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
+  // #2278: source price support does not establish an international wire's direction.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!read.canonicalHint.startsWith("wire_")) continue;
+    const scope = internationalWireEligibility(sourceText, read);
+    if (scope.kind === "not_applicable" || scope.kind === "admit") continue;
+    candidates.splice(at, 1);
+    if (scope.kind === "hold") held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
+      excerpt: scope.scope.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
+  // #2335: the printed dollar remains supported, but a symbolic charge is not flat.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!mayHaveSymbolicLesserFee(read.feeName, read.canonicalHint)) continue;
+    const formula = symbolicLesserOfReview(sourceText, read.feeName, read.amount);
+    if (!formula) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
+      excerpt: formula.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
+  const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
+  for (const candidate of candidates) {
+    const owners = monthlyOwnerReview(candidate);
+    if (!owners) continue;
+    candidate.eligibilityReview = true;
+    candidate.linkedConditions = [candidate.linkedConditions, owners].filter(Boolean).join("\n\n");
+  }
+  // #2209/#2259: preserve literal product prices without pooling them into standard benchmarks.
+  // This explicit shape is not one of the automatic range/name/source promoters' inputs.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!read.eligibilityReview) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint, excerpt: read.excerpt,
+      ownedPolicy: true, linkedConditions: read.linkedConditions, lineShare: read.lineShare });
+  }
   // An untraced read is held once, and only when no specialist read the same fee traceably.
   for (const row of untraced) {
     if (held.filter((prior) => !unpricedHalf(prior)).length >= MAX_HELD_PER_DOCUMENT) break;
@@ -413,5 +557,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     if (!duplicate) rates.push(rate);
     return false;
   });
-  return { candidates, held: stillHeld, rates, runs, dropped };
+  const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
+    ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
+  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped };
 }

@@ -48,3 +48,5 @@ page scoring); folding it in is left for its owner.
 - Knox paid reads in the last 14 days it would have stopped: 6 of 3,680.
 - Fee links Magellan now treats as articles: 6 institutions (4 more), among them TD Bank, whose
   saved fee link is a /learning/ article.
+
+**Agent lesson:** gutenberg/pr-1777-one-article-rule

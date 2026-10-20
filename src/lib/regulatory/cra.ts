@@ -24,8 +24,17 @@ import { registryFetch, RegistryHttpError, type RegistryFetchOptions } from "./h
  * nothing. A blank field stays null, never zero.
  */
 
-export const CRA_RATINGS_URL = "https://www.ffiec.gov/craratings/CRA_Ratings.zip";
-export const CRA_FLAT_FILE_BASE = "https://www.ffiec.gov/cra/xls";
+/** Interagency ratings file and its spec (Rtg_spec.html), read 2026-10-17. Tab-delimited text in a zip. */
+export const CRA_RATINGS_URL = "https://apps.ffiec.gov/craratings/craratng.zip";
+export const CRA_FLAT_FILE_BASE = "https://www.ffiec.gov/sites/default/files/data/cra/flat-files";
+/**
+ * Revised 2022 and 2023 flat files, listed beside the originals on the FFIEC flat-file page
+ * (read 2026-10-17). They are tried first and win over the originals when published.
+ */
+export const CRA_REVISED_LENDING_FILES: Readonly<Record<number, { disclosure: string; transmittal: string }>> = {
+  2022: { disclosure: "cra2022_Discl_D22.zip", transmittal: "CRA2022_Transmittal.zip" },
+  2023: { disclosure: "cra2023_Discl_D22.zip", transmittal: "CRA2023_Transmittal.zip" },
+};
 /** First activity year loaded; the fixed-width layout below is the 2016-onward one. */
 export const CRA_LENDING_FIRST_YEAR = 2016;
 
@@ -100,6 +109,19 @@ export const CRA_RATING_FIELDS = {
 } as const;
 
 export type CraRatingField = keyof typeof CRA_RATING_FIELDS;
+
+/**
+ * The spec's field order, used when the file has no header row: ID, Regulator (1 OCC, 2 FRB,
+ * 3 FDIC, 4 OTS), Exam Date (ccyymmdd), Bank Name, City, State, Asset Size ($000), Exam Method,
+ * Rating. The ID is the OCC charter number, the FRB RSSD id, the FDIC cert or the OTS docket,
+ * by regulator; there is no separate RSSD column.
+ */
+export const CRA_RATINGS_SPEC_COLUMNS = ["ID", "Regulator", "Exam Date", "Bank Name", "City", "State", "Asset Size", "Exam Method", "Rating"] as const;
+
+/** True when a line is a ratings record in the spec's order rather than a header row. */
+export function isPositionalRatingLine(cells: string[]): boolean {
+  return cells.length >= CRA_RATINGS_SPEC_COLUMNS.length && /^[1-4]$/.test(cells[1].trim()) && /^\d{8}$/.test(cells[2].trim()) && /^[1-4]$/.test(cells[8].trim());
+}
 
 /** Without these a row cannot be a rating; a file missing one loads nothing. */
 export const CRA_RATING_REQUIRED: readonly CraRatingField[] = ["examDate", "rating"];
@@ -254,7 +276,10 @@ export function parseCraRatingsText(content: string): CraRatingsFile {
   if (lines.length === 0) return { ...base, layoutProblem: "The ratings file is empty" };
   const delimiter = detectDelimiter(lines[0]);
   if (!delimiter) return { ...base, layoutProblem: "No header row: the first line does not split into columns on tab, pipe or comma" };
-  const headers = splitDelimited(lines[0], delimiter);
+  const first = splitDelimited(lines[0], delimiter);
+  const positional = isPositionalRatingLine(first);
+  const headers = positional ? [...CRA_RATINGS_SPEC_COLUMNS] : first;
+  const dataLines = positional ? lines : lines.slice(1);
   const keys = headers.map(headerKey);
 
   const fieldColumns = { ...emptyColumns };
@@ -283,7 +308,10 @@ export function parseCraRatingsText(content: string): CraRatingsFile {
 
   let raggedLines = 0;
   const ratings: CraRating[] = [];
-  for (const line of lines.slice(1)) {
+  // A bare "ID" column is the regulator's own id for the bank (spec): the FRB's is the RSSD id and
+  // the FDIC's is the cert, so those are read into rssd / fdicCert as well.
+  const idByRegulator = at.agencyId !== undefined && keys[at.agencyId] === "ID" && at.rssd === undefined && at.fdicCert === undefined;
+  for (const line of dataLines) {
     const row = splitDelimited(line, delimiter);
     if (row.length !== headers.length) raggedLines += 1;
     const get = (f: CraRatingField) => (at[f] === undefined ? null : text(row[at[f]!]));
@@ -292,9 +320,10 @@ export function parseCraRatingsText(content: string): CraRatingsFile {
       if (row[i] !== undefined && row[i] !== "") raw[h] = row[i];
     });
     const url = get("evaluationUrl");
+    const regulatorId = idByRegulator ? normalizeCraRegulator(get("regulator")) : null;
     const partial = {
-      rssd: digitsOrNull(get("rssd")),
-      fdicCert: digitsOrNull(get("fdicCert")),
+      rssd: regulatorId === "FRB" ? digitsOrNull(get("agencyId")) : digitsOrNull(get("rssd")),
+      fdicCert: regulatorId === "FDIC" ? digitsOrNull(get("agencyId")) : digitsOrNull(get("fdicCert")),
       agencyId: get("agencyId"),
       regulatorRaw: get("regulator"),
       name: get("name"),
@@ -353,6 +382,15 @@ export function craLendingUrls(year: number): { disclosure: string; transmittal:
     disclosure: `${CRA_FLAT_FILE_BASE}/${yy}exp_discl.zip`,
     transmittal: `${CRA_FLAT_FILE_BASE}/${yy}exp_trans.zip`,
   };
+}
+
+/** The year's file pairs to try, in order: the revised files first where FFIEC published them. */
+export function craLendingUrlCandidates(year: number): Array<{ disclosure: string; transmittal: string }> {
+  const revised = CRA_REVISED_LENDING_FILES[year];
+  const original = craLendingUrls(year);
+  return revised
+    ? [{ disclosure: `${CRA_FLAT_FILE_BASE}/${revised.disclosure}`, transmittal: `${CRA_FLAT_FILE_BASE}/${revised.transmittal}` }, original]
+    : [original];
 }
 
 /** Disclosure tables loaded: D1-1/D1-2 small business originations/purchases, D2-1/D2-2 small farm. */
@@ -669,11 +707,27 @@ async function fetchZip(url: string, options: RegistryFetchOptions): Promise<Uin
 
 /** Download and parse one activity year's disclosure and transmittal files. */
 export async function fetchCraLendingYear(year: number, options: RegistryFetchOptions = {}): Promise<CraLendingDownload> {
-  const urls = craLendingUrls(year);
+  const candidates = craLendingUrlCandidates(year);
+  let urls = candidates[candidates.length - 1];
+  let disclosureZip: Awaited<ReturnType<typeof fetchZip>> = null;
+  for (const [i, candidate] of candidates.entries()) {
+    const last = i === candidates.length - 1;
+    // A revised file that is missing or not a zip falls back to the original; only the last
+    // candidate's errors reach the run.
+    disclosureZip = last
+      ? await fetchZip(candidate.disclosure, options)
+      : await fetchZip(candidate.disclosure, options).catch((error) => {
+          if (error instanceof RegistryHttpError) return null;
+          throw error;
+        });
+    if (disclosureZip) {
+      urls = candidate;
+      break;
+    }
+  }
   const base: CraLendingDownload = {
     year, urls, published: false, disclosureEntries: [], transmittalEntries: [], disclosureFiles: [], disclosure: null, transmittal: null,
   };
-  const disclosureZip = await fetchZip(urls.disclosure, options);
   if (!disclosureZip) return base;
   const disclosure = await unzipListing(disclosureZip, isCraDisclosureEntry);
   const reads = Object.keys(disclosure.files).sort().map((name) => readCraDisclosure(strFromU8(disclosure.files[name], true), year));

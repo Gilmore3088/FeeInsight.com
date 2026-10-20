@@ -33,7 +33,7 @@ describe("FeeAlertControl", () => {
   it("saves with one click when signed in", async () => {
     mocks.save.mockResolvedValue({ ok: true, feeCategories: ["overdraft"] });
     render(<FeeAlertControl {...base} initial={{ signedIn: true, saved: false, feeCategories: null }} />);
-    expect(screen.getByRole("heading")).toHaveTextContent("updates its published overdraft");
+    expect(screen.getByRole("heading")).toHaveTextContent("First Bank's overdraft changes in our data");
     fireEvent.click(screen.getByRole("button", { name: "Save First Bank" }));
     await waitFor(() => expect(screen.getByRole("heading")).toHaveTextContent("get an email when First Bank"));
     expect(mocks.save).toHaveBeenCalledWith({ institutionId: 3, feeCategory: "overdraft", allFees: false });
@@ -79,6 +79,6 @@ describe("FeeAlertControl", () => {
     render(
       <FeeAlertControl {...base} mode="verify" focusCategory={null} initial={{ signedIn: true, saved: false, feeCategories: null }} />,
     );
-    expect(screen.getByRole("heading")).toHaveTextContent("fees are verified");
+    expect(screen.getByRole("heading")).toHaveTextContent("publishes more fees");
   });
 });

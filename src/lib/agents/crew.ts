@@ -3,6 +3,7 @@ import { narrateEvent, STEP_OWNER } from "./narrate";
 import type { AdminAgent } from "./types";
 import { agentRegistry, nextRunFor } from "./atlas/registry";
 import { CREW, crewMember, type CrewMemberMeta } from "./crew-members";
+import { registryLedgerAgent } from "./hoovie/names";
 
 /**
  * The Fee Insight crew: the six pipeline agents presented as named workers with a
@@ -49,7 +50,8 @@ function eventTone(eventType: string, status: string): CrewFeedItem["tone"] {
 }
 
 function asAgent(value: unknown, stepKey: string | null): AdminAgent {
-  const candidate = String(value ?? "");
+  // A registry step written under Magellan's name before #1865 is Hoovie's.
+  const candidate = registryLedgerAgent(String(value ?? ""), stepKey);
   if (crewMember(candidate)) return candidate as AdminAgent;
   return (stepKey && STEP_OWNER[stepKey]) || "atlas";
 }
@@ -104,7 +106,9 @@ export async function getCrewFeed({
       JOIN agent_runs r ON r.id = e.agent_run_id
       LEFT JOIN agent_run_steps s ON s.id = e.step_id
      WHERE e.event_type = ANY(${FEED_EVENT_TYPES})
-       AND (${agent ?? null}::text IS NULL OR COALESCE(s.agent_name, r.agent_name) = ${agent ?? null})
+       AND (${agent ?? null}::text IS NULL
+            OR (CASE WHEN COALESCE(s.agent_name, r.agent_name) = 'magellan' AND s.step_key LIKE 'registry-%' THEN 'hoovie'
+                     ELSE COALESCE(s.agent_name, r.agent_name) END) = ${agent ?? null})
      ORDER BY e.created_at DESC, e.id DESC
      LIMIT ${safeLimit * 2}
   `;
@@ -198,7 +202,8 @@ async function readCrewStatus(now: Date): Promise<CrewMemberStatus[]> {
        WHERE status IN ('queued', 'running')
     `,
     sql`
-      SELECT COALESCE(s.agent_name, r.agent_name) AS agent,
+      SELECT CASE WHEN COALESCE(s.agent_name, r.agent_name) = 'magellan' AND s.step_key LIKE 'registry-%' THEN 'hoovie'
+                  ELSE COALESCE(s.agent_name, r.agent_name) END AS agent,
              COUNT(*) FILTER (WHERE e.event_type = 'step.finished')::int AS finished,
              COUNT(*) FILTER (WHERE e.event_type IN ('step.failed', 'step.dead'))::int AS failed
         FROM agent_run_events e
@@ -210,12 +215,12 @@ async function readCrewStatus(now: Date): Promise<CrewMemberStatus[]> {
     `,
     getCrewFeed({ limit: 200 }),
     sql`
-      SELECT agent_name,
+      SELECT CASE WHEN agent_name = 'magellan' AND step_key LIKE 'registry-%' THEN 'hoovie' ELSE agent_name END AS agent_name,
              MAX(started_at) AS last_attempt_at,
              MAX(completed_at) FILTER (WHERE status = 'completed') AS last_success_at
         FROM agent_run_steps
        WHERE updated_at > NOW() - INTERVAL '30 days'
-       GROUP BY agent_name
+       GROUP BY 1
     `,
   ]);
   const iso = (value: unknown) => (value ? new Date(value as string | Date).toISOString() : null);

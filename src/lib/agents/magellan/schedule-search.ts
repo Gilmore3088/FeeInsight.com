@@ -1,7 +1,9 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { loadMarketLeaderIds } from "@/lib/data-store/market-leaders";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
@@ -601,7 +603,7 @@ export async function runScheduleSearch(options: {
     return result;
   }
 
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const model = PAID_PASS_MODELS.find();
   const ownHostsById = await loadOwnHosts(db, rows);
   const sharedNames = await loadSharedNameIds(db, rows, { runId: options.runId, stepId: options.stepId ?? null });
@@ -626,16 +628,18 @@ export async function runScheduleSearch(options: {
     const documents: CheckedDocument[] = [];
 
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "schedule_search",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lane },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lane, lessons_applied: roleLessons.lessonIds },
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
           tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: scheduleSearchPrompt(row, siteDomains) }],
         },
       });

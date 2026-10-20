@@ -12,7 +12,7 @@ import { AgentFrame } from "../agent-frame";
 export const dynamic = "force-dynamic";
 
 export default async function DarwinPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const status = await fetchDarwinStatus().catch((): DarwinStatus => ({
     pending: null,
     today_promoted: null,

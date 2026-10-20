@@ -12,6 +12,7 @@ describe("buildInsufficientEvidenceReport", () => {
       assetSize: 125_000_000,
       latestSourceStatus: null,
       latestFinancial: {
+        source: "ncua",
         report_date: "2026-03-31",
         total_assets: 125_000_000,
         service_charge_income: 420_000,
@@ -44,7 +45,7 @@ describe("buildInsufficientEvidenceReport", () => {
     expect(text).toContain("should not receive a generic competitive position");
     expect(text).toContain("Financial context is available through 2026-03-31");
     // Call report figures are in thousands: $125 billion of assets, $420 million of fee income.
-    expect(text).toContain("assets are $125.0B and reported service charge income is $420.0M");
+    expect(text).toContain("assets are $125.0B and reported year-to-date broad credit-union fee income is $420.0M");
     expect(text).not.toMatch(/provider generation|extract rows|evidence tier|source record/i);
     expect(text).not.toMatch(
       /market intelligence superiority|precision pricing|create sustainable competitive advantage/i,

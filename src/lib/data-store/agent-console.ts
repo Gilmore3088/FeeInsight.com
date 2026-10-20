@@ -1,9 +1,5 @@
 import { sql } from "./connection";
 import {
-  type AgentHealthTile,
-  type HealthMetric,
-  HEALTH_METRICS,
-  HEALTH_METRIC_LABELS,
   type LineageTier1,
   type LineageTier2,
   type LineageTier3,
@@ -16,7 +12,7 @@ import {
 } from "./agent-console-types";
 
 /**
- * Agent console queries (Plan 62B-10, tabs: Overview/Lineage/Messages/Replay).
+ * Agent console queries (Plan 62B-10, tabs: Lineage/Messages/Replay).
  *
  * Types + constants live in `./agent-console-types` (no DB dependency — safe
  * to import from client components). This module adds the server query
@@ -24,19 +20,12 @@ import {
  * only need a single import.
  *
  * Backing DB objects:
- *   - `agent_health_rollup` (62B-09): 15-min bucket, 5 metrics per agent
  *   - `lineage_graph(fee_published_id)` (62B-01): JSONB Tier-3 → Tier-2 → Tier-1 → R2
  *   - `v_agent_reasoning_trace` (62B-05/06): events + messages unioned by correlation_id
  *   - `agent_messages` (62B-05): inter-agent message queue
  */
 
-export {
-  HEALTH_METRICS,
-  HEALTH_METRIC_LABELS,
-};
 export type {
-  AgentHealthTile,
-  HealthMetric,
   LineageTier1,
   LineageTier2,
   LineageTier3,
@@ -52,76 +41,6 @@ function toIso(v: unknown): string | null {
   if (!v) return null;
   if (v instanceof Date) return v.toISOString();
   return String(v);
-}
-
-function toNum(v: unknown): number | null {
-  if (v === null || v === undefined) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
-/**
- * Latest bucket per agent. Returns one row per distinct agent_name.
- */
-export async function getAgentHealthTiles(
-  agentNames?: string[],
-): Promise<AgentHealthTile[]> {
-  const rows =
-    agentNames && agentNames.length > 0
-      ? ((await sql`
-          SELECT DISTINCT ON (agent_name) agent_name, bucket_start,
-                 loop_completion_rate, review_latency_seconds,
-                 pattern_promotion_rate, confidence_drift, cost_to_value_ratio
-            FROM agent_health_rollup
-           WHERE agent_name = ANY(${agentNames})
-           ORDER BY agent_name, bucket_start DESC
-        `) as unknown as Record<string, unknown>[])
-      : ((await sql`
-          SELECT DISTINCT ON (agent_name) agent_name, bucket_start,
-                 loop_completion_rate, review_latency_seconds,
-                 pattern_promotion_rate, confidence_drift, cost_to_value_ratio
-            FROM agent_health_rollup
-           ORDER BY agent_name, bucket_start DESC
-        `) as unknown as Record<string, unknown>[]);
-
-  return rows.map((r) => ({
-    agent_name: String(r.agent_name),
-    bucket_start: toIso(r.bucket_start),
-    metrics: {
-      loop_completion_rate: toNum(r.loop_completion_rate),
-      review_latency_seconds: toNum(r.review_latency_seconds),
-      pattern_promotion_rate: toNum(r.pattern_promotion_rate),
-      confidence_drift: toNum(r.confidence_drift),
-      cost_to_value_ratio: toNum(r.cost_to_value_ratio),
-    },
-  }));
-}
-
-/**
- * Returns a sorted (oldest → newest) array of metric values for sparkline rendering.
- * Metric column is whitelisted against HEALTH_METRICS to prevent injection via
- * `sql.unsafe` — see threat model T-62B-10-03.
- */
-export async function getAgentHealthSparkline(
-  agentName: string,
-  metric: HealthMetric,
-  bucketCount = 672,
-): Promise<number[]> {
-  if (!HEALTH_METRICS.includes(metric)) {
-    throw new Error(`unknown metric: ${metric}`);
-  }
-  const rows = (await sql.unsafe(
-    `SELECT ${metric} AS v
-       FROM agent_health_rollup
-      WHERE agent_name = $1
-      ORDER BY bucket_start DESC
-      LIMIT $2`,
-    [agentName, bucketCount],
-  )) as unknown as { v: unknown }[];
-  return rows.reverse().map((r) => {
-    const n = toNum(r.v);
-    return n ?? 0;
-  });
 }
 
 // The lineage_graph() SQL function returns a nested JSONB document.

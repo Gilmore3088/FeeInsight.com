@@ -48,12 +48,12 @@
 ## designation-lists
 1. BankFind field names MDI_STATUS_CODE, MDI_STATUS_DESC, SPECGRP, SPECGRPN, MUTUAL and SUBCHAPS, and their codes (MUTUAL 1 = mutual; MDI code "0" or blank means not an MDI). A missing field is reported in `fields_missing` and produces no rows.
 2. FOICU column names LIMITED_INC, TOM_CODE and YEAR_OPENED (aliases tried: LOW_INCOME/LID, FOM_CODE/FOM_TYPE, YEAR_CHARTERED). TOM_CODE is stored as filed, with no label for its codes. FOICU may also carry an MDI column; MINORITY_FLAG/MDI/MDI_FLAG are tried.
-3. Page URLs and link patterns: the NCUA MDI page (`ncua.gov/.../minority-depository-institution-preservation`), the CDFI Fund certification page and `joinbankon.org/accounts/`. Each file's column headers are matched by alias, and the header row is found at run time.
-4. Whether Bank On's page links a file or renders a table (or loads its list by JavaScript, which this reader cannot see; that would show as an empty partition). A nationwide account has no state and stays unmatched (`no_state`), because matching is exact name + state only.
+3. Page URLs and link patterns: the NCUA MDI page (`ncua.gov/.../minority-depository-institution-preservation`) and the CDFI Fund certification page. Each file's column headers are matched by alias, and the header row is found at run time.
+4. (Struck 2026-10-17: the Bank On list was removed under "No non-commercial data".)
 5. The CDFI list's "Organization Type" wording, which decides which rows are depository institutions. Holding-company CDFIs are kept unmatched (`holding_company`) and are not pushed down to their banks.
 
 ## payment-networks
-1. Page URLs: Zelle `/participating-banks-and-credit-unions`, FRB Services `/financial-services/fednow/organizations`, TCH `/payment-systems/rtp/rtp-participating-financial-institutions`, Fed `regii-about.htm` (the Exempt / Not Exempt links) and `regii-average-interchange-fee.htm`. A wrong URL records an empty partition ("page is gone (404)").
+1. Page URLs: Fed `regii-about.htm` (the Exempt / Not Exempt links) and `regii-average-interchange-fee.htm`. A wrong URL records an empty partition ("page is gone (404)"). (The Zelle, FedNow and RTP participant lists were struck on 2026-10-17 under "No non-commercial data".)
 2. Page shapes: whether each list is server-rendered HTML (a JavaScript-built list loads nothing and says so), its column headings, and whether the Fed's issuer lists are CSV/HTML (a PDF/XLSX-only list loads nothing and is named in `linked_files`). Headings are recognised by pattern at run time; unrecognised ones are reported.
 3. Link wording on the Fed page ("Exempt" / "Not Exempt", "as of <date>"); a date not stated falls back to the fetch date (`as_of_basis` in the run detail).
 4. robots.txt on each host, including overpass-api.de: if it disallows our token the partition records that and loads nothing.
@@ -68,8 +68,10 @@
 2. FFIEC income level is derived from the file's ratio with the CRA thresholds (not read from FFIEC's
    own indicator column, whose position is unknown); the write is blocked unless the ratio column's
    median is 80-130 and the year column matches.
-3. No plain download confirmed for the FDIC household survey tables, FDIC national rates, Atlanta Fed
-   payment choice tables or a World Bank RPW CSV: those four are URL-configured and skip until set.
+3. No plain download confirmed for the FDIC household survey tables, FDIC national rates or a World
+   Bank RPW CSV: those three are URL-configured and skip until set. (The Atlanta Fed payment choice
+   tables were struck on 2026-10-17; World Bank RPW is held and schedules nothing until its terms are
+   confirmed.)
 4. FDIC industry totals are the sum of every filer's BankFind Call Report figures for the quarter
    (QBP's base), not the published QBP tables; small differences from the QBP are expected.
 5. The Census geocoder reuse: `toCensusCsv` from `census-geocoder.ts` is reused, but tracts need the
@@ -87,10 +89,8 @@
    BankNCUANumber, ProjectState, ApprovalFiscalYear, GrossApproval, SBAGuaranteedApproval,
    ThirdPartyLender_*). Every run reports the fields it did not find. The SBA CKAN package id
    `7-a-504-foia` and its resource names are matched by pattern, and the run lists them when none match.
-3. CourtListener v4: whether anonymous search is allowed, and the result field names (caseName,
-   court_id, dateFiled, docketNumber, docket_absolute_url, docket_id) along with the
-   `filed_after`/`filed_before` params. regulations.gov: the `filter[agencyId]` value FRS and the
-   `docketType` attribute.
+3. regulations.gov: the `filter[agencyId]` value FRS and the `docketType` attribute. (CourtListener
+   fee lawsuits were struck on 2026-10-17 under "No non-commercial data".)
 4. Which us-gaap concepts banks use for fee income. They are found at run time by
    name or label pattern, and the run lists `fee_concepts_found` with SEC's labels so they can be
    reviewed. 8-K and 10-K passage detection is by text pattern. The 8-K item list is read from the
@@ -99,3 +99,22 @@
    and PDF links. Lines are kept by keyword under the nearest heading, so this is low precision
    (early warning, not a confirmed event list). `institution_name` is filled only when the text
    before the first comma reads like an institution.
+
+## First prod runs (2026-10-17, 11:57-12:07 UTC)
+
+- `fdic-history` 2026: 5,035 events written, 4,770 linked to an institution, no missing fields.
+- `ffiec-call-detail` 2026Q1: 4,336 banks, 39,806 rows. Loaded: H034 ATM fees (512 banks), the RI-E lines (ATM, check printing, safe deposit, interchange, wire), RC-N past due and nonaccrual, RI-B totals, card and auto. Refused by the description check: H033 ("SEV CHAR DEP DOM OFF MAIN IND"), H035 ("...ALL IND"), RC-E ("NONINTR TRN ACCTS INDIV HSHLD FMLY" and siblings), K205/K206 ("CHARGE-OFFS ALL OTHER"). RC-O was missing because its file is split with the part marker after the date ("Schedule RCO 03312026(1 of 2).txt"). Parser v2 matches those descriptions and file names; RC-E now loads each line on its own (P753, P754, P756, P758) and P757 (MMDA of partnerships and corporations) is left out.
+- `ncua-extras` 2026Q2: empty, because the loader read `Acct-DescTradeNames.txt` instead of `AcctDesc.txt`. Parser v2 skips the trade-names file.
+
+## CRA source check (2026-10-17, data-source research)
+
+- The CRA loader's URLs were wrong. Ratings are `apps.ffiec.gov/craratings/craratng.zip`, tab-delimited
+  in the spec's order (ID, Regulator, Exam Date, Name, City, State, Assets $000, Exam Method, Rating),
+  possibly with no header row. The ID depends on the regulator (OCC charter, FRB RSSD, FDIC cert, OTS
+  docket); there is no RSSD column. Flat files live under `www.ffiec.gov/sites/default/files/data/cra/flat-files/`,
+  and FFIEC's revised 2022 and 2023 files win over the originals. Parser v2 reads all of this; the
+  `cra` partitions retry on the bump. The fixed-width flat-file column positions are still unverified.
+- Round-2 first run, 13:40-13:55 UTC: only `ffiec-call-detail` v4 had run (123,955 rows written) and
+  `bls-qcew` (16,828). The other round-2 sources had not reached the scheduler yet.
+
+**Agent lesson:** hoovie/pr-1786-check-fields-against-file

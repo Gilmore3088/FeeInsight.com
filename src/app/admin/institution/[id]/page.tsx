@@ -24,6 +24,8 @@ import {
   type InstitutionFeeScheduleEvidence,
 } from "@/lib/data-store/institution";
 import { InstitutionActions } from "./institution-actions";
+import { WebsiteField } from "./website-field";
+import { NON_RETAIL_INSTITUTIONS } from "@/lib/non-retail";
 import { getInstitutionPeerRanking } from "@/lib/data-store/call-reports";
 import { getFinancialsByInstitution } from "@/lib/data-store/financial";
 import { HeroCards } from "./hero-cards";
@@ -38,7 +40,7 @@ export default async function InstitutionDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   const canHold = hasPermission(user, "approve");
   const { id } = await params;
   const institutionId = Number(id);
@@ -115,6 +117,11 @@ export default async function InstitutionDetailPage({
             .filter(Boolean)
             .join(" / ")}
         </p>
+        {NON_RETAIL_INSTITUTIONS.has(institution.id) && (
+          <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+            Non-retail: {NON_RETAIL_INSTITUTIONS.get(institution.id)}. Skipped in the top 10 per state count.
+          </p>
+        )}
       </div>
 
       {/* Profile + Actions row */}
@@ -126,18 +133,7 @@ export default async function InstitutionDetailPage({
           </h3>
           <dl className="space-y-2 text-xs">
             <ProfileRow label="Website">
-              {institution.website_url ? (
-                <a
-                  href={institution.website_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline break-all"
-                >
-                  {truncateUrl(institution.website_url)}
-                </a>
-              ) : (
-                <span className="text-gray-400">-</span>
-              )}
+              <WebsiteField institutionId={institution.id} websiteUrl={institution.website_url} />
             </ProfileRow>
             <ProfileRow label="Fee Schedule URL">
               {institution.fee_schedule_url ? (

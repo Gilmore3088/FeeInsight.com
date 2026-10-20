@@ -84,7 +84,6 @@ const _payload = {
     fed_funds_rate: 4.25,
     unemployment_rate: 4.1,
     cpi_yoy_pct: 2.8,
-    consumer_sentiment: 68.4,
     as_of: "2026-03-01",
   },
   beige_book_themes: [

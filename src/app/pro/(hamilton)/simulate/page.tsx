@@ -18,6 +18,7 @@ import { getMemoryFacts } from "@/lib/data-store/hamilton-workspace";
 import { ExhibitView } from "@/components/hamilton/memo/exhibit-view";
 import { PositionCheckPanel } from "@/components/hamilton/PositionCheckPanel";
 import { checkPosition, parseProposedFee } from "@/lib/hamilton/position-check";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 import {
   AuditPanel,
   DistributionBars,
@@ -135,7 +136,11 @@ export default async function ModelPage({ searchParams }: PageProps) {
     clientFigures: { paidItems, waiverRate },
     enteredBy: user.display_name || user.username,
     extraAssumptions: [
-      current != null ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.` : "No published price for you, so each change is measured from $0.",
+      current != null
+        ? `Today's price is your published ${ws.feeName.toLowerCase()} fee, ${fmtMoney(current)}.`
+        : ws.ownSeveral
+          ? `Your schedule lists several ${ws.feeName.toLowerCase()} fees (${ws.ownSeveral}), so each change is measured from $0.`
+          : "No published price for you, so each change is measured from $0.",
       "Volume held steady at every price: Hamilton doesn't estimate how customers respond from public data.",
       ...(fromFiling && revenueLine
         ? [`Items a year are a working estimate: ${revenueLine.label}, four quarters to ${revenueLine.quarterEnd}, divided by today's price. It assumes every paid item was charged today's fee.`]
@@ -183,7 +188,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
           label="Fee"
           items={ws.ownFees.slice(0, 10).map((f) => ({
             label: f.name,
-            meta: fmtMoney(f.amount),
+            meta: f.label,
             href: hrefWithInstitutionContext(`/pro/simulate?fee=${encodeURIComponent(f.category)}&layer=${layer.key}`, instId),
             active: f.category === ws.fee,
           }))}
@@ -342,6 +347,7 @@ export default async function ModelPage({ searchParams }: PageProps) {
           </table>
         </div>
         <p className="text-xs text-warm-600">Volume is held steady at every price; Hamilton doesn&apos;t estimate how customers respond.</p>
+        <DatasetNote figures={[layer.stamp ? { label: layer.label, stamp: layer.stamp } : null]} />
       </MemoSection>
 
       {positionExhibit ? (

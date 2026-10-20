@@ -1,6 +1,8 @@
 import { sql } from "@/lib/data-store/connection";
 import { getLatestAnswerKeyScoreRun } from "@/lib/data-store/answer-key";
 import { CHECKED_PERIODS } from "@/lib/fee-frequency";
+import { readAccuracyHistory, type AccuracyHistory } from "./deming/accuracy-history";
+import { accuracyStatusLabel, formatAccuracyBound } from "./deming/accuracy-measure";
 
 /**
  * The quality ledger James reads on #1026, as lines for the morning email (Oct 15): the answer
@@ -28,15 +30,17 @@ const PER_ITEM_PERIOD_SQL = [
 ].join(" OR ");
 
 export interface QualityLedger {
-  answerKey: { precision: number | null; recall: number | null; scoredAt: string; scorerVersion: number } | null;
+  answerKey: { precision: number | null; recall: number | null; scoredAt: string; scorerVersion: number; referenceState?: string; eligibleBanks?: number; excludedBanks?: number } | null;
   liveFees: number;
   storedNotes: number;
   perItemPeriods: number;
   noSourceLink: number;
+  /** Persisted calendar weeks, split where scoring changed; null when the read failed. */
+  accuracyHistory?: AccuracyHistory | null;
 }
 
 export async function readQualityLedger(db: SqlTag = sql): Promise<QualityLedger> {
-  const [[row], run] = await Promise.all([
+  const [[row], run, accuracyHistory] = await Promise.all([
     db`
       SELECT count(*)::int AS live_fees,
              count(*) FILTER (WHERE conditions ~ 'Rosetta artifact #[0-9]+')::int AS stored_notes,
@@ -45,15 +49,20 @@ export async function readQualityLedger(db: SqlTag = sql): Promise<QualityLedger
         FROM published_fee_catalog
     `,
     getLatestAnswerKeyScoreRun(db),
+    readAccuracyHistory(db).catch((error) => {
+      console.error("Quality ledger accuracy history could not be read", error);
+      return null;
+    }),
   ]);
   return {
     answerKey: run
-      ? { precision: run.precision, recall: run.recall, scoredAt: run.scored_at, scorerVersion: run.scorer_version }
+      ? { precision: run.precision, recall: run.recall, scoredAt: run.scored_at, scorerVersion: run.scorer_version, referenceState: run.referenceState, eligibleBanks: run.reference?.eligibleBanks, excludedBanks: run.reference?.excludedBanks }
       : null,
     liveFees: Number(row?.live_fees ?? 0),
     storedNotes: Number(row?.stored_notes ?? 0),
     perItemPeriods: Number(row?.per_item_periods ?? 0),
     noSourceLink: Number(row?.no_source_link ?? 0),
+    accuracyHistory,
   };
 }
 
@@ -63,11 +72,18 @@ const pct = (value: number | null) => (value == null ? "not scored" : `${(value 
 export function qualityLedgerLines(ledger: QualityLedger): string[] {
   const k = ledger.answerKey;
   return [
-    k
+    k?.referenceState && k.referenceState !== "measured"
+      ? `Answer key: no current measurement (${k.referenceState.replaceAll("_", " ")}); ${k.referenceState === "unavailable" ? "Reference counts unavailable." : `${count(k.eligibleBanks ?? 0)} eligible and ${count(k.excludedBanks ?? 0)} excluded reference banks.`} Historical scores remain separate.`
+      : k
       ? `Answer key (scorer v${k.scorerVersion}, ${k.scoredAt.slice(0, 10)}): ${pct(k.precision)} of the fees we publish are right; we find ${pct(k.recall)} of the fees we should.`
       : "Answer key: no score yet.",
     `Knox's note still stored in a live fee's conditions: ${count(ledger.storedNotes)} of ${count(ledger.liveFees)} (target 0).`,
     `NSF, overdraft and returned-item fees stored by a period (James's per-item rule): ${count(ledger.perItemPeriods)}, including overdraft programs the bank prices by the period, which the rule keeps.`,
     `Live fees with no link to the bank's own document: ${count(ledger.noSourceLink)} (target 0).`,
+    ...(ledger.accuracyHistory == null
+      ? ["Automated stored-copy audit history: unavailable."]
+      : ledger.accuracyHistory.weeks.filter((week) => week.audits > 0).map((week) =>
+        `Automated stored-copy audit, week ${week.weekStart}${week.partial ? " (so far)" : ""}, ${week.series ?? "legacy, versions unknown"}${week.scoringChanged ? " (scoring changed; separate series)" : ""}: ${count(week.right)}/${count(week.scorable)} (${pct(week.accuracy)}); ${accuracyStatusLabel(week)}${week.range ? `; 95% range ${formatAccuracyBound(week.range.low, "low")}–${formatAccuracyBound(week.range.high, "high")}` : ""}.`)),
+    ...(ledger.accuracyHistory?.legacySnapshots?.map((snapshot) => `Legacy rolling audit snapshot ${snapshot.asOf}: ${count(snapshot.right)}/${count(snapshot.scorable)} (${pct(snapshot.accuracy)}); versions and individual audit dates unavailable, no confidence or target claim.`) ?? []),
   ];
 }

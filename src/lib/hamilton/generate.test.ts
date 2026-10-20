@@ -20,10 +20,12 @@ vi.mock("@anthropic-ai/sdk", () => {
   return { default: MockAnthropic };
 });
 
-vi.mock("@/lib/ai-provider-usage", () => ({
+vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/lib/ai-provider-usage")>(),
   trackAnthropicRequest: async (_context: unknown, request: () => Promise<unknown>) => request(),
 }));
 
+import { buildFinancialIncomeGroup } from "@/lib/report-assemblers/financial-income";
 import { generateGlobalThesis, generateSection } from "./generate";
 import type { ThesisInput } from "./types";
 
@@ -58,7 +60,6 @@ function makeThesisInput(scopeOverride: ThesisInput["scope"] = "quarterly"): The
         fed_funds_rate: 5.25,
         unemployment_rate: 3.9,
         cpi_yoy_pct: 3.1,
-        consumer_sentiment: 72.5,
         as_of: "2024-12-01",
       },
       beige_book_themes: ["Boston: moderate activity.", "New York: tightening."],
@@ -113,6 +114,7 @@ function makeLighterResponse(): string {
 
 function mockSuccessResponse(rawJson: string) {
   mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
     content: [{ type: "text", text: rawJson }],
     usage: { input_tokens: 800, output_tokens: 420 },
   });
@@ -148,6 +150,24 @@ describe("generateGlobalThesis", () => {
     expect(result.usage.outputTokens).toBe(420);
   });
 
+  it("grounds financial narration only in separate dated source groups, ignoring legacy totals", async () => {
+    mockSuccessResponse(makeQuarterlyResponse());
+    const input = makeThesisInput();
+    input.data.financial_income_groups = ["fdic", "ncua"].map((source) => buildFinancialIncomeGroup(source as "fdic" | "ncua", [{
+      quarter: "2026-Q2", total_service_charges: source === "fdic" ? 100 : 10,
+      bank_service_charges: source === "fdic" ? 100 : 0, cu_service_charges: source === "ncua" ? 10 : 0,
+      total_institutions: source === "fdic" ? 50 : 5, yoy_change_pct: null,
+    }]));
+    await generateGlobalThesis(input);
+    const prompt = JSON.stringify(mockCreate.mock.calls[0][0].messages);
+    expect(prompt).toContain("deposit_service_charge_income");
+    expect(prompt).toContain("broad_credit_union_fee_income");
+    expect(prompt).toContain("2026-06-30");
+    expect(prompt).toContain("reported_count");
+    expect(prompt).toContain("Never combine their totals");
+    expect(prompt).not.toContain("48,000,000,000");
+  });
+
   it("sets contrarian_insight to null for non-quarterly scope", async () => {
     mockSuccessResponse(makeLighterResponse());
 
@@ -160,6 +180,7 @@ describe("generateGlobalThesis", () => {
 
   it("throws error with unparseable JSON message prefix", async () => {
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text: "This is not JSON at all — just text." }],
       usage: { input_tokens: 100, output_tokens: 30 },
     });
@@ -193,6 +214,7 @@ describe("generateGlobalThesis", () => {
 
   it("throws error on empty response from Claude", async () => {
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [],
       usage: { input_tokens: 50, output_tokens: 0 },
     });
@@ -213,6 +235,7 @@ describe("formatContext change (no 75-word limit)", () => {
 
   it("generateSection does not inject HARD LIMIT text into Claude request", async () => {
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text: "Fee pricing is commoditized." }],
       usage: { input_tokens: 200, output_tokens: 15 },
     });
@@ -236,6 +259,7 @@ describe("formatContext change (no 75-word limit)", () => {
 
   it("generateSection omits CONTEXT block when no context provided", async () => {
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text: "Fees are stable." }],
       usage: { input_tokens: 180, output_tokens: 10 },
     });
@@ -275,6 +299,7 @@ describe("generateSection word count range (SECTION-03)", () => {
   it("mock response with 150 words produces wordCount >= 150 and <= 200", async () => {
     const text = makeNWords(150);
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text }],
       usage: { input_tokens: 300, output_tokens: 150 },
     });
@@ -292,6 +317,7 @@ describe("generateSection word count range (SECTION-03)", () => {
   it("mock response with 175 words produces wordCount in 150-200 range", async () => {
     const text = makeNWords(175);
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text }],
       usage: { input_tokens: 320, output_tokens: 175 },
     });
@@ -309,6 +335,7 @@ describe("generateSection word count range (SECTION-03)", () => {
   it("mock response with 120 words produces wordCount below minimum (detects under-range output)", async () => {
     const text = makeNWords(120);
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text }],
       usage: { input_tokens: 280, output_tokens: 120 },
     });
@@ -326,6 +353,7 @@ describe("generateSection word count range (SECTION-03)", () => {
   it("mock response with 220 words produces wordCount above maximum (detects over-range output)", async () => {
     const text = makeNWords(220);
     mockCreate.mockResolvedValue({
+    stop_reason: "end_turn",
       content: [{ type: "text", text }],
       usage: { input_tokens: 350, output_tokens: 220 },
     });
@@ -347,7 +375,7 @@ describe("generateVerifiedSection", () => {
     process.env.ANTHROPIC_API_KEY = "test-key-12345";
   });
 
-  const reply = (text: string) => ({ content: [{ type: "text", text }], usage: { input_tokens: 10, output_tokens: 10 } });
+  const reply = (text: string) => ({ stop_reason: "end_turn", content: [{ type: "text", text }], usage: { input_tokens: 10, output_tokens: 10 } });
 
   it("accepts a narrative whose figures trace to the data", async () => {
     mockCreate.mockResolvedValueOnce(reply("Overdraft sits at $35, $5 above the $30 peer median (16.7% higher)."));

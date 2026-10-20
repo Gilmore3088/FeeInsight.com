@@ -57,3 +57,5 @@ By 13:24 UTC all 43 paid rows had been read. One would go to Darwin: Northern Tr
 42 stay retired: 23 already have a live fee of the same category and price, and the free rules did not
 read the remaining 19 the same way. `SUPERSEDED_RECHECK_LIVE` is now on. The row still goes through Darwin
 before Hamilton can publish it.
+
+**Agent lesson:** knox/issue-1093

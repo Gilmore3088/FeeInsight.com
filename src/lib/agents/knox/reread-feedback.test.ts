@@ -252,23 +252,25 @@ describe("consumeRereadRequests", () => {
     expect(result).toMatchObject({ renamed: [], resolved: 1, outcomes: { name_changed: 1 } });
   });
 
-  it("switch on: a read repeating a takedown Hamilton confirmed is written held, not sent to Darwin", async () => {
+  it("switch on: a legacy confirmed takedown without an original witness leaves a new read for Darwin", async () => {
     const { db } = dbFor([TELLER]);
+    Object.assign(db, { unsafe: (text: string) => text });
     const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
     db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = strings.join("?");
       if (text.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
-      if (text.includes("f.kind = 'takedown_confirmed'")) {
-        return Promise.resolve([{ institution_id: 77, fee_name: "Teller Check Payable to Someone Other than Member", amount: "10.00", check_name: "hamilton.source_check" }]);
+      if (text.includes("f.kind='takedown_confirmed'")) {
+        return Promise.resolve([{ feedback_id: 41, witness_header: null, has_live_twin: false, check_name: "hamilton.source_check" }]);
       }
       return base(strings, ...values);
     });
     const result = await consumeRereadRequests(asDb(db), { runId: 7, dryRun: false, live: true });
-    expect(result).toMatchObject({ sentToDarwin: [], resolved: 1, outcomes: { held_taken_down: 1 } });
+    expect(result).toMatchObject({ sentToDarwin: [603], resolved: 1, outcomes: { sent_to_darwin: 1 },
+      takedownLessonsUnknown: { unsupported_producer: 1 } });
     const insert = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("INSERT INTO raw_fee_observations"));
     const flags = JSON.parse(String(insert?.slice(1).find((value) => String(value).includes(KNOX_REREAD_FEEDBACK_FLAG)))) as string[];
-    expect(flags).toEqual(expect.arrayContaining(["knox_review:taken_down", "knox_lesson:taken_down:hamilton.source_check", KNOX_REREAD_FEEDBACK_FLAG]));
-    expect(flags).not.toContain("needs_darwin_verification");
+    expect(flags).toEqual(expect.arrayContaining(["needs_darwin_verification", KNOX_REREAD_FEEDBACK_FLAG]));
+    expect(flags.some((flag) => flag.startsWith("knox_lesson:taken_down:") || flag === "knox_review:taken_down")).toBe(false);
   });
 
   it("switch on: a failed write is settled unresolved, so it never holds the head of the queue", async () => {

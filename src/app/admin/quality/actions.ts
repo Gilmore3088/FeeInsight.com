@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireAuth } from "@/lib/auth";
 import { clearSourceSubmissionCountsCache } from "@/lib/admin-queries";
 import { getAutomationControl } from "@/lib/automation-control";
+import { addHandFoundLink } from "@/lib/agents/magellan/operator-schedules";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { grantInstitutionWorkspaceMembership } from "@/lib/hamilton/institution-membership";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -39,7 +40,6 @@ function refreshTrustPaths(institutionId: number | null): void {
   clearSourceSubmissionCountsCache();
   revalidatePath("/admin");
   revalidatePath("/admin/quality");
-  revalidatePath("/admin/data-quality");
   if (institutionId) {
     revalidatePath(`/admin/institution/${institutionId}`);
     revalidatePath(`/institution/${institutionId}`);
@@ -106,10 +106,7 @@ export async function acceptSourceSubmission(formData: FormData): Promise<void> 
   const resolution = automation?.enabled
     ? "manual_validation_needed"
     : "ready_for_validation_when_automation_resumes";
-  const queueStatus = automation?.enabled
-    ? "manual_validation_needed"
-    : "ready_when_automation_resumes";
-  const validationMode = automation?.enabled ? "automation_guarded" : "manual";
+  let linkOutcome: string | null = null;
 
   try {
     const submission = await submissionExists(id);
@@ -129,36 +126,18 @@ export async function acceptSourceSubmission(formData: FormData): Promise<void> 
         WHERE id = ${id}
       `;
 
-      if (submission.institution_id) {
-        await tx`
-          UPDATE institution_sources
-          SET fee_schedule_url = ${submission.source_url}
-          WHERE id = ${submission.institution_id}
-            AND (
-              fee_schedule_url IS NULL
-              OR btrim(fee_schedule_url) = ''
-              OR fee_schedule_url <> ${submission.source_url}
-            )
-        `;
-
-        await tx`
-          INSERT INTO source_validation_queue
-            (institution_id, submission_id, source_url, queue_status, validation_mode,
-             created_by_user_id, notes)
-          VALUES
-            (${submission.institution_id}, ${id}, ${submission.source_url}, ${queueStatus},
-             ${validationMode}, ${user.id}, ${notes})
-          ON CONFLICT (submission_id)
-          WHERE submission_id IS NOT NULL
-          DO UPDATE SET
-            source_url = EXCLUDED.source_url,
-            queue_status = EXCLUDED.queue_status,
-            validation_mode = EXCLUDED.validation_mode,
-            created_by_user_id = EXCLUDED.created_by_user_id,
-            notes = EXCLUDED.notes,
-            updated_at = NOW()
-        `;
-      }
+      // #1038: an accepted link joins the bank's documents as a hand-found schedule, which the
+      // priority path fetches, reads, verifies and publishes on its next tick. It used to
+      // overwrite the bank's own fee link and add a source_validation_queue row no agent reads.
+      const handFound = submission.institution_id
+        ? await addHandFoundLink({
+            db: tx,
+            institutionId: submission.institution_id,
+            url: submission.source_url,
+            givenBy: `community submission #${id}`,
+          })
+        : null;
+      linkOutcome = handFound ? (handFound.ok ? "queued_for_priority_read" : handFound.code) : null;
 
       await tx`
         INSERT INTO community_fee_submission_events
@@ -169,7 +148,7 @@ export async function acceptSourceSubmission(formData: FormData): Promise<void> 
              resolution,
              automation_enabled: automation?.enabled ?? false,
              institution_id: submission.institution_id,
-             validation_queue_status: submission.institution_id ? queueStatus : null,
+             hand_found_link: linkOutcome,
              provider_call_queued: false,
            })})
       `;
@@ -182,7 +161,7 @@ export async function acceptSourceSubmission(formData: FormData): Promise<void> 
             severity: "medium",
             title: `${submission.institution_name} - official fee source accepted`,
             body:
-              `Data Trust accepted an official fee source URL. Validation is ${readableStatus(queueStatus)}; ` +
+              `Data Trust accepted an official fee source URL. The link is ${readableStatus(linkOutcome ?? "not_linked")}; ` +
               "rerun analysis or reports after verified rows publish.",
             sourceJson: {
               source: "community_fee_submission",
@@ -190,8 +169,7 @@ export async function acceptSourceSubmission(formData: FormData): Promise<void> 
               previous_status: submission.review_status,
               new_status: "accepted",
               resolution,
-              validation_queue_status: queueStatus,
-              validation_mode: validationMode,
+              hand_found_link: linkOutcome,
               provider_call_queued: false,
             },
           },

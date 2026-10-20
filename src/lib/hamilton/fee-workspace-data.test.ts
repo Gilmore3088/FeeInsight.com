@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getFeeResearch = vi.fn();
-vi.mock("@/lib/data-store/fee-index", () => ({ getInstitutionFeeValues: vi.fn(async () => new Map([["wire_domestic_outgoing", 35]])) }));
+vi.mock("@/lib/data-store/fee-index", () => ({
+  getInstitutionOwnFees: vi.fn(async () => new Map([["wire_domestic_outgoing", { price: 35, low: 35, high: 35, fees: [{ name: "Outgoing wire", amount: 35 }] }]])),
+}));
 vi.mock("./workspace-context", () => ({ resolveHamiltonInstitutionContext: vi.fn(async () => ({ institution: { id: 323, name: "Capital City Bank" } })) }));
 vi.mock("./workspace/research", () => ({ getFeeResearch: (...args: unknown[]) => getFeeResearch(...args) }));
 

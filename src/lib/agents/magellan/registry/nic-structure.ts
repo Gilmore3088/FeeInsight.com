@@ -1,7 +1,7 @@
 import { strFromU8 } from "fflate";
 import { sql } from "@/lib/data-store/connection";
 import { unzipSchedules } from "@/lib/regulatory/ffiec";
-import { RegistryHttpError, registryFetch, type RegistryFetchOptions } from "@/lib/regulatory/http";
+import { blockedHost, RegistryHttpError, registryFetch, type RegistryBlockedHost, type RegistryFetchOptions } from "@/lib/regulatory/http";
 import {
   NIC_ATTRIBUTES_ACTIVE_URL,
   NIC_ATTRIBUTES_CLOSED_URL,
@@ -27,6 +27,11 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  * refreshed weekly. Rows NIC drops later are kept (fetched_at shows when each was last seen).
  * Nothing here changes institution_sources.holding_company_rssd; disagreements between it and
  * NIC's open direct parent are counted in the partition detail.
+ *
+ * When NIC refuses the request (HTTP 401/403; www.ffiec.gov answers production's Vercel requests
+ * with 403, #1806), the partition is recorded empty with `detail.missing_source` naming the host
+ * and the FDIC BankFind fallback's reach (current direct holding company only). No NIC rows are
+ * made up from FDIC data.
  */
 
 export const NIC_STRUCTURE_SOURCE = "nic-structure";
@@ -34,7 +39,25 @@ export const NIC_STRUCTURE_PARSER_VERSION = 1;
 export const NIC_STRUCTURE_PARTITION = "current";
 const REFRESH_HOURS = 24 * 7;
 const EMPTY_RETRY_HOURS = 24;
+/** A refused host is asked again weekly, not daily. */
+const BLOCKED_RETRY_HOURS = 24 * 7;
 const WRITE_CHUNK = 5_000;
+
+export const NIC_FDIC_FALLBACK =
+  "FDIC BankFind RSSDHCR / NAMEHCR in institution_sources.holding_company_rssd / holding_company_name (fdic-universe step)";
+
+export interface NicMissingSource {
+  host: string;
+  url: string;
+  status: number;
+  /** NIC has no official second host for the structure files. */
+  second_host: null;
+  fallback: string;
+  /** Tracked banks whose FDIC record names a holding company. */
+  fallback_banks: number;
+  /** What the fallback does not give. */
+  not_covered: string[];
+}
 
 export function nicStructurePartitions(): string[] {
   return [NIC_STRUCTURE_PARTITION];
@@ -62,6 +85,8 @@ export interface RegistryNicStructureResult {
   headerChecks: NicHeaderCheck[];
   missingFiles: string[];
   quality: NicStructureQuality | null;
+  /** Set when NIC refused the request: the host, what it answered, and the FDIC fallback's reach. */
+  missingSource: NicMissingSource | null;
   dryRun: boolean;
   empty: boolean;
   emptyReason: string | null;
@@ -202,13 +227,89 @@ async function countParentDisagreements(db: RegistryDb): Promise<number> {
   return Number(row?.disagreements ?? 0);
 }
 
+/** Banks we track whose FDIC record names a holding company (RSSDHCR). Read only. */
+async function countFdicHoldingCompanyLinks(db: RegistryDb): Promise<number> {
+  const [row] = await db<{ banks: number }[]>`
+    SELECT COUNT(DISTINCT rssd_id)::int AS banks
+      FROM institution_sources
+     WHERE source = 'fdic' AND rssd_id IS NOT NULL AND holding_company_rssd IS NOT NULL
+  `;
+  return Number(row?.banks ?? 0);
+}
+
+/**
+ * NIC refused the request (#1806: HTTP 403 to Vercel). Nothing is written to the NIC tables. The
+ * partition is recorded empty, naming the host, and says how far the official fallback reaches:
+ * FDIC BankFind's RSSDHCR / NAMEHCR, already in institution_sources from the fdic-universe step,
+ * which gives each bank's current direct holding company and nothing else.
+ */
+async function recordBlocked(
+  db: RegistryDb,
+  input: { partitionKey: string; dryRun: boolean; runId: number | null; blocked: RegistryBlockedHost },
+): Promise<RegistryNicStructureResult> {
+  const fallbackBanks = await countFdicHoldingCompanyLinks(db);
+  const missingSource: NicMissingSource = {
+    host: input.blocked.host,
+    url: input.blocked.url,
+    status: input.blocked.status,
+    second_host: null,
+    fallback: NIC_FDIC_FALLBACK,
+    fallback_banks: fallbackBanks,
+    not_covered: ["parent history (start and end dates)", "parents above the direct holding company", "parent attributes (entity type, city, state)"],
+  };
+  const emptyReason =
+    `NIC source missing: ${input.blocked.host} answered HTTP ${input.blocked.status}. ` +
+    `Fallback: ${n(fallbackBanks)} tracked banks carry their current direct holding company from FDIC BankFind (RSSDHCR); ` +
+    "no parent history, chain or attributes";
+  const base: RegistryNicStructureResult = {
+    source: NIC_STRUCTURE_SOURCE,
+    partitionKey: input.partitionKey,
+    sourceUrl: NIC_RELATIONSHIPS_URL,
+    relationships: 0,
+    parents: 0,
+    entities: 0,
+    writtenRelationships: 0,
+    writtenEntities: 0,
+    linkedBanks: 0,
+    parentDisagreements: null,
+    headerChecks: [],
+    missingFiles: [NIC_RELATIONSHIPS_URL],
+    quality: null,
+    missingSource,
+    dryRun: input.dryRun,
+    empty: true,
+    emptyReason,
+  };
+  if (input.dryRun) return base;
+  await recordRegistryPartition(db, {
+    source: NIC_STRUCTURE_SOURCE,
+    partitionKey: input.partitionKey,
+    status: "empty",
+    rowCount: 0,
+    sourceUrl: NIC_RELATIONSHIPS_URL,
+    runId: input.runId,
+    nextAttemptAfterHours: BLOCKED_RETRY_HOURS,
+    detail: { parser_version: NIC_STRUCTURE_PARSER_VERSION, missing_files: [NIC_RELATIONSHIPS_URL], missing_source: missingSource, reason: emptyReason },
+  });
+  return base;
+}
+
+const n = (value: number) => value.toLocaleString("en-US");
+
 export async function runRegistryNicStructure(options: RegistryNicStructureOptions = {}): Promise<RegistryNicStructureResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
   const partitionKey = options.partitionKey ?? NIC_STRUCTURE_PARTITION;
   if (partitionKey !== NIC_STRUCTURE_PARTITION) throw new Error(`Invalid NIC structure partition: ${partitionKey}`);
 
-  const relFile = await fetchCsv(NIC_RELATIONSHIPS_URL, options.fetchOptions);
+  let relFile: { name: string; text: string } | null = null;
+  try {
+    relFile = await fetchCsv(NIC_RELATIONSHIPS_URL, options.fetchOptions);
+  } catch (error) {
+    const blocked = blockedHost(error);
+    if (!blocked) throw error;
+    return recordBlocked(db, { partitionKey, dryRun, runId: options.runId ?? null, blocked });
+  }
   const missingFiles: string[] = [];
   const headerChecks: NicHeaderCheck[] = [];
   let relationships: NicRelationship[] = [];
@@ -272,6 +373,7 @@ export async function runRegistryNicStructure(options: RegistryNicStructureOptio
     headerChecks,
     missingFiles,
     quality,
+    missingSource: null,
     dryRun,
     empty: emptyReason !== null,
     emptyReason,

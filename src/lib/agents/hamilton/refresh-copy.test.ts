@@ -8,6 +8,7 @@ import {
   refreshFeesFromCurrentCopy,
   type RefreshCopyCandidate,
 } from "./refresh-copy";
+import type { FeeAudience } from "@/lib/fee-audience";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -36,22 +37,27 @@ function candidate(extra: Partial<RefreshCopyCandidate> = {}): RefreshCopyCandid
     prior_fee_name: "Overdraft fee",
     prior_amount: "35.00",
     prior_source_document_id: 500,
+    prior_lineage_ref:601,published_state:"snapshot501",identity_raw_id:501,identity_product:"",
     ...extra,
   };
 }
 
 function createDb(rows: RefreshCopyCandidate[]): DbMock {
   let nextId = 7001;
-  return vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray) => {
     const text = templateText(strings);
     if (text.includes("WITH stale AS MATERIALIZED")) return Promise.resolve(rows);
     if (text.includes("INSERT INTO published_fee_records")) return Promise.resolve([{ fee_published_id: nextId++ }]);
     if (text.includes("UPDATE published_fee_records")) return Promise.resolve([{ fee_published_id: 501 }]);
     return Promise.resolve([]);
   });
+  Object.assign(db,{ unsafe:(text:string) => text.startsWith("SELECT fp.fee_published_id")
+    ? Promise.resolve(rows.map((r) => ({...r,fee_published_id:r.prior_fee_published_id}))) : text });
+  return db;
 }
 
 function asDb(db: DbMock): Parameters<typeof refreshFeesFromCurrentCopy>[0] {
+  if (!("unsafe" in db)) Object.assign(db,{unsafe:(text:string) => text});
   return db as unknown as Parameters<typeof refreshFeesFromCurrentCopy>[0];
 }
 
@@ -60,6 +66,24 @@ function writes(db: DbMock): string[] {
 }
 
 describe("planRefreshes", () => {
+  const audiences: FeeAudience[] = ["consumer", "business", "both", "unknown"];
+
+  it.each(audiences.flatMap((prior) => audiences.map((current) => [prior, current] as const)))(
+    "refreshes %s to %s only when the audience identity is unchanged (#2109)", (prior, current) => {
+      const row = candidate({ prior_fee_audience: prior, fee_audience: current });
+      const plan = planRefreshes([row]);
+      expect(plan.refresh).toEqual(prior === current ? [row] : []);
+      expect(plan.skipped).toEqual(prior === current ? [] : [{ candidate: row, reason: "audience_differs" }]);
+    },
+  );
+
+  it("normalizes missing legacy audience to unknown, without treating it as a wildcard", () => {
+    expect(planRefreshes([candidate({ prior_fee_audience: null, fee_audience: "unknown" })]).refresh).toHaveLength(1);
+    expect(planRefreshes([candidate({ prior_fee_audience: "unknown", fee_audience: undefined })]).refresh).toHaveLength(1);
+    expect(planRefreshes([candidate({ prior_fee_audience: null, fee_audience: "consumer" })]).skipped[0].reason).toBe("audience_differs");
+    expect(planRefreshes([candidate({ prior_fee_audience: "business", fee_audience: undefined })]).skipped[0].reason).toBe("audience_differs");
+  });
+
   it("moves a live fee the current copy states under the same name and amount", () => {
     const plan = planRefreshes([candidate()]);
     expect(plan.refresh).toHaveLength(1);
@@ -104,6 +128,10 @@ describe("planRefreshes", () => {
     const text = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(text).toContain("AS free_read");
     expect(text).toContain("AS document_url");
+    expect(text).toContain("COALESCE(fp.fee_audience, 'unknown') AS fee_audience");
+    expect(text).toContain("COALESCE(nv.fee_audience, 'unknown') AS fee_audience");
+    expect(text).toContain("stale.fee_audience AS prior_fee_audience");
+    expect(text).toContain("AND COALESCE(nv.fee_audience, 'unknown') = stale.fee_audience");
   });
 
   it("uses each live fee and each current-copy row once", () => {
@@ -133,6 +161,8 @@ describe("refreshFeesFromCurrentCopy", () => {
     expect(moveText).toContain("SET lineage_ref = ");
     expect(moveText).toContain("AND rolled_back_at IS NULL");
     expect(moveText).toContain("AND quarantined_at IS NULL");
+    expect(moveText).toContain("AND COALESCE(fee_audience, 'unknown') = ");
+    expect(moveText).toContain("AND COALESCE(current_verified.fee_audience, 'unknown') = ");
     expect(moveCall).toContain(9801);
     expect(moveCall).toContain(501);
     expect(moveCall).not.toContain(`${REFRESH_COPY_REASON_PREFIX}501`);
@@ -155,6 +185,16 @@ describe("refreshFeesFromCurrentCopy", () => {
     const result = await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "agentic-run-9", dryRun: true });
     expect(result).toMatchObject({ checked: 1, refreshed: 1 });
     expect(writes(db)).toEqual([]);
+  });
+
+  it.each([true, false])("leaves cross-audience lineage untouched in dryRun=%s", async (dryRun) => {
+    const db = createDb([candidate({ prior_fee_audience: "consumer", fee_audience: "business" })]);
+    const result = await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "agentic-run-9", dryRun });
+    expect(result).toMatchObject({ checked: 1, refreshed: 0, skipped: { audience_differs: 1 } });
+    expect(writes(db).some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
+    if (dryRun) expect(writes(db)).toEqual([]);
+    else expect(db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts")))
+      .toContain(refreshCopyFingerprint(501, 9801));
   });
 
   it("records skipped pairs so they are not checked again, and changes no fee", async () => {

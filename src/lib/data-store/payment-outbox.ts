@@ -11,13 +11,15 @@ export interface PaymentEmailJob {
 }
 export async function enqueuePaymentEmail(tx: typeof sql, input: {
   eventId: string; key: string; kind: PaymentEmailKind; leadId?: number; message: ResendMessage; reviewReason?: string;
-}): Promise<void> {
+}): Promise<boolean> {
   const id = randomUUID();
   const message = { ...input.message, idempotencyKey: `payment-email/${id}` };
-  await tx`INSERT INTO payment_email_outbox(id,event_id,dedupe_key,kind,lead_id,message,state,last_error)
+  const inserted = await tx`INSERT INTO payment_email_outbox(id,event_id,dedupe_key,kind,lead_id,message,state,last_error)
     VALUES (${id},${input.eventId},${input.key},${input.kind},${input.leadId ?? null},${JSON.stringify(message)}::jsonb,
       ${input.reviewReason ? "review" : "pending"},${input.reviewReason ?? null})
-    ON CONFLICT (dedupe_key) DO NOTHING`;
+    ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`;
+  // False when the key was already staged, by this event or an earlier one.
+  return inserted.length > 0;
 }
 
 /** Reclaim only expired leases. Every receipt update must prove ownership of the lease. */

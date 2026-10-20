@@ -10,6 +10,7 @@ import { CHART, CHART_FONTS } from "@/lib/charts/style";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { countyCentroid, countyFeature, countyLabel, countyNeighbors, milesBetween, type CountyFeature } from "@/lib/geo/counties";
 import type { MarketStudyData, MarketStudyFee, MarketStudyHousehold, MarketStudyMember } from "@/lib/data-store/market-study";
+import { feeScheduleUrls, statedFeeText } from "@/lib/own-fee";
 
 export interface ChartSize {
   narrow?: boolean;
@@ -309,6 +310,7 @@ export function feePosition(f: MarketStudyFee): FeePosition {
 }
 
 function positionLine(f: MarketStudyFee, subject: string): string {
+  if (f.subjectSeveral || f.competitors.some(c => c.several)) return "Several stated prices; compare the named fees";
   const vals = f.competitors.map((c) => c.amount);
   const own = f.subject!;
   switch (feePosition(f)) {
@@ -359,12 +361,12 @@ export function feeComparison(d: MarketStudyData, styles: Map<number, BankStyle>
       seen.set(c.amount, n + 1);
       const style = styles.get(c.institution_id);
       // Tied competitors stack; on a phone they stack downward, away from the text above.
-      out += `<circle cx="${r1(x(c.amount))}" cy="${r1(cy + (narrow ? n : -n) * 11)}" r="6" fill="${style?.colour ?? CHART.context}" stroke="${CHART.paper}" stroke-width="1.5"><title>${esc(`${style?.name ?? "Competitor"}: ${money(c.amount)}`)}</title></circle>`;
+      out += `<circle cx="${r1(x(c.amount))}" cy="${r1(cy + (narrow ? n : -n) * 11)}" r="6" fill="${style?.colour ?? CHART.context}" stroke="${CHART.paper}" stroke-width="1.5"><title>${esc(`${style?.name ?? "Competitor"}: ${statedFeeText(c.amount, c.several, money)}`)}</title></circle>`;
     }
     const own = f.subject!;
     const flip = x(own) > w - right - 40;
-    out += `<circle cx="${r1(x(own))}" cy="${cy}" r="9" fill="${CHART.paper}" stroke="${CHART.terra}" stroke-width="3"><title>${esc(`${subject}: ${money(own)}`)}</title></circle>`;
-    out += text(x(own) + (flip ? -14 : 14), cy + 5, money(own), { size: 13, anchor: flip ? "end" : "start", font: "mono", fill: CHART.terraText, weight: 700, halo: true });
+    out += `<circle cx="${r1(x(own))}" cy="${cy}" r="9" fill="${CHART.paper}" stroke="${CHART.terra}" stroke-width="3"><title>${esc(`${subject}: ${statedFeeText(own, f.subjectSeveral, money)}`)}</title></circle>`;
+    out += text(x(own) + (flip ? -14 : 14), cy + 5, f.subjectSeveral ? `${money(f.subjectSeveral.low)} to ${money(f.subjectSeveral.high)}` : money(own), { size: 13, anchor: flip ? "end" : "start", font: "mono", fill: CHART.terraText, weight: 700, halo: true });
   });
   return svg(w, height + 4, out, `${subject}'s fees beside the county's competitors`);
 }
@@ -543,23 +545,29 @@ export function buildMarketStudy(d: MarketStudyData): MarketStudy {
   const subjectHasFees = d.fees.some((f) => f.subject !== null);
   if (!subjectHasFees) feeTitle = `${subject} has no published fees on file yet to compare`;
   else if (rows.length === 0) feeTitle = `Too few ${countyShort} competitors publish the same fees as ${subject} yet`;
+  else if (rows.some(f => f.subjectSeveral || f.competitors.some(c => c.several))) feeTitle = `${subject} and the county's competitors publish several prices; compare the named fees`;
   else if (od && feePosition(od) === "above") feeTitle = `${subject}'s overdraft fee would be the highest in the county`;
   else if (od && feePosition(od) === "below") feeTitle = `${subject}'s overdraft fee would be the lowest in the county`;
   else feeTitle = `${subject} would be above every competitor on ${above.length} of ${rows.length} fees and below all of them on ${below.length}`;
   const missing = d.members.filter((m) => m.institution_id !== null && m.institution_id !== d.subject.institution_id && !d.fees.some((f) => f.competitors.some((c) => c.institution_id === m.institution_id)));
+  const namedPrices = rows.map(f => {
+    const priced = [{ name: subject, amount: f.subject!, several: f.subjectSeveral, urls: f.subjectDocumentUrls },
+      ...f.competitors.map(c => ({ name: styles.get(c.institution_id)?.name ?? "Competitor", amount: c.amount, several: c.several, urls: c.documentUrls }))];
+    return `<li><strong>${esc(getDisplayName(f.category))}</strong><ul>${priced.map(p => `<li>${esc(p.name)}: ${esc(statedFeeText(p.amount, p.several, money))}${feeScheduleUrls(p.urls).map((url, i) => ` <a href="${esc(url)}" target="_blank" rel="noreferrer">Schedule ${i + 1}</a>`).join("")}</li>`).join("")}</ul></li>`;
+  }).join("");
   sections.push(
     section(
       "Exhibit 3 · Prices",
       feeTitle,
       `${subject}'s published fee beside each ${countyShort} competitor's, for fees at least ${FEE_MIN_COMPETITORS} of them publish.`,
       fees
-        ? feeLegend(d, styles) + fees
+        ? feeLegend(d, styles) + fees + `<details><summary>Named fees and schedules</summary><ul>${namedPrices}</ul></details>`
         : notice(
             subjectHasFees
               ? `No fee is published by both ${subject} and at least ${FEE_MIN_COMPETITORS} competitors in the county yet.`
               : `${subject}'s fee schedule is not in the Bank Fee Index yet, so its prices cannot be set beside the county's.`,
           ),
-      `${"Bank Fee Index published fees, each from the bank's own current fee schedule."}${
+      `${"Bank Fee Index published fees, each from the bank's own stored fee schedule. Dots count one value per institution; tooltips show stated prices or their range and fee names."}${
         missing.length > 0 ? ` No fee schedule is on file yet for ${listJoin(missing.slice(0, 4).map((m) => shortBankName(m.name)))}${missing.length > 4 ? ` and ${missing.length - 4} more` : ""}, so their prices are not shown.` : ""
       }`,
     ),

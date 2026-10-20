@@ -34,9 +34,9 @@ const NEXT_STEPS = [
     detail: "Open Darwin when raw observations need verified categories, lineage checks, and amount checks.",
   },
   {
-    href: "/admin/index",
-    label: "Inspect published index",
-    detail: "Check the national benchmark cache after publish jobs finish.",
+    href: "/admin/fees/catalog",
+    label: "Inspect published fees",
+    detail: "Check national medians and maturity by fee type after publish jobs finish.",
   },
 ] as const;
 

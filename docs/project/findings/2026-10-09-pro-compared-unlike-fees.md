@@ -6,3 +6,4 @@
 **Fix:** `compareSelectedInstitutionFees` takes the bank's value only from consumer rows charged on the peers' basis. The basis is the most common stated `frequencyFamily` among peer rows (`getCategoryChargeBases`, national, cached one hour); a row with no stated frequency counts as that basis. A category stated only on a business schedule or only on another basis gets no above or below position, and so does a category whose peers mix bases (under 80% on one basis; among categories with 300 or more rows on Oct 9, these were account research, bill pay, late payment and ACH origination). Instead it is listed in `fee_comparisons_not_like_for_like`, and Hamilton says the comparison is not like for like.
 
 **Lesson:** Any comparison of one institution with a peer statistic must filter the institution's rows the same way the statistic filters its own.
+**Guard:** `src/lib/hamilton/report-evidence.test.ts` ("compareSelectedInstitutionFees (like for like)")

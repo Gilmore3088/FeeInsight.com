@@ -24,9 +24,14 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const NCUA_EXTRAS_SOURCE = "ncua-extras";
-export const NCUA_EXTRAS_PARSER_VERSION = 1;
-/** Newest quarters first, back to here; older zips can be added by lowering it. */
-export const NCUA_EXTRAS_FIRST: Quarter = { year: 2020, quarter: 1 };
+export const NCUA_EXTRAS_PARSER_VERSION = 3;
+/**
+ * Newest quarters first, back to here. Held at the 13 quarters already loaded (Oct 18, 2026): the
+ * back-fill had reached 2023 Q2 and the six years still due to 2020 Q1 were about 4 GB more of lines
+ * nothing reads yet. Lower it only by PR, with the size budget for institution_call_report_items
+ * (`src/lib/agents/hoovie/size-budgets.ts`) in view.
+ */
+export const NCUA_EXTRAS_FIRST: Quarter = { year: 2023, quarter: 2 };
 const RECENT_REFRESH_HOURS = 24 * 7;
 const HISTORICAL_REFRESH_HOURS = 24 * 180;
 const EMPTY_RETRY_HOURS = 24;
@@ -134,7 +139,7 @@ export async function runRegistryNcuaExtras(options: RegistryNcuaExtrasOptions):
     : !read?.hasDescriptionFile
       ? "The zip has no account description file (AcctDesc), so no line can be confirmed"
       : read.values.length === 0
-        ? "No 5300 line matched the account-count, employee, insured-limit or fee-income topics"
+        ? "No 5300 line matched the account-count, employee, insured-limit, fee-income, dividend or share-mix topics"
         : null;
   const values = read?.values ?? [];
   const charters = new Set(values.map((v) => v.charter));

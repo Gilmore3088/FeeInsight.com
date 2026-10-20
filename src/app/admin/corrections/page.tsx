@@ -62,7 +62,7 @@ export default async function FeeCorrectionsAuditPage({
 }: {
   searchParams: Promise<{ institution?: string | string[] }>;
 }) {
-  const user = await requireAuth("view");
+  const user = await requireAuth("operate");
   const canRetry = hasPermission(user, "edit");
   const institutionId = parseInstitution((await searchParams).institution);
   let entries: FeeAuditEntry[] = [];

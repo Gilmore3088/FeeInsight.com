@@ -85,6 +85,11 @@ export interface RunHamiltonCategoryGuardResult {
   rolledBackFees: number;
   rejectedVerifiedFees: number;
   /** Failed for the first time: logged for a second look, still live. */
+  /**
+   * The live fees this step took down, or in a dry run would take down: failures confirmed by a
+   * second look, up to `limit`. `failures` also holds first looks and fees still waiting.
+   */
+  confirmedFeeIds: number[];
   flaggedFees: number;
   /** Failed again before their second look was due: still live. */
   awaitingSecondLook: number;
@@ -331,6 +336,7 @@ export async function runHamiltonCategoryGuard(
     failingFees: confirmed.length,
     rolledBackFees,
     rejectedVerifiedFees,
+    confirmedFeeIds: confirmed.slice(0, limit).map((failure) => failure.feePublishedId),
     flaggedFees: look.flagged,
     awaitingSecondLook: look.waiting,
     restoredFees: restore.restored,
@@ -481,7 +487,8 @@ interface LiveRefile extends Restore {
 /** Pure: whether a refile moves an excess activity fee. */
 export function movesExcessActivityFee(restore: Restore): boolean {
   return EXCESS_ACTIVITY_NAME.test(restore.row.fee_name) ||
-    refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to;
+    (restore.row.canonical_fee_key === "monthly_maintenance" &&
+      refileFromLine(restore.row.canonical_fee_key, restore.row.fee_name, restore.row) === restore.to);
 }
 
 /**

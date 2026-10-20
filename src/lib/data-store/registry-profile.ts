@@ -1,8 +1,12 @@
 import { sql } from "./connection";
+import { STRUCK_ENFORCEMENT_AGENCIES } from "./struck-sources";
 import { stateAgencyCode } from "@/lib/regulatory/state-enforcement";
 import { buildLocalOfficeMap, localMapBounds, LOCAL_MAP_MAX_STATES, type LocalOfficeMap } from "@/lib/geo/local-office-map";
 import { getLocalMarketMembers } from "./custom-report-market";
+import { getDepositShareChange } from "./deposit-share-change";
+import { institutionDisplayName } from "@/lib/institution-display-name";
 import { latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
+import { identityCandidatesFor, loadIdentityIndex } from "@/lib/agents/magellan/registry/identity";
 
 /**
  * Reads for the gated institution profile built on the regulatory registry:
@@ -27,6 +31,26 @@ export interface BranchMarket {
   msa_name: string;
   branches: number;
   deposits: number;
+  /** Banks: the metro's code; null outside a metro area and for credit unions. */
+  msa_code?: number | null;
+  /** The city holding most of its offices in this market, for the city fee page link. */
+  city?: string | null;
+  state?: string | null;
+  /** Banks, metros only: its deposit share there and who it competes with (FDIC Summary of Deposits). */
+  share?: MarketShareDetail | null;
+}
+
+export interface MarketShareDetail {
+  /** Its share of the bank deposits in the metro, in percent. */
+  sharePct: number;
+  /** Change in percentage points over five years; null when the metro has no rows that year. */
+  change5yPp: number | null;
+  /** Its rank by deposits in the metro, 1 = largest. */
+  rank: number;
+  /** FDIC-insured institutions with offices in the metro. */
+  institutions: number;
+  /** The largest other institutions there, by deposit share. */
+  competitors: { name: string; sharePct: number }[];
 }
 
 export interface BranchState {
@@ -55,6 +79,10 @@ export interface BranchFootprint {
   nearbyCount?: number;
   /** Banks only: this bank's share of the bank deposits in its local market, in percent. */
   ownDepositSharePct?: number | null;
+  /** The local market named for a reader: "Leon, Alachua and Gadsden counties, FL"; null when unknown. */
+  marketName?: string | null;
+  /** branch_counties: the counties holding most of its deposits; hq_city: its headquarters city's counties. */
+  marketBasis?: "branch_counties" | "hq_city" | null;
   /** Offices placed on the zoomed map (credit union coordinates are added over time). */
   mappedOffices?: number;
   /** True when the zoomed map applies but too few offices are placed yet to draw it. */
@@ -116,12 +144,36 @@ async function otherOfficesIn(
   return [...rows];
 }
 
+/** "Leon", "Leon and Wakulla", "Leon, Alachua and Gadsden". */
+function joinNames(names: string[]): string {
+  return names.length <= 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/** The market counties by name (USDA county list), in market order: "Leon, Alachua and Gadsden counties, FL". */
+async function marketCountyName(countyFips: string[], fallbackPlaces: string[]): Promise<string | null> {
+  if (countyFips.length === 0) return null;
+  const rows = await sql<{ geo_code: string; geo_name: string; state_code: string | null }[]>`
+    SELECT DISTINCT ON (LPAD(geo_code, 5, '0')) LPAD(geo_code, 5, '0') AS geo_code, geo_name, state_code
+      FROM area_statistics
+     WHERE source = 'usda-rucc' AND geo_type = 'county' AND LPAD(geo_code, 5, '0') = ANY(${countyFips})
+     ORDER BY LPAD(geo_code, 5, '0')`.catch(() => []);
+  const byFips = new Map(rows.map((r) => [r.geo_code, r]));
+  const found = countyFips.map((f) => byFips.get(f)).filter((r): r is NonNullable<typeof r> => Boolean(r));
+  if (found.length !== countyFips.length) return fallbackPlaces.length > 0 ? fallbackPlaces.join("; ") : null;
+  const short = found.map((r) => r.geo_name.replace(/\s+(County|Parish|Borough|Census Area|Municipality)$/i, ""));
+  const states = [...new Set(found.map((r) => r.state_code).filter(Boolean))];
+  const kind = /Parish$/i.test(found[0].geo_name) ? "parish" : "county";
+  const noun = found.length === 1 ? kind : kind === "parish" ? "parishes" : "counties";
+  return `${joinNames(short)} ${noun}${states.length === 1 ? `, ${states[0]}` : ""}`;
+}
+
 /** The largest competitors in the institution's local market, and a bank's own deposit share there. */
 async function marketCompetitors(
   institutionId: number,
-): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "nearby" | "nearbyCount" | "ownDepositSharePct" | "marketName" | "marketBasis">> {
   const market = await getLocalMarketMembers(institutionId).catch(() => null);
   if (!market) return { nearby: [], nearbyCount: 0, ownDepositSharePct: null };
+  const marketName = await marketCountyName(market.county_fips, market.places);
   const total = market.members.reduce((sum, m) => sum + (m.market_deposits ?? 0), 0);
   const share = (deposits: number | null) =>
     deposits === null || total <= 0 ? null : Math.round((deposits / total) * 1000) / 10;
@@ -135,6 +187,8 @@ async function marketCompetitors(
     })),
     nearbyCount: rivals.length,
     ownDepositSharePct: subject ? share(subject.market_deposits) : null,
+    marketName,
+    marketBasis: market.basis,
   };
 }
 
@@ -152,7 +206,7 @@ async function localMapFor(
   points: OfficePoint[],
   isBank: boolean,
   totalOffices: number,
-): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct">> {
+): Promise<Pick<BranchFootprint, "localMap" | "mappedOffices" | "mapPending" | "approxOffices" | "nearby" | "nearbyCount" | "ownDepositSharePct" | "marketName" | "marketBasis">> {
   if (states.length === 0 || states.length > LOCAL_MAP_MAX_STATES) return { localMap: null, mappedOffices: 0 };
   const own = points.map((p) => ({
     latitude: Number(p.latitude),
@@ -180,6 +234,38 @@ async function localMapFor(
   return { localMap, mappedOffices: map.dots.length, approxOffices, ...(await marketCompetitors(institutionId)) };
 }
 
+const MARKET_COMPETITORS = 5;
+
+/** Each metro's deposit share, five-year change and largest competitors, from the shared share reader. */
+async function withMarketShares(institutionId: number, year: number, markets: BranchMarket[]): Promise<BranchMarket[]> {
+  const codes = markets.map((m) => m.msa_code).filter((c): c is number => c != null);
+  if (codes.length === 0) return markets;
+  const result = await getDepositShareChange({ geo: "metro", markets: codes, endYear: year }).catch(() => null);
+  if (!result) return markets;
+  const byCode = new Map(result.markets.map((m) => [Number(m.market), m]));
+  return markets.map((m) => {
+    const summary = m.msa_code == null ? null : byCode.get(m.msa_code);
+    const own = summary?.rows.find((r) => r.institution_id === institutionId);
+    if (!summary || !own) return m;
+    const rows = summary.rows as Array<(typeof summary.rows)[number] & { name?: string | null }>;
+    const competitors = rows
+      .filter((r) => r.institution_id !== institutionId && r.name)
+      .sort((a, b) => b.share - a.share)
+      .slice(0, MARKET_COMPETITORS)
+      .map((r) => ({ name: institutionDisplayName(r.name ?? ""), sharePct: Math.round(r.share * 10) / 10 }));
+    return {
+      ...m,
+      share: {
+        sharePct: Math.round(own.share * 10) / 10,
+        change5yPp: own.change_5y_pp === null ? null : Math.round(own.change_5y_pp * 10) / 10,
+        rank: own.rank,
+        institutions: summary.institutions,
+        competitors,
+      },
+    };
+  });
+}
+
 export async function getBranchFootprint(institutionId: number): Promise<BranchFootprint | null> {
   const byYear = await sql<Array<{ year: number; branches: number; deposits: string }>>`
     SELECT year, COUNT(*)::int AS branches, COALESCE(SUM(deposits), 0) AS deposits
@@ -196,13 +282,14 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
        WHERE institution_id = ${institutionId} AND year = ${latestYear} AND state IS NOT NULL
        GROUP BY state
        ORDER BY branches DESC`,
-    sql<Array<{ msa_name: string; branches: number; deposits: string }>>`
-      SELECT COALESCE(msa_name, 'Outside a metro area') AS msa_name, COUNT(*)::int AS branches,
-             COALESCE(SUM(deposits), 0) AS deposits
+    sql<Array<{ msa_name: string; msa_code: number | null; city: string | null; state: string | null; branches: number; deposits: string }>>`
+      SELECT COALESCE(MAX(msa_name), 'Outside a metro area') AS msa_name, NULLIF(msa_code, 0) AS msa_code,
+             MODE() WITHIN GROUP (ORDER BY INITCAP(city)) AS city, MODE() WITHIN GROUP (ORDER BY state) AS state,
+             COUNT(*)::int AS branches, COALESCE(SUM(deposits), 0) AS deposits
         FROM institution_branch_deposits
        WHERE institution_id = ${institutionId} AND year = ${latestYear}
-       GROUP BY 1
-       ORDER BY 3 DESC
+       GROUP BY NULLIF(msa_code, 0)
+       ORDER BY 6 DESC
        LIMIT 8`,
   ]);
   const points =
@@ -218,7 +305,18 @@ export async function getBranchFootprint(institutionId: number): Promise<BranchF
     latestYear,
     byYear: byYear.map((r) => ({ year: Number(r.year), branches: Number(r.branches), deposits: Number(r.deposits) })),
     byState: byState.map((r) => ({ state: r.state, branches: Number(r.branches), deposits: Number(r.deposits) })),
-    topMarkets: topMarkets.map((r) => ({ msa_name: r.msa_name, branches: Number(r.branches), deposits: Number(r.deposits) })),
+    topMarkets: await withMarketShares(
+      institutionId,
+      latestYear,
+      topMarkets.map((r) => ({
+        msa_name: r.msa_name,
+        msa_code: r.msa_code === null ? null : Number(r.msa_code),
+        city: r.city,
+        state: r.state,
+        branches: Number(r.branches),
+        deposits: Number(r.deposits),
+      })),
+    ),
     ...(await localMapFor(institutionId, byState.map((r) => r.state), [...points], true, Number(byYear[byYear.length - 1]?.branches ?? 0))),
   };
 }
@@ -491,15 +589,19 @@ export async function getEnforcementRecord(institutionId: number): Promise<Enfor
     SELECT charter_type, primary_regulator, holding_company_name, state_code, charter_agency FROM institution_sources WHERE id = ${institutionId}`;
   if (!inst || inst.charter_type !== "bank") return null;
   const holding = inst.holding_company_name ? String(inst.holding_company_name) : null;
+  // Struck states' orders (non-commercial site terms; DECISIONS.md "No non-commercial data") are never read.
   const loaded = await sql<Array<Record<string, unknown>>>`
-    SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions GROUP BY agency`;
+    SELECT agency, MAX(fetched_at) AS fetched_at FROM institution_enforcement_actions
+     WHERE agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
+     GROUP BY agency`;
   const loadedAgencies = new Set(loaded.map((r) => String(r.agency)));
   const rows = await sql<Array<Record<string, unknown>>>`
     SELECT agency, party_name, institution_id, action_type, subject, start_date, termination_date,
            penalty_amount, document_url
       FROM institution_enforcement_actions
-     WHERE institution_id = ${institutionId}
-        OR (${holding}::text IS NOT NULL AND holding_company = ${holding})
+     WHERE (institution_id = ${institutionId}
+            OR (${holding}::text IS NOT NULL AND holding_company = ${holding}))
+       AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
      ORDER BY start_date DESC NULLS LAST, id DESC`;
   const actions: EnforcementActionRow[] = rows.map((r) => ({
     agency: String(r.agency),
@@ -603,7 +705,8 @@ export async function getIdentityLinksNeedingReview(limit = 25): Promise<Identit
       FROM institution_identity_links l
       LEFT JOIN institution_sources s ON s.id = l.institution_id
      WHERE l.status = 'needs_review'
-     ORDER BY (l.detail->>'candidates')::int DESC NULLS LAST, l.external_name
+     ORDER BY (SELECT MAX(value::numeric) FROM jsonb_each_text(l.detail) WHERE key ~ '^complaints_[0-9]{4}$') DESC NULLS LAST,
+              (l.detail->>'candidates')::numeric DESC NULLS LAST, l.external_name, l.id
      LIMIT ${limit}`;
   return rows.map((r) => ({
     link_type: String(r.link_type),
@@ -614,4 +717,167 @@ export async function getIdentityLinksNeedingReview(limit = 25): Promise<Identit
     method: String(r.method),
     confidence: Number(r.confidence),
   }));
+}
+
+/** The number of identity links waiting for a person, for the registry page's badge. */
+export async function countIdentityLinksNeedingReview(): Promise<number> {
+  const [row] = await sql<Array<{ n: number }>>`
+    SELECT COUNT(*)::int AS n FROM institution_identity_links WHERE status = 'needs_review'`;
+  return Number(row?.n ?? 0);
+}
+
+export const IDENTITY_LINK_STATUSES = ["needs_review", "accepted", "rejected"] as const;
+export type IdentityLinkStatus = (typeof IDENTITY_LINK_STATUSES)[number];
+export const IDENTITY_LINK_PAGE_SIZE = 25;
+
+/** An institution a link points at or could point at, as the reviewer sees it. */
+export interface IdentityInstitution {
+  id: number;
+  name: string;
+  city: string | null;
+  state: string | null;
+  charter: string | null;
+  /** Thousands of dollars. */
+  assets: number | null;
+  holdingCompany: string | null;
+  rssd: string | null;
+  cert: string | null;
+}
+
+export interface IdentityLinkRow {
+  id: number;
+  linkType: "cfpb_company" | "sec_cik";
+  externalKey: string;
+  externalName: string | null;
+  status: IdentityLinkStatus;
+  method: string;
+  confidence: number;
+  candidates: number | null;
+  /** CFPB: complaints in the latest year the matcher saw the company. */
+  complaints: { year: number; count: number } | null;
+  ticker: string | null;
+  exchange: string | null;
+  verifiedBy: string | null;
+  reviewNote: string | null;
+  institution: IdentityInstitution | null;
+}
+
+function institutionFrom(r: Record<string, unknown>, prefix = ""): IdentityInstitution | null {
+  const id = r[`${prefix}id`];
+  if (id === null || id === undefined) return null;
+  const text = (key: string) => (r[`${prefix}${key}`] ? String(r[`${prefix}${key}`]) : null);
+  return {
+    id: Number(id),
+    name: text("institution_name") ?? `#${id}`,
+    city: text("city"),
+    state: text("state_code"),
+    charter: text("charter_type"),
+    assets: numOrNull(r[`${prefix}asset_size`]),
+    holdingCompany: text("holding_company_name"),
+    rssd: text("rssd_id"),
+    cert: text("cert_number") ?? text("ncua_charter_id"),
+  };
+}
+
+/** The latest complaints_<year> count the CFPB matcher stored on the link. */
+export function latestComplaintCount(detail: Record<string, unknown> | null | undefined): { year: number; count: number } | null {
+  let best: { year: number; count: number } | null = null;
+  for (const [key, value] of Object.entries(detail ?? {})) {
+    const match = /^complaints_(\d{4})$/.exec(key);
+    const count = Number(value);
+    if (match && Number.isFinite(count) && (!best || Number(match[1]) > best.year)) best = { year: Number(match[1]), count };
+  }
+  return best;
+}
+
+/**
+ * One page of identity links for the review screen. Links waiting for review come by impact
+ * (complaints, then how many institutions share the name); decided ones newest first.
+ */
+export async function listIdentityLinks(filters: {
+  status: IdentityLinkStatus;
+  linkType: "cfpb_company" | "sec_cik" | null;
+  query: string | null;
+  page: number;
+}): Promise<{ rows: IdentityLinkRow[]; total: number }> {
+  const pattern = filters.query ? `%${filters.query.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
+  const where = () => sql`
+     WHERE l.status = ${filters.status}
+       AND (${filters.linkType}::text IS NULL OR l.link_type = ${filters.linkType})
+       AND (${pattern}::text IS NULL OR l.external_name ILIKE ${pattern} OR l.external_key ILIKE ${pattern})`;
+  const order =
+    filters.status === "needs_review"
+      ? sql`ORDER BY (SELECT MAX(value::numeric) FROM jsonb_each_text(l.detail) WHERE key ~ '^complaints_[0-9]{4}$') DESC NULLS LAST,
+                     (l.detail->>'candidates')::numeric DESC NULLS LAST, l.external_name, l.id`
+      : sql`ORDER BY l.updated_at DESC, l.id DESC`;
+  const offset = Math.max(0, filters.page - 1) * IDENTITY_LINK_PAGE_SIZE;
+  const [rows, [count]] = await Promise.all([
+    sql<Array<Record<string, unknown>>>`
+      SELECT l.id AS link_id, l.link_type, l.external_key, l.external_name, l.status, l.method, l.confidence,
+             l.detail, l.verified_by, s.id, s.institution_name, s.city, s.state_code, s.charter_type, s.asset_size,
+             s.holding_company_name, s.rssd_id, s.cert_number, s.ncua_charter_id
+        FROM institution_identity_links l
+        LEFT JOIN institution_sources s ON s.id = l.institution_id
+        ${where()}
+        ${order}
+       LIMIT ${IDENTITY_LINK_PAGE_SIZE} OFFSET ${offset}`,
+    sql<Array<{ n: number }>>`SELECT COUNT(*)::int AS n FROM institution_identity_links l ${where()}`,
+  ]);
+  return {
+    total: Number(count?.n ?? 0),
+    rows: rows.map((r) => {
+      const detail = (r.detail ?? {}) as Record<string, unknown>;
+      return {
+        id: Number(r.link_id),
+        linkType: r.link_type === "sec_cik" ? "sec_cik" : "cfpb_company",
+        externalKey: String(r.external_key),
+        externalName: r.external_name ? String(r.external_name) : null,
+        status: String(r.status) as IdentityLinkStatus,
+        method: String(r.method),
+        confidence: Number(r.confidence),
+        candidates: numOrNull(detail.candidates),
+        complaints: latestComplaintCount(detail),
+        ticker: typeof detail.ticker === "string" ? detail.ticker : null,
+        exchange: typeof detail.exchange === "string" ? detail.exchange : null,
+        verifiedBy: r.verified_by ? String(r.verified_by) : null,
+        reviewNote: typeof detail.review_note === "string" ? detail.review_note : null,
+        institution: institutionFrom(r),
+      };
+    }),
+  };
+}
+
+
+/**
+ * Every institution the link's name could belong to, recomputed with the matcher's own index and
+ * normalization (the link stores only how many there were). Largest first.
+ */
+export async function getIdentityLinkCandidates(linkId: number): Promise<IdentityInstitution[]> {
+  const [link] = await sql<Array<{ external_key: string; external_name: string | null }>>`
+    SELECT external_key, external_name FROM institution_identity_links WHERE id = ${linkId}`;
+  if (!link) return [];
+  const index = await loadIdentityIndex(sql);
+  const ids = identityCandidatesFor(link.external_name ?? link.external_key, index).map((c) => c.id);
+  if (ids.length === 0) return [];
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT id, institution_name, city, state_code, charter_type, asset_size, holding_company_name, rssd_id, cert_number, ncua_charter_id
+      FROM institution_sources WHERE id IN ${sql(ids)}
+     ORDER BY asset_size DESC NULLS LAST, institution_name`;
+  return rows.map((r) => institutionFrom(r)).filter((r): r is IdentityInstitution => r !== null);
+}
+
+/** Free search for the right institution when it is not a candidate: by name, or by cert, RSSD or NCUA charter number. */
+export async function searchInstitutionsForIdentityLink(query: string): Promise<IdentityInstitution[]> {
+  const q = query.trim().slice(0, 120);
+  if (q.length < 2) return [];
+  const byNumber = /^\d{1,15}$/.test(q);
+  const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const rows = await sql<Array<Record<string, unknown>>>`
+    SELECT id, institution_name, city, state_code, charter_type, asset_size, holding_company_name, rssd_id, cert_number, ncua_charter_id
+      FROM institution_sources
+     WHERE regulatory_status IS DISTINCT FROM 'inactive'
+       AND ${byNumber ? sql`(cert_number = ${q} OR rssd_id = ${q} OR ncua_charter_id = ${q} OR id = ${Number(q)})` : sql`institution_name ILIKE ${pattern}`}
+     ORDER BY asset_size DESC NULLS LAST, institution_name
+     LIMIT 20`;
+  return rows.map((r) => institutionFrom(r)).filter((r): r is IdentityInstitution => r !== null);
 }

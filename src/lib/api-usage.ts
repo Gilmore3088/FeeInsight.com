@@ -1,4 +1,5 @@
 import { sql } from "@/lib/data-store/connection";
+import { retainV1BackgroundTask } from "@/lib/api-v1-background";
 
 /** Postgres "undefined_column": usage_events has no api_key_id until its migration runs. */
 const UNDEFINED_COLUMN = "42703";
@@ -11,7 +12,22 @@ function isUndefinedColumn(err: unknown): boolean {
  * Records one API call in usage_events. `keyId` is the issued api_keys row that made the call
  * (null for a signed-in site session or an anonymous caller), so usage can be split per key.
  */
-export async function logApiUsage(
+export function logApiUsage(
+  organizationId: number | null,
+  anonymousId: string | null,
+  eventType: string,
+  metadata?: object,
+  keyId?: number | null,
+): Promise<void> {
+  const task = writeApiUsage(organizationId, anonymousId, eventType, metadata, keyId);
+  // /fees predates the api.v1 event prefix; keep other callers' lifecycle unchanged.
+  if (eventType.startsWith("api.v1.") || eventType.startsWith("api.fees.")) {
+    retainV1BackgroundTask(task);
+  }
+  return task;
+}
+
+async function writeApiUsage(
   organizationId: number | null,
   anonymousId: string | null,
   eventType: string,

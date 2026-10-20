@@ -14,6 +14,7 @@ import {
   type CrewCommand,
 } from "./crew-commands";
 import { PUBLISHER_AGENT_NAMES, PUBLISHER_STEP_KEYS } from "./gutenberg/names";
+import { registryLedgerNames } from "./hoovie/names";
 import { startAgentRun } from "./run-store";
 import { scheduleDueStateLaneRuns, startStateLaneRun, STATE_LANE_STEPS } from "./state-lane-scheduler";
 
@@ -261,7 +262,8 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
     case "retry": {
       // A failed step belongs to whoever owns it today (`ledgerAgent`): a publisher step written
       // under Hamilton's name before #1075 step 2 is Gutenberg's, and Hamilton keeps the rest.
-      const retryNames = command.agent === "gutenberg" ? [...PUBLISHER_AGENT_NAMES] : [command.agent];
+      // Likewise a registry step under Magellan's name before #1865 is Hoovie's.
+      const retryNames = command.agent === "gutenberg" ? [...PUBLISHER_AGENT_NAMES] : registryLedgerNames(command.agent);
       const [failed] = await sql`
         SELECT r.id, r.state_code, s.step_key
           FROM agent_runs r
@@ -270,7 +272,9 @@ export async function executeCrewWrite(command: CrewCommand, actor: string): Pro
            AND s.status IN ('failed', 'blocked')
            AND s.agent_name = ANY(${retryNames}::text[])
            AND (CASE WHEN s.agent_name = 'hamilton' AND s.step_key = ANY(${[...PUBLISHER_STEP_KEYS]}::text[])
-                     THEN 'gutenberg' ELSE s.agent_name END) = ${command.agent}
+                     THEN 'gutenberg'
+                     WHEN s.agent_name = 'magellan' AND s.step_key LIKE 'registry-%' THEN 'hoovie'
+                     ELSE s.agent_name END) = ${command.agent}
          ORDER BY r.updated_at DESC
          LIMIT 1
       `;

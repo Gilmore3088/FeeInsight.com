@@ -20,6 +20,7 @@ export type {
   GuideAccessTier,
   GuideStat,
   GuideStatus,
+  GuideAction,
   GuideOutcome,
   CostScenario,
   IllustrativePolicy,
@@ -114,12 +115,22 @@ export function blockText(block: GuideBlock): string[] {
       return block.intro ? [block.intro] : [];
     case "breakdown":
       return [block.title, ...block.items.map((i) => i.label), block.totalLabel, block.note];
+    case "actions":
+      return [
+        ...block.actions.flatMap((a) => [a.title, a.text]),
+        ...(block.tips ? [block.tips.title, ...block.tips.items] : []),
+      ];
     case "cap_scope":
       return [];
+    case "network_mentions":
+      return [block.title, block.caption];
     case "policy_table":
       return [...block.rows.flatMap((r) => [r.feature, r.question]), ...(block.compare ? [block.compare.intro] : [])];
     case "complaints":
       return [block.text];
+    case "animation":
+      // A scene's captions and button labels are not guide prose; fee-animation/scenes tests them.
+      return [];
     case "updates":
       return block.items.flatMap((u) => [u.title, u.changed, u.who, u.action]);
   }

@@ -29,3 +29,5 @@ link text says. The 502 mapping itself is unchanged.
 **Lesson:** read the `fetch.http` attempt and the paid attempt's `detail.note` before calling a
 fetch failure the bank's. To learn what a page links to, open the vault copy or a finder's
 `detail.trail`, not the stored text.
+
+**Agent lesson:** magellan/pr-1293-plain-fetch-outcome

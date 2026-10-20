@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { amountsIn, classifyFeeText, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
+import { amountsIn, classifyFeeText, headingName, readUnderHeading, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
 import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
 import { researchSplitTarget } from "@/lib/fee-fold";
@@ -559,8 +559,8 @@ describe("Knox extract.rules", () => {
     expect(foldedCategory(name)).toBe(key);
   });
 
+  // v90 (James, Oct 20, "File them"): returned statements are returned mail now (see below).
   it.each([
-    "Returned Statement Fee",
     "Membership Fee",
     "Telephone Transfer Fee",
     "Uncollected Funds Fee",
@@ -1573,8 +1573,9 @@ describe("v75: recurring held name families from the 62-bank answer key (Knox re
     expect(hint("Credit Card Replacement | $20")).toEqual([]);
   });
 
-  it("leaves returned statements held (James's call since v26)", () => {
-    expect(hint("Returned Statement fee | $10/each")).toEqual([]); // inst 7526, f2295
+  it("files returned statements as returned mail (James's decision card, Oct 20, \"File them\"; v90)", () => {
+    expect(hint("Returned Statement fee | $10/each")).toEqual([["returned_mail", 10]]); // inst 7526, f2295
+    expect(classifyFeeText("Returned Statement Fee")).toBe("returned_mail");
   });
 });
 
@@ -1764,5 +1765,43 @@ describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
     expect(hint("ACH Same Day Processing Fee")).toBe("ach_origination");
     // Travel cards stay held: the gate keys leave some unfiled and the 62-bank key files them two ways.
     expect(hint("Travel Money Card")).toBeNull();
+  });
+});
+
+describe("v80 (#2032): rows named by the heading above them", () => {
+  const read = (text: string) => runFreeSpecialists(text).candidates.map((fee) => [fee.feeName, fee.amount, fee.canonicalHint]);
+
+  it("reads a heading with footnote numbers glued to it", () => {
+    const fees = read("Cashier’s Check1,4\nCustomer ......................................$10.00\nNon-Customer .............................Not Available\nMoney Orders1,4\nCustomer ......................................$5.00");
+    expect(fees).toContainEqual(["Cashier’s Check: Customer", 10, "cashiers_check"]);
+    expect(fees).toContainEqual(["Money Orders: Customer", 5, "money_order"]);
+  });
+
+  it("reads wires under a one-word Domestic or International line", () => {
+    const fees = read(
+      "Wire Transfers\nDomestic\nIncoming1,2 .............................$15.00\nOutgoing ...............................$30.00\nInternational\nUSD Outgoing ...........................$40.00\nForeign Currency Outgoing ..............$25.00",
+    );
+    expect(fees).toContainEqual(["Domestic Wire Transfers: Incoming", 15, "wire_domestic_incoming"]);
+    expect(fees).toContainEqual(["Domestic Wire Transfers: Outgoing", 30, "wire_domestic_outgoing"]);
+    expect(fees).toContainEqual(["International Wire Transfers: USD Outgoing", 40, "wire_intl_outgoing"]);
+    expect(fees).toContainEqual(["International Wire Transfers: Foreign Currency Outgoing", 25, "wire_intl_outgoing"]);
+  });
+
+  it("files another bank's ATMs named in more than one word", () => {
+    expect(classifyFeeText("Direct S/C-Fee (non-Beacon Bank ATMs)")).toBe("atm_non_network");
+    expect(classifyFeeText("non-cash vending machines")).not.toBe("atm_non_network");
+    expect(classifyFeeText("NON-BANK OWNED ATMS")).toBe("atm_non_network");
+    expect(classifyFeeText("Non-proprietary ATMS")).toBe("atm_non_network");
+  });
+
+  it("keeps box sizes and figure lines as they were", () => {
+    expect(readUnderHeading("3x10 ..... $40.00", "Safe Deposit Box").map((fee) => fee.feeName)).not.toContain("Safe Deposit Box: 3x");
+    expect(headingName("Checking Plus1")).toBeUndefined();
+    expect(headingName("Money Orders1,4")).toBe("Money Orders");
+  });
+
+  it("reads a Domestic line as a wire subheading only within the heading's reach", () => {
+    const far = read("Wire Transfers\nNotes about wires follow\nmore notes\nmore notes\nmore notes\nmore notes\nInternational\nOutgoing ...............$40.00");
+    expect(far.map((fee) => fee[0])).not.toContain("International Wire Transfers: Outgoing");
   });
 });

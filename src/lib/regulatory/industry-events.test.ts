@@ -7,10 +7,9 @@ import {
   cleaningReport,
   commentSubmitter,
   CsvStreamParser,
-  defendantOf,
   eventDate,
   exactNameKey,
-  fetchCourtListenerYear,
+  fetchNcuaMergers,
   fetchPublishedList,
   findDataLinks,
   h2ReleaseDates,
@@ -26,6 +25,7 @@ import {
   scanSecFilingText,
   yearValue,
 } from "./industry-events";
+import { blockedHost, RegistryUnreachableError } from "./http";
 
 describe("value readers", () => {
   it("never turns a blank into zero", () => {
@@ -118,6 +118,39 @@ describe("tables", () => {
     ]);
   });
 
+  it("downloads at most maxFiles data files from a page", async () => {
+    const page = '<a href="/a/insurance-report-activity-mar-2026.zip">March 2026</a><a href="/a/insurance-report-activity-dec-2025.zip">December 2025</a>';
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).endsWith(".zip") ? new Response(zipSync({ "notes.pdf": new Uint8Array([1]) }), { status: 200 }) : new Response(page, { status: 200 }),
+    ) as unknown as typeof fetch;
+    const list = await fetchPublishedList(["https://ncua.gov/x"], /insurance-report-activity/i, NCUA_LIQUIDATION_SPEC, ["name", "date"], { fetchImpl, backoffMs: 0 }, 1);
+    expect(list.candidates).toHaveLength(2);
+    expect(vi.mocked(fetchImpl).mock.calls.map((c) => String(c[0]))).toEqual(["https://ncua.gov/x", "https://ncua.gov/a/insurance-report-activity-mar-2026.zip"]);
+  });
+
+  it("fails, never an empty check, when every landing page returns 404 (#2306, run 8051)", async () => {
+    const pages = ["https://ncua.gov/analysis/cuso-economic-data/merger-activity-reports", "https://ncua.gov/analysis/credit-union-corporate-call-report-data/mergers"];
+    const fetchImpl = vi.fn(async () => new Response("Not Found", { status: 404 })) as unknown as typeof fetch;
+    const error = await fetchNcuaMergers({ fetchImpl, backoffMs: 0 }, pages).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RegistryUnreachableError);
+    const unreachable = error as RegistryUnreachableError;
+    expect(unreachable.status).toBe(404);
+    expect(unreachable.pagesTried.map((p) => p.status)).toEqual(["not_found", "not_found"]);
+    expect(unreachable.message).toBe(`No landing page could be fetched; every page returned 404: ${pages[0]} 404; ${pages[1]} 404`);
+    // A refused page is the publisher's block (#1806), recorded as a named missing source.
+    const refused = vi.fn(async () => new Response("Forbidden", { status: 403 })) as unknown as typeof fetch;
+    const block = await fetchNcuaMergers({ fetchImpl: refused, backoffMs: 0 }, pages).catch((e: unknown) => e);
+    expect(blockedHost(block)).toMatchObject({ host: "ncua.gov", status: 403 });
+  });
+
+  it("still reads the list when one landing page is dead and another answers", async () => {
+    const page = "<table><tr><th>Credit Union</th><th>Liquidation Date</th></tr><tr><td>Acme FCU</td><td>2025-01-05</td></tr></table>";
+    const fetchImpl = vi.fn(async (url: string) => String(url).includes("old") ? new Response("", { status: 404 }) : new Response(page, { status: 200 })) as unknown as typeof fetch;
+    const list = await fetchPublishedList(["https://ncua.gov/old", "https://ncua.gov/new"], /liquidat/i, NCUA_LIQUIDATION_SPEC, ["name", "date"], { fetchImpl, backoffMs: 0 });
+    expect(list.pagesTried.map((p) => p.status)).toEqual(["not_found", "ok"]);
+    expect(list.table?.rows).toHaveLength(1);
+  });
+
   it("falls back to an HTML table on the page and reports PDF-only pages", async () => {
     const page = "<table><tr><th>Credit Union</th><th>Date</th></tr><tr><td>Acme FCU</td><td>2025-01-05</td></tr></table>";
     const fetchImpl = vi.fn(async () => new Response(page, { status: 200 })) as unknown as typeof fetch;
@@ -178,29 +211,7 @@ describe("SEC", () => {
   });
 });
 
-describe("lawsuits and comments", () => {
-  it("reads the defendant side of a case name", () => {
-    expect(defendantOf("Jane Doe v. First Bank, N.A., et al.")).toBe("First Bank, N.A.");
-    expect(defendantOf("In re Acme Bank Overdraft Litigation")).toBe("Acme Bank");
-    expect(defendantOf("Smith Trust")).toBeNull();
-  });
-
-  it("skips with a reason when CourtListener needs a token", async () => {
-    const fetchImpl = vi.fn(async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
-    const r = await fetchCourtListenerYear(2025, { fetchImpl, backoffMs: 0 });
-    expect(r.cases).toEqual([]);
-    expect(r.authRequired).toMatch(/COURTLISTENER_API_TOKEN/);
-  });
-
-  it("dedupes dockets and reports fields no result carried", async () => {
-    const result = { caseName: "Doe v. Acme Bank", court: "S.D. Ohio", dateFiled: "2025-02-01", docket_id: 7, docket_absolute_url: "/docket/7/doe-v-acme/" };
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ count: 2, next: null, results: [result, result] }), { status: 200 })) as unknown as typeof fetch;
-    const r = await fetchCourtListenerYear(2025, { fetchImpl, backoffMs: 0 });
-    expect(r.cases).toHaveLength(1);
-    expect(r.cases[0]).toMatchObject({ defendantName: "Acme Bank", docketUrl: "https://www.courtlistener.com/docket/7/doe-v-acme/" });
-    expect(r.missingFields).toEqual(["court_id", "docketNumber"]);
-  });
-
+describe("rule comments", () => {
   it("reads the commenter from a regulations.gov title", () => {
     expect(commentSubmitter("Comment from Navy Federal Credit Union")).toBe("Navy Federal Credit Union");
     expect(looksLikeInstitution("Navy Federal Credit Union")).toBe(true);
@@ -211,6 +222,8 @@ describe("lawsuits and comments", () => {
 describe("early warning", () => {
   it("lists H.2 releases newest first and keeps application lines under their heading", () => {
     expect(h2ReleaseDates('<a href="/releases/h2/20261002/">x</a><a href="/releases/h2/20261009/">y</a>')).toEqual(["20261009", "20261002"]);
+    expect(h2ReleaseDates('<a href="20261010">Oct 10</a><a href="20261003/default.htm">Oct 3</a><a href="https://www.federalreserve.gov/releases/h2/20200103/default.htm">2020</a>')).toEqual(["20261010", "20261003", "20200103"]);
+    expect(h2ReleaseDates('<a href="/releases/h2/current/">current</a><a href="123456789">x</a><a href="99999999">y</a>')).toEqual([]);
     const text = "Bank Holding Companies\nAcme Bancorp, Springfield, Illinois -- to acquire Beta Bank, Peoria, Illinois.\nOther business of the board was conducted today in session.";
     const lines = applicationLines(text, "20261009", "2026-10-09", "https://x", "h2");
     expect(lines).toHaveLength(1);

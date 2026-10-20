@@ -3,7 +3,8 @@ import { parseCsv } from "./ncua";
 
 /**
  * NCUA 5300 lines beyond the fixed columns of institution_financial_records: share and deposit
- * account counts, employees, shares over the insured limit and fee-income lines. Pure: reads a
+ * account counts, employees, shares over the insured limit, fee-income lines, dividend expense
+ * and balances by share type. Pure: reads a
  * downloaded quarterly zip, never writes to the database.
  *
  * No account code is written here from memory. The zip's account description file
@@ -13,7 +14,7 @@ import { parseCsv } from "./ncua";
  * in the run, and a zip without the description file loads nothing.
  */
 
-export type NcuaExtraTopic = "account_counts" | "employees" | "uninsured_shares" | "fee_income";
+export type NcuaExtraTopic = "account_counts" | "employees" | "uninsured_shares" | "fee_income" | "dividend_expense" | "share_mix";
 
 interface TopicRule {
   topic: NcuaExtraTopic;
@@ -34,10 +35,22 @@ export const NCUA_EXTRA_TOPICS: readonly TopicRule[] = [
     matches: [/FEE INCOME|INTERCHANGE|OVERDRAFT|NON-?SUFFICIENT|COURTESY PAY|SERVICE CHARGE|ATM FEE/i],
     excludes: [/EXPENSE|LOAN ORIGINATION|NUMBER OF/i],
   },
+  // Cost of member funds: dividends on shares and interest on deposits, year to date.
+  {
+    topic: "dividend_expense",
+    matches: [/DIVIDEND|INTEREST ON DEPOSITS/i],
+    excludes: [/NUMBER OF|LOAN|RECEIV|INCOME|RATE|PAYABLE/i],
+  },
+  // Share mix: balances by share type, the CU match for a bank's deposit mix.
+  {
+    topic: "share_mix",
+    matches: [/SHARE DRAFT|REGULAR SHARE|MONEY MARKET|SHARE CERTIFICATE|IRA|KEOGH|NONMEMBER DEPOSIT|TOTAL SHARES/i],
+    excludes: [/NUMBER OF|NO\.? OF|DIVIDEND|INTEREST|LOAN|RATE/i],
+  },
 ];
 
 /** Most lines one quarter may read, so a loose description match cannot flood the table. */
-export const NCUA_EXTRA_MAX_ACCOUNTS = 80;
+export const NCUA_EXTRA_MAX_ACCOUNTS = 140;
 
 export interface NcuaAccountDescription {
   code: string;
@@ -110,14 +123,19 @@ export function chooseNcuaExtraLines(accounts: NcuaAccountDescription[]): { line
     if (!topic) continue;
     seen.add(account.code);
     const count = topic === "account_counts" || topic === "employees";
-    all.push({ ...account, topic, unit: count ? "count" : "dollars", basis: topic === "fee_income" ? "ytd" : "point_in_time" });
+    all.push({ ...account, topic, unit: count ? "count" : "dollars", basis: topic === "fee_income" || topic === "dividend_expense" ? "ytd" : "point_in_time" });
   }
   return { lines: all.slice(0, NCUA_EXTRA_MAX_ACCOUNTS), truncated: Math.max(0, all.length - NCUA_EXTRA_MAX_ACCOUNTS) };
 }
 
 export function readNcuaExtras(zip: Uint8Array): NcuaExtrasRead {
   const files = unzipSync(zip, { filter: (file) => DESCRIPTION_FILE.test(file.name) || DATA_FILE.test(file.name) });
-  const descriptionFile = Object.keys(files).find((name) => DESCRIPTION_FILE.test(name)) ?? null;
+  // The zip also carries Acct-DescTradeNames.txt (trade names, no account lines); 2026Q2 picked it
+  // first and matched nothing.
+  const descriptionFile =
+    Object.keys(files)
+      .filter((name) => DESCRIPTION_FILE.test(name) && !/trade\s*names?/i.test(name))
+      .sort((a, b) => a.length - b.length)[0] ?? null;
   if (!descriptionFile) {
     return { hasDescriptionFile: false, descriptionFile: null, lines: [], linesNotInData: [], topicsWithoutLines: NCUA_EXTRA_TOPICS.map((t) => t.topic), truncatedLines: 0, values: [] };
   }

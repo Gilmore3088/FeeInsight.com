@@ -12,14 +12,6 @@ export interface InstitutionCommandResult {
   reused?: boolean;
 }
 
-export interface CreateInstitutionInput {
-  name: string;
-  stateCode: string;
-  charterType: "bank" | "credit_union";
-  websiteUrl?: string;
-  feeScheduleUrl?: string;
-}
-
 export interface BulkInstitutionUrlResult {
   success: boolean;
   updated: number;
@@ -37,6 +29,8 @@ function normalizeHttpUrl(value: string): string {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("URL must use http or https");
   }
+  // "https://HTTP://WWW.BANKWITHCHOICE.COM" parses with the host "http" (#1754).
+  if (!url.hostname.includes(".")) throw new Error("URL needs a full domain name, like https://www.example.com");
   return url.toString();
 }
 
@@ -48,33 +42,23 @@ function revalidateInstitutionSurfaces(institutionId: number, stateCode?: string
   revalidatePath("/admin");
 }
 
-export async function createInstitutionCommand(
-  input: CreateInstitutionInput,
-): Promise<InstitutionCommandResult & { id?: number }> {
-  await requireAuth("edit");
-  try {
-    const name = input.name.trim();
-    const stateCode = input.stateCode.trim().toUpperCase();
-    if (name.length < 2) throw new Error("Name is required");
-    if (!/^[A-Z]{2}$/.test(stateCode)) throw new Error("Invalid state code");
-    const websiteUrl = input.websiteUrl ? normalizeHttpUrl(input.websiteUrl) : null;
-    const feeScheduleUrl = input.feeScheduleUrl ? normalizeHttpUrl(input.feeScheduleUrl) : null;
-    const [row] = await sql`
-      INSERT INTO institution_sources
-        (institution_name, state_code, charter_type, website_url,
-         fee_schedule_url, source, status)
-      VALUES
-        (${name}, ${stateCode}, ${input.charterType}, ${websiteUrl},
-         ${feeScheduleUrl}, 'manual', 'active')
-      RETURNING id
-    `;
-    revalidatePath("/admin/magellan");
-    revalidatePath("/admin/institutions");
-    revalidatePath("/admin");
-    return { success: true, id: Number(row.id) };
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
-  }
+/**
+ * A fee link a person sets replaces the profile's remembered address too (#1881). Magellan fetches
+ * the remembered address first, so changing only `fee_schedule_url` left Texas Capital's new PDF
+ * unread on Oct 18. A person's link wins over a locked correction as well: it is the newer word.
+ */
+async function rememberPersonFeeUrl(tx: typeof sql, institutionId: number, url: string): Promise<void> {
+  // A new link also brings back a bank marked offline (#1884). The profile sync keeps a locked
+  // 'offline' kind and keeps the 'manual_review' strategy it gives offline rows, and Magellan's
+  // fetch queues skip both, so the link alone would never be fetched.
+  await tx`
+    UPDATE institution_source_profiles
+       SET canonical_source_url = ${url},
+           source_kind = CASE WHEN source_kind = 'offline' THEN 'unknown' ELSE source_kind END,
+           read_strategy = CASE WHEN read_strategy = 'manual_review' THEN NULL ELSE read_strategy END,
+           updated_at = NOW()
+     WHERE institution_id = ${institutionId}
+  `;
 }
 
 export async function setInstitutionFeeUrl(
@@ -85,10 +69,41 @@ export async function setInstitutionFeeUrl(
   try {
     validateInstitutionId(institutionId);
     const url = normalizeHttpUrl(value);
+    const rows = await withTransaction(async (tx) => {
+      const updated = await tx`
+        UPDATE institution_sources
+           SET fee_schedule_url = ${url},
+               document_type = NULL
+         WHERE id = ${institutionId}
+         RETURNING state_code
+      `;
+      if (updated.length > 0) await rememberPersonFeeUrl(tx, institutionId, url);
+      return updated;
+    });
+    if (rows.length === 0) return { success: false, error: "Institution not found" };
+    revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/**
+ * An institution's website, set by a person on its admin page (#1754: Choice Financial's was stored
+ * as "https://HTTP://WWW.BANKWITHCHOICE.COM" and James had no way to fix it). The homepage, without
+ * a trailing slash, as the registry stores it.
+ */
+export async function setInstitutionWebsiteUrl(
+  institutionId: number,
+  value: string,
+): Promise<InstitutionCommandResult> {
+  await requireAuth("edit");
+  try {
+    validateInstitutionId(institutionId);
+    const url = normalizeHttpUrl(value).replace(/\/$/, "");
     const rows = await sql`
       UPDATE institution_sources
-         SET fee_schedule_url = ${url},
-             document_type = NULL
+         SET website_url = ${url}
        WHERE id = ${institutionId}
        RETURNING state_code
     `;
@@ -100,19 +115,39 @@ export async function setInstitutionFeeUrl(
   }
 }
 
+/**
+ * A bank a person marks offline is forgotten by its profile too (#1884). Magellan's fetch picks
+ * candidates by `canonical_source_url` and skips only `source_kind = 'offline'`, so clearing
+ * `fee_schedule_url` alone left it fetching the old remembered page. As with a person's fee link,
+ * this wins over a locked correction: it is the newer word.
+ */
+async function forgetOfflineSource(tx: typeof sql, institutionId: number): Promise<void> {
+  await tx`
+    UPDATE institution_source_profiles
+       SET canonical_source_url = NULL,
+           source_kind = 'offline',
+           updated_at = NOW()
+     WHERE institution_id = ${institutionId}
+  `;
+}
+
 export async function markInstitutionOfflineCommand(
   institutionId: number,
 ): Promise<InstitutionCommandResult> {
   await requireAuth("edit");
   try {
     validateInstitutionId(institutionId);
-    const rows = await sql`
-      UPDATE institution_sources
-         SET fee_schedule_url = NULL,
-             document_type = 'offline'
-       WHERE id = ${institutionId}
-       RETURNING state_code
-    `;
+    const rows = await withTransaction(async (tx) => {
+      const updated = await tx`
+        UPDATE institution_sources
+           SET fee_schedule_url = NULL,
+               document_type = 'offline'
+         WHERE id = ${institutionId}
+         RETURNING state_code
+      `;
+      if (updated.length > 0) await forgetOfflineSource(tx, institutionId);
+      return updated;
+    });
     if (rows.length === 0) return { success: false, error: "Institution not found" };
     revalidateInstitutionSurfaces(institutionId, String(rows[0].state_code ?? ""));
     return { success: true };
@@ -220,6 +255,7 @@ export async function bulkSetInstitutionFeeUrls(
            WHERE id = ${item.id}
           RETURNING id
         `;
+        if (rows.length > 0) await rememberPersonFeeUrl(tx, item.id, item.url);
         if (rows.length > 0) updated += 1;
         else errors.push(`Institution ID ${item.id} not found`);
       }

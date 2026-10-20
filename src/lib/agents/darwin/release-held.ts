@@ -1,4 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
+import { inSavepoint } from "@/lib/agents/savepoint";
+import { completeAudienceAdmission, prepareVerificationAudience, VerificationAudienceDeferred } from "./verification-audience";
+import { requireInternationalVerification } from "./international-verification";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { CATEGORY_GUARD_RULES } from "@/lib/fee-category-guard";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
@@ -13,6 +16,7 @@ import {
   insertVerifiedFee,
   loadSourceTexts,
   rawFeeFingerprint,
+  resolvedRawCategory,
   type RawFeeRow,
 } from "./verify";
 
@@ -102,6 +106,8 @@ export interface ReleaseDecision {
 }
 
 export interface RunDarwinReleaseResult {
+  deferred?: number;
+  deferrals?: Array<{ feeRawId: number; reason: string }>;
   selected: number;
   acted: boolean;
   verdicts: Partial<Record<ReleaseVerdict, number>>;
@@ -224,29 +230,52 @@ export const TEMPORARY_RELEASE_HOLDS: ReadonlySet<string> = new Set(["release_ch
  */
 export async function releaseHeldFee(
   db: SqlTag,
-  options: { runId: number; row: HeldFeeRow; sourceLine: string | null },
+  options: {
+    runId: number; row: HeldFeeRow; sourceLine: string | null;
+    /** Raw selection before the existing release line-frequency fill. */
+    originalRow?: HeldFeeRow;
+    sourceText?: string | null;
+    categoryModel?: CategoryModel | null;
+    frequencyFromSourceLine?: (line: string, amount: number | null) => string | null;
+  },
 ): Promise<{ feeVerifiedId: number | null; feedbackWritten: number | null }> {
-  const { row } = options;
-  const feeVerifiedId = await insertVerifiedFee(db, {
-    runId: options.runId,
-    row,
-    canonicalFeeKey: row.held_canonical_fee_key,
-    extraFlags: [DARWIN_RELEASED_HOLD_FLAG],
+  return inSavepoint(db, async scope => {
+    const admission = await prepareVerificationAudience(scope, options.originalRow ?? options.row, options.sourceText);
+    const row = admission.row as HeldFeeRow;
+    requireInternationalVerification(admission, row.held_canonical_fee_key, resolvedRawCategory(admission.row));
+    let sourceLine = options.sourceLine;
+    let frequency = options.row.frequency;
+    if ((!row.fee_audience || row.fee_audience === "unknown") && admission.ownClause !== "none") {
+      const hold = releaseCheckHold(row, admission.sourceText, options.categoryModel ?? null);
+      if (hold) throw new VerificationAudienceDeferred(hold);
+      sourceLine = releaseVerdict(row, admission.sourceText, options.categoryModel).sourceLine;
+      frequency = row.frequency || (sourceLine && options.frequencyFromSourceLine
+        ? options.frequencyFromSourceLine(sourceLine, amountOf(row.amount)) : null);
+    }
+    const feeVerifiedId = await insertVerifiedFee(scope, {
+      runId: options.runId,
+      row: { ...row, frequency, fee_audience: admission.audience?.feeAudience ?? row.fee_audience },
+      canonicalFeeKey: row.held_canonical_fee_key,
+      extraFlags: [DARWIN_RELEASED_HOLD_FLAG],
+      sourceText: admission.sourceText,
+      audience: admission.audience,
+      audienceAdmission: completeAudienceAdmission(admission, row.held_canonical_fee_key, frequency),
+    });
+    if (feeVerifiedId == null) return { feeVerifiedId: null, feedbackWritten: null };
+    const decision: ReleaseDecision = {
+      feeRawId: Number(row.fee_raw_id),
+      institutionId: Number(row.institution_id),
+      canonicalFeeKey: row.held_canonical_fee_key,
+      amount: amountOf(row.amount),
+      heldReason: row.held_reason,
+      verdict: "review",
+      sourceCheck: "stated",
+      sourceLine,
+      feeVerifiedId,
+    };
+    const entry = feedbackFor(decision, row, options.runId, "release");
+    return { feeVerifiedId, feedbackWritten: entry ? await recordDarwinFeedback(scope, [entry]) : null };
   });
-  if (feeVerifiedId == null) return { feeVerifiedId: null, feedbackWritten: null };
-  const decision: ReleaseDecision = {
-    feeRawId: Number(row.fee_raw_id),
-    institutionId: Number(row.institution_id),
-    canonicalFeeKey: row.held_canonical_fee_key,
-    amount: amountOf(row.amount),
-    heldReason: row.held_reason,
-    verdict: "review",
-    sourceCheck: "stated",
-    sourceLine: options.sourceLine,
-    feeVerifiedId,
-  };
-  const entry = feedbackFor(decision, row, options.runId, "release");
-  return { feeVerifiedId, feedbackWritten: entry ? await recordDarwinFeedback(db, [entry]) : null };
 }
 
 /** Same institution, category, amount and source as a fee already verified. */
@@ -275,10 +304,20 @@ async function selectHeldFees(
     : "NULL::bigint";
   const filters: string[] = [];
   const state = normalizeStateCode(stateCode);
-  if (state) filters.push(`AND upper(btrim(inst.state_code)) = $${params.push(state)}`);
+  // A state lane reads its state's institutions once, before the held attempts. Postgres
+  // estimates one held attempt where there are 13,233 (the jsonb filters), so with the state as a
+  // plain filter it scanned every institution once per held attempt: 116M rows, over the 120 s
+  // timeout in every lane's classify step on 2026-10-17 (ID: >60 s; 1.6 s this way).
+  const scope = state
+    ? `WITH scope AS MATERIALIZED (
+        SELECT id, institution_name, state_code FROM institution_sources
+         WHERE upper(btrim(state_code)) = $${params.push(state)}
+      )`
+    : "";
   if (institutionId) filters.push(`AND fr.institution_id = $${params.push(institutionId)}`);
   return db.unsafe<HeldFeeRow[]>(
     `
+      ${scope}
       SELECT fr.fee_raw_id,
              fr.institution_id,
              fr.source_url,
@@ -302,7 +341,7 @@ async function selectHeldFees(
              ${currentDocument} AS current_document_id
         FROM pipeline_attempts pa
         JOIN raw_fee_observations fr ON fr.fee_raw_id = substring(pa.input_fingerprint from 5)::bigint
-        JOIN institution_sources inst ON inst.id = fr.institution_id
+        JOIN ${state ? "scope" : "institution_sources"} inst ON inst.id = fr.institution_id
        WHERE pa.stage = 'verify'
          AND pa.strategy = $2
          AND pa.strategy_version = $3
@@ -450,78 +489,93 @@ export async function runDarwinReleaseHeld(options: {
 
   const decisions: ReleaseDecision[] = [];
   const feedback: FeedbackRow[] = [];
-  for (const row of rows) {
-    const text = row.source_document_id == null ? null : texts.get(Number(row.source_document_id));
-    const secondLook = row.first_look_at != null;
-    let judged = releaseVerdict(row, text, categoryModel);
-    let judgedText = text;
-    // A second look also reads the bank's current copy of the page.
-    if (secondLook && judged.verdict === "reject" && row.current_document_id != null) {
-      const currentText = texts.get(Number(row.current_document_id));
-      const current = releaseVerdict(row, currentText, categoryModel);
-      if (current.verdict !== "reject") {
-        judged = current;
-        judgedText = currentText;
-      }
-    }
-    const amount = amountOf(row.amount);
-    const key = duplicateKey(Number(row.institution_id), row.held_canonical_fee_key, amount, row.source_url);
-    let verdict: ReleaseVerdict = judged.verdict;
-    // Scrapping is a last resort: the first "not stated" only marks the fee for a second look.
-    if (verdict === "reject" && !secondLook) verdict = "reject_pending";
-    if (verdict === "review" && verified.has(key)) verdict = "duplicate";
-    else if (verdict === "review") verified.add(key);
+  let deferred = 0;
+  const deferrals: Array<{ feeRawId: number; reason: string }> = [];
+  for (const selected of rows) {
+    try {
+      await inSavepoint(db, async scope => {
+        const legacyText = selected.source_document_id == null ? null : texts.get(Number(selected.source_document_id));
+        const admission = learning ? await prepareVerificationAudience(scope, selected, legacyText) : null;
+        const raw = (admission?.row ?? selected) as HeldFeeRow;
+        if (admission) requireInternationalVerification(admission, raw.held_canonical_fee_key, resolvedRawCategory(admission.row));
+        const row = admission?.audience ? { ...raw, fee_audience: admission.audience.feeAudience } : raw;
+        const text = admission ? admission.sourceText : legacyText;
+        const secondLook = row.first_look_at != null;
+        let judged = releaseVerdict(row, text, categoryModel);
+        let judgedText = text;
+        // A second look also reads the bank's current copy of the page.
+        if (secondLook && judged.verdict === "reject" && row.current_document_id != null) {
+          const currentText = texts.get(Number(row.current_document_id));
+          const current = releaseVerdict(row, currentText, categoryModel);
+          if (current.verdict !== "reject") {
+            judged = current;
+            judgedText = currentText;
+          }
+        }
+        const amount = amountOf(row.amount);
+        const key = duplicateKey(Number(row.institution_id), row.held_canonical_fee_key, amount, row.source_url);
+        let verdict: ReleaseVerdict = judged.verdict;
+        // Scrapping is a last resort: the first "not stated" only marks the fee for a second look.
+        if (verdict === "reject" && !secondLook) verdict = "reject_pending";
+        if (verdict === "review" && verified.has(key)) verdict = "duplicate";
+        else if (verdict === "review") verified.add(key);
 
-    const decision: ReleaseDecision = {
-      feeRawId: Number(row.fee_raw_id),
-      institutionId: Number(row.institution_id),
-      canonicalFeeKey: row.held_canonical_fee_key,
-      amount,
-      heldReason: row.held_reason,
-      verdict,
-      sourceCheck: judged.sourceCheck,
-      sourceLine: judged.sourceLine,
-      feeVerifiedId: null,
-    };
-    decisions.push(decision);
-    if (acts && verdict === "reject") {
-      const entry = feedbackFor(decision, row, options.runId, "reject");
-      if (entry) feedback.push(entry);
-    } else if (acts && verdict !== "reject_pending" && earlierRejects.has(decision.feeRawId)) {
-      const entry = feedbackFor(decision, row, options.runId, "restore");
-      if (entry) feedback.push(entry);
-    }
-
-    if (learning) {
-      await recordAttempt(db, {
-        institutionId: decision.institutionId,
-        sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
-        stage: "verify",
-        strategy: DARWIN_RELEASE_STRATEGY.strategy,
-        version: DARWIN_RELEASE_STRATEGY.version,
-        fingerprint: rawFeeFingerprint(decision.feeRawId),
-        outcome: verdict === "review" ? "ok" : verdict === "reject" ? "rejected" : "unchanged",
-        yieldCount: 0,
-        costMicrousd: 0,
-        runId: options.runId,
-        stepId: options.stepId ?? null,
-        foldIntoPlaybook: false,
-        detail: {
-          fee_raw_id: decision.feeRawId,
-          fee_name: row.fee_name,
-          canonical_fee_key: decision.canonicalFeeKey,
-          amount: decision.amount,
-          held_reason: decision.heldReason,
+        const decision: ReleaseDecision = {
+          feeRawId: Number(row.fee_raw_id),
+          institutionId: Number(row.institution_id),
+          canonicalFeeKey: row.held_canonical_fee_key,
+          amount,
+          heldReason: row.held_reason,
           verdict,
-          source_check: decision.sourceCheck,
-          source_line: decision.sourceLine?.slice(0, 300) ?? null,
-          source_context: decision.sourceLine ? scheduleContext(judgedText, decision.sourceLine) : null,
-          look: secondLook ? 2 : 1,
-          first_look_at: row.first_look_at == null ? null : new Date(row.first_look_at).toISOString(),
-          current_document_id: row.current_document_id == null ? null : Number(row.current_document_id),
-          acted: acts && verdict === "reject",
-        },
+          sourceCheck: judged.sourceCheck,
+          sourceLine: judged.sourceLine,
+          feeVerifiedId: null,
+        };
+        decisions.push(decision);
+        if (acts && verdict === "reject") {
+          const entry = feedbackFor(decision, row, options.runId, "reject");
+          if (entry) feedback.push(entry);
+        } else if (acts && verdict !== "reject_pending" && earlierRejects.has(decision.feeRawId)) {
+          const entry = feedbackFor(decision, row, options.runId, "restore");
+          if (entry) feedback.push(entry);
+        }
+
+        if (learning) {
+          await recordAttempt(scope, {
+            institutionId: decision.institutionId,
+            sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+            stage: "verify",
+            strategy: DARWIN_RELEASE_STRATEGY.strategy,
+            version: DARWIN_RELEASE_STRATEGY.version,
+            fingerprint: rawFeeFingerprint(decision.feeRawId),
+            outcome: verdict === "review" ? "ok" : verdict === "reject" ? "rejected" : "unchanged",
+            yieldCount: 0,
+            costMicrousd: 0,
+            runId: options.runId,
+            stepId: options.stepId ?? null,
+            foldIntoPlaybook: false,
+            detail: {
+              fee_raw_id: decision.feeRawId,
+              fee_name: row.fee_name,
+              canonical_fee_key: decision.canonicalFeeKey,
+              amount: decision.amount,
+              held_reason: decision.heldReason,
+              verdict,
+              source_check: decision.sourceCheck,
+              source_line: decision.sourceLine?.slice(0, 300) ?? null,
+              source_context: decision.sourceLine ? scheduleContext(judgedText, decision.sourceLine) : null,
+              look: secondLook ? 2 : 1,
+              first_look_at: row.first_look_at == null ? null : new Date(row.first_look_at).toISOString(),
+              current_document_id: row.current_document_id == null ? null : Number(row.current_document_id),
+              acted: acts && verdict === "reject",
+            },
+          });
+        }
       });
+    } catch (error) {
+      if (!(error instanceof VerificationAudienceDeferred)) throw error;
+      deferred += 1;
+      if (deferrals.length < 25) deferrals.push({ feeRawId: Number(selected.fee_raw_id), reason: error.reason });
     }
   }
 
@@ -529,6 +583,8 @@ export async function runDarwinReleaseHeld(options: {
   for (const decision of decisions) verdicts[decision.verdict] = (verdicts[decision.verdict] ?? 0) + 1;
   return {
     selected: rows.length,
+    deferred,
+    deferrals,
     acted: acts,
     verdicts,
     // This pass only sorts held fees. A `review` fee is released, if at all, by the paid release

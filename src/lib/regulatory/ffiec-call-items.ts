@@ -31,15 +31,43 @@ export interface FfiecItemDefinition {
 const RECOVERY = /RECOVER/i;
 /** RI-E item 1 codes as remembered from the instructions; the description check picks the line. */
 const RIE_CANDIDATES = ["RIADC013", "RIADC014", "RIADC015", "RIADC016", "RIADF555", "RIADT047", "RIADF556", "RIADF557"] as const;
-/** RC-E Memoranda consumer-deposit codes as remembered; the description check picks the line. */
-const RCE_CANDIDATES = ["RCONP753", "RCONP754", "RCONP755", "RCONP756", "RCONP757", "RCONP758"] as const;
 const CHARGE_OFF_ONLY = /^(?!.*RECOVER).*CHARGE-?\s?OFF/i;
 
 export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
   // Schedule RI Memoranda item 15: service charges on consumer deposit accounts ($1B+ banks).
-  { key: "consumer_maintenance_charges_ytd", codes: ["RIADH033"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/MAINTENANCE/i] },
+  { key: "consumer_maintenance_charges_ytd", codes: ["RIADH033"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/MAINTENANCE|\bMAIN\b/i] },
   { key: "consumer_atm_fees_ytd", codes: ["RIADH034"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/ATM|AUTOMATED TELLER/i] },
-  { key: "other_deposit_service_charges_ytd", codes: ["RIADH035"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/OTHER/i, /SERVICE CHARGE/i] },
+  { key: "other_deposit_service_charges_ytd", codes: ["RIADH035"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/\bOTHER\b|\bALL\b/i, /SERVICE CHARGE|\bSE?RV CHAR\b|\bSEV CHAR\b/i] },
+  // Schedule RI: cost of deposits and the cost structure, every bank, year to date. The bulk file
+  // abbreviates labels ("SEV CHAR DEP DOM OFF MAIN IND"), so each check is loose but the code fixed.
+  { key: "service_charges_deposits_ytd", codes: ["RIAD4080"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/SERVICE CHARGE|SE?R?V CHA?R|SVC CHG/i] },
+  { key: "interest_expense_transaction_ytd", codes: ["RIAD4508"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/TRANSACTION|\bTRANS\b|\bTRN\b/i] },
+  { key: "interest_expense_savings_ytd", codes: ["RIAD0093"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/SAVING|\bSVGS?\b|MMDA|MONEY MARKET/i] },
+  {
+    key: "interest_expense_time_250k_or_less_ytd",
+    codes: ["RIADHK03"],
+    schedule: "RI",
+    unit: "thousands",
+    basis: "ytd",
+    describedBy: [/TIME|\bTM\b/i],
+    notDescribedBy: [/MORE THAN|GREATER|OVER|>|\bGT\b/i],
+  },
+  { key: "interest_expense_time_over_250k_ytd", codes: ["RIADHK04"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/TIME|\bTM\b/i, /MORE THAN|GREATER|OVER|>|\bGT\b/i] },
+  { key: "interest_expense_total_ytd", codes: ["RIAD4073"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/INT(EREST)?\.? EXP|INTEREST EXPENSE/i, /TOTAL|\bTOT\b/i] },
+  { key: "net_interest_income_ytd", codes: ["RIAD4074"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/NET INT(EREST)?/i] },
+  { key: "noninterest_income_total_ytd", codes: ["RIAD4079"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/NONINT(EREST)?|NON-INT(EREST)?/i, /INC(OME)?/i] },
+  { key: "salaries_benefits_ytd", codes: ["RIAD4135"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/SALAR|\bSAL\b|EMPLOYEE BENEFIT/i] },
+  { key: "premises_expense_ytd", codes: ["RIAD4217"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/PREMISES|\bPREM\b|FIXED ASSET/i] },
+  { key: "noninterest_expense_total_ytd", codes: ["RIAD4093"], schedule: "RI", unit: "thousands", basis: "ytd", describedBy: [/NONINT(EREST)?|NON-INT(EREST)?/i, /EXP/i] },
+  // Schedule RI-E item 2: other noninterest expense lines (reported above the disclosure threshold).
+  { key: "data_processing_expense_ytd", codes: ["RIADC017"], schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/DATA PROC/i] },
+  { key: "advertising_expense_ytd", codes: ["RIAD0497"], schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/ADVERTIS|MARKETING/i] },
+  // Schedule RC: size and funding base.
+  { key: "total_deposits", codes: ["RCON2200"], schedule: "RC", unit: "thousands", basis: "point_in_time", describedBy: [/DEPOSIT|\bDEP\b/i] },
+  { key: "total_assets", codes: ["RCFD2170", "RCON2170"], schedule: "RC", unit: "thousands", basis: "point_in_time", describedBy: [/TOTAL ASSETS|\bTOT\b.*ASSET/i] },
+  // Schedule RC-E: deposit mix, every bank.
+  { key: "transaction_deposits_total", codes: ["RCON2215"], schedule: "RCE", unit: "thousands", basis: "point_in_time", describedBy: [/TRANSACTION|\bTRN\b/i], notDescribedBy: [/NONTRANS|NON-TRANS|NONTRN/i] },
+  { key: "nontransaction_deposits_total", codes: ["RCON2385"], schedule: "RCE", unit: "thousands", basis: "point_in_time", describedBy: [/NONTRANS|NON-TRANS|NONTRN/i] },
   // Schedule RI-E item 1: other noninterest income lines, filed by banks of every size but only
   // when a line passes the disclosure threshold (051 filers: December only). Absent means not
   // disclosed, never zero. Several codes are candidates; only one whose file description
@@ -51,23 +79,42 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
   { key: "wire_transfer_income_ytd", codes: RIE_CANDIDATES, schedule: "RIE", unit: "thousands", basis: "ytd", describedBy: [/WIRE/i] },
   // Schedule RC-E Memoranda: deposits intended primarily for individuals ($1B+ banks), the base
   // for service-charge income per dollar of consumer deposits.
+  // Each line loads as filed; a consumer transaction or savings total is a sum read at query
+  // time. The 2026Q1 file abbreviates: "NONINTR TRN ACCTS INDIV HSHLD FMLY".
   {
-    key: "consumer_transaction_deposits",
-    codes: RCE_CANDIDATES,
+    key: "consumer_noninterest_transaction_deposits",
+    codes: ["RCONP753"],
     schedule: "RCE",
     unit: "thousands",
     basis: "point_in_time",
-    describedBy: [/TRANSACTION/i, /INDIVIDUAL|CONSUMER|PERSONAL/i],
-    notDescribedBy: [/NONTRANSACTION|NUMBER/i],
+    describedBy: [/NONINTR|NONINTEREST/i, /\bTRN\b|TRANSACTION/i, /INDIV|HOUSEHOLD|HSHLD/i],
   },
   {
-    key: "consumer_savings_deposits",
-    codes: RCE_CANDIDATES,
+    key: "consumer_interest_transaction_deposits",
+    codes: ["RCONP754"],
     schedule: "RCE",
     unit: "thousands",
     basis: "point_in_time",
-    describedBy: [/NONTRANSACTION SAVINGS|SAVINGS/i, /INDIVIDUAL|CONSUMER|PERSONAL/i],
-    notDescribedBy: [/NUMBER|TIME DEPOSIT/i],
+    describedBy: [/\bINTR\b|INTEREST/i, /\bTRN\b|TRANSACTION/i, /INDIV|HOUSEHOLD|HSHLD/i],
+    notDescribedBy: [/NONINTR|NONINTEREST/i],
+  },
+  {
+    key: "consumer_money_market_deposits",
+    codes: ["RCONP756"],
+    schedule: "RCE",
+    unit: "thousands",
+    basis: "point_in_time",
+    describedBy: [/MMDA|MONEY MARKET/i, /HOUSEHOLD|HSHLD/i],
+    notDescribedBy: [/\bOTHE?R\b|CORP/i],
+  },
+  {
+    key: "consumer_other_savings_deposits",
+    codes: ["RCONP758"],
+    schedule: "RCE",
+    unit: "thousands",
+    basis: "point_in_time",
+    describedBy: [/SVGS|SAVINGS/i, /HOUSEHOLD|HSHLD/i],
+    notDescribedBy: [/MMDA|MONEY MARKET|TIME/i],
   },
   // Schedule RC-O Memoranda item 1: deposit accounts (excluding retirement) by size.
   {
@@ -76,20 +123,20 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
     schedule: "RCO",
     unit: "thousands",
     basis: "point_in_time",
-    describedBy: [/250,?000/, /LESS/i, /AMOUNT/i],
-    notDescribedBy: [/NUMBER OF/i],
+    describedBy: [/250,?000|250K/i, /LESS/i, /AMOUNT|\bAMT\b/i],
+    notDescribedBy: [/NUMBER OF|\bNBR\b/i],
   },
-  { key: "deposits_250k_or_less_count", codes: ["RCONF050"], schedule: "RCO", unit: "count", basis: "point_in_time", describedBy: [/250,?000/, /LESS/i, /NUMBER/i] },
+  { key: "deposits_250k_or_less_count", codes: ["RCONF050"], schedule: "RCO", unit: "count", basis: "point_in_time", describedBy: [/250,?000|250K/i, /LESS/i, /NUMBER|\bNBR\b/i] },
   {
     key: "deposits_over_250k_amount",
     codes: ["RCONF051"],
     schedule: "RCO",
     unit: "thousands",
     basis: "point_in_time",
-    describedBy: [/250,?000/, /MORE|GREATER|OVER/i, /AMOUNT/i],
-    notDescribedBy: [/NUMBER OF/i],
+    describedBy: [/250,?000|250K/i, /MORE|GREATER|OVER|\bGT\b/i, /AMOUNT|\bAMT\b/i],
+    notDescribedBy: [/NUMBER OF|\bNBR\b/i],
   },
-  { key: "deposits_over_250k_count", codes: ["RCONF052"], schedule: "RCO", unit: "count", basis: "point_in_time", describedBy: [/250,?000/, /MORE|GREATER|OVER/i, /NUMBER/i] },
+  { key: "deposits_over_250k_count", codes: ["RCONF052"], schedule: "RCO", unit: "count", basis: "point_in_time", describedBy: [/250,?000|250K/i, /MORE|GREATER|OVER|\bGT\b/i, /NUMBER|\bNBR\b/i] },
   // Schedule RC-N item 9: total loans and leases by delinquency.
   { key: "loans_past_due_30_89", codes: ["RCFD1406", "RCON1406"], schedule: "RCN", unit: "thousands", basis: "point_in_time", describedBy: [/30/, /89/] },
   { key: "loans_past_due_90_plus", codes: ["RCFD1407", "RCON1407"], schedule: "RCN", unit: "thousands", basis: "point_in_time", describedBy: [/90/] },
@@ -101,8 +148,8 @@ export const FFIEC_CALL_ITEMS: readonly FfiecItemDefinition[] = [
   { key: "recoveries_credit_card_ytd", codes: ["RIADB515"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/CREDIT CARD/i], notDescribedBy: [CHARGE_OFF_ONLY] },
   { key: "charge_offs_auto_ytd", codes: ["RIADK129"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/AUTO/i], notDescribedBy: [RECOVERY] },
   { key: "recoveries_auto_ytd", codes: ["RIADK133"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/AUTO/i], notDescribedBy: [CHARGE_OFF_ONLY] },
-  { key: "charge_offs_other_consumer_ytd", codes: ["RIADK205"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/OTHER CONSUMER/i], notDescribedBy: [RECOVERY] },
-  { key: "recoveries_other_consumer_ytd", codes: ["RIADK206"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/OTHER CONSUMER/i], notDescribedBy: [CHARGE_OFF_ONLY] },
+  { key: "charge_offs_other_consumer_ytd", codes: ["RIADK205"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/OTHER CONSUMER|ALL OTHER/i], notDescribedBy: [RECOVERY] },
+  { key: "recoveries_other_consumer_ytd", codes: ["RIADK206"], schedule: "RIBI", unit: "thousands", basis: "ytd", describedBy: [/OTHER CONSUMER|ALL OTHER/i], notDescribedBy: [CHARGE_OFF_ONLY] },
 ];
 
 export const FFIEC_CALL_ITEM_SCHEDULES = [...new Set(FFIEC_CALL_ITEMS.map((item) => item.schedule))];

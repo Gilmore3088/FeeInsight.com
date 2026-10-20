@@ -353,7 +353,7 @@ function workflowLanes(
 }
 
 export default async function AtlasCommandPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [center, stateLaneDispatch] = await Promise.all([
     getCachedAtlasCommandCenter(),
     getCachedAtlasStateLaneDispatch(),

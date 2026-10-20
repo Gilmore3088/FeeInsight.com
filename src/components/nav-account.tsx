@@ -80,7 +80,7 @@ const MENU_LINK = "block px-4 py-1.5 text-[13px] text-ink no-underline hover:bg-
 
 /**
  * For Pro users the account corner holds everything outside Hamilton's four tabs: the bank and
- * its data, all changes, the reference pages, Admin for staff, account and sign out. One header
+ * its data, alerts and watches, the reference pages, Admin for staff, account and sign out. One header
  * across the site and Pro (James, 2026-10-06), so the tabs stay four.
  */
 function ProAccountMenu({ session }: { session: SessionChrome }) {

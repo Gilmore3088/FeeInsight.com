@@ -2,6 +2,7 @@ import type { sql } from "@/lib/data-store/connection";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import type { ExtractedFeeCandidate } from "@/lib/agents/knox/rules";
+import { eligibleReferenceFeedbackSql, readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 type SqlTag = typeof sql;
 
@@ -87,6 +88,7 @@ export function lessonsFrom(rows: KnoxLesson[]): KnoxLessons {
 /** Reads the lessons; an empty set when the store is missing or the read fails. */
 export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
   try {
+    const reference = await readReferenceEligibility(db);
     return await inSavepoint(db, async (scope) => {
       if (!(await feedbackSchemaReady(scope))) return new Map();
       const rows = await scope<Array<{ institution_id: number | string | null; name: string; wrong_key: string; right_key: string; wrong_banks: number | string; right_banks: number | string }>>`
@@ -111,6 +113,7 @@ export async function loadKnoxLessons(db: SqlTag): Promise<KnoxLessons> {
              AND f.evidence->>'fee_name' IS NOT NULL
              AND f.canonical_fee_key IS NOT NULL
              AND f.kind IN ('wrong_category', 'darwin_verified', 'answer_key')
+             AND ${eligibleReferenceFeedbackSql(scope, "f", reference)}
              AND rs.fee_raw_id IS NULL
           UNION ALL
           SELECT name, canonical_fee_key, 'right', institution_id FROM restored

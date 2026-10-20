@@ -41,3 +41,5 @@ No application logic, query, data, schema, permission, model or deployment chang
 The day-away scheduled continuation must inspect the next run's actual result,
 not assume this test patch makes the combined feature ready. Preserve all prior
 failed runs and do not close H02 or release the stacked PR on this evidence alone.
+
+**Guard:** `src/lib/data-store/hamilton-peer-list.test.ts:51` (the regulator CASE is matched whatever its line wrapping; the cases after it reject a wrong regulator in either branch)

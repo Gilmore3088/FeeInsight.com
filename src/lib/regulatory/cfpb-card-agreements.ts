@@ -27,7 +27,6 @@ import { quarterEndDate, type Quarter } from "./quarters";
  */
 
 export type AgreementKind = "credit_card" | "prepaid" | "tccp_plan";
-export type PartitionFamily = "card" | "prepaid" | "tccp";
 
 /* ------------------------------------------------------------------ URLs -- */
 
@@ -91,16 +90,6 @@ export type FeeTermType =
   | "atm_fee"
   | "reload_fee"
   | "purchase_apr";
-
-export const CARD_FEE_TYPES: readonly FeeTermType[] = [
-  "annual_fee",
-  "late_fee",
-  "foreign_transaction_fee",
-  "cash_advance_fee",
-  "balance_transfer_fee",
-  "returned_payment_fee",
-];
-export const PREPAID_FEE_TYPES: readonly FeeTermType[] = ["monthly_fee", "atm_fee", "reload_fee"];
 
 interface FeeLabel {
   type: FeeTermType;

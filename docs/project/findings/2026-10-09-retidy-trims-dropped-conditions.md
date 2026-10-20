@@ -21,3 +21,5 @@ the name. Examples: 105070 lost "(after 1st one)", 47474 became plain "ATM Fee",
 **Lesson:** a dry read for a version bump must run the whole chain on every due institution, not
 only the rows the new rule targets: the bump re-runs every older rule on banks it had not reached.
 A log that holds the old value must never be keyed so that a later write replaces it.
+
+**Agent lesson:** knox/pr-933-retidy-keeps-conditions

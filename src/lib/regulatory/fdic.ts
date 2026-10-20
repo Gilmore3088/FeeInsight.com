@@ -1,4 +1,5 @@
 import { registryFetchJson, type RegistryFetchOptions } from "./http";
+import { validCoordinates } from "./coordinates";
 import { fdicRepdte, quarterEndDate, type Quarter } from "./quarters";
 
 /**
@@ -442,6 +443,9 @@ export function parseFdicSod(record: FdicRecord): FdicSodRow | null {
   const branch = int(record.BRNUM);
   if (cert === null || year === null || branch === null) return null;
   const msa = int(record.MSABR);
+  const latitude = num(record.SIMS_LATITUDE);
+  const longitude = num(record.SIMS_LONGITUDE);
+  const coordinatesValid = validCoordinates(latitude, longitude);
   return {
     cert,
     year,
@@ -456,7 +460,7 @@ export function parseFdicSod(record: FdicRecord): FdicSodRow | null {
     county_fips: int(record.STCNTYBR),
     msa_code: msa && msa > 0 ? msa : null,
     msa_name: str(record.MSANAMB),
-    latitude: num(record.SIMS_LATITUDE),
-    longitude: num(record.SIMS_LONGITUDE),
+    latitude: coordinatesValid ? latitude : null,
+    longitude: coordinatesValid ? longitude : null,
   };
 }

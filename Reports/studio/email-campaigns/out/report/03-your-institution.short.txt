@@ -6,7 +6,7 @@ The Competitive Fee Position Report puts one institution's fee schedule next to 
 [ WHAT'S IN IT ]
 - Each fee marked below, inside or above your competitors' middle 50%.
 - The competitors you name, side by side with you.
-- The competitor's published schedule and its date behind every figure.
+- The competitor's published schedule and its read date behind each compared fee.
 
 Request your institution report: https://feeinsight.com/reports?report=institution&src=email_report#request
 

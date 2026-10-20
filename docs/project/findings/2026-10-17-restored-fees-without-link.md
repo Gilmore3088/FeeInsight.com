@@ -18,3 +18,5 @@ pass or the hand-started repair.
 **Lesson:** when a repair is hand-started, check every path that can bring a row back live
 (restores, re-reads, re-sources) and either run the repair's safe half on every step or make the
 path itself keep the invariant.
+
+**Agent lesson:** gutenberg/pr-1739-fill-restored-links

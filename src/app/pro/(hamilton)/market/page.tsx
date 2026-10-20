@@ -4,9 +4,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
-import {
-  getNationalIndexCached,
-} from "@/lib/data-store";
+import { getNationalIndexCachedStamped } from "@/lib/data-store/fee-index";
 import {
   getBeigeBookHeadlines,
   getBeigeBookEditions,
@@ -19,6 +17,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAmount } from "@/lib/format";
 import { timeAgo } from "@/lib/format";
 import { Figure, MemoHeader, MemoPage, MemoSection, SERIF } from "@/components/hamilton/memo/memo";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
 export const metadata: Metadata = {
   title: "Market",
@@ -40,7 +39,7 @@ export default async function ProMarketPage() {
   if (!user) redirect("/login?from=/pro/market");
   if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/market");
 
-  const allEntries = await getNationalIndexCached();
+  const { entries: allEntries, stamp: indexStamp } = await getNationalIndexCachedStamped();
   const stats = await getPublicStatsCached();
   const freshness = await getDataFreshnessCached();
 
@@ -123,6 +122,7 @@ export default async function ProMarketPage() {
               </li>
             ))}
           </ul>
+          <DatasetNote className="mt-3" figures={[{ label: "National medians", stamp: indexStamp }]} />
         </MemoSection>
       )}
 

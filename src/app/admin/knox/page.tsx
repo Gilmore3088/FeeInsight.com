@@ -6,7 +6,7 @@ import { requireAuth } from "@/lib/auth";
 import { formatAdminDateTime } from "@/lib/admin-time";
 import { getKnoxStatus, type KnoxStatus } from "@/lib/data-store/knox-status";
 import { logReadFailure } from "@/lib/admin-read-failure";
-import { GoldStandardView } from "../verify/page";
+import { GoldStandardView } from "./gold-standard-view";
 import { AgentFrame } from "../agent-frame";
 import { KnoxHeldLines } from "./held-lines";
 
@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
  * records stay in `agent_messages` and `knox_overrides`; old queue links land here.
  */
 export default async function KnoxPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const status = await getKnoxStatus().catch((error) => {
     logReadFailure("Knox status", error);
     return null;
@@ -82,7 +82,7 @@ export default async function KnoxPage() {
         <p className="mt-1 text-xs text-gray-500">
           The biggest institutions with extracted fees. Open a bank&apos;s schedule and compare it with what Knox wrote down.
         </p>
-        <GoldStandardView embedded />
+        <GoldStandardView />
       </section>
     </div>
   );

@@ -629,9 +629,11 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
         ? "darwin"
         : schedule.job_name.includes("pulse")
           ? "hamilton"
-          : schedule.job_name.includes("registry") || schedule.job_name.includes("magellan")
-            ? "magellan"
-            : "atlas";
+          : schedule.job_name.includes("registry")
+            ? "hoovie"
+            : schedule.job_name.includes("magellan")
+              ? "magellan"
+              : "atlas";
     attention.push({
       id: `schedule:${schedule.job_name}`,
       severity: schedule.status === "failed" ? "critical" : "warning",
@@ -640,7 +642,8 @@ export async function getAtlasCommandCenter(): Promise<AtlasCommandCenter> {
       detail: schedule.last_completed_at
         ? `Last successful run: ${formatAdminDateTime(schedule.last_completed_at)}`
         : "No successful completion marker has been recorded.",
-      href: owner === "atlas" ? "/admin" : `/admin/${owner}`,
+      // Hoovie (public data, #1865) has no admin page of its own yet; its registry page sits under Magellan.
+      href: owner === "atlas" ? "/admin" : owner === "hoovie" ? "/admin/magellan/registry" : `/admin/${owner}`,
       action: `Open ${owner}`,
     });
   }

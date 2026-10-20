@@ -11,6 +11,7 @@ import { checkAnswerEvidence, savedAnswerEvidence, type AnswerEvidenceCheck } fr
 import type { AnalyzeResponse } from "@/lib/hamilton/types";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { bindWrittenAnswer, withoutOmitted } from "@/lib/hamilton/written-answer-binding";
+import { writtenAnswerEvidence, type WrittenAnswerEvidenceContext } from "./written-answer-evidence";
 
 /** The message metadata key that carries the saved row's id to the Analyze screen. */
 export const SAVED_ANALYSIS_ID_KEY = "savedAnalysisId";
@@ -19,8 +20,8 @@ export const SAVED_ANALYSIS_ID_KEY = "savedAnalysisId";
 export { questionOnly } from "@/lib/hamilton/conversation-context";
 
 /** The shared evidence gate (answer-gate.ts) on a written answer, the tool outputs it was written from and the reader's question. */
-export function writtenAnswerCheck(text: string, toolOutputs: readonly unknown[], question?: string): AnswerEvidenceCheck {
-  return checkAnswerEvidence(text, toolOutputs, { question });
+export function writtenAnswerCheck(text: string, toolOutputs: readonly unknown[], question?: string, context?: WrittenAnswerEvidenceContext): AnswerEvidenceCheck {
+  return checkAnswerEvidence(text, writtenAnswerEvidence(toolOutputs, context), { question, explicitFinancialDerivations: true });
 }
 
 /**

@@ -14,12 +14,10 @@ vi.mock("./connection", () => {
 import {
   getNationalEconomicSummary,
   getDistrictEconomicSummary,
-  getDistrictBeigeBookSummaries,
   getBeigeBookThemes,
   getFredSummary,
   type DistrictEconomicSummary,
   type BeigeBookTheme,
-  type DistrictBeigeBookSummary,
   type FredSummary,
 } from "./fed";
 import { getSql } from "./connection";
@@ -54,7 +52,7 @@ describe("getNationalEconomicSummary", () => {
     expect(result).toHaveProperty("fed_funds_rate");
     expect(result).toHaveProperty("unemployment_rate");
     expect(result).toHaveProperty("cpi_yoy_pct");
-    expect(result).toHaveProperty("consumer_sentiment");
+    expect(result).not.toHaveProperty("consumer_sentiment");
   });
 
   it("returns null indicators when DB is empty", async () => {
@@ -64,20 +62,6 @@ describe("getNationalEconomicSummary", () => {
     expect(result.fed_funds_rate).toBeNull();
     expect(result.unemployment_rate).toBeNull();
     expect(result.cpi_yoy_pct).toBeNull();
-    expect(result.consumer_sentiment).toBeNull();
-  });
-
-  it("returns non-null consumer_sentiment when UMCSENT rows exist", async () => {
-    // All buildRichIndicator calls share the same mock; return rows for every call
-    getMock().mockResolvedValue([
-      { observation_date: "2025-01-01", value: "74.5" },
-      { observation_date: "2024-12-01", value: "72.0" },
-      { observation_date: "2024-11-01", value: "71.8" },
-    ]);
-
-    const result = await getNationalEconomicSummary();
-    expect(result.consumer_sentiment).not.toBeNull();
-    expect(result.consumer_sentiment!.current).toBeCloseTo(74.5, 1);
   });
 });
 
@@ -316,89 +300,20 @@ describe("getBeigeBookThemes", () => {
   });
 });
 
-// ── getDistrictBeigeBookSummaries audit (BEIGE-01) ────────────────────────────
-
-describe("getDistrictBeigeBookSummaries audit", () => {
-  beforeEach(() => {
-    resetMock(getMock());
-  });
-
-  it("returns array with district_number, district_name, summary, themes, release_date keys", async () => {
-    getMock().mockResolvedValueOnce([
-      {
-        fed_district: 1,
-        content_text: "Economic activity in Boston expanded modestly. Employment remained stable. Consumer spending increased. Prices rose.",
-        release_date: "2026-01-15",
-      },
-    ]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(1);
-    const item = result[0] as DistrictBeigeBookSummary;
-    expect(item).toHaveProperty("district_number");
-    expect(item).toHaveProperty("district_name");
-    expect(item).toHaveProperty("summary");
-    expect(item).toHaveProperty("themes");
-    expect(item).toHaveProperty("release_date");
-  });
-
-  it("themes field is a string array from keyword-based extraction", async () => {
-    getMock().mockResolvedValueOnce([
-      {
-        fed_district: 3,
-        content_text: "Employment grew modestly. Inflation pressures eased. Consumer spending was flat.",
-        release_date: "2026-01-15",
-      },
-    ]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    const themes = result[0].themes;
-    expect(Array.isArray(themes)).toBe(true);
-    themes.forEach((t: string) => expect(typeof t).toBe("string"));
-  });
-
-  it("returns empty array when DB returns no rows", async () => {
-    getMock().mockResolvedValueOnce([]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    expect(result).toEqual([]);
-  });
-
-  it("maps district numbers to names correctly", async () => {
-    getMock().mockResolvedValueOnce([
-      {
-        fed_district: 7,
-        content_text: "Chicago district activity grew at a moderate pace.",
-        release_date: "2026-01-15",
-      },
-    ]);
-
-    const result = await getDistrictBeigeBookSummaries();
-
-    expect(result[0].district_number).toBe(7);
-    expect(result[0].district_name).toBe("Chicago");
-  });
-});
-
-// ── getFredSummary — 7 indicator fields ─────────────────────────────────────
+// ── getFredSummary — 6 indicator fields ─────────────────────────────────────
 
 describe("getFredSummary", () => {
   beforeEach(() => {
     resetMock(getMock());
   });
 
-  it("returns all 7 indicator fields plus as_of (8 total fields)", async () => {
-    // Mock: DISTINCT ON query returns rows for all 7 series
+  it("returns all 6 indicator fields plus as_of (7 total fields)", async () => {
+    // Mock: DISTINCT ON query returns rows for all 6 series
     getMock()
       .mockResolvedValueOnce([
         { series_id: "FEDFUNDS", value: 5.33, observation_date: "2025-01-01" },
         { series_id: "UNRATE", value: 4.1, observation_date: "2025-01-01" },
         { series_id: "CPIAUCSL", value: 315.6, observation_date: "2025-01-01" },
-        { series_id: "UMCSENT", value: 72.5, observation_date: "2025-01-01" },
         { series_id: "GDPC1", value: 22000, observation_date: "2024-10-01" },
         { series_id: "PSAVERT", value: 4.6, observation_date: "2025-01-01" },
         { series_id: "DRCBLACBS", value: 14.5, observation_date: "2024-10-01" },
@@ -413,7 +328,7 @@ describe("getFredSummary", () => {
     expect(result).toHaveProperty("fed_funds_rate");
     expect(result).toHaveProperty("unemployment_rate");
     expect(result).toHaveProperty("cpi_yoy_pct");
-    expect(result).toHaveProperty("consumer_sentiment");
+    expect(result).not.toHaveProperty("consumer_sentiment");
     expect(result).toHaveProperty("gdp_growth_yoy_pct");
     expect(result).toHaveProperty("personal_savings_rate");
     expect(result).toHaveProperty("bank_lending_standards");
@@ -436,7 +351,6 @@ describe("getFredSummary", () => {
     expect(result.fed_funds_rate).toBeNull();
     expect(result.unemployment_rate).toBeNull();
     expect(result.cpi_yoy_pct).toBeNull();
-    expect(result.consumer_sentiment).toBeNull();
     expect(result.gdp_growth_yoy_pct).toBeNull();
     expect(result.personal_savings_rate).toBeNull();
     expect(result.bank_lending_standards).toBeNull();

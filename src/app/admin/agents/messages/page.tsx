@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/auth";
 import Link from "next/link";
 import {
   listRecentThreads,
@@ -13,6 +14,7 @@ function formatTs(ts: string): string {
 }
 
 export default async function AgentsMessagesPage() {
+  await requireAuth("operate");
   let threads: MessageThread[] = [];
   let loadError: string | null = null;
 

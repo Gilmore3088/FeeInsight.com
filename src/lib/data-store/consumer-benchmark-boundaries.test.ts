@@ -16,7 +16,7 @@ vi.mock("./connection", () => {
 });
 vi.mock("./custom-report-market", () => ({ getLocalMarketMembers: vi.fn(async () => null) }));
 vi.mock("./fee-index", () => ({
-  getInstitutionFeeValues: vi.fn(async () => new Map([["nsf", 0]])),
+  getInstitutionOwnFees: vi.fn(async () => new Map([["nsf", { category: "nsf", value: 0, price: 0, low: 0, high: 0, fees: [{ name: "NSF", amount: 0 }] }]])),
   getFeeValuesForInstitutions: vi.fn(async () => new Map()),
   getPeerIndexes: vi.fn(async () => Array.from({ length: 3 }, () => [{ fee_category: "nsf", institution_count: state.sample, median_amount: 30, p25_amount: 25, p75_amount: 35 }])),
 }));

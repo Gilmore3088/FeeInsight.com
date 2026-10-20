@@ -21,14 +21,6 @@ export const FDIC_TIER_LABELS: Record<string, string> = {
   mega:      "Mega (>$250B)",
 };
 
-export const FDIC_TIER_ORDER = [
-  "micro",
-  "community",
-  "midsize",
-  "regional",
-  "mega",
-] as const;
-
 export const FDIC_TIER_BREAKPOINTS: Record<string, [number, number]> = {
   micro:     [0,                100_000_000],
   community: [100_000_000,      1_000_000_000],

@@ -167,7 +167,7 @@ export function revenueShiftObservation(trend: ServiceChargeTrend | null, instit
     id: "revenue_shift:service_charges",
     kind: "revenue_shift",
     feeCategory: null,
-    headline: `${institutionName ? `${institutionName}'s` : "Your"} deposit service charge income is ${pct > 0 ? "up" : "down"} ${Math.abs(Math.round(pct))}% from a year earlier.`,
+    headline: `${institutionName ? `${institutionName}'s` : "Your"} ${trend.source === "ncua" ? "broad credit-union fee income" : "deposit service charge income"} is ${pct > 0 ? "up" : "down"} ${Math.abs(Math.round(pct))}% from a year earlier.`,
     facts: [
       { text: `Four quarters to ${trend.quarterEnd}: ${fmtMillions(trend.latestTtm)}.`, source },
       { text: `The four quarters before: ${fmtMillions(trend.priorTtm)}.`, source },

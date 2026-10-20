@@ -192,21 +192,7 @@ export const RETIRED_CATEGORIES: Readonly<Record<string, RetiredCategory>> = {
   refinance_fee: { family: "Mortgage Servicing", rules: [], otherwise: "other_lending_fee" },
   duplicate_title: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
   dmv_filing: { family: "Vehicle & Title", rules: [], otherwise: "vehicle_title" },
-  // Using an ATM abroad and using a card abroad are one type, International ATM & Card (James,
-  // Oct 8: Foreign Transaction gave up its spot). The survivor keeps the card_foreign_txn key,
-  // which holds the rates and the spotlight guide. A line priced for any domestic ATM, or for
-  // domestic and international ATMs together, is the network ATM fee ("ATMs inside United States
-  // & internationally" $3 under "Not at North Shore Bank or MoneyPass network"). A reimbursement
-  // cap ("up to $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner
-  // network ("Allpoint ATM Transactions" $0 at SoFi) have no home (Oct 9 review of the last 4).
-  atm_international: {
-    family: "ATM & Card",
-    rules: [
-      { to: null, name: /outside (?:the )?u\.?s\.?a?\.? excluded|^allpoint\b/i },
-      { to: "atm_non_network", name: /\bnon[- ]?international\b|\binside (?:the )?united states\b/i },
-    ],
-    otherwise: "card_foreign_txn",
-  },
+  // International ATM is its own type again (James, Oct 19, #2037: "Split"); it left this table.
   // A distribution closes out (part of) the IRA.
   ira_distribution: { family: "Retirement & IRA", rules: [], otherwise: "ira_termination" },
 };
@@ -267,6 +253,60 @@ export const IRA_CLOSING =
  */
 export const SKIP_A_PAY =
   /^(?![\s\S]*\b(?:overdraft|no[- ]fee|free)\b)[\s\S]*\bskip[- ]?(?:a[- ]?)?(?:loan[- ]?)?pay(?:ments?)?\b/i;
+
+/**
+ * Guard v72 (#1788, James's sample-report review, Oct 17): an ATM used outside the U.S. is
+ * International ATM (`atm_international` since guard v76; International ATM & Card,
+ * `card_foreign_txn`, before), not the non-network ATM fee: PNC's "Non-PNC Bank ATM
+ * Fee (All Other Countries)" $5 sat beside its $3 U.S. fee. The name must name an ATM (or a cash
+ * disbursement) and a place outside the U.S.: international, another or a foreign country, outside
+ * the U.S., abroad or overseas. "Foreign ATM" alone is another bank's ATM at home and is not matched.
+ * One price for domestic and international ATMs ("(International or Domestic)", "includes
+ * international", "inside United States & internationally"), a line priced inside or within the U.S.
+ * ("Non-IBC ATM locations (in the U.S.)"), "non-international" and a bank named International are
+ * not matched either.
+ */
+export const INTERNATIONAL_ATM = new RegExp(
+  String.raw`^(?![\s\S]*(?:\bdomestic\b|\bnon[- ]?international\b|\b(?:inside|within|in)\s+(?:the\s+)?(?:u\.?s\.?a?(?![a-z])|united states|us(?![a-z]))|\bincludes?\s+international\b|\bus,\s*canada\b|\binternationally\b))` +
+    String.raw`(?=[\s\S]*\b(?:atms?|automated teller|cash disbursements?|machines?)\b)` +
+    String.raw`[\s\S]*(?:\binternational\b(?!\s+bank\b)|\bintl\b|\bint['’]l\b|\b(?:other|foreign)\s+countr(?:y|ies)\b|\boutside\s+(?:of\s+)?(?:the\s+)?(?:u\.?s\.?a?(?![a-z])|united states|us(?![a-z]))|\babroad\b|\boverseas\b)`,
+  "i",
+);
+
+/**
+ * Guard v76 (James, Oct 19, #2037: "Split"): `INTERNATIONAL_ATM` with no card purchase in the name, so
+ * an ATM used abroad that was filed as International ATM & Card ("International ATM Withdrawal Fee",
+ * "Non–Wells Fargo ATMs outside the U.S.", "Non-IBC ATM locations (outside the U.S.): Withdrawal") is
+ * International ATM again. One price for ATM and debit card use abroad ("International ATM/Debit
+ * Card Transaction", "ATM/Visa Debit Foreign Transactions"), a POS or purchase line, and a credit
+ * card's cash advance stay the card's foreign transaction fee, as does an ATM line naming no place
+ * abroad ("ATM – Surcharge for Foreign Transactions").
+ */
+export const ATM_ABROAD = new RegExp(
+  String.raw`^(?![\s\S]*\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?)\b)` + INTERNATIONAL_ATM.source.slice(1),
+  "i",
+);
+
+/**
+ * Guard v72 (#1788): an overdraft charged for staying overdrawn for days ("7 Day Overdraft Processing
+ * Fee", "Overdraft Charge (First assessed on the 6th business day overdrawn)", "Cont OD Charge") is
+ * the continuous overdraft fee, not the per-item overdraft fee. A daily cap or a per-day item limit
+ * ("Max 5 per day") is not matched, nor a name that also prices each item paid ("fee assessed for each
+ * item paid1 Continuous Overdraft Fee...", taken-down 14969: its $30 is the per-item fee).
+ */
+export const SUSTAINED_OVERDRAFT =
+  /^(?![\s\S]*\b(?:(?:each|per)\s+(?:item|presentment)|items?\s+paid)\b)[\s\S]*(?:\bcont(?:inuous)?\.?\s+(?:od|overdraft|o\/d)\b|\b\d+(?:st|nd|rd|th)?[- ](?:business\s+|calendar\s+|banking\s+)?days?[- ](?:overdraft|overdrawn|negative|od)\b|\b\d+(?:st|nd|rd|th)\s+(?:business\s+|calendar\s+|banking\s+)?day\s+(?:overdrawn|negative|in overdraft)\b|\b(?:overdrawn|negative|in overdraft)\s+(?:for\s+)?(?:more than|over|after|beyond)\s+\d+\s+(?:\w+\s+)?days\b)/i;
+
+/**
+ * Guard v72 (#1788): a wire the member receives ("Domestic Wire Transfer Fee – In Coming", "Wire
+ * Transfer (in-bound) Domestic", "Domestic Wire-In fee", "Domestic Wire: In", "Domestic Wire Deposit
+ * Fee", "Income Wire Transfer (foreign)") filed under an outgoing wire type is the incoming wire fee.
+ * A name that also names sending ("In/Out", "Wire Out / Wire In", "outbound/inbound") prices both or
+ * another slot and is not matched; "in person", "in branch" and "in U.S. dollars" say how or where it
+ * is sent.
+ */
+export const INCOMING_WIRE =
+  /^(?![\s\S]*\b(?:out|outgoing|out[- ]going|outbound|out[- ]bound|send|sent|sending|withdrawals?)\b)(?=[\s\S]*\b(?:wires?|transfers?)\b)[\s\S]*(?:\bin[- ]?coming\b|\bin[- ]bound\b|\binbound\b|\breceiv\w*|\bwires?[- ]in\b|\b(?:domestic|international|foreign)[- ]in\b|:\s*in\s*$|\bincome wire\b|\bwire deposits?\b)/i;
 
 /** A mortgage, lien or loan subordination; a wire line under a "Subordination Request" heading is not one. */
 export const SUBORDINATION = /^(?![\s\S]*subordination request:\s*(?:incoming|outgoing))[\s\S]*\bsubordinat/i;
@@ -437,7 +477,6 @@ export interface SplitCategory {
   sqlPattern: string;
 }
 
-
 /** The account research split's switched rules, tried after its IRA, fax and copy rules. */
 const RESEARCH_SPLIT_RULES: ReadonlyArray<{ to: string; name: RegExp }> = [
   { to: "excess_withdrawal", name: EXCESS_WITHDRAWAL },
@@ -472,6 +511,11 @@ export function splitCategoriesFor(options: {
     nsf: { to: "deposited_item_return", name: FOREIGN_DEPOSIT_RETURN, sqlPattern: "foreign|canadian|international|non[- ]?u\\.?s" },
     // Guard v69: an IRA's own closing charge is the IRA termination fee, not an early closure.
     early_closure: { to: "ira_termination", name: IRA_CLOSING, sqlPattern: "\\mira|roth|retirement" },
+    // Guard v72 (#1788): staying overdrawn for days is the continuous overdraft fee.
+    overdraft: { to: "continuous_od", name: SUSTAINED_OVERDRAFT, sqlPattern: "cont|day" },
+    // Guard v72 (#1788): a wire the member receives is the incoming wire fee.
+    wire_domestic_outgoing: { to: "wire_domestic_incoming", name: INCOMING_WIRE, sqlPattern: "in|receiv|deposit" },
+    wire_intl_outgoing: { to: "wire_intl_incoming", name: INCOMING_WIRE, sqlPattern: "in|receiv|deposit" },
     // A lien release is other lending (James, Oct 8: Lien Release gave up its spot). A subordination
     // stays legal process (James, Oct 15).
     legal_process: { to: "other_lending_fee", name: LENDING_LEGAL, sqlPattern: "lien" },
@@ -511,14 +555,22 @@ export function splitCategoriesFor(options: {
     // Balancing or reconciling a checkbook is reconciliation work, not a check order.
     check_printing: { to: "account_research", name: CHECKBOOK_RECONCILIATION, sqlPattern: "reconcil|balanc|research" },
     // A cross-border banking bundle's fee is the account's maintenance fee, not a currency fee.
-    card_foreign_txn: { to: "monthly_maintenance", name: CROSS_BORDER_BUNDLE, sqlPattern: "cross.?border" },
+    // Guard v76: an ATM used abroad is International ATM, its own type again (James, Oct 19, #2037).
+    card_foreign_txn: {
+      to: "monthly_maintenance",
+      name: CROSS_BORDER_BUNDLE,
+      also: [{ to: "atm_international", name: ATM_ABROAD }],
+      sqlPattern: "cross.?border|atm|automated teller|cash disburse|machine",
+    },
     // Buying or reloading a prepaid card is the prepaid card's fee; its ATM use stays here.
     // Adjusting an ATM deposit or dispute is research work, not a network ATM fee.
+    // Guard v72: an ATM used outside the U.S. is International ATM (#1788; International ATM & Card
+    // until guard v76).
     atm_non_network: {
       to: "gift_card_purchase",
       name: PREPAID_BUY_OR_RELOAD,
-      also: [{ to: "account_research", name: ATM_ADJUSTMENT }],
-      sqlPattern: "prepaid|reload|adjust",
+      also: [{ to: "account_research", name: ATM_ADJUSTMENT }, { to: "atm_international", name: INTERNATIONAL_ATM }],
+      sqlPattern: "prepaid|reload|adjust|internat|\\mintl\\M|int.l\\M|countr|outside|abroad|overseas",
     },
     // A statement mailed back undelivered is returned mail (its own type once the research split is
     // on; account research before).
@@ -570,8 +622,6 @@ export function researchSplitCategory(
   return to && RESEARCH_SPLIT_KEYS.has(to) ? to : null;
 }
 
-export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
-
 /** Where a live-category fee moves under `SPLIT_CATEGORIES`, or null when it stays. Pure. */
 export function splitLiveCategory(
   key: string | null | undefined,
@@ -595,7 +645,10 @@ export function splitLiveCategory(
 // Once on, a "return to paper statements" charge is never returned mail: an e-statement one is a
 // paper statement fee, and a paper statement one stays there. Off, every rule matches exactly as in
 // v16, so the version stays 16 until the switch is on and the fold step re-reads nothing for it.
-export const FOLD_RULES_VERSION = RESEARCH_SPLIT_LIVE ? 17 : 16;
+// v18: International ATM is its own type again (James, Oct 19, #2037): it leaves the retired table,
+// and an ATM used abroad filed as the card's foreign transaction fee or the non-network ATM fee
+// splits out to it, whether or not the research split is on.
+export const FOLD_RULES_VERSION = 18;
 
 /** The retired categories that sat in these families. */
 export function retiredKeysInFamilies(families: readonly string[]): string[] {
