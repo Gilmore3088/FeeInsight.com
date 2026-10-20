@@ -17,7 +17,8 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
     }
     db = postgres(connection, { max: 1, ssl: "require", types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } });
     await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, state_code text)`;
-    await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, superseded_by_id bigint, document_url text)`;
+    await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, superseded_by_id bigint, document_url text,
+      crawled_at timestamptz, status text DEFAULT 'success', companion_source_id bigint, last_checked_at timestamptz, institution_id bigint)`;
     await db`CREATE TEMP TABLE raw_fee_observations (fee_raw_id bigint PRIMARY KEY, source_document_id bigint,
       agent_event_id uuid, extraction_note text, conditions text, product_name text)`;
     await db`CREATE TEMP TABLE verified_fee_observations (fee_verified_id bigint PRIMARY KEY, fee_raw_id bigint,
@@ -32,7 +33,8 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
       coverage_tier text, agent_event_id uuid, verified_by_agent_event_id uuid, published_by_adversarial_event_id uuid)`;
     await db`CREATE TEMP TABLE pipeline_attempts (institution_id bigint, source_document_id bigint, stage text,
       strategy text, strategy_version int, input_fingerprint text, outcome text, yield_count int,
-      cost_microusd bigint, duration_ms int, agent_run_id bigint, agent_run_step_id bigint, detail jsonb)`;
+      cost_microusd bigint, duration_ms int, agent_run_id bigint, agent_run_step_id bigint, detail jsonb,
+      created_at timestamptz DEFAULT now())`;
     await db`CREATE TEMP TABLE agent_run_events (agent_run_id bigint, event_type text, status text, message text, detail jsonb)`;
   });
   afterAll(async () => { if (db) await db.end(); });
@@ -141,5 +143,36 @@ describe.skipIf(!connection)("Current-copy refresh in isolated PostgreSQL (#2109
     expect(await refreshFeesFromCurrentCopy(racingDb as unknown as Db, { runId: 9, batchId: "test-run-9", dryRun: false }))
       .toMatchObject({ checked: 1, refreshed: 0 });
     expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("601");
+  });
+
+  async function seedMovedPage(triedDaysAgo: number) {
+    await seed("consumer", "consumer");
+    // The cited page has no copy in 60 days and the bank's newer document is a different page.
+    await db`UPDATE source_documents SET institution_id = 42`;
+    await db`UPDATE source_documents SET superseded_by_id = NULL, crawled_at = NOW() - interval '60 days'
+      WHERE id = 500`;
+    await db`UPDATE source_documents SET document_url = 'https://testbank.example/schedule.pdf',
+      crawled_at = NOW() - interval '5 days' WHERE id = 900`;
+    await db`INSERT INTO pipeline_attempts (institution_id, stage, strategy, strategy_version, input_fingerprint, detail, created_at)
+      VALUES (42, 'fetch', 'fetch.live_source', 1, 'live:42', '{"live_page":"testbank.example/fees"}'::jsonb,
+        NOW() - make_interval(days => ${triedDaysAgo}))`;
+  }
+
+  it("moves a fee off a page the bank moved away from to its newer document (#1200)", async () => {
+    await seedMovedPage(1);
+    expect(await run(true)).toMatchObject({ checked: 1, refreshed: 1, movedPage: 1 });
+    expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("601");
+    expect(await run()).toMatchObject({ checked: 1, refreshed: 1, movedPage: 1 });
+    expect((await db`SELECT lineage_ref FROM published_fee_records`)[0].lineage_ref).toBe("9801");
+    const [attempt] = await db`SELECT detail->>'moved_page' AS moved_page, detail->>'prior_lineage_ref' AS prior FROM pipeline_attempts WHERE strategy = 'hamilton.refresh_copy'`;
+    expect(attempt).toEqual({ moved_page: "true", prior: "601" });
+  });
+
+  it("leaves a moved page alone without a recent live check, or once the page has a fresh copy (#1200)", async () => {
+    await seedMovedPage(60);
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
+    await db`UPDATE pipeline_attempts SET created_at = NOW() - interval '1 day'`;
+    await db`UPDATE source_documents SET last_checked_at = NOW() WHERE id = 500`;
+    expect(await run(true)).toMatchObject({ checked: 0, refreshed: 0 });
   });
 });
