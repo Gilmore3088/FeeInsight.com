@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
-import { briefRecipients, buildDailyBrief, dailyBriefEmail, storageWarningLines } from "./daily-brief";
+import { briefRecipients, buildDailyBrief, dailyBriefEmail, STORAGE_MEASUREMENT_MISSING_ALERT, storageWarningFromLatest, storageWarningLines } from "./daily-brief";
 import type { PipelineHealth } from "@/lib/job-health";
 import type { PipelineFunnel } from "@/lib/data-store/pipeline-funnel";
 import type { RegistryFeedFreshness } from "@/lib/data-store/feed-freshness";
@@ -183,6 +183,19 @@ describe("morning brief", () => {
     expect(older.subject).toContain("storage warning");
     expect(older.lines).toContain("Storage: area_statistics is 2,100 MB, above its 2,000 MB budget; the sources that write it are held.");
     expect(older.lines).not.toContain("Nothing is stuck. Nothing needs you.");
+  });
+
+  it("warns when Atlas has not measured the database within the window (Oct 19)", () => {
+    const now = new Date("2026-10-20T12:00:00Z");
+    const missing = storageWarningFromLatest(null, now);
+    expect(missing).toEqual({ alerts: [STORAGE_MEASUREMENT_MISSING_ALERT], at: now.toISOString() });
+    const brief = buildDailyBrief({ ...base, needsYou: [], storage: missing });
+    expect(brief.subject).toBe("Morning brief: 1 thing needs you, storage warning, pipeline running");
+    expect(brief.lines[0]).toContain("- Storage: Atlas has not measured the database in over 36 hours");
+
+    const measured = storageWarningFromLatest({ alerts: '["x is over budget"]', created_at: "2026-10-20T11:00:00Z" }, now);
+    expect(measured).toEqual({ alerts: ["x is over budget"], at: "2026-10-20T11:00:00.000Z" });
+    expect(storageWarningFromLatest({ alerts: [], created_at: "2026-10-20T11:00:00Z" }, now)?.alerts).toEqual([]);
   });
 
   it("names a public source that failed or loaded empty, with its reason (#1866)", () => {
