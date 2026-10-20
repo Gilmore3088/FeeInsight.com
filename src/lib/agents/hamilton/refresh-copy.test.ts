@@ -213,11 +213,11 @@ describe("refreshFeesFromCurrentCopy", () => {
 describe("moved pages (#1200)", () => {
   function movedDb(rows: RefreshCopyCandidate[], moved: number[]) {
     const db = createDb(rows);
-    const base = db.getMockImplementation()!;
-    db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const base = db.getMockImplementation() as (...args: unknown[]) => unknown;
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
       if (templateText(strings).includes("WITH cited AS MATERIALIZED")) return Promise.resolve(moved.map((id) => ({ id })));
       return base(strings, ...values);
-    }) as typeof base);
+    });
     return db;
   }
 
