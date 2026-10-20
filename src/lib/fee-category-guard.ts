@@ -167,6 +167,11 @@ const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
 const NOT_RESEARCH_WITHDRAWAL = /\bwithdrawals?\s+(?:over|in\s+excess|beyond|after)\b|\bexcess(?:ive)?\s+(?:savings\s+|share\s+)?withdrawals?\b/i;
 const NOT_RESEARCH_MAIL = /\breturn(?:ed|s)?\s+mail\b/i;
 const RESEARCH_WORD = /\b(?:research|reconcil|investigat)/i;
+/**
+ * v78: guaranteeing a signature ("Medallion Signature Guarantee" $75, "Medallion Stamp" $10) verifies
+ * no account. The answer keys leave it unmapped: none of the 50 types holds it.
+ */
+const SIGNATURE_GUARANTEE = /\bmedallion\b|\bsignature\s+guarant/i;
 /** v74: a loan payment ("Foreign Returned Item | Varies | ACH Loan Payment on Website" $2, 153002) is not a deposited item coming back. */
 // A loan payment line that names no deposit ("Returned Deposit/Loan Payment" prices both and stays).
 const LOAN_PAYMENT = /^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b/i;
@@ -704,6 +709,17 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(reconcil|(?<!\b(?:address(?:es)?|locator|locate)\s+(?:[\w/-]+\s+)?)\bresearch|excess|\bwires?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breturn(?:ed)?\s+(?:checks?|items?|deposits?|ach|payments?|loans?|drafts?)\b|\bnsf\b|\bdeposit\w*|\bdrafts?\b|\b(?:items?|checks?|drafts?)\s+returned\b|change of address|address change|\breturn(?:ing)?\s+to\s+paper|\bre-?enroll|\b(?:branch|atm)\s+locat)/i,
   },
+  // v78 (#2449, Oct 20): account verification names a verification, a confirmation or certification,
+  // a VOD, a bank or credit reference, proof of funds, an audit or a letter about the account. A
+  // name with none of those (a checking account, a positive pay service, a bare wire) does not count,
+  // a signature guarantee, a letter of credit, a payoff or a collection letter is a different fee,
+  // and research or reconciling is account research unless the name also verifies ("Account
+  // reconciliation/research/verification of deposit fee" stays).
+  account_verification: {
+    include: /(verif|confirm|certif|cer\W?fic|\bvods?\b|\bcartas?\b|\bletters?\b|\breferences?\b|proof of (?:funds|deposits?)|\baudit)/i,
+    exclude: new RegExp(`${SIGNATURE_GUARANTEE.source}|\\bletters?\\s+of\\s+credit\\b|\\bpay-?offs?\\b|\\bcollection\\b`, "i"),
+    excludeUnless: { pattern: RESEARCH_WORD, unless: /verif|confirm/i },
+  },
   // v74 (James's 20 live defects, Oct 19): research is checked by name too. Withdrawals over a
   // count and returned mail are their own types (re-filed below); the name still counts as research
   // when it says research, reconciling or investigating.
@@ -834,7 +850,13 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // in the PR (#1026 ledger).
 // v77 (Oct 19, W43 live check): a card that draws only on credit (`CREDIT_CARD_ONLY`) fails the
 // replacement and rushed card rules; a credit card is a lending product. Counts in the PR.
-export const CATEGORY_GUARD_VERSION = 77;
+// v78 (Oct 20, #2449): account verification is guarded by name. Research re-files to
+// account research and a domestic wire to the outgoing wire fee (on Darwin's path; the live sweep
+// re-files only `RESTORE_REFILES`); a signature guarantee (unmapped in the answer keys), a checking
+// or spending account or a positive pay name fails and goes to the second look, and once the
+// category is guarded the borrowed-direction rule also fails a verification glued to a wire's
+// direction row ("Account Verification NC: Domestic"). Counts in the PR.
+export const CATEGORY_GUARD_VERSION = 78;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -953,6 +975,9 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "ira_termination", to: "ira_administration", when: IRA_EXCESS_WITHDRAWALS },
   { from: "rush_card", to: "courier_delivery", when: CURRENCY_SERVICE },
   { from: "deposited_item_return", to: "other_lending_fee", when: LOAN_PAYMENT },
+  // v78: research filed as account verification is account research, and a wire is the wire fee its name states.
+  { from: "account_verification", to: "account_research", when: RESEARCH_WORD },
+  { from: "account_verification", to: "wire_domestic_outgoing", when: /\bwires?\b/i, unless: /incoming|receiv|international|foreign|\bintl\b/i },
 ];
 
 /** v74: a re-file rule from `canonicalFeeKey` matches the name and its target's guard accepts it (`onlyIfRefiles`). */
