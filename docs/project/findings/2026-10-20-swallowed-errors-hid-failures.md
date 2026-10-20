@@ -10,7 +10,9 @@ the Hamilton shell: `getHamiltonArtifactInstitutionId(...).catch(() => null)` at
 
 **Cause:** `catch` handlers that return a default value without recording the error.
 
-**Fix:** #2414 merged with the warning. The Hamilton lookup is not fixed; it is tracked on #975.
+**Fix:** #2414 merged with the warning. The Hamilton lookup now logs the failed read with its
+user, artifact and path and rethrows it to the Pro error boundary, while a missing artifact still
+returns null and its page 404s (tracked on #975).
 
 **Lesson:** When a read or step can fail, let the error surface or record it (a run step warning,
 or a logged error with context) before falling back. An empty result must mean empty.

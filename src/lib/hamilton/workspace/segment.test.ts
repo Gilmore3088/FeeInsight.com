@@ -121,6 +121,44 @@ describe("segment answer", () => {
     expect(buildFeeAnswer({ ...overdraftResearch(), current: 0, segment: seg }, { focus: "competitors" }).headline).not.toContain("0th percentile");
   });
 
+  describe("a 'the N largest' segment reads as counted English (#2028)", () => {
+    const top25 = parseSegment("Which credit unions in the top 25 of the $1 billion to $10 billion tier run a fee share below 4%?")!;
+    const five = members.filter((m) => m.amount > 0).map((m) => ({ ...m, charterType: "credit_union" as const }));
+
+    it("places the fee 'at the bottom of 5 of the 25 largest', never 'of 5 the 25 largest'", () => {
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: five, current: 0, ownInSegment: true });
+      const answer = buildFeeAnswer({ ...overdraftResearch(), current: 0, segment: seg }, { focus: "competitors" });
+      expect(answer.headline).toBe("Your $0 overdraft fee is at the bottom of 5 of the 25 largest $1B to $10B credit unions (median $35).");
+      expect(answer.claims[0].text).toBe("5 of the 25 largest $1B to $10B credit unions publish an overdraft fee in the index.");
+    });
+
+    it("names the whole group once when every member publishes", () => {
+      const all = Array.from({ length: 25 }, (_, i) => ({ ...members[i % members.length], institutionId: i + 1, institutionName: `CU ${i + 1}`, totalAssets: 9_000_000 - i }));
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: all, current: null, ownInSegment: false });
+      const answer = buildFeeAnswer({ ...overdraftResearch(), current: null, segment: seg }, { focus: "competitors" });
+      expect(answer.headline).toMatch(/^The 25 largest \$1B to \$10B credit unions publish an overdraft fee; median/);
+      expect(answer.claims[0].text).toBe("25 of the 25 largest $1B to $10B credit unions publish an overdraft fee in the index.");
+    });
+
+    it("counts a too-small group without stacking two counts", () => {
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: five.slice(0, 2), current: 32, ownInSegment: false });
+      expect(buildFeeAnswer({ ...overdraftResearch(), segment: seg }).headline).toBe(
+        "Only 2 of the 25 largest $1B to $10B credit unions publish an overdraft fee, too few for a median.",
+      );
+    });
+
+    it("says none of the group publishes the fee without 'the 25 the 25 largest'", () => {
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: [], current: 32, ownInSegment: false });
+      expect(seg.problem).toBe("None of the 25 largest credit unions with $1 billion to $10 billion in assets publishes an overdraft fee in the index yet.");
+    });
+
+    it("writes no 'N the' or 'the N the' anywhere in the answer", () => {
+      const seg = buildSegmentResearch({ segment: top25, feeCategory: "overdraft", institutionsInSegment: 25, members: five, current: 32, ownInSegment: true });
+      const text = JSON.stringify(buildFeeAnswer({ ...overdraftResearch(), segment: seg }, { focus: "competitors" }));
+      expect(text).not.toMatch(/\d the \d/);
+    });
+  });
+
   it("says so in the first claim when the segment can't be built, then falls back to peers", () => {
     const research = {
       ...overdraftResearch(),

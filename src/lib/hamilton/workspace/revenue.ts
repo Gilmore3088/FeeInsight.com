@@ -28,7 +28,7 @@ function quarterOf(date: string): number {
   return Math.floor(Number(date.slice(5, 7)) / 3);
 }
 
-function previousQuarterEnd(date: string): string {
+export function previousQuarterEnd(date: string): string {
   const year = Number(date.slice(0, 4));
   const q = quarterOf(date);
   if (q === 1) return `${year - 1}-12-31`;

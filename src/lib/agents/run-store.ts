@@ -21,7 +21,7 @@ import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/l
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
-import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { sourceCheckReceiptNote, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { newerCopyReceiptNote, retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
@@ -382,16 +382,22 @@ async function executeAgenticStep(
   // Atlas's hourly nationwide lane sync (state-lane-scheduler.ts), from its own route.
   if (step.stepKey === "lane-sync") {
     const { runNationwideLaneSync } = await import("@/lib/agents/state-lane-scheduler");
-    const synced = await runNationwideLaneSync();
+    const synced = await runNationwideLaneSync({ runId: run.id, stepId: step.id });
     const seconds = Math.round((synced.ms.profiles + synced.ms.unchecked + synced.ms.second_looks + synced.ms.priorities) / 1000);
+    // A failed unchecked read is said as a failure, never as "woke 0" (#2424).
+    const uncheckedPart = synced.uncheckedError
+      ? `woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees, but the read failed for ${synced.uncheckedFailedStates.length > 0 ? `${synced.uncheckedFailedStates.length} state(s) (${synced.uncheckedFailedStates.join(", ")})` : "every state"} (${synced.uncheckedError})`
+      : `woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees`;
     return {
       status: "completed",
-      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
+      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); ${uncheckedPart} and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
       detail: {
         lanes_touched: synced.profiles.lanesTouched,
         profiles_touched: synced.profiles.profilesTouched,
         profile_sync_failures: synced.profiles.failures,
         unchecked_woken: synced.uncheckedWoken,
+        unchecked_wake_error: synced.uncheckedError,
+        unchecked_failed_states: synced.uncheckedFailedStates,
         second_look_woken: synced.secondLookWoken,
         priorities_updated: synced.priorities.updated,
         priorities_error: synced.priorities.error,
@@ -1428,6 +1434,7 @@ async function executeAgenticStep(
       // are checked too.
       const sourceCheck = await timedSweep(sweepMs, "sourceCheck", () => takeDownUntraceableFees(tx, {
         runId: run.id,
+        stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
@@ -1605,10 +1612,7 @@ async function executeAgenticStep(
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
           : "");
-      const sourceNote =
-        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
-          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
-          : "";
+      const sourceNote = sourceCheckReceiptNote(sourceCheck, published.dryRun);
       const newerCopyNote = newerCopyReceiptNote(newerCopy, published.dryRun);
       const refreshNote =
         refreshCopy.refreshed > 0
@@ -1983,6 +1987,9 @@ async function executeAgenticStep(
                 relabeled: feedbackSync.relabeled,
               }
             : false,
+          source_check_status: sourceCheck?.status ?? null,
+          source_check_failed_phase: sourceCheck?.failedPhase ?? null,
+          source_check_error: sourceCheck?.error ?? null,
           source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
           source_check_fees: sourceCheck?.liveFeesChecked ?? 0,
           source_check_traced: sourceCheck?.traced ?? 0,

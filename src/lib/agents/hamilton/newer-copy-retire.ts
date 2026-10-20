@@ -14,10 +14,10 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// v2 (#2477, James 2026-10-20): every v1 pair is judged again under the current identity, restore
-// and hold guards (#2117/#2118/#2121). Prod dry run 2026-10-20: 772 pairs, 8 fees retired at 2
-// institutions, 0 restores. Recorded in DECISIONS.md and Bayes VERSIONS_WITHOUT_REPLAY.
-export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 2 } as const;
+// Keep v1 pair fingerprints closed (#2117/#2118/#2121): identity/hold fixes apply only to
+// pending pairs and future copies. Historical decisions are not automatically replayed;
+// Bayes documents this deliberate no-replay contract in VERSIONS_WITHOUT_REPLAY.
+export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 1 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
  * any fee is retired. Below it the newer copy is not recognizably the same schedule (an
@@ -69,8 +69,20 @@ export interface NewerCopyFeeRow extends Partial<Omit<PublishedIdentity, "fee_pu
 
 export type NewerCopyVerdict = "still_stated" | "still_named" | "dropped" | "unproven" | "no_amount";
 
-function states(text: string, fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">): ReturnType<typeof checkFeeAgainstSource> {
-  return checkFeeAgainstSource(text, fee.fee_name, Number(fee.amount), ".");
+/**
+ * A stored name can glue a heading to its row ("Early Closing of AccountClub Account", read from a
+ * PDF that ran "Early Closing of Account" into "Club Account: $20.00") while a newer copy prints
+ * them on two lines. When the source check rejects the glued name in the NEWER copy, the split name
+ * is tried once. Only the newer copy gets the retry: there it can only turn a fee into `still_stated`;
+ * on the older copy it could turn an `unproven` fee into a judged one, which could retire it (#2477).
+ */
+function states(text: string, fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">, retrySplit = false): ReturnType<typeof checkFeeAgainstSource> {
+  const result = checkFeeAgainstSource(text, fee.fee_name, Number(fee.amount), ".");
+  if (result.ok || !retrySplit) return result;
+  const split = fee.fee_name.replace(/([a-z])([A-Z])/g, "$1 $2");
+  if (split === fee.fee_name) return result;
+  const retried = checkFeeAgainstSource(text, split, Number(fee.amount), ".");
+  return retried.ok ? retried : result;
 }
 
 const PRICE = /\$\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\b\d{1,3}(?:,\d{3})*\.\d{2}\b/g;
@@ -129,7 +141,7 @@ export function newerCopyVerdict(
     // Use only the proven product block; another section's price cannot be a witness.
     newerText = owner.block;
   }
-  const newer = states(newerText, fee);
+  const newer = states(newerText, fee, true);
   if (newer.ok || newer.reason === "tiered_fee") return "still_stated";
   const older = states(olderText, fee);
   if (!older.ok) return older.reason === "tiered_fee" ? "still_named" : "unproven";
