@@ -86,4 +86,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "unguarded-account-verification",
+    agent: "darwin",
+    stage: "category check",
+    lesson: "Every category needs a name test before a fee in it is verified: a category with no rule passes any name, so a checking account, a positive pay service or a signature guarantee can publish as an account verification. Confirm the name says what the category is; re-file it where its name places it, and send it to the second look when no category holds it.",
+    why: "Account verification had no category rule, so 14 of its 692 live fees (Oct 20) were other fees: 8 signature guarantees, a domestic wire, two checking or spending accounts, a positive pay service, and two rows ($20 domestic, $50 foreign) where a no-charge verification was glued to the wire prices below it.",
+    evidence: { issues: [], prs: [2449], files: ["src/lib/fee-category-guard.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
