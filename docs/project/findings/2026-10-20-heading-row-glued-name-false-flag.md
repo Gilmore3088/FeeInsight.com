@@ -1,0 +1,6 @@
+# 2026-10-20: a name that glued a heading to its row was judged gone from the newer copy
+**What happened:** a hand check of Hamilton's current-copy flags (#2477) found 15 of 20 sampled flagged fees still charged. Fee 57754, "Early Closing of AccountClub Account" $20 (First Northern Bank and Trust), was flagged although its current page prints it.
+**Cause:** the older copy's PDF text ran the heading "Early Closing of Account" into its row "Club Account: $20.00", so Knox stored the glued name. The current copy prints the heading and the row on two lines. The shared source check matched the glued name in the older text but not in the current one (`amount_not_the_fee`), so the newer-copy verdict was `still_named` and the fee was flagged.
+**Fix:** the newer-copy and current-copy verdicts retry the source check once with the glued words split ("Early Closing of Account Club Account"), which the check reads as the heading's row at its own price. The retry can only keep a fee stated; it never retires or flags one.
+**Lesson:** a stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued.
+**Guard:** `src/lib/agents/hamilton/newer-copy-retire.test.ts` ("reads a name that glued a heading to its row against the page's two lines").
