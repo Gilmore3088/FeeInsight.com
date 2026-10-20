@@ -8,6 +8,7 @@ import {
   READER_LOSS_RESTORES_ON,
   readerLostLine,
   restorableExcerpt,
+  restoreStillPrinted,
   restorableName,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
@@ -112,6 +113,8 @@ describe("restorableExcerpt", () => {
       sampled(1, "Wire Transfer International", "15", "wire_intl_outgoing", "Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer International"),
       sampled(2, "Card Replacement", "25", "card_replacement", "Discard fee $30 Card Replacement | $25 Replace Key"),
       sampled(3, "Replacement Credit Card Rush", "25", "rush_card", "$  30 Replacement Credit Card Rush | $25 Replace Key"),
+      // Re-sample, Oct 20: "$25.00 for Incoming – Foreign Wires / $50.00 for Outgoing – Foreign Wires".
+      sampled(90951, "Incoming – Foreign Wires", "50", "wire_intl_incoming", "for Incoming – Foreign Wires $50.00"),
     ]) {
       expect(restorableExcerpt(row)).toBe(false);
     }
@@ -127,6 +130,19 @@ describe("restorableExcerpt", () => {
     ]) {
       expect(restorableExcerpt(row)).toBe(true);
     }
+  });
+});
+
+describe("restoreStillPrinted", () => {
+  const doc = (text: string) => [{ source_document_id: 7, normalized_text: text, updated_at: REREAD_AT }];
+  // Re-sample of restores, Oct 20: a column-read PDF still prints the name and, elsewhere, the price.
+  it("needs the re-read to find the name and to print the price somewhere in the document", () => {
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $32.00 $5.00"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $5.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $320.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("$32.00"), "name_not_in_text")).toBe(false);
+    expect(restoreStillPrinted({ ...stopPayment, amount: "6.25" }, doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted({ ...stopPayment, amount: "6.25" }, doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
   });
 });
 
