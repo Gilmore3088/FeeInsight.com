@@ -130,7 +130,7 @@ export const KNOX_LESSONS: AgentLesson[] = [
     agent: "knox",
     stage: "held queue",
     lesson: "A held dollar range with no fee category that carries a deposit or loan rate (a balance tier with its APY) is not a fee: set it aside, kept and never deleted, so the held queue shows only lines that may still be fees.",
-    why: "Thousands of rate-table tiers sat in Knox's held queue as unpriced ranges with nothing re-reading them, hiding the real range-priced fees among them (4,091 such lines at 482 banks on Oct 20).",
+    why: "Thousands of rate-table tiers sat in Knox's held queue as unpriced ranges with nothing re-reading them, hiding the real range-priced fees among them (4,091 candidates at 482 banks on Oct 20; the first 2,000 read all passed the band test).",
     evidence: { issues: [1102, 1060], prs: [1622], files: ["src/lib/agents/knox/held-recheck.ts"] },
     appliesTo: ["extract"],
     since: "2026-10-20",
