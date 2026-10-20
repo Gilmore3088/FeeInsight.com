@@ -1,7 +1,6 @@
 "use server";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
-import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
+import { reportStartError } from "@/lib/report-access";
 import { redirectWithoutPremium } from "@/lib/team-billing";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-tables";
@@ -22,7 +21,8 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Hamilton access required." };
   // A lapsed account keeps its saved briefs read-only: no new brief and no edits (#1999).
-  if (!canAccessPremium(user)) return { success: false, error: REPORT_START_BLOCKED_MESSAGE };
+  const blocked = await reportStartError(user);
+  if (blocked) return { success: false, error: blocked };
   if (!input?.edits || typeof input.edits.title !== "string" || typeof input.edits.teamNote !== "string" || typeof input.edits.includeEvidence !== "boolean" || input.edits.title.length > 200 || input.edits.teamNote.length > 5000) return { success: false, error: "Check the title and team note lengths." };
   try {
     if (input.reportId) {

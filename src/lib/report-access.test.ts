@@ -4,7 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn(async () => []) }));
 
 import type { User } from "@/lib/auth";
-import { canReadReportJob, REPORT_START_BLOCKED_MESSAGE, reportStartRefusal } from "./report-access";
+import {
+  canReadReportJob,
+  REPORT_START_BLOCKED_MESSAGE,
+  reportStartBlockedMessage,
+  reportStartRefusal,
+} from "./report-access";
 
 const user = (overrides: Partial<User> = {}): User =>
   ({ id: 7, role: "viewer", subscription_status: "canceled", stripe_customer_id: null, ...overrides }) as User;
@@ -36,5 +41,30 @@ describe("reportStartRefusal (#1999)", () => {
 
   it("should_allow_active_subscriber_to_start", async () => {
     expect(await reportStartRefusal(user({ subscription_status: "active" }), "/pro/reports")).toBeNull();
+  });
+
+  it("should_point_lapsed_payer_to_billing_issue_not_subscribe", async () => {
+    const lapsedSince = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const refusal = await reportStartRefusal(
+      user({ subscription_status: "past_due", past_due_since: lapsedSince } as Partial<User>),
+      "/pro/reports",
+    );
+    expect(refusal?.href).toBe("/account/billing-issue");
+    expect(refusal?.error).toContain("/account/billing-issue");
+    expect(refusal?.error).not.toContain("/subscribe");
+    expect(refusal?.error).toContain("/account/reports");
+  });
+});
+
+describe("reportStartBlockedMessage (#1999)", () => {
+  it("should_send_lapsed_team_member_to_team_billing", () => {
+    const message = reportStartBlockedMessage("/account/team-billing");
+    expect(message).toContain("/account/team-billing");
+    expect(message).not.toContain("/subscribe");
+  });
+
+  it("should_send_cancelled_account_to_subscribe_and_its_reports_page", () => {
+    expect(reportStartBlockedMessage("/subscribe?from=x")).toBe(REPORT_START_BLOCKED_MESSAGE);
+    expect(REPORT_START_BLOCKED_MESSAGE).toContain("/account/reports");
   });
 });

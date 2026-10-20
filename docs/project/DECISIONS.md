@@ -12,10 +12,13 @@ or edit a saved board brief. Nobody reads another user's report; an admin can re
 The read rule is `canReadReportJob` and the start rule `reportStartRefusal` in
 `src/lib/report-access.ts`: the legacy job routes (`/api/reports/[id]/status`, `/download`) let
 the owner read with or without a subscription; `/api/reports/generate`, the Pro report actions and
-the board-brief actions refuse a start with one message that points to /subscribe; and
+the board-brief actions refuse a start with a message that points where `premiumGatePath` sends
+the account (/subscribe, /account/billing-issue or /account/team-billing); and
 `/api/pro/report-pdf` still downloads the account's own saved report (answers, the committee packet
 and published reports stay Pro-only). Pro pages still send a lapsed visitor through
-`premiumGatePath`.
+`premiumGatePath`, so the reports are listed outside the Pro shell at `/account/reports`: any
+signed-in account sees only its own completed report jobs and saved Hamilton reports, with download
+links and no start or re-run controls, linked from the billing pages, /subscribe and the account menu.
 
 **Hosted report tokens are rotated and kept out of the repo.** James, 2026-10-20, on #2001 (found
 in the #1922 customer data isolation review; tracker #975): rotate the `/r/<token>` prospect report

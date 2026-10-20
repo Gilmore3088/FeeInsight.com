@@ -287,6 +287,7 @@ export const ROUTES: RouteEntry[] = [
   { file: "account/welcome/page.tsx", kind: "account_page", label: "Welcome after checkout", probes: [get("/account/welcome")] },
   { file: "account/billing-issue/page.tsx", kind: "account_page", label: "Payment issue (Pro accounts are sent on to Hamilton)", probes: [get("/account/billing-issue")] },
   { file: "account/team-billing/page.tsx", kind: "team_billing_page", label: "Team subscription needs attention (#1999)", probes: [get("/account/team-billing")] },
+  { file: "account/reports/page.tsx", kind: "account_page", label: "Your reports, read-only for any signed-in account (#1999)", probes: [get("/account/reports")] },
 ];
 
 /** The outcome a probe must get for a state. */
