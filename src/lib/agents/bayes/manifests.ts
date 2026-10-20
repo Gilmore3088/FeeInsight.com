@@ -498,6 +498,8 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v76 (Oct 19, #2037, James's "Split"): an ATM used abroad re-files from card_foreign_txn and
     // atm_non_network to atm_international, its own type again.
     // v77 (Oct 19, #2388): a card that draws only on credit fails card replacement and rush card.
+    // v78 (Oct 20): account verification is guarded by name; research and wires re-file, and
+    // signature guarantees and other names fail.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
