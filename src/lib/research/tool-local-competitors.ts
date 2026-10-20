@@ -17,13 +17,24 @@ import { severalFeesOf, type SeveralFees } from "@/lib/own-fee";
  * (getInstitutionOwnFees, the competitors' row filter): each stated price, and a category it
  * states several different fees in as their range and names, never whichever row came first (#1994).
  */
+const toCents = (amount: number) => Math.round(amount * 100) / 100;
+
+/** The several-fees span in cents, as your_fees is, so the two read alike. */
+function severalInCents(span: SeveralFees): SeveralFees {
+  return {
+    low: toCents(span.low),
+    high: toCents(span.high),
+    fees: span.fees.map((line) => ({ ...line, amount: toCents(line.amount) })),
+  };
+}
+
 async function subjectFees(institutionId: number): Promise<{ fees: Record<string, number>; several: Record<string, SeveralFees> }> {
   const fees: Record<string, number> = {};
   const several: Record<string, SeveralFees> = {};
   for (const [category, fee] of await getInstitutionOwnFees(institutionId)) {
-    if (fee.price !== null) fees[category] = Math.round(fee.price * 100) / 100;
+    if (fee.price !== null) fees[category] = toCents(fee.price);
     const span = severalFeesOf(fee);
-    if (span) several[category] = span;
+    if (span) several[category] = severalInCents(span);
   }
   return { fees, several };
 }

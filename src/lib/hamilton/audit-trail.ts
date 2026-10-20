@@ -40,7 +40,7 @@ export interface AuditClientFact {
 
 export const STANDARD_METHOD = [
   "Only published fees count: each was read from the institution's own fee schedule, checked against that document, and linked to it.",
-  "One value per institution: the median of its published amounts for the fee, except overdraft, which counts at its highest tier.",
+  "Overdraft counts at its highest tier. For any other fee, a peer that publishes several amounts counts at the median of those amounts. Your own fee at several amounts is shown as a range and not placed against the peers.",
   "A real $0 fee counts as $0. An institution that hasn't published the fee is left out, not counted as $0.",
   "Medians and middle halves are shown only as computed; layers with too few institutions are marked.",
 ];

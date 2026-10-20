@@ -742,8 +742,10 @@ export async function takeDownUntraceableFees(
     });
   } catch (error) {
     console.error("takeDownUntraceableFees write failed:", error);
-    // The savepoint rolled back every write, so no count survives: the step detail must not show
-    // checked institutions or fees next to a failed status (#2235).
+    // This savepoint rolled back its relinks, takedowns, restores and receipts, so no count
+    // survives: the step detail must not show checked institutions or fees next to a failed
+    // status (#2235). secondLook's pipeline_feedback flag and clear rows were committed earlier in
+    // their own savepoint and stay; a failed write here does not undo them.
     return {
       ...EMPTY_RESULT,
       takedowns: [],

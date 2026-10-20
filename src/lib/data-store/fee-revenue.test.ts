@@ -1,9 +1,15 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => {
   const mockSql = Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) });
   return { getSql: () => mockSql, sql: mockSql };
 });
+
+const quarters = vi.hoisted(() => ({ ready: false }));
+vi.mock("./call-report-quarters", () => ({
+  CALL_REPORT_QUARTERS_TABLE: "call_report_quarterly_income",
+  callReportQuartersReady: async () => quarters.ready,
+}));
 
 import { sql } from "./connection";
 import { getCharterFeeRevenueSummary, getFeeRevenueData, getFiledFeeIncomeData, getTierFeeRevenueSummary } from "./fee-revenue";
@@ -108,5 +114,30 @@ describe("fee revenue reads split NCUA year-to-date income into quarters (#1245)
     expect(fragments).toContain("EXTRACT(QUARTER FROM inf.report_date::date) = 1");
     const raw = mock.mock.calls.map((call) => Array.isArray(call[0]) ? call[0].join(" ") : String(call[0])).join("\n");
     expect(raw).not.toContain("JOIN institution_financial_records ifin");
+  });
+});
+
+describe("fee revenue reads the precomputed quarters once they are built (#1048)", () => {
+  afterEach(() => { quarters.ready = false; });
+
+  it.each([
+    ["getFiledFeeIncomeData", () => getFiledFeeIncomeData()],
+    ["getFeeRevenueData", () => getFeeRevenueData()],
+    ["getTierFeeRevenueSummary", () => getTierFeeRevenueSummary()],
+    ["getCharterFeeRevenueSummary", () => getCharterFeeRevenueSummary()],
+  ])("%s takes the latest summary row instead of the raw filings", async (_name, read) => {
+    quarters.ready = true;
+    await read();
+    const fragments = mock.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(fragments).toContain("FROM call_report_quarterly_income q");
+    expect(fragments).toContain("q.prior_quarter_end_income AS service_charge_income");
+    expect(fragments).not.toContain("institution_financial_records");
+  });
+
+  it("falls back to the per-request split while the summary is empty", async () => {
+    await getFiledFeeIncomeData();
+    const fragments = mock.unsafe.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(fragments).toContain("FROM institution_financial_records i2");
+    expect(fragments).not.toContain("call_report_quarterly_income");
   });
 });
