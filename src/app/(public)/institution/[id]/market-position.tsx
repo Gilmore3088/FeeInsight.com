@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Check } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { formatCompactDollars } from "@/lib/format";
 import { ASSET_BANDS, type HistoryPoint } from "@/lib/market-position";
@@ -74,12 +75,19 @@ export function MarketPositionCard({
   institutionName,
   selectedCode,
   onSelect,
+  metroPeerCount,
 }: {
   position: MarketPosition;
   institutionId: number;
   institutionName: string;
   selectedCode: number | null;
   onSelect: (code: number) => void;
+  /**
+   * How many banks the peer explorer's home metro set holds (same charter, publishing fees), so the
+   * link names the count it lands on. Null when the page does not offer that set: no link then.
+   * Undefined when not known: the link names no count.
+   */
+  metroPeerCount?: number | null;
 }) {
   const metro = position.metros.find((m) => m.code === selectedCode) ?? position.metros[0];
   const home = position.metros.find((m) => m.isHome) ?? null;
@@ -105,7 +113,7 @@ export function MarketPositionCard({
           ))}
         </div>
       )}
-      <MetroSummary metro={metro} institutionId={institutionId} institutionName={institutionName} home={home} />
+      <MetroSummary metro={metro} institutionId={institutionId} institutionName={institutionName} home={home} metroPeerCount={metroPeerCount} />
       <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <MetroMapPanel metro={metro} institutionName={institutionName} />
         <ShareChart metro={metro} institutionName={institutionName} />
@@ -121,11 +129,13 @@ function MetroSummary({
   institutionId,
   institutionName,
   home,
+  metroPeerCount,
 }: {
   metro: MetroPosition;
   institutionId: number;
   institutionName: string;
   home: MetroPosition | null;
+  metroPeerCount?: number | null;
 }) {
   const own = metro.subject;
   const fee = useAddressFee();
@@ -141,17 +151,44 @@ function MetroSummary({
           <>{institutionName} has no deposits on file in {metro.name}.</>
         )}
       </p>
-      {home && (
+      {home && metroPeerCount !== null && (
         // The peer explorer reads ?peers= in the browser (the profile is cached), so a soft
-        // navigation to the same cached page switches its set.
-        <Link
-          href={metroPeersHref(institutionId, fee)}
-          className="inline-flex min-h-11 shrink-0 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-        >
-          {metro.isHome ? "Compare fees with these local competitors" : `Compare fees with competitors in ${home.name}`} &rarr;
-        </Link>
+        // navigation to the same cached page switches its set (peer-explorer-island.tsx scrolls
+        // to it). The explorer compares only the home metro, so the link always names it.
+        <div className="shrink-0 sm:max-w-[22rem] sm:text-right">
+          <Link
+            href={metroPeersHref(institutionId, fee)}
+            className="inline-flex min-h-11 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
+          >
+            <span>
+              <WithArrow text={metroPeersLinkText(home.name, metroPeerCount)} />
+            </span>
+          </Link>
+          {!metro.isHome && <p className="text-[12px] text-ink-muted">The fee comparison uses its home metro, {home.name}.</p>}
+        </div>
       )}
     </div>
+  );
+}
+
+/**
+ * "Compare fees with the 9 banks in Tallahassee, FL that publish fees": the explorer's own count,
+ * which differs from the deposit rank's "of 18" (every FDIC-insured institution with offices there).
+ */
+export function metroPeersLinkText(homeName: string, count: number | undefined): string {
+  return count !== undefined
+    ? `Compare fees with the ${count.toLocaleString("en-US")} ${count === 1 ? "bank" : "banks"} in ${homeName} that ${count === 1 ? "publishes" : "publish"} fees`
+    : `Compare fees with banks in ${homeName} that publish fees`;
+}
+
+/** The text with its last word and the arrow kept together, so a phone never wraps a lone arrow. */
+function WithArrow({ text }: { text: string }) {
+  const cut = text.lastIndexOf(" ");
+  return (
+    <>
+      {text.slice(0, cut + 1)}
+      <span className="whitespace-nowrap">{`${text.slice(cut + 1)}\u00a0\u2192`}</span>
+    </>
   );
 }
 
@@ -294,8 +331,9 @@ function Toggle({ on, onClick, children }: { on: boolean; onClick: () => void; c
       type="button"
       aria-pressed={on}
       onClick={onClick}
-      className={`min-h-9 rounded-full border px-3 text-[12px] transition-colors ${on ? "border-ink-soft bg-[#F4F1EC] text-ink" : "border-border bg-white text-ink-muted line-through"}`}
+      className={`inline-flex min-h-9 items-center gap-1 rounded-full border px-3 text-[12px] transition-colors ${on ? "border-ink bg-ink text-white" : "border-border bg-white text-ink-muted hover:border-ink"}`}
     >
+      {on && <Check aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2.5} />}
       {children}
     </button>
   );

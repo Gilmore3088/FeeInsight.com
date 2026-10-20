@@ -275,6 +275,10 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   const stateName = stateCode ? STATE_NAMES[stateCode] : null;
 
   const sparse = verifiedFees.length < MIN_VERIFIED_FEES_FOR_OFFER;
+  // The market card's link lands on the explorer's home metro set: its count, or null (no link)
+  // when the page shows no explorer or does not offer that set.
+  const metroOption = !sparse && peerExplorerSet ? peerSets?.options.find((option) => option.key === "metro") : undefined;
+  const metroPeerCount = metroOption ? metroOption.count : null;
   const schedule = scheduleState({ publishedFees: verifiedFees.length, hasSchedule: Boolean(inst.fee_schedule_url) });
   const categories = [...new Set(verifiedFees.map((fee) => fee.fee_category).filter((c): c is string => Boolean(c)))];
   const rawRows = compareRows(
@@ -667,6 +671,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
                   market={marketPosition}
                   institutionId={instId}
                   institutionName={inst.institution_name}
+                  metroPeerCount={metroPeerCount}
                 />
               </div>
             </section>

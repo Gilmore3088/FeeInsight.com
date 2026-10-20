@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { loadPeerExplorerSection } from "./peer-explorer-actions";
 
@@ -33,6 +33,18 @@ export function PeerExplorerIsland({
 }
 
 const STATE_KEYS = ["peer", "pfee", "pview"] as const;
+
+/**
+ * Brings the explorer into view after a link swapped its set, and puts #peers back in the address.
+ * A soft navigation to the same cached page can drop the hash and leave the reader at the top
+ * (James's Oct 20 review of the "Compare fees with ... local competitors" link), so the scroll is
+ * explicit rather than left to the browser.
+ */
+export function revealPeers(): void {
+  const url = new URL(window.location.href);
+  if (url.hash !== "#peers") window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}#peers`);
+  document.getElementById("peers")?.scrollIntoView({ block: "start" });
+}
 
 function PeerExplorerFromAddress({
   institutionId,
@@ -69,6 +81,21 @@ function PeerExplorerFromAddress({
       live = false;
     };
   }, [institutionId, defaultSet, peers]);
+
+  // A change of ?peers= after the first render came from a link: once the new set shows, reveal it.
+  const lastPeers = useRef(peers);
+  const pendingReveal = useRef(false);
+  const settled = (loaded !== null && loaded.peers === peers) || peers === null || peers === defaultSet || (failed !== null && failed.peers === peers);
+  useEffect(() => {
+    if (lastPeers.current !== peers) {
+      lastPeers.current = peers;
+      pendingReveal.current = true;
+    }
+    if (settled && pendingReveal.current) {
+      pendingReveal.current = false;
+      revealPeers();
+    }
+  }, [peers, settled]);
 
   if (loaded && loaded.peers === peers) return <>{loaded.node}</>;
   // Back on the default set with nothing else chosen, or the asked-for set could not load: the

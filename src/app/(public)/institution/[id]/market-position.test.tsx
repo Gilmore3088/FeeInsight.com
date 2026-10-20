@@ -55,7 +55,7 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("Source: NCUA branch file, quarter ending June 30, 2026.");
     expect(container.textContent).not.toContain("Showing 3 of");
     expect(container.textContent).toContain("Position over time, 2024 to 2026");
-    expect(screen.getByRole("link", { name: /Compare fees with these local competitors/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
+    expect(screen.getByRole("link", { name: /Compare fees with banks in Tallahassee, FL that publish fees/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
     expect(container.textContent).not.toMatch(/Frost/);
   });
 
@@ -82,7 +82,9 @@ describe("MarketPositionCard", () => {
     const onSelect = vi.fn();
     const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={23540} onSelect={onSelect} />);
     expect(container.textContent).toContain("Only the 2026 survey has Subject Bank in this metro");
-    expect(screen.getByRole("link", { name: /Compare fees with competitors in Tallahassee, FL/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Compare fees with banks in Tallahassee, FL that publish fees/ })).toBeInTheDocument();
+    // The explorer compares the home metro only, so a non-home chip says so.
+    expect(container.textContent).toContain("The fee comparison uses its home metro, Tallahassee, FL.");
     fireEvent.click(screen.getByRole("button", { name: "Tallahassee, FL" }));
     expect(onSelect).toHaveBeenCalledWith(45220);
   });
@@ -91,12 +93,43 @@ describe("MarketPositionCard", () => {
     window.history.replaceState(null, "", "/institution/323?fee=nsf");
     try {
       render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
-      expect(screen.getByRole("link", { name: /Compare fees with these local competitors/ })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: /Compare fees with banks in Tallahassee, FL that publish fees/ })).toHaveAttribute(
         "href",
         "/institution/323?fee=nsf&peers=metro#peers",
       );
     } finally {
       window.history.replaceState(null, "", "/");
     }
+  });
+
+  it("should_name_the_explorer_count_of_publishing_banks_on_the_link", () => {
+    const { container } = render(
+      <MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={9} />,
+    );
+    const link = screen.getByRole("link", { name: /Compare fees with the 9 banks in Tallahassee, FL that publish fees/ });
+    expect(link).toBeInTheDocument();
+    expect(container.textContent).not.toContain("The fee comparison uses its home metro");
+  });
+
+  it("should_keep_the_arrow_with_the_last_word", () => {
+    render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={9} />);
+    const link = screen.getByRole("link", { name: /Compare fees/ });
+    const tail = link.querySelector(".whitespace-nowrap");
+    expect(tail?.textContent).toBe("fees\u00a0\u2192");
+  });
+
+  it("should_hide_the_link_when_the_metro_set_is_not_offered", () => {
+    render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={null} />);
+    expect(screen.queryByRole("link", { name: /Compare fees/ })).toBeNull();
+  });
+
+  it("should_show_filter_chips_that_start_on_as_selected", () => {
+    render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
+    const chip = screen.getByRole("button", { name: "Credit unions" });
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    expect(chip.className).toContain("bg-ink");
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    expect(chip.className).not.toContain("bg-ink");
   });
 });
