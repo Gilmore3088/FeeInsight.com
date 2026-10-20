@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**A seat member of a lapsed team sees a team-billing page, not /subscribe.** James, 2026-10-20
+(#1999, from the #1920 billing-state review): a seat member whose team owner's payment has lapsed
+(past due beyond the grace window) sees a short page, "Your team's subscription needs attention",
+asking them to contact the owner, named with the team and an email link when known, instead of
+being sent to /subscribe to buy their own. The owner still goes to /account/billing-issue. The page
+is `/account/team-billing`; every Pro gate routes through `premiumGatePath` in
+`src/lib/team-billing.ts`. Part 2 of #1999 (cancelled accounts still reaching their own legacy
+report jobs) was not decided and stays as it is.
+
 **Previews build only for PRs that change visible files.** James, 2026-10-20: previews build only
 for PRs that change visible files (src/app, src/components, styles, public, build config,
 dependencies); a build failure in a non-visible PR surfaces at the production deploy, which keeps

@@ -9,7 +9,7 @@ const summary = vi.hoisted(() => ({ refreshedOn: null as string | null }));
 
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => ({ id: 1 })) }));
-vi.mock("@/lib/access", () => ({ canAccessPremium: vi.fn(() => true) }));
+vi.mock("@/lib/access", () => ({ canAccessPremium: vi.fn(() => true), isPaymentLapsed: vi.fn(() => false) }));
 vi.mock("@/lib/data-store/fee-index", () => ({
   getNationalIndexCachedStamped: vi.fn(async () => ({ entries: [], stamp: null })),
 }));

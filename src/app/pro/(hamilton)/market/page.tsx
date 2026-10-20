@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { getNationalIndexCachedStamped } from "@/lib/data-store/fee-index";
 import {
   getBeigeBookHeadlines,
@@ -38,7 +38,7 @@ const rowLink =
 export default async function ProMarketPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?from=/pro/market");
-  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/market");
+  await redirectWithoutPremium(user, "/pro/market");
 
   const { entries: allEntries, stamp: indexStamp } = await getNationalIndexCachedStamped();
   const stats = await getPublicStatsCached();

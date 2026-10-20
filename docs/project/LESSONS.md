@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-183 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+184 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — A seat member of a lapsed team sees a team-billing page, not /subscribe. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Previews build only for PRs that change visible files. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Newer-copy check v2 reopens every settled pair. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
