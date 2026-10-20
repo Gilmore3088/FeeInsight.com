@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**Returned statements file as returned mail.** James, 2026-10-20 03:51 UTC, decision card "File
+returned statements under returned mail instead of keeping them held?": "File them". On Oct 7 (v26)
+he had kept them held because no category fit; the returned-mail type made on Oct 15 (#1398) covers
+"returned or undeliverable mail or statements". Knox v90 files them there, the held re-check sends
+the held ones to Darwin (246 held lines at 126 banks match the name; 231 of them passed the release checks in the Oct 20 dry run), and live ones already sit under returned mail.
+
 **A process fix switches on once its sample checks clean; James hears after.** James, 2026-10-20
 01:53 UTC, on a decision card in the "Resolve issues 981 and 982" thread, after asking at 01:52 why
 built fixes were not on. Fixes that change live fees were shipping switched off with a dry-run count

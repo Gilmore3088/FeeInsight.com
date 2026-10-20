@@ -1,5 +1,5 @@
 import { reproducibleFees } from "@/lib/agents/hamilton/rules-recheck";
-import { foldedCategory } from "@/lib/agents/knox/rules";
+import { foldedCategory, RETURNED_STATEMENT } from "@/lib/agents/knox/rules";
 import { foldContext, foldRetiredCategory, isRetiredCategory, researchSplitCategory, researchSplitTarget, splitLiveCategory } from "@/lib/fee-fold";
 
 /**
@@ -91,7 +91,10 @@ export function combineScores(scores: GateScore[]): GateScore {
  * would count the fee found. Pure.
  */
 export function gateKeyFor(fee: AnswerKeyDocument["fees"][number], text: string): string | null {
-  const mapped = fee.key === "unmapped" ? { ...fee, key: foldedCategory(fee.source_line ?? "") ?? "unmapped" } : fee;
+  // v90: the keys mark returned statements "unmapped"; Knox now files them as returned mail (#2454).
+  const line = fee.source_line ?? "";
+  const unmappedKey = foldedCategory(line) ?? (RETURNED_STATEMENT.test(line) ? researchSplitTarget("returned_mail") : "unmapped");
+  const mapped = fee.key === "unmapped" ? { ...fee, key: unmappedKey } : fee;
   if (mapped.key === "unmapped" || mapped.amount == null) return null;
   const key = keyCategory(mapped, text);
   return `${EQUIVALENT[key] ?? key}:${cents(Number(mapped.amount))}`;
