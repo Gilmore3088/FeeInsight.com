@@ -148,7 +148,7 @@ describe("recordable reference-document decisions (#1862)", () => {
     ["a bulleted business label", "Schedule of Fees\nOverdraft fee $25\n• Business Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a cash management label", "Schedule of Fees\nOverdraft fee $25\nCash Management Services\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a non-personal label", "Schedule of Fees\nOverdraft fee $25\n## Non-Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
-    ["a business fees section", "Schedule of Fees\nOverdraft fee $25\nBusiness Checking Fees\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a business fees section", "Schedule of Fees\nOverdraft fee $25\nBusiness Checking Fees\nWire transfer fee $15", "fail", "business_document"],
     ["a treasury fees section", "Schedule of Fees\nOverdraft fee $25\nTreasury Management Fees\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a spaced non personal label", "Schedule of Fees\nOverdraft fee $25\nNon Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a business-only schedule", "Business Fee Schedule\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
