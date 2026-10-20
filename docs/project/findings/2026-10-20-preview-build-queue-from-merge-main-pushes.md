@@ -29,5 +29,5 @@ Draft PRs still build: Vercel's ignore step has no draft flag and no GitHub toke
 **Lesson:** Merge `main` into a branch only when CLAUDE.md says to (a conflict, a dependency, a
 new migration); each merge push into a PR that ships code costs a full preview build.
 
-**Guard:** `scripts/vercel-ignore-build.test.ts:144` (a merge-main push into a docs-only PR skips;
-`:152` an empty retry after a failed page build builds; `:177` production always builds)
+**Guard:** `scripts/vercel-ignore-build.test.ts:181` (a merge-main push into a docs-only PR skips;
+`:189` an empty retry after a failed page build builds; `:214` production always builds)

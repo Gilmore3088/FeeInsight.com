@@ -12,4 +12,4 @@ the history it needs from the shallow clone
 (`findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md`).
 **Lesson:** on a page PR, make sure the last commit of each push touches non-test, non-doc code,
 or check the Vercel comment says "Ready" and not "Ignored" before sending preview links.
-**Guard:** `scripts/vercel-ignore-build.test.ts:74` (a push whose last commit changes only docs or tests, after a page commit, still builds because the diff runs from the last successful deployment)
+**Guard:** `scripts/vercel-ignore-build.test.ts:75` (a push whose last commit changes only docs or tests, after a page commit, still builds because the diff runs from the last successful deployment)
