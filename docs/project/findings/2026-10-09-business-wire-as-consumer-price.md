@@ -8,4 +8,4 @@ named for business, commercial or corporate accounts (read-only SQL, 2026-10-09)
 or corporate and does not also say consumer, personal, retail or individual. "Business day" is
 not a payer. Matching rows are flagged, get a 12h second look, then are archived. This PR.
 **Lesson:** a consumer comparison needs the payer checked as well as the category.
-**Agent lesson:** darwin/pr-898-category-whose-item
+**Agent lesson:** darwin/pr-898-file-by-whose-item

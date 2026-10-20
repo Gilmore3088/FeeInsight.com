@@ -17,4 +17,4 @@ fails a free `atm_non_network` line that names no other bank or network, which m
 **Lesson:** "free at the ATM" is usually the bank's own machine. A non-network price of $0 has
 to say whose network it is.
 
-**Agent lesson:** darwin/pr-898-category-whose-item
+**Agent lesson:** darwin/pr-898-file-by-whose-item
