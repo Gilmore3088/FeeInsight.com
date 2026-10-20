@@ -141,8 +141,19 @@ describe("restoreStillPrinted", () => {
     expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $5.00"), "amount_not_the_fee")).toBe(false);
     expect(restoreStillPrinted(stopPayment, doc("Stop Payment $320.00"), "amount_not_the_fee")).toBe(false);
     expect(restoreStillPrinted(stopPayment, doc("$32.00"), "name_not_in_text")).toBe(false);
-    expect(restoreStillPrinted({ ...stopPayment, amount: "6.25" }, doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
-    expect(restoreStillPrinted({ ...stopPayment, amount: "6.25" }, doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted({ ...stopPayment, fee_name: "Return Deposited Items", amount: "6.25" }, doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted({ ...stopPayment, fee_name: "Return Deposited Items", amount: "6.25" }, doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment\nLine of credit up to $32,000"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment\nWire $132.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Overdraft $35.00 $32.00"), "amount_not_the_fee")).toBe(false);
+  });
+  it("reads only the fee's own document", () => {
+    const texts = [
+      { source_document_id: 7, normalized_text: "Stop Payment Request EFT", updated_at: REREAD_AT },
+      { source_document_id: 8, normalized_text: "Stop Payment $32.00", updated_at: REREAD_AT },
+    ];
+    expect(restoreStillPrinted(stopPayment, texts, "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted({ ...stopPayment, source_document_id: null }, texts, "amount_not_the_fee")).toBe(false);
   });
 });
 

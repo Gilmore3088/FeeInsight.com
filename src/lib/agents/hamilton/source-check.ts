@@ -264,11 +264,14 @@ export function restorableExcerpt(fee: Pick<LiveFeeRow, "fee_name" | "amount" | 
   });
 }
 
-/** The amount as the document would print it: "$25", "$25.00", "$ 25.00"; cents when it has them. */
+/**
+ * The amount as the document would print it: "$25", "$25.00", "$ 25.00"; cents when it has them.
+ * Never "$25,000" or "$25.50". "$1,000.00" is not found for a $1,000 fee, which refuses the restore.
+ */
 function printedPrice(amount: number): RegExp {
   const [whole, cents] = amount.toFixed(2).split(".");
   const tail = cents === "00" ? "(?:\\.00)?" : `\\.${cents}`;
-  return new RegExp(`\\$\\s*${whole}${tail}(?![\\d.]*\\d)`);
+  return new RegExp(`\\$\\s*${whole}${tail}(?![\\d.,]*\\d)`);
 }
 
 /**
@@ -281,7 +284,10 @@ export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], r
   if (reason !== "amount_not_the_fee") return false;
   const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
   const own = texts.find((text) => Number(text.source_document_id) === ownId);
-  return own != null && printedPrice(Number(fee.amount)).test(own.normalized_text ?? "");
+  if (own == null) return false;
+  const text = (own.normalized_text ?? "").replace(/\s+/g, " ").toLowerCase();
+  const name = fee.fee_name.replace(/\s+/g, " ").trim().toLowerCase();
+  return name.length > 0 && text.includes(name) && printedPrice(Number(fee.amount)).test(own.normalized_text ?? "");
 }
 
 const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
@@ -494,7 +500,7 @@ export async function takeDownUntraceableFees(
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
     const verdict = traceLiveFee(fee, institutionTexts);
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
-    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.kind === "untraceable" ? verdict.reason : "")))) {
+    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
       result.readerLost += 1;
       counts.checked += 1;
