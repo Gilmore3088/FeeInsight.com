@@ -1,7 +1,7 @@
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
-import { ProviderBudgetBlockedError, estimateAnthropicCostMicrousd, observedProviderUsage, incompleteProviderResponse } from "@/lib/ai-provider-usage";
+import { ProviderBudgetBlockedError, ProviderCircuitOpenError, estimateAnthropicCostMicrousd, observedProviderUsage, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage } from "@/lib/agents/learning/fee-page";
@@ -15,6 +15,7 @@ import {
   PAID_PASS_ITEMS_PER_RUN,
   PAID_PASS_MODELS,
   paidModelCall,
+  providerRefusalSql,
   paidResponseText,
   type PaidMessageCreator,
   type PaidPassResult,
@@ -202,6 +203,7 @@ async function selectPaidReadCandidates(
               AND paid.input_fingerprint = doc.content_hash
               AND paid.strategy = ${paidParam}
               AND paid.outcome <> ALL(${retryableParam}::text[])
+              AND NOT ${providerRefusalSql("paid")}
          )
        ORDER BY (adt.status = 'needs_ocr') DESC, adt.updated_at DESC, adt.id DESC
        LIMIT ${limitParam}
@@ -211,7 +213,8 @@ async function selectPaidReadCandidates(
 }
 
 function isBudgetStop(error: unknown): boolean {
-  return error instanceof ProviderBudgetBlockedError || error instanceof EmergencyStopActiveError;
+  // A provider billing refusal (#1056) is the account's state, not the scan's: stop, record nothing.
+  return error instanceof ProviderBudgetBlockedError || error instanceof EmergencyStopActiveError || error instanceof ProviderCircuitOpenError;
 }
 
 function callFailureOutcome(error: unknown): AttemptOutcome {

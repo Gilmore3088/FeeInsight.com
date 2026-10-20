@@ -2,6 +2,7 @@ import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
 import { htmlToScoringText } from "@/lib/agents/learning/fee-page";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
@@ -225,6 +226,8 @@ async function hostTaken(db: SqlTag, institutionId: number, origin: string): Pro
 function budgetStop(error: unknown): string | null {
   if (error instanceof ProviderBudgetBlockedError) return error.message || error.reasonCode;
   if (error instanceof EmergencyStopActiveError) return error.message;
+  // A provider billing refusal (#1056) stops the step like a cap; the institution stays queued.
+  if (error instanceof ProviderCircuitOpenError) return error.message;
   return null;
 }
 
