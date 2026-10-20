@@ -145,8 +145,8 @@ describe("billing-access route coverage", () => {
       const start = source.indexOf(`export async function ${action.name}(`);
       const next = source.indexOf("\nexport ", start + 1);
       const body = source.slice(start, next === -1 ? undefined : next);
-      // canAccessPremium (directly or via hasProAccess), a staff role check, or a call to an action that has one.
-      const checked = /canAccessPremium\(|hasProAccess\(\)|user\.role !== "admin"|await loadAnalysisRecord\(|await setWatchedState\(/.test(body);
+      // canAccessPremium (directly, via hasProAccess or via redirectWithoutPremium), a staff role check, or a call to an action that has one.
+      const checked = /canAccessPremium\(|redirectWithoutPremium\(|hasProAccess\(\)|user\.role !== "admin"|await loadAnalysisRecord\(|await setWatchedState\(/.test(body);
       expect(checked, `${action.file}#${action.name} must check access itself: server actions skip the /pro layouts`).toBe(true);
     }
   });

@@ -1,9 +1,8 @@
 export const dynamic = "force-dynamic";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { getCachedFeeCategorySummaries } from "@/lib/data-store/fee-cache";
 import {
   getDisplayName,
@@ -44,9 +43,8 @@ function myFeesHref(category: string): string {
 }
 
 export default async function ProCategoriesPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?from=/pro/categories");
-  if (!canAccessPremium(user)) redirect("/subscribe?from=/pro/categories");
+  // A lapsed payment or a lapsed team goes to its billing page, not /subscribe (issue 1999).
+  await redirectWithoutPremium(await getCurrentUser(), "/pro/categories");
 
   const summaries = await getCachedFeeCategorySummaries();
   const summaryMap = new Map(summaries.map((s) => [s.fee_category, s]));

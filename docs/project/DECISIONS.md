@@ -5,14 +5,25 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**A cancelled account keeps read-only access to its own reports.** James, 2026-10-20 (#1999 part
+2, from the #1920 billing-state review): after a subscription ends, the account can still view and
+download the reports it already has, but it cannot start a new report, re-run or regenerate one,
+or edit a saved board brief. Nobody reads another user's report; an admin can read any report job.
+The read rule is `canReadReportJob` and the start rule `reportStartRefusal` in
+`src/lib/report-access.ts`: the legacy job routes (`/api/reports/[id]/status`, `/download`) let
+the owner read with or without a subscription; `/api/reports/generate`, the Pro report actions and
+the board-brief actions refuse a start with one message that points to /subscribe; and
+`/api/pro/report-pdf` still downloads the account's own saved report (answers, the committee packet
+and published reports stay Pro-only). Pro pages still send a lapsed visitor through
+`premiumGatePath`.
+
 **A seat member of a lapsed team sees a team-billing page, not /subscribe.** James, 2026-10-20
 (#1999, from the #1920 billing-state review): a seat member whose team owner's payment has lapsed
 (past due beyond the grace window) sees a short page, "Your team's subscription needs attention",
 asking them to contact the owner, named with the team and an email link when known, instead of
 being sent to /subscribe to buy their own. The owner still goes to /account/billing-issue. The page
 is `/account/team-billing`; every Pro gate routes through `premiumGatePath` in
-`src/lib/team-billing.ts`. Part 2 of #1999 (cancelled accounts still reaching their own legacy
-report jobs) was not decided and stays as it is.
+`src/lib/team-billing.ts`. Part 2 of #1999 was decided the same day (the entry above).
 
 **Paid market-report links are tied to their payment.** James, 2026-10-20 (#2000, found in the
 #1922 isolation review). Every report link sent to a buyer names the paid request (`leads.id`) it

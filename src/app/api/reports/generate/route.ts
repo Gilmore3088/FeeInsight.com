@@ -22,6 +22,7 @@ import { getCurrentUser, hasPermission } from '@/lib/auth';
 import { getSql } from '@/lib/data-store/connection';
 import { checkFreshness } from '@/lib/report-engine/freshness';
 import { triggerReportJob } from '@/lib/report-agent-runs';
+import { reportStartRefusal } from '@/lib/report-access';
 import type { ReportType } from '@/lib/report-engine/types';
 import { matchesConfiguredCronSecret } from '@/lib/cron-secret';
 import { isProviderLimitError } from '@/lib/ai-provider';
@@ -56,6 +57,12 @@ async function handlePOST(request: Request) {
 
   if (!user && !cronAuthed) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  // #1999: an account without an active subscription keeps read-only access to its own
+  // reports; it can't start or re-run one.
+  const refusal = user ? await reportStartRefusal(user, '/pro/reports') : null;
+  if (refusal) {
+    return NextResponse.json({ error: refusal.error, href: refusal.href }, { status: 403 });
   }
   if (user && !hasPermission(user, 'trigger_jobs')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

@@ -1,6 +1,8 @@
 "use server";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
+import { redirectWithoutPremium } from "@/lib/team-billing";
 import { sql } from "@/lib/data-store/connection";
 import { getHamiltonReportById, saveHamiltonReport } from "@/lib/hamilton/pro-tables";
 import { readSavedOutputFeeRefs } from "@/lib/data-store/saved-output-fee-refs";
@@ -18,7 +20,9 @@ import { marketBoardBriefInput } from "@/components/hamilton/intelligence/market
 /** Source IDs are user-scoped on every save; browser evidence/identity is never accepted. */
 export async function saveBoardBrief(input: { analysisId?: string; reportId?: string; edits: BoardBriefEdits }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
   const user = await getCurrentUser();
-  if (!user || !canAccessPremium(user)) return { success: false, error: "Hamilton access required." };
+  if (!user) return { success: false, error: "Hamilton access required." };
+  // A lapsed account keeps its saved briefs read-only: no new brief and no edits (#1999).
+  if (!canAccessPremium(user)) return { success: false, error: REPORT_START_BLOCKED_MESSAGE };
   if (!input?.edits || typeof input.edits.title !== "string" || typeof input.edits.teamNote !== "string" || typeof input.edits.includeEvidence !== "boolean" || input.edits.title.length > 200 || input.edits.teamNote.length > 5000) return { success: false, error: "Check the title and team note lengths." };
   try {
     if (input.reportId) {
@@ -51,7 +55,9 @@ export async function saveBoardBrief(input: { analysisId?: string; reportId?: st
  */
 export async function createMarketBoardBrief(form: FormData): Promise<void> {
   const user = await getCurrentUser();
-  if (!user || !canAccessPremium(user)) redirect("/subscribe");
+  // A lapsed payment or a lapsed team goes to its billing page, not /subscribe (#1999).
+  await redirectWithoutPremium(user, "/pro/reports");
+  if (!user) return;
   let selection;
   try { selection = decodeLandingResearch(String(form.get("research") ?? "")); } catch { selection = null; }
   if (!selection || selection.scope.kind === "local") redirect("/pro/hamilton");

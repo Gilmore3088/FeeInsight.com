@@ -63,19 +63,28 @@ async function handlePOST(req: NextRequest): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
-  if (!canAccessPremium(user)) {
-    return NextResponse.json({ error: "Pro subscription required" }, { status: 403 });
-  }
+  const premium = canAccessPremium(user);
+  const proRequired = () => NextResponse.json({ error: "Pro subscription required" }, { status: 403 });
 
   // Parse body and dispatch on type
   let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
+    if (!premium) return proRequired();
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
   const pdfType = (body.type as string) || "report";
+
+  // After a subscription ends the account keeps read-only access to its own saved reports
+  // (James, 2026-10-20; #1999), so it can still download one. Answers, the committee packet
+  // (rebuilt from today's data) and published reports stay Pro-only.
+  if (!premium) {
+    const ownId = pdfType === "report" ? recordId(body?.reportId) : null;
+    const own = ownId ? await getHamiltonReportById(ownId, user.id).catch(() => null) : null;
+    if (!own) return proRequired();
+  }
 
   // ── Pricing committee packet ─────────────────────────────────────────────
   if (pdfType === "committee_packet") {

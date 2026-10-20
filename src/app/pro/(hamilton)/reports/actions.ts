@@ -5,6 +5,7 @@ import { partnerReviewContext, reviewAnswerPage } from "@/lib/hamilton/partner-r
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { getCurrentUser } from "@/lib/auth";
 import { canAccessPremium } from "@/lib/access";
+import { REPORT_START_BLOCKED_MESSAGE } from "@/lib/report-access";
 import { loadHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { readHamiltonIdentitySnapshot } from "@/lib/hamilton/identity-display";
@@ -87,7 +88,7 @@ export async function previewReportPeerCoverage(
 ): Promise<PreviewReportPeerCoverageResult> {
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
-  if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
+  if (!canAccessPremium(user)) return { success: false, error: REPORT_START_BLOCKED_MESSAGE };
   if (!normalizeCanonicalInstitutionId(params.institutionId)) {
     return { success: false, error: "Choose a research institution to check report coverage." };
   }
@@ -179,7 +180,7 @@ export async function generateReport(
   const user = await getCurrentUser();
   if (!user) return { success: false, error: "Authentication required" };
   // generateSection() below makes paid model calls: Pro only.
-  if (!canAccessPremium(user)) return { success: false, error: "Pro subscription required" };
+  if (!canAccessPremium(user)) return { success: false, error: REPORT_START_BLOCKED_MESSAGE };
   if (!normalizeCanonicalInstitutionId(params.institutionId)) {
     return { success: false, error: "Choose a research institution before writing this report." };
   }
@@ -626,7 +627,8 @@ export async function loadPublishedReport(reportId: string) {
 /** Explicitly confirmed landing selection; uses the same user-scoped report library/PDF workflow. */
 export async function saveLandingResearchReport(input: { research: unknown; confirmed: boolean }): Promise<{ success: true; reportId: string } | { success: false; error: string }> {
   const user = await getCurrentUser();
-  if (!user || !canAccessPremium(user)) return { success: false, error: "Hamilton access required." };
+  if (!user) return { success: false, error: "Hamilton access required." };
+  if (!canAccessPremium(user)) return { success: false, error: REPORT_START_BLOCKED_MESSAGE };
   if (input.confirmed !== true) return { success: false, error: "Confirm the selection before creating a report." };
   try {
     const { parseLandingResearch } = await import("@/lib/hamilton/landing-research-handoff");
