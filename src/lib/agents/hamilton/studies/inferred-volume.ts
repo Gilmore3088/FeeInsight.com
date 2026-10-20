@@ -32,7 +32,7 @@ import type { Placement, StudyRecord } from "./store";
  */
 
 export const INFERRED_VOLUME_KEY = "inferred_items_paid";
-export const INFERRED_VOLUME_VERSION = 3;
+export const INFERRED_VOLUME_VERSION = 4;
 
 export interface IncomeFeeRow {
   institutionId: number;

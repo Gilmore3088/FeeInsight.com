@@ -1344,7 +1344,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `SOURCE_LINK_DRIFT_VERSION` | `hamilton.source_link_drift` | v1 | `hamilton/source-link.ts` |
 | `FEE_DEPENDENCE_VERSION` | — | v1 | `hamilton/studies/fee-dependence.ts` |
 | `PRICE_STUDY_VERSION` | — | v1 | `hamilton/studies/index.ts` |
-| `INFERRED_VOLUME_VERSION` | — | v3 (income current against the newest filing: banks one quarter, credit union December four quarters, #2052) | `hamilton/studies/inferred-volume.ts` |
+| `INFERRED_VOLUME_VERSION` | — | v4 (income current against the newest filing: banks one quarter, credit union December four quarters, #2052) | `hamilton/studies/inferred-volume.ts` |
 
 The shared figure gate and paid eval use the same explicit monetary-unit normalization
 (`hamilton/monetary-units.ts`): stored thousands/millions/billions become base dollars,
