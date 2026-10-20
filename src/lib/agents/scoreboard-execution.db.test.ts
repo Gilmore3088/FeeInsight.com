@@ -71,8 +71,9 @@ vi.mock("@/lib/agents/deming/change-outcomes", () => ({ runChangeOutcomes: () =>
 vi.mock("@/lib/agents/deming/sunday-maintenance", () => ({ runSundayMaintenance: () => effect("deming-sunday-maintenance", { email: null }), summarizeSundayMaintenance: () => "Synthetic maintenance" }));
 vi.mock("@/lib/agents/atlas/city-repair", () => ({ runCityRepair: () => effect("atlas-city-repair"), summarizeCityRepair: () => "Synthetic city repair", cityRepairDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/atlas/hand-link-repair", () => ({ runHandLinkRepair: () => effect("hand-links", { candidates: [] }), summarizeHandLinkRepair: () => "Synthetic links", handLinkRepairDetail: () => ({ fixture: true }) }));
-vi.mock("@/lib/agents/atlas/storage-retention", () => ({ runStorageRetention: () => effect("atlas-storage-retention"), summarizeStorageRetention: () => "Synthetic retention", storageRetentionDetail: () => ({ fixture: true }) }));
+vi.mock("@/lib/agents/atlas/storage-retention", () => ({ runStorageRetention: () => effect("atlas-storage-retention", { alerts: [] }), summarizeStorageRetention: () => "Synthetic retention", storageRetentionDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/hoovie/storage-tiers", () => ({ runColdTier: () => effect("cold-tier"), summarizeColdTier: () => "Synthetic cold tier", coldTierDetail: () => ({ fixture: true }) }));
+vi.mock("@/lib/agents/atlas/vault-retention", () => ({ runVaultRetention: () => effect("vault-retention", { alerts: [] }), summarizeVaultRetention: () => "Synthetic vault", vaultRetentionDetail: () => ({ fixture: true }) }));
 
 import { executeAgentRun, executeQueuedAgentRuns, reapStaleAgentSteps, startAgentRun, type StartAgentRunInput } from "./run-store";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";

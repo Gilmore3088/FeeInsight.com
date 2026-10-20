@@ -113,6 +113,8 @@ import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agen
 import { handLinkRepairDetail, runHandLinkRepair, summarizeHandLinkRepair } from "@/lib/agents/atlas/hand-link-repair";
 import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
 import { coldTierDetail, runColdTier, summarizeColdTier } from "@/lib/agents/hoovie/storage-tiers";
+import { runVaultRetention, summarizeVaultRetention, vaultRetentionDetail } from "@/lib/agents/atlas/vault-retention";
+import { r2Client } from "@/lib/agents/document-vault";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -2632,10 +2634,13 @@ async function executeAgenticStep(
       const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
+      // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
+      const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client(), commitDb: sql });
       return {
         status: "completed",
-        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)}`,
-        detail: { ...storageRetentionDetail(result), cold_tier: coldTierDetail(cold) },
+        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
+        // The vault's warnings join `alerts`, which the morning brief emails.
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts], cold_tier: coldTierDetail(cold), vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {

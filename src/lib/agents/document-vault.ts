@@ -1,4 +1,4 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import type { sql } from "@/lib/data-store/connection";
@@ -117,6 +117,17 @@ async function vaultAbortable<T>(work:Promise<T>,signal?:AbortSignal):Promise<T>
 
 export function getDocumentVault(): DocumentVault {
   return createDocumentVault(r2Client());
+}
+
+/**
+ * Removes one stored document from the vault (#1041). Only Atlas's vault retention calls it, and
+ * only for a key its lineage check cleared and only while `VAULT_RETENTION_LIVE` is on
+ * (`src/lib/agents/atlas/vault-retention.ts`). Refuses anything that is not a vault key, so a
+ * cold file or another object in the same bucket can never be removed through it.
+ */
+export async function deleteVaultObject(client: S3Client, key: string, bucket: string = documentsBucket()): Promise<void> {
+  if (!isVaultKey(key)) throw new Error(`Not a document vault key: ${key}`);
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
 const readyCache = new WeakMap<object, boolean>();
