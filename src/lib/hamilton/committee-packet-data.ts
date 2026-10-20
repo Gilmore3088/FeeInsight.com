@@ -1,7 +1,7 @@
 /**
  * Server reads for the pricing committee packet. Every read is an existing governed reader:
  * - fees and peers: getEngineFeePeers (published_fee_catalog via getPeerFeeValues /
- *   getInstitutionFeeValues; the same peer choice as Research) and getInstitutionFeeRows;
+ *   getInstitutionOwnFees; the same peer choice as Research) and getInstitutionFeeRows;
  * - quarter on quarter: getQuarterlyChanges (hamilton_briefing_snapshots);
  * - peer fee changes: loadConfirmedFeeChanges (fee_change_records, borne out by each schedule);
  * - filed income trend: getEngineFeePeers' financials (institution_financial_records);
@@ -12,7 +12,7 @@
  * packet down.
  */
 import { getFeeRevenueDataCached } from "@/lib/data-store/public-cached-reads";
-import { getInstitutionFeeRows, getInstitutionFeeValues } from "@/lib/data-store/fee-index";
+import { getInstitutionFeeRows, getInstitutionOwnFees } from "@/lib/data-store/fee-index";
 import { getWatchedFeeCategories } from "@/lib/data-store/hamilton-workspace";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
@@ -36,7 +36,7 @@ import type { Fact } from "./workspace/types";
 export async function packetFeeList(userId: number, institutionId: number): Promise<{ fees: string[]; source: "watchlist" | "published" }> {
   const watched = await getWatchedFeeCategories(userId);
   if (watched.length) return { fees: watched.slice(0, MAX_PACKET_FEES), source: "watchlist" };
-  const own = await getInstitutionFeeValues(institutionId).catch(() => new Map<string, number>());
+  const own = await getInstitutionOwnFees(institutionId).catch(() => new Map<string, unknown>());
   const rank = (c: string) => {
     const i = (FEATURED_FEES as readonly string[]).indexOf(c);
     return i === -1 ? FEATURED_FEES.length : i;

@@ -897,7 +897,7 @@ export async function getEngineFeePeers(
   if (categories.length === 0) return null;
   const base = await loadBase(institutionId, categories, options);
   if (!base) return null;
-  const financialRows = await loadServiceChargeRows(institutionId).catch(() => [] as ServiceChargeRow[]);
+  const financialRows = await loadServiceChargeRows(institutionId, base.charterType).catch(() => [] as ServiceChargeRow[]);
   const financials = await withPeerMedian(base, institutionFinancials(financialRows)).catch(() => null);
   return {
     institutionName: base.institutionName,
