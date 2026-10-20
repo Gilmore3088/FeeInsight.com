@@ -34,7 +34,7 @@ describe("committee packet PDF", () => {
       expect(totalPages).toBeGreaterThanOrEqual(6);
       expect(totalPages).toBeLessThanOrEqual(20);
       // No page holds only its footer.
-      for (const page of pages) expect(page.replace(/\s+/g, " ").replace(/Hamilton — Fee Insight · Pricing committee brief · read [A-Za-z]+ \d+, \d{4}/, "").replace(/Page \d+ of \d+/, "").trim().length).toBeGreaterThan(40);
+      for (const page of pages) expect(page.replace(/\s+/g, " ").replace(/Hamilton, from Fee Insight · Pricing committee brief · read [A-Za-z]+ \d+, \d{4}/, "").replace(/Page \d+ of \d+/, "").trim().length).toBeGreaterThan(40);
       const all = pages.join("\n").replace(/\s+/g, " ");
       // Page one is the assessment; page two the supporting exhibits; then the evidence appendix.
       const one = pages[0].replace(/\s+/g, " ");
