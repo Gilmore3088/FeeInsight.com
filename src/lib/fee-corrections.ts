@@ -23,6 +23,8 @@ import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { rebuildIndexAfterAdminAction, recordAdminFeeRun } from "@/lib/fee-admin-run";
 import { correctionsReady } from "./fee-correction-guard";
+import { captureCorrectiveSource } from "@/lib/agents/deming/corrective-source-store";
+import type { CorrectiveDocument } from "@/lib/agents/deming/corrective-source";
 
 import {
   CORRECTION_BATCH_PREFIX,
@@ -155,6 +157,7 @@ interface Evidence {
   documentUrl: string | null;
   documentR2Key: string | null;
   check: Record<string, unknown>;
+  learningDocument: CorrectiveDocument;
 }
 
 /** Checks the corrected value against the named document's stored text. Null with an error when it fails. */
@@ -163,11 +166,11 @@ async function checkEvidence(
   institutionId: number,
   input: { sourceDocumentId: number; sourceExcerpt: string; feeName: string; amount: number; canonicalFeeKey: string; conditions: string | null },
 ): Promise<{ ok: true; evidence: Evidence } | { ok: false; error: string; field: string }> {
-  const docs = await tx<{ id: number | string; institution_id: number | string; document_url: string | null; document_r2_key: string | null; normalized_text: string | null }[]>`
-    SELECT sd.id, sd.institution_id, sd.document_url, sd.document_r2_key, t.normalized_text
+  const docs = await tx<{ id: number | string; institution_id: number | string; document_url: string | null; document_r2_key: string | null; content_hash: string | null; ast_id: number | string | null; ast_institution_id: number | string | null; text_hash: string | null; source_hash: string | null; normalized_text: string | null }[]>`
+    SELECT sd.id, sd.institution_id, sd.document_url, sd.document_r2_key, sd.content_hash, t.normalized_text, t.ast_id, t.ast_institution_id, t.text_hash, t.source_hash
       FROM source_documents sd
       LEFT JOIN LATERAL (
-        SELECT ast.normalized_text FROM agent_source_texts ast
+        SELECT ast.normalized_text, ast.id AS ast_id, ast.institution_id AS ast_institution_id, ast.text_hash, ast.source_hash FROM agent_source_texts ast
          WHERE ast.source_document_id = sd.id
            AND ast.status = 'completed' AND ast.normalized_text IS NOT NULL
          ORDER BY ast.id DESC LIMIT 1
@@ -203,6 +206,10 @@ async function checkEvidence(
       documentUrl: doc.document_url,
       documentR2Key: doc.document_r2_key,
       check: { check: "checkFeeAgainstSource", ok: true, source_line: check.sourceLine },
+      // Freeze exactly the normalization actually checked above, never a later convenient read.
+      learningDocument: { id: Number(doc.id), institutionId: Number(doc.institution_id), astId: Number(doc.ast_id),
+        astInstitutionId: Number(doc.ast_institution_id), status: "completed", documentUrl: doc.document_url ?? "",
+        contentHash: doc.content_hash ?? "", sourceHash: doc.source_hash ?? "", textHash: doc.text_hash ?? "", normalizedText: doc.normalized_text },
     },
   };
 }
@@ -361,6 +368,9 @@ async function writeVersion(tx: SqlTag, w: WriteVersion): Promise<FeeCorrectionR
     runId: run.runId,
     dedupeKey: `${FEE_CORRECTION_CHECK}:${correctionId}`,
   }]);
+  if (w.action === "correct" && w.evidence) {
+    await captureCorrectiveSource(tx, { correctionId, runId: run.runId, stepId: run.stepId, document: w.evidence.learningDocument });
+  }
   const refresh = await rebuildIndexAfterAdminAction(tx, run);
   return {
     ok: true,

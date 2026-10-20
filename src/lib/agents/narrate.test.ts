@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { narrateEvent, narrateStepFinished } from "./narrate";
+import { narrateEvent, narrateStepFinished, STEP_OWNER } from "./narrate";
 import { verifiedRecheckReceipt } from "./darwin/verified-recheck-receipt";
 
 describe("narrateStepFinished", () => {
+  it("attributes bounded HMDA repair to Hoovie and separates preview, apply and receipt replay", () => {
+    expect(STEP_OWNER["hmda-identity-repair"]).toBe("hoovie");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "preview", writes: 0 })).toBe("Reviewed the bounded HMDA identity scope; no source or identity data changed.");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "apply" })).toContain("receipt records the exact changed rows");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "apply", replayed: true })).toContain("no repeated identity writes");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "rollback" })).toContain("recorded post-images");
+  });
+
   it("independently discloses unknown returned-response costs without calling them zero", () => {
     expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 1, cost_microusd: 220, unknown_cost_responses: 1 }))
       .toContain("$0.00 in known estimates; cost unavailable for 1 returned response");
@@ -188,5 +196,22 @@ describe("Regulatory Wire notes stopped by a budget (#1149)", () => {
       budget_reason: "Monthly cap agent:magellan: $150.02 used of $150.00; resets the 1st at 00:00 UTC.",
     });
     expect(sentence).toBe("Wrote 0 Regulatory Wire research notes from 20 items; 0 unreadable, 0 failed. Stopped by a budget cap with 6 items waiting: Monthly cap agent:magellan: $150.02 used of $150.00; resets the 1st at 00:00 UTC.");
+  });
+});
+
+
+describe("corrective source receipt narration", () => {
+  it("does not fill absent or malformed corrective counts with zero", () => {
+    for(const value of [undefined,null,-1,1.5,"2",false]) {
+      const sentence=narrateStepFinished("deming-regression",{schema_ready:true,corrective_source:{protocol:2,evaluated:value,caught:value,unavailable:{count:value}}});
+      expect(sentence).toContain("unknown evaluated, unknown matched; unavailable unknown");
+    }
+  });
+  it("does not turn unknown source evidence into a passing denominator", () => {
+    const sentence = narrateStepFinished("deming-regression", { schema_ready: true, promoted: 0, replayed: 0, caught: 0, regressions: 0,
+      corrective_source: { protocol: 2, evaluated: 0, caught: 0, unavailable: { count: null, atLeast: false } } });
+    expect(sentence).toContain("0 evaluated, 0 matched; unavailable unknown");
+    expect(sentence).toContain("Original extraction binding is unknown");
+    expect(sentence).not.toContain("100%");
   });
 });

@@ -70,6 +70,11 @@ import { runChangeOutcomes, summarizeChangeOutcomes } from "@/lib/agents/deming/
 import { refreshPageClassifier } from "@/lib/agents/magellan/page-classifier";
 import { isRegistryStepKey, runRegistryStep } from "@/lib/agents/magellan/registry";
 import {
+  executeHmdaIdentityRepair,
+  HMDA_IDENTITY_REPAIR_STEP_KEY,
+  parseHmdaRepairParams,
+} from "@/lib/agents/hoovie/hmda-identity-repair";
+import {
   clusterPublicDiscoveryFindings,
   runPublicDiscoveryAudit,
   summarizePublicDiscoveryDiagnosis,
@@ -104,6 +109,7 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { persistCorrectiveArtifact, recordCorrectiveWarnings } from "@/lib/agents/deming/corrective-source-store";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
@@ -348,6 +354,18 @@ async function executeAgenticStep(
   const stateCode = normalizeStateCode(
     stringRunParam(params, ["state_code", "stateCode", "state"]),
   ) ?? undefined;
+
+  // This reviewed repair is manual-only. Its source verification happens before
+  // its own bounded transaction; step input must not override the reviewed run config.
+  if (step.stepKey === HMDA_IDENTITY_REPAIR_STEP_KEY) {
+    const repairParams = parseHmdaRepairParams(run.params);
+    const expectedKind = repairParams.mode === "preview" ? "dry_run" : "manual_repair";
+    if (run.triggerSource !== "admin" || run.runKind !== expectedKind) {
+      throw new Error("HMDA identity repair requires an explicit admin run with the matching execution mode.");
+    }
+    const result = await executeHmdaIdentityRepair({ db: tx, runId: run.id, stepId: step.id, params: repairParams });
+    return { status: "completed", ...result };
+  }
 
   // Regulator-data steps (registry-*) share one dispatcher in magellan/registry.
   if (isRegistryStepKey(step.stepKey)) {
@@ -2570,6 +2588,10 @@ async function executeAgenticStep(
     }
     case "deming-regression": {
       const result = await runDemingRegression({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const fixture = result.corrective && run.runKind !== "dry_run"
+        ? await persistCorrectiveArtifact(tx, run.id, step.id, result.corrective.artifact)
+        : { state: "not_stored", ciImport: "not_implemented" };
+      if (result.corrective?.warnings.length) await recordCorrectiveWarnings(tx, run.id, step.id, result.corrective.warnings);
       return {
         status: "completed",
         summary: summarizeDemingRegression(result),
@@ -2588,6 +2610,12 @@ async function executeAgenticStep(
           retired: result.retired,
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
+          totals_scope: "historical_all_datasets",
+          corrective_source: result.corrective ? { protocol: 2, promoted: result.corrective.promoted, evaluated: result.corrective.evaluated,
+            caught: result.corrective.caught, activated: result.corrective.activated, regressions: result.corrective.regressions,
+            unavailable: result.corrective.unavailable, admission_limit_reached: result.corrective.admissionLimitReached,
+            replay_limit_reached: result.corrective.replayLimitReached, deferred: result.corrective.deferred, fixture,
+            warnings: result.corrective.warnings } : null,
         },
       };
     }
@@ -3701,9 +3729,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
  * killed ticks (runs 6483 and 6552 failed after three tries, Oct 15). They run from their own
  * route (`/api/admin/crew/answer-eval`). The hourly lane sync (`lane-sync`) fits a tick but would
  * spend most of one before any lane work, as it did inside the tick until 2026-10-18; it runs
- * from `/api/admin/crew/lane-sync`.
+ * from `/api/admin/crew/lane-sync`. The bounded HMDA identity repair requires an explicit
+ * admin advance of its reviewed configuration, so the tick never starts it either.
  */
-export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "lane-sync"] as const;
+export const TICK_EXCLUDED_STEP_KEYS = ["hamilton-answer-eval", "hamilton-paid-answer-eval", "lane-sync", HMDA_IDENTITY_REPAIR_STEP_KEY] as const;
 /** Steps not listed above: most run in seconds, so this keeps an unknown long one safe. */
 const DEFAULT_STEP_EXPECTED_MS = 120_000;
 /**
@@ -4104,6 +4133,8 @@ export async function executeAgentRun(
           step.stepKey === "report-reconcile" ||
           // The lane sync writes through its own statements; a step transaction would sit idle.
           step.stepKey === "lane-sync" ||
+          // A person's bounded HMDA repair verifies its source before opening its own transaction.
+          step.stepKey === HMDA_IDENTITY_REPAIR_STEP_KEY ||
           Object.values(LIVE_AUDIT_STEPS).includes(step.stepKey as never) ||
           isRegistryStepKey(step.stepKey)
             ? await executeAgenticStep(sql, run, step)
@@ -4246,7 +4277,7 @@ export async function executeQueuedAgentRuns({
                 AND NOT s.step_key = ANY(${[...MARKETING_STEP_KEYS]}::text[])
                 AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
               OR (${pauseExemptOnly} AND NOT s.step_key = ANY(${[...PAUSE_EXEMPT_STEP_KEYS]}::text[]))
-              -- A step that cannot finish inside a tick runs only from its own route.
+              -- Long or manual-only steps require their explicit execution route.
               OR s.step_key = ANY(${[...TICK_EXCLUDED_STEP_KEYS]}::text[])
             )
        )

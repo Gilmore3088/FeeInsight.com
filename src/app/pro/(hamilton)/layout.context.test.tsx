@@ -36,6 +36,26 @@ it("keeps reopened report A's authorized subject when the URL points at B", asyn
   expect(mocks.resolve).toHaveBeenCalledWith(expect.objectContaining({ instId: "8109", transientSource: "artifact", persistUrlSelection: false }));
 });
 
+it.each(["scenario", "scenario_id"])("keeps a reopened simulation's subject in the shell (%s)", async (alias) => {
+  mocks.headers.mockResolvedValue(new Headers({ "x-invoke-path": `/pro/simulate?${alias}=saved-a&instId=1535` }));
+  mocks.artifact.mockResolvedValue("8109");
+  const value = await props();
+  expect(mocks.artifact).toHaveBeenCalledWith({ userId: 25, lookup: { kind: "scenario", artifactId: "saved-a" } });
+  expect(mocks.resolve).toHaveBeenCalledWith(expect.objectContaining({ instId: "8109", transientSource: "artifact", persistUrlSelection: false }));
+  expect(value.selectedInstitutionId).toBe("8109");
+  expect(value.institutionContext.name).toBe("Original saved A");
+});
+
+it.each(["missing", "unscoped", "failed read"])("leaves the shell unscoped for a %s saved simulation", async (kind) => {
+  mocks.headers.mockResolvedValue(new Headers({ "x-invoke-path": "/pro/simulate?scenario_id=saved-a&instId=1535" }));
+  if (kind === "failed read") mocks.artifact.mockRejectedValue(new Error("Synthetic database failure"));
+  else mocks.artifact.mockResolvedValue(null);
+  const value = await props();
+  expect(mocks.resolve).not.toHaveBeenCalled();
+  expect(value.selectedInstitutionId).toBeNull();
+  expect(value.institutionContext.name).toBeNull();
+});
+
 it.each(["legacy unscoped", "unavailable private"])("does not borrow B for a %s saved report", async (kind) => {
   // The stored-preference mock would produce B even with no URL institution.
   if (kind === "legacy unscoped") mocks.headers.mockResolvedValue(new Headers({ "x-invoke-path": "/pro/reports?report_id=legacy" }));

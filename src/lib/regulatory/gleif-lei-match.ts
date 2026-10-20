@@ -1,3 +1,5 @@
+import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
+import { createGleifIdentityVeto, FDIC_IDENTITY_HOLD_REASON } from "./gleif-identity-holds";
 import { GLEIF_API_BASE, normalizeLei, type GleifEntity, type RegistrationAuthority } from "./gleif";
 
 /**
@@ -72,6 +74,8 @@ export interface LeiUniverseInstitution {
   id: number;
   source: string;
   lei: string | null;
+  linkedLei?: string | null;
+  identityLeis?: string[];
   rssd: string | null;
   cert: string | null;
   charter: string | null;
@@ -95,7 +99,7 @@ function institutionKey(inst: LeiUniverseInstitution, basis: KeyBasis): string |
  * One proposal per institution that carries the key, from the records registered with that key's
  * authorities. Records whose authority is not one of `authorityIds` are ignored.
  */
-export function proposeByKey(universe: LeiUniverseInstitution[], entities: GleifEntity[], basis: KeyBasis, authorityIds: Set<string>): Map<number, LeiProposal> {
+export function proposeByKey(universe: LeiUniverseInstitution[], entities: GleifEntity[], basis: KeyBasis, authorityIds: Set<string>, holds: readonly FdicIdentityHold[] = []): Map<number, LeiProposal> {
   const leisByKey = new Map<string, Set<string>>();
   for (const e of entities) {
     if (!e.registeredAtId || !authorityIds.has(e.registeredAtId) || !usableEntity(e)) continue;
@@ -121,21 +125,25 @@ export function proposeByKey(universe: LeiUniverseInstitution[], entities: Gleif
       else out.set(id, { kind: "linked", basis, key, lei: leis[0] });
     }
   }
+  for (const inst of universe) {
+    const proposal = out.get(inst.id);
+    if (proposal) out.set(inst.id, vetoLeiProposal(inst, proposal, holds));
+  }
   return out;
 }
 
 /** Institutions that carry their own LEI. */
-export function proposeOwnLei(universe: LeiUniverseInstitution[]): Map<number, LeiProposal> {
+export function proposeOwnLei(universe: LeiUniverseInstitution[], holds: readonly FdicIdentityHold[] = []): Map<number, LeiProposal> {
   const out = new Map<number, LeiProposal>();
   for (const inst of universe) {
     const lei = normalizeLei(inst.lei);
-    if (lei) out.set(inst.id, { kind: "linked", basis: "own_lei", key: lei, lei });
+    if (lei) out.set(inst.id, vetoLeiProposal(inst, { kind: "linked", basis: "own_lei", key: lei, lei }, holds));
   }
   return out;
 }
 
 /** The exact name-and-state rule over one search's records. */
-export function proposeByNameState(inst: LeiUniverseInstitution, entities: GleifEntity[]): LeiProposal {
+export function proposeByNameState(inst: LeiUniverseInstitution, entities: GleifEntity[], holds: readonly FdicIdentityHold[] = []): LeiProposal {
   const name = normalizeLegalName(inst.name);
   const state = inst.state?.trim().toUpperCase() ?? null;
   const key = name && state ? `${name}|${state}` : null;
@@ -143,7 +151,24 @@ export function proposeByNameState(inst: LeiUniverseInstitution, entities: Gleif
   const leis = [...new Set(entities.filter((e) => usableEntity(e) && e.legalState === state && normalizeLegalName(e.legalName) === name).map((e) => e.lei))].sort();
   if (leis.length === 0) return { kind: "none", basis: "name_state", key, reason: "No GLEIF record has this exact legal name in this state" };
   if (leis.length > 1) return { kind: "ambiguous", basis: "name_state", key, candidates: leis, reason: `${leis.length} GLEIF records have this exact legal name in this state` };
-  return { kind: "linked", basis: "name_state", key, lei: leis[0] };
+  return vetoLeiProposal(inst, { kind: "linked", basis: "name_state", key, lei: leis[0] }, holds);
+}
+
+/** Holds remain authoritative even when another key or name proposal agrees. */
+export function vetoLeiProposal(inst: LeiUniverseInstitution, proposal: LeiProposal, holds: readonly FdicIdentityHold[]): LeiProposal {
+  const veto = createGleifIdentityVeto(holds);
+  const candidates = proposal.kind === "linked" ? [proposal.lei] : proposal.kind === "ambiguous" ? proposal.candidates : [];
+  if (!veto.blocksInstitution(inst.id, inst.cert, inst.source) && !veto.blocksLei(inst.lei) && !veto.blocksLei(inst.linkedLei) && !inst.identityLeis?.some((lei) => veto.blocksLei(lei)) && !candidates.some((lei) => veto.blocksLei(lei))) return proposal;
+  return { kind: "ambiguous", basis: proposal.basis, key: proposal.key,
+    candidates: [...new Set([...candidates, ...veto.institutionLeis(inst.id, inst.cert, inst.source)])].sort(), reason: FDIC_IDENTITY_HOLD_REASON };
+}
+
+/** Overlay after merge as well: an older accepted key cannot bypass a publisher hold. */
+export function vetoLeiLink(row: LeiLinkRow, inst: Pick<LeiUniverseInstitution, "id" | "cert" | "source" | "lei" | "linkedLei" | "identityLeis">, holds: readonly FdicIdentityHold[]): LeiLinkRow {
+  const veto = createGleifIdentityVeto(holds);
+  if (!veto.blocksInstitution(inst.id, inst.cert, inst.source) && !veto.blocksLei(inst.lei) && !veto.blocksLei(inst.linkedLei) && !inst.identityLeis?.some((lei) => veto.blocksLei(lei)) && !veto.blocksLei(row.lei) && !row.candidates.some((lei) => veto.blocksLei(lei))) return row;
+  return { ...row, status: "ambiguous", lei: null,
+    candidates: [...new Set([...(row.lei ? [row.lei] : []), ...row.candidates, ...[inst.lei, inst.linkedLei, ...(inst.identityLeis ?? [])].filter((lei): lei is string => typeof lei === "string" && veto.blocksLei(lei)), ...veto.institutionLeis(inst.id, inst.cert, inst.source)])].sort(), reason: FDIC_IDENTITY_HOLD_REASON };
 }
 
 export interface LeiLinkRow {
