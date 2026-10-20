@@ -24,3 +24,5 @@ full application CI success; inspect the final head's GitHub Actions run before 
 
 Source evidence: https://github.com/Gilmore3088/FeeInsight.com/actions/runs/37997537194
 Artifact `backlog-resolution-evidence`, file `ci-failure-excerpt.txt`.
+
+**Guard:** `src/lib/vitest-collection.test.ts:22` (no file Vitest's default include collects imports `node:test`; Node-runner checks stay `*.node-check.mjs`)

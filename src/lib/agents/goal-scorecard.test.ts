@@ -8,6 +8,7 @@ import {
   readerMissSince,
   summarizeReaderRemedies,
   weekStartUtc,
+  coverageGroupsSql,
   coverageTarget,
   goalBriefLines,
   goalHeadline,
@@ -439,4 +440,26 @@ it("prints the completed and planned samples without filling missing legacy coun
   const line=goalBriefLines(await readGoalScorecard(db)).find(line=>line.startsWith("Hamilton answers"));
   expect(line).toContain("17 of 90 planned institutions asked, 24 of 40 Pro questions replayed");
   expect(line).toContain("stopped at its time budget");
+});
+
+// 2026-10-14-catalog-subquery-nested-loop: with the live list as a plain subquery over
+// published_fee_catalog, Postgres misestimated the institution filter and rescanned the catalog
+// once per institution (25.3M rows discarded, 3.9 s every hour).
+describe("coverageGroupsSql reads the live catalog once", () => {
+  type Fragment = { parts: readonly string[]; params: unknown[] };
+  const tag = ((parts: TemplateStringsArray, ...params: unknown[]): Fragment => ({ parts, params })) as unknown as Parameters<typeof coverageGroupsSql>[0];
+  const render = (fragment: Fragment): string =>
+    fragment.parts.reduce((text, part, i) => {
+      const param = fragment.params[i - 1];
+      const inner = param && typeof param === "object" && "parts" in param ? render(param as Fragment) : "?";
+      return text + inner + part;
+    });
+
+  it.each([false, true])("materializes the live list and hash-joins it to institutions (weekAgo %s)", (weekAgo) => {
+    const text = render(coverageGroupsSql(tag, { weekAgo }) as unknown as Fragment).replace(/\s+/g, " ");
+    expect(text).toMatch(/^ ?WITH live AS MATERIALIZED \( SELECT DISTINCT institution_id FROM public\.published_fee_catalog \)/);
+    expect(text.match(/published_fee_catalog/g)).toHaveLength(1);
+    expect(text).toContain("LEFT JOIN live ON live.institution_id = i.id");
+    if (weekAgo) expect(text).toContain("week_ago AS MATERIALIZED (");
+  });
 });

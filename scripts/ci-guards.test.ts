@@ -310,3 +310,35 @@ describe("queue-owner-kill", () => {
     expect(output).toContain("label_queue");
   });
 });
+
+/** migration-lock-kill (2026-10-15-migration-lock-timeout): a migration that locks a busy table sets lock_timeout. */
+describe("migration-lock-kill", () => {
+  function lockRepo(files: Record<string, string>) {
+    repo = mkdtempSync(join(tmpdir(), "lock-guard-"));
+    for (const [name, sql] of Object.entries(files)) write(`supabase/migrations/${name}`, sql);
+    const out = spawnSync("bash", [GUARD, "migration-lock-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes a busy-table ALTER that sets lock_timeout, a quiet table, and applied history", () => {
+    const { status, output } = lockRepo({
+      "20270110000048_old.sql": "ALTER TABLE public.raw_fee_observations ADD COLUMN note text;\n",
+      "20270110000072_note.sql": "SET lock_timeout = '10s';\nALTER TABLE public.raw_fee_observations\n  ADD COLUMN extraction_note text;\n",
+      "20270110000073_quiet.sql": "ALTER TABLE public.state_expert_notes ADD COLUMN body text;\n-- ALTER TABLE raw_fee_observations in a comment\n",
+    });
+    expect(status, output).toBe(0);
+  });
+
+  it("fails a new ALTER, index, catalog view or trigger on a busy table without lock_timeout", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_alter.sql": "alter table\n  raw_fee_observations add column extraction_note text;\n",
+      "20270110000073_index.sql": "CREATE UNIQUE INDEX dedup_idx\n  ON public.verified_fee_observations (fee_raw_id);\n",
+      "20270110000074_view.sql": "CREATE OR REPLACE VIEW public.published_fee_catalog AS SELECT 1;\n",
+      "20270110000075_trigger.sql": "CREATE TRIGGER t AFTER INSERT ON public.agent_run_steps FOR EACH ROW EXECUTE FUNCTION f();\n",
+      "20270110000076_ok.sql": "SET LOCAL lock_timeout = '5s';\nALTER TABLE institution_sources ADD COLUMN x int;\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_alter", "073_index", "074_view", "075_trigger"]) expect(output).toContain(`20270110000${name}.sql`);
+    expect(output).not.toContain("076_ok");
+  });
+});

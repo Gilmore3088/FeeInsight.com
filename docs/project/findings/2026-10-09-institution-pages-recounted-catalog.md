@@ -21,3 +21,5 @@ cache. Next bypasses an `unstable_cache` nested inside another one, so the cover
 every miss: 330 calls from 03:55 to 04:25 at about 750 ms. The coverage cache is now read beside the
 per-institution cache, never inside it. Any `cachedPublicRead` called from inside another cached read
 does not cache.
+
+**Guard:** `src/lib/data-store/public-cached-reads.test.ts:59` (the peer rank reads the coverage and peer-value caches beside each other, never one cached read inside another)

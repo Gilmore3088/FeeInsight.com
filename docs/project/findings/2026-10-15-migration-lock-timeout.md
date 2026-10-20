@@ -52,3 +52,5 @@ Only then merge the code that uses the new column or table.
 ## For next time
 - A migration that takes an ACCESS EXCLUSIVE lock on a busy table should be applied with the pipeline paused, and with a `lock_timeout` that fails fast.
 - Always confirm on prod that the migration landed. A successful merge does not mean the migration applied.
+
+**Guard:** `scripts/ci-guards.sh migration-lock-kill` (a migration after 20270110000071 that alters, indexes, re-creates a catalog view on or triggers a busy fee, source or run table must set `lock_timeout`; tests `scripts/ci-guards.test.ts:315`)
