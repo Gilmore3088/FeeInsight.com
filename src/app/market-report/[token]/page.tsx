@@ -9,7 +9,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ReportChrome, ReportChromeFooter } from "@/components/public/report-chrome";
 import { verifyReportToken } from "@/lib/custom-report/link";
-import { isReportRevoked } from "@/lib/data-store/report-payments";
+import { reportLinkOpens } from "@/lib/custom-report/link-access";
 import { loadMarketReport } from "@/lib/custom-report/report-data";
 import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
 import { TrackView } from "@/components/track-view";
@@ -46,8 +46,8 @@ export default async function MarketReportPage({ params }: PageProps) {
   const { token } = await params;
   const verified = verifyReportToken(token);
   if (!verified) notFound();
-  // A refunded report's link closes.
-  if (await isReportRevoked(verified.institutionId)) notFound();
+  // A refunded payment's link closes.
+  if (!(await reportLinkOpens(verified))) notFound();
 
   const report = await loadMarketReport(verified.institutionId);
   if (!report || !report.data.market) notFound();

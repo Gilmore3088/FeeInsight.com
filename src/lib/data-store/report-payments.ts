@@ -85,6 +85,22 @@ export async function isReportRevoked(institutionId: number): Promise<boolean> {
   return row?.revoked === true;
 }
 
+/**
+ * True when this paid request is for this institution and its payment is live: paid and not
+ * refunded. A purchase-bound report link opens only while this holds (#2000).
+ */
+export async function isPurchaseLive(purchaseId: number, institutionId: number): Promise<boolean> {
+  const [row] = await sql<{ live: boolean }[]>`
+    SELECT EXISTS (
+             SELECT 1 FROM leads l
+              WHERE l.id = ${purchaseId}
+                AND to_jsonb(l) ->> 'quote_institution_id' = ${String(institutionId)}
+                AND to_jsonb(l) ->> 'paid_at' IS NOT NULL
+                AND to_jsonb(l) ->> 'refunded_at' IS NULL
+           ) AS live`;
+  return row?.live === true;
+}
+
 export async function getInstitutionLabel(institutionId: number): Promise<{ id: number; name: string; city: string | null; stateCode: string | null } | null> {
   const [row] = await sql<{ id: string | number; institution_name: string; city: string | null; state_code: string | null }[]>`
     SELECT id, institution_name, city, state_code FROM institution_sources WHERE id = ${institutionId}`;
