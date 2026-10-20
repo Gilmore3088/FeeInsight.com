@@ -53,6 +53,7 @@ vi.mock("@/lib/agents/magellan/fetch", async (original) => ({
 }));
 vi.mock("@/lib/agents/magellan/address-variant-fetch", () => ({ runAddressVariantFetch: async () => null }));
 vi.mock("@/lib/agents/magellan/saved-link-fetch", () => ({ runSavedLinkFetch: async () => null }));
+vi.mock("@/lib/agents/magellan/live-source-refetch", () => ({ runLiveSourceRefetch: async () => null }));
 
 import { executeQueuedAgentRuns, startAgentRun } from "./run-store";
 import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "@/lib/data-store/connection";
@@ -121,6 +122,26 @@ describe.skipIf(!connection)("capped state-lane continuation in isolated Postgre
       const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
       expect(out.results.map(row => row.runId)).toEqual([expected.run.id]);
     }
+  });
+
+  it("gives the daily scoreboard the tick ahead of an idle lane once it has waited 15 minutes", async () => {
+    const scoreboard = await seed("fetch", "workflow", false);
+    await db`UPDATE agent_runs SET params_json='{"source":"atlas.scoreboard"}'::jsonb,
+      started_at=now()-interval '20 minutes' WHERE id=${scoreboard.run.id}`;
+    const lane = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '1 day' WHERE id=${lane.run.id}`;
+    const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+    expect(out.results.map(row => row.runId)).toEqual([scoreboard.run.id]);
+  });
+
+  it("leaves an idle lane ahead of a scoreboard queued under 15 minutes ago", async () => {
+    const scoreboard = await seed("fetch", "workflow", false);
+    await db`UPDATE agent_runs SET params_json='{"source":"atlas.scoreboard"}'::jsonb,
+      started_at=now()-interval '5 minutes' WHERE id=${scoreboard.run.id}`;
+    const lane = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '1 day' WHERE id=${lane.run.id}`;
+    const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+    expect(out.results.map(row => row.runId)).toEqual([lane.run.id]);
   });
 
   it("measures lane inactivity from its last completed step instead of its launch", async () => {

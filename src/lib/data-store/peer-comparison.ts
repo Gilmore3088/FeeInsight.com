@@ -147,11 +147,6 @@ export function defaultPeerFilters(inst: { charter_type?: string | null; asset_s
   return filters;
 }
 
-/** "Banks with $300M to $1B in assets in Fed district 11 (Dallas)", or "3 chosen institutions". */
-export function describePeerGroup(filters: PeerFilterSet): string {
-  return describePeerSet(filters);
-}
-
 function byFamilyThenName(a: { family: string | null; display_name: string | null }, b: { family: string | null; display_name: string | null }): number {
   return (a.family ?? "").localeCompare(b.family ?? "") || (a.display_name ?? "").localeCompare(b.display_name ?? "");
 }

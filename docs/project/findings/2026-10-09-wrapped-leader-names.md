@@ -68,3 +68,5 @@ All 15 were checked against the source text, and 15 of 15 are former or business
 - The re-check matches by category and price, so a former price that equals another row's new price stays live. These are safe deposit 3x5 $50 (4x5's new price), 2.5x10 $45 (3x5's new price) and 5x10 $150.
 - Photocopies $4 stays. Its line repeats "$4.00 per copy" on its own.
 - The account tables on pages 7-13 ("Account Name | Limited Checking | Personal Checking" / "Monthly Service Charge | $8.00 | $12.00") have no former/new header on their own page; it sits on page 7 above a different table. Their former monthly prices stay live: $8 (103515), $20 (103517), $25 (103520), $2 HSA (103516) and $5 quarterly savings (103521).
+
+**Agent lesson:** knox/pr-861-wrapped-leader-names

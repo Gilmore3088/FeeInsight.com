@@ -5,7 +5,7 @@ vi.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 
 import type { ScoreboardSnapshotRow } from "@/lib/data-store/answer-key";
 import type { SpendLine } from "@/lib/data-store/console-spend";
-import { AGENT_GUIDES, agentScoreVitals, agentSpendVital, toRecentStep, type FrameAgent } from "./agent-frame";
+import { AGENT_GUIDES, agentScoreVitals, agentSpendVital, lessonEvidenceLinks, toRecentStep, type FrameAgent } from "./agent-frame";
 import { existsSync } from "node:fs";
 
 const snapshot = {
@@ -57,5 +57,13 @@ describe("agent frame (admin redesign #1122, step 4)", () => {
 
   it("links each agent to a guide that exists", () => {
     for (const path of Object.values(AGENT_GUIDES)) expect(existsSync(path)).toBe(true);
+  });
+
+  it("links a lesson's issues, PRs and files on GitHub", () => {
+    expect(lessonEvidenceLinks({ issues: [2306], prs: [2412], files: ["src/lib/agents/hoovie/source-health.ts"] })).toEqual([
+      { label: "#2306", href: "https://github.com/Gilmore3088/FeeInsight.com/issues/2306" },
+      { label: "PR #2412", href: "https://github.com/Gilmore3088/FeeInsight.com/pull/2412" },
+      { label: "source-health.ts", href: "https://github.com/Gilmore3088/FeeInsight.com/blob/main/src/lib/agents/hoovie/source-health.ts" },
+    ]);
   });
 });

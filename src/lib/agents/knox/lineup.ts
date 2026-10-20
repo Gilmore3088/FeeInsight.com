@@ -276,19 +276,23 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   let heading: string | null = null;
   let headingAt = -1;
   let accountHeading: string | null = null;
+  let accountHeadingAt = -1;
   // v73: a heading that speaks of checking but names no one account ("Checking Account Fees", "Our
   // Checking Accounts", "CHECKING & MONEY MARKET") ends the account lookback: the fees under it are
   // checking's or mixed, and an older heading above it belongs to other accounts.
   let accountStopped = false;
-  const takeAccount = (name: string) => {
-    if (!accountStopped && accountHeading === null && !namesNoAccount(name)) accountHeading = name;
+  const takeAccount = (name: string, index: number) => {
+    if (!accountStopped && accountHeading === null && !namesNoAccount(name)) {
+      accountHeading = name;
+      accountHeadingAt = index;
+    }
   };
   for (let index = at - 1; index >= Math.max(0, at - HEADING_LOOKBACK_LINES); index -= 1) {
     const line = lines[index];
     if (line.includes("$") || line.includes("|")) continue;
     const kind = line.replace(/[\s:]+$/, "");
     if (!accountStopped && accountHeading === null && !namesNoAccount(kind)) {
-      if (ACCOUNT_KIND_HEADING.test(kind)) accountHeading = kind;
+      if (ACCOUNT_KIND_HEADING.test(kind)) takeAccount(kind, index);
       else if ((CHECKING_WORDS.test(kind) || PACKAGE_HEADING.test(kind)) && !ACCOUNT_TYPE_HEADING.test(line) && !distinctAccountName(line.replace(HEADING_TAIL, ""))) accountStopped = true;
     }
     // v55: "Money Market" alone heads its own fee; another fee's heading ("Early (Share)
@@ -296,7 +300,7 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
     if (ACCOUNT_TYPE_HEADING.test(line)) {
       heading = line;
       headingAt = index;
-      takeAccount(line);
+      takeAccount(line, index);
       break;
     }
     if (FEE_HEADING_END.test(line)) break;
@@ -304,7 +308,7 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
     if (named) {
       heading = named;
       headingAt = index;
-      takeAccount(named);
+      takeAccount(named, index);
       break;
     }
   }
@@ -312,11 +316,13 @@ function accountBlock(text: string, excerpt: string): AccountBlock | null {
   // Below the fee: stop at the next account's heading.
   for (let index = at + 1; index <= Math.min(lines.length - 1, at + BLOCK_LINES_BELOW); index += 1) {
     const line = lines[index];
-    if (!line.includes("$") && (ACCOUNT_TYPE_HEADING.test(line) || distinctAccountName(line.replace(HEADING_TAIL, "")))) break;
+    if (!line.includes("$") && (ACCOUNT_KIND_HEADING.test(line.replace(/[\s:]+$/, "")) ||
+      ACCOUNT_TYPE_HEADING.test(line) || distinctAccountName(line.replace(HEADING_TAIL, "")))) break;
     nearby.push(lines[index]);
   }
   // Above the fee: never past its own heading.
-  for (let index = at - 1; index >= Math.max(0, at - BLOCK_LINES_ABOVE, headingAt + 1); index -= 1) nearby.push(lines[index]);
+  // A printed account kind is an ownership boundary even when it is not a branded display name.
+  for (let index = at - 1; index >= Math.max(0, at - BLOCK_LINES_ABOVE, headingAt + 1, accountHeadingAt + 1); index -= 1) nearby.push(lines[index]);
   const around = lines.slice(Math.max(0, at - BLOCK_LINES_ABOVE), at).concat(lines.slice(at + 1, at + 1 + BLOCK_LINES_BELOW));
   return { heading, accountHeading, feeLine: lines[at], nearby, around };
 }
@@ -527,7 +533,7 @@ export function explicitAccountHeading(value: string, institutionName?: string |
 export function withLineupFromText<T extends { canonicalHint: string; feeName: string; excerpt: string; amount?: number | null; lineup?: AccountLineup | null }>(
   candidate: T,
   text: string,
-  /** v73's account order; false reads the name as v55 did (`lineupCorrections`, LINEUP_CORRECT_STRATEGY v2). */
+  /** False keeps v55's own-name order; its context still respects a nearer printed account kind. */
   options: { accountProduct?: boolean; institutionName?: string | null } = {},
 ): T {
   if (!ACCOUNT_PRODUCT_CATEGORIES.has(candidate.canonicalHint)) return withAncillaryProduct(candidate, text, options.institutionName);
@@ -544,7 +550,7 @@ export function withLineupFromText<T extends { canonicalHint: string; feeName: s
     return null;
   };
   const productName = options.accountProduct === false
-    ? (current.productName ?? productNameFromFeeName(candidate.feeName) ?? block?.heading ?? null)
+    ? (current.productName ?? productNameFromFeeName(candidate.feeName) ?? block?.accountHeading ?? block?.heading ?? null)
     : accountProductFor({ ...candidate, lineup: current }, text, block?.accountHeading ?? null, options.institutionName);
   if (candidate.canonicalHint !== LINEUP_CATEGORY) {
     // A minimum balance fee records its account only.
@@ -581,6 +587,8 @@ function mentionsFigure(line: string, value: number): boolean {
  * not state it. A name is corrected only when v55 would never store it (a fee heading such as
  * "Early (Share) Savings Account Closing", or no account name at all) and v55 reads a name.
  * Anything else stays as stored: a value v55 cannot explain may be a model read it cannot redo.
+ * Printed generic account kinds bound the context too; a new generic fallback cannot by itself
+ * disprove a more specific retained owner that the branded display helper rejects (#2269).
  */
 export function lineupCorrections(
   candidate: { feeName: string; excerpt: string },
@@ -615,8 +623,13 @@ export function lineupCorrections(
   }
   if (stored.productName && v55.productName && v55.productName !== stored.productName) {
     const name = squash(stored.productName);
+    // A new generic fallback cannot disprove a specific stored owner. For example,
+    // readableProductName rejects "The Virginian", although it is a printed product.
+    const newGenericFallback = block.accountHeading === v55.productName && block.heading !== block.accountHeading;
+    const canReplaceWithKind = !newGenericFallback || ACCOUNT_KIND_HEADING.test(name) || ACCOUNT_TYPE_HEADING.test(name)
+      || FEE_HEADING_END.test(name) || LEAD_IN.test(name) || isPageSentence(name);
     // A stored name with a link's lead-in ("Learn more about Advantage Checking") is corrected too.
-    if (FEE_HEADING_END.test(name) || readableProductName(name) === null || LEAD_IN.test(name)) {
+    if (canReplaceWithKind && (FEE_HEADING_END.test(name) || readableProductName(name) === null || LEAD_IN.test(name))) {
       corrections.push({ field: "productName", old: stored.productName, new: v55.productName });
     }
   } else if (stored.productName && !v55.productName && block.heading === null && isPageSentence(squash(stored.productName))) {

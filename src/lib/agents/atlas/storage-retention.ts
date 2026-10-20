@@ -3,6 +3,7 @@ import { inSavepoint } from "@/lib/agents/savepoint";
 import { TABLE_BUDGET_MB, hoovieTableBudgets, overBudgetTables, sourcesHeldForSize, type OverBudgetTable } from "@/lib/agents/hoovie/size-budgets";
 import { degradeLiveAuditRetention } from "@/lib/data-store/live-source-audit-read";
 import type { LiveAuditContext } from "@/lib/data-store/live-source-audit";
+import { dropExpiredLegacyPartitions, retentionCutoff, type PartitionPlan } from "@/lib/agents/atlas/legacy-event-partitions";
 
 type SqlTag = typeof sql;
 
@@ -24,6 +25,9 @@ type SqlTag = typeof sql;
  * The trims:
  * 1. `legacy_event_log`: rows of the retired `agent_events` log older than 60 days (about 420 MB on
  *    Oct 17, all in the April-August partitions). Its only reader looks at the last 24 hours.
+ *    Since Oct 19 (James) a monthly partition wholly older than the cutoff is dropped whole
+ *    (`legacy-event-partitions.ts`), which returns its disk; the row delete, still at most
+ *    `DELETE_BATCH`, only reaches the partly expired month and the default partition.
  * 2. `run_events`: run-ledger events older than 90 days, except the newest event of each kind for
  *    each step (several steps read their last cursor or last result from it) and any event that
  *    recorded a cost.
@@ -80,6 +84,8 @@ export const DELETE_BATCH = 20_000;
  */
 export const STORAGE_ALERT_MB = 13_000;
 export const STORAGE_ALERT_GROWTH_MB = 300;
+/** Warning only (#2220): prospective witnesses have no automatic deletion or writer hold. */
+export const NORMALIZED_WITNESS_ALERT_MB = 256;
 const LISTED_TABLES = 12;
 
 export interface TableSize {
@@ -95,6 +101,8 @@ export interface TrimResult {
   eligible: number | null;
   deleted: number;
   error?: string;
+  /** `legacy_event_log` only: the monthly partitions wholly past the cutoff, measured or dropped. */
+  partitions?: PartitionPlan;
 }
 
 export interface TableBudgetSize {
@@ -195,7 +203,11 @@ async function previousRun(db: SqlTag): Promise<{ databaseMb: number | null; at:
   return { databaseMb: num(row.database_mb), at, nextAfterId: num(row.next_after_id) ?? 0 };
 }
 
-async function trimLegacyEventLog(db: SqlTag, live: boolean): Promise<TrimResult> {
+/**
+ * The partitions are dropped first (`dropExpiredLegacyPartitions`, committed one by one), so this
+ * count and delete see only what is left: the partly expired month and the default partition.
+ */
+async function trimLegacyEventLog(db: SqlTag, live: boolean, partitions: PartitionPlan | null): Promise<TrimResult> {
   const [row] = await db<{ n: string }[]>`
     SELECT count(*)::bigint AS n FROM agent_events
      WHERE created_at < NOW() - make_interval(days => ${LEGACY_EVENT_LOG_DAYS}::int)
@@ -214,7 +226,14 @@ async function trimLegacyEventLog(db: SqlTag, live: boolean): Promise<TrimResult
     `;
     deleted = gone.length;
   }
-  return { policy: "legacy_event_log", live, eligible: Number(row?.n ?? 0), deleted };
+  const dropped = (partitions?.partitions ?? []).filter((p) => p.dropped).reduce((sum, p) => sum + (p.rows ?? 0), 0);
+  return {
+    policy: "legacy_event_log",
+    live,
+    eligible: Number(row?.n ?? 0) + dropped,
+    deleted: deleted + dropped,
+    ...(partitions ? { partitions } : {}),
+  };
 }
 
 /**
@@ -379,6 +398,10 @@ export function storageAlerts(databaseMb: number | null, growthMb: number | null
   if (databaseMb != null && databaseMb > STORAGE_ALERT_MB) alerts.push(`database is ${databaseMb.toLocaleString("en-US")} MB, above ${STORAGE_ALERT_MB.toLocaleString("en-US")} MB`);
   if (growthMb != null && growthMb > STORAGE_ALERT_GROWTH_MB) alerts.push(`grew ${growthMb.toLocaleString("en-US")} MB since the last run, above ${STORAGE_ALERT_GROWTH_MB} MB`);
   for (const entry of overBudget) {
+    if (entry.table === "agent_source_text_witnesses") {
+      alerts.push(`Normalized witnesses are ${entry.totalMb.toLocaleString("en-US")} MB, above the ${entry.budgetMb} MB review budget; evidence is retained, review storage headroom`);
+      continue;
+    }
     alerts.push(entry.table in TABLE_BUDGET_MB
       ? `${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above its ${entry.budgetMb.toLocaleString("en-US")} MB budget; the sources that write it are held`
       : `${entry.table} is ${entry.totalMb.toLocaleString("en-US")} MB, above the ${entry.budgetMb.toLocaleString("en-US")} MB default; nothing is held until a PR gives it a budget`);
@@ -391,17 +414,40 @@ export function storageAlerts(databaseMb: number | null, growthMb: number | null
  * or trim is reported and the others still run, each in its own savepoint.
  */
 export async function runStorageRetention(
-  options: { db?: SqlTag; dryRun?: boolean; live?: Partial<Record<RetentionPolicy, boolean>>;context?:LiveAuditContext } = {},
+  options: {
+    db?: SqlTag;
+    dryRun?: boolean;
+    live?: Partial<Record<RetentionPolicy, boolean>>;
+    context?: LiveAuditContext;
+    /** A connection outside the step's transaction; each legacy partition drop commits on it. */
+    commitDb?: SqlTag | null;
+    now?: Date;
+  } = {},
 ): Promise<StorageResult> {
   const db = options.db ?? sql;
   const dryRun = Boolean(options.dryRun);
   const isLive = (policy: RetentionPolicy) => !dryRun && (options.live?.[policy] ?? RETENTION_LIVE[policy]);
 
+  // First, before any statement here touches the log: a lock this transaction held on it would
+  // block the committed drops until their lock timeout.
+  let partitionError: string | null = null;
+  const partitions = await inSavepoint(db, (scope) => dropExpiredLegacyPartitions({
+    db: scope,
+    commitDb: options.commitDb,
+    live: isLive("legacy_event_log"),
+    cutoff: retentionCutoff(options.now ?? new Date(), LEGACY_EVENT_LOG_DAYS),
+    context: options.context,
+  })).catch((error: unknown) => {
+    partitionError = message(error);
+    return null;
+  });
+
   const prior = await inSavepoint(db, (scope) => scope<{ value: string | null }[]>`
     SELECT current_setting('statement_timeout') AS value, set_config('statement_timeout', ${STATEMENT_TIMEOUT}, true) AS applied
   `).catch(() => [] as Array<{ value: string | null }>);
   const sized = await inSavepoint(db, measure).catch(() => ({ databaseMb: null, tables: [] as TableSize[] }));
-  const budgets = hoovieTableBudgets();
+  const sourceBudgets = hoovieTableBudgets();
+  const budgets: Record<string, number> = { ...sourceBudgets, agent_source_text_witnesses: NORMALIZED_WITNESS_ALERT_MB };
   const budgetSizes = await inSavepoint(db, (scope) => measureBudgetTables(scope, Object.keys(budgets).sort())).catch(() => null);
   const budgetTables = budgetSizes
     ? Object.entries(budgetSizes)
@@ -409,7 +455,7 @@ export async function runStorageRetention(
       .sort((a, b) => b.totalMb - a.totalMb)
     : null;
   const overBudget = budgetSizes ? overBudgetTables(budgetSizes, budgets) : [];
-  const heldSources = [...sourcesHeldForSize(budgetSizes, budgets)].map(([source, tables]) => ({ source, tables }));
+  const heldSources = [...sourcesHeldForSize(budgetSizes, sourceBudgets)].map(([source, tables]) => ({ source, tables }));
   const previous = await inSavepoint(db, previousRun).catch(() => ({ databaseMb: null, at: null, nextAfterId: 0 }));
   const growthMb = sized.databaseMb != null && previous.databaseMb != null
     ? Math.round((sized.databaseMb - previous.databaseMb) * 10) / 10
@@ -418,7 +464,9 @@ export async function runStorageRetention(
   const trims: TrimResult[] = [];
   const failed = (policy: RetentionPolicy, error: unknown): TrimResult => ({ policy, live: isLive(policy), eligible: null, deleted: 0, error: message(error) });
 
-  trims.push(await inSavepoint(db, (scope) => trimLegacyEventLog(scope, isLive("legacy_event_log"))).catch((error) => failed("legacy_event_log", error)));
+  const legacy: TrimResult = await inSavepoint(db, (scope) => trimLegacyEventLog(scope, isLive("legacy_event_log"), partitions))
+    .catch((error) => ({ ...failed("legacy_event_log", error), ...(partitions ? { partitions } : {}) }));
+  trims.push(partitionError && !legacy.error ? { ...legacy, error: `partitions: ${partitionError}` } : legacy);
   trims.push(await inSavepoint(db, (scope) => trimRunEvents(scope, isLive("run_events"),options.context)).catch((error) => failed("run_events", error)));
   let attemptWindow: StorageResult["attemptWindow"] = null;
   try {
@@ -463,11 +511,44 @@ export function storageRetentionDetail(result: StorageResult): Record<string, un
     budget_tables: result.budgetTables ? Object.fromEntries(result.budgetTables.map((t) => [t.table, t.totalMb])) : null,
     over_budget: result.overBudget.map((t) => ({ table: t.table, total_mb: t.totalMb, budget_mb: t.budgetMb })),
     held_sources: result.heldSources,
-    trims: result.trims.map((t) => ({ policy: t.policy, live: t.live, eligible: t.eligible, deleted: t.deleted, ...(t.error ? { error: t.error } : {}) })),
+    trims: result.trims.map((t) => ({
+      policy: t.policy,
+      live: t.live,
+      eligible: t.eligible,
+      deleted: t.deleted,
+      ...(t.error ? { error: t.error } : {}),
+      ...(t.partitions ? { partitions: partitionDetail(t.partitions) } : {}),
+    })),
     attempt_window: result.attemptWindow
       ? { after_id: result.attemptWindow.afterId, through_id: result.attemptWindow.throughId, next_after_id: result.attemptWindow.nextAfterId }
       : null,
   };
+}
+
+function partitionDetail(plan: PartitionPlan): Record<string, unknown> {
+  return {
+    cutoff: plan.cutoff,
+    boundary: plan.boundary,
+    ...(plan.note ? { note: plan.note } : {}),
+    expired: plan.partitions.map((p) => ({ name: p.name, rows: p.rows, total_mb: p.totalMb, dropped: p.dropped, ...(p.error ? { error: p.error } : {}) })),
+  };
+}
+
+/** Pure: the partition clause of the summary, or "" when no month is wholly past the cutoff. */
+export function summarizePartitions(plan: PartitionPlan | undefined, live: boolean): string {
+  if (!plan || plan.partitions.length === 0) return "";
+  const totalMb = (list: PartitionPlan["partitions"]) => Math.round(list.reduce((sum, p) => sum + (p.totalMb ?? 0), 0) * 10) / 10;
+  if (!live) {
+    const names = plan.partitions.map((p) => p.name).join(", ");
+    return ` (whole months past the cutoff: ${names}, ${totalMb(plan.partitions).toLocaleString("en-US")} MB)`;
+  }
+  const dropped = plan.partitions.filter((p) => p.dropped);
+  const failed = plan.partitions.filter((p) => !p.dropped);
+  const done = dropped.length > 0
+    ? `dropped ${dropped.map((p) => p.name).join(", ")}, ${totalMb(dropped).toLocaleString("en-US")} MB`
+    : "dropped no partition";
+  const left = failed.length > 0 ? `; could not drop ${failed.map((p) => p.name).join(", ")}` : "";
+  return ` (${done}${left}${plan.note ? `: ${plan.note}` : ""})`;
 }
 
 const TRIM_NAMES: Record<RetentionPolicy, string> = {
@@ -482,16 +563,19 @@ export function summarizeStorageRetention(result: StorageResult): string {
     : `Database ${result.databaseMb.toLocaleString("en-US")} MB${result.growthMb == null ? "" : ` (${result.growthMb >= 0 ? "+" : ""}${result.growthMb.toLocaleString("en-US")} MB since the last run)`}.`;
   const alert = result.alerts.length > 0 ? ` Warning: ${result.alerts.join("; ")}.` : "";
   const budgets = result.budgetTables == null
-    ? " Could not measure the public-data tables against their budgets."
+    ? " Could not measure the tracked tables against their budgets."
     : result.heldSources.length > 0
       ? ` Registry sources held for size: ${result.heldSources.map((h) => `${h.source} (${h.tables.join(", ")})`).join("; ")}.`
       : result.overBudget.length > 0
         ? " No registry source is held; the tables over the default are warnings only."
-        : ` All ${result.budgetTables.length} public-data tables are within budget.`;
+        : ` All ${result.budgetTables.length} tracked tables are within budget.`;
   const trims = result.trims.map((t) => {
     if (t.eligible == null) return `${TRIM_NAMES[t.policy]}: could not count`;
     const n = t.eligible.toLocaleString("en-US");
-    return t.live ? `${TRIM_NAMES[t.policy]}: deleted ${t.deleted.toLocaleString("en-US")} of ${n}` : `${TRIM_NAMES[t.policy]}: ${n} (off)`;
+    const parts = summarizePartitions(t.partitions, t.live);
+    return t.live
+      ? `${TRIM_NAMES[t.policy]}: deleted ${t.deleted.toLocaleString("en-US")} of ${n}${parts}`
+      : `${TRIM_NAMES[t.policy]}: ${n} (off)${parts}`;
   });
   return `${size}${alert}${budgets} Trims: ${trims.join("; ")}.`;
 }

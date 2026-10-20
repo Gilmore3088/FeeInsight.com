@@ -37,5 +37,6 @@ export function institutionDisplayName(raw: string | null | undefined): string |
       .replace(/,?\s+Inc\.?$/i, "")
       .replace(/(?<=\S\s)(Of|And|The)\b/g, (word) => word.toLowerCase());
   }
-  return name;
+  // Acronyms the registry loads as words ("Ecu Federal Credit Union", "Campus Usa", #1953).
+  return name.replace(/\bUsa\b/g, "USA").replace(/^Ecu\b/, "ECU");
 }

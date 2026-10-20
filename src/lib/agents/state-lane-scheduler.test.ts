@@ -60,6 +60,12 @@ function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
 }
 
+function documentBacklogCall() {
+  const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("AS backlog"));
+  expect(call).toBeDefined();
+  return call!;
+}
+
 function laneUpdate(): { text: string; values: unknown[] } | undefined {
   // The priority refresh also updates every lane; the lane's own schedule update is the one wanted.
   const call = sqlMock.mock.calls.find((entry) => {
@@ -183,7 +189,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    expect(sqlMock.mock.calls[0]).toContain(thinRereadKindSql("adt"));
+    expect(documentBacklogCall()).toContain(thinRereadKindSql("adt"));
     expect(thinRereadKindSql("adt")).toContain("adt.document_kind_version IS DISTINCT FROM");
   });
 
@@ -192,7 +198,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    const backlogQuery = templateText(documentBacklogCall()[0]);
     expect(backlogQuery).toContain("inst.last_rescue_attempt_at IS NULL");
     expect(backlogQuery).toContain("COALESCE(inst.rescue_status, 'pending') IN ('pending', 'retry_after')");
   });
@@ -202,9 +208,9 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("TX");
 
-    const backlogQuery = templateText(sqlMock.mock.calls[0][0]);
+    const backlogQuery = templateText(documentBacklogCall()[0]);
     expect(backlogQuery).toContain("inst.last_crawl_at < NOW() - make_interval(days =>");
-    expect(sqlMock.mock.calls[0]).toContain(30);
+    expect(documentBacklogCall()).toContain(30);
   });
 
   it("counts a live fee flagged since its bank's last fetch as backlog, so the page is re-fetched before the second look", async () => {
@@ -212,7 +218,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("TX");
 
-    const query = templateText(sqlMock.mock.calls[0][0]);
+    const query = templateText(documentBacklogCall()[0]);
     expect(query).toContain("pending.kind = 'takedown_pending'");
     expect(query).toContain("pending_fee.rolled_back_at IS NULL");
     expect(query).toContain("(pending.evidence->>'flagged_at')::timestamptz > COALESCE(inst.last_crawl_at, '-infinity'::timestamptz)");
@@ -234,7 +240,7 @@ describe("state lane scheduler", () => {
 
     await stateHasDocumentBacklog("PA");
 
-    const query = templateText(sqlMock.mock.calls[0][0]);
+    const query = templateText(documentBacklogCall()[0]);
     expect(query).toContain("prior.text_hash = adt.text_hash");
     expect(query).toContain("prior.id <> adt.id");
   });
@@ -245,7 +251,7 @@ describe("state lane scheduler", () => {
     await stateHasDocumentBacklog("GU");
 
     // #1052: the same test the selection runs, so Guam's 9 rows due under guard v61 wake its lane.
-    expect(sqlMock.mock.calls[0]).toContain(darwinDueSql());
+    expect(documentBacklogCall()).toContain(darwinDueSql());
     expect(darwinDueSql()).toContain(`COALESCE((pa.detail->>'category_guard_version')::int, 0) < ${CATEGORY_GUARD_VERSION}`);
   });
 
@@ -512,12 +518,24 @@ describe("state lane scheduler", () => {
     expect(call?.slice(1)).toEqual(expect.arrayContaining([REPORT_REQUEST_PRIORITY, NEAR_READY_BANK_PRIORITY, NEAR_READY_GAP]));
   });
 
-  it("gives a state whose report James is waiting to review the report-request weight", async () => {
-    sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
-    await refreshLanePriorities();
-    const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
-    expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
-    expect(call?.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("binds report-review priority states $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockImplementation(() => Promise.resolve(Object.assign([], { count: 1 })));
+      await refreshLanePriorities();
+      const call = sqlMock.mock.calls.find((entry) => templateText(entry[0]).includes("SET priority_score"));
+      expect(templateText(call?.[0])).toContain("OR lane.state_code = ANY(");
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("OR lane.state_code = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+      expect(call![reviewBinding + 2]).toBe(REPORT_REQUEST_PRIORITY);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("puts states whose market leaders lack headline fees ahead", async () => {

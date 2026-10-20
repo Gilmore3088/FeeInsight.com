@@ -1,6 +1,7 @@
 /**
  * /reports/sample-competitive-fee-position/csv — the sample report's numbers as a
- * spreadsheet, the same file a buyer downloads from their own report.
+ * spreadsheet, the same file a buyer downloads from their own report: one row per published
+ * record behind each amount, with its basis, source and the report's context.
  */
 import { buildReportCsv } from "@/lib/custom-report/analysis";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";

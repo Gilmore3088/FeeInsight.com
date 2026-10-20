@@ -1,4 +1,5 @@
 import { CATEGORY_AMOUNT_ENVELOPES } from "./envelopes";
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { canonicalHintFrom, conditionalZero, DARWIN_BATCH_KEY_VERSION, DARWIN_CATEGORY_HOLDS, DARWIN_SOURCE_CHECK_VERSION, DARWIN_VERIFY_STRATEGY, FREQUENCY_SETTLED_FLAG, pendingCategoryLesson, postSourceCheck, runDarwinVerify, sourceLineFor, statedInOwnSource, verificationReasonCode, verificationReasonText, type RawFeeRow } from "./verify";
@@ -73,6 +74,20 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
 }
 
 function asVerifyDb(db: DbMock): NonNullable<Parameters<typeof runDarwinVerify>[0]["db"]> {
+  // Existing rule tests supply immutable ordinary raw facts. Source locking/own authority
+  // is exercised by the actual PostgreSQL suites, not simulated by this SQL stub.
+  const original = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = templateText(strings);
+    if (text.includes("SELECT fr.*") && text.includes("FROM raw_fee_observations fr")) {
+      return (db.unsafe as unknown as (query: string, params: unknown[]) => Promise<Array<Record<string, unknown>>>)("SELECT * FROM raw_fee_observations -- current immutable rule fixture", [null, [Number(values[0])]])
+        .then((rows: Array<Record<string, unknown>>) => rows.filter(row => Number(row.fee_raw_id) === Number(values[0])));
+    }
+    return original(strings, ...values);
+  });
+  if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function") {
+    Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
+  }
   return db as unknown as NonNullable<Parameters<typeof runDarwinVerify>[0]["db"]>;
 }
 
@@ -859,11 +874,12 @@ describe("category change re-judge (#1295)", () => {
   const DOC_7699 = [
     "Copy of Corporate Check | $10.00",
     "Wire Transfer - Domestic | $35.00",
-    "Wire Transfer - International | $45.00",
+    "Wire Transfer - International | $45.00 outgoing",
     "Overdraft Transfer from Shares | $3.00 per transfer",
   ].join("\n");
+  const DOC_7699_HASH = createHash("sha256").update(DOC_7699).digest("hex");
   const WIRE_CONDITIONS =
-    "Knox deterministic extraction from Rosetta artifact #3981. canonical_hint=wire_intl_outgoing; calibrated_confidence=0.98; excerpt=\"Wire Transfer - International | $45.00\"";
+    `Knox deterministic extraction from Rosetta artifact #3981. canonical_hint=wire_intl_outgoing; text_hash=${DOC_7699_HASH}; calibrated_confidence=0.98; excerpt="Wire Transfer - International | $45.00 outgoing"`;
   const COLLECTION = "Collection Items (plus any bank fees)";
   const overdraftRejections: PriorDecision[] = [{ canonical_fee_key: "overdraft", reason_code: "category_mismatch" }];
   const row = (fee_raw_id: number, fee_name: string, outlier_flags: string[], attempts: PriorDecision[]): CategoryChangeRow => ({
@@ -903,9 +919,9 @@ describe("category change re-judge (#1295)", () => {
     expect(categoryChangeCandidates([input], canonicalHintFrom).length).toBe(qualifies ? 1 : 0);
   });
 
-  it("ships with the take-over proof switched off (gated on James)", async () => {
+  it("ships with the take-over proof switched on (sampled clean, Oct 20)", async () => {
     const real = await vi.importActual<typeof import("./category-change")>("./category-change");
-    expect(real.DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE).toBe(false);
+    expect(real.DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE).toBe(true);
   });
 
   // Production rows (read-only, Oct 16): raw 308091 "By fax" $5 (institution 97) and raw 353324
@@ -936,16 +952,22 @@ describe("category change re-judge (#1295)", () => {
       outlier_flags: ["needs_darwin_verification", "canonical_hint:wire_intl_outgoing", "knox_reread_took_over", "knox_stale_hint_repaired"],
     };
     // A re-filed price the schedule never states: the shared source check still decides.
-    const unstated = { ...wireRaw, fee_raw_id: 126799, amount: "12.00", conditions: "excerpt=\"Wire Transfer - International | $12.00\"" };
+    const unstated = { ...wireRaw, fee_raw_id: 126799, fee_name: "Wire Transfer - Domestic", amount: "12.00",
+      outlier_flags: ["needs_darwin_verification", "canonical_hint:wire_domestic_outgoing", "knox_reread_took_over", "knox_stale_hint_repaired"],
+      conditions: `Knox deterministic extraction from Rosetta artifact #3981. canonical_hint=wire_domestic_outgoing; text_hash=${DOC_7699_HASH}; excerpt="Wire Transfer - Domestic | $12.00"` };
 
     function rejudgeDb(): DbMock {
       const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
         const text = templateText(strings);
         const current = currentRawLock(text, values, [wireRaw, unstated]);
         if (current) return Promise.resolve(current);
+        if (text.includes("FROM source_documents WHERE id")) return Promise.resolve([{ id: 7699, institution_id: 7114,
+          document_url: wireRaw.source_url, status: "success", content_hash: DOC_7699_HASH, superseded_by_id: null, duplicate_of_id: null }]);
         if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
         if (text.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
-        if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ source_document_id: 7699, normalized_text: DOC_7699 }]);
+        if (text.includes("FROM agent_source_texts")) return Promise.resolve([{ id: 3981, institution_id: 7114,
+          source_document_id: 7699, source_url: wireRaw.source_url, source_hash: DOC_7699_HASH,
+          status: "completed", normalized_text: DOC_7699, text_hash: DOC_7699_HASH }]);
         if (text.includes("INSERT INTO verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 5100 }]);
         return Promise.resolve([]);
       }) as DbMock;

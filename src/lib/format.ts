@@ -54,10 +54,6 @@ export function timeAgo(dateString: string): string {
   return `${months}mo ago`;
 }
 
-export function formatPct(value: number): string {
-  return `${(value * 100).toFixed(0)}%`;
-}
-
 const FEE_AMOUNT_FORMAT = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",

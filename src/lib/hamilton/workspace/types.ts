@@ -10,6 +10,7 @@
  * Client-safe: no server imports.
  */
 
+import type { CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import type { LineupAccount, LineupSummary } from "@/lib/data-store/account-lineup";
 import type { Storyline, StorylineExhibit } from "./storyline-types";
 import type { SeveralFees } from "@/lib/own-fee";
@@ -161,21 +162,24 @@ export interface InstitutionFinancials {
 }
 
 export interface PeerIncomeSeries {
+  cohortHistory?: CallCohortHistory;
   /** e.g. "Credit unions, $300M to $1B in assets". */
   label: string;
   quarters: (IncomeQuarter & { institutions: number })[];
   sourceRef: SourceRef;
 }
 
-/** Industry-wide deposit service charge income, from every FDIC and NCUA filer on file. */
+/** Source-specific national quarterly income; bank deposit charges and CU broad fee income stay separate. */
 export interface MarketIncome {
+  financialSource?: "fdic" | "ncua";
+  measureDefinition?: Record<string, unknown>;
   quarter: string;
   /** Dollars, that quarter. */
   total: number;
   banks: number;
   creditUnions: number;
   institutions: number;
-  /** Against the same quarter a year earlier, when on file. */
+  /** Held null until a comparable economic-cohort growth basis is reviewed. */
   yoyPct: number | null;
   sourceRef: SourceRef;
 }
@@ -192,6 +196,7 @@ export interface Briefing {
   nationalIncome: MarketIncome | null;
   /** The same, the last eight quarters on file, newest first. */
   nationalIncomeSeries: MarketIncome[];
+  nationalIncomeCohortHistory?: CallCohortHistory;
   /** Named local competitors beside the bank, fee by fee; null when no local market is on file. */
   localMarket?: BriefingLocalMarket | null;
   /** The bank's filed overdraft income line, when it publishes an overdraft fee and files one. */
@@ -442,6 +447,7 @@ export interface FeeResearch {
   ownSchedule?: { documentUrl: string | null; readAt: string | null } | null;
   /** Industry deposit service charge income, newest quarter first (eight quarters), as on the Briefing. */
   nationalIncomeSeries: MarketIncome[];
+  nationalIncomeCohortHistory?: CallCohortHistory;
   /** The bank's total deposit service charge income, as context for this fee. */
   institutionFinancials: InstitutionFinancials | null;
   /** Rules that govern changing this fee, then recent regulator releases that mention it. */
@@ -569,6 +575,7 @@ export type Exhibit =
     }
   | {
       kind: "trend";
+      cohortHistory?: CallCohortHistory;
       title: string;
       unit: "dollars" | "percent";
       series: { label: string; points: { date: string; value: number }[] }[];

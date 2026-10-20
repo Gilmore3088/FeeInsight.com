@@ -1,5 +1,40 @@
 # Hamilton Agent Guide
 
+## Prospective international wire direction (#2278)
+
+An unpublished international wire must bind its actual verified/raw lineage to the current
+exact original artifact and prove its own geography and direction after normal Darwin
+classification. Generic, opposite or unavailable source scope stays pending; a literal price
+alone does not prove applicability. The source-only document/artifact prefix precedes the
+existing published/verified/raw identity suffix, with nonwaiting acquisitions and fresh full
+candidate/peer checks inside a rollback-capable savepoint. Direct insertions derive actual
+identity and category; normal ordinary rows retain their existing complete verified-state CAS.
+
+A differing-price, market-comparable same-product/audience live peer with unproven scope
+also defers the prospective international insertion. Catalog overlay facts decide whether a
+peer participates, independently of original-body availability. This prevents an unresolved
+old generic $35 and a new explicit outgoing $45 from creating a spurious $40 comparison.
+The exact verified input remains selectable without a primary publish.rules settlement or
+negative lesson; finite pending counts/reasons are separate from required-evidence failures.
+Supported operator holds and corrections retain authority. Normal advisory serialization
+and fresh membership checks bound automatic writes; external/manual phantom writers are not
+claimed to be serializable. No history cleanup, price authority, median or replay epoch changes.
+
+## Literal charging units and comparisons (#2248)
+
+Prospective source-owned hourly, page, document, image, statement, half-hour, quarter-hour
+and minute rows retain their literal numeric price, frequency and full readable conditions
+through publication and frequency fill. No amount is converted or unit inferred from a blank
+or legacy `per_item` value. Existing category-period/per-event checks still apply; an explicit
+paper-statement `per_statement` unit is preserved without inferring a calendar month.
+
+Those finite known special units stay visible on evidence surfaces but are excluded from
+legacy category medians, ranges, counts and numeric subject comparisons until same-unit
+cohorts exist. `fee-unit.ts` defines the exact SQL/client normalized predicate; report deltas,
+local-competitor own prices and profile comparison eligibility use it. Statistics method
+17/18, population stamp descriptions and national summary cache keys change together.
+Historical metadata recovery and the live hourly recheck switch remain separate.
+
 Hamilton is the last agent in the pipeline and the one people meet. It has four faces,
 all built on the same live published fees, and one rule across them: every output can be
 retraced without asking Hamilton (see Audit trail).
@@ -297,6 +332,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - Persist selected-institution source/source-label metadata on reports, scenarios, and watchlist rows.
 - Emit publication, refresh, and fee-movement Monitor signals with canonical institution IDs.
 - A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
+- An admin correction is the newest truth about a fee. No check takes down a live fee with a current correction, however its old document reads; only a new correction or a reversal replaces it. Corrected rows keep their original Knox lineage, so a check that reads live Knox rows will see them; the `keep_admin_corrected_fee_live` trigger (migration 20270110000068, #978) skips such a takedown, and a new check should leave these rows out itself rather than lean on it.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
 ## Publishing (publish.rules version 3)
@@ -374,6 +410,34 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
   as a real run, without writing.
 - A fee line the bank removed from a newer copy of its page comes down (Newer-copy
   check below).
+
+## Unavailable publication evidence (#1069)
+
+The three existing enabled prepublication gates (exact copies, shared sweep rules and page
+copies) distinguish an available no-match from an unavailable read. The same boundary covers
+prior live rows and document/listed-line evidence needed by a publication or supersession
+decision. Only required branch inputs gate that decision. Already-proved identical/older
+outcomes and positive independent refusals retain their existing meanings; off/shadow controls
+stay diagnostic.
+
+A candidate whose required evidence is unavailable stays pending: no insertion, supersession,
+fee rejection, negative lesson or settled publish.rules v3 fingerprint. Its ordinary next
+healthy run can decide the same input. This does not reopen historical settled tuples or
+change any rule version, switch, recovery or clearing authority. Shared historical consumers
+keep their existing healthy contracts and conservative fallbacks.
+
+The saved publish detail carries publication_evidence_check (publish.evidence.v1), finite
+check codes, affected/deferred counts and at most 20 sampled verified IDs. Raw exceptions,
+SQL, source text and stacks are not copied into that receipt. An unavailable read is not a
+zero-match complete validation; summary/narration distinguish pending evidence deferrals from
+known refusals. A completed run step can report incomplete evidence.
+With live copy candidates, the own document row and a URL accepted by the existing page-key
+parser are required; missing, blank or unparseable own URLs stay unavailable. This does not
+require timestamps or text for unrelated copies and does not change the historical collapse.
+This is a bounded publication-read receipt; it does not certify whole-pipeline validation,
+source fidelity, successfully returned fields outside required prospective branch inputs,
+or the completeness of the primary selector or other maintenance producers.
+The original #1069 weekly below-1% takedown target remains a separate measured acceptance.
 
 ## Publish step order
 
@@ -497,12 +561,18 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 12a. Product page against the schedule (`product-page-conflict.ts`, James 2026-10-13): a live
     dollar fee from a product page whose bank's schedule documents list the same category only
     at other prices; the schedule wins. Per-account and multi-item categories are left out
-    (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
-    nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
+    (`PER_ACCOUNT_CATEGORIES`). On since Oct 20 (`PRODUCT_PAGE_CONFLICT_LIVE`), after an automatic
+    sample of its dry run against the banks' stored documents checked clean (2 takedowns, 1 right,
+    0 wrong, 1 doubtful): a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
     A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
     name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending
     flag the check no longer raises on a live fee is cleared (`takedown_cleared`).
+    The schedule must price the same item, not only the same category (`isSameItemConflict`,
+    Oct 20): a category holds several items, and 12 of 20 sampled takedowns paired different ones
+    (an HSA closing fee against a Christmas Club penalty). A product price named as a discount,
+    and a tier's own product page or fee (`/checking/bankon`), are never conflicts. Lesson: judge
+    a fee against the same line of the schedule, never against its category's prices.
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
@@ -569,6 +639,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
     v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    Moved pages (#1200, `MOVED_PAGE_REFRESH_LIVE`): a live fee also follows its page when the
+    page stopped answering at its own address, that is Magellan's live-source pass tried it in the
+    last 37 days, after its newest copy, and no copy of it is under 30 days old. It moves to the newest current document of its bank
+    read after it that states the same line, under the same rules as a superseded copy.
     Both rows must keep the same audience (#2109): missing legacy audience means `unknown`,
     never a wildcard for consumer, business or both. The selector, pure plan and final write
     enforce it; an audience changed since selection leaves the live row where it was. This
@@ -954,7 +1028,7 @@ its category (`businessScheduleFeesSql`; a footnote-only business fee stays the 
 needs the page read). The sweeps and publish share one builder per rule, so they cannot disagree;
 the sweeps stay the live re-check and this check takes nothing down. A row a sweep would take down
 is counted in the step's `publish_sweep_check` (`would_refuse`, `by_rule`, samples, and `error`
-when a read failed; a failed read refuses nothing). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
+when a read failed; an enabled unavailable check leaves an otherwise publishable row pending). `PUBLISH_REFUSE_SWEEP_RULES_LIVE` is
 on (James's OK, 2026-10-17): such a row is skipped (skip reason `Refused at publish, a sweep would
 take it down: <the sweep's reason>`). Set it back to false to count only.
 
@@ -964,7 +1038,7 @@ institution, category, variant and amount from other documents. A row the collap
 behind a live copy of the same page is counted in the step's `page_copy_check` and, while
 `PUBLISH_REFUSE_PAGE_COPIES_LIVE` is on, skipped (`Copy of the page of live fee #<kept id>`). A row
 the collapse would keep (the newer edition) publishes as before. The collapse stays the live
-re-check; this check takes nothing down, and a failed read refuses nothing. Dry count: 51 of the 53
+re-check; this check takes nothing down. An enabled unavailable read leaves the candidate pending. Dry count: 51 of the 53
 rows closed as page copies in the 30 hours to Oct 18 02:40 UTC were closed behind a row already live
 when they published.
 

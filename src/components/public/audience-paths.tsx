@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 
 interface AudiencePath {
   eyebrow: string;
@@ -28,7 +29,7 @@ export const AUDIENCE_PATHS: readonly AudiencePath[] = [
     eyebrow: "I work at a bank or credit union",
     title: "Benchmark my institution",
     body: "A free competitive fee report; Hamilton for teams",
-    href: "/for-institutions#report",
+    href: REPORT_REQUEST_HREF,
   },
 ];
 

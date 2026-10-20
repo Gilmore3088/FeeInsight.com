@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { sql } from "./connection";
 import type { GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { queueBoardFromDetail, type QueueBoard } from "@/lib/agents/queue-board";
 import { eligibleReferences, readReferenceEligibility, referenceScoreCohort, sameReferenceCohort, type ReferenceEligibilitySnapshot } from "./answer-key-reference-store";
 import type { ReferenceScoreCohort } from "./answer-key-eligibility";
 
@@ -705,6 +706,8 @@ export interface ScoreboardSnapshotRow {
   goal: GoalScorecard | null;
   /** Darwin's undecided rows from that day's agent health check (`detail.agent_health`); null when not recorded. */
   darwin_backlog: number | null;
+  /** The piles board stored that day (`detail.queues`, #1108); null on older snapshots. */
+  queues: QueueBoard | null;
 }
 
 const SNAPSHOT_NUMBER_COLUMNS = [
@@ -775,6 +778,7 @@ export async function listScoreboardSnapshots(days = 30, db: SqlTag = sql): Prom
     }
     const undecided = detail?.agent_health?.agents?.find((section) => section.agent === "darwin")?.numbers?.undecided;
     snapshot.darwin_backlog = undecided == null || !Number.isFinite(Number(undecided)) ? null : Number(undecided);
+    snapshot.queues = queueBoardFromDetail((detail as { queues?: unknown } | null)?.queues);
     return snapshot as unknown as ScoreboardSnapshotRow;
   });
 }

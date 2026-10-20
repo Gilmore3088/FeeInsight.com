@@ -2,6 +2,112 @@
 
 Knox owns conservative raw fee extraction.
 
+## Prospective international wire applicability (#2278)
+
+Numeric source support does not choose incoming/outgoing scope. After ordinary admission,
+literal own-source direction/geography reviews the existing resolved category. Complete own
+cells, bounded physical label/price continuations and literal wire headings retain their facts;
+an exact two-direction/two-dollar pair binds each admitted amount to its printed direction.
+Repeated/equal-price, tiered/extra-column pairs and unsupported owners remain unresolved.
+Generic international prices do not borrow a nearby outgoing row or the legacy outgoing hint.
+
+Both common candidate writers derive private `knox_eligibility:international_wire` from actual
+hash-bound full source. Supplied model flags/conditions cannot create it. Only the exact pending
+unverified identity can become this hold; judged and unrelated held histories remain unchanged.
+Affected missing source declines/defer without inventing scope; unresolved domestic callers keep
+their existing availability contract. Final Darwin/publication use actual locked lineage and
+nonsettling uncertainty, including old generic/new explicit mixed-price conflicts. No numeric
+matcher, category rule, selector, epoch, provider control or historical correction is changed.
+
+## Source-owned symbolic lesser-of eligibility (#2335)
+
+A complete physical own-label row can print a dollar bound followed by `or amount of
+minimum payment, whichever is less`. The dollar remains numerically source-supported;
+the current flat-price representation cannot express the symbolic charge. Free extraction
+and both common candidate writers keep this row in eligibility review, carrying the full
+own clause and source-derived `knox_eligibility:symbolic_lesser`. Supplied model conditions,
+linked conditions and extra flags cannot create or qualify that provenance. Multiple prices,
+unsupported tails and indistinguishable same-name/same-price rows decline; they never choose
+an amount, account, frequency or category. Percent formulas, prefixed table/header labels and
+wrapped clauses remain outside this bounded physical grammar, not a claim of complete safety.
+
+Positive late-payment named/category callers now need hash-bound full source even when their
+fee is ordinary. Missing legacy content may recover only the exact artifact/document/
+institution/hash; unavailable or mismatched content declines. Supplied content retains the
+existing trusted internal source-row relation contract and checks its actual digest. This
+caller-boundary change is measured/tested separately from the formula wording frame.
+
+Only exact unverified pending identities may become this held shape, using the existing
+transaction, row lock and fresh judgment check. Every judged/verified/published history and
+unrelated nonpending hold stays unchanged. Darwin's current-raw lock respects the dedicated
+provenance despite stale category/product selection; ordinary flagless rejudges stay eligible.
+This is the explicitly approved prospective applicability phase, like #2304/#2259, not a
+shared unsupported-price rule or historical retirement predicate. No replay epoch, selector,
+rules version, provider activation or historical88747repair is included. The attempted fresh
+wording frame timed out without a rowset; it supplies no population or global-recall claim.
+
+## Source-owned cap-first eligibility (#2304, prospective admission)
+
+The existing literal `NSF Fee` / `Overdraft Fee` cap-first price grammar can prove an item
+price while retaining a youth, senior, student, account or business section. Price support
+is not general applicability. Both common candidate writers re-read this bounded scope from
+the full source, and route a uniquely owned restricted item price to eligibility review with
+`knox_eligibility:cap_first`. Unknown or indistinguishable repeated ownership declines the
+write. The actual heading and complete cap/item clause are retained; model conditions,
+product guesses and supplied flags cannot create this provenance. No new price/category
+authority or source-check refusal is added.
+
+Every possible literal cap-item caller needs hash-bound full source, including an otherwise
+ordinary NSF/OD candidate. A minimal legacy caller may load only its exact completed artifact
+ID/document/institution/hash, then check the content digest. Missing or mismatched source
+declines; it does not establish an unrestricted fee. This fail-closed caller change extends
+beyond the restricted cap class, and is tested separately from ordinary source-bound controls.
+Supplied full text trusts the internal source-row query's identity relations, then checks its
+actual digest. Free/paid rows select those fields together. Feedback's exact document lookup
+also requires the source institution to equal the stored request institution; a malformed
+foreign-document request settles without text rather than supplying another bank's row.
+
+Only the exact unverified pending raw identity carrying `needs_darwin_verification` can be
+taken over by this hold. Insert, raw lock and a fresh judgment check share a transaction.
+Every judged identity and unrelated nonpending hold keeps its complete old row. Darwin's
+current-raw lock respects this provenance despite a stale chosen category, without adding a
+global needs-flag requirement. Original overwritten source witnesses and historical recovery
+remain separate (#2220). Paid providers, selectors, priorities, floors and versions are unchanged.
+
+The 2026-10-19 17:12 UTC read-only frame had 8,580 hash-verified completed texts containing the
+required `max` token, including historical documents, and zero exact cap-first matches. The
+separate raw lexical frame had 32 rows (31 current source hashes equal original, one unjudged
+row without a document); its 18 active public catalog rows use ordinary maximum wording.
+These dated observations do not certify unavailable original witnesses or future text.
+
+## Literal own charging units (#2248, prospective raw lineage)
+
+The same unreleased v87 outcome also closes #2283: after admission, one exact bounded own
+label/price can retain a complete additive parenthetical such as a separately incurred
+locksmith fee. Source text supplies it, including a single lowercase wrapped continuation;
+model claims, extra prices, columns, incomplete or repeated conflicting occurrences do not.
+Unknown units such as per-key stay literal conditions, without a new supported unit code.
+This condition-only annotation has the same historical conflict/promoter protections as units.
+
+After the existing name, price and category admission checks, an exact own label/price pair
+can carry its literal hourly, page, document, image, statement, half-hour, quarter-hour or
+minute unit. The numeric amount is unchanged. The full own price clause and existing linked
+conditions survive in readable `conditions`; model-provided unit or condition claims are not
+evidence. Equal-price neighbors, incompatible repeated labels, conflicting units, minima and
+turnaround times cannot supply a unit. An exact one-word label may own its immediate explicit
+price bullet for annotation, without widening the shared price-admission/refusal grammar.
+
+Existing period/per-event/hour-exempt category guards still run. Literal `per_statement` is
+allowed for `paper_statement`; it never means monthly. Newly inserted zero-price rows follow
+the same evidence contract. Same-key historical raw conflicts keep their complete old rows;
+held/name-file/untraced/superseded direct promoters do not use new unit facts to rewrite old
+frequency, conditions, identity or hold status. Historical recovery remains separate work.
+
+Known special units stay visible but do not enter mixed-unit category comparisons. SQL and
+client comparison readers share one finite predicate, statistics method 17/18, and versioned
+summary caches. Blank, `other` and legacy `per_item` are not reinterpreted. This code does not
+activate historical hourly rereads, change provider/pause controls or rescale any amount.
+
 ## Ancillary product ownership (#1911 code phase, 2026-10-19)
 
 A bounded single-primary-deposit-product document can assign its own ancillary priced fee
@@ -149,6 +255,48 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 677 of 736 (92.0%), 677 found (55.7%).
 
 ## Rules versions (`extract.rules`)
+
+v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
+other mailed-back statements file as returned mail, the type made for returned or undeliverable
+mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing
+his v26 call that they stay held. 246 held lines at 126 banks match the name, and 231 of them passed the release checks in the Oct 20 dry run; live returned
+statements already sit under returned mail (83 at 82 banks).
+
+v89 (Oct 20, #1102) turns on the held-name rules (`KNOX_HELD_NAME_RULES_LIVE`) under James's
+sampled-clean rule, and drops their returned-statement rule so returned statements stay held
+(his v26 call). New reads file "Stop Pay Fee", reconveyance, a bare or short-window early
+closure, a club withdrawal fee, a mailed member statement, an IRA close-out and a prime-mark box
+size; the held re-check sends the held lines to Darwin with `knox_held_name_rule`. A promoted
+held name drops any page markup ("…Charges<br> Stop Pay Order").
+
+v88 (Oct 19, #2021/#2284/#2286) binds bounded slash-joined domestic wire prices to
+explicit incoming/outgoing clauses on their own physical row. Ordinary conflicting prices,
+including Wire In/Out aliases, disable the authority. New international or restricted-section
+admission is not granted. The free producer, paid grounding and shared source check use the
+same domestic witness, and the live rules recheck applies an explicit refusal before broader
+category/amount reproduction. Already-passed own-source rows return through the ordinary rules
+signature and genuine two-look path; source-check strategy 18, selector predicates, floors
+78/73/82 and controls stay unchanged. The full four-category impact corpus and same-snapshot
+87-to-88 due counter are recorded with the release receipts; no historical metadata rewrite
+or direct price patch is part of this version. #2021 stays open until normal production replay
+and output validation. International applicability (#2278) and unchanged legacy business
+heading classification (#2285) remain separate findings.
+
+v87 (Oct 19, #2248) annotates newly admitted raw lineage with literal own hourly, page,
+document, image, statement, half-hour, quarter-hour or minute frequency and complete source
+conditions. Physical ownership, exact repeated-name consistency and unchanged category guards
+bound the annotation. Whole and partial hours are never numerically converted; an explicit
+statement is never inferred to be monthly. Hash-checked Milaca and Morton sources plus the
+corrected Oakwood source pass actual free/accepted-paid raw, Darwin, Hamilton and fill stages.
+
+Historical insert conflicts and direct held/superseded promoters keep their old identities,
+frequency, conditions and holds; this version does not recover old unit metadata. Existing
+re-read floors (78/73/82), selector predicates, pause controls and historical hourly switch
+remain unchanged. Ordinary version-driven due reads are counted separately from recovery.
+The shared finite normalized SQL/client comparison predicate removes explicitly known special
+units from legacy mixed-unit populations, with method 17/18 and cache/stamp parity. The exact
+15:18:07 UTC read-only population was 915 rows at 735 distinct institutions, all hourly; this
+is neither a source-certified recovery list nor 735 deduplicated statistic values.
 
 v86 (Oct 19, #2259) keeps a generic monthly fee in eligibility review when its own
 physical price/phrase is repeated under distinct explicit account owners. The bounded
@@ -419,7 +567,7 @@ refinancing and document fees into other lending. The answer keys left these lin
 so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
 of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
-stay held.
+stay held (returned statements file as returned mail since v90).
 
 v27 (rules 27) reads two-column schedules where the right column's footnotes run beside a left-column
 heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
@@ -699,7 +847,7 @@ by its heading where its own words mislead, and the next held families get names
 - Left held on purpose: travel and reloadable cards (one gate key leaves "Travel Money Card"
   unfiled, the 62-bank key files them two ways), a printout without "statement" (the keys split it
   between research and copies), a copy of a title, stop pay (`HELD_NAME_PATTERNS`, James's switch),
-  returned statements, reopening an account, and a bare "Service Fee", "Checking Fee" or "Shipping
+  reopening an account, and a bare "Service Fee", "Checking Fee" or "Shipping
   Fee" (on live texts those names took rows the heading pass reads right, "Cashier's Checks: |
   Performance Checking", "Credit/Debit Replacement Card: | Standard Shipping").
 - 62-bank key, free-team replay of the 62 key texts (scorer fee rule, a key's account research
@@ -795,7 +943,7 @@ that key's fold home.
 - "Mobile Check Deposit" is mobile deposit.
 - One price for a "Debit Card or Credit Card Replacement" is the debit card's (a credit card alone
   is still a lending fee).
-- Left held on purpose: returned statements (James's call since v26); a bare "Wire Transfer Fee"
+- Left held on purpose (returned statements file as returned mail since v90): a bare "Wire Transfer Fee"
   (about 1 in 5 say incoming or international after the price); and printouts, instant-issue cards,
   travel and reloadable cards, loan coupon books, remote deposit capture and a bare "Expedited
   Delivery", which the Texas or seven-state gate keys leave unfiled or file elsewhere.
@@ -1109,27 +1257,31 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   `held_name_file`. On 15 Oct 2026 (read-only, after the second review of #1385): 161 held lines
   matched a settled name, 71 would move at 40 banks in 26 states (38 of them set aside), and none
   had a label yet.
-- `previewHeldNameRules` (#1102, off until James switches it on): the held-name rules
+- `previewHeldNameRules` (#1102, on since Oct 20, v89): the held-name rules
   (`HELD_NAME_PATTERNS` in `rules.ts`) file unclassified names that say their own category at
   many banks: "Stop Pay Fee", "Reconveyance Fee", a bare "Early Closure Fee" row, a club
-  withdrawal fee, a closure inside a window of a year or less, a returned or undeliverable
-  statement (account research, as `fee-fold.ts` files returned mail), a mailed member statement,
+  withdrawal fee, a closure inside a window of a year or less, a mailed member statement,
   an IRA closeout or withdrawal, and a box size written with prime marks ("3″x5″"). They come
   after every other rule. A loan's, HELOC's, mortgage's or certificate's early closure, a window
   over a year, and a bare "Wire Transfer Fee" (about 1 in 5 say incoming or international after
-  the price) stay held. While `KNOX_HELD_NAME_RULES_LIVE` is false, each extract step reads every
+  the price) stay held. Returned statements file as returned mail since v90 (James, Oct 20, "File
+  them"); their rule was dropped from v89 to keep his v26 call. While `KNOX_HELD_NAME_RULES_LIVE` was false, each extract step read every
   held line whose excerpt could match (`HELD_NAME_PREFILTER_SQL`) and reports in
   `held_name_preview` how many only these rules price at the row's own amount, and how many of
   those pass Darwin's category guard and trace on their own line. It writes nothing. On
   14 Oct 2026, 638 lines at 299 banks passed both checks (436 set aside), and a hand check of
-  20 found 20 right. Switching on takes a rules version bump in the same change: new reads
+  20 found 20 right. On 20 Oct the global dry run released 478 (440 passing both checks, at 207
+  banks, 231 of them returned statements), and a random 20 of the 478 were
+  all printed on the bank's document. Switching on took a rules version bump (v89): new reads
   file these names, `recheckHeldRows` sends the held lines to Darwin with
   `knox_held_name_rule`, and Hamilton's rules re-check reads them the same way. With the
-  switch on, the answer-key gates read Texas 520 right / 15 wrong (511 / 14 off) and seven
-  states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
+  switch on and the returned-statement rule still in (14 Oct), the answer-key gates read Texas
+  520 right / 15 wrong (511 / 14 off) and seven states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
-- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, off until James switches it on): a held
+- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, on since Oct 20 under James's sampled-clean rule, #2442: the dry run
+  picked 4,091 candidates at 482 banks, the first 2,000 read all passed the band test, and a
+  random 20 were all rate bands): a held
   range line with no category that is a deposit or loan rate band ("Tier 3 | $25,000.00 –
   $49,999.99 | 0.75%", "$3,500 to $20,000 | 11.25% | 48 months"). It asks for positive evidence,
   since two reviews found fees a negative test missed. A line is a band only when:
@@ -1178,7 +1330,7 @@ more rules versions without moving them:
 |---|---|---|
 | `unclassified` | Knox's held re-check and name filing; James labels the weekly name queue | today's rules, a settled name or a label |
 | `range` (with a category) | James: a range needs storage first (#1060) | none yet |
-| `range_no_category` | Knox's range-band pass (off) | bands set aside as not fees once on |
+| `range_no_category` | Knox's range-band pass (on since Oct 20) | bands set aside as not fees |
 | `range_band` | Knox's range-band pass | set aside, kept |
 | `percentage` | Knox's rate re-check | to Darwin as a rate fee |
 | `untraced` | Knox's untraced re-check; then Rosetta | traced by today's rules; a Rosetta re-read is the next slice |
@@ -1488,6 +1640,19 @@ only on what the free team could not read.
   budget, stop or circuit error ends the pass before the call and writes no attempt, so the text
   stays eligible; any other call error records its outcome. Each attempt records its cost.
 
+## Printed generic account boundaries (#2269)
+
+Lineup source context stops at the nearer explicitly printed account kind, including generic
+Savings/Checking headings, and at the next account below the fee. The correction fallback uses
+that owner before an older heading. Display-name rejection alone cannot replace a specific
+retained product with a newly preferred generic kind. Fee captions, link/tagline labels and
+genuinely borrowed generic owners can still be corrected from the fee's own source context.
+The RNB tagline fixture now resolves to its printed Personal Savings owner rather than NULL.
+`LINEUP_CORRECT_STRATEGY` stays v2; no rules/epoch bump or settled-attempt replay is authorized.
+The dated published-monthly proposal frame omits stored opening deposits and held/unpublished
+rows, so it is not a full correction-population count or historical recovery authority.
+
+
 ## Boundaries
 
 - Do not write `verified_fee_observations` or `published_fee_records`.
@@ -1544,7 +1709,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v86 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v90 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

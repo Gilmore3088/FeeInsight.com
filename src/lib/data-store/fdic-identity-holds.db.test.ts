@@ -34,7 +34,7 @@ describe.skipIf(!connection)("durable FDIC identity holds in isolated PostgreSQL
     db = postgres(connection!, { ssl: false, max: 2, prepare: false, onnotice: () => undefined,
       connection: { search_path: schema }, types: { json: JSON_TEXT_PASSTHROUGH } });
     await db`CREATE SCHEMA ${db(schema)}`;
-    await db.unsafe(readFileSync("supabase/migrations/20261019163933_fdic_identity_conflict_holds.sql", "utf8").replaceAll("public.", `${schema}.`));
+    await db.unsafe(readFileSync("supabase/migrations/20270110000074_fdic_identity_conflict_holds.sql", "utf8").replaceAll("public.", `${schema}.`));
     await db`CREATE TABLE agent_runs (id integer PRIMARY KEY,status text,run_kind text,cancel_requested_at timestamptz,params_json jsonb,agent_name text)`;
     await db`CREATE TABLE agent_run_steps (agent_run_id integer,step_key text,status text,agent_name text)`;
     await db`INSERT INTO agent_runs VALUES (1,'running','workflow',NULL,'{"source":"magellan.registry","registry_source":"fdic-universe","partition_key":"current"}','magellan')`;

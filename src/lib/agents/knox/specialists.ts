@@ -26,6 +26,9 @@ import { frequencyFromLine, settledFrequency } from "@/lib/fee-frequency";
 import { withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
 import { exclusiveStackedPrices, stackedFeePrices } from "@/lib/custom-report/stacked-fee-prices";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
+import { withOwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { mayHaveSymbolicLesserFee, symbolicLesserOfReview } from "./symbolic-lesser-of";
+import { internationalWireEligibility } from "./international-wire-eligibility";
 
 /**
  * Knox's free extraction team, run over one whole document. Pure.
@@ -140,7 +143,14 @@ import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 // overdraft-program charge stays held instead of losing its period on the paid-item path.
 // v86 (#2259): repeated monthly price prose without one literal account owner stays
 // eligibility-held; paid and minimal-row callers share the source-bearing writer gate.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 86 } as const;
+// v87 (#2248): new raw lineage keeps literal own charging units and full conditions;
+// known special units leave mixed-unit comparisons. Historical raw metadata stays settled.
+// v88 (#2021/#2284/#2286): explicit domestic post-price directions bind paired wire
+// prices; the same bounded own-price refusal applies to free, paid and live rechecks.
+// v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
+// statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
+// v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 90 } as const;
 
 export interface SpecialistRun {
   strategy: string;
@@ -477,6 +487,28 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     candidates.push({ ...candidate, canonicalHint: twin, lineShare: `twin:${twin}` });
   }
 
+  // #2278: source price support does not establish an international wire's direction.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!read.canonicalHint.startsWith("wire_")) continue;
+    const scope = internationalWireEligibility(sourceText, read);
+    if (scope.kind === "not_applicable" || scope.kind === "admit") continue;
+    candidates.splice(at, 1);
+    if (scope.kind === "hold") held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
+      excerpt: scope.scope.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
+  // #2335: the printed dollar remains supported, but a symbolic charge is not flat.
+  for (let at = candidates.length - 1; at >= 0; at--) {
+    const read = candidates[at];
+    if (!mayHaveSymbolicLesserFee(read.feeName, read.canonicalHint)) continue;
+    const formula = symbolicLesserOfReview(sourceText, read.feeName, read.amount);
+    if (!formula) continue;
+    candidates.splice(at, 1);
+    held.push({ shape: "eligibility", feeName: read.feeName, amount: read.amount, amountMax: null,
+      percent: null, frequency: read.frequency, canonicalHint: read.canonicalHint,
+      excerpt: formula.ownText, ownedPolicy: true, lineShare: read.lineShare });
+  }
   const monthlyOwnerReview = monthlyAccountOwnerReview(text, institutionName);
   for (const candidate of candidates) {
     const owners = monthlyOwnerReview(candidate);
@@ -525,5 +557,7 @@ export function runFreeSpecialists(sourceText: string, options: { institutionNam
     if (!duplicate) rates.push(rate);
     return false;
   });
-  return { candidates, held: stillHeld, rates, runs, dropped };
+  const unitHolds = stillHeld.map(row => row.shape === "zero" && row.canonicalHint && row.amount != null
+    ? withOwnFeeUnit({ ...row, amount: row.amount, canonicalHint: row.canonicalHint }, sourceText) : row);
+  return { candidates: candidates.map(candidate => withOwnFeeUnit(candidate, sourceText)), held: unitHolds, rates, runs, dropped };
 }

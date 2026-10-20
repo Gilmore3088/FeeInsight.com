@@ -60,7 +60,7 @@ unavailable; none is treated as an empty hold set. The bound is an explicit revi
 
 ## Release prerequisites
 
-The new migration is `20261019163933_fdic_identity_conflict_holds.sql`, generated using the
+The new migration is `20270110000074_fdic_identity_conflict_holds.sql`, generated using the
 project Supabase migration workflow. It creates empty schema only. Read-only inspection
 confirmed production currently has no hold table and verified the relevant institution/run
 columns. The migration has only been exercised on disposable loopback PostgreSQL fixtures.

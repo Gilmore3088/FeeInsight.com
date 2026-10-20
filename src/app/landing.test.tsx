@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IndexRow } from "@/lib/data-store";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
 import { REPORT_OFFER } from "@/lib/constants";
+import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import { buildRevenueContext } from "@/lib/custom-report/revenue-context";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
@@ -391,8 +392,23 @@ describe("one question section", () => {
       { quarter: "2025-Q4", service_charge_income: 1_760 },
       { quarter: "2025-Q3", service_charge_income: 1_720 },
     ],
-    { tier: "community", sc_rank: 12, peer_count: 140, peer_median_sc: 610 },
+    { tier: "community", sc_rank: 12, peer_count: 140, peer_median_sc: 610,
+      comparison: financialPeerComparison({ source: "fdic", reportDate: "2026-06-30", tier: "community", minimumAssetsUsd: 1e8, maximumAssetsUsd: 1e9, subjectIncluded: true, eligibleCount: 140, reportedCount: 140, ratioReportedCount: 140, minimumMedianCount: 5 }) },
   );
+  it("carries broad CU fee-income labels into all landing evidence and report examples", () => {
+    const cuRevenue = buildRevenueContext([
+      { quarter: "2026-Q2", service_charge_income: 300 },
+      { quarter: "2026-Q1", service_charge_income: 280 },
+    ], null, "ncua");
+    const cuReport = { ...report, data: { ...report.data, subject: { ...report.data.subject, charter_type: "credit_union" } } };
+    const view = buildOneQuestionView({ report: cuReport, revenue: cuRevenue })!;
+    expect(view.income?.measureLabel).toBe("Broad credit-union fee income");
+    expect(view.asks.find((ask) => ask.output === "monitor")?.question).toContain("broad credit-union fee income");
+    const html = renderToStaticMarkup(<LandingResearch report={cuReport} revenue={cuRevenue} />);
+    expect(html).toContain("Broad credit-union fee income");
+    expect(html).not.toContain("Deposit service charges");
+    expect(html).not.toContain("in deposit service charges");
+  });
   const branches = { sod_year: 2025, totalBranches: 80, totalDeposits: 10_000_000_000, byInstitution: { 323: { branches: 14, deposits: 2_100_000_000 } } };
   const peers = {
     groupLabel: "Banks with $1B to $10B in assets",

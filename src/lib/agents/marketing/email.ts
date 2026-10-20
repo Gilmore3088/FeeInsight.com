@@ -101,7 +101,7 @@ function link(path: string, month: string, format: string, text: string): string
  * customers see the Hamilton line set on their subscriber record (src/lib/email/monthly-offer.ts).
  */
 function offerHtml(month: string, format: string): string {
-  const url = `https://feeinsight.com/for-institutions?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=agent-${month}&utm_content=${format}#report`;
+  const url = `https://feeinsight.com/reports?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=agent-${month}&utm_content=${format}#request`;
   return `${esc(mergeTag(MONTHLY_OFFER_FIELDS.text, FREE_MONTHLY_OFFER.text))} <a href="${esc(mergeTag(MONTHLY_OFFER_FIELDS.url, url))}" style="color:${RD.terra};">${esc(mergeTag(MONTHLY_OFFER_FIELDS.cta, FREE_MONTHLY_OFFER.cta))}</a>`;
 }
 

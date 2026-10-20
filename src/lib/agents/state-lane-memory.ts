@@ -1264,8 +1264,3 @@ export async function getAtlasStateLaneDispatch(
     return emptyDispatch(true);
   }
 }
-
-export function correctionAfterValue(value: unknown): Record<string, unknown> {
-  const parsed = safeJsonb<Record<string, unknown>>(value);
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-}

@@ -9,7 +9,7 @@ import { formatCompactDollars } from "@/lib/format";
 import { RD } from "@/lib/report-design/tokens";
 import { enforcementAgencyLabel, enforcementAgencyList, isStateAgency } from "@/lib/regulatory/state-enforcement";
 import type { ActionTheme, RegulatoryWatch, WatchFeeTie, WatchPeerAction, WatchRuleChange, WatchState } from "@/lib/data-store/regulatory-watch";
-import { WATCH_ACTION_YEARS } from "@/lib/data-store/regulatory-watch";
+import { WATCH_ACTION_YEARS } from "@/lib/regulatory/watch-policy";
 
 
 export const THEME: Record<ActionTheme, { label: string; color: string }> = {

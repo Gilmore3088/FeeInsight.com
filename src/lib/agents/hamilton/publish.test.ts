@@ -2,11 +2,13 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, sentenceFragmentName, separateLines } from "./publish";
+import { PUBLISH_MIN_ROWS_PER_STEP, ARTICLE_PAGE_RESELECT_SQL, ARTICLE_PAGE_SKIP_REASON, CATALOG_DEPTH_LIVE_SQL, decidePriorFee, HAMILTON_PUBLISH_MIN_INSTITUTION_FEES, HAMILTON_PUBLISH_STRATEGY, linesApartOnPage, listsBothPrices, qualifiedLines, namesShareReading, newerCopyPrintsLine, otherBalanceLine, publishedFeeName, publishNameHold, publishSkipReason, runHamiltonPublish, selectListedFeeLines, sameLineDuplicateOf, sentenceFragmentName, separateLines } from "./publish";
 import { feePageKey } from "./page-key";
 import { PUBLISH_REFUSE_SWEEP_RULES_LIVE, publishSweepRefusals } from "./publish-sweep-rules";
 
-type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+type DbMock = ReturnType<typeof vi.fn<(strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown[]>>> & {
+  unsafe: ReturnType<typeof vi.fn<(query: string, params: unknown[]) => Promise<unknown[]>>>;
+};
 
 function templateText(strings: unknown): string {
   return Array.isArray(strings) ? strings.join(" ") : String(strings);
@@ -33,8 +35,9 @@ function createDbMock(
   sweepRows: { otherBank?: unknown[]; unconfirmedHost?: unknown[]; business?: unknown[]; owner?: unknown[] } = {},
 ): DbMock {
   let nextPublishedId = 1201;
-  const db = vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray, ...params: unknown[]) => {
     const text = templateText(strings);
+    if (text.includes("AS verified_state")) return Promise.resolve(rows.filter(row => Number(row.fee_verified_id) === Number(params[0])));
     if (text.includes("agent_source_texts")) return Promise.resolve(movementEvidence);
     if (text.includes("INSERT INTO published_fee_records")) {
       return Promise.resolve([{ fee_published_id: nextPublishedId++ }]);
@@ -44,6 +47,12 @@ function createDbMock(
     }
     // No admin hold in these fixtures (publish.admin-hold.test.ts covers one).
     if (text.includes("left(quarantine_reason")) return Promise.resolve([]);
+    if (text.includes("fr.source_document_id <>")) {
+      // The page-copy SQL only returns same-price rows from another document. A prior
+      // price or this very document is not a live copy requiring its own metadata read.
+      return Promise.resolve(priorPublishedRows.filter((prior) =>
+        Number(prior.amount) === Number(params[3]) && Number(prior.source_document_id) !== Number(params[4])));
+    }
     if (text.includes("FROM published_fee_records")) {
       return Promise.resolve(priorPublishedRows);
     }
@@ -58,6 +67,7 @@ function createDbMock(
     if (query.includes("FROM verified_fee_observations")) return Promise.resolve(rows);
     return Promise.resolve([]);
   });
+  Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
   return db;
 }
 
@@ -492,7 +502,7 @@ describe("Hamilton agentic publish", () => {
     expect(skipped.sweepCheck.wouldRefuse).toBe(0);
   });
 
-  it("publishes as before when a sweep read fails, and the run ledger gets the error", async () => {
+  it("defers publication when an enabled sweep read is unavailable", async () => {
     const db = createDbMock([verifiedFee]);
     const base = db.unsafe as (query: string, params: unknown[]) => Promise<unknown[]>;
     db.unsafe = vi.fn((query: string, params: unknown[]) =>
@@ -501,8 +511,237 @@ describe("Hamilton agentic publish", () => {
 
     const result = await runHamiltonPublish({ runId: 135, refuseSweepRulesLive: true, db: asPublishDb(db) });
 
-    expect(result.results[0]).toMatchObject({ status: "published" });
-    expect(result.sweepCheck.error).toContain("business_schedule: statement timeout");
+    expect(result.publishedFees).toBe(0);
+    expect(result.results[0]).toMatchObject({ status: "skipped" });
+    expect(result.sweepCheck.error).toBe("Publication evidence unavailable: business_schedule");
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["business_schedule"] });
+    expect(result.evidenceCheck).toMatchObject({ readState: "unavailable", deferred: 1, unavailableByCheck: { business_schedule: 1 } });
+    expect(writes(db).join("\n")).not.toMatch(/INSERT INTO published_fee_records|UPDATE published_fee_records|UPDATE verified_fee_observations|INSERT INTO pipeline_attempts/);
+  });
+
+  it.each([
+    ["other_bank_document", "COALESCE(o.id, 0)"],
+    ["unconfirmed_document_host", "own_label"],
+    ["document_owner", "named_other_id"],
+  ])("defers when required %s evidence is unavailable", async (check, marker) => {
+    const db = createDbMock([verifiedFee]);
+    const base = db.unsafe.getMockImplementation()!;
+    db.unsafe.mockImplementation((query: string, params: unknown[]) =>
+      query.includes(marker) ? Promise.reject(new Error("secret SQL/source detail")) : base(query, params));
+    const result = await runHamiltonPublish({ runId: 136, db: asPublishDb(db) });
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: [check] });
+    expect(result.publishedFees).toBe(0);
+    expect(result.supersededFees).toBe(0);
+    expect(JSON.stringify(result)).not.toContain("secret SQL/source detail");
+  });
+
+  function unavailableTaggedRead(db: DbMock, marker: string) {
+    const base = db.getMockImplementation()!;
+    let attempted = 0;
+    db.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) => {
+      if (templateText(strings).includes(marker)) {
+        attempted += 1;
+        return Promise.reject(new Error("private exception with SQL, URL and stack"));
+      }
+      return base(strings, ...params);
+    });
+    return () => attempted;
+  }
+
+  it.each([
+    ["live_prior", "ORDER BY fp.published_at DESC"],
+    ["exact_duplicate", "lower(btrim(fp.fee_name))"],
+  ])("keeps a pending row after %s failure", async (check, marker) => {
+    const db = createDbMock([verifiedFee]);
+    const attempted = unavailableTaggedRead(db, marker);
+    const result = await runHamiltonPublish({ runId: 137, db: asPublishDb(db) });
+    expect(attempted()).toBe(1);
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: [check] });
+    expect(result.publishedFees).toBe(0);
+    expect(writes(db).join("\\n")).not.toContain("INSERT INTO published_fee_records");
+    expect(JSON.stringify(result)).not.toContain("private exception");
+  });
+
+  it("does not supersede a legitimate existing price when its coexistence read fails", async () => {
+    const db = createDbMock([verifiedFee], [priorPublishedFee]);
+    const attempted = unavailableTaggedRead(db, "SELECT source_document_id, fee_name, amount");
+    const result = await runHamiltonPublish({ runId: 138, db: asPublishDb(db) });
+    expect(attempted()).toBe(1);
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["listed_fee_lines"] });
+    expect(result.publishedFees).toBe(0);
+    expect(result.supersededFees).toBe(0);
+    expect(writes(db).join("\\n")).not.toMatch(/INSERT INTO published_fee_records|UPDATE published_fee_records/);
+  });
+
+  it("does not settle a provisional older-document outcome when its exception text read fails", async () => {
+    const db = createDbMock([verifiedFee], [{ ...priorPublishedFee, document_crawled_at: "2026-10-02T00:00:00Z" }]);
+    const attempted = unavailableTaggedRead(db, "SELECT normalized_text FROM agent_source_texts");
+    const result = await runHamiltonPublish({ runId: 139, db: asPublishDb(db) });
+    expect(attempted()).toBe(1);
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["document_text"] });
+    expect(result.publishedFees).toBe(0);
+  });
+
+  it.each(["page_copy_live", "page_copy_document", "page_copy_text", "page_copy_document_missing", "page_copy_text_missing"])("defers a failed %s prerequisite", async (check) => {
+    const db = createDbMock([verifiedFee]);
+    const base = db.getMockImplementation()!;
+    const witnesses: string[] = [];
+    const expectedCheck = check.replace("_missing", "");
+    db.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) => {
+      const text = templateText(strings);
+      let stage: string | null = null;
+      if (text.includes("fr.source_document_id <>")) stage = "page_copy_live";
+      else if (text.includes("FROM source_documents") && text.includes("GREATEST(last_checked_at")) stage = "page_copy_document";
+      else if (text.includes("SELECT DISTINCT ON (source_document_id)") && text.includes("normalized_text")) stage = "page_copy_text";
+      if (!stage) return base(strings, ...params);
+      witnesses.push(stage);
+      if (stage === expectedCheck) return check.endsWith("_missing")
+        ? Promise.resolve([]) : Promise.reject(new Error("private source/read failure"));
+      if (stage === "page_copy_live") return Promise.resolve([{
+        fee_published_id: 601, institution_id: 42, source_document_id: 12,
+        document_url: "https://testbank.example/fees?print=1", crawled_at: "2026-10-02",
+        canonical_fee_key: "overdraft", amount: 35, fee_name: "Overdraft fee", frequency: "per_item", fee_audience: "consumer",
+      }]);
+      if (stage === "page_copy_document") return Promise.resolve([{ document_url: "https://testbank.example/fees", crawled_at: "2026-10-01", superseded: false, superseded_by_id: null }]);
+      return Promise.resolve([]);
+    });
+    const result = await runHamiltonPublish({ runId: 140, db: asPublishDb(db) });
+    expect(witnesses).toContain(expectedCheck);
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: [expectedCheck] });
+    expect(result.publishedFees).toBe(0);
+    expect(result.supersededFees).toBe(0);
+  });
+
+  it.each([null, "", " \t", "not a URL", "https://testbank.example/%E0%A4%A"])("leaves publication pending for required unknown own page URL %j", async (document_url) => {
+    const db = createDbMock([verifiedFee]);
+    const base = db.getMockImplementation()!;
+    db.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("fr.source_document_id <>")) return Promise.resolve([{
+        fee_published_id: 601, institution_id: 42, source_document_id: 12,
+        document_url: "https://testbank.example/fees?print=1", crawled_at: "2026-10-02",
+        canonical_fee_key: "overdraft", amount: 35, fee_name: "Overdraft fee", frequency: "per_item", fee_audience: "consumer",
+      }]);
+      if (text.includes("FROM source_documents") && text.includes("GREATEST(last_checked_at")) {
+        return Promise.resolve([{ document_url, crawled_at: "2026-10-01", superseded: false, superseded_by_id: null }]);
+      }
+      return base(strings, ...params);
+    });
+    const result = await runHamiltonPublish({ runId: 151, db: asPublishDb(db) });
+    expect(result).toMatchObject({ publishedFees: 0, supersededFees: 0, evidenceDeferredFees: 1 });
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["page_copy_document"] });
+    expect(writes(db).join("\n")).not.toMatch(/INSERT INTO published_fee_records|UPDATE published_fee_records|UPDATE verified_fee_observations|INSERT INTO pipeline_attempts/);
+    expect(db.mock.calls.some(([query]) => templateText(query).includes("SELECT DISTINCT ON (source_document_id)"))).toBe(false);
+  });
+
+  it("defers the wide same-line prerequisite instead of deciding from a failed reselect", async () => {
+    const db = createDbMock([{ ...verifiedFee, same_line_reselect: true }]);
+    const base = db.getMockImplementation()!;
+    let reads = 0;
+    db.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) => {
+      if (templateText(strings).includes("ORDER BY fp.published_at DESC") && ++reads === 2) {
+        return Promise.reject(new Error("wide prior unavailable"));
+      }
+      return base(strings, ...params);
+    });
+    const result = await runHamiltonPublish({ runId: 145, db: asPublishDb(db) });
+    expect(reads).toBe(2);
+    expect(result.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["live_prior"] });
+    expect(result.publishedFees).toBe(0);
+  });
+
+  it("requires text only when the prior-line branch needs it to distinguish two fees", async () => {
+    const row = { ...verifiedFee, fee_name: "ACH OD Fee" };
+    const prior = { ...priorPublishedFee, source_document_id: 77, fee_name: "Courtesy Pay Fee", amount: "35.00" };
+    expect(separateLines(row, prior)).toBe(true);
+    const missing = await runHamiltonPublish({ runId: 147, db: asPublishDb(createDbMock([row], [prior])) });
+    expect(missing.results[0]).toMatchObject({ evidenceDeferred: true, unavailableEvidence: ["document_text"] });
+    const text = "ACH OD Fee $35.00\nCourtesy Pay Fee $35.00\nStop Payment Fee $30.00";
+    const complete = await runHamiltonPublish({ runId: 148, db: asPublishDb(createDbMock([row], [prior], undefined, [{ normalized_text: text }])) });
+    expect(complete.publishedFees).toBe(1);
+    const noPrior = createDbMock([verifiedFee]);
+    expect((await runHamiltonPublish({ runId: 149, db: asPublishDb(noPrior) })).publishedFees).toBe(1);
+    expect(noPrior.mock.calls.some(([query]) => templateText(query).includes("SELECT normalized_text"))).toBe(false);
+  });
+
+  it("retains a proved older outcome after a successful required text read despite unrelated unavailable sweep evidence", async () => {
+    const prior = { ...priorPublishedFee, document_crawled_at: "2026-10-02T00:00:00Z" };
+    const db = createDbMock([verifiedFee], [prior], undefined, [{ normalized_text: "Overdraft fee $30.00\nStop Payment fee $30.00" }]);
+    const base = db.unsafe.getMockImplementation()!;
+    db.unsafe.mockImplementation((query: string, params: unknown[]) => query.includes("consumer_fee_id")
+      ? Promise.reject(new Error("unrelated unavailable sweep")) : base(query, params));
+    const result = await runHamiltonPublish({ runId: 150, db: asPublishDb(db) });
+    expect(result.results[0].reason).toBe("Older document than the live price");
+    expect(result.results[0].evidenceDeferred).toBeUndefined();
+    expect(result.publishedFees).toBe(0);
+  });
+
+  it("preserves historical shared-read fallbacks without inventing a duplicate or coexistence witness", async () => {
+    const listed = createDbMock([]);
+    unavailableTaggedRead(listed, "SELECT source_document_id, fee_name, amount");
+    expect(await selectListedFeeLines(asPublishDb(listed), [77])).toEqual([]);
+    await expect(selectListedFeeLines(asPublishDb(listed), [77], { required: true }))
+      .rejects.toThrow("Publication evidence unavailable: listed_fee_lines");
+    const prior = createDbMock([], [priorPublishedFee]);
+    unavailableTaggedRead(prior, "ORDER BY fp.published_at DESC");
+    expect(await sameLineDuplicateOf(asPublishDb(prior), verifiedFee, 1201)).toBeNull();
+  });
+
+  it("bounds availability receipt samples while retaining the total affected count", async () => {
+    const rows = Array.from({ length: 25 }, (_, i) => ({ ...verifiedFee, fee_verified_id: 900 + i, institution_id: 50 + i }));
+    const db = createDbMock(rows);
+    unavailableTaggedRead(db, "ORDER BY fp.published_at DESC");
+    const result = await runHamiltonPublish({ runId: 146, db: asPublishDb(db) });
+    expect(result.evidenceDeferredFees).toBe(25);
+    expect(result.evidenceCheck?.unavailableByCheck).toEqual({ live_prior: 25 });
+    expect(result.evidenceCheck?.samples).toHaveLength(20);
+    expect(result.publishedFees).toBe(0);
+  });
+
+  it("preserves a proved identical outcome despite an unrelated failed batch sweep", async () => {
+    const db = createDbMock([verifiedFee], [{ ...priorPublishedFee, amount: "35.00" }]);
+    const base = db.unsafe.getMockImplementation()!;
+    db.unsafe.mockImplementation((query: string, params: unknown[]) =>
+      query.includes("consumer_fee_id") ? Promise.reject(new Error("timeout")) : base(query, params));
+    const result = await runHamiltonPublish({ runId: 141, db: asPublishDb(db) });
+    expect(result.results[0]).toMatchObject({ status: "skipped", reason: "Identical fee already published" });
+    expect(result.evidenceDeferredFees).toBe(0);
+    expect(result.evidenceCheck).toMatchObject({ readState: "unavailable", deferred: 0 });
+  });
+
+  it("keeps a known sweep refusal when another required check is unavailable", async () => {
+    const db = createDbMock([verifiedFee], [], undefined, [], sweepFixture);
+    unavailableTaggedRead(db, "lower(btrim(fp.fee_name))");
+    const result = await runHamiltonPublish({ runId: 142, db: asPublishDb(db) });
+    expect(result.results[0].reason).toContain("Refused at publish, a sweep would take it down");
+    expect(result.evidenceDeferredFees).toBe(0);
+    expect(result.publishedFees).toBe(0);
+    expect(result.evidenceCheck).toMatchObject({ readState: "unavailable", deferred: 0 });
+  });
+
+  it("keeps disabled refusal reads diagnostic and does not activate their policy", async () => {
+    const db = createDbMock([verifiedFee]);
+    unavailableTaggedRead(db, "lower(btrim(fp.fee_name))");
+    const base = db.unsafe.getMockImplementation()!;
+    db.unsafe.mockImplementation((query: string, params: unknown[]) =>
+      query.includes("consumer_fee_id") ? Promise.reject(new Error("timeout")) : base(query, params));
+    const result = await runHamiltonPublish({ runId: 143, db: asPublishDb(db), refuseDuplicatesLive: false, refuseSweepRulesLive: false });
+    expect(result.publishedFees).toBe(1);
+    expect(result.evidenceDeferredFees).toBe(0);
+    expect(result.evidenceCheck).toMatchObject({ readState: "unavailable", deferred: 0 });
+  });
+
+  it("still publishes independent rows whose own evidence is available", async () => {
+    const db = createDbMock([verifiedFee, { ...verifiedFee, fee_verified_id: 802, institution_id: 43 }]);
+    const base = db.getMockImplementation()!;
+    db.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) =>
+      templateText(strings).includes("lower(btrim(fp.fee_name))") && params[0] === 42
+        ? Promise.reject(new Error("one row only")) : base(strings, ...params));
+    const result = await runHamiltonPublish({ runId: 144, db: asPublishDb(db) });
+    expect(result.publishedFees).toBe(1);
+    expect(result.evidenceDeferredFees).toBe(1);
+    expect(result.results.find((r) => r.feeVerifiedId === 801)?.evidenceDeferred).toBe(true);
+    expect(result.results.find((r) => r.feeVerifiedId === 802)?.status).toBe("published");
   });
 
   it("files each row under one sweep: another bank's host first, then an unconfirmed host, then a business schedule", () => {
@@ -658,7 +897,7 @@ describe("Hamilton agentic publish", () => {
 
     const result = await runHamiltonPublish({ runId: 118, stateCode: "CA", limit: 10, db: asPublishDb(db) });
 
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS MATERIALIZED ("));
     expect(selects).toHaveLength(2);
     expect(selects[0][1]).toContain("CA");
     expect(selects[1][1]).not.toContain("CA");
@@ -669,7 +908,7 @@ describe("Hamilton agentic publish", () => {
   it("keeps a single bank's read scoped to that bank", async () => {
     const db = createDbMock([]);
     await runHamiltonPublish({ runId: 119, stateCode: "CA", institutionId: 42, db: asPublishDb(db) });
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS MATERIALIZED ("));
     expect(selects).toHaveLength(1);
   });
 
@@ -874,7 +1113,7 @@ describe("Hamilton agentic publish", () => {
       depthRows?: Array<Record<string, unknown>>,
     ): DbMock {
       const db = createDbMock(rows, prior, depthRows);
-      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown>;
+      const base = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
       db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
         if (templateText(strings).includes("learning_schema_ready")) {
           return Promise.resolve([{ learning_schema_ready: true }]);

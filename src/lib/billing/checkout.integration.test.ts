@@ -18,7 +18,7 @@ import { withCheckoutLock } from "@/lib/data-store/checkout-intents";
 
 const testUrl = process.env.BILLING_TEST_DATABASE_URL;
 const suite = testUrl ? describe : describe.skip;
-let db: ReturnType<typeof postgres>;
+let db: postgres.Sql<{ json: unknown }>;
 const sessions = new Map<string, Record<string, unknown>>();
 const create = vi.fn();
 const params = (id = 7) => ({ mode: "subscription" as const, customer: `cus_${id}`,

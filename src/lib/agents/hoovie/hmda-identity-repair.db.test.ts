@@ -70,7 +70,7 @@ describe.skipIf(!connection)("bounded HMDA identity repair in isolated PostgreSQ
     for (const line of constraintLines) await db.unsafe(line.replaceAll("public.", ""));
     await db`INSERT INTO agent_registry (agent_name, display_name, role) VALUES ('hoovie', 'Hoovie', 'data')`;
     await db.unsafe("DO $$ BEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF;\n  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF;\nEND $$;");
-    await db.unsafe(migrationFragment("20261019163933_fdic_identity_conflict_holds.sql", "CREATE TABLE public.institution_identity_holds"));
+    await db.unsafe(migrationFragment("20270110000074_fdic_identity_conflict_holds.sql", "CREATE TABLE public.institution_identity_holds"));
   });
 
   afterAll(async () => {

@@ -32,3 +32,5 @@ maintaining a daily balance of $300". That reading is right, so 1 of 1 is correc
 stay held (safe deposit box size rows, sentence fragments, $0 "None", a misread cash advance), as
 they should. The re-check is narrow by design. Five sampled rows could not be checked because
 their texts were not exported.
+
+**Agent lesson:** knox/pr-882-recheck-untraced-holds

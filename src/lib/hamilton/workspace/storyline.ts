@@ -10,6 +10,7 @@
  */
 
 import { PERCENTILE_METHOD } from "@/lib/percentile";
+import { HISTORICAL_INCOME_CAVEAT } from "./national-income";
 import { revenueLineName } from "./revenue";
 import { subjectPossessive, subjectName } from "./subject";
 import { formatDollarsInWords, formatFeeAmount } from "@/lib/format";
@@ -39,7 +40,6 @@ export interface StoryIntent {
   list?: boolean;
 }
 
-export const MIN_STORY_EXHIBITS = 3;
 export const MAX_STORY_EXHIBITS = 5;
 /** Rows a structure matrix shows after the bank's own. */
 const MAX_MATRIX_ROWS = 12;
@@ -719,7 +719,8 @@ function trendPiece(research: FeeResearch): Piece | null {
   return {
     key: "trend",
     actionTitle,
-    exhibit: { kind: "trend", title: `${subjectPossessive(research)} ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])] },
+    exhibit: { kind: "trend", title: `${subjectPossessive(research)} ${what} by quarter`, unit: "dollars", series, sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
+      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: HISTORICAL_INCOME_CAVEAT } : {}) },
   };
 }
 

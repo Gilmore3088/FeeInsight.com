@@ -35,19 +35,31 @@ function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
 }
 
 function asReadDb(db: DbMock): NonNullable<Parameters<typeof runRosettaRead>[0]["db"]> {
+  // Callback facade only; native SQL tests prove actual rollback/savepoint behavior.
+  Object.assign(db, { begin: vi.fn(async (work: (scope: DbMock) => Promise<unknown>) => work(db)) });
   return db as unknown as NonNullable<Parameters<typeof runRosettaRead>[0]["db"]>;
 }
+
+it("requires a transaction primitive before any artifact write when witness capability is absent", async () => {
+  const db = vi.fn(async (_strings: TemplateStringsArray) => [{ normalized_witness_ready: false }]);
+  await expect(recordReadResult(db as unknown as Parameters<typeof recordReadResult>[0], 1, {} as Parameters<typeof recordReadResult>[2], null))
+    .rejects.toThrow();
+  expect(db).toHaveBeenCalledTimes(1);
+  expect(templateText(db.mock.calls[0]?.[0])).toContain("normalized_witness_ready");
+});
 
 function response(body: BodyInit, contentType = "text/html", status = 200): Response {
   return new Response(body, { status, headers: { "content-type": contentType } });
 }
+const rawHash = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 
 const htmlCandidate = {
   source_document_id: 501,
   institution_id: 42,
   institution_name: "Test Bank",
   document_url: "https://testbank.example/fees",
-  content_hash: "source-hash",
+  // These reader/content fixtures make no captured-byte promise. Identity cases use exact raw digests.
+  content_hash: null as string | null,
 };
 
 describe("Rosetta agentic read", () => {
@@ -343,7 +355,8 @@ describe("Rosetta agentic read", () => {
       { url: "https://testbank.example/fees.pdf", contentType: "application/pdf", status: 503, documentType: "pdf", outcome: "http_5xx" },
       { url: "https://testbank.example/fees.docx", contentType: "application/msword", status: 403, documentType: "docx", outcome: "http_403" },
     ])("records $documentType access failure separately from a reader attempt", async ({ url, contentType, status, documentType, outcome }) => {
-      const db = learningDb([{ ...htmlCandidate, document_url: url }]);
+      const capturedHash = rawHash("captured source before HTTP failure");
+      const db = learningDb([{ ...htmlCandidate, document_url: url, content_hash: capturedHash }]);
       const pdfTextExtractor = vi.fn();
       const fetchImpl = vi.fn().mockResolvedValueOnce(response("unavailable", contentType, status));
 
@@ -357,7 +370,7 @@ describe("Rosetta agentic read", () => {
         attemptOutcome: outcome,
       });
       const [attempt] = attemptValues(db);
-      expect(attempt.slice(2, 7)).toEqual(["read", DOCUMENT_ACCESS_STRATEGY, ROSETTA_DOCUMENT_ACCESS_VERSION, "source-hash", outcome]);
+      expect(attempt.slice(2, 7)).toEqual(["read", DOCUMENT_ACCESS_STRATEGY, ROSETTA_DOCUMENT_ACCESS_VERSION, capturedHash, outcome]);
       expect(JSON.parse(String(attempt[12]))).toMatchObject({ document_type: documentType, reader: null, reader_version: ROSETTA_READ_VERSION });
       expect(pdfTextExtractor).not.toHaveBeenCalled();
     });
@@ -367,13 +380,14 @@ describe("Rosetta agentic read", () => {
       { url: htmlCandidate.document_url, error: new Error("Connection refused"), outcome: "network_error", status: "failed" },
       { url: htmlCandidate.document_url, error: Object.assign(new Error("aborted"), { name: "AbortError" }), outcome: "timeout", status: "failed" },
     ])("records $outcome before any reader can run", async ({ url, error, outcome, status }) => {
-      const db = learningDb([{ ...htmlCandidate, document_url: url }]);
+      const capturedHash = rawHash("captured source before access failure");
+      const db = learningDb([{ ...htmlCandidate, document_url: url, content_hash: capturedHash }]);
       const fetchImpl = vi.fn().mockRejectedValue(error);
 
       const result = await runRosettaRead({ runId: 311, db: asReadDb(db), fetchImpl });
 
       expect(result.results[0]).toMatchObject({ status, strategy: DOCUMENT_ACCESS_STRATEGY, reader: null, attemptOutcome: outcome });
-      expect(attemptValues(db)[0].slice(2, 7)).toEqual(["read", DOCUMENT_ACCESS_STRATEGY, ROSETTA_DOCUMENT_ACCESS_VERSION, "source-hash", outcome]);
+      expect(attemptValues(db)[0].slice(2, 7)).toEqual(["read", DOCUMENT_ACCESS_STRATEGY, ROSETTA_DOCUMENT_ACCESS_VERSION, capturedHash, outcome]);
       if (outcome === "invalid_url") expect(fetchImpl).not.toHaveBeenCalled();
     });
 
@@ -400,19 +414,22 @@ describe("Rosetta agentic read", () => {
     });
 
     it("keeps a PDF parser failure attributed to the reader that actually ran", async () => {
-      const db = learningDb([htmlCandidate]);
-      const fetchImpl = vi.fn().mockResolvedValueOnce(response(new TextEncoder().encode("%PDF-1.4"), "application/pdf"));
+      const bytes = new TextEncoder().encode("%PDF-1.4");
+      const capturedHash = rawHash(bytes);
+      const db = learningDb([{ ...htmlCandidate, content_hash: capturedHash }]);
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(bytes, "application/pdf"));
       const pdfTextExtractor = vi.fn().mockRejectedValueOnce(new Error("invalid xref"));
 
       const result = await runRosettaRead({ runId: 313, db: asReadDb(db), fetchImpl, pdfTextExtractor });
 
       expect(result.results[0]).toMatchObject({ strategy: "read.pdf_layout", reader: "read.pdf_layout", attemptOutcome: "parse_error" });
-      expect(attemptValues(db)[0].slice(2, 7)).toEqual(["read", "read.pdf_layout", ROSETTA_READ_VERSION, "source-hash", "parse_error"]);
+      expect(attemptValues(db)[0].slice(2, 7)).toEqual(["read", "read.pdf_layout", ROSETTA_READ_VERSION, capturedHash, "parse_error"]);
     });
 
     it("reads a PDF served as octet-stream from an extensionless URL as a PDF", async () => {
-      const db = learningDb([{ ...htmlCandidate, document_url: "https://testbank.example/download?id=7" }]);
       const bytes = new TextEncoder().encode("%PDF-1.4 binary");
+      const capturedHash = rawHash(bytes);
+      const db = learningDb([{ ...htmlCandidate, document_url: "https://testbank.example/download?id=7", content_hash: capturedHash }]);
       const fetchImpl = vi.fn().mockResolvedValueOnce(response(bytes, "application/octet-stream"));
       const text = "Overdraft fee $35 per item. ".repeat(12);
       const pdfTextExtractor = vi.fn().mockResolvedValueOnce({ totalPages: 1, text });
@@ -428,7 +445,7 @@ describe("Rosetta agentic read", () => {
         attemptOutcome: "ok",
       });
       expect(result).toMatchObject({ learning: true, outcomes: { ok: 1 } });
-      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining([42, 501, "read", "read.pdf_layout", "source-hash", "ok", 301, 9]));
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining([42, 501, "read", "read.pdf_layout", capturedHash, "ok", 301, 9]));
       const sqlText = db.mock.calls.map((call) => templateText(call[0])).join("\n");
       expect(sqlText).toContain("UPDATE institution_source_profiles");
       expect(JSON.stringify(db.mock.calls)).toContain('"pdf_text"');
@@ -463,15 +480,18 @@ describe("Rosetta agentic read", () => {
     });
 
     it("skips an input the playbook says already failed with this reader version", async () => {
+      const body = "<div id=app></div>";
+      const capturedHash = rawHash(body);
       const db = learningDb([
         {
           ...htmlCandidate,
+          content_hash: capturedHash,
           do_not_retry: [
-            { stage: "read", strategy: "read.html_dom", version: ROSETTA_READ_VERSION, fingerprint: "source-hash", outcome: "js_required", at: "2026-09-01T00:00:00Z" },
+            { stage: "read", strategy: "read.html_dom", version: ROSETTA_READ_VERSION, fingerprint: capturedHash, outcome: "js_required", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);
-      const fetchImpl = vi.fn().mockResolvedValueOnce(response("<div id=app></div>"));
+      const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
 
       const result = await runRosettaRead({ runId: 304, db: asReadDb(db), fetchImpl });
 
@@ -482,16 +502,18 @@ describe("Rosetta agentic read", () => {
     });
 
     it("reads a reopened page once although the playbook still lists its earlier failure", async () => {
+      const body = "<h1>Schedule of Fees</h1><table><tr><td>Overdraft fee</td><td>$35.00</td></tr><tr><td>Stop payment</td><td>$30.00</td></tr></table>";
+      const capturedHash = rawHash(body);
       const db = learningDb([
         {
           ...htmlCandidate,
+          content_hash: capturedHash,
           reopen_pending: true,
           do_not_retry: [
-            { stage: "read", strategy: "read.html_dom", version: ROSETTA_READ_VERSION, fingerprint: "source-hash", outcome: "wrong_document", at: "2026-09-01T00:00:00Z" },
+            { stage: "read", strategy: "read.html_dom", version: ROSETTA_READ_VERSION, fingerprint: capturedHash, outcome: "wrong_document", at: "2026-09-01T00:00:00Z" },
           ],
         },
       ]);
-      const body = "<h1>Schedule of Fees</h1><table><tr><td>Overdraft fee</td><td>$35.00</td></tr><tr><td>Stop payment</td><td>$30.00</td></tr></table>";
       const fetchImpl = vi.fn().mockResolvedValueOnce(response(body));
 
       const result = await runRosettaRead({ runId: 305, db: asReadDb(db), fetchImpl });

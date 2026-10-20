@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useOptimistic, useTransition } from "react";
 import { STATE_NAMES } from "@/lib/us-states";
 import { directoryHref } from "./directory-view";
 
@@ -22,6 +22,9 @@ interface StatePickerProps {
 export function StatePicker({ query, stateCode, charter, fee = "", fees = false, className = "" }: StatePickerProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  // The pick shows at once and stays while the directory loads (#1953: the dropdown snapped back
+  // to the old value for seconds, so a reader thought the choice was lost).
+  const [picked, setPicked] = useOptimistic(stateCode);
 
   return (
     <div className={className}>
@@ -31,11 +34,16 @@ export function StatePicker({ query, stateCode, charter, fee = "", fees = false,
       <select
         id="institution-state-filter"
         name="state"
-        value={stateCode}
+        value={picked}
         aria-busy={isPending}
         onChange={(event) => {
-          const href = directoryHref({ q: query, state: event.target.value, charter, fee, fees });
-          startTransition(() => router.push(href));
+          const next = event.target.value;
+          const href = directoryHref({ q: query, state: next, charter, fee, fees });
+          // An async action stays pending until the new page commits; the pick shows until then.
+          startTransition(async () => {
+            setPicked(next);
+            await router.push(href);
+          });
         }}
         className={`min-h-11 w-full rounded-full border border-control-border bg-surface-0 px-4 text-[14px] text-ink outline-none focus-visible:ring-2 focus-visible:ring-brick ${
           isPending ? "opacity-60" : ""

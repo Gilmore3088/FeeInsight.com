@@ -8,6 +8,7 @@ vi.mock("@/lib/ai-provider-usage", async (importOriginal) => ({
 
 import { KNOX_RULES_STRATEGY } from "./specialists";
 import { articleLinkSql } from "@/lib/agents/magellan/link-coverage";
+import { providerRefusalSql } from "@/lib/agents/paid-pass";
 import {
   groundPaidRow,
   KNOX_PAID_FLAG,
@@ -172,6 +173,15 @@ describe("Knox paid extraction (pass 3)", () => {
     const prompt = String((create.mock.calls[0] as unknown as [{ messages: Array<{ content: string }> }])[0].messages[0].content);
     expect(prompt).toContain("wire_domestic_outgoing (Wire Transfer (Domestic Out))");
     expect(prompt).toContain("Domestic wires you send cost $27.50 per wire.");
+    // Knox's role lessons ride the request as instructions, at most ten (learning/lesson-reader.ts).
+    const system = String((create.mock.calls[0] as unknown as [{ system?: string }])[0].system);
+    expect(system).toContain("LESSONS FOR YOUR ROLE");
+    expect(system).toContain("[issue-2286]");
+    expect(system.split("\n").filter((line) => line.startsWith("- [")).length).toBeLessThanOrEqual(10);
+    expect(trackAnthropicRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: expect.objectContaining({ lessons_applied: expect.arrayContaining(["issue-2286"]) }) }),
+      expect.any(Function),
+    );
 
     expect(result).toMatchObject({ selected: 1, processed: 1, succeeded: 1, failed: 0, budgetStopped: false });
     expect(result.costMicrousd).toBeGreaterThan(0);
@@ -328,6 +338,7 @@ describe("Knox paid extraction (pass 3)", () => {
     expect(query).toContain(") AS no_fee_read_id");
     expect(query).toContain("prior.outcome = 'no_candidates'");
     expect(query).toContain("found.yield_count > 0");
+    expect(query).toContain(`AND NOT ${providerRefusalSql("paid")}`);
   });
 
   it("selects without calling the model on a dry run", async () => {

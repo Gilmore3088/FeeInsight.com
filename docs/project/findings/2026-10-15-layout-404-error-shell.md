@@ -26,3 +26,5 @@ after the client draws the page). Status, noindex and the visible page were alre
 **Lesson:** a layout-level 404 trades a server-rendered body for a correct status. Search
 engines get the 404 and noindex they need; a visitor without JavaScript sees a blank page.
 Keep that trade unless a later Next version renders not-found boundaries during the shell.
+
+**Guard:** `src/app/(public)/not-found.test.tsx:17` (the public not-found page renders a React `<title>`; `:13` its metadata title is "Page not found")

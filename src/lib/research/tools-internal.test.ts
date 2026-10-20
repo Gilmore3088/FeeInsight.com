@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { writtenAnswerCheck } from "@/lib/hamilton/answer-save";
 
 // Mock all data-store modules before importing the tool
 vi.mock("@/lib/data-store/call-reports", () => ({
@@ -68,6 +69,7 @@ vi.mock("@/lib/data-store/geographic", () => ({
   getStateStats: vi.fn().mockResolvedValue({}),
 }));
 vi.mock("@/lib/data-store/fee-revenue", () => ({
+  getFiledFeeIncomeData: vi.fn().mockResolvedValue([]),
   getFeeRevenueData: vi.fn().mockResolvedValue([]),
   getTierFeeRevenueSummary: vi.fn().mockResolvedValue([]),
   getCharterFeeRevenueSummary: vi.fn().mockResolvedValue([]),
@@ -102,6 +104,7 @@ import * as complaints from "@/lib/data-store/complaints";
 import * as feeIndex from "@/lib/data-store/fee-index";
 import * as derivedAnalytics from "@/lib/data-store/derived-analytics";
 import * as intelligence from "@/lib/data-store/intelligence";
+import * as feeRevenue from "@/lib/data-store/fee-revenue";
 
 describe("queryNationalData", () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -120,37 +123,42 @@ describe("queryNationalData", () => {
   describe("source: call_reports", () => {
     it("returns all data when no view specified", async () => {
       const result = await execute({ source: "call_reports", quarters: 8, limit: 10, top_n: 5 });
-      expect(callReports.getRevenueTrend).toHaveBeenCalledWith(8);
-      expect(callReports.getTopRevenueInstitutions).toHaveBeenCalledWith(10);
+      expect(callReports.getRevenueTrend).toHaveBeenCalledWith(8, "fdic");
+      expect(callReports.getRevenueTrend).toHaveBeenCalledWith(8, "ncua");
+      expect(callReports.getTopRevenueInstitutions).toHaveBeenCalledWith(10, "fdic");
+      expect(callReports.getTopRevenueInstitutions).toHaveBeenCalledWith(10, "ncua");
       expect(callReports.getRevenueByTier).toHaveBeenCalled();
-      expect(result).toHaveProperty("trend");
-      expect(result).toHaveProperty("top_institutions");
-      expect(result).toHaveProperty("by_tier");
+      expect(result).toHaveProperty("financial_groups.0.trend");
+      expect(result).toHaveProperty("financial_groups.0.top_institutions");
+      expect(result).toHaveProperty("financial_groups.0.by_tier");
     });
 
     it("returns only trend when view=trend", async () => {
       const result = await execute({ source: "call_reports", view: "trend", quarters: 4, limit: 10, top_n: 5 });
-      expect(callReports.getRevenueTrend).toHaveBeenCalledWith(4);
+      expect(callReports.getRevenueTrend).toHaveBeenCalledWith(4, "fdic");
+      expect(callReports.getRevenueTrend).toHaveBeenCalledWith(4, "ncua");
       expect(callReports.getTopRevenueInstitutions).not.toHaveBeenCalled();
-      expect(result).toHaveProperty("trend");
+      expect(result).toHaveProperty("financial_groups.0.trend");
     });
 
     it("returns top institutions when view=top_institutions", async () => {
       const result = await execute({ source: "call_reports", view: "top_institutions", limit: 5, quarters: 8, top_n: 5 });
-      expect(callReports.getTopRevenueInstitutions).toHaveBeenCalledWith(5);
-      expect(result).toHaveProperty("top_institutions");
+      expect(callReports.getTopRevenueInstitutions).toHaveBeenCalledWith(5, "fdic");
+      expect(callReports.getTopRevenueInstitutions).toHaveBeenCalledWith(5, "ncua");
+      expect(result).toHaveProperty("financial_groups.0.top_institutions");
     });
 
     it("returns tier data when view=by_tier", async () => {
       const result = await execute({ source: "call_reports", view: "by_tier", quarters: 8, limit: 10, top_n: 5 });
       expect(callReports.getRevenueByTier).toHaveBeenCalled();
-      expect(result).toHaveProperty("by_tier");
+      expect(result).toHaveProperty("financial_groups.0.by_tier");
     });
 
     it("returns district data when view=by_district with district param", async () => {
       const result = await execute({ source: "call_reports", view: "by_district", district: 3, quarters: 8, limit: 10, top_n: 5 });
-      expect(callReports.getDistrictFeeRevenue).toHaveBeenCalledWith(3);
-      expect(result).toHaveProperty("district_revenue");
+      expect(callReports.getDistrictFeeRevenue).toHaveBeenCalledWith(3, undefined, "fdic");
+      expect(callReports.getDistrictFeeRevenue).toHaveBeenCalledWith(3, undefined, "ncua");
+      expect(result).toHaveProperty("financial_groups.0.district_revenue");
     });
   });
 
@@ -197,25 +205,27 @@ describe("queryNationalData", () => {
     it("returns all health data when no view specified", async () => {
       const result = await execute({ source: "health", quarters: 8, limit: 10, top_n: 5 });
       expect(health.getIndustryHealthMetrics).toHaveBeenCalled();
-      expect(health.getHealthMetricsByCharter).toHaveBeenCalled();
+      expect(health.getIndustryHealthMetrics).toHaveBeenCalledWith("fdic");
+      expect(health.getIndustryHealthMetrics).toHaveBeenCalledWith("ncua");
       expect(health.getDepositGrowthTrend).toHaveBeenCalled();
       expect(health.getLoanGrowthTrend).toHaveBeenCalled();
       expect(health.getInstitutionCountTrends).toHaveBeenCalled();
-      expect(result).toHaveProperty("metrics");
-      expect(result).toHaveProperty("by_charter");
+      expect(result).toHaveProperty("financial_groups.0.metrics");
+      expect(result).toHaveProperty("financial_groups.1.charter_type", "credit_union");
     });
 
     it("returns only metrics when view=metrics", async () => {
       const result = await execute({ source: "health", view: "metrics", quarters: 8, limit: 10, top_n: 5 });
       expect(health.getIndustryHealthMetrics).toHaveBeenCalled();
       expect(health.getHealthMetricsByCharter).not.toHaveBeenCalled();
-      expect(result).toHaveProperty("metrics");
+      expect(result).toHaveProperty("financial_groups.0.metrics");
     });
 
     it("returns deposit trend when view=deposits", async () => {
       const result = await execute({ source: "health", view: "deposits", quarters: 6, limit: 10, top_n: 5 });
-      expect(health.getDepositGrowthTrend).toHaveBeenCalledWith(6);
-      expect(result).toHaveProperty("deposits");
+      expect(health.getDepositGrowthTrend).toHaveBeenCalledWith(6, "fdic");
+      expect(health.getDepositGrowthTrend).toHaveBeenCalledWith(6, "ncua");
+      expect(result).toHaveProperty("financial_groups.0.deposits");
     });
   });
 
@@ -268,11 +278,13 @@ describe("queryNationalData", () => {
     it("returns all derived analytics when no view specified", async () => {
       const result = await execute({ source: "derived", quarters: 8, limit: 10, top_n: 5 });
       expect(derivedAnalytics.getRevenueConcentration).toHaveBeenCalledWith(5);
-      expect(derivedAnalytics.getFeeDependencyTrend).toHaveBeenCalledWith(8);
-      expect(derivedAnalytics.getRevenuePerInstitutionTrend).toHaveBeenCalledWith(8);
+      expect(derivedAnalytics.getFeeDependencyTrend).toHaveBeenCalledWith(8, "fdic");
+      expect(derivedAnalytics.getFeeDependencyTrend).toHaveBeenCalledWith(8, "ncua");
+      expect(derivedAnalytics.getRevenuePerInstitutionTrend).toHaveBeenCalledWith(8, "fdic");
+      expect(derivedAnalytics.getRevenuePerInstitutionTrend).toHaveBeenCalledWith(8, "ncua");
       expect(result).toHaveProperty("concentration");
-      expect(result).toHaveProperty("dependency");
-      expect(result).toHaveProperty("revenue_per_institution");
+      expect(result).toHaveProperty("financial_groups.0.dependency");
+      expect(result).toHaveProperty("financial_groups.0.revenue_per_institution");
     });
 
     it("returns only concentration when view=concentration", async () => {
@@ -284,14 +296,16 @@ describe("queryNationalData", () => {
 
     it("returns only dependency when view=dependency", async () => {
       const result = await execute({ source: "derived", view: "dependency", quarters: 6, limit: 10, top_n: 5 });
-      expect(derivedAnalytics.getFeeDependencyTrend).toHaveBeenCalledWith(6);
-      expect(result).toHaveProperty("dependency");
+      expect(derivedAnalytics.getFeeDependencyTrend).toHaveBeenCalledWith(6, "fdic");
+      expect(derivedAnalytics.getFeeDependencyTrend).toHaveBeenCalledWith(6, "ncua");
+      expect(result).toHaveProperty("financial_groups.0.dependency");
     });
 
     it("returns only per-institution when view=revenue_per_institution", async () => {
       const result = await execute({ source: "derived", view: "revenue_per_institution", quarters: 4, limit: 10, top_n: 5 });
-      expect(derivedAnalytics.getRevenuePerInstitutionTrend).toHaveBeenCalledWith(4);
-      expect(result).toHaveProperty("revenue_per_institution");
+      expect(derivedAnalytics.getRevenuePerInstitutionTrend).toHaveBeenCalledWith(4, "fdic");
+      expect(derivedAnalytics.getRevenuePerInstitutionTrend).toHaveBeenCalledWith(4, "ncua");
+      expect(result).toHaveProperty("financial_groups.0.revenue_per_institution");
     });
   });
 
@@ -381,6 +395,141 @@ describe("queryNationalData", () => {
       expect(result).toHaveProperty("error");
       expect((result as { error: string }).error).toContain("Unknown source");
     });
+  });
+});
+
+describe("Hamilton financial tool comparability (#2330)", () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const national = internalTools.queryNationalData.execute as any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const correlation = internalTools.queryFeeRevenueCorrelation.execute as any;
+  beforeEach(() => vi.clearAllMocks());
+
+  it.each([
+    ["call_reports", "trend"], ["call_reports", "top_institutions"], ["call_reports", "by_tier"], ["call_reports", "by_district"],
+    ["health", "metrics"], ["health", "by_charter"], ["health", "deposits"], ["health", "loans"], ["health", "institution_counts"],
+    ["derived", "dependency"], ["derived", "revenue_per_institution"],
+  ])("%s/%s returns separately labeled canonical financial groups without a pooled benchmark", async (source, view) => {
+    const result = await national({ source, view, quarters: 8, limit: 10, top_n: 5 });
+    expect(result.financial_groups).toHaveLength(2);
+    expect(result.financial_groups[0]).toMatchObject({ financial_source: "fdic", charter_type: "bank", fee_income_definition: { source: "fdic", measure: "deposit_service_charge_income", period_basis: "standalone_quarter" } });
+    expect(result.financial_groups[1]).toMatchObject({ financial_source: "ncua", charter_type: "credit_union", fee_income_definition: { source: "ncua", measure: "broad_credit_union_fee_income", source_period_basis: "year_to_date" } });
+    expect(Object.keys(result)).toEqual(["financial_groups"]);
+  });
+
+  it.each(["call_reports", "health", "derived"])("honors a credit-union charter or explicit regulator in %s", async (source) => {
+    const result = await national({ source, charter: "credit_union", quarters: 8, limit: 10, top_n: 5 });
+    expect(result.financial_groups).toHaveLength(1);
+    expect(result.financial_groups[0].financial_source).toBe("ncua");
+    const bank = await national({ source, financial_source: "fdic", quarters: 8, limit: 10, top_n: 5 });
+    expect(bank.financial_groups).toHaveLength(1);
+    expect(bank.financial_groups[0].charter_type).toBe("bank");
+    expect(await national({ source, charter: "credit_union", financial_source: "fdic" })).toHaveProperty("error");
+  });
+
+  it.each(["institutions", "by_tier", "by_charter"])("partitions correlation %s and passes a canonical source to every reader", async (view) => {
+    const result = await correlation({ view, limit: 20 });
+    expect(result.financial_groups.map((group: { financial_source: string }) => group.financial_source)).toEqual(["fdic", "ncua"]);
+    expect(result).not.toHaveProperty("data");
+    for (const group of result.financial_groups) {
+      expect(group.income_per_10k_assets).toMatchObject({ fields: ["fee_income_ratio", "avg_fee_income_ratio"], definition: expect.stringContaining("not fee income as a share of revenue"), unit: "USD income per 10,000 USD assets", period_basis: "standalone_quarter" });
+      expect(group).toMatchObject({ population_basis: "fee_price_income_correlation", eligibility: { minimum_published_fee_categories: 3 } });
+    }
+    const reader = view === "institutions" ? feeRevenue.getFeeRevenueData : view === "by_tier" ? feeRevenue.getTierFeeRevenueSummary : feeRevenue.getCharterFeeRevenueSummary;
+    expect(reader).toHaveBeenCalledWith("fdic");
+    expect(reader).toHaveBeenCalledWith("ncua");
+    expect(feeRevenue.getFiledFeeIncomeData).not.toHaveBeenCalled();
+    vi.clearAllMocks();
+    const scoped = await correlation({ view, limit: 20, charter_type: "credit_union" });
+    expect(scoped.financial_groups).toHaveLength(1);
+    expect(reader).toHaveBeenCalledExactlyOnceWith("ncua");
+  });
+
+  it.each([
+    ["ncua", "credit_union"], ["fdic", "bank"],
+  ] as const)("compares %s filed income without requiring or inventing schedule prices (#2332)", async (source, charter) => {
+    const financials = Array.from({ length: 6 }, (_, index) => ({
+      institution_id: index + 1, institution_name: `Synthetic ${index + 1}`,
+      charter_type: charter, financial_source: source, report_date: "2026-06-30",
+      state_code: "VA", asset_size_tier: "regional", fed_district: 5,
+      total_assets: 20_000_000, service_charge_income: (index + 1) * 100,
+      fee_income_ratio: (index + 1) * 0.05,
+    }));
+    vi.mocked(feeRevenue.getFiledFeeIncomeData).mockResolvedValueOnce(financials);
+    const result = await correlation({
+      view: "peers", institution_id: 1, charter_type: charter,
+      peer_institution_ids: [2, 3, 4, 5, 6], states: ["va"], asset_tiers: ["regional"], fed_districts: [5],
+    });
+    expect(feeRevenue.getFiledFeeIncomeData).toHaveBeenCalledExactlyOnceWith(source);
+    expect(feeRevenue.getFeeRevenueData).not.toHaveBeenCalled();
+    expect(feeRevenue.getTierFeeRevenueSummary).not.toHaveBeenCalled();
+    expect(feeRevenue.getCharterFeeRevenueSummary).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      source, quarter: "2026-06-30", peer_count: 5, peer_median_service_charge_income: 400,
+      comparison: {
+        financial_source: source, charter_type: charter, period_basis: "standalone_quarter",
+        population_basis: "filed_financials", fee_schedule_coverage_required: false,
+        subject_included: false, sample_size: 5, minimum_median_count: 5,
+        filters: { institutionIds: [2, 3, 4, 5, 6], states: ["VA"], assetTiers: ["regional"], fedDistricts: [5] },
+      },
+    });
+    expect(result.subject).not.toHaveProperty("avg_fee");
+    expect(result.subject).not.toHaveProperty("fee_count");
+    const definition = source === "ncua" ? "broad fee income" : "deposit service charges";
+    expect(writtenAnswerCheck(`Reported quarterly ${definition} was $100,000, against a peer median of $400,000.`, [result])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck(`Reported quarterly ${definition} was $100, against a peer median of $400.`, [result]).passed).toBe(false);
+  });
+
+  it("does not pretend a conflicting source/charter or missing subject is a comparison", async () => {
+    expect(await correlation({ view: "by_tier", charter_type: "bank", financial_source: "ncua" })).toHaveProperty("error");
+    expect(feeRevenue.getTierFeeRevenueSummary).not.toHaveBeenCalled();
+    expect(await correlation({ view: "peers" })).toHaveProperty("error");
+  });
+
+  it("labels dependency percentages and whole-dollar per-institution income with their actual period bases", async () => {
+    const result = await national({ source: "derived", quarters: 8, limit: 10, top_n: 5 });
+    expect(result.financial_groups[0]).toMatchObject({ dependency: { measure_definition: { unit: "percent", period_basis: "standalone_quarter" } }, revenue_per_institution: { measure_definition: { unit: "USD", period_basis: "standalone_quarter" } } });
+    expect(result.financial_groups[1]).toMatchObject({ dependency: { measure_definition: { unit: "percent", period_basis: "year_to_date" } }, revenue_per_institution: { measure_definition: { unit: "USD", period_basis: "standalone_quarter" } } });
+  });
+
+  it("passes the full answer gate for national thousands, derived dollars, and health percentages (#2358)", async () => {
+    vi.mocked(callReports.getRevenueTrend).mockResolvedValueOnce({ latest: { quarter: "2026-Q2", total_service_charges: 2640000, total_institutions: 4000, bank_service_charges: 0, cu_service_charges: 2640000, yoy_change_pct: 2.5 }, quarters: [] });
+    const nationalIncome = await national({ source: "call_reports", financial_source: "ncua", view: "trend", quarters: 8, limit: 10, top_n: 5 });
+    expect(writtenAnswerCheck("Credit unions reported $2.64 billion in broad fee income for Q2 2026.", [nationalIncome])).toMatchObject({ passed: true, figureCheck: { unmatched: [] } });
+    expect(writtenAnswerCheck("Credit unions reported $2.64 million in broad fee income.", [nationalIncome]).passed).toBe(false);
+
+    vi.mocked(derivedAnalytics.getFeeDependencyTrend).mockResolvedValueOnce({ trend: [{ report_date: "2026-06-30", avg_fee_income_ratio: 4.3, institution_count: 25 }], signals: { qoq_change_pct: null, yoy_change_pct: null } });
+    vi.mocked(derivedAnalytics.getRevenuePerInstitutionTrend).mockResolvedValueOnce({ current: { by_tier: [], by_charter: [] }, trend: [{ report_date: "2026-06-30", avg_sc_income: 11125000, institution_count: 25 }], signals: { qoq_change_pct: null, yoy_change_pct: null } });
+    const derived = await national({ source: "derived", financial_source: "ncua", quarters: 8, limit: 10, top_n: 5 });
+    expect(writtenAnswerCheck("The reported revenue share was 4.3%, and mean quarterly income was $11.125 million.", [derived])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The reported revenue share was $4.3.", [derived]).passed).toBe(false);
+
+    vi.mocked(health.getIndustryHealthMetrics).mockResolvedValueOnce({ roa: { current: 0.75, history: [], trend: "stable", asOf: "2026-06-30", minimum_median_count: 5 }, roe: null, efficiency_ratio: null });
+    vi.mocked(health.getDepositGrowthTrend).mockResolvedValueOnce({ current_yoy_pct: 2.5, history: [{ quarter: "2026-Q2", yoy_pct: 2.5, absolute: 1200000 }], trend: "stable", asOf: "2026-06-30" });
+    const metrics = await national({ source: "health", financial_source: "ncua", quarters: 8, limit: 10, top_n: 5 });
+    expect(writtenAnswerCheck("The return on assets was 0.75%. Deposits were $1.2 billion, with reported growth of 2.5%.", [metrics])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The return on assets was $0.75.", [metrics]).passed).toBe(false);
+  });
+
+  it.each(["institutions", "by_tier", "by_charter"])("keeps correlation %s schedule prices, financial totals, and asset intensity in separate units (#2358)", async (view) => {
+    const row = { financial_source: "ncua", report_date: "2026-06-30", service_charge_income: 153080, avg_service_charge_income: 153080, avg_fee: 30, avg_fee_amount: 30, median_overdraft: 30, fee_income_ratio: 7.49, avg_fee_income_ratio: 7.49 };
+    const reader = view === "institutions" ? feeRevenue.getFeeRevenueData : view === "by_tier" ? feeRevenue.getTierFeeRevenueSummary : feeRevenue.getCharterFeeRevenueSummary;
+    vi.mocked(reader).mockResolvedValueOnce([row] as never);
+    const result = await correlation({ view, limit: 20, financial_source: "ncua" });
+    expect(writtenAnswerCheck("Reported broad fee income was $153.08 million. The published schedule price was $30.", [result])).toMatchObject({ passed: true, problems: [] });
+    expect(writtenAnswerCheck("The published schedule price was $30,000.", [result]).passed).toBe(false);
+    expect(writtenAnswerCheck("Fee income was 7.49% of revenue.", [result]).passed).toBe(false);
+  });
+
+  it("leaves same-fee prices comparable across charters and labels schedule concentration correctly", async () => {
+    const result = await national({ source: "derived", view: "concentration", quarters: 8, limit: 10, top_n: 5 });
+    expect(result).toHaveProperty("concentration");
+    expect(result.concentration_basis).toContain("not realized fee income");
+    expect(result).not.toHaveProperty("financial_groups");
+    expect(derivedAnalytics.getFeeDependencyTrend).not.toHaveBeenCalled();
+    const prices = await national({ source: "fee_index", financial_source: "ncua", limit: 10 });
+    expect(prices).toHaveProperty("index");
+    expect(feeIndex.getNationalIndexStamped).toHaveBeenCalled();
   });
 });
 

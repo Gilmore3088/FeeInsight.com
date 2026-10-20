@@ -11,3 +11,5 @@
 
 ## What it needs
 A protection plan James approves (it is a permissions change): make `app-tests` required, give docs-only PRs a path that reports it, and decide whether `fee-audience-sql` joins `app-tests`. Tracked in #982 and `docs/plans/hamilton-h07-acceptance-matrix.md` (B8).
+
+**Guard:** the GitHub ruleset on `main` (#1641, #1642 closed; read 2026-10-19 in `docs/plans/hamilton-h07-acceptance-matrix.md` B8) blocks deletion and force-push and requires `app-tests`, which docs-only PRs also report. Still open: `fee-audience-sql` is not in `app-tests`' `needs` (`.github/workflows/test.yml`), so it can be red while `app-tests` is green.

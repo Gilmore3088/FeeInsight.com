@@ -20,6 +20,7 @@ import { feeBullets, ownsBulletName } from "./fee-bullets";
 import { accountTableRow } from "@/lib/custom-report/account-table";
 import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
 import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./stacked-fee-prices";
+import { checkWireClausePrice } from "./wire-clause-prices";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -38,6 +39,15 @@ export type SourceCheckResult = {
   eligibilityContext?: string;
   producerScopeUnknown?: true;
 } | { ok: false; reason: SourceCheckFailure };
+
+export type SourceCheckOptions = {
+  /**
+   * Let a row read under its section heading take the category word from that heading (#1835).
+   * Only the fee position report passes it: the pipeline (Darwin, Hamilton, Knox) keeps the
+   * stricter nearby-lines rule until the change ships with Darwin's live re-check and dry-run count.
+   */
+  sectionHeadingCategory?: boolean;
+};
 
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
@@ -989,6 +999,30 @@ function cachedSourceLines(text: string): string[] {
   return lastLines;
 }
 
+interface SourcePageRows {
+  fees: string[];
+  headings: boolean[];
+  columnHeadings: Array<string | null>;
+}
+
+// These facts depend only on this exact physical page, never the fee being checked.
+// Weak keys keep the existing current-text cache's lifetime: earlier documents are
+// collectable, and no source judgments or institution context are cached here.
+const pageRows = new WeakMap<string[], SourcePageRows>();
+
+function sourcePageRows(lines: string[]): SourcePageRows {
+  const prior = pageRows.get(lines);
+  if (prior) return prior;
+  const fees = lines.map((_, index) => feeRow(lines, index));
+  const read = {
+    fees,
+    headings: lines.map((line, index) => fees[index] === line && moneyTokens(line).length === 0 && !ZERO_WORDS.test(line)),
+    columnHeadings: lines.map(rightColumnHeading),
+  };
+  pageRows.set(lines, read);
+  return read;
+}
+
 /**
  * A two-column page flattened row by row ("CHECK CASHING ... 15% | PROCESSING OF LEVIES**" /
  * "($15.00 Minimum) | IRS or Court-ordered Garnishments ... $100.00") interleaves two fee lists,
@@ -1097,10 +1131,14 @@ export function checkFeeAgainstSource(
   amount: number,
   categoryPattern: string,
   canonicalFeeKey?: string | null,
+  options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  const sectionHeadingCategory = options.sectionHeadingCategory === true;
   if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
   // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
   const text = droppedPointText(rawText);
+  const wire = checkWireClausePrice(text, feeName, amount, canonicalFeeKey, categoryPattern);
+  if (wire) return wire;
   if (canonicalFeeKey == null || NSF_POLICY_CATEGORIES.has(canonicalFeeKey)) {
     const item = capFirstItemPrices(text).find(row => stackedLabelKey(row.label) === stackedLabelKey(feeName) && row.amount === amount &&
       (canonicalFeeKey == null || row.canonicalKey === canonicalFeeKey));
@@ -1154,7 +1192,7 @@ export function checkFeeAgainstSource(
   const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);
   let first: SourceCheckResult | null = null;
   for (const lines of pages) {
-    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
+    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem, sectionHeadingCategory);
     if (asPrice.ok) {
       if (conflictsWithAudienceStatement(feeName, amount, asPrice.sourceLine)) {
         return { ok: false, reason: "amount_not_the_fee" };
@@ -1163,7 +1201,7 @@ export function checkFeeAgainstSource(
     }
     first ??= asPrice;
     if (!asCap) continue;
-    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
+    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory);
     if (cap.ok) return cap;
   }
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
@@ -1191,7 +1229,9 @@ function checkAgainstLines(
   categoryPattern: string,
   dailyCap: boolean,
   perItem = false,
+  sectionHeadingCategory = false,
 ): SourceCheckResult {
+  const page = sourcePageRows(lines);
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
   const named = nameStems(feeName);
   const stems = dailyCap ? withNameWords(named.filter((stem) => !DAILY_CAP_NAME_WORDS.has(stem)), named.words) : named;
@@ -1219,9 +1259,9 @@ function checkAgainstLines(
     // is a fee's row, not a heading).
     const headings: string[] = [];
     for (let j = Math.max(0, i - NAME_HEADING_LINES); j < i; j += 1) {
-      if (feeRow(lines, j) === lines[j] && moneyTokens(lines[j]).length === 0 && !ZERO_WORDS.test(lines[j])) headings.push(lines[j]);
+      if (page.headings[j]) headings.push(lines[j]);
       else if (SUB_ROW.test(line)) {
-        const columnHeading = rightColumnHeading(lines[j]);
+        const columnHeading = page.columnHeadings[j];
         if (columnHeading) headings.push(columnHeading);
       }
     }
@@ -1230,7 +1270,7 @@ function checkAgainstLines(
       !headings.some((above) => namesFee(above, stems) && stems.every((stem) => !hasStem(line, stem, stems) || hasStem(above, stem, stems))) &&
       namesFee(`${headings.join(" ")} ${line}`, stems, stems.length);
     if (!namesFee(line, stems) && !underHeading) continue;
-    let row = feeRow(lines, i);
+    let row = page.fees[i];
     if (perItem && policyAmount(row, rounded)) {
       best = "amount_not_the_fee";
       continue;
@@ -1273,7 +1313,16 @@ function checkAgainstLines(
       continue;
     }
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (!category.test(context)) {
+    // A row whose name was read under its section heading may take the category word from that
+    // heading, however many priced rows down the section it sits ("Wire Transfers" / "Outgoing
+    // Domestic Fee" / "$35" / ... / "Incoming Domestic Fee" / "$25", #1835). Only the nearest
+    // heading counts, and only when it carries one of the fee's own name words: a heading further
+    // up belongs to an earlier section ("ATM Service Charge" above "Faxes – | Outgoing | $4.00").
+    // Report path only (SourceCheckOptions.sectionHeadingCategory); the pipeline's verdict is unchanged.
+    const section = headings[headings.length - 1];
+    const sectionNamesCategory =
+      sectionHeadingCategory && underHeading && !namesFee(line, stems) && section !== undefined && namesFee(section, stems, 1) && category.test(section);
+    if (!category.test(context) && !sectionNamesCategory) {
       best = "category_not_in_text";
       continue;
     }

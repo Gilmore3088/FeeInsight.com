@@ -11,6 +11,8 @@ import {
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
+import { ownFeeUnit } from "@/lib/custom-report/own-fee-unit";
+import { ownAdditiveCondition } from "@/lib/custom-report/own-additive-condition";
 import { rateFeeFromHeld, type RateFeeCandidate, type RateHoldReason } from "@/lib/agents/knox/percent";
 import { KNOX_RATE_FEE_FLAG, KNOX_REREAD_ASSET_FLOOR } from "@/lib/agents/knox/extract";
 import { KNOX_PAID_FLAG } from "@/lib/agents/knox/paid-extract";
@@ -177,7 +179,8 @@ export function promotedConditions(conditions: string, candidate: ExtractedFeeCa
  * the same excerpt, so Darwin's category guard can check it.
  */
 export function promotedName(row: HeldRow, candidate: ExtractedFeeCandidate): string {
-  const name = row.fee_name?.trim();
+  // Page markup left in a held name ("Miscellaneous Fees and Charges<br> Stop Pay Order") never publishes.
+  const name = row.fee_name?.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
   return name && classifyFeeText(name) === candidate.canonicalHint ? name : candidate.feeName;
 }
 
@@ -230,7 +233,7 @@ export async function recheckHeldRows(
   for (const row of rows) {
     const versions = versionsChecked(row);
     const candidate = recategorizeHeld(row);
-    if (!candidate) {
+    if (!candidate || ownFeeUnit(candidate.excerpt, promotedName(row, candidate), candidate.amount, candidate.canonicalHint)) {
       stillHeldIds.push(Number(row.fee_raw_id));
       const setAside = versions.length >= HELD_SET_ASIDE_AFTER_VERSIONS;
       if (setAside && !flagList(row.outlier_flags).includes(HELD_SET_ASIDE_FLAG)) setAsideIds.push(Number(row.fee_raw_id));
@@ -455,8 +458,13 @@ export async function previewHeldNameRules(
  * Switched off, the extract step writes nothing and its detail (`range_band_set_aside`) carries the
  * dry-run count for the lane: `candidates` is every line in the lane the SQL picks, and `checked`
  * the ones read this step (at most `RANGE_BAND_LIMIT`). It holds, rejects or re-files no live fee.
+ *
+ * On since Oct 20 under James's sampled-clean rule (his decision card, 01:54 UTC, "all eight with
+ * rules"): read only, the pass's SQL picked 4,091 held lines at 482 banks, the first 2,000
+ * all passed the band test, and a random 20 read against each bank's stored document were all
+ * deposit rate or balance tiers, not fees.
  */
-export const RANGE_BAND_SET_ASIDE_LIVE = false;
+export const RANGE_BAND_SET_ASIDE_LIVE = true;
 export const RANGE_BAND_FLAG = "knox_range_band";
 /** On a line this pass set aside (and only then), so an undo leaves other passes' set-asides alone. */
 export const RANGE_BAND_SET_ASIDE_BY_FLAG = "knox_set_aside_by:range_band";
@@ -640,7 +648,7 @@ export async function setAsideRangeBands(
  *   "No category fits";
  * - the store: with no label, a name that says fee or charge and is live (`published_fee_records`,
  *   flat, not rolled back or quarantined) under exactly one category at `SETTLED_NAME_MIN_BANKS` or
- *   more banks, and no other category, is settled ("Returned Statement Fee" at 3 banks, account research; "Rush Fee" at 6, rush card).
+ *   more banks, and no other category, is settled ("Rush Fee" at 6 banks, rush card).
  *
  * A store decision files only a name that says fee or charge ("Minimum Balance" is a requirement,
  * and a box size's name key is only "x"). A line moves only when its own price is a plain price for
@@ -952,7 +960,9 @@ export async function fileHeldByName(
   for (const row of rows) {
     const key = row.filed_key;
     const by = row.filed_by;
-    const hold = nameFileHold({ ...row, filed_by: by });
+    const ownUnit = ownFeeUnit(heldExcerpt(row.conditions) ?? "", row.fee_name ?? "", Number(row.amount), key);
+    const ownCondition = ownAdditiveCondition(heldExcerpt(row.conditions) ?? "", row.fee_name ?? "", Number(row.amount));
+    const hold = ownUnit ? "unit_recovery" : ownCondition ? "condition_recovery" : nameFileHold({ ...row, filed_by: by });
     if (hold) {
       result.kept[hold] = (result.kept[hold] ?? 0) + 1;
       checkedIds.push(Number(row.fee_raw_id));
@@ -1125,7 +1135,7 @@ export async function recheckUntracedRows(
   let promoted = 0;
   for (const row of rows) {
     const read = tracedRead(row, reads.get(Number(row.document_text_id)) ?? []);
-    if (!read) {
+    if (!read || read.ownUnit || read.ownCondition) {
       stillHeldIds.push(Number(row.fee_raw_id));
       continue;
     }
@@ -1296,7 +1306,7 @@ export async function recheckSupersededRows(
   let notRead = 0;
   for (const row of rows) {
     const read = tracedRead(row, reads.get(Number(row.document_text_id)) ?? []);
-    if (!read) {
+    if (!read || read.ownUnit || read.ownCondition) {
       notRead += 1;
       markedIds.push(Number(row.fee_raw_id));
       continue;
@@ -1573,7 +1583,7 @@ export async function refileSupersededRows(
 
   const found = readable
     .map((row) => ({ row, read: refiledRead(row, reads.get(Number(row.document_text_id)) ?? []) }))
-    .filter((entry): entry is { row: typeof entry.row; read: ExtractedFeeCandidate } => entry.read !== null);
+    .filter((entry): entry is { row: typeof entry.row; read: ExtractedFeeCandidate } => entry.read !== null && !entry.read.ownUnit && !entry.read.ownCondition);
   result.notRead = readable.length - found.length;
 
   // A live fee of today's category at that price already stands for the fee (a live twin).
@@ -1914,6 +1924,8 @@ export async function recheckHeldRates(
                fee_name = ${rate.feeName},
                extraction_note = ${(row.conditions ?? "").replace(/^Knox held for review \(percentage\)/, `Knox rate rules v${HELD_RATE_RECHECK_VERSION} read a percentage fee held for review`).replace(/canonical_hint=[^;]*;/, `canonical_hint=${rate.canonicalHint};`)},
                conditions = NULL,
+               -- A held row carries Knox's 0.5 placeholder; a rate read directly scores its line (#1055).
+               extraction_confidence = ${confidenceFor(rate.excerpt)},
                amount_kind = 'percent',
                rate_percent = ${rate.ratePercent},
                rate_min_amount = ${rate.rateMinAmount},
@@ -1952,4 +1964,71 @@ export async function recheckHeldRates(
   }
 
   return { checked: rows.length, promoted, stillHeld: stillHeldIds.length, promotedByCategory, heldReasons, dryRun };
+}
+
+/** Promoted held rates re-scored per extract step (#1055). */
+export const PROMOTED_RATE_RESCORE_LIMIT = 500;
+
+export interface PromotedRateRescoreResult {
+  checked: number;
+  rescored: number;
+  verifiedRescored: number;
+  dryRun: boolean;
+}
+
+/**
+ * Held rates promoted before #1055 kept the held queue's 0.5 placeholder, which Darwin copied, so
+ * Hamilton's 0.8 floor refused all of them (1,037 verified rates at 656 banks, Oct 20). Each gets
+ * the score a directly read rate gets from its own line, on the raw row and its verified copy;
+ * Hamilton then decides it once more. James approved re-scoring them on Oct 20. Finite: a row
+ * leaves the set once re-scored.
+ */
+export async function rescorePromotedRates(
+  db: SqlTag,
+  options: { dryRun?: boolean; institutionId?: number | null; limit?: number } = {},
+): Promise<PromotedRateRescoreResult> {
+  const dryRun = Boolean(options.dryRun);
+  const institutionId = options.institutionId ?? null;
+  const limit = Math.max(1, Math.min(Number(options.limit) || PROMOTED_RATE_RESCORE_LIMIT, PROMOTED_RATE_RESCORE_LIMIT));
+  const rows = await db<Array<{ fee_raw_id: number | string; extraction_note: string | null }>>`
+    SELECT fr.fee_raw_id, fr.extraction_note
+      FROM raw_fee_observations fr
+     WHERE fr.source = 'knox'
+       AND fr.amount_kind = 'percent'
+       AND fr.outlier_flags ? ${HELD_RECHECK_PROMOTED_FLAG}
+       AND fr.outlier_flags ? ${KNOX_RATE_FEE_FLAG}
+       AND fr.extraction_confidence = 0.5
+       AND fr.extraction_note LIKE '%excerpt="%'
+       AND (${institutionId}::int IS NULL OR fr.institution_id = ${institutionId}::int)
+     ORDER BY fr.fee_raw_id
+     LIMIT ${limit}
+     -- Lanes run this inside their long extract transaction: one lane's rows are skipped, not waited on.
+     FOR UPDATE SKIP LOCKED
+  `;
+  const scored = rows.flatMap((row) => {
+    const excerpt = heldExcerpt(row.extraction_note);
+    return excerpt ? [{ id: Number(row.fee_raw_id), confidence: confidenceFor(excerpt) }] : [];
+  });
+  if (dryRun || scored.length === 0) {
+    return { checked: rows.length, rescored: dryRun ? scored.length : 0, verifiedRescored: 0, dryRun };
+  }
+  const ids = scored.map((row) => row.id);
+  const confidences = scored.map((row) => row.confidence);
+  const raw = await db`
+    UPDATE raw_fee_observations fr
+       SET extraction_confidence = scored.confidence
+      FROM (SELECT unnest(${ids}::bigint[]) AS id, unnest(${confidences}::numeric[]) AS confidence) scored
+     WHERE fr.fee_raw_id = scored.id
+       AND fr.extraction_confidence = 0.5
+    RETURNING fr.fee_raw_id
+  `;
+  const verified = await db`
+    UPDATE verified_fee_observations fv
+       SET extraction_confidence = scored.confidence
+      FROM (SELECT unnest(${ids}::bigint[]) AS id, unnest(${confidences}::numeric[]) AS confidence) scored
+     WHERE fv.fee_raw_id = scored.id
+       AND fv.extraction_confidence = 0.5
+    RETURNING fv.fee_verified_id
+  `;
+  return { checked: rows.length, rescored: raw.length, verifiedRescored: verified.length, dryRun };
 }

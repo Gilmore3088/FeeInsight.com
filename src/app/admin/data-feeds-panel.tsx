@@ -198,7 +198,7 @@ const REPORT_LABELS: Record<string, string> = {
   "report_jobs:monthly_pulse": "Monthly Pulse report files",
   "report_jobs:state_index": "State Index report files",
   published_reports: "Reports published to the public library",
-  hamilton_reports: "Hamilton Pro reports saved by users",
+  hamilton_reports: "Hamilton reports saved by users",
   "run:atlas.daily_brief": "Daily brief email",
   "run:atlas.fee_alerts": "Fee alert emails",
   "run:atlas.lead_watch": "Lead watch",

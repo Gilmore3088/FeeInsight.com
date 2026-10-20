@@ -51,3 +51,5 @@ needed.
 
 **Lesson:** before calling a takedown wrong, check whether the bank still shows the same category
 and price. A dedupe removes a copy, not a fee.
+
+**Agent lesson:** gutenberg/pr-897-recheck-second-look

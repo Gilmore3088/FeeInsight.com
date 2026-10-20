@@ -2,6 +2,7 @@ import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { splitLiveCategory } from "@/lib/fee-fold";
+import { readPublicationEvidence, type PublicationEvidence } from "./publication-evidence";
 
 type SqlTag = typeof sql;
 
@@ -159,9 +160,8 @@ export function collapseKeepOrder<T extends { frequency?: string | null; fee_aud
 export async function selectExactCopies(
   db: SqlTag,
   line: CollapseLine,
-): Promise<ExactCopyRow[]> {
-  try {
-    return await inSavepoint(db, (scope) => scope<ExactCopyRow[]>`
+): Promise<PublicationEvidence<ExactCopyRow[]>> {
+  return readPublicationEvidence("exact_duplicate", () => inSavepoint(db, (scope) => scope<ExactCopyRow[]>`
       SELECT fp.fee_published_id, fp.frequency, fp.fee_audience, fp.published_at, fp.quarantined_at, fr.product_name
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
@@ -180,12 +180,7 @@ export async function selectExactCopies(
          AND fp.rolled_back_at IS NULL
          AND fp.quarantined_at IS NULL
          AND ${scope.unsafe(productKeySql("fr.product_name"))} = ${productKey(line.productName)}
-    `);
-  } catch (error) {
-    // A failed shadow check never blocks a publish.
-    console.error("selectExactCopies failed:", error);
-    return [];
-  }
+    `));
 }
 
 export interface PublishDuplicateCheck {

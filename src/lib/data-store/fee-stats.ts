@@ -43,6 +43,11 @@
  *    different period than the category's median and stays out of its medians, ranges and
  *    counts (basisMismatchSql). Per item, other and blank frequencies stay. The bank's own page
  *    keeps the row, marked as not compared (fee-comparability.ts basisMismatchReason).
+ * 10. Literal special units (#2248): known hourly, page, document, image, statement, half-hour,
+ *    quarter-hour and minute prices stay visible with their literal amounts and conditions, but
+ *    leave pooled category comparisons until same-unit cohorts exist. The finite SQL predicate
+ *    and client predicate use identical explicit transport-whitespace and ASCII normalization.
+ *    No unit is inferred from blank, other or legacy per_item values; no price is rescaled.
  */
 import { computePercentile, computeStats } from "./fees";
 import { countedAmounts } from "./counted-amounts";
@@ -52,6 +57,7 @@ import { countedAmounts } from "./counted-amounts";
 export { countedAmounts };
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL } from "@/lib/agents/magellan/link-coverage";
 import { SAFE_DEPOSIT_CATEGORY, SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
+import { specialUnitSql } from "@/lib/fee-unit";
 import type { CountingRule, PopulationFilter } from "@/lib/dataset-stamp";
 
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STRONG_INSTITUTION_COUNT, maturityTier, type MaturityTier } from "./maturity";
@@ -81,8 +87,10 @@ export const COUNT_SHARED_SCHEDULE_ONCE: boolean = true;
  * 13/14 (#1879): medians and quartiles round half a cent up on the decimal value (roundCents).
  * 15/16 (#1980): national, state and district medians leave out institutions the regulator marks
  * inactive (activeInstitutionFilter), the rule every public count already uses.
+ * 17/18 (#2248): explicitly hourly, page, document, image, statement and partial-hour prices
+ * remain visible evidence but leave category comparisons whose charging units are mixed.
  */
-export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 15 : 16;
+export const STATS_METHOD_VERSION = COUNT_SHARED_SCHEDULE_ONCE ? 17 : 18;
 
 /** SQL predicate: the row's source address names a business-only schedule (rule 6). */
 export function businessSourceSql(alias: string): string {
@@ -115,7 +123,7 @@ export function activeInstitutionFilter(alias = "ct"): string {
 /** Shared audience/source boundary for dollar and rate catalogs. Alias is code, not input. */
 export function statsRowFilter(alias = "ef"): string {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(alias)) throw new Error("Invalid statistics table alias");
-  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)} AND NOT ${safeDepositServiceSql(alias)} AND NOT ${basisMismatchSql(alias)}`;
+  return `${alias}.source_document_id IS NOT NULL AND ${alias}.fee_audience IN ('consumer', 'both', 'unknown') AND NOT ${businessSourceSql(alias)} AND NOT ${safeDepositServiceSql(alias)} AND NOT ${basisMismatchSql(alias)} AND NOT ${specialUnitSql(alias)}`;
 }
 
 /** Compatibility predicate for readers using the conventional ef alias. */
@@ -150,7 +158,12 @@ export const STATS_POPULATION_FILTERS: ReadonlyArray<PopulationFilter & { sqlMar
   {
     key: "one_charging_basis",
     label: "Where a fee is usually charged on one schedule (for example monthly), the same fee charged over a different period left out",
-    sqlMarker: ".frequency",
+    sqlMarker: ".fee_category IN (",
+  },
+  {
+    key: "literal_charging_units",
+    label: "Prices per hour, page, document, image, statement or part of an hour left out of category comparisons that mix charging units",
+    sqlMarker: "translate(btrim(",
   },
 ];
 
@@ -230,15 +243,9 @@ export interface StatsInputRow {
   schedule_group?: string | number | null;
 }
 
-/** Categories whose tiers are compared at the highest (standard) tier, not the median. */
-export const HIGHEST_TIER_CATEGORIES: ReadonlySet<string> = new Set(["overdraft"]);
+import { HIGHEST_TIER_CATEGORIES, institutionValue } from "@/lib/fee-institution-value";
 
-/** One institution's value for a category from its own amounts (sorted or not). */
-export function institutionValue(category: string | null | undefined, amounts: number[]): number {
-  const sorted = [...amounts].sort((a, b) => a - b);
-  if (category && HIGHEST_TIER_CATEGORIES.has(category)) return sorted[sorted.length - 1];
-  return computePercentile(sorted, 50);
-}
+export { HIGHEST_TIER_CATEGORIES, institutionValue };
 
 export interface FeeStatistics {
   institution_count: number;

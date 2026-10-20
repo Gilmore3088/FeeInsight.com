@@ -3,10 +3,9 @@ import type { sql as sqlClient } from "@/lib/data-store/connection";
 import { REPORT_PAYMENT_KIND } from "@/lib/leads/report-payment";
 import { anchorPaidInstitution, paidInstitutionId } from "@/lib/pro-checkout-institution";
 import { getStripe } from "@/lib/stripe";
-import { isSubscriptionInvoice, lockBillingCustomer, mapSubscriptionStatus, reconcileSubscription, type SubscriptionState } from "@/lib/billing/subscription-state";
+import { isSubscriptionInvoice, lockBillingCustomer, mapSubscriptionStatus, reconcileSubscription } from "@/lib/billing/subscription-state";
 
 type Tx = typeof sqlClient;
-export type SubscriptionStatus = SubscriptionState;
 export const mapStripeStatus = mapSubscriptionStatus;
 
 function customerIdOf(value: string | { id: string } | null | undefined): string | null {

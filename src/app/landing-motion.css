@@ -23,6 +23,7 @@
 }
 @media print {
   .fi-home-hero::before { clip-path: none; }
+  .fi-grow-x { animation: none; }
 }
 
 /* The h1's two lines never wrap (so no word is ever left alone on a line), and its size follows
@@ -70,6 +71,13 @@
 
 .fi-home-question { transition: opacity 0.3s ease, transform 0.3s ease; }
 
+/* A stacked bar draws in from the left once (the market report's position split). */
+.fi-grow-x { animation: fi-grow-x 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) 0.15s both; }
+@keyframes fi-grow-x {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
 /* One question: as each card lights, a dot runs down its line (the research stage's dots, Oct 17). */
 .fi-oq-dot {
   offset-rotate: 0deg;
@@ -85,6 +93,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .fi-grow-x { animation: none; }
   .fi-home-fade { animation: none; }
   .fi-oq-dot { display: none; animation: none; }
   .fi-home-slide,

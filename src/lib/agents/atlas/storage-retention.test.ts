@@ -9,6 +9,7 @@ import {
   STORAGE_ALERT_MB,
   storageAlerts,
   storageRetentionDetail,
+  summarizePartitions,
   summarizeStorageRetention,
 } from "./storage-retention";
 
@@ -136,11 +137,19 @@ describe("storageAlerts and summary", () => {
       "demographics is 1,100 MB, above the 1,000 MB default; nothing is held until a PR gives it a budget",
     ]);
   });
+  it("warns on the private witness budget without purging evidence or holding a source", async () => {
+    const { db, calls } = mockDb({ budgetMb: { agent_source_text_witnesses: 257 } });
+    const result = await runStorageRetention({ db, live: OFF });
+    expect(result.alerts).toContain("Normalized witnesses are 257 MB, above the 256 MB review budget; evidence is retained, review storage headroom");
+    expect(result.heldSources).toEqual([]);
+    expect(calls.some((query) => query.includes("DELETE FROM"))).toBe(false);
+    expect(result.budgetTables).toEqual([{ table: "agent_source_text_witnesses", totalMb: 257, budgetMb: 256 }]);
+  });
   it("says what each trim would remove while it is off", async () => {
     const { db } = mockDb({ legacy: 1200, runEvents: 0, attemptRead: { read: "10", through_id: "10", repeats: "4" } });
     const result = await runStorageRetention({ db, live: OFF });
     expect(summarizeStorageRetention(result)).toBe(
-      "Database 6,340 MB. All 2 public-data tables are within budget. Trims: old rows of the retired event log: 1,200 (off); run events over 90 days old: 0 (off); exact repeats in the attempt log: 4 (off).",
+      "Database 6,340 MB. All 2 tracked tables are within budget. Trims: old rows of the retired event log: 1,200 (off); run events over 90 days old: 0 (off); exact repeats in the attempt log: 4 (off).",
     );
     expect(storageRetentionDetail(result)).toMatchObject({ database_mb: 6340, attempt_window: { next_after_id: 0 } });
   });
@@ -180,6 +189,40 @@ describe("public-data table budgets", () => {
     expect(result.budgetTables).toBeNull();
     expect(result.heldSources).toEqual([]);
     expect(storageRetentionDetail(result)).toMatchObject({ budget_tables: null });
+  });
+});
+
+describe("legacy event-log partitions in the trim", () => {
+  const plan = (dropped: boolean) => ({
+    cutoff: "2026-08-20T08:00:00.000Z",
+    boundary: ["agent_events_2026_08"],
+    partitions: [
+      { name: "agent_events_2026_06", rows: 300_000, totalMb: 174, dropped },
+      { name: "agent_events_2026_07", rows: 320_000, totalMb: 189, dropped },
+    ],
+  });
+  it("names the whole months past the cutoff while off or in a dry run", () => {
+    expect(summarizePartitions(plan(false), false)).toBe(" (whole months past the cutoff: agent_events_2026_06, agent_events_2026_07, 363 MB)");
+  });
+  it("names what it dropped and what it could not", () => {
+    expect(summarizePartitions(plan(true), true)).toBe(" (dropped agent_events_2026_06, agent_events_2026_07, 363 MB)");
+    const partly = plan(true);
+    partly.partitions[1] = { ...partly.partitions[1], dropped: false };
+    expect(summarizePartitions(partly, true)).toBe(" (dropped agent_events_2026_06, 174 MB; could not drop agent_events_2026_07)");
+    expect(summarizePartitions({ ...plan(false), partitions: [] }, true)).toBe("");
+  });
+  it("lists the partitions before touching the log, and a dry run drops none", async () => {
+    const { db, calls } = mockDb({ legacy: 10 });
+    const result = await runStorageRetention({ db, dryRun: true, commitDb: db, now: new Date("2026-10-19T08:00:00Z") });
+    const listed = calls.findIndex((c) => c.includes("FROM pg_inherits"));
+    const log = calls.findIndex((c) => c.includes("FROM agent_events"));
+    expect(listed).toBeGreaterThanOrEqual(0);
+    expect(listed).toBeLessThan(log);
+    expect(calls.some((c) => /DETACH|DROP TABLE/.test(c))).toBe(false);
+    expect(result.trims[0]).toMatchObject({ policy: "legacy_event_log", live: false, eligible: 10, deleted: 0 });
+    expect(storageRetentionDetail(result).trims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ policy: "legacy_event_log", partitions: { cutoff: "2026-08-20T08:00:00.000Z", boundary: [], expired: [] } }),
+    ]));
   });
 });
 

@@ -1,5 +1,5 @@
 import type { MarketReport } from "@/lib/custom-report/report-data";
-import { placeLabel } from "@/app/market-report/report-body";
+import { placeLabel } from "@/app/market-report/place-label";
 import { verifiedSourceQuote } from "./sample-sources";
 import {
   MIN_MEDIAN_INSTITUTIONS,

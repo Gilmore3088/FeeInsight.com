@@ -1,13 +1,41 @@
 import { describe, expect, it } from "vitest";
 import { buildFeeAnswer, economicDrivers, proseFeeName } from "./answer";
 import { economicBackdrop, beigeBookExcerpt } from "./economy";
-import { evaluateFourRoles, MAX_STORY_LINE_WORDS, sentences, words } from "./four-roles";
+import { evaluateFourRoles, findUnrequestedAdvice, MAX_STORY_LINE_WORDS, sentences, words } from "./four-roles";
 import { economyContext, overdraftResearch } from "./test-fixtures";
 import type { HamiltonAnswer } from "./types";
 
 function failuresOf(answer: HamiltonAnswer, role: string): string[] {
   return evaluateFourRoles(answer).roles.find((r) => r.role === role)?.failures ?? [];
 }
+
+describe("source cautions versus unrequested fee advice (#2328)", () => {
+  it.each([
+    "This figure should not be annualized.",
+    "The YTD total should not be doubled.",
+    "This is a six-month figure and should not be doubled into a yearly one.",
+    "Reported income should not be annualised.",
+    "These amounts should not be annualized.",
+    "The total is not annualized and should not be doubled to estimate a full year.",
+  ])("allows a narrowly stated reporting-basis caution: %s", (text) => expect(findUnrequestedAdvice(text)).toBeNull());
+
+  it.each([
+    "You should raise your fee to $35.",
+    "You should not raise your fee.",
+    "You should not lower your price.",
+    "The fee should not be doubled.",
+    "The amount should not be doubled.",
+    "The figure should not be doubled.",
+    "Your fee figure should not be doubled.",
+    "Your fee total is not annualized and should not be doubled to estimate a full year.",
+    "The total is not annualized and should not be doubled to estimate a full year; you should raise the fee.",
+    "This figure should be annualized.",
+    "This figure should not be annualized, but you should raise your fee.",
+    "The figure should not be doubled. We recommend lowering the fee.",
+    "The total should not be doubled and you ought to cut the price.",
+    "You should not assume that raising the fee is safe.",
+  ])("retains advice rejection, including negated advice: %s", (text) => expect(findUnrequestedAdvice(text)).not.toBeNull());
+});
 
 describe("four-roles eval: one overdraft answer", () => {
   const answer = buildFeeAnswer(overdraftResearch());

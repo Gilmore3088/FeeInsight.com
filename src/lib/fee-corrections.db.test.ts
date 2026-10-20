@@ -16,6 +16,7 @@ import {
   reverseFeeCorrection,
 } from "./fee-corrections";
 import { holdPublishedFee } from "./fee-hold";
+import { fillBlankFrequencies } from "@/lib/agents/hamilton/frequency-fill";
 import { readerFeeConditions } from "./fee-conditions";
 
 const connection = process.env.E2E_DATABASE_URL;
@@ -37,6 +38,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   let wrongFeeId = 0;
   let overdraftFeeId = 0;
   let nextRaw = 978200;
+  let rereadRunId: number;
 
   async function seedFee(name: string, key: string, amount: number, documentId: number): Promise<{ verifiedId: number; publishedId: number }> {
     const rawId = nextRaw++;
@@ -105,6 +107,11 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     db = raw as unknown as Db;
     pool = rawPool as unknown as Db;
     resetCorrectionsReadyCache();
+    // Other rollback-only suites can consume serial1 without retaining that run (#2294).
+    // Each simulated reread owns the real run referenced by its durable conflict receipt.
+    const [rereadRun] = await raw`INSERT INTO agent_runs (agent_name, run_kind, title, status)
+      VALUES ('hamilton', 'state_agent', 'H03 test reread', 'running') RETURNING id`;
+    rereadRunId = Number(rereadRun.id);
     // Re-runnable on a local database: remove this test's own rows (and only those) first.
     await raw`DELETE FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
     await raw`DELETE FROM published_fee_corrections WHERE institution_id = ${INST}`;
@@ -193,7 +200,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   it("should_not_republish_the_corrected_away_value_when_the_old_source_is_read_again", async () => {
     for (const amount of [25, 28]) {
       const blocked: unknown[] = [];
-      const published = await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-reread", row: await reread(amount, DOC_OLD), onCorrected: (block) => blocked.push(block) });
+      const published = await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-reread", row: await reread(amount, DOC_OLD), onCorrected: (block) => blocked.push(block) });
       expect(published).toBeNull();
       expect(blocked[0]).toMatchObject({ kind: "protected", feeChainId: wrongFeeId });
     }
@@ -205,12 +212,13 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   it("should_queue_a_newer_source_that_disagrees_once_without_publishing_it", async () => {
     const row = await reread(32, DOC_NEW);
     const blocked: Array<{ kind: string }> = [];
-    expect(await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-new", row, onCorrected: (block) => blocked.push(block) })).toBeNull();
+    expect(await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-new", row, onCorrected: (block) => blocked.push(block) })).toBeNull();
     expect(blocked[0].kind).toBe("conflict");
-    expect(await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-new", row })).toBeNull();
-    const conflicts = await raw`SELECT status, amount, source_document_id FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
+    expect(await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-new", row })).toBeNull();
+    const conflicts = await raw`SELECT status, amount, source_document_id, agent_run_id FROM published_fee_correction_conflicts WHERE institution_id = ${INST}`;
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0].status).toBe("open");
+    expect(Number(conflicts[0].agent_run_id)).toBe(rereadRunId);
     expect(Number(conflicts[0].source_document_id)).toBe(DOC_NEW);
     expect((await liveStopPayment()).map((row) => Number(row.amount))).toEqual([35]);
     const listed = await getInstitutionCorrections(db, INST);
@@ -257,6 +265,45 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     expect(rows[0]).toMatchObject({ n: 4, live: 1 });
   });
 
+  it("should_keep_a_corrected_fee_live_when_an_agent_check_takes_it_down_but_let_the_correction_workflow_replace_it", async () => {
+    const [current] = await raw`SELECT fee_published_id FROM published_fee_corrections WHERE fee_chain_id = ${wrongFeeId} AND status = 'current'`;
+    const correctedId = Number(current.fee_published_id);
+    // The shape every agent takedown takes (rules re-check, taxonomy fold, duplicates): it reads the
+    // corrected row through its original Knox lineage and closes it against the old document.
+    const closed = await raw`UPDATE published_fee_records
+         SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'hamilton-rules-recheck-978', rolled_back_reason = 'knox_rules_recheck'
+       WHERE fee_published_id = ${correctedId} AND rolled_back_at IS NULL
+       RETURNING fee_published_id`;
+    expect(closed).toHaveLength(0);
+    const [still] = await raw`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id = ${correctedId}`;
+    expect(still.rolled_back_at).toBeNull();
+    // A fee nobody corrected still comes down as before.
+    const overdraft = await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'hamilton-rules-recheck-978'
+       WHERE fee_published_id = ${overdraftFeeId} RETURNING fee_published_id`;
+    expect(overdraft).toHaveLength(1);
+    await raw`UPDATE published_fee_records SET rolled_back_at = NULL, rolled_back_by_batch_id = NULL WHERE fee_published_id = ${overdraftFeeId}`;
+  });
+
+  it("should_leave_a_corrected_fee_out_of_the_frequency_fill_while_reading_an_uncorrected_one", async () => {
+    const [current] = await raw`SELECT fee_published_id FROM published_fee_corrections WHERE fee_chain_id = ${wrongFeeId} AND status = 'current'`;
+    const correctedId = Number(current.fee_published_id);
+    // Both rows now read as frequency-fill candidates: a per-event fee stored as daily, on a line it
+    // can re-read. Only the one no admin corrected may be rewritten.
+    for (const id of [correctedId, overdraftFeeId]) {
+      await raw`UPDATE published_fee_records SET frequency = 'daily' WHERE fee_published_id = ${id}`;
+      await raw`UPDATE raw_fee_observations fr SET extraction_note = 'excerpt="Fee | $35.00 per item"'
+                  FROM verified_fee_observations fv, published_fee_records fp
+                 WHERE fp.fee_published_id = ${id} AND fv.fee_verified_id = fp.lineage_ref AND fr.fee_raw_id = fv.fee_raw_id`;
+    }
+    const result = await fillBlankFrequencies(db as never, { runId: rereadRunId, dryRun: true, institutionId: INST });
+    const touched = [...result.filled, ...result.held, ...result.planWouldHold].map((fee) => fee.feePublishedId);
+    expect(result.scanned).toBe(1);
+    expect(touched).not.toContain(correctedId);
+    for (const id of [correctedId, overdraftFeeId]) {
+      await raw`UPDATE published_fee_records SET frequency = 'per_item' WHERE fee_published_id = ${id}`;
+    }
+  });
+
   it("should_let_only_one_of_two_concurrent_editors_win", async () => {
     const listed = await getInstitutionCorrections(db, INST);
     const [currentId, version] = Object.entries(listed.versions)[0];
@@ -293,7 +340,7 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
   it("should_dismiss_a_conflict_with_a_reason_admin_only", async () => {
     // The current version was read from the 2027 document; a later one that disagrees is a conflict.
     const row = await reread(31, DOC_NEWEST);
-    await insertPublishedFee(db as never, { runId: 1, batchId: "agentic-run-978-new2", row });
+    await insertPublishedFee(db as never, { runId: rereadRunId, batchId: "agentic-run-978-new2", row });
     const [open] = await raw`SELECT id FROM published_fee_correction_conflicts WHERE institution_id = ${INST} AND status = 'open'`;
     expect(open).toBeDefined();
     expect((await dismissCorrectionConflict(db, Number(open.id), "Misread", analyst)).ok).toBe(false);

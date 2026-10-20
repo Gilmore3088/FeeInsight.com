@@ -43,7 +43,7 @@ describe.skipIf(!connection)("GLEIF durable holds in isolated PostgreSQL", () =>
     await db.unsafe(fragment("20270110000059_public_data_tables_round3.sql", "CREATE TABLE IF NOT EXISTS public.gleif_entities", "-- state-lists:"));
     await db.unsafe(fragment("20261003142709_regulatory_registry.sql", "CREATE TABLE IF NOT EXISTS public.registry_ingest_partitions", "CREATE INDEX IF NOT EXISTS registry_ingest_partitions_due_idx"));
     await db.unsafe("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='anon') THEN CREATE ROLE anon; END IF; IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname='authenticated') THEN CREATE ROLE authenticated; END IF; END $$;");
-    await db.unsafe(fragment("20261019163933_fdic_identity_conflict_holds.sql", "CREATE TABLE public.institution_identity_holds"));
+    await db.unsafe(fragment("20270110000074_fdic_identity_conflict_holds.sql", "CREATE TABLE public.institution_identity_holds"));
   });
   beforeEach(async () => {
     await db`ALTER TABLE institution_identity_holds DISABLE TRIGGER USER`;

@@ -922,6 +922,8 @@ export interface FetchLinkContext {
    * gone link is not sent back to discovery, and a failed fetch stores no document row.
    */
   keepRemembered?: boolean;
+  /** Extra fields for the attempt log's detail (`live-source-refetch.ts` keys its retries on them). */
+  detail?: Record<string, unknown>;
 }
 
 /**
@@ -981,6 +983,7 @@ export async function fetchAndRecordLink(
         vault_key: result.vaultKey,
         reason: result.reason,
         ...(ctx.note ? { note: ctx.note } : {}),
+        ...(ctx.detail ?? {}),
       },
     });
   }

@@ -98,6 +98,7 @@ import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/a
 import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
 import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
 import { BANK_ZELLE_SOURCE } from "@/lib/agents/magellan/registry/bank-zelle";
+import { CALL_REPORT_SUMMARIES_SOURCE } from "@/lib/agents/magellan/registry/call-report-summaries";
 import { BANK_ZELLE_MATCHER_VERSION } from "@/lib/agents/magellan/registry/bank-zelle-match";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
@@ -359,12 +360,14 @@ export function registryPartitionsBySource(
  * partitions is due, so the closed-institution and merger checks (Atlas marks closed or merged
  * charters inactive from these) keep their cadence however many data sources are added. The
  * FDIC universe and NCUA 5300 syncs set `institution_sources.status`; ffiec-overdraft feeds the
- * overdraft income series. Every other source shares the remaining runs round-robin.
+ * overdraft income series; call-report-summaries rebuilds the readers' quarterly income right
+ * after a call-report load makes it due. Every other source shares the remaining runs round-robin.
  */
 export const PRIORITY_REGISTRY_SOURCES: readonly string[] = [
   FDIC_UNIVERSE_SOURCE,
   NCUA_FINANCIALS_SOURCE,
   FFIEC_OVERDRAFT_SOURCE,
+  CALL_REPORT_SUMMARIES_SOURCE,
 ];
 
 function roundRobin(lists: Array<{ source: string; partitions: string[] }>): RegistryPartitionCandidate[] {

@@ -21,7 +21,7 @@ describe.skipIf(!connection)("FDIC own-LEI collection in isolated PostgreSQL", (
   let db: postgres.Sql<{ json: unknown }>;
   let registryDb: RegistryDb;
   const receipts: Array<Record<string, unknown>> = [];
-  const holdMigration = readFileSync(new URL("../../../../../supabase/migrations/20261019163933_fdic_identity_conflict_holds.sql", import.meta.url), "utf8");
+  const holdMigration = readFileSync(new URL("../../../../../supabase/migrations/20270110000074_fdic_identity_conflict_holds.sql", import.meta.url), "utf8");
 
   beforeAll(async () => {
     if (!connection || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connection).hostname)) {

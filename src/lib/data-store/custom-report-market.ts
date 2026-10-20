@@ -1,9 +1,12 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
+import { branchCitySpellings, hqPlacesInBranchCounties } from "./city-spellings";
+import { institutionValue, statsRowFilter } from "./fee-stats";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
 import { nameIsFragment } from "@/lib/agents/darwin/release-review";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import { quoteNamesOtherFee, quoteNamesOwnFee, quoteStatesFigure } from "@/lib/custom-report/evidence";
+import { catalogExcerpt } from "./account-lineup";
 
 /**
  * Live data for an automatic Competitive Fee Position Report: the institution, its local
@@ -33,7 +36,7 @@ export type ReportDropReason =
   | "not_checking";
 
 /**
- * The monthly maintenance line compares entry checking. Its rule keeps savings out by fee name,
+ * The monthly maintenance line compares consumer checking. Its rule keeps savings out by fee name,
  * but a savings or money market fee is often named just "Monthly fee", so the schedule line
  * that states the fee decides as well.
  */
@@ -59,6 +62,24 @@ export function reportRowProblem(row: { fee_name: string; takedown_pending?: boo
 }
 const SOD_THOUSANDS = 1_000;
 
+const collapse = (text: string) => text.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * The schedule line a report shows for a record. The shared source check finds the first line of
+ * the document that states the amount under the fee's words, which can be another fee's line: for
+ * Hancock Whitney's "Overdraft Charge/Overdraft Fee (each item)" $36 (row 66419) it found "Sustained
+ * Overdraft Fee of $36.00" higher up the same document. The record's own stored excerpt (the line
+ * it was read from) is used instead when it states the amount as this fee and appears in that same
+ * stored text.
+ */
+export function recordSourceLine(line: string, checked: string, excerpt: string | null, amount: number, text: string | null): string {
+  if (!excerpt || !text || !quoteStatesFigure(excerpt, amount)) return checked;
+  // Only to replace a line that labels the amount as another fee, with one that labels it as this
+  // fee: TD's "$3 monthly fee" excerpt must not hide the "Paper statements" its line names.
+  if (!quoteNamesOtherFee(line, checked, amount) || !quoteNamesOwnFee(line, excerpt, amount)) return checked;
+  return collapse(text).includes(collapse(excerpt)) ? excerpt : checked;
+}
+
 export interface MarketInstitution {
   institution_id: number;
   institution_name: string;
@@ -69,9 +90,24 @@ export interface MarketInstitution {
   market_deposits: number | null;
 }
 
+/** One published row behind a report amount, with the evidence it was checked against. */
+export interface MarketFeeRecord {
+  /** The published_fee_catalog row id; missing on copies saved before it was kept. */
+  id?: number | null;
+  amount: number;
+  /** The fee's published name, which names the account or product when the bank does. */
+  fee_name: string;
+  /** The line of the bank's own document that states this amount. */
+  source_line: string;
+  source_url?: string | null;
+  schedule_read_on?: string | null;
+}
+
 export interface MarketFeeLine {
   institution_id: number;
   line: string;
+  /** The published_fee_catalog row id of the first record; missing on older saved copies. */
+  id?: number | null;
   amount: number;
   fee_name: string;
   source_url: string | null;
@@ -82,9 +118,11 @@ export interface MarketFeeLine {
   source_line: string;
   /**
    * Every checked amount the institution states for this fee line, representative first,
-   * when there is more than one (balance tiers, or two separate charges).
+   * when there is more than one (balance tiers, or two separate charges). With tiers, `amount`
+   * is the value the index counts for the institution (`institutionValue`: the middle of its
+   * prices, the highest for overdraft), so the report compares the way the medians are built.
    */
-  tiers?: { amount: number; fee_name: string; source_line: string }[];
+  tiers?: MarketFeeRecord[];
 }
 
 export interface CustomReportMarketData {
@@ -95,6 +133,25 @@ export interface CustomReportMarketData {
   lines: MarketFeeLine[];
   /** Published rows left out because their source text does not state them, by reason. */
   dropped: Partial<Record<ReportDropReason, number>>;
+  /**
+   * The subject institution's own live records that passed a line's eligibility rules (category,
+   * name, consumer basis, amount range) and were left out only because the shared source check
+   * could not match them to its saved schedule. They make that line's comparison incomplete
+   * (analysis.ts `incomplete`). Competitors' records never go here. Missing on older copies.
+   */
+  unmatchedOwn?: UnmatchedOwnRecord[];
+}
+
+/** One of the subject's eligible records that failed the shared source check (see `unmatchedOwn`). */
+export interface UnmatchedOwnRecord {
+  line: string;
+  id: number | null;
+  amount: number;
+  fee_name: string;
+  /** The record's own stored excerpt, when it has one. */
+  excerpt: string | null;
+  source_url: string | null;
+  reason: SourceCheckFailure;
 }
 
 interface StoredText {
@@ -143,6 +200,9 @@ async function loadMarketCounties(subject: {
   city: string | null;
 }): Promise<MarketCountyRow[]> {
   const fdicCert = subject.charter_type === "credit_union" ? null : subject.cert_number;
+  // The headquarters city's branch spellings, folded (#2092): "SAINT PETERSBURG" on the record
+  // still finds the branches filed under "ST. PETERSBURG".
+  const hqSpellings = subject.city && subject.state_code ? await branchCitySpellings(subject.city, subject.state_code) : [];
   return sql<MarketCountyRow[]>`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits),
     own_all AS (
@@ -166,7 +226,7 @@ async function loadMarketCounties(subject: {
       SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state
       FROM institution_branch_deposits b, latest
       WHERE NOT EXISTS (SELECT 1 FROM own)
-        AND b.year = latest.y AND b.state = ${subject.state_code} AND UPPER(b.city) = UPPER(${subject.city ?? ""})
+        AND b.year = latest.y AND b.state = ${subject.state_code} AND UPPER(b.city) = ANY(${hqSpellings}::text[])
         AND b.county_fips IS NOT NULL
       GROUP BY b.county_fips, b.year
       ORDER BY COUNT(*) DESC, SUM(COALESCE(b.deposits, 0)) DESC, b.county_fips::text
@@ -207,6 +267,8 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
   if (counties.length === 0) return null;
   const countyFips = counties.map((row) => String(row.county_fips));
   const sodYear = Number(counties[0].year);
+  // Institutions headquartered in a market city, whatever spelling their record uses (#2092).
+  const hqPlaces = await hqPlacesInBranchCounties(sodYear, countyFips);
   const rows = await sql<
     { institution_id: number; institution_name: string; city: string | null; state_code: string | null; charter_type: string | null; market_deposits: string | null }[]
   >`
@@ -220,7 +282,7 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
       WHERE institution_id IS NOT NULL GROUP BY institution_id
       UNION
       SELECT s.id, NULL FROM institution_sources s
-      WHERE EXISTS (SELECT 1 FROM branches p WHERE p.state = s.state_code AND p.city = UPPER(s.city))
+      WHERE (s.state_code || '|' || UPPER(s.city)) = ANY(${hqPlaces}::text[])
         AND NOT EXISTS (SELECT 1 FROM branches b2 WHERE b2.institution_id = s.id)
     ),
     members AS (
@@ -269,10 +331,12 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     market_deposits: null,
     asset_size: num(subject.asset_size),
   };
-  if (counties.length === 0) return { subject: subjectRow, market: null, competitors: [], lines: [], dropped: {} };
+  if (counties.length === 0) return { subject: subjectRow, market: null, competitors: [], lines: [], dropped: {}, unmatchedOwn: [] };
 
   const countyFips = counties.map((row) => String(row.county_fips));
   const sodYear = Number(counties[0].year);
+  // Institutions headquartered in a market city, whatever spelling their record uses (#2092).
+  const hqPlaces = await hqPlacesInBranchCounties(sodYear, countyFips);
 
   const rows = await sql<
     {
@@ -284,11 +348,13 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       market_deposits: string | null;
       line: string | null;
       amount: string | null;
+      fee_id: string | number | null;
       fee_name: string | null;
       source_url: string | null;
       updated_at: string | null;
       source_document_id: string | null;
       takedown_pending: boolean | null;
+      conditions: string | null;
     }[]
   >`
     WITH rules AS (
@@ -305,7 +371,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       WHERE institution_id IS NOT NULL GROUP BY institution_id
       UNION
       SELECT s.id, NULL FROM institution_sources s
-      WHERE EXISTS (SELECT 1 FROM branches p WHERE p.state = s.state_code AND p.city = UPPER(s.city))
+      WHERE (s.state_code || '|' || UPPER(s.city)) = ANY(${hqPlaces}::text[])
         AND NOT EXISTS (SELECT 1 FROM branches b2 WHERE b2.institution_id = s.id)
     ),
     members AS (
@@ -314,10 +380,11 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       SELECT ${institutionId}::bigint, NULL WHERE NOT EXISTS (SELECT 1 FROM rivals WHERE institution_id = ${institutionId})
     ),
     guarded AS (
-      SELECT c.institution_id, r.k AS line, c.amount, c.fee_name, c.source_document_id,
+      SELECT c.id AS fee_id, c.institution_id, r.k AS line, c.amount, c.fee_name, c.source_document_id,
              COALESCE(c.document_url, c.source_url) AS source_url, c.updated_at,
              EXISTS (SELECT 1 FROM pipeline_feedback pf
-                      WHERE pf.fee_published_id = c.id AND pf.kind = 'takedown_pending') AS takedown_pending
+                      WHERE pf.fee_published_id = c.id AND pf.kind = 'takedown_pending') AS takedown_pending,
+             COALESCE(c.extraction_note, c.conditions) AS conditions
       FROM published_fee_catalog c
       JOIN rules r ON c.canonical_fee_key = ANY (r.source_keys)
       WHERE c.institution_id IN (SELECT institution_id FROM members)
@@ -340,8 +407,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       FROM guarded g
     )
     SELECT m.institution_id, s.institution_name, s.city, s.state_code, s.charter_type,
-           m.deposits AS market_deposits, p.line, p.amount, p.fee_name, p.source_url, p.updated_at::text AS updated_at,
-           p.source_document_id::text AS source_document_id, p.takedown_pending
+           m.deposits AS market_deposits, p.line, p.fee_id, p.amount, p.fee_name, p.source_url, p.updated_at::text AS updated_at,
+           p.source_document_id::text AS source_document_id, p.takedown_pending, p.conditions
     FROM members m
     JOIN institution_sources s ON s.id = m.institution_id
     LEFT JOIN ranked p ON p.institution_id = m.institution_id
@@ -377,6 +444,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
   const includeByLine = new Map(FEE_LINE_RULES.map((rule) => [rule.key, rule.include]));
   const filled = new Map<string, MarketFeeLine>();
   const dropped: Partial<Record<ReportDropReason, number>> = {};
+  const unmatchedOwn: UnmatchedOwnRecord[] = [];
 
   const competitors = new Map<number, MarketInstitution>();
   const lines: MarketFeeLine[] = [];
@@ -407,7 +475,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       let check: ReturnType<typeof checkFeeAgainstSource> = { ok: false, reason: "no_source_text" };
       let source: StoredText | null = null;
       for (const candidate of candidates) {
-        check = checkFeeAgainstSource(candidate.text, row.fee_name, amount, include);
+        check = checkFeeAgainstSource(candidate.text, row.fee_name, amount, include, undefined, { sectionHeadingCategory: true });
         if (check.ok) {
           source = candidate;
           break;
@@ -415,36 +483,75 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       }
       if (!check.ok) {
         dropped[check.reason] = (dropped[check.reason] ?? 0) + 1;
+        // The subject's own eligible record, left out only by the source check: kept so the report
+        // can say that line's comparison is missing an input (not a savings fee by its excerpt).
+        const excerpt = catalogExcerpt(row.conditions);
+        if (id === subjectRow.institution_id && !maintenanceLineIsNotChecking(row.line, excerpt ?? "")) {
+          unmatchedOwn.push({
+            line: row.line,
+            id: row.fee_id === null ? null : Number(row.fee_id),
+            amount,
+            fee_name: row.fee_name,
+            excerpt,
+            source_url: row.source_url ?? null,
+            reason: check.reason,
+          });
+        }
         continue;
       }
-      if (maintenanceLineIsNotChecking(row.line, check.sourceLine)) {
+      // The line the record was read from, when its stored excerpt states the amount on this same
+      // document; otherwise the first line the shared check matched (recordSourceLine).
+      const sourceLine = recordSourceLine(row.line, check.sourceLine, catalogExcerpt(row.conditions), amount, source?.text ?? null);
+      if (maintenanceLineIsNotChecking(row.line, sourceLine)) {
         dropped.not_checking = (dropped.not_checking ?? 0) + 1;
         continue;
       }
+      const record: MarketFeeRecord = {
+        id: row.fee_id === null ? null : Number(row.fee_id),
+        amount,
+        fee_name: row.fee_name,
+        source_line: sourceLine,
+        source_url: row.source_url ?? source?.url ?? null,
+        schedule_read_on: source?.readOn ?? null,
+      };
       const representative = filled.get(slot);
       if (representative) {
-        // Further checked amounts for the same line are shown as tiers, not compared.
+        // Every further checked amount for the same line is kept with its own evidence, so the
+        // report can show each record behind the value it compares (custom-report/evidence.ts).
         const tiers = representative.tiers ?? [
-          { amount: representative.amount, fee_name: representative.fee_name, source_line: representative.source_line },
+          {
+            id: representative.id ?? null,
+            amount: representative.amount,
+            fee_name: representative.fee_name,
+            source_line: representative.source_line,
+            source_url: representative.source_url,
+            schedule_read_on: representative.schedule_read_on,
+          },
         ];
-        if (!tiers.some((tier) => tier.amount === amount && tier.source_line === check.sourceLine)) {
-          representative.tiers = [...tiers, { amount, fee_name: row.fee_name, source_line: check.sourceLine }];
+        if (!tiers.some((tier) => tier.amount === amount && tier.source_line === sourceLine)) {
+          representative.tiers = [...tiers, record];
         }
         continue;
       }
       const entry: MarketFeeLine = {
         institution_id: id,
         line: row.line,
+        id: record.id,
         amount,
         fee_name: row.fee_name,
         source_url: row.source_url ?? source?.url ?? null,
         updated_at: row.updated_at ? row.updated_at.slice(0, 10) : null,
         schedule_read_on: source?.readOn ?? null,
-        source_line: check.sourceLine,
+        source_line: sourceLine,
       };
       filled.set(slot, entry);
       lines.push(entry);
     }
+  }
+
+  // One value per institution, the statistics contract's own (fee-stats.ts rule 2).
+  for (const entry of lines) {
+    if (entry.tiers && entry.tiers.length > 1) entry.amount = institutionValue(entry.line, entry.tiers.map((t) => t.amount));
   }
 
   return {
@@ -458,6 +565,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
     competitors: [...competitors.values()],
     lines,
     dropped,
+    unmatchedOwn,
   };
 }
 

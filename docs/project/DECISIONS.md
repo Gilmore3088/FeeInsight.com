@@ -3,7 +3,58 @@
 Newest first. Each entry: date, what was decided, who, why, and what it means for the work.
 Seeded 2026-10-05 from the project's working memory; earlier decisions were not recorded here.
 
+## 2026-10-20
+
+**Returned statements file as returned mail.** James, 2026-10-20 03:51 UTC, decision card "File
+returned statements under returned mail instead of keeping them held?": "File them". On Oct 7 (v26)
+he had kept them held because no category fit; the returned-mail type made on Oct 15 (#1398) covers
+"returned or undeliverable mail or statements". Knox v90 files them there, the held re-check sends
+the held ones to Darwin (246 held lines at 126 banks match the name; 231 of them passed the release checks in the Oct 20 dry run), and live ones already sit under returned mail.
+
+**A process fix switches on once its sample checks clean; James hears after.** James, 2026-10-20
+01:53 UTC, on a decision card in the "Resolve issues 981 and 982" thread, after asking at 01:52 why
+built fixes were not on. Fixes that change live fees were shipping switched off with a dry-run count
+and waiting for his yes, which only the morning digest asked for: the hourly line check (#1456,
+2,077 live fees at 1,619 banks), the hand-takedown returns (6 fees) and eight more switches sat off,
+so the live score could not move. He chose "Both on, and a new rule": those two go on now
+(`HOURLY_LINE_LIVE`, `HAND_TAKEDOWN_RETURNS_LIVE`), and from now on a switch for a process fix that
+has a dry-run count turns on by PR once an automatic sample of that dry run checks clean against the
+bank's own document. James is told after, in the digest (count, sample result, score change), not
+asked first. At 01:54 he applied it to the eight waiting accuracy switches ("all eight with rules"):
+`DARWIN_RECHECK_OLDER_LIVE`, `DARWIN_RECHECK_SECOND_LOOK_LIVE`, `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`,
+`KNOX_HELD_NAME_RULES_LIVE`, `RANGE_BAND_SET_ASIDE_LIVE`, `SAVED_LINK_FETCH_LIVE`,
+`PRODUCT_PAGE_CONFLICT_LIVE` and `READER_LOSS_RESTORES_ON`; for the last two the automatic sample
+replaces their hand checks. Storage and speed switches, migrations, deletions and spend still need
+his yes.
+
+**Issues become lessons for the agents, not only checks.** James, 2026-10-20: "I don't want a
+check, I want a lesson for the agents so they get better at their roles. This is the whole point
+of the recursive agent architecture." Until then the pipeline agents learned only per institution
+(the playbook), so a closed issue taught the agent nothing about its role. New rule: a PR that
+closes an issue whose root cause is in a pipeline agent adds a lesson to that agent's
+`src/lib/agents/<agent>/role-lessons.ts` in the same PR. Lessons are reviewed code; Atlas's daily
+`atlas-lesson-sync` step copies them into `agent_lessons` (a lesson removed from the repo is retired,
+never deleted), every step records the lessons that shaped it as `lessons_applied`, model-calling
+steps send them as instructions (at most ten, newest first), and each agent page lists "What this
+agent has learned". `scripts/ci-guards.sh lesson-kill` checks the files. It is in CLAUDE.md "How
+work runs" and AGENTS.md "How work runs".
+
 ## 2026-10-19
+
+**Review findings become checklist lines, not new issues.** James, 2026-10-19 17:01 UTC, on a
+decision card in the backlog thread, after asking at 16:48 how to start closing issues "we have
+ballooned to nearly 300". GitHub REST on Oct 19: 295 open issues. A sort of all 295 closed 41 as
+fixed, duplicate, obsolete or folded into a parent, merged PRs closed more, and new issues kept
+arriving; GitHub REST at 17:04 UTC showed 242 open. About 180 issues were opened on Oct 19
+against about 105 closed, and
+most were single findings from one review or one PR. New rule:
+- A finding the PR under review can fix is fixed in that PR before it merges.
+- Any other finding is a checklist line on the issue for its root cause, or on the agent's or
+  Foundation tracker if no such issue exists.
+- A new issue is opened only for a new root cause.
+This replaces the Oct 12 "every change a review finds is documented as its own issue, with no cap"
+entry below. Every finding is still tracked, and the open count now reflects root causes. It is in
+CLAUDE.md "How work runs" and AGENTS.md "How work runs".
 
 **Fix the input and the process, not the output.** James, 2026-10-19 04:04 UTC, in the project
 chat: "we don't fix the output, we fix the input and the process. And only then do we validate and
@@ -434,6 +485,7 @@ system first." Before any agent work, the repository is reset to how work runs n
 - the site-copy marketing skills are linked so sessions find them;
 - Vercel previews are built for every PR.
 
+(Replaced 2026-10-19: findings are now checklist lines on their root-cause issue; see that entry.)
 Every change a review finds is documented as its own issue, with no cap (James, Oct 12: "if
 Magellan has nine, we need to document all nine"). Work that belongs to no agent
 (infrastructure, documentation, process) has its own Foundation tracker. What keeps the work
@@ -442,7 +494,8 @@ it closes, and James re-orders the list weekly (about ten minutes).
 
 **Review the pipeline one agent at a time before relying on it again.** James, Oct 12, in a
 Claude Code session. Each agent gets a written review with production measurements and a GitHub
-tracker issue with one sub-issue per change, under one master tracker
+tracker issue with one sub-issue per change (narrowed 2026-10-19: a change is a checklist line
+on the tracker unless it is a new root cause), under one master tracker
 (`docs/plans/pipeline-review-2026-10-12.md`). Order: Magellan, Rosetta, Knox, Darwin, Hamilton,
 state experts, Atlas. Reviews are documents and issues; code follows one issue and one PR at a time.
 

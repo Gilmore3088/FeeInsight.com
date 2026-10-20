@@ -170,6 +170,20 @@ export const GLOBAL_ONLY_PUBLISH_SWEEPS: readonly MovedPublishSweep[] = [
   "holdFeedback",
 ];
 
+/**
+ * Moved sweeps that check a sample per run, keyed by the run (`md5(id || run id)`) or the hour:
+ * a dry run and the next lane publish sample different institutions, so their counts differ
+ * by sample, not by state. The page-copy takedowns a 2026-10-19 dry run counted and the lanes did
+ * not (fees 8543, 82637, 81908) were this: the lanes had not sampled institutions 8121 and 608
+ * (25 a run from a pool of 947). Compare these by day totals, not pair by pair.
+ */
+export const SAMPLED_PUBLISH_SWEEPS: readonly MovedPublishSweep[] = [
+  "pageCopyRestore",
+  "pageCopyCollapse",
+  "nearNameCollapse",
+  "crossPage",
+];
+
 export function runsMovedSweep(mode: PublishSweepMode, key: MovedPublishSweep): boolean {
   if (mode === "lane") return false;
   if (mode === "institution") return !GLOBAL_ONLY_PUBLISH_SWEEPS.includes(key);
@@ -361,7 +375,7 @@ export async function sweepsBeforeGuardRequeue(ctx: MovedSweepContext) {
     institutionId,
   }));
   // A product-page fee the bank's own schedule prices differently: the schedule wins
-  // (James, 2026-10-13). Off until a hand check of 10 conflicts finds 9 right; logs first looks.
+  // (James, 2026-10-13). On since 2026-10-20 after an automatic sample checked clean (`PRODUCT_PAGE_CONFLICT_LIVE`).
   const productPageConflict = await sweep(ctx, "productPageConflict", (): Result<typeof retireProductPageConflicts> => ({
     live: false, conflicts: 0, flagged: 0, cleared: 0, waiting: 0, rolledBack: [], dryRun,
   }), () => retireProductPageConflicts(tx, {
@@ -667,7 +681,8 @@ export function movedSweepCounts(r: MovedSweepResults, ran: (key: MovedPublishSw
     sourceLinkFill: r.sourceLinkFill.fills.length,
     linkDrift: r.linkDrift.repoints.length + r.linkDrift.archived.length,
     "linkDrift.flagged": r.linkDrift.flagged,
-    feedbackSync: r.feedbackSync.written + r.feedbackSync.relabeled,
+    // A dry run writes nothing, so it counts the rows it would upsert (`wouldWrite`).
+    feedbackSync: (r.feedbackSync.wouldWrite ?? r.feedbackSync.written) + r.feedbackSync.relabeled,
     holdFeedback: r.holdFeedback.zeroed,
   };
   const counts: Record<string, number> = {};
@@ -847,6 +862,8 @@ export async function runPublishSweepsStep(
       changed,
       flagged,
       sweep_counts: counts,
+      // Counts of these sweeps come from a per-run sample: compare them by day totals.
+      sampled_sweeps: SAMPLED_PUBLISH_SWEEPS,
       sweep_ms: sweepMs,
       would_take_down_ids: dryRun ? takedownIds.slice(0, PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT) : undefined,
       taken_down_ids: dryRun ? undefined : takedownIds.slice(0, PUBLISH_SWEEPS_TAKEDOWN_ID_LIMIT),

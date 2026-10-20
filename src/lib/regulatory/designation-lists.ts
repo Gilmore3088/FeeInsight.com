@@ -48,9 +48,6 @@ export const DESIGNATIONS = {
 } as const;
 export type Designation = (typeof DESIGNATIONS)[keyof typeof DESIGNATIONS];
 
-/** Flag designations (an institution has it or not) versus categorical ones (every institution has a value). */
-export const FLAG_DESIGNATIONS: readonly Designation[] = [DESIGNATIONS.mdi, DESIGNATIONS.lowIncome, DESIGNATIONS.cdfi, DESIGNATIONS.subchapterS];
-
 export const FDIC_INSTITUTIONS_URL = "https://api.fdic.gov/banks/institutions";
 /** Page that links NCUA's MDI list file (xlsx or csv); the file's own name changes each release. */
 export const NCUA_MDI_PAGE_URL = "https://ncua.gov/support-services/credit-union-resources-expansion/resources/minority-depository-institution-preservation";

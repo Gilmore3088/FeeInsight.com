@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  stream: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(),
+  stream: vi.fn(), generate: vi.fn(), briefing: vi.fn(), check: vi.fn(), save: vi.fn(), write: vi.fn(), merge: vi.fn(), usage: vi.fn(),
   held: { message: null as string | null },
   gateThrows: false,
 }));
@@ -17,6 +17,7 @@ vi.mock("@/lib/hamilton/answer-save", async () => {
     ...actual,
     writtenAnswerCheck: (...args: Parameters<typeof actual.writtenAnswerCheck>) => {
       if (mocks.gateThrows) throw new Error("synthetic gate failure");
+      mocks.check(...args);
       return actual.writtenAnswerCheck(...args);
     },
   };
@@ -26,7 +27,7 @@ vi.mock("@/lib/api-hardening/audit", () => ({ getRequestSubjectKey: () => "synth
 vi.mock("@/lib/auth", () => ({ getCurrentUser: async () => ({ id: 7, role: "premium" }) }));
 vi.mock("@/lib/access", () => ({ canAccessPremium: () => true }));
 vi.mock("@/lib/hamilton/institution-membership", () => ({ getUserInstitutionMemberships: async () => [] }));
-vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefing: async () => "Research evidence." }));
+vi.mock("@/lib/hamilton/institution-briefing", () => ({ buildHamiltonInstitutionBriefingSnapshot: mocks.briefing }));
 vi.mock("@/lib/data-store", () => ({ getInstitutionById: async (id: number) => ({ id, institution_name: `Synthetic Subject ${id}` }) }));
 vi.mock("@/lib/hamilton/quota", () => ({ checkProAiQuota: async () => ({ allowed: true }), quotaExceededMessage: () => "quota" }));
 vi.mock("@/lib/research/history", () => ({ logUsage: async () => {} }));
@@ -63,7 +64,7 @@ vi.mock("@/lib/hamilton/answer-gate", async () => {
   };
 });
 vi.mock("ai", () => ({
-  generateText: vi.fn(), streamText: mocks.stream, convertToModelMessages: async (messages: unknown) => messages, stepCountIs: () => ({}),
+  generateText: mocks.generate, streamText: mocks.stream, convertToModelMessages: async (messages: unknown) => messages, stepCountIs: () => ({}),
   createUIMessageStream: ({ execute }: { execute: (input: unknown) => Promise<void> }) => execute({ writer: { merge: mocks.merge, write: mocks.write } }),
   createUIMessageStreamResponse: async ({ stream }: { stream: Promise<void> }) => { await stream; return new Response("synthetic stream"); },
 }));
@@ -101,12 +102,76 @@ beforeEach(() => {
   mocks.gateThrows = false;
   mocks.usage.mockReset();
   mocks.stream.mockReset();
+  mocks.generate.mockReset();
+  mocks.check.mockReset();
+  mocks.briefing.mockReset().mockResolvedValue({ prompt: "Research evidence.", evidence: [] });
   mocks.save.mockReset().mockResolvedValue("saved-1");
   mocks.write.mockReset();
   mocks.merge.mockReset();
 });
 
 describe("written answer evidence gate", () => {
+  const incomeFact = { institution_id: 202, institution_name: "Synthetic Subject 202", context_role: "research",
+    metric: "service_charge_income", value: 57260, unit: "thousands of dollars", report_date: "2026-06-30",
+    period_basis: "ytd", source: "ncua", publisher: "NCUA", evidence_tier: "regulatory" };
+
+  it("validates the streamed answer against the same briefing snapshot as the prompt", async () => {
+    mocks.held.message = "Synthetic held line.";
+    const evidence = [incomeFact];
+    mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify(evidence), evidence });
+    answers("## Hamilton's View\nFee income through June was $57.26 million year to date.");
+
+    await POST(request("What was fee income through June?"));
+
+    expect(mocks.briefing).toHaveBeenCalledTimes(1);
+    expect(mocks.stream.mock.calls[0][0].system).toContain(JSON.stringify(evidence));
+    expect(mocks.check.mock.calls[0][3].briefingEvidence).toEqual(evidence);
+    expect(mocks.check.mock.calls[0][3].briefingEvidence[0]).toBe(incomeFact);
+    expect(mocks.check.mock.calls[0][3]).toMatchObject({ institutionId: 202, toolResults: [{ output: TOOL_OUTPUT }] });
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect(metadata()).toMatchObject({ answerEvidence: { passed: true, held: false } });
+  });
+
+  it("uses the same evidence snapshot and named tool inputs in the citation-gated path", async () => {
+    const evidence = [incomeFact];
+    mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify(evidence), evidence });
+    const text = "## Evidence\n" + Array.from({ length: 5 }, () => "NCUA 5300 reports fee income through June of $57.26 million year to date.").join("\n");
+    const toolResult = { toolName: "queryData", input: { source: "ncua" }, output: { source: "ncua", rows: [] } };
+    mocks.generate.mockResolvedValueOnce({ text, finishReason: "stop", steps: [{ toolResults: [toolResult] }], totalUsage: {} });
+    const req = new Request("https://example.test/api/research/hamilton", { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", parts: [{ type: "text", text: "What was fee income through June?" }] }], mode: "analyze", institutionId: 202, gate_citations: true }) });
+
+    const response = await POST(req);
+
+    expect((await response.json()).status).toBe("ok");
+    expect(mocks.briefing).toHaveBeenCalledTimes(1);
+    expect(mocks.generate.mock.calls[0][0].system).toContain(JSON.stringify(evidence));
+    expect(mocks.check.mock.calls[0][3].briefingEvidence).toEqual(evidence);
+    expect(mocks.check.mock.calls[0][3].briefingEvidence[0]).toBe(incomeFact);
+    expect(mocks.check.mock.calls[0][3]).toMatchObject({ institutionId: 202, toolResults: [toolResult] });
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it.each(["Overdraft fees generated no revenue.", "Nobody paid overdraft fees.", "The customer base is growing."])("holds unsupported NCUA interpretation without showing or saving it: %s", async (claim) => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify([incomeFact]), evidence: [incomeFact] });
+    answers(`## Hamilton's View\n${claim}`);
+    await POST(request("What does the NCUA filing establish?"));
+    expect(mocks.merge).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(metadata()).toMatchObject({ answerEvidence: { passed: false, held: true } });
+  });
+
+  it("shows a sourced financial answer with a period caution", async () => {
+    mocks.held.message = "Synthetic held line.";
+    mocks.briefing.mockResolvedValueOnce({ prompt: JSON.stringify([incomeFact]), evidence: [incomeFact] });
+    answers("## Hamilton's View\nFee income was $57.26 million year to date. This six-month figure should not be annualized.");
+    await POST(request("What was fee income through June?"));
+    expect(mocks.merge).toHaveBeenCalledTimes(1);
+    expect(mocks.save).toHaveBeenCalledTimes(1);
+    expect(metadata()).toMatchObject({ answerEvidence: { passed: true, held: false } });
+  });
+
   it.each(["error", "length", "content-filter", "tool-calls", "other"])("does not save a terminal %s stream as a completed answer", async (finishReason) => {
     mocks.stream.mockImplementation((options) => ({
       consumeStream: async () => {

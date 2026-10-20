@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PRODUCT_NAME, REPORT_OFFER, REPORT_PRICE_INLINE, SITE_NAME } from "@/lib/constants";
 import { PRO_PLANS_HREF } from "@/components/public/pro-next-step";
 import { UNAVAILABLE_LABEL, type PublicStatsSummary } from "@/lib/public-stats";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 import { PrintButton } from "./print-button";
 import { HubSection } from "./district/[id]/district-hub";
 
@@ -160,7 +161,7 @@ export function MethodFlow({
 export function ProBand({ sampleLive }: { sampleLive: boolean }) {
   const secondary = sampleLive
     ? { href: "/reports/sample-competitive-fee-position", label: `See the sample ${REPORT_OFFER.name}` }
-    : { href: "/for-institutions#report", label: REPORT_OFFER.institutionCtaLabel };
+    : { href: REPORT_REQUEST_HREF, label: REPORT_OFFER.institutionCtaLabel };
   return (
     <section
       id="apply"

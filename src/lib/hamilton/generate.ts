@@ -11,11 +11,10 @@ import {
   getHamiltonModel,
   type Anthropic,
 } from "@/lib/ai-provider";
-import { trackAnthropicRequest } from "@/lib/ai-provider-usage";
+import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedProviderUsage, type ProviderUsage } from "@/lib/ai-provider-usage";
 import { HAMILTON_VOICE } from "./voice";
 import {
   evaluateCitationDensity,
-  type CitationGateOptions,
   type CitationGateResult,
 } from "./citation-gate";
 import { checkNarrativeFigures } from "./figure-check";
@@ -73,6 +72,8 @@ export interface SectionTracking {
   operation?: string;
   subjectKey?: string;
   agentRunId?: number;
+  /** One observation per returned raw response, including figure regeneration/incomplete replies. */
+  onProviderResponse?: (usage: ProviderUsage | undefined, model: string) => void;
 }
 
 export async function generateSection(input: SectionInput, tracking: SectionTracking = {}): Promise<SectionOutput> {
@@ -100,6 +101,11 @@ export async function generateSection(input: SectionInput, tracking: SectionTrac
         },
         { ...attempt, timeout: REQUEST_TIMEOUT_MS },
         );
+      }).then((response) => {
+        // Bookkeeping must never turn an otherwise completed request into a paid retry.
+        try { tracking.onProviderResponse?.(observedProviderUsage(response.usage), MODEL); }
+        catch (error) { console.error("Hamilton report usage observer failed", error); }
+        return assertCompletedAnthropicTextResponse(response);
       }),
     );
   } catch (err) {
@@ -134,11 +140,11 @@ function buildThesisPrompt(input: ThesisInput): string {
     ? `  "contrarian_insight": "<one non-obvious finding the reader does not expect>",\n`
     : '';
 
-  const revenueLine = input.data.revenue_snapshot
-    ? `REVENUE DATA (this leads):
-Total service charges: $${input.data.revenue_snapshot.total_service_charges.toLocaleString()} (${input.data.revenue_snapshot.latest_quarter})
-YoY change: ${input.data.revenue_snapshot.yoy_change_pct !== null ? `${input.data.revenue_snapshot.yoy_change_pct.toFixed(1)}%` : 'unavailable'}
-Banks: $${input.data.revenue_snapshot.bank_service_charges.toLocaleString()} | Credit unions: $${input.data.revenue_snapshot.cu_service_charges.toLocaleString()}
+  const financialGroups = input.data.financial_income_groups ?? [];
+  const revenueLine = financialGroups.length
+    ? `SEPARATE FINANCIAL MEASURES (amounts in thousands of dollars):
+${JSON.stringify(financialGroups)}
+Bank deposit service charges and broad credit-union fee income are different measures. Never combine their totals, means, revenue shares or growth rates. Retain source, definition, period basis, report date, reporting count and changing-population limitations.
 
 `
     : '';
@@ -229,11 +235,11 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
         },
         { ...attempt, timeout: THESIS_TIMEOUT_MS },
         );
-      }),
+      }).then((response) => assertCompletedAnthropicTextResponse(response)),
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new Error(`Hamilton thesis generation failed [scope=${input.scope}]: ${message}`);
+    throw new Error(`Hamilton thesis generation failed [scope=${input.scope}]: ${message}`, { cause: err });
   }
 
   const raw = extractAnthropicText(response);
@@ -267,39 +273,6 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
       outputTokens: response.usage.output_tokens,
     },
   };
-}
-
-// ─── Citation-Gated Section Generation (roadmap #2) ───────────────────────────
-
-export type GatedSectionOutput =
-  | { status: "ok"; section: SectionOutput; gate: Extract<CitationGateResult, { status: "pass" }> }
-  | { status: "refused"; gate: Extract<CitationGateResult, { status: "refused" }> };
-
-/**
- * Generate a Hamilton section and gate it on citation density.
- *
- * Use this wherever a report narrative is destined for a user-visible surface
- * (PDF, published article, Pro deliverable). The gate refuses reports that
- * make quantified claims without citing pipeline-verified sources — matching
- * the CLAUDE.md accuracy constraint ("All data in reports must trace to
- * pipeline-verified fees").
- *
- * The underlying generation call is not retried — refusal bubbles up so the
- * caller can either widen the data scope or surface the structured empty
- * state to the user.
- */
-export async function generateGatedSection(
-  input: SectionInput,
-  gateOptions?: CitationGateOptions,
-): Promise<GatedSectionOutput> {
-  const section = await generateSection(input);
-  const gate = evaluateCitationDensity(section.narrative, gateOptions);
-
-  if (gate.status === "refused") {
-    return { status: "refused", gate };
-  }
-
-  return { status: "ok", section, gate };
 }
 
 // ─── Figure-Verified Section Generation ───────────────────────────────────────

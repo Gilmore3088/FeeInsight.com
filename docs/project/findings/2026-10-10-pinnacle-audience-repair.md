@@ -82,3 +82,5 @@ The earlier multi-statement SQL response returned only the last schema-column re
 - Verify live Pinnacle consumer NSF $0 eliminated, business NSF $30, overdraft $30 for both, with source/evidence lineage. Check deployed application/routes as well as database rows and prove the old observations cannot republish.
 
 A frontend-only preview against the unchanged production schema cannot validate this branch. Completion means all release and live acceptance gates, not just a green draft PR.
+
+**Agent lesson:** knox/pr-986-scope-each-audience

@@ -40,3 +40,5 @@ A clean install and production build against the CI schema in a disposable loopb
 The local full suite passes 12,362 tests; the agentic suite passes 1,606. Typecheck and legacy guards pass. The final lint result retains 37 existing warnings plus 40 newly visible analyzer warnings; no warning-free claim is made.
 
 The dated dependency scan falls from 49 to 45 total package entries and 17 to 13 production entries; no Next advisory remains in that scan. These are package counts, not independent exploit counts. MapLibre's major upgrade, other runtime packages and development tooling remain separate security work. Login throttling, inactive API-key checks, XLSX bounds, safe fetching, legacy-password rehash and safe health errors also remain open.
+
+**Guard:** `src/lib/next-version-floor.test.ts:29` (`next` and `eslint-config-next` pinned at or above 16.4.2; `:34` the lockfile resolves `next` and its Linux SWC binary at or above it)

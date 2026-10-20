@@ -48,7 +48,7 @@ describe("saved peer research round trip", () => {
     expect(screen.getByRole("heading", { name: shown.shortAnswer })).toBeTruthy();
     const table = within(screen.getByRole("table", { name: "Peer table" }));
     expect(table.getAllByRole("rowheader").map(cell => within(cell).getAllByRole("link")[0].textContent)).toEqual(["Gulf CU", "Bay CU"]);
-    expect(table.getByText("$2,000,000,000")).toBeTruthy();
+    expect(table.getByText("$2B")).toBeTruthy();
     expect(table.getAllByText("Not available")).toHaveLength(2);
     const fees = within(screen.getByRole("table", { name: "Published NSF charges" }));
     expect(fees.getByText("$0")).toBeTruthy();

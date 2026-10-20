@@ -41,7 +41,7 @@ function Regressions({ quality }: { quality: AgentQuality }) {
         <p className="text-xs tabular-nums text-gray-600 dark:text-gray-400">
           {quality.evalCases.length === 0
             ? "No test cases yet."
-            : quality.evalCases.map((row) => `${row.dataset} ${row.status}: ${num(row.count)}`).join(" · ")}
+            : "Historical all-dataset counts (including unbound source history): " + quality.evalCases.map((row) => `${row.dataset} ${row.status}: ${num(row.count)}`).join(" · ")}
         </p>
       )}
       {misses.length > 0 ? (

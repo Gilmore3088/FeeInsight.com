@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildCallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { feeItem } from "./names";
 import { buildFeeAnswer } from "./answer";
@@ -243,6 +244,19 @@ describe("storyline", () => {
     expect(story.kind).toBe("price_test");
     const test = story.options!.find((o) => o.label === "Test $25")!;
     expect(test.consequences.map((c) => c.text)).toContain("At today's item count, overdraft income would be about $93.8 thousand a year, against $120 thousand filed.");
+  });
+
+  it("retains a peer history manifest on saved trend exhibits and labels its limits", () => {
+    const base = research();
+    const history = buildCallCohortHistory({ requestedIds: [1, 2], periods: [] });
+    const financials = { ...base.institutionFinancials!, peerMedian: { label: "Regional credit unions", cohortHistory: history,
+      quarters: [{ quarterEnd: "2026-06-30", amount: 60000, institutions: 5 }, { quarterEnd: "2026-03-31", amount: 50000, institutions: 6 }],
+      sourceRef: { label: "NCUA dated cross-sections" } } };
+    const answer = buildFeeAnswer(research({ institutionFinancials: financials }), { story: { focus: "trend" } });
+    const exhibit = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "trend")!.exhibit;
+    expect(exhibit).toMatchObject({ kind: "trend", cohortHistory: history, note: expect.stringContaining("not constant-cohort or merger-adjusted growth") });
+    // Own as-filed arithmetic remains available and is not mistaken for peer growth.
+    expect(answer.storyline!.exhibits[0].actionTitle).toContain("4.2%");
   });
 
   it("names who changed the fee and when, newest first", () => {

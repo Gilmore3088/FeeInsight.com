@@ -6,8 +6,9 @@ This repository uses one agentic experience for data trust, validation, publishi
 
 Up to three builders, one per lane, starting from the Now list in GitHub issue #1026: one
 outcome, one branch, one PR, with small related fixes batched into it. Search open issues, PRs and current main before building, and reuse or explicitly
-supersede what exists. Every change a review finds is its own issue under a tracker (one per
-agent, plus the Foundation tracker for non-agent work), and the review names what it closes.
+supersede what exists. A review finding the PR can fix is fixed in that PR; anything else is a
+checklist line on its root-cause issue or tracker (one per agent, plus the Foundation tracker for
+non-agent work). A new issue is opened only for a new root cause, and the review names what it closes.
 Outreach is parked. Do not delete branches; unknown-age branches may hold unmerged work.
 James has standing approval for clean, merge-ready GitHub PRs to merge without another per-PR
 approval request. "Clean, merge-ready" means the exact current head is reviewed, required CI/checks
@@ -25,6 +26,13 @@ conversion, Knox extraction or categorisation, Darwin verification or classifica
 whole class of error is fixed, then re-run the affected institutions and validate the output. A
 one-off data fix (an admin correction, hold or re-file) comes only as the last step after that
 process fix, never instead of it.
+
+Issues become lessons for the agents, not only checks (James, 2026-10-20). A PR that closes an
+issue whose root cause is in a pipeline agent adds a lesson to that agent's
+`src/lib/agents/<agent>/role-lessons.ts` in the same PR: one or two plain sentences on how the agent
+should do its role differently, the root cause, the evidence and the steps it shapes. Every run
+reads its agent's lessons and records them as `lessons_applied`; model-calling steps send them as
+instructions. `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
 
 ## Current Runtime
 
@@ -143,13 +151,14 @@ Growth owns marketing: the weekly LinkedIn drafts and the monthly marketing emai
 Use these current semantic tables and read models:
 
 - Institutions and sources: `institution_sources`, `source_documents`, `source_collection_runs`, `agent_source_texts`.
+- Private future normalized witnesses: `agent_source_text_witnesses` (diagnostic evidence, no automatic fee authority).
 - Fee tiers: `raw_fee_observations`, `verified_fee_observations`, `published_fee_records`, `published_fee_catalog`.
 - Public intake: `community_fee_submissions`.
 - Institution authority: `institution_claims`, `institution_claim_events`, `institution_workspace_memberships`, `institution_workspace_invitations`.
 - Agent ledger: `agent_runs`, `agent_run_steps`, `agent_run_events`.
 - Provider safety: `automation_control`, `ai_api_usage_events`.
 - Marketing (Growth): `content_drafts`, `pipeline_feedback`.
-- Hamilton Pro persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
+- Hamilton persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
 
 Do not use retired runtime contracts such as `fee_crawler`, `ops_jobs`, Modal worker IDs, old crawler table aliases, or request-time DDL.
 
@@ -175,6 +184,6 @@ Before calling agentic work done, run the narrow tests for the touched code and 
 - `npx tsc --noEmit`
 - `npm run lint`
 - `npx vitest run` (full suite; CI runs all of these)
-- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton Pro flows.
+- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton flows.
 
 For database-affecting work, verify against the actual current schema and add a migration only through the project migration workflow. Do not edit production-applied migrations in place.

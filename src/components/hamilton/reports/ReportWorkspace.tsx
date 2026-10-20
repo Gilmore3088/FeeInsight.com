@@ -437,6 +437,19 @@ export function ReportWorkspace({
         </p>
       )}
 
+      {selectedInstitution && (
+        <Link
+          href={hrefWithInstitutionContext("/pro/reports/committee", String(selectedInstitution.id))}
+          className="flex flex-col gap-0.5 rounded-lg border border-warm-300 bg-warm-50 px-5 py-4 no-underline hover:border-warm-500 focus:outline-none focus-visible:border-terra focus-visible:ring-2 focus-visible:ring-terra"
+        >
+          <span className="text-base font-semibold text-warm-900">Pricing committee brief</span>
+          <span className="text-sm text-warm-700">
+            A two-page brief for the pricing committee: the largest differences from your peers, what to resolve first and a next step, with every source in an appendix.
+          </span>
+          <span className="mt-1 text-sm font-medium text-terra-text">Open the brief →</span>
+        </Link>
+      )}
+
       {!selectedInstitution && !reportGenerated && (
         <Callout>
           Choose a research institution before checking coverage or writing a report.{" "}

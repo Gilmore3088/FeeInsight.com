@@ -17,3 +17,5 @@ institutions on prod.
 
 Lesson: when a query needs `published_fee_catalog` more than once, materialize the scoped rows
 once. The planner does not push an institution filter into the view's depth check.
+
+**Guard:** `src/lib/data-store/search.test.ts:267` (the state directory query names `published_fee_catalog` once, in the materialized `scope_catalog` CTE that both counts read)
