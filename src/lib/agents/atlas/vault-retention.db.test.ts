@@ -32,6 +32,10 @@ const DOCS = [
   { id: 15, obj: 15, why: "an archived historical fee cites it" },
   { id: 16, obj: 16, why: "a profile's last good document" },
   { id: 17, obj: 17, why: "re-checked by Magellan 3 days ago", checkedDaysAgo: 3 },
+  { id: 18, obj: 18, why: "an answer key names the hash of its bytes (another bank's key, upper case)" },
+  { id: 19, obj: 19, why: "an answer key names its bank and URL" },
+  { id: 20, obj: 20, why: "an answer-key eligibility check read it" },
+  { id: 21, obj: 21, why: "a pipeline attempt read it" },
 ] as const;
 
 describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
@@ -42,7 +46,7 @@ describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
     }
     db = postgres(connection, { max: 1, ssl: "require", types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } });
     await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, institution_id bigint, status text, content_hash text,
-      document_r2_key text, content_type text, byte_size bigint, fees_extracted integer NOT NULL DEFAULT 0, duplicate_of_id bigint,
+      document_url text, document_r2_key text, content_type text, byte_size bigint, fees_extracted integer NOT NULL DEFAULT 0, duplicate_of_id bigint,
       crawled_at timestamptz NOT NULL, last_checked_at timestamptz)`;
     await db`CREATE TEMP TABLE agent_source_texts (id bigserial PRIMARY KEY, source_document_id bigint NOT NULL, status text NOT NULL,
       created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`;
@@ -53,12 +57,14 @@ describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
     await db`CREATE TEMP TABLE historical_fee_observation_archive (id bigserial PRIMARY KEY, source_document_id bigint)`;
     await db`CREATE TEMP TABLE eval_cases (id bigserial PRIMARY KEY, source_document_id bigint)`;
     await db`CREATE TEMP TABLE institution_source_profiles (institution_id bigint PRIMARY KEY, last_successful_source_document_id bigint)`;
+    await db`CREATE TEMP TABLE pipeline_attempts (id bigserial PRIMARY KEY, source_document_id bigint)`;
+    await db`CREATE TEMP TABLE answer_key_institutions (id bigserial PRIMARY KEY, institution_id bigint NOT NULL, document_url text NOT NULL, content_hash text)`;
     await db`CREATE TEMP TABLE agent_run_events (id bigserial PRIMARY KEY, event_type text NOT NULL, detail jsonb NOT NULL DEFAULT '{}')`;
 
     for (const doc of DOCS) {
       const d = doc as { id: number; obj: number; judgedDaysAgo?: number; checkedDaysAgo?: number; noKey?: boolean; text?: string | null; feesExtracted?: number };
-      await db`INSERT INTO source_documents (id, institution_id, status, content_hash, document_r2_key, content_type, byte_size, fees_extracted, crawled_at, last_checked_at)
-        VALUES (${d.id}, ${d.id}, 'success', ${hash(d.obj)}, ${d.noKey ? null : key(d.obj)}, 'text/html', 1048576, ${d.feesExtracted ?? 0},
+      await db`INSERT INTO source_documents (id, institution_id, document_url, status, content_hash, document_r2_key, content_type, byte_size, fees_extracted, crawled_at, last_checked_at)
+        VALUES (${d.id}, ${d.id}, ${`https://bank${d.id}.example/fees`}, 'success', ${hash(d.obj)}, ${d.noKey ? null : key(d.obj)}, 'text/html', 1048576, ${d.feesExtracted ?? 0},
                 now() - interval '90 days', now() - make_interval(days => ${d.checkedDaysAgo ?? 60}))`;
       const status = d.text === undefined ? "wrong_document" : d.text;
       if (status) {
@@ -74,6 +80,13 @@ describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
     await db`INSERT INTO eval_cases (source_document_id) VALUES (10)`;
     await db`INSERT INTO historical_fee_observation_archive (source_document_id) VALUES (15)`;
     await db`INSERT INTO institution_source_profiles VALUES (16, 16)`;
+    await db`INSERT INTO answer_key_institutions (institution_id, document_url, content_hash)
+      VALUES (900, 'https://other.example/fees', ${` ${hash(18).toUpperCase()} `}), (19, 'https://bank19.example/fees', NULL),
+             (900, 'https://bank1.example/fees', NULL)`;
+    await db`INSERT INTO agent_run_events (event_type, detail) VALUES ('answer_key.eligibility', ${JSON.stringify({
+      observations: [{ sourceDocumentId: null }, { sourceDocumentId: 20, excerpt: 'Fee schedule' }],
+    })}::jsonb), ('answer_key.eligibility', ${JSON.stringify({ observations: 'not a list' })}::jsonb)`;
+    await db`INSERT INTO pipeline_attempts (source_document_id) VALUES (21)`;
   });
   afterAll(async () => { if (db) await db.end(); });
 
@@ -82,14 +95,16 @@ describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
     const result = await db.begin((tx) => runVaultRetention({ db: tx as unknown as Db, live: false, client: null }));
     expect(result.retention).toMatchObject({ live: false, eligibleObjects: 1, eligibleMb: 1, deleted: 0 });
     expect(result.retention.error).toBeUndefined();
-    expect(result.size).toMatchObject({ objects: 14, mb: 14, unsizedObjects: 0 });
+    expect(result.size).toMatchObject({ objects: 18, mb: 18, unsizedObjects: 0 });
     expect(await db`SELECT * FROM source_documents ORDER BY id`).toEqual(before);
   });
 
   it("deletes only the object no fee lineage reaches, even when switched on", async () => {
     const send = vi.fn().mockResolvedValue({});
     const client = { send } as unknown as S3Client;
-    const result = await db.begin((tx) => runVaultRetention({ db: tx as unknown as Db, live: true, client, bucket: "docs" }));
+    // The step's own connection outside a transaction, so each key's re-check and clearing commit
+    // on it before the delete (temporary tables live on this one session).
+    const result = await runVaultRetention({ db: db as unknown as Db, commitDb: db as unknown as Db, live: true, client, bucket: "docs" });
     expect(result.retention).toMatchObject({ live: true, eligibleObjects: 1, deleted: 1, failed: 0, deletedKeys: [key(1)] });
     const deleted = send.mock.calls.map(([command]) => (command as DeleteObjectCommand).input.Key);
     expect(send.mock.calls.every(([command]) => command instanceof DeleteObjectCommand)).toBe(true);
@@ -102,18 +117,19 @@ describe.skipIf(!connection)("vault retention in isolated PostgreSQL", () => {
   });
 
   it("protects each of those objects through its lineage row alone (not by accident)", async () => {
-    // With every lineage row gone (rolled back after), the nine lineage-protected objects become
+    // With every lineage row gone (rolled back after), the 13 lineage-protected objects become
     // eligible; the four kept for other reasons (read copy, recent verdict, fees found, recent check) stay.
     const rollback = new Error("rollback");
     let eligible: number | null = null;
     await db.begin(async (tx) => {
       for (const table of ["raw_fee_observations", "verified_fee_observations", "published_fee_records", "published_fee_corrections",
-        "historical_fee_observation_archive", "eval_cases", "institution_source_profiles", "agent_run_events"]) {
+        "historical_fee_observation_archive", "eval_cases", "institution_source_profiles", "agent_run_events",
+        "answer_key_institutions", "pipeline_attempts"]) {
         await tx.unsafe(`DELETE FROM ${table}`);
       }
       eligible = (await runVaultRetention({ db: tx as unknown as Db, live: false })).retention.eligibleObjects;
       throw rollback;
     }).catch((error) => { if (error !== rollback) throw error; });
-    expect(eligible).toBe(9);
+    expect(eligible).toBe(13);
   });
 });

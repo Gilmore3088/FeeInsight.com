@@ -2635,7 +2635,7 @@ async function executeAgenticStep(
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
       // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
-      const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client() });
+      const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client(), commitDb: sql });
       return {
         status: "completed",
         summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,

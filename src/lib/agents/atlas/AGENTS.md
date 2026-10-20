@@ -128,10 +128,13 @@ the real thresholds by PR. It also counts, every run, the objects the retention 
 every row holding the bytes (by key or content hash) was judged `wrong_document` by Rosetta over 30
 days ago, has no other text, extracted no fees and was not fetched or re-checked in 30 days, and no
 fee lineage reaches it (`FEE_LINEAGE_REFS`: raw, verified and published fee tiers by document and
-key, corrections, archives, snapshots, eval cases, feedback, witnesses, profile pointers, and
-live-fee audit captures). A missing fee tier stops the count. Deletion (at most 500 objects a run,
-clearing `document_r2_key` on their rows) runs only while `VAULT_RETENTION_LIVE` is true, which a
-PR sets after James's yes; it is off. Storing cleaned text instead of large raw HTML is not done.
+key, corrections, archives, snapshots, eval cases, feedback, pipeline attempts, witnesses, profile
+pointers, answer-key documents by content hash and by bank and URL, answer-key eligibility checks,
+and live-fee audit captures). A missing fee tier stops the count. Deletion (at most 500 objects a
+run) runs only while `VAULT_RETENTION_LIVE` is true, which a PR sets after James's yes; it is off.
+When on, each object is re-checked and its rows' `document_r2_key` cleared in a committed
+transaction first, then checked again for any new row or citation of the bytes, and only then
+deleted; a failed delete puts the key back. Storing cleaned text instead of large raw HTML is not done.
 
 ## Direct state re-search (`priority-state-research.ts`)
 
