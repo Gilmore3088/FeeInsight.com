@@ -28,6 +28,11 @@ vi.mock("@/lib/report-assemblers/national-quarterly", () => ({
 
 import { generateGlobalThesis, generateSection } from "@/lib/hamilton/generate";
 import { assembleMonthlyPulse } from "@/lib/report-assemblers/monthly-pulse";
+vi.mock("@/lib/report-assemblers/national-trends", () => ({ assembleNationalTrends: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/report-assemblers/regulatory-context", () => ({ assembleRegulatoryContext: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/report-engine/editor", () => ({ runEditorReview: vi.fn().mockResolvedValue({ approved: true, flaggedSections: [], reviewNote: "Fixture" }) }));
+vi.mock("@/lib/report-templates/templates/national-quarterly", () => ({ renderNationalQuarterlyReport: vi.fn(() => { throw new Error("stop at template"); }) }));
+import { buildFinancialIncomeGroup } from "@/lib/report-assemblers/financial-income";
 import { assembleNationalQuarterly } from "@/lib/report-assemblers/national-quarterly";
 import { assembleAndRender } from "./assemble-and-render";
 
@@ -63,4 +68,31 @@ describe("assembleAndRender's assembling guard (#1271)", () => {
     // The cancel is left in place: no 'failed' write follows.
     expect(m.calls.some((call) => call.text.includes("status = 'failed'"))).toBe(false);
   });
+});
+
+
+it("passes separate source groups to Hamilton and excludes legacy pooled metrics", async () => {
+  const groups = ["fdic", "ncua"].map((source) => buildFinancialIncomeGroup(source as "fdic" | "ncua", [{
+    quarter: "2026-Q2", total_service_charges: source === "fdic" ? 100 : 10,
+    bank_service_charges: source === "fdic" ? 100 : 0, cu_service_charges: source === "ncua" ? 10 : 0,
+    total_institutions: source === "fdic" ? 50 : 5, yoy_change_pct: null,
+  }]));
+  vi.mocked(assembleNationalQuarterly).mockResolvedValue({
+    financial_income_groups: groups, total_institutions: 100, fred: null, district_headlines: [], categories: [],
+    revenue: { total_service_charges: 999999 },
+    derived: { revenue_per_institution: 999999, bank_revenue_share_pct: 91, cu_revenue_share_pct: 9,
+      categories_with_data_count: 0, total_priced_categories: 0 },
+  } as never);
+  vi.mocked(generateSection).mockResolvedValue({ narrative: "Fixture.", usage: { inputTokens: 0, outputTokens: 0 } } as never);
+  await expect(assembleAndRender("national_index", {}, "fixture")).rejects.toThrow("stop at template");
+  const sections = vi.mocked(generateSection).mock.calls.map(([input]) => input);
+  const income = sections.find((input) => input.title === "Fee Income in Call Reports")!;
+  expect(income.data.financial_income_groups).toEqual(groups);
+  expect(income.context).toContain("Never combine totals, means, shares or growth");
+  for (const input of sections) {
+    expect(input.data).not.toHaveProperty("revenue");
+    expect(input.data).not.toHaveProperty("revenue_per_institution");
+    expect(input.data).not.toHaveProperty("bank_revenue_share_pct");
+    expect(input.data).not.toHaveProperty("cu_revenue_share_pct");
+  }
 });

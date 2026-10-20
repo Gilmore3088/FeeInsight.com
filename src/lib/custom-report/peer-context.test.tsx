@@ -49,4 +49,11 @@ describe("report peer context", () => {
     expect(html).toMatch(/Too few of these peers publish paper statement/i);
     expect(html).not.toMatch(/Hamilton Pro|Frost/);
   });
+  it("labels a credit union's broader fee-income ratio without calling it deposit service charges", () => {
+    const peers: ReportPeerContext = { groupLabel: "Credit unions with $10B to $250B in assets", fees: [], thinFeeKeys: [], financial: { reportDate: "2026-06-30", source: "ncua", peerCount: 24, rows: [{ key: "fee_income_ratio", own: 3.8, median: 3.2, percentile: 60 }] } };
+    const html = renderToStaticMarkup(<PeerSection name="Synthetic CU" peers={peers} />);
+    expect(html).toContain("Broad credit-union fee income as a share of revenue");
+    expect(html).not.toContain("Deposit service charges as a share of revenue");
+  });
+
 });

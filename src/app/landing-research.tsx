@@ -132,14 +132,14 @@ export function cardFigure(k: EvidenceKey, view: OneQuestionView | null, fee: On
     if (!income) return empty(detail);
     return {
       metric: income.latestCompact,
-      caption: `Deposit service charges · ${income.latestQuarter}`,
+      caption: `${income.measureLabel} · ${income.latestQuarter}`,
       source: `${income.filing}, ${income.latestQuarter}: ${income.latestLabel}`,
       chart: (
         <Bars
           values={income.quarters.map((q) => q.thousands)}
           highlight={income.quarters.length - 1}
           kind="income"
-          label={`Deposit service charges by quarter: ${income.quarters.map((q) => `${q.label} ${q.valueLabel}`).join(", ")}`}
+          label={`${income.measureLabel} by quarter: ${income.quarters.map((q) => `${q.label} ${q.valueLabel}`).join(", ")}`}
         />
       ),
       key: `income:${income.latestQuarter}`,
@@ -319,7 +319,7 @@ function FeeChart({ fee }: { fee: OneQuestionFee }) {
 function FinancialList({ view }: { view: OneQuestionView }) {
   const income = view.income;
   if (!income) return <p className="text-[13px] text-ink-muted">Call Report figures are not available right now.</p>;
-  const rows: { line: string; value: string }[] = [{ line: `Deposit service charges, ${income.latestQuarter}`, value: income.latestLabel }];
+  const rows: { line: string; value: string }[] = [{ line: `${income.measureLabel}, ${income.latestQuarter}`, value: income.latestLabel }];
   if (income.sizeMedian) rows.push({ line: `Median for its size (${income.sizeMedian.tierLabel})`, value: income.sizeMedian.valueLabel });
   if (income.share) rows.push({ line: `Share of revenue, own / median for ${view.peerNoun} its size`, value: `${income.share.own} / ${income.share.median}` });
   return (
@@ -476,7 +476,7 @@ function InvestigatePanel({ view, fee }: { view: OneQuestionView | null; fee: On
             <ul className="mt-2 space-y-1.5 text-[12px] leading-snug text-ink-soft">
               {view.income ? (
                 <li>
-                  {view.income.latestLabel} in deposit service charges, {view.income.latestQuarter}
+                  {view.income.latestLabel} in {view.income.measureLabel.toLowerCase()}, {view.income.latestQuarter}
                   {view.income.sizeMedian ? `, against ${a(view.income.sizeMedian.valueLabel)} median for its size` : ""} ({view.income.filing})
                 </li>
               ) : null}
@@ -555,7 +555,7 @@ function MonitorPanel({ view }: { view: OneQuestionView | null }) {
       <Preview
         heading={OUTPUTS[2].heading}
         visual={
-          <div className="max-w-[22rem]" role="img" aria-label={`Deposit service charges by quarter: ${income.quarters.map((q) => `${q.label} ${q.valueLabel}`).join(", ")}`} data-evidence-chart="monitor">
+          <div className="max-w-[22rem]" role="img" aria-label={`${income.measureLabel} by quarter: ${income.quarters.map((q) => `${q.label} ${q.valueLabel}`).join(", ")}`} data-evidence-chart="monitor">
             <div className="flex h-14 items-end gap-2" aria-hidden="true">
               {income.quarters.map((q, i) => {
                 const top = Math.max(...income.quarters.map((x) => x.thousands), 0) || 1;
@@ -573,7 +573,7 @@ function MonitorPanel({ view }: { view: OneQuestionView | null }) {
         }
       >
         <p data-monitor-change="">
-          Deposit service charges {verb}
+          {income.measureLabel} {verb}
           {change.direction === "flat" ? "" : ` ${change.pctLabel}`} from {change.from} to {change.to}, from <span className={NUM}>{change.fromLabel}</span> to{" "}
           <span className={NUM}>{change.toLabel}</span>.
         </p>
@@ -607,7 +607,7 @@ function ReportPanel({ view, fee, sampleHref }: { view: OneQuestionView | null; 
             title: "Current financial position",
             body: income ? (
               <>
-                {income.latestLabel} in deposit service charges, {income.latestQuarter}
+                {income.latestLabel} in {income.measureLabel.toLowerCase()}, {income.latestQuarter}
                 {income.share ? `; ${income.share.own} of revenue against ${income.share.median} for ${view.peerNoun} its size` : ""}.
               </>
             ) : (

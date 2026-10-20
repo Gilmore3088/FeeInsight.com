@@ -281,6 +281,14 @@ function narrateFinished(
         ? `Atlas restored ${count(n(detail, "repaired"), "credit union city", "credit union cities")} cut at 15 characters from NCUA's branch file.${linkNote}`
         : `Atlas found ${count(found, "credit union city", "credit union cities")} cut at 15 characters and changed none (${detail.dry_run === true ? "dry run" : "switched off"}).${linkNote}`;
     }
+    case "atlas-lesson-sync": {
+      if (detail.ready === false) return "Atlas could not sync the agents' lessons: agent_lessons is not there.";
+      const retired = Array.isArray(detail.superseded) ? detail.superseded.length : 0;
+      const skipped = Array.isArray(detail.skipped_agents) ? (detail.skipped_agents as Detail[]).filter((entry) => n(entry, "lessons") > 0) : [];
+      const skipNote = skipped.length ? ` Skipped ${skipped.map((entry) => `${n(entry, "lessons")} for ${String(entry.agent)}`).join(", ")} (no registry row).` : "";
+      if (detail.dry_run === true) return `Atlas checked the agents' role lessons (dry run): ${count(retired, "lesson")} would be retired.${skipNote}`;
+      return `Atlas synced the agents' role lessons: ${n(detail, "inserted")} new, ${n(detail, "updated")} updated, ${n(detail, "unchanged")} unchanged, ${retired} retired.${skipNote}`;
+    }
     case "atlas-storage-retention": {
       const size = detail.database_mb == null ? "could not read the database size" : `measured the database at ${count(n(detail, "database_mb"), "MB", "MB")}`;
       const trims = Array.isArray(detail.trims) ? (detail.trims as Detail[]) : [];
@@ -345,6 +353,13 @@ function narrateFinished(
       const soFar = rate && Number(rate.judged) > 0 ? ` So far ${Number(rate.moved)} of ${count(Number(rate.judged), "change")} moved their number.` : "";
       return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.${soFar}`;
     }
+    case "deming-monthly-review": {
+      if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";
+      const alarms = Array.isArray(detail.alarms) ? detail.alarms.length : 0;
+      return alarms === 0
+        ? "Ran the monthly agent review: no measure moved the wrong way past its limit."
+        : `Ran the monthly agent review: ${count(alarms, "measure")} moved the wrong way past ${alarms === 1 ? "its" : "their"} limit.`;
+    }
     case "deming-sunday-maintenance":
       if (detail.ran === false) return "Not Sunday: no maintenance email this time.";
       return detail.delivery_status === "sent"
@@ -358,7 +373,9 @@ function narrateFinished(
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
       const accuracy = (detail.accuracy ?? {}) as Detail;
-      return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision.`;
+      const piles = Array.isArray((detail.queues as Detail | null)?.queues) ? ((detail.queues as Detail).queues as Array<{ alarms?: unknown[] }>) : null;
+      const alarmed = piles ? piles.filter((pile) => Array.isArray(pile.alarms) && pile.alarms.length > 0).length : null;
+      return `${detail.stored === true ? "Recorded" : "Read"} the daily scoreboard: coverage ${percentOf(coverage.rate)}, accuracy ${percentOf(accuracy.precision)} precision${alarmed == null ? "" : `, ${alarmed} of ${piles!.length} piles alarmed`}.`;
     }
     case "content-market-spread": {
       const picked = (detail.picked ?? null) as Detail | null;
@@ -721,6 +738,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "schedule-check": "atlas",
   "atlas-city-repair": "atlas",
   "atlas-storage-retention": "atlas",
+  "atlas-lesson-sync": "atlas",
   "deming-fresh-audit": "atlas",
   "deming-benchmark-health": "atlas",
   "deming-data-quality": "atlas",
@@ -728,6 +746,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
+  "deming-monthly-review": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",

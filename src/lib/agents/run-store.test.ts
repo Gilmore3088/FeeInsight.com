@@ -101,6 +101,7 @@ vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+  HAMILTON_PUBLISH_MIN_INSTITUTION_FEES: 3,
 }));
 
 vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
@@ -174,7 +175,9 @@ import {
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
+  withLessonsApplied,
 } from "./run-store";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 
 const runRow = {
   id: 101,
@@ -849,7 +852,7 @@ describe("agentic run store", () => {
 
   async function savedRecheckRun(
     alias: "classify" | "verify", recheck: unknown,
-    options: { dryRun?: boolean; learning?: boolean; processed?: number } = {},
+    options: { dryRun?: boolean; learning?: boolean; processed?: number; deferred?: number; deferrals?: Array<{ feeRawId: number; reason: string }> } = {},
   ) {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const steps = [{ ...queuedStepRows[0], step_key: alias, agent_name: "darwin", title: "Verify fees" }];
@@ -860,6 +863,7 @@ describe("agentic run store", () => {
     txMock.unsafe.mockResolvedValue([]);
     runDarwinVerifyMock.mockResolvedValue({
       selectedRawFees: 7, processedRawFees: options.processed ?? 7, verifiedFees: 6, skippedFees: 1,
+      deferredRawFees: options.deferred ?? 0, deferrals: options.deferrals ?? [],
       limit: 10, dryRun: options.dryRun === true, learning: options.learning ?? true, results: [], recheck,
       outcomes: {}, reasonCounts: {}, zeroFeesVerified: 0, peerFallbackChecks: 0,
       peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0,
@@ -878,6 +882,30 @@ describe("agentic run store", () => {
   }
 
   const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
+
+  it("saves bounded unresolved-admission receipts without source context and excludes deferred zeros from settled counts", async () => {
+    const zero = await import("./darwin/conditional-zero-resolve");
+    const zeroSpy = vi.spyOn(zero, "runDarwinConditionalZeroResolve").mockResolvedValue({
+      selected: 4, verified: 1, dryRun: false, verdicts: { conditional_zero_free_on_schedule: 1 },
+      deferred: 2, deferrals: [{ feeRawId: 89, reason: "no_original_hash" }],
+    });
+    try {
+      const samples = Array.from({ length: 30 }, (_, index) => ({ feeRawId: index + 1,
+        reason: index === 0 ? "SECRET source stack" : "no_original_hash", sourceContext: "SECRET source body" }));
+      const { detail, message } = await savedRecheckRun("verify", recheckZero, { deferred: 30, deferrals: samples });
+      expect(detail.deferred_raw_fees).toBe(30);
+      expect(detail.verification_deferrals).toHaveLength(25);
+      expect(detail.verification_deferrals[0]).toEqual({ feeRawId: 1, reason: "admission_unresolved" });
+      expect(JSON.stringify(detail.verification_deferrals)).not.toContain("SECRET");
+      expect(detail.conditional_zero).toMatchObject({ selected: 4, settled: 2, deferred: 2,
+        deferrals: [{ feeRawId: 89, reason: "no_original_hash" }] });
+      expect(message).toContain("30 row(s) deferred without a verification decision");
+      expect(message).toContain("Settled 2 conditional-$0 hold(s)");
+      expect(message).toContain("2 conditional-$0 hold(s) deferred without a decision");
+    } finally {
+      zeroSpy.mockRestore();
+    }
+  });
 
   it.each(["classify", "verify"] as const)("saves nonzero producer reports through %s → real finish INSERT", async alias => {
     const { detail, message } = await savedRecheckRun(alias, {
@@ -924,6 +952,18 @@ describe("agentic run store", () => {
     const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 3 }, { processed: 0 });
     expect(detail.processed_raw_fees).toBe(0);
     expect(message).toContain("Recheck producer report: 3 checked");
+  });
+
+  it.each(["classify", "verify"] as const)("saves a v2 producer-event reference through %s with no new raw rows",async alias=>{
+    const {detail,message}=await savedRecheckRun(alias,{...recheckZero,secondLookOtherCode:1,checked:3,restored:[9],flagged:1,waiting:1,execution:{
+      protocol:"darwin.recheck.execution.v1",scope:"selected_batch",state:"partial",runId:runRow.id,stepId:queuedStepRows[0].id,eventId:700,
+      batchKey:"fixture-batch",selected:5,assessed:4,settled:3,unresolved:1,reasonCode:null,samples:[{feeVerifiedId:10,code:"identity_changed"}],
+      phases:{primary:"complete",due:"complete",source:"complete",olderShadow:"cadence_skip",dueShadow:"reported_unknown"},
+    }},{processed:0});
+    expect(detail.recheck).toMatchObject({protocol:"darwin.recheck.receipt.v2",state:"referenced",producerEventId:700,assessmentCompleteness:"partial",effects:{restored:1}});
+    expect(message).toContain("witness #700");expect(message).toContain("whole backlog unknown");
+    expect(message).toContain("1 flagged/pending, 1 waiting, 1 other-code pending");
+    expect(message).toContain("do not finalize a fee decision");
   });
 
   it("runs Darwin verification through the agentic worker instead of measuring only", async () => {
@@ -1156,18 +1196,29 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
-  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
-    sqlMock.mockResolvedValue([]);
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("keeps report-review ordering $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockResolvedValue([]);
 
-    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+      await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
 
-    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
-    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
-    const retry = order.indexOf("= 'failed') DESC");
-    const review = order.indexOf("::text[])) DESC");
-    expect(review).toBeGreaterThan(retry);
-    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
-    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+      const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+      const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+      const retry = order.indexOf("= 'failed') DESC");
+      const review = order.indexOf("::text[])) DESC");
+      expect(review).toBeGreaterThan(retry);
+      expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("AND upper(btrim(r.state_code)) = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
@@ -1787,6 +1838,20 @@ describe("recordProRequest", () => {
     await expect(
       recordProRequest({ operation: "thesis", title: "t", status: "failed", summary: "s", userId: null }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("lessons_applied on a finished step", () => {
+  it("records the ids of the role lessons that shaped the step, keeping its own detail", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract-paid" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const expected = lessonIds(lessonsForStep("knox", "extract-paid"));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
+  });
+
+  it("leaves a step whose agent keeps no lessons unchanged", () => {
+    const outcome = { status: "completed" as const, summary: "s", detail: { a: 1 } };
+    expect(withLessonsApplied({ agent: "growth", stepKey: "growth-score" }, outcome)).toBe(outcome);
   });
 });
 

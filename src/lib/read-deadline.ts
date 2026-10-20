@@ -46,7 +46,13 @@ export type OnAbandonedRead = (read: Promise<unknown>, label: string) => void;
 export function createReadBudget(totalMs: number, logPrefix: string, now: () => number = Date.now,
   onAbandoned?: OnAbandonedRead): ReadBudget {
   const endsAt = now() + totalMs;
-  const remaining = () => Math.max(0, endsAt - now());
+  let expired = false;
+  const remaining = () => {
+    if (expired) return 0;
+    const left = Math.max(0, endsAt - now());
+    if (left === 0) expired = true;
+    return left;
+  };
   let fellBack = false;
   const abandoned = new WeakSet<Promise<unknown>>();
   const pending = new Map<Promise<unknown>, string>();
@@ -87,7 +93,10 @@ export function createReadBudget(totalMs: number, logPrefix: string, now: () => 
     if (left === 0) return Promise.reject(new ReadDeadlineError(label, totalMs)).catch(readFailed);
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new ReadDeadlineError(label, totalMs)), left);
+      timer = setTimeout(() => {
+        expired = true;
+        reject(new ReadDeadlineError(label, totalMs));
+      }, left);
     });
     return Promise.race([read, deadline]).catch(readFailed).finally(() => clearTimeout(timer));
   }

@@ -2,6 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { decodeColdFile, getColdStore, type ColdStore } from "@/lib/agents/hoovie/cold-files";
 import type { CallInstitutionRow, CallRollupRow } from "./roll-ups";
 import { ncuaCallMeasure } from "./ncua-call-measures";
+import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
 
 /**
  * Cold reads (#1870): a call-report quarter whose hot rows were pruned from Postgres is read from
@@ -50,17 +51,22 @@ export async function prunedCallFiles(now = Date.now()): Promise<ColdFileRef[]> 
   return files;
 }
 
+/** A filing period is covered independently for each regulator. */
+export function callSourcePeriodKey(source: string, period: string): string {
+  return JSON.stringify([source, period]);
+}
+
 /**
  * Pure: the files a query needs, newest first: the row sources it reads, inside the month bounds
- * (same rule as the hot query: the report date's YYYY-MM), and not a period Postgres already answered.
+ * (same rule as the hot query: the report date's YYYY-MM), excluding only source/periods Postgres answered.
  */
 export function coldFilesInRange(
   files: readonly ColdFileRef[],
-  args: { rowSources: readonly string[]; from: string | null; to: string | null; hotPeriods: ReadonlySet<string> },
+  args: { rowSources: readonly string[]; from: string | null; to: string | null; hotSourcePeriods: ReadonlySet<string> },
 ): ColdFileRef[] {
   return files
     .filter((f) => args.rowSources.includes(f.source))
-    .filter((f) => !args.hotPeriods.has(f.period))
+    .filter((f) => !args.hotSourcePeriods.has(callSourcePeriodKey(f.source, f.period)))
     .filter((f) => (args.from == null || f.period.slice(0, 7) >= args.from) && (args.to == null || f.period.slice(0, 7) <= args.to))
     .sort((a, b) => (a.period === b.period ? a.source.localeCompare(b.source) : a.period < b.period ? 1 : -1));
 }
@@ -80,19 +86,33 @@ export interface ColdCallRow {
   fetched_at: string | null;
 }
 
-/** Reads one line item from the given files. A file that fails its checks is reported, not used. */
+/** Pure: an archived value that is absent, not a reported figure (null, blank or not a number). */
+export function missingColdValue(value: unknown): boolean {
+  if (value == null) return true;
+  if (typeof value === "string" && value.trim() === "") return true;
+  if (typeof value !== "number" && typeof value !== "string") return true;
+  return !Number.isFinite(Number(value));
+}
+
+/**
+ * Reads one line item from the given files. A file that fails its checks is reported, not used.
+ * A row whose value is missing (null, blank or not a number) is never read as zero (#2315); it is
+ * left out and its file is named in `incomplete`, since production call-report values are never null.
+ */
 export async function readColdCallRows(
   files: readonly ColdFileRef[],
   filter: { itemKey: string; institutionIds: readonly number[] | null },
   store: ColdStore = getColdStore(),
-): Promise<{ rows: ColdCallRow[]; failed: string[] }> {
+): Promise<{ rows: ColdCallRow[]; failed: string[]; incomplete?: string[] }> {
   const rows: ColdCallRow[] = [];
   const failed: string[] = [];
+  const incomplete: string[] = [];
   const members = filter.institutionIds ? new Set(filter.institutionIds.map(String)) : null;
   const measure = ncuaCallMeasure(filter.itemKey);
   // Item keys are [a-z0-9_] (queryData's schema), so the quoted key is a safe substring test.
   const needle = JSON.stringify(filter.itemKey);
   for (const file of files) {
+    let missing = 0;
     try {
       const decoded = decodeColdFile(await store.get(file.objectKey), {
         expected: { sha256: file.sha256, rowCount: file.rowCount },
@@ -104,11 +124,13 @@ export async function readColdCallRows(
         // not that the file contains the indexed publisher and quarter.
         if (row.source !== file.source || row.report_date !== file.period) continue;
         if (measure && (row.source !== "ncua" || row.item_code !== measure.code || row.unit !== measure.storedUnit || row.period_basis !== measure.periodBasis)) continue;
-        // A missing curated figure is not a reported zero. Keep generic/manual decoding unchanged.
-        if (measure && (row.value == null || (typeof row.value === "string" && row.value.trim() === ""))) continue;
         if (members && !members.has(String(row.institution_id))) continue;
+        // A missing figure is not a reported zero, for every line item, curated or generic (#2315).
+        if (missingColdValue(row.value)) {
+          missing += 1;
+          continue;
+        }
         const value = Number(row.value);
-        if (!Number.isFinite(value)) continue;
         rows.push({
           institution_id: Number(row.institution_id),
           source: String(row.source),
@@ -126,9 +148,27 @@ export async function readColdCallRows(
       }
     } catch {
       failed.push(`${file.source} ${file.period}`);
+      continue;
     }
+    if (missing > 0) incomplete.push(`${file.source} ${file.period} (${missing} row${missing === 1 ? "" : "s"} missing a value)`);
   }
-  return { rows, failed };
+  return { rows, failed, incomplete };
+}
+
+/**
+ * Archive integrity is not institution identity. Apply the same current canonical
+ * charter/source boundary as the hot SQL before either a series or a median is shaped.
+ */
+export function canonicalColdCallRows(
+  rows: readonly ColdCallRow[],
+  identities: readonly { id: number | string; charter_type: unknown }[],
+): ColdCallRow[] {
+  const charterById = new Map(identities.map((identity) => [String(identity.id), identity.charter_type]));
+  return rows.filter((row) => {
+    if (!Number.isSafeInteger(row.institution_id) || row.institution_id <= 0) return false;
+    const charter = charterById.get(String(row.institution_id));
+    return (charter === "bank" && row.source === "ffiec") || (charter === "credit_union" && row.source === "ncua");
+  });
 }
 
 /** Same conversion as the hot reads: FFIEC thousands become dollars; counts stay counts. */
@@ -165,10 +205,10 @@ export function percentileCont(sorted: readonly number[], fraction: number): num
 }
 
 /** Pure: the hot roll-up (callPeerRollup), keeping period bases and units separate. */
-export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
+export function coldCallRollup(rows: readonly ColdCallRow[], subjectId?: number | null): CallRollupRow[] {
   const groups = new Map<string, ColdCallRow[]>();
   for (const row of rows) {
-    const key = `${row.report_date}|${comparable(row).unit}|${row.period_basis}`;
+    const key = `${row.report_date}|${comparable(row).unit}|${row.period_basis}|${row.source}`;
     const list = groups.get(key) ?? [];
     list.push(row);
     groups.set(key, list);
@@ -178,15 +218,19 @@ export function coldCallRollup(rows: readonly ColdCallRow[]): CallRollupRow[] {
     const [period, unit, periodBasis] = key.split("|");
     const values = list.map((r) => comparable(r).value).sort((a, b) => a - b);
     const newest = [...list].sort((a, b) => (b.fetched_at ?? "").localeCompare(a.fetched_at ?? ""))[0];
+    const reporters = [...new Set(list.map((row) => row.institution_id))].sort((a, b) => a - b);
     out.push({
       period,
       unit,
       median: percentileCont(values, 0.5),
       p25: percentileCont(values, 0.25),
       p75: percentileCont(values, 0.75),
-      institution_count: new Set(list.map((r) => r.institution_id)).size,
+      institution_count: reporters.length,
+      reporting_institution_ids: reporters.slice(0, MAX_COHORT_REPORTERS),
+      reporter_ids_complete: reporters.length <= MAX_COHORT_REPORTERS,
       period_basis: periodBasis,
       sources: [...new Set(list.map((r) => r.source))].sort(),
+      ...(subjectId !== undefined ? { subject_included: subjectId === null ? null : list.some((row) => row.institution_id === subjectId) } : {}),
       fetched_at: newest?.fetched_at ?? null,
       source_url: newest?.source_url ?? null,
     });

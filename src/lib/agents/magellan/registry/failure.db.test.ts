@@ -4,7 +4,8 @@ import postgres from "postgres";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { recordRegistryFailure } from "./failure";
 import { REGISTRY_SOURCES, runRegistryStep } from "./index";
-import { RegistryHttpError } from "@/lib/regulatory/http";
+import { RegistryHttpError, RegistryUnreachableError } from "@/lib/regulatory/http";
+import { getRegistryFeedFreshness, getRegistryPeriodPartitions } from "@/lib/data-store/feed-freshness";
 import type { RegistryDb } from "./partitions";
 import { JSON_TEXT_PASSTHROUGH } from "@/lib/data-store/connection";
 
@@ -74,6 +75,41 @@ describe.skipIf(!connection)("registry failure receipts in isolated PostgreSQL",
     const r = await row();
     expect(r.status).toBe("failed");
     expect(Number(r.hours)).toBeGreaterThan([400,404].includes(status) ? 23.9 : 5.9);
+  });
+
+  it("records a list whose every landing page failed as its own failure kind, with the pages (#2306)", async () => {
+    const pages = [{ url: "https://ncua.gov/a?token=secret", status: "not_found" as const }, { url: "https://ncua.gov/b", status: "not_found" as const }];
+    await recordRegistryFailure(asDb(), input(new RegistryUnreachableError(pages, 404)));
+    const r = await row();
+    expect(r.status).toBe("failed");
+    expect(r.last_error).toContain("every page returned 404");
+    expect(r.detail).toMatchObject({ failure_kind: "landing_pages_unreachable", http_status: 404, pages_tried: [{ status: "not_found" }, { url: "https://ncua.gov/b" }] });
+    expect(JSON.stringify(r)).not.toContain("secret");
+    expect(Number(r.hours)).toBeGreaterThan(23.9);
+  });
+
+  it("source freshness never counts an unreachable partition as a successful check (#2306, run 8051)", async () => {
+    await db`TRUNCATE registry_ingest_partitions RESTART IDENTITY`;
+    // Run 8051's shape: empty, both NCUA pages 404. A sibling family succeeded afterwards.
+    const run8051 = { family: "ncua-mergers", reason: "no landing page could be fetched", skipped: false,
+      pages_tried: [{ url: "https://ncua.gov/x", status: "not_found" }, { url: "https://ncua.gov/y", status: "not_found" }] };
+    await db`INSERT INTO registry_ingest_partitions(source,partition_key,status,attempts,row_count,detail,fetched_at,updated_at)
+      VALUES ('industry-events','ncua-mergers','empty',1,0,${JSON.stringify(run8051)}::jsonb,'2026-10-17T00:00Z','2026-10-17T00:00Z'),
+             ('industry-events','fdic-failures','succeeded',1,12,'{}'::jsonb,'2026-10-18T00:00Z','2026-10-18T00:00Z'),
+             ('industry-events','occ-bulletin','empty',1,0,${JSON.stringify({ reason: "no new bulletins", pages_tried: [{ url: "https://occ.gov", status: "ok" }] })}::jsonb,'2026-10-18T01:00Z','2026-10-18T01:00Z'),
+             ('industry-events','ncua-liquidations','failed',1,0,${JSON.stringify({ failure_kind: "landing_pages_unreachable" })}::jsonb,'2026-10-16T00:00Z','2026-10-16T00:00Z'),
+             ('dead-only','ncua-mergers','empty',1,0,${JSON.stringify(run8051)}::jsonb,'2026-10-17T00:00Z','2026-10-17T00:00Z')`;
+    const feeds = await getRegistryFeedFreshness(db as never);
+    const events = feeds.find((f) => f.source === "industry-events")!;
+    expect(events).toMatchObject({ unreachable: 2, unreachablePartition: "ncua-mergers", unreachablePages: "https://ncua.gov/x 404; https://ncua.gov/y 404",
+      emptyPartition: "occ-bulletin", lastSuccessAt: "2026-10-18T01:00:00.000Z" });
+    expect(feeds.find((f) => f.source === "dead-only")).toMatchObject({ lastSuccessAt: null, unreachable: 1, emptyReason: null });
+    // Period completeness (#2228) reads only period partitions; family keys are not periods.
+    await db`INSERT INTO registry_ingest_partitions(source,partition_key,status,attempts,row_count,detail,fetched_at)
+      VALUES ('fdic-financials','2026Q2','succeeded',1,40,'{"partial":true}'::jsonb,'2026-10-18T00:00Z')`;
+    expect(await getRegistryPeriodPartitions(db as never)).toEqual([
+      { source: "fdic-financials", partitionKey: "2026Q2", status: "succeeded", partial: true, rowCount: 40, blocked: false, fetchedAt: "2026-10-18T00:00:00.000Z" },
+    ]);
   });
 
   it("the real dispatcher records an exception and preserves its original cause", async () => {

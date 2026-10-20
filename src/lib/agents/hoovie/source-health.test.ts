@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => {
@@ -16,6 +18,7 @@ import {
   sourceHealth,
   sourceHealthDetail,
   sourceHealthLines,
+  staleAfterDays,
   summarizeSourceHealth,
 } from "./source-health";
 import { HOOVIE_SOURCES } from "./sources";
@@ -181,12 +184,102 @@ describe("buildSourceHealthReport", () => {
   });
 });
 
+describe("a partition that reached no landing page (#2306)", () => {
+  // Run 8051: industry-events/ncua-mergers, both NCUA addresses 404, recorded empty, while the
+  // source's other families kept succeeding afterwards.
+  const run8051 = feed("industry-events", {
+    lastSuccessAt: "2026-10-18T06:00:00.000Z", succeeded: 9, latestPeriod: "occ-bulletin",
+    unreachable: 1, unreachablePartition: "ncua-mergers",
+    unreachablePages: "https://ncua.gov/analysis/cuso-economic-data/merger-activity-reports 404; https://ncua.gov/files/mergers.xlsx 404",
+  });
+
+  it("fails the source, naming the partition and its pages, even after other partitions succeeded", () => {
+    const health = sourceHealth(contract("industry-events", "irregular"), run8051, null, NOW);
+    expect(health.status).toBe("failed");
+    expect(health.reason).toContain("1 partition reached no landing page (ncua-mergers)");
+    expect(health.reason).toContain("merger-activity-reports 404");
+  });
+
+  it("is failed, not nothing-loaded, when it is the source's only partition", () => {
+    const only = feed("x", { unreachable: 1, unreachablePartition: "ncua-mergers" });
+    expect(sourceHealth(contract("x"), only, null, NOW).status).toBe("failed");
+  });
+});
+
+describe("daily-polled feeds (#2228)", () => {
+  it("are stale after days without a successful check, not the irregular 90", () => {
+    const daily = contract("reg-news", "irregular", { checkEveryHours: 24 });
+    expect(staleAfterDays(daily)).toBe(3);
+    expect(staleAfterDays(contract("x", "irregular"))).toBe(90);
+    const health = sourceHealth(daily, ok("reg-news", "2026-10-10T00:00:00.000Z"), null, NOW);
+    expect(health).toMatchObject({ status: "stale", reason: "last success 8 days ago; checked every 24 hours, it is stale after 3" });
+  });
+
+  it("names a loader constant equal to each contract's checkEveryHours", () => {
+    const polled = HOOVIE_SOURCES.filter((c) => c.checkEveryHours);
+    expect(polled.length).toBeGreaterThan(0);
+    for (const c of polled) {
+      const code = readFileSync(join(process.cwd(), "src/lib/agents/magellan/registry", `${c.loader}.ts`), "utf8");
+      expect(code, c.source).toMatch(new RegExp(`REFRESH_HOURS\\s*=\\s*${c.checkEveryHours};`));
+    }
+  });
+});
+
+describe("expected-period completeness beside fetch health (#2228)", () => {
+  const period = (source: string, partitionKey: string, status: string, rowCount = status === "succeeded" ? 5 : 0) =>
+    ({ source, partitionKey, status, partial: false, rowCount, blocked: false, fetchedAt: "2026-10-18T00:00:00.000Z" });
+  const report = buildSourceHealthReport({
+    contracts: [contract("backfilled"), contract("current"), contract("waiting"), contract("events", "irregular")],
+    // All four fetched fine: fetch health is fresh for each.
+    feeds: [ok("backfilled"), ok("current"), ok("waiting"), ok("events")],
+    skips: new Map(),
+    now: NOW,
+    planned: new Map([
+      ["backfilled", ["2026Q2", "2026Q1", "2025Q4"]],
+      ["current", ["2026Q2", "2026Q1"]],
+      ["waiting", ["2026Q2", "2026Q1"]],
+      ["events", ["ncua-mergers", "fdic-failures"]],
+    ]),
+    periods: [
+      period("backfilled", "2025Q4", "succeeded"), period("backfilled", "2026Q1", "empty"), period("backfilled", "2026Q2", "empty"),
+      period("current", "2026Q2", "succeeded"), period("current", "2026Q1", "succeeded"),
+      period("waiting", "2026Q2", "empty"), period("waiting", "2026Q1", "succeeded"),
+    ],
+  });
+  const by = (source: string) => report.sources.find((entry) => entry.source === source)!;
+
+  it("keeps status as fetch health and reports completeness separately", () => {
+    expect(report.sources.every((entry) => entry.status === "fresh")).toBe(true);
+    expect(by("backfilled").completeness).toMatchObject({ state: "late", completedPeriod: "2025Q4" });
+    expect(by("current").completeness).toMatchObject({ state: "complete", expectedPeriod: "2026Q2" });
+    expect(by("waiting").completeness).toMatchObject({ state: "awaiting_release", completedPeriod: "2026Q1" });
+    expect(by("events").completeness?.state).toBe("not_periodic");
+  });
+
+  it("names completeness gaps in the brief and ledger even when every fetch is fresh", () => {
+    expect(sourceHealthLines(report)).toEqual([
+      "Newest-period completeness: 1 source missing, partial or late, whatever their fetch status.",
+      "- backfilled: late, 2026Q2 not released and 2026Q1 not loaded in full; newest complete 2025Q4 (2 periods behind)",
+    ]);
+    expect(summarizeSourceHealth(report)).toBe("Deming checked 4 public-data sources: 4 fresh; newest period missing, partial or late for 1.");
+    const detail = sourceHealthDetail(report) as { sources: Array<Record<string, unknown>> };
+    expect(detail.sources.find((s) => s.source === "backfilled")?.completeness).toMatchObject({
+      state: "late", expected_period: "2026Q2", completed_period: "2025Q4", periods_behind: 2, coverage: { loaded: 1, planned: 3 }, awaiting_partitions: 2,
+    });
+  });
+});
+
 describe("readSourceHealth", () => {
   it("grades every Hoovie contract from one partition read, read-only", async () => {
     const calls: string[] = [];
     const db = vi.fn((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       calls.push(text);
+      if (text.includes("partition_key ~")) {
+        return Promise.resolve([
+          { source: "fdic-financials", partition_key: "2026Q2", status: "succeeded", row_count: 4500, partial: false, blocked: false, fetched_at: new Date("2026-10-17T00:00:00Z") },
+        ]);
+      }
       if (text.includes("FROM registry_ingest_partitions")) {
         return Promise.resolve([
           {
@@ -203,7 +296,11 @@ describe("readSourceHealth", () => {
     // Without its key the state-bills source is skipped, not reported empty.
     expect(report.sources.find((entry) => entry.source === "state-bills")).toMatchObject({ status: "skipped", reason: "no OPEN_STATES_API_KEY set" });
     expect(report.sources.find((entry) => entry.source === "state-bill-news")?.status).toBe("skipped");
-    expect(calls.every((text) => /^\s*SELECT/.test(text))).toBe(true);
+    // Completeness comes from the scheduler's own plan and the period partitions (#2228).
+    expect(report.sources.find((entry) => entry.source === "fdic-financials")?.completeness).toMatchObject({ expectedPeriod: "2026Q2", state: "complete" });
+    expect(report.sources.find((entry) => entry.source === "industry-events")?.completeness?.state).toBe("not_periodic");
+    expect(report.sources.find((entry) => entry.source === "state-bills")?.completeness?.state).toBe("not_planned");
+    expect(calls.every((text) => /^\s*(SELECT|WITH)\b/.test(text) && !/\b(INSERT|UPDATE|DELETE)\b/.test(text))).toBe(true);
     // The scheduler's module graph is large; loading it the first time is slow.
   }, 60_000);
 });

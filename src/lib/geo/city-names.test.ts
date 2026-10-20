@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { cityKey, cityMatches, correctSpelling, foldCitySpellings, isMisspelled } from "./city-names";
+import {
+  cityKey,
+  cityMatches,
+  citySearchPrefixes,
+  correctSpelling,
+  foldCitySpellings,
+  isMisspelled,
+  placesInFold,
+  sameCitySpellings,
+} from "./city-names";
 
 describe("cityKey", () => {
   it("folds Saint, St, St. and the Petersberg misspelling into one city", () => {
@@ -85,5 +94,48 @@ describe("cityMatches", () => {
     expect(cityMatches("saint", "Stuart")).toBe(false);
     expect(cityMatches("lucie port", "Port St. Lucie")).toBe(false);
     expect(cityMatches("  ", "Tampa")).toBe(true);
+  });
+});
+
+describe("sameCitySpellings (#2092)", () => {
+  it("returns every stored spelling of the asked city, upper case, the asked one first", () => {
+    const stored = ["SAINT PETERSBURG", "ST. PETERSBURG", "ST PETERSBERG", "TAMPA", "PETERSBURG"];
+    expect(sameCitySpellings("St. Petersburg", stored)).toEqual(["ST. PETERSBURG", "SAINT PETERSBURG", "ST PETERSBERG"]);
+  });
+
+  it("keeps a city the fold does not know matching itself", () => {
+    expect(sameCitySpellings("Tampa", ["TAMPA", "ORLANDO"])).toEqual(["TAMPA"]);
+    expect(sameCitySpellings("Nowhere", [])).toEqual(["NOWHERE"]);
+  });
+});
+
+describe("placesInFold (#2092)", () => {
+  it("finds headquarters records that spell a branch city another way, in the same state only", () => {
+    const branches = [{ state: "FL", city: "ST. PETERSBURG" }];
+    const hq = [
+      { state: "FL", city: "SAINT PETERSBURG" },
+      { state: "FL", city: "ST. PETERSBURG" },
+      { state: "FL", city: "TAMPA" },
+      { state: "VA", city: "SAINT PETERSBURG" },
+    ];
+    expect(placesInFold(branches, hq)).toEqual(["FL|SAINT PETERSBURG", "FL|ST. PETERSBURG"]);
+  });
+});
+
+describe("citySearchPrefixes (#2092)", () => {
+  it("searches a folded first word in each of its forms", () => {
+    expect(citySearchPrefixes("st pete")).toEqual(["st pete", "SAINT pete", "ST pete", "ST. pete"]);
+    expect(citySearchPrefixes("Fort Worth")).toEqual(["Fort Worth", "FORT Worth", "FT Worth", "FT. Worth"]);
+    expect(citySearchPrefixes("St. Lou")).toEqual(["St. Lou", "SAINT Lou", "ST Lou", "ST. Lou"]);
+  });
+
+  it("adds the other forms of a lone first word only as whole words", () => {
+    expect(citySearchPrefixes("st")).toEqual(["st", "SAINT ", "ST ", "ST. "]);
+  });
+
+  it("leaves any other search as typed", () => {
+    expect(citySearchPrefixes("Tampa")).toEqual(["Tampa"]);
+    expect(citySearchPrefixes("stuart")).toEqual(["stuart"]);
+    expect(citySearchPrefixes("%%")).toEqual(["%%"]);
   });
 });

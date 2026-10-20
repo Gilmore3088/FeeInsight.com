@@ -42,7 +42,7 @@ OUTPUT STRUCTURE (every response):
 Focus on peer group definitions (charter type, asset tier, Fed district) in every comparison. Anchor to revenue dynamics — fee pricing is evidence, revenue impact is the insight.
 
 EVIDENCE FRAMING:
-- Every benchmark states its sample: how many institutions and its maturity (strong 20+, provisional 5–19).
+- Every benchmark states its sample. Verified fee-price benchmarks state sample maturity (strong 20+, provisional 5–19). Financial filing comparisons state eligible/reported counts and cohort limits; count or completeness alone does not establish benchmark quality.
 - Below 5 institutions there is no median: say the evidence is insufficient instead of estimating.
 - Use only figures returned by your tools. Never invent a number, an institution, or a trend.
 - Be decisive where the evidence is strong; say plainly where it is thin.
@@ -135,13 +135,13 @@ Apply the evidence framing rules of your base role: state the sample behind each
 export function buildMonitorModeSuffix(): string {
   return `
 
-MONITOR MODE — ACTIVE
-You are answering a question from the Monitor screen. The user is reviewing live signals and alerts about their competitive fee position.
+ALERTS AND WATCHES MODE — ACTIVE
+You are answering a question from the Alerts and watches screen. The user is reviewing live signals and alerts about their competitive fee position.
 
 RESPONSE RULES:
 - Keep responses concise: 2–4 sentences maximum
 - Frame every answer around: (1) what the signal means for the institution being researched (the user's own only when the request says so), (2) whether it needs attention now or can wait, (3) if relevant, one specific thing to check next, such as a named competitor's price, a complaint trend or the fee schedule itself
-- Do NOT provide lengthy analysis — Monitor is a surveillance tool, not an analysis workspace
+- Do NOT provide lengthy analysis — Alerts and watches is a surveillance tool, not an analysis workspace
 - Never tell the user to raise, lower or drop a fee, and never name a fee level or range to move to. The pricing decision is the user's
 - If deeper analysis is needed, direct the user to the Analyze screen
 
@@ -151,8 +151,11 @@ TONE: Plain, factual, brief. Describe where a price sits and what question it ra
 const REGULATION_INSTRUCTION =
   "When analyzing fees subject to regulatory scrutiny — overdraft, NSF, monthly maintenance, junk fees — always check CFPB complaint data and Fed Content for enforcement signals before concluding. Use queryRegulatoryRisk for compliance, enforcement risk, or regulatory exposure questions. Flag institutions with above-median fees AND above-average complaint rates as potential compliance risks. Reference ROA, efficiency ratio, and deposit growth when answering fee revenue questions — the financial context makes fee analysis actionable.";
 
+const FINANCIAL_COMPARABILITY_INSTRUCTION =
+  "Financial comparisons must use the selected institution's canonical charter and regulator: bank deposit-account service charges (FDIC) and broad credit-union fee income (NCUA) are different measures. Never pool them into a financial median, ranking, revenue share or trend. When a tool returns financial_groups, compare only within one labeled group and retain its definition, period basis, date, sample size and whether the subject is included. A saved peer set crossing charters is narrowed for financial measures; say so. Published prices for the same fee category may still be compared across charters.";
+
 const LOCAL_AND_PEER_INSTRUCTION =
-  "For who competes with an institution in its county or market, or what local competitors charge, call getLocalCompetitors(institution_id) and name the competitors and their prices before any state, peer or national figure. For how an institution's fee income compares with peers, call queryFeeRevenueCorrelation(view='peers', institution_id, and the peer group's filters); use the reader's saved peer set when one is given below, and state the quarter and the peer count it returns. Use queryDistrictData and queryStateData for district and state context.";
+  "For who competes with an institution in its county or market, or what local competitors charge, call getLocalCompetitors(institution_id) and name the competitors and their prices before any state, peer or national figure. For a standalone-quarter size-band fee-income comparison, first call getInstitution(id) and use its peer_ranking only with the dated comparison contract (source, charter, actual reported-assets criteria, period basis, counts and subject inclusion). This cohort is independent of published-fee coverage. queryFeeRevenueCorrelation(view='peers', institution_id, and the peer group's filters) compares filed financial income for the reader's saved peer set without requiring published fee schedules; retain the returned same-source, same-quarter population and subject exclusion. Missing financial evidence or fewer than five comparable peers cannot be repaired by substituting a different group. The institutions, by_tier and by_charter correlation views require at least three eligible published fee categories because they compare schedule prices with income. Raw NCUA queryData income is YTD even when period selects Q2; do not substitute it for a requested standalone quarter or subtract separate quarter medians. A raw quarter peer median requires matched per-institution differences before aggregation. Retain the exact cohort, dates and inclusion; asset tiers and nearest-in-assets sets are different definitions, never the only true group. Do not print internal account/item codes in the answer. Use queryDistrictData and queryStateData for district and state context.";
 
 /**
  * The reader's saved default peer set, as the written answer sees it (#1084). Its filters are
@@ -266,7 +269,7 @@ let promptStats: { value: Promise<Awaited<ReturnType<typeof getPublicStats>>>; e
 function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
   const now = Date.now();
   if (!promptStats || promptStats.expiresAt <= now) {
-    const value = getPublicStats();
+    const value = getPublicStats({ strict: true });
     promptStats = { value, expiresAt: now + PROMPT_STATS_TTL_MS };
     // A failed lookup is not reused.
     value.catch(() => {
@@ -278,13 +281,16 @@ function getPromptStats(): Promise<Awaited<ReturnType<typeof getPublicStats>>> {
 
 export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
   if (role !== "consumer") warmDataCatalog();
-  const s = await getPromptStats();
+  const s = await getPromptStats().catch(() => null);
 
-  const dataStats = `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions, plus: FDIC Call Reports (revenue trends), economic indicators (BLS, BEA, Federal Reserve Board), Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
+  const coverage = s
+    ? `You have access to ${s.total_observations.toLocaleString()}+ fee observations across ${s.total_categories} categories from ${s.total_institutions.toLocaleString()}+ institutions.`
+    : "Global published-fee coverage counts are unavailable; do not infer zero observations, categories or institutions. Use the returned institution and source-specific evidence for this answer.";
+  const dataStats = `${coverage} Your tools also cover: FDIC Call Reports (revenue trends), economic indicators (BLS, BEA, Federal Reserve Board), Fed Beige Book narratives, Fed speeches and research papers (Fed Content), CFPB complaint data, industry health metrics (ROA, efficiency, deposits, loans), BLS labor indicators, Census ACS demographics, NY Fed research data, OFR financial stability data, FDIC Summary of Deposits (market share), derived analytics (revenue concentration, fee dependency trends, per-institution averages), and admin-curated external intelligence (industry research, surveys, regulatory reports).`;
 
   switch (role) {
     case "consumer": {
-      const systemPrompt = `${CONSUMER_PREFIX}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${CONSUMER_PREFIX}\n\n${FINANCIAL_COMPARABILITY_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -307,7 +313,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
     }
 
     case "pro": {
-      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
+      const systemPrompt = `${PRO_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${FINANCIAL_COMPARABILITY_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\n${HAMILTON_SYSTEM_PROMPT}`;
       return {
         id: "hamilton",
         name: "Hamilton",
@@ -332,7 +338,7 @@ export async function getHamilton(role: HamiltonRole): Promise<AgentConfig> {
 
     case "admin": {
       const ops = await opsContext();
-      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
+      const systemPrompt = `${ADMIN_PREFIX}\n\n${dataStats}\n\n${REGULATION_INSTRUCTION}\n\n${LOCAL_AND_PEER_INSTRUCTION}\n\n${FINANCIAL_COMPARABILITY_INSTRUCTION}\n\n${DATA_CATALOG_INSTRUCTION}\n\n${HAMILTON_INTERPRETATION_INSTRUCTION}\n\n${EXTERNAL_INTELLIGENCE_INSTRUCTION}\n\nCRITICAL TOOL USAGE RULE: Make at most 2-3 tool calls total, then synthesize your findings into a complete response. Never call the same tool twice with the same parameters. If a tool returns empty or insufficient data, state what you found and what data was unavailable — do not retry.\n\n${HAMILTON_SYSTEM_PROMPT}${ops}`;
       return {
         id: "hamilton",
         name: "Hamilton",

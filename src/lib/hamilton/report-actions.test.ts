@@ -124,6 +124,7 @@ function selectedInstitution(overrides: Record<string, unknown> = {}) {
   return {
     id: 2945,
     institution_name: "Hamilton Federal Credit Union",
+    charter_type: "credit_union",
     fee_publication_status: "provisional",
     insight_readiness: "directional_analysis",
     confidence_summary: "Official source accepted; rows are pending approval.",
@@ -195,7 +196,9 @@ describe("Hamilton Reports generateReport", () => {
     mocks.getInstitutionById.mockResolvedValue(selectedInstitution());
     mocks.getFeesByInstitution.mockResolvedValue([]);
     mocks.getFinancialsByInstitution.mockResolvedValue([
+      { source: "fdic", report_date: "2026-09-30", total_assets: 9_999_999, total_deposits: 9_999_999, service_charge_income: 9_999_999, total_revenue: 9_999_999, fee_income_ratio: 0.99, roa: 1 },
       {
+        source: "ncua",
         report_date: "2026-06-30",
         total_assets: 1_500_000_000,
         total_deposits: 1_200_000_000,
@@ -573,6 +576,7 @@ describe("Hamilton Reports generateReport", () => {
         source_url: "https://example.com/fees",
       },
     ]);
+    mocks.getInstitutionById.mockResolvedValue(selectedInstitution({ charter_type: "bank" }));
     mocks.getFinancialsByInstitution.mockResolvedValue(
       ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"].map((report_date) => ({
         report_date,

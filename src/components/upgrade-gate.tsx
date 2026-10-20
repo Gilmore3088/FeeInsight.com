@@ -130,12 +130,3 @@ export async function UpgradeGate({
     </div>
   );
 }
-
-/** Lock icon badge for quick action tiles. */
-export function PremiumBadge() {
-  return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-brick-tint text-brick uppercase tracking-wider ml-1">
-      Pro
-    </span>
-  );
-}

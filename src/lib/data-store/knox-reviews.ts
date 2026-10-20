@@ -11,15 +11,10 @@ export interface KnoxReviewCounts {
   total: number;
 }
 
-
 // 30-second per-instance cache; concurrent cold callers share one in-flight query.
 const CACHE_TTL_MS = 30_000;
 let _knoxCountsCache: { value: KnoxReviewCounts; expiresAt: number } | null = null;
 let _inFlight: Promise<KnoxReviewCounts> | null = null;
-
-export function clearKnoxReviewCountsCache(): void {
-  _knoxCountsCache = null;
-}
 
 /**
  * Count Knox rejection messages grouped by human-review status.

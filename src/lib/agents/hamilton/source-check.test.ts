@@ -7,6 +7,7 @@ import {
   markRestoredForSourceCheck,
   READER_LOSS_RESTORES_ON,
   readerLostLine,
+  restorableExcerpt,
   restorableName,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
@@ -89,6 +90,42 @@ describe("restorableName", () => {
       "Automated overdraft LOC transfer after 2",
     ]) {
       expect(restorableName(name)).toBe(false);
+    }
+  });
+});
+
+describe("restorableExcerpt", () => {
+  // Lane speed's sample of restores, Oct 20 (data-quality/switch-samples-2026-10-20.md).
+  const sampled = (id: number, name: string, amount: string, key: string, excerpt: string) => ({
+    ...knoxFee(id, name, amount, excerpt),
+    canonical_fee_key: key,
+  });
+
+  it("holds back the five the sample found wrong on the stored line", () => {
+    for (const row of [
+      sampled(30893, "Replacement Credit Card Rush", "25", "rush_card", "$30 Replacement Credit Card Rush | $25 Replace Key"),
+      sampled(14460, "Non-Member Check Cashing Fee", "10", "check_cashing", "$10 Non-Member Check Cashing Fee"),
+      sampled(14461, "Notary Public Fee: Members", "5", "notary_fee", "$5 Notary Public Fee: Members"),
+      sampled(62929, "Return Deposited Items", "6.25", "deposited_item_return", "$6.25 | Return Deposited Items"),
+      sampled(20693, "Notary Fee Free for members", "5", "notary_fee", "Notary Fee Free for members $5.00"),
+      // Review probes: a heading repeating the name's first word, a word inside another word, two spaces after "$".
+      sampled(1, "Wire Transfer International", "15", "wire_intl_outgoing", "Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer International"),
+      sampled(2, "Card Replacement", "25", "card_replacement", "Discard fee $30 Card Replacement | $25 Replace Key"),
+      sampled(3, "Replacement Credit Card Rush", "25", "rush_card", "$  30 Replacement Credit Card Rush | $25 Replace Key"),
+    ]) {
+      expect(restorableExcerpt(row)).toBe(false);
+    }
+  });
+
+  it("still puts back the ones the sample confirmed, name first", () => {
+    for (const row of [
+      sampled(13942, "Wire Transfer – Domestic", "25", "wire_domestic_outgoing", "Wire Transfer – Domestic $25.00 Charge for outgoing wire transfers"),
+      sampled(16759, "Account Research/ Reconciliation", "25", "account_research", "Account Research/ Reconciliation $25.00 per hour Club Account Withdrawal Fee $5.00 each"),
+      sampled(49636, "Wire Transfers Outgoing- Domestic (USA)", "15", "wire_domestic_outgoing", "Wire Transfers Outgoing- Domestic (USA) $15.00 Per transfer"),
+      sampled(57745, "Verification of Deposit or Loan", "10", "account_verification", "or range of checks Verification of Deposit or Loan $10.00"),
+      stopPayment,
+    ]) {
+      expect(restorableExcerpt(row)).toBe(true);
     }
   });
 });

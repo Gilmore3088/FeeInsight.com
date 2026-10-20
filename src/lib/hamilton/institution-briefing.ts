@@ -1,3 +1,4 @@
+import { financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { readerFeeConditions } from "@/lib/fee-conditions";
 import {
   getFeesByInstitution,
@@ -126,8 +127,10 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
           })),
         ].slice(0, 18)
       : [];
-  // ffiec rows duplicate fdic quarters in other units; the briefing reads the thousands-scale sources.
-  const latestFinancial = financials.find((record) => record.source !== "ffiec") ?? null;
+  // Select the regulator from canonical identity; same-scale rows are not interchangeable.
+  const expectedFinancialSource = financialSourceForCharter(inst.charter_type);
+  const comparableFinancials = financials.filter((record) => expectedFinancialSource !== null && record.source === expectedFinancialSource);
+  const latestFinancial = comparableFinancials[0] ?? null;
   const status = inst.fee_publication_status ?? "unavailable";
   // Operator-only fields (pipeline stage, extraction confidence, source and quality
   // codes) stay out of customer briefings so Hamilton cannot narrate them.
@@ -161,7 +164,7 @@ export async function buildHamiltonInstitutionBriefingSnapshot(
     }
   }
   const financialFields = ["total_assets", "total_deposits", "service_charge_income", "total_revenue", "fee_income_ratio", "roa", "branch_count", "member_count", "employee_count"] as const;
-  for (const record of financials.filter((record) => record.source === "fdic" || record.source === "ncua")) {
+  for (const record of comparableFinancials) {
     for (const metric of financialFields) {
       const ratio = metric === "fee_income_ratio" || metric === "roa";
       const count = metric === "branch_count" || metric === "member_count" || metric === "employee_count";

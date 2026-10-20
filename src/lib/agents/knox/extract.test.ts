@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
-import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract, insertCandidate } from "./extract";
+import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, KNOX_STALE_READ_BELOW_VERSION, runKnoxExtract, insertCandidate } from "./extract";
 import { thinRereadKindSql } from "@/lib/agents/thin-document";
 import { KNOX_FAULT_REASONS } from "./calibration";
 import { KNOX_RULES_STRATEGY } from "./specialists";
@@ -354,6 +354,25 @@ describe("Knox agentic extraction", () => {
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("WHERE older_copy.superseded_by_id = adt.source_document_id");
       expect(query).toContain("live_fee.rolled_back_at IS NULL");
+    });
+
+    it("reads a stale or unread current copy before a large bank's once-per-version repeat", async () => {
+      const db = createDbMock([]);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        return Promise.resolve([]);
+      });
+
+      await runKnoxExtract({ runId: 112, db: asExtractDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const order = query.slice(query.lastIndexOf("ORDER BY"));
+      expect(order).toContain(`current_read.strategy_version >= ${KNOX_STALE_READ_BELOW_VERSION}`);
+      expect(order.indexOf("current_read.strategy_version")).toBeLessThan(
+        order.indexOf(`(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`),
+      );
     });
 
     it("reads a priority bank's current page again while it has no live overdraft fee", async () => {

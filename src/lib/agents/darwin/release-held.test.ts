@@ -37,8 +37,12 @@ function dbWith(
   extraTexts: Array<Record<string, unknown>> = [],
   earlierRejects: Array<Record<string, unknown>> = [],
 ): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) => {
+  const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = templateText(strings);
+    // Immutable ordinary raw facts; actual lock/source cases use the PostgreSQL suites.
+    if (query.includes("SELECT fr.*") && query.includes("FROM raw_fee_observations fr")) {
+      return Promise.resolve((rows as Array<Record<string, unknown>>).filter(row => Number(row.fee_raw_id) === Number(values[0])));
+    }
     if (query.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     if (query.includes("to_regclass('public.pipeline_feedback')")) return Promise.resolve([{ ready: true }]);
     if (query.includes("superseded_by_id")) return Promise.resolve([{ ready: true }]);
@@ -50,6 +54,7 @@ function dbWith(
     return Promise.resolve([]);
   }) as DbMock;
   db.unsafe = vi.fn(() => Promise.resolve(rows));
+  Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
   return db;
 }
 

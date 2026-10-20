@@ -63,7 +63,7 @@ describe("competitor moves", () => {
 describe("revenue shift", () => {
   it("attributes filed income to the research institution", () => {
     expect(revenueShiftObservation({ latestTtm: 600_000, priorTtm: 400_000, quarterEnd: "2026-06-30", source: "ncua" }, "Space Coast Credit Union")?.headline)
-      .toBe("Space Coast Credit Union's deposit service charge income is up 50% from a year earlier.");
+      .toBe("Space Coast Credit Union's broad credit-union fee income is up 50% from a year earlier.");
   });
   const rows = (values: number[], source = "fdic") =>
     ["2026-06-30", "2026-03-31", "2025-12-31", "2025-09-30", "2025-06-30", "2025-03-31", "2024-12-31", "2024-09-30"].map(

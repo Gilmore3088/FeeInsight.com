@@ -1,5 +1,8 @@
 import { deriveNcuaAnswerEvidence, type NcuaAnswerDerivation, type NcuaDerivationInput } from "./answer-derivations";
 import type { HamiltonBriefingEvidence } from "./institution-briefing";
+import { profileQuarterCalculations, type ProfileQuarterCalculation } from "./profile-quarter-evidence";
+import { filedPeerIncomeEvidenceResult } from "./filed-peer-evidence";
+import { callPeerHistoryEvidence } from "./call-peer-history-evidence";
 
 /** Server-observed tool reads, never calculations supplied by a model or browser. */
 export interface AnswerToolEvidence {
@@ -40,8 +43,14 @@ function calculationLedger(reads: readonly AnswerToolEvidence[]) {
     projected.push(candidate);
   }
   const limitations = [...all.limitations];
+  const profiles: ProfileQuarterCalculation[] = [];
+  for (const calculation of profileQuarterCalculations(reads)) {
+    if (retained.length + profiles.length >= WRITTEN_CALCULATION_MAX_FACTS
+      || JSON.stringify({ input_facts: Object.fromEntries(facts), derivations: [...projected, ...profiles, calculation], limitations }).length > WRITTEN_CALCULATION_MAX_CHARS - 400) break;
+    profiles.push(calculation);
+  }
   if (retained.length < all.derivations.length) limitations.push("The calculation ledger was bounded. State only calculations included here; request a narrower filing window for other calculations.");
-  return { retained, prompt: { input_facts: Object.fromEntries(facts), derivations: projected, limitations } };
+  return { retained: [...retained, ...profiles], prompt: { input_facts: Object.fromEntries(facts), derivations: [...projected, ...profiles], limitations } };
 }
 
 /** Repeated derivation inputs are provenance, not additional numerical candidates. */
@@ -72,12 +81,17 @@ export function writtenAnswerEvidence(
   context: WrittenAnswerEvidenceContext = {},
 ): unknown {
   const calculated = calculationLedger(context.toolResults ?? []);
+  const filedPeers = filedPeerIncomeEvidenceResult(context.toolResults ?? [], context.institutionId ?? null);
   return {
     selected_institution_id: context.institutionId ?? null,
     briefing_evidence: context.briefingEvidence ?? [],
     // Full input provenance remains in the tool results/model context. These candidates are
     // re-created by our deterministic reader, rather than trusting a returned calculation.
     validated_calculations: calculated.prompt.derivations,
+    validated_filed_peer_income: filedPeers.observations,
+    // Never take a conflict verdict from model/browser-supplied output-shaped data.
+    filed_peer_income_conflict: filedPeers.conflicting,
+    validated_call_peer_history: callPeerHistoryEvidence(context.toolResults ?? [], context.institutionId ?? null),
     tool_evidence: context.toolResults?.length
       ? context.toolResults.map((read) => ({ ...read, output: withoutEmbeddedDerivations(read.output) }))
       : toolOutputs.map((output) => withoutEmbeddedDerivations(output)),

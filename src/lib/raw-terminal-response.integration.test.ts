@@ -1,5 +1,6 @@
 /** @vitest-environment node */
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
+import { createHash } from 'node:crypto';
 const state = vi.hoisted(() => ({ sql: vi.fn(), upsert: vi.fn(), getGuide: vi.fn(), summaries: vi.fn(), control: vi.fn(), budget: vi.fn(), stop: vi.fn(), savedRead: vi.fn(), savedWrite: vi.fn(), pro: vi.fn(), researchUsage: vi.fn(), audit: vi.fn() }));
 vi.mock('@/lib/data-store/connection', async (importOriginal) => ({ ...await importOriginal<typeof import('@/lib/data-store/connection')>(), sql: state.sql }));
 vi.mock('@/lib/automation-control', async (importOriginal) => { const actual = await importOriginal<typeof import('@/lib/automation-control')>(); return { ...actual, assertAutomationEnabled: state.control, engageEmergencyStop: state.stop, findOpenProviderCreditFailure: async () => null }; });
@@ -227,6 +228,7 @@ describe('terminal raw response integration with actual SDK and factory', () => 
     it.each(['end_turn', 'max_tokens'])('Rosetta preserves explicitly labelled partial transcription at %s', async (reason) => {
         stopReason = reason;
         bodyText = 'SCHEDULE OF FEES\nOverdraft fee | $35.00\nNSF fee | $35.00\nStop payment | $30.00';
+        const pdfBytes = new TextEncoder().encode('%PDF-1.4 owned fixture');
         const db = Object.assign(vi.fn(async (strings: unknown) => {
             const text = sqlText(strings);
             if (text.includes('learning_schema_ready'))
@@ -238,10 +240,10 @@ describe('terminal raw response integration with actual SDK and factory', () => 
             if (text.includes('INSERT INTO agent_source_texts'))
                 return [{ id: 990 }];
             return [];
-        }), { unsafe: vi.fn(async (query: string) => query.includes('FROM agent_source_texts adt') ? [{ source_document_id: 1, institution_id: 41, institution_name: 'Scan Bank 1', document_url: 'https://scan1.example/fees.pdf', content_hash: 'owned-hash-1' }] : []) });
+        }), { unsafe: vi.fn(async (query: string) => query.includes('FROM agent_source_texts adt') ? [{ source_document_id: 1, institution_id: 41, institution_name: 'Scan Bank 1', document_url: 'https://scan1.example/fees.pdf', content_hash: createHash('sha256').update(pdfBytes).digest('hex') }] : []) });
         // Callback-only sink; native Rosetta SQL controls prove rollback.
         Object.assign(db, { begin: vi.fn(async (work: (scope: typeof db) => Promise<unknown>) => work(db)) });
-        const pdfFetch = vi.fn(async () => new Response(new TextEncoder().encode('%PDF-1.4 owned fixture'), { headers: { 'content-type': 'application/pdf' } }));
+        const pdfFetch = vi.fn(async () => new Response(pdfBytes, { headers: { 'content-type': 'application/pdf' } }));
         const r = await settle('rosetta-partial', () => runRosettaPaidRead({ runId: 900, db: db as unknown as NonNullable<Parameters<typeof runRosettaPaidRead>[0]["db"]>, fetchImpl: pdfFetch, pageCounter: async () => 3 }), v => ({ processed: v.processed, succeeded: v.succeeded, failed: v.failed, result: v.results, attempts: db.mock.calls.filter((c: unknown[]) => sqlText(c[0]).includes('INSERT INTO pipeline_attempts')).map((c: unknown[]) => ({ strategy: c[4], outcome: c[7], cost: c[9], detail: c.at(-1) })), stored: db.mock.calls.filter((c: unknown[]) => sqlText(c[0]).includes('INSERT INTO agent_source_texts')).map((c: unknown[]) => ({ values: c.slice(1) })) }));
         expect(r.error).toBeNull();
         expect(r.result).toMatchObject({ processed: 1, succeeded: 1, failed: 0 });

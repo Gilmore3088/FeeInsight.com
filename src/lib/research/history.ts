@@ -9,72 +9,8 @@ export interface Conversation {
   updated_at: string;
 }
 
-/** Ensure research tables exist */
-export async function ensureResearchTables(): Promise<void> {
-  await sql`
-    CREATE TABLE IF NOT EXISTS research_conversations (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL,
-      agent_id TEXT NOT NULL,
-      title TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS research_messages (
-      id SERIAL PRIMARY KEY,
-      conversation_id INTEGER NOT NULL REFERENCES research_conversations(id) ON DELETE CASCADE,
-      role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'tool')),
-      content TEXT NOT NULL,
-      tool_calls TEXT,
-      token_count INTEGER,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS research_usage (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER,
-      ip_address TEXT,
-      agent_id TEXT NOT NULL,
-      input_tokens INTEGER NOT NULL DEFAULT 0,
-      output_tokens INTEGER NOT NULL DEFAULT 0,
-      estimated_cost_cents INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    )
-  `;
-
-  await sql`CREATE INDEX IF NOT EXISTS idx_research_conv_user ON research_conversations(user_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_research_msg_conv ON research_messages(conversation_id)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_research_usage_user_date ON research_usage(user_id, created_at)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_research_usage_ip_date ON research_usage(ip_address, created_at)`;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS research_articles (
-      id SERIAL PRIMARY KEY,
-      slug TEXT UNIQUE NOT NULL,
-      title TEXT NOT NULL,
-      subtitle TEXT,
-      content TEXT NOT NULL DEFAULT '',
-      category TEXT NOT NULL DEFAULT 'analysis',
-      tags TEXT,
-      author TEXT DEFAULT 'Bank Fee Index',
-      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published', 'archived')),
-      generated_by TEXT,
-      conversation_id INTEGER,
-      published_at TIMESTAMP,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      view_count INTEGER NOT NULL DEFAULT 0
-    )
-  `;
-
-  await sql`CREATE INDEX IF NOT EXISTS idx_research_articles_status ON research_articles(status)`;
-  await sql`CREATE INDEX IF NOT EXISTS idx_research_articles_slug ON research_articles(slug)`;
-}
+// The research_* tables come from supabase/migrations (20260406_report_jobs.sql,
+// 20261004163709_research_usage_baseline.sql); request code never creates schema (#2234).
 
 export async function listConversations(
   userId: number,

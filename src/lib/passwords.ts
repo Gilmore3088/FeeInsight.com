@@ -96,9 +96,3 @@ export async function verifyPassword(
 
   return { valid: false, needsRehash: false };
 }
-
-export function generateToken(): { token: string; hash: string } {
-  const token = randomBytes(32).toString("hex");
-  const hash = createHash("sha256").update(token).digest("hex");
-  return { token, hash };
-}

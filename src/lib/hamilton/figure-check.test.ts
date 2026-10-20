@@ -36,6 +36,49 @@ describe("checkNarrativeFigures", () => {
   });
 });
 
+describe("explicit field units in mixed financial rows (#2358)", () => {
+  const data = {
+    source: "ncua", units: "thousands of dollars",
+    service_charge_income: 153080, avg_fee: 30, fee_income_ratio: 0.0382,
+    income_per_10k_assets: 7.49, absolute: 1200000,
+    field_units: { avg_fee: "USD", fee_income_ratio: "fraction", income_per_10k_assets: "USD income per 10,000 USD assets", absolute: "thousands of dollars" },
+  };
+  const options = { explicitFinancialDerivations: true };
+
+  it("uses per-field units before the shared scale, including explicitly tagged nonmoney field names", () => {
+    expect(checkNarrativeFigures("Income was $153.08 million, the fee was $30, revenue share was 3.82%, and deposits were $1.2 billion.", data, options).unmatched).toEqual([]);
+  });
+
+  it("keeps wrong scales, fractions, asset intensity, and unvalidated NCUA arithmetic held", () => {
+    expect(checkNarrativeFigures("The fee was $30,000. Revenue share was 0.0382%. Income was $7,490 or 7.49% of revenue. The gap was $153.07997 million.", data, options).unmatched).toEqual(["$30,000", "$7,490", "$153.07997 million", "0.0382%", "7.49%"]);
+    expect(checkNarrativeFigures("Income was $1.2 billion.", { ...data, field_units: { absolute: "unrecognized" } }, options).unmatched).toEqual(["$1.2 billion"]);
+  });
+});
+
+describe("explicit asset-intensity quantities (#2361)", () => {
+  const data = { source: "ncua", income_per_10k_assets: 7.49, field_units: { income_per_10k_assets: "USD income per 10,000 USD assets" } };
+  const options = { explicitFinancialDerivations: true };
+  it.each([
+    "Fee income was $7.49 per $10,000 of total assets.",
+    "Fee income per ten thousand dollars of assets was $7.49.",
+    "Fee income was $7.49 per ten thousand dollars of assets.",
+  ])("accepts exactly the typed dollar-per-asset quantity: %s", (text) => {
+    expect(checkNarrativeFigures(text, data, options)).toEqual({ checked: 1, unmatched: [] });
+  });
+  it.each([
+    "Fee income was $7.49.", "Fee income was 7.49% of revenue.",
+    "Fee income was $7.49 per account.", "Fee income was $7.49 per $1,000 of total assets.",
+    "Fee income was $7.49 per $10,000 of revenue.",
+  ])("holds a different quantity: %s", (text) => {
+    expect(checkNarrativeFigures(text, data, options).unmatched.length).toBeGreaterThan(0);
+  });
+  it("cannot convert an ordinary dollar total to asset intensity, including legacy bank figures", () => {
+    for (const source of ["ncua", "fdic"]) {
+      expect(checkNarrativeFigures("Income was $7.49 per $10,000 of assets.", { source, amount: 7.49, unit: "USD" }, options).unmatched).toEqual(["$7.49"]);
+    }
+  });
+});
+
 describe("figures that are not the data's to trace (#1425)", () => {
   const data = { institution_amount: 35, peer_median: 30 };
 
@@ -52,6 +95,10 @@ describe("figures that are not the data's to trace (#1425)", () => {
       "Banks with between $1 billion and $10 billion in total assets charge $30.",
       "Banks under $1 billion in assets charge $30.",
       "Among institutions with assets above $10 billion, the median is $30.",
+      "Reported assets from $10 billion up to, but not including, $250 billion.",
+      "Reported assets from $10 billion to $250 billion.",
+      "Credit unions with $10 billion to under $250 billion in assets.",
+      "Credit unions with reported assets of at least $10 billion and under $250 billion.",
     ]) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual([]);
   });
 
@@ -64,6 +111,11 @@ describe("figures that are not the data's to trace (#1425)", () => {
       ["The bank has $10 billion in assets.", ["$10 billion"]],
       // Only the tiers' own bounds: $5 billion is not one.
       ["Banks with $5 billion in assets charge $30.", ["$5 billion"]],
+      ["Fee income from $10 billion up to, but not including, $250 billion.", ["$10 billion", "$250 billion"]],
+      ["Fee income from $10 billion to under $250 billion.", ["$10 billion", "$250 billion"]],
+      ["Institutions with $5 billion to under $250 billion in assets.", ["$5 billion"]],
+      ["Credit unions with $10 billion to under $250 billion in assets had $10 billion in fee income.", ["$10 billion"]],
+      ["Reported assets from $10 billion up to, but not including, $250 billion. Fee income was $10 billion.", ["$10 billion"]],
     ] as const) expect(checkNarrativeFigures(text, data).unmatched, text).toEqual(unmatched);
   });
 

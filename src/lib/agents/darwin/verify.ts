@@ -4,7 +4,12 @@ import { scopedFeeStatements, type FeeAudience } from "@/lib/fee-audience";
 import { CAP_FIRST_ELIGIBILITY_FLAG } from "../knox/cap-first-eligibility";
 import { SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "../knox/symbolic-lesser-of";
 import { darwinAudience, type DarwinAudience } from "./audience";
+import {
+  admittedRawMatches, completeAudienceAdmission, prepareVerificationAudience, requireSameAudienceAdmission,
+  VerificationAudienceDeferred, type VerificationAudienceAdmission,
+} from "./verification-audience";
 import { tierPerkZero } from "./tier-perk";
+import { requireInternationalVerification } from "./international-verification";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -22,7 +27,7 @@ import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
 import { sourceLinkSkipReason } from "@/lib/agents/hamilton/source-link";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { darwinFeedbackRows, recordDarwinFeedback } from "./feedback";
-import { recheckVerifiedFees, type VerifiedRecheckResult } from "./verified-recheck";
+import { recheckVerifiedFees, unavailableRecheckResult, type VerifiedRecheckResult } from "./verified-recheck";
 import { recheckDocumentOwners, type DocumentOwnerResult } from "./document-owner";
 import {
   categoryChangeCandidates,
@@ -728,6 +733,9 @@ export interface RunDarwinVerifyOptions {
 export interface RunDarwinVerifyResult {
   selectedRawFees: number;
   processedRawFees: number;
+  /** Transient source/raw contention or changed admission: no ordinary decision is recorded. */
+  deferredRawFees?: number;
+  deferrals?: Array<{ feeRawId: number; reason: string }>;
   verifiedFees: number;
   skippedFees: number;
   limit: number;
@@ -795,6 +803,11 @@ export function canonicalHintFrom(row: Pick<RawFeeRow, "outlier_flags" | "condit
   const hint = fromFlag || row.conditions?.match(/canonical_hint=([a-z0-9_]+)/i)?.[1] || null;
   if (!hint) return null;
   return VALID_CANONICAL_KEYS.has(hint) ? hint : null;
+}
+
+/** Existing refile behavior, shared with prospective checks on the actual current raw row. */
+export function resolvedRawCategory(row: RawFeeRow): string | null {
+  return refileFromLine(canonicalHintFrom(row), row.fee_name, row) ?? refileCategory(canonicalHintFrom(row), row.fee_name);
 }
 
 function stableUuid(value: string): string {
@@ -1204,31 +1217,49 @@ async function selectRawFees(
 /** Caller must hold the run-ledger transaction: the raw product lock spans this insert.
  * inSavepoint alone does not start a transaction; standalone autocommit is not supported here.
  */
-export async function insertVerifiedFee(
-  db: SqlTag,
-  options: {
-    runId: number;
-    row: RawFeeRow;
-    canonicalFeeKey: string;
-    secondSourceAgrees?: boolean;
-    extraFlags?: string[];
-    /** The document's newest text, for Darwin's audience decision (#1059). */
-    sourceText?: string | null;
-    /** A decision already made for this row; null means none (the raw row's audience stands). */
-    audience?: DarwinAudience | null;
-  },
-): Promise<number | null> {
-  const feeRawId = Number(options.row.fee_raw_id);
-  const institutionId = Number(options.row.institution_id);
-  const percent = isPercentFee(options.row);
-  const amount = percent ? null : normalizedAmount(options.row.amount);
+export interface InsertVerifiedFeeOptions {
+  runId: number;
+  row: RawFeeRow;
+  canonicalFeeKey: string;
+  secondSourceAgrees?: boolean;
+  extraFlags?: string[];
+  /** The document's newest text, for Darwin's audience decision (#1059). */
+  sourceText?: string | null;
+  /** A decision already made for this row; null means none (the raw row's audience stands). */
+  audience?: DarwinAudience | null;
+  /** A completed caller admission on current facts, never model/caller authority. */
+  audienceAdmission?: VerificationAudienceAdmission;
+}
+
+export async function insertVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOptions): Promise<number | null> {
+  return inSavepoint(db, scope => insertCurrentVerifiedFee(scope, options));
+}
+
+async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOptions): Promise<number | null> {
+  const admitted = options.audienceAdmission;
+  const current = await prepareVerificationAudience(db, admitted?.row ?? options.row, options.sourceText);
+  requireSameAudienceAdmission(current, admitted, options.canonicalFeeKey);
+  const effectiveAudience = current.audience?.feeAudience ?? current.row.fee_audience ?? "unknown";
+  if (admitted && (options.row.fee_audience ?? "unknown") !== effectiveAudience) {
+    throw new VerificationAudienceDeferred("admitted_audience_changed");
+  }
+  // A derived audience must not masquerade as the original raw label in the CAS.
+  const callerRaw = admitted ? { ...options.row, fee_audience: admitted.row.fee_audience, frequency: admitted.row.frequency } : options.row;
+  if (admitted && options.row.frequency !== admitted.writeFrequency) throw new VerificationAudienceDeferred("admitted_frequency_changed");
+  if (!admittedRawMatches(callerRaw, current.row)) throw new VerificationAudienceDeferred("admitted_raw_changed");
+  requireInternationalVerification(current, options.canonicalFeeKey, resolvedRawCategory(current.row));
+  const row = admitted ? { ...current.row, frequency: admitted.writeFrequency ?? current.row.frequency } : current.row;
+  const feeRawId = Number(row.fee_raw_id);
+  const institutionId = Number(row.institution_id);
+  const percent = isPercentFee(row);
+  const amount = percent ? null : normalizedAmount(row.amount);
   const eventId = stableUuid(`darwin:${options.runId}:${feeRawId}:${options.canonicalFeeKey}`);
   const flags = ["agentic_darwin_verified"];
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
   if (options.extraFlags) flags.push(...options.extraFlags);
-  const stated = options.row.frequency ?? null;
-  const line = excerptOf(options.row.conditions);
+  const stated = row.frequency ?? null;
+  const line = excerptOf(row.conditions);
   // #1456: Darwin keeps an hourly frequency Knox stated but does not read one itself; live fees
   // become hourly through the switched live re-check (hourly-frequency-check.ts).
   const settled = amount == null ? stated : settledFrequency(line, amount, stated, options.canonicalFeeKey, { hourly: false });
@@ -1236,13 +1267,13 @@ export async function insertVerifiedFee(
   const frequency = perEventFrequency(options.canonicalFeeKey, settled, line, amount);
   if (frequency !== stated) flags.push(FREQUENCY_SETTLED_FLAG);
   // With no decision the trigger copies the raw row's audience, as before.
-  const audience = options.audience !== undefined ? options.audience : darwinAudience(options.row, amount, options.sourceText);
+  const audience = current.audience;
   // Every caller locks current raw state, including legacy rows with no represented product.
   {
     const current = await db`
       SELECT fr.fee_raw_id FROM raw_fee_observations fr WHERE fr.fee_raw_id = ${feeRawId}
-        AND (${options.row.product_name === undefined} OR
-          ${db.unsafe(productKeySql("fr.product_name"))} = ${productKey(options.row.product_name)})
+        AND (${row.product_name === undefined} OR
+          ${db.unsafe(productKeySql("fr.product_name"))} = ${productKey(row.product_name)})
         -- The current raw proof owns this decision, including a stale different category.
         -- Do not require a needs flag: legitimate historical rejudges may lack it.
         AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
@@ -1278,22 +1309,22 @@ export async function insertVerifiedFee(
     VALUES (
       ${feeRawId},
       ${institutionId},
-      ${options.row.source_url},
-      ${options.row.document_r2_key},
-      ${options.row.extraction_confidence},
+      ${row.source_url},
+      ${row.document_r2_key},
+      ${row.extraction_confidence},
       ${options.canonicalFeeKey},
       ${null},
       ${JSON.stringify(flags)}::jsonb,
       ${eventId}::uuid,
-      ${options.row.fee_name},
+      ${row.fee_name},
       ${amount},
       ${frequency},
       'verified',
       ${percent ? "percent" : "flat"},
-      ${percent ? ratePercentOf(options.row) : null},
-      ${percent ? options.row.rate_min_amount ?? null : null},
-      ${percent ? options.row.rate_max_amount ?? null : null},
-      ${percent ? options.row.rate_basis ?? null : null},
+      ${percent ? ratePercentOf(row) : null},
+      ${percent ? row.rate_min_amount ?? null : null},
+      ${percent ? row.rate_max_amount ?? null : null},
+      ${percent ? row.rate_basis ?? null : null},
       ${audience?.feeAudience ?? "unknown"},
       ${audience?.audienceEvidence ?? null}
     )
@@ -1621,8 +1652,7 @@ export async function runDarwinVerify(
   const peers = new PeerLevelCache(db);
   // A row Knox filed under a neighbouring category is checked under the one its own source line
   // (guard v62) or its name says.
-  const categoryOf = (row: RawFeeRow) =>
-    refileFromLine(canonicalHintFrom(row), row.fee_name, row) ?? refileCategory(canonicalHintFrom(row), row.fee_name);
+  const categoryOf = resolvedRawCategory;
   const hintedRows = rows.filter((row) => canonicalHintFrom(row) != null);
   const sourceCopies = await loadSourceCopies(
     db,
@@ -1631,162 +1661,181 @@ export async function runDarwinVerify(
     canonicalHintFrom,
   );
 
+  const deferrals: Array<{ feeRawId: number; reason: string }> = [];
+  let deferredRawFees = 0;
   for (const knoxRow of rows) {
-    // Darwin's audience decision (#1059) is the audience every check below reads, and the one
-    // written: a consumer fee enters the consumer peer check, a business fee never does.
-    const sourceText = knoxRow.source_document_id == null ? null : sourceTexts.get(Number(knoxRow.source_document_id)) ?? null;
-    const audience = darwinAudience(knoxRow, isPercentFee(knoxRow) ? null : normalizedAmount(knoxRow.amount), sourceText);
-    const row: RawFeeRow = audience ? { ...knoxRow, fee_audience: audience.feeAudience } : knoxRow;
-    const canonicalFeeKey = categoryOf(row);
-    let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
-    const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
-    if (categoryHold) reasonCode = "category_lesson_pending";
-    if (!reasonCode && !statedInOwnSource(row, sourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
-    // Traced to its line: the line must also price it as read, in a live category, under
-    // Hamilton's own name rules (2026-10-09: the re-select verified "$0 if condition" fees).
-    const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, sourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
-    const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
-    if (postCheck) reasonCode = postCheck.code;
-    // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
-    if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
-    if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
-      reasonCode = "duplicate_in_batch";
-    }
-    const base = {
-      feeRawId: Number(row.fee_raw_id),
-      institutionId: Number(row.institution_id),
-      feeName: row.fee_name,
-      amount: normalizedAmount(row.amount),
-      canonicalFeeKey,
-    };
-
-    // Pass 2 runs only on rows the rules accept.
-    let peer: PeerCheckResult | null = null;
-    let secondSource: SecondSourceResult | null = null;
-    if (!reasonCode && canonicalFeeKey && base.amount != null) {
-      // The peer levels are the benchmark population, so a fee enters on the benchmarks' terms
-      // (#1112): consumer, both, and unknown unless its schedule is business-only; never business.
-      // Second-source evidence is separate; it still gives no confidence to an unknown fee.
-      if (entersPeerCheck(row.fee_audience, row.source_url)) {
-        const stateCode = row.state_code ?? options.stateCode;
-        const levels = await peers.forState(stateCode);
-        peer = peerCheck(
-          levels,
+    try {
+      await inSavepoint(db, async scope => {
+        // Darwin's audience decision (#1059) is the audience every check below reads, and the one
+        // written: a consumer fee enters the consumer peer check, a business fee never does.
+        const legacySourceText = knoxRow.source_document_id == null ? null : sourceTexts.get(Number(knoxRow.source_document_id)) ?? null;
+        const admission = dryRun ? null : await prepareVerificationAudience(scope, knoxRow, legacySourceText);
+        const admittedRaw = admission?.row ?? knoxRow;
+        const sourceText = admission ? admission.sourceText : legacySourceText;
+        const audience = admission ? admission.audience : darwinAudience(admittedRaw, isPercentFee(admittedRaw) ? null : normalizedAmount(admittedRaw.amount), sourceText);
+        const row: RawFeeRow = audience ? { ...admittedRaw, fee_audience: audience.feeAudience } : admittedRaw;
+        const rowSourceTexts = new Map(sourceTexts);
+        if (row.source_document_id != null && sourceText != null) rowSourceTexts.set(Number(row.source_document_id), sourceText);
+        const canonicalFeeKey = categoryOf(row);
+        if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
+        let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
+        const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
+        if (categoryHold) reasonCode = "category_lesson_pending";
+        if (!reasonCode && !statedInOwnSource(row, rowSourceTexts, canonicalFeeKey)) reasonCode = "not_in_source";
+        // Traced to its line: the line must also price it as read, in a live category, under
+        // Hamilton's own name rules (2026-10-09: the re-select verified "$0 if condition" fees).
+        const sourceLine = reasonCode || !canonicalFeeKey ? null : sourceLineFor(row, rowSourceTexts, canonicalFeeKey) ?? excerptOf(row.conditions);
+        const postCheck = reasonCode || !canonicalFeeKey ? null : postSourceCheck(canonicalFeeKey, row.fee_name, normalizedAmount(row.amount), sourceLine, sourceText);
+        if (postCheck) reasonCode = postCheck.code;
+        // #1397: a $0 a premium or private-banking schedule grants is that tier's perk, not the bank's price.
+        if (!reasonCode && tierPerkZero(normalizedAmount(row.amount), row.fee_name, row.source_url, sourceText, canonicalFeeKey)) reasonCode = "tier_perk_zero";
+        if (!reasonCode && canonicalFeeKey && verifiedInBatch.has(batchKey(row, canonicalFeeKey))) {
+          reasonCode = "duplicate_in_batch";
+        }
+        const base = {
+          feeRawId: Number(row.fee_raw_id),
+          institutionId: Number(row.institution_id),
+          feeName: row.fee_name,
+          amount: normalizedAmount(row.amount),
           canonicalFeeKey,
-          institutionTier(row.asset_size_tier, row.asset_size),
-          base.amount,
-          await peers.widerLevels(),
-          districtOfState(stateCode),
-        );
-      }
-      secondSource = secondSourceCheck(
-        {
-          feeRawId: base.feeRawId,
-          institutionId: base.institutionId,
-          sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
-          canonicalFeeKey,
-          amount: base.amount,
-          feeAudience: row.fee_audience ?? "unknown",
-          productName: row.product_name,
-        },
-        sourceCopies,
-      );
-      if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
-    }
+        };
 
-    let result: DarwinVerificationResult;
-    if (reasonCode || !canonicalFeeKey) {
-      const code = reasonCode ?? "missing_canonical";
-      result = {
-        ...base,
-        status: "skipped",
-        decision: decisionFor(code),
-        reasonCode: code,
-        reason: code === "peer_outlier" && peer && base.amount != null
-          ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
-          : code === "name_rule" && postCheck?.rule
-            ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
-            : verificationReasonText(row, code),
-        feeVerifiedId: null,
-        peerCheck: peer,
-        secondSource,
-      };
-    } else {
-      // One refused insert must not roll back the whole step (#1113): the insert runs in
-      // its own savepoint, and a failure holds only this row.
-      let insertFailed = false;
-      const feeVerifiedId = dryRun
-        ? null
-        : await inSavepoint(db, (scope) => insertVerifiedFee(scope, {
-          runId: options.runId,
-          row,
-          canonicalFeeKey,
-          secondSourceAgrees: secondSource?.verdict === "agrees",
-          audience,
-        })).catch(() => {
-          insertFailed = true;
-          return null;
-        });
-      const verified = Boolean(feeVerifiedId) || dryRun;
-      const code: DarwinReasonCode | null = verified ? null : insertFailed ? "insert_failed" : "duplicate_verified";
-      if (verified) verifiedInBatch.add(batchKey(row, canonicalFeeKey));
-      result = {
-        ...base,
-        status: verified ? "verified" : "skipped",
-        decision: decisionFor(code),
-        reasonCode: code,
-        reason: code ? DARWIN_REASON_TEXT[code] : null,
-        feeVerifiedId,
-        peerCheck: peer,
-        secondSource,
-      };
-    }
-    result.categoryModel = categoryModel && canonicalFeeKey
-      ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey)
-      : null;
-    results.push(result);
+        // Pass 2 runs only on rows the rules accept.
+        let peer: PeerCheckResult | null = null;
+        let secondSource: SecondSourceResult | null = null;
+        if (!reasonCode && canonicalFeeKey && base.amount != null) {
+          // The peer levels are the benchmark population, so a fee enters on the benchmarks' terms
+          // (#1112): consumer, both, and unknown unless its schedule is business-only; never business.
+          // Second-source evidence is separate; it still gives no confidence to an unknown fee.
+          if (entersPeerCheck(row.fee_audience, row.source_url)) {
+            const stateCode = row.state_code ?? options.stateCode;
+            const levels = await peers.forState(stateCode);
+            peer = peerCheck(
+              levels,
+              canonicalFeeKey,
+              institutionTier(row.asset_size_tier, row.asset_size),
+              base.amount,
+              await peers.widerLevels(),
+              districtOfState(stateCode),
+            );
+          }
+          secondSource = secondSourceCheck(
+            {
+              feeRawId: base.feeRawId,
+              institutionId: base.institutionId,
+              sourceDocumentId: row.source_document_id == null ? null : Number(row.source_document_id),
+              canonicalFeeKey,
+              amount: base.amount,
+              feeAudience: row.fee_audience ?? "unknown",
+              productName: row.product_name,
+            },
+            sourceCopies,
+          );
+          if (holdsForPeerReview(peer, canonicalFeeKey)) reasonCode = "peer_outlier";
+        }
 
-    if (learning) {
-      await recordAttempt(db, {
-        institutionId: result.institutionId,
-        stage: "verify",
-        strategy: DARWIN_VERIFY_STRATEGY.strategy,
-        version: DARWIN_VERIFY_STRATEGY.version,
-        fingerprint: rawFeeFingerprint(result.feeRawId),
-        outcome: attemptOutcome(result),
-        yieldCount: result.status === "verified" ? 1 : 0,
-        costMicrousd: 0,
-        runId: options.runId,
-        stepId: options.stepId ?? null,
-        detail: {
-          fee_raw_id: result.feeRawId,
-          fee_verified_id: result.feeVerifiedId,
-          canonical_fee_key: result.canonicalFeeKey,
-          // Knox's category as Darwin read it, so a later Knox re-file is a new decision (#1295).
-          knox_category: canonicalHintFrom(rowByRawFeeId.get(result.feeRawId) ?? { outlier_flags: null, conditions: null }),
-          amount: result.amount,
-          decision: result.decision,
-          reason_code: result.reasonCode,
-          reason: result.reason,
-          category_guard_version: CATEGORY_GUARD_VERSION,
-          source_check_version: DARWIN_SOURCE_CHECK_VERSION,
-          // A peer hold is re-decided once when the peer check's version rises (v5, #1112).
-          peer_version: DARWIN_PEER_STRATEGY.version,
-          batch_key_version: DARWIN_BATCH_KEY_VERSION,
-          // Darwin's audience decision (#1059), when it made one; else the raw row's stands.
-          fee_audience: row.fee_audience ?? "unknown",
-          audience_evidence: audience?.audienceEvidence,
-          category_hold: categoryHold
-            ? { filed_as: categoryHold.filedAs, should_be: categoryHold.shouldBe, since: categoryHold.since }
-            : undefined,
-          name_rule: postCheck?.rule,
-          source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
-          amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
-            ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
-            : undefined,
-        },
+        let result: DarwinVerificationResult;
+        if (reasonCode || !canonicalFeeKey) {
+          const code = reasonCode ?? "missing_canonical";
+          result = {
+            ...base,
+            status: "skipped",
+            decision: decisionFor(code),
+            reasonCode: code,
+            reason: code === "peer_outlier" && peer && base.amount != null
+              ? `${DARWIN_REASON_TEXT[code]}: ${peerOutlierReason(peer, base.amount)}`
+              : code === "name_rule" && postCheck?.rule
+                ? `${DARWIN_REASON_TEXT[code]}: ${postCheck.rule} (${RULE_WHY[postCheck.rule as keyof typeof RULE_WHY]})`
+                : verificationReasonText(row, code),
+            feeVerifiedId: null,
+            peerCheck: peer,
+            secondSource,
+          };
+        } else {
+          // One refused insert must not roll back the whole step (#1113): the insert runs in
+          // its own savepoint, and a failure holds only this row.
+          let insertFailed = false;
+          const feeVerifiedId = dryRun
+            ? null
+            : await inSavepoint(scope, (insertScope) => insertVerifiedFee(insertScope, {
+              runId: options.runId,
+              row,
+              canonicalFeeKey,
+              secondSourceAgrees: secondSource?.verdict === "agrees",
+              audience,
+              sourceText,
+              audienceAdmission: admission ? completeAudienceAdmission(admission, canonicalFeeKey) : undefined,
+            })).catch((error) => {
+              if (error instanceof VerificationAudienceDeferred) throw error;
+              insertFailed = true;
+              return null;
+            });
+          const verified = Boolean(feeVerifiedId) || dryRun;
+          const code: DarwinReasonCode | null = verified ? null : insertFailed ? "insert_failed" : "duplicate_verified";
+          if (verified) verifiedInBatch.add(batchKey(row, canonicalFeeKey));
+          result = {
+            ...base,
+            status: verified ? "verified" : "skipped",
+            decision: decisionFor(code),
+            reasonCode: code,
+            reason: code ? DARWIN_REASON_TEXT[code] : null,
+            feeVerifiedId,
+            peerCheck: peer,
+            secondSource,
+          };
+        }
+        result.categoryModel = categoryModel && canonicalFeeKey
+          ? categoryOpinion(categoryModel, row.fee_name, canonicalFeeKey)
+          : null;
+        results.push(result);
+
+        if (learning) {
+          await recordAttempt(scope, {
+            institutionId: result.institutionId,
+            stage: "verify",
+            strategy: DARWIN_VERIFY_STRATEGY.strategy,
+            version: DARWIN_VERIFY_STRATEGY.version,
+            fingerprint: rawFeeFingerprint(result.feeRawId),
+            outcome: attemptOutcome(result),
+            yieldCount: result.status === "verified" ? 1 : 0,
+            costMicrousd: 0,
+            runId: options.runId,
+            stepId: options.stepId ?? null,
+            detail: {
+              fee_raw_id: result.feeRawId,
+              fee_verified_id: result.feeVerifiedId,
+              canonical_fee_key: result.canonicalFeeKey,
+              // Knox's category as Darwin read it, so a later Knox re-file is a new decision (#1295).
+              knox_category: canonicalHintFrom(rowByRawFeeId.get(result.feeRawId) ?? { outlier_flags: null, conditions: null }),
+              amount: result.amount,
+              decision: result.decision,
+              reason_code: result.reasonCode,
+              reason: result.reason,
+              category_guard_version: CATEGORY_GUARD_VERSION,
+              source_check_version: DARWIN_SOURCE_CHECK_VERSION,
+              // A peer hold is re-decided once when the peer check's version rises (v5, #1112).
+              peer_version: DARWIN_PEER_STRATEGY.version,
+              batch_key_version: DARWIN_BATCH_KEY_VERSION,
+              // Darwin's audience decision (#1059), when it made one; else the raw row's stands.
+              fee_audience: row.fee_audience ?? "unknown",
+              audience_evidence: audience?.audienceEvidence,
+              category_hold: categoryHold
+                ? { filed_as: categoryHold.filedAs, should_be: categoryHold.shouldBe, since: categoryHold.since }
+                : undefined,
+              name_rule: postCheck?.rule,
+              source_line: postCheck && sourceLine ? sourceLine.slice(0, 300) : undefined,
+              amount_envelope: result.reasonCode === "outside_envelope" && result.canonicalFeeKey
+                ? darwinEnvelopeFor(result.canonicalFeeKey, learnedEnvelopes)
+                : undefined,
+            },
+          });
+          await recordPassTwoAttempts(scope, options, result);
+        }
       });
-      await recordPassTwoAttempts(db, options, result);
+    } catch (error) {
+      if (!(error instanceof VerificationAudienceDeferred)) throw error;
+      deferredRawFees += 1;
+      if (deferrals.length < 25) deferrals.push({ feeRawId: Number(knoxRow.fee_raw_id), reason: error.reason });
     }
   }
 
@@ -1811,7 +1860,7 @@ export async function runDarwinVerify(
   const recheck = learning
     ? await recheckVerifiedFees(db, { runId: options.runId, stepId: options.stepId ?? null }).catch((error) => {
         console.warn("[darwin] verified recheck failed", error instanceof Error ? error.message : error);
-        return null;
+        return unavailableRecheckResult({ runId: options.runId, stepId: options.stepId ?? null });
       })
     : null;
   // Darwin's re-check of shared documents against the bank their own text names (document-owner.ts).
@@ -1825,6 +1874,8 @@ export async function runDarwinVerify(
   return {
     selectedRawFees: rows.length,
     processedRawFees: results.length,
+    deferredRawFees,
+    deferrals,
     verifiedFees: results.filter((result) => result.status === "verified").length,
     skippedFees: results.filter((result) => result.status === "skipped").length,
     limit,

@@ -12,14 +12,6 @@ export interface InstitutionCommandResult {
   reused?: boolean;
 }
 
-export interface CreateInstitutionInput {
-  name: string;
-  stateCode: string;
-  charterType: "bank" | "credit_union";
-  websiteUrl?: string;
-  feeScheduleUrl?: string;
-}
-
 export interface BulkInstitutionUrlResult {
   success: boolean;
   updated: number;
@@ -67,35 +59,6 @@ async function rememberPersonFeeUrl(tx: typeof sql, institutionId: number, url: 
            updated_at = NOW()
      WHERE institution_id = ${institutionId}
   `;
-}
-
-export async function createInstitutionCommand(
-  input: CreateInstitutionInput,
-): Promise<InstitutionCommandResult & { id?: number }> {
-  await requireAuth("edit");
-  try {
-    const name = input.name.trim();
-    const stateCode = input.stateCode.trim().toUpperCase();
-    if (name.length < 2) throw new Error("Name is required");
-    if (!/^[A-Z]{2}$/.test(stateCode)) throw new Error("Invalid state code");
-    const websiteUrl = input.websiteUrl ? normalizeHttpUrl(input.websiteUrl) : null;
-    const feeScheduleUrl = input.feeScheduleUrl ? normalizeHttpUrl(input.feeScheduleUrl) : null;
-    const [row] = await sql`
-      INSERT INTO institution_sources
-        (institution_name, state_code, charter_type, website_url,
-         fee_schedule_url, source, status)
-      VALUES
-        (${name}, ${stateCode}, ${input.charterType}, ${websiteUrl},
-         ${feeScheduleUrl}, 'manual', 'active')
-      RETURNING id
-    `;
-    revalidatePath("/admin/magellan");
-    revalidatePath("/admin/institutions");
-    revalidatePath("/admin");
-    return { success: true, id: Number(row.id) };
-  } catch (error) {
-    return { success: false, error: error instanceof Error ? error.message : String(error) };
-  }
 }
 
 export async function setInstitutionFeeUrl(

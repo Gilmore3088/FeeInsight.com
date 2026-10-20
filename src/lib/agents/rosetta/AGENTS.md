@@ -120,6 +120,22 @@ Rosetta owns source text normalization.
     `read.unknown` and `read.docx` failures keep their existing retry behavior. An
     unsupported format keeps its existing format-specific attempt; a failure from a
     reader that ran stays attributed to that reader.
+  - Before conversion, the shared byte loader compares the actual vault or HTTP body
+    SHA-256 with the selected document's valid captured hash. A mismatch or malformed
+    selected hash is retryable `read.document_access` evidence failure: no text, kind,
+    table, profile, witness or successful read is written for those bytes. A paid
+    preflight failure makes no provider call, usage event or settled paid-transcription
+    attempt. A later legitimate capture can therefore be read normally. A vault read
+    error keeps the existing HTTP fallback, whose bytes must pass the same check;
+    mismatched vault bytes are refused without silently replacing them by HTTP.
+    Ordinary legacy reads with no captured hash remain explicitly `unbound`, preserving
+    a NULL original hash; the observed digest does not manufacture historical authority.
+    Paid reads require a captured hash (the normal SQL selector already excludes NULL).
+    `primary_byte_identity` describes the initially selected document only. Secondary
+    JavaScript-linked URLs, selected-state concurrency, owner checks without witness
+    capability, source lifecycle/recovery and provider/artifact/attempt settlement remain
+    separate boundaries. This prospective guard changes no reader version or replay
+    policy and does not reopen historical bytes.
   - A scan (`scanned_pdf` from `read.pdf_layout`) goes straight to free OCR: tesseract.js
     on the largest image of each page, English model bundled from
     `@tesseract.js-data/eng` (`ROSETTA_OCR_LANG_PATH` overrides), at most

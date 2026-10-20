@@ -20,6 +20,7 @@ import { candidateWriteFacts } from "./candidate-facts";
 import { monthlyAccountOwnerReview } from "./monthly-account-owners";
 import { capFirstEligibility, CAP_FIRST_ELIGIBILITY_FLAG } from "./cap-first-eligibility";
 import { mayHaveSymbolicLesserFee, symbolicLesserOfReview, SYMBOLIC_LESSER_ELIGIBILITY_FLAG } from "./symbolic-lesser-of";
+import { internationalWireEligibility, requiresInternationalWireSource, INTERNATIONAL_WIRE_ELIGIBILITY_FLAG } from "./international-wire-eligibility";
 import { mayHaveCapFirstItemPrice } from "@/lib/custom-report/stacked-fee-prices";
 import { withPublishedIdentityWrite } from "@/lib/agents/hamilton/published-identity";
 import { layoutSignature, thinLayouts, type LayoutYield } from "@/lib/agents/knox/layout-signature";
@@ -70,6 +71,26 @@ const LARGE_BANK_REREAD_ORDER = `CASE WHEN COALESCE(inst.asset_size, 0) >= ${KNO
               AND last_read.input_fingerprint = adt.text_hash
               AND last_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
          ) END ASC NULLS FIRST, `;
+
+// A text no rules version at or above KNOX_STALE_READ_BELOW_VERSION has read (a stale read or a
+// first read) goes before a $10B+ bank's once-per-version repeat. On 2026-10-19 the rules moved
+// v80-v88 in 18 hours and each bump queued the 722 large-bank texts first: 779 of the 854 reads
+// in six hours repeated a v78+ read, 17 reached the stale backlog, and the backlog grew to 12,449
+// pages. 130 of the 198 W43 missing fees Knox never read were on those stale pages. Used only on
+// the current-copy query (schema flag; it does not check each row's supersession). Unlike the
+// large-bank set, the stale set refills only when KNOX_STALE_READ_BELOW_VERSION is raised, so
+// re-reads of texts already read at v78+ (thin text, rules-recheck misses, twins, repeats) wait
+// only until it drains.
+function staleReadFirstOrder(): string {
+  return `NOT EXISTS (
+           SELECT 1 FROM pipeline_attempts current_read
+            WHERE current_read.stage = 'extract'
+              AND current_read.institution_id = adt.institution_id
+              AND current_read.input_fingerprint = adt.text_hash
+              AND current_read.strategy = '${KNOX_RULES_STRATEGY.strategy}'
+              AND current_read.strategy_version >= ${KNOX_STALE_READ_BELOW_VERSION}
+         ) DESC, `;
+}
 
 /**
  * A current copy last read by a rules version below this is read again once (2026-10-07:
@@ -556,7 +577,7 @@ function textArtifactQuery(
                    AND theirs.superseded_by_id IS NOT NULL
               )` : ""}
          )
-       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
+       ${forCount ? "" : `ORDER BY ${learning && priorityIds.length > 0 ? `COALESCE(array_position($${params.push(`{${priorityIds.join(",")}}`)}::bigint[], adt.institution_id::bigint), 2147483647), ` : ""}${learning ? `${currentCopy ? staleReadFirstOrder() : ""}(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC, ${LARGE_BANK_REREAD_ORDER}` : ""}adt.updated_at DESC, adt.id DESC`}
        LIMIT $1
     `;
   return { query, params };
@@ -701,7 +722,7 @@ async function writeCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag!==INTERNATIONAL_WIRE_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
     && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
@@ -873,6 +894,8 @@ async function writeCandidate(
 
 /** Ordinary callers cannot supply an unvalidated learned-hold flag. */
 export async function insertCandidate(db:SqlTag,options:CandidateInsertOptions):Promise<boolean> {
+  const internationalHeld = await holdInternationalWireCandidate(db, options);
+  if (internationalHeld !== null) return internationalHeld;
   const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
   if (symbolicHeld !== null) return symbolicHeld;
   const capHeld = await holdCapFirstCandidate(db, options);
@@ -885,6 +908,8 @@ export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string
 
 /** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
 export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const internationalHeld = await holdInternationalWireCandidate(db, options);
+  if (internationalHeld !== null) return {inserted:internationalHeld,takenDownBy:null,declinedReason:internationalHeld?null:"international_scope_declined"};
   const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
   if (symbolicHeld !== null) return {inserted:symbolicHeld,takenDownBy:null,declinedReason:symbolicHeld?null:"symbolic_formula_declined"};
   const capHeld = await holdCapFirstCandidate(db, options);
@@ -952,6 +977,23 @@ async function eligibilitySourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxT
       AND st.status='completed' AND st.normalized_text IS NOT NULL`;
   if (!source?.normalized_text.trim() || createHash("sha256").update(source.normalized_text).digest("hex") !== row.text_hash) return null;
   return { ...row, normalized_text: source.normalized_text };
+}
+
+/** Domestic unresolved rows keep their existing contract; positive own international facts do not. */
+async function holdInternationalWireCandidate(db: SqlTag, options: CandidateInsertOptions): Promise<boolean | null> {
+  const candidate = options.candidate;
+  if (!candidate.canonicalHint.startsWith("wire_")) return null;
+  const required = requiresInternationalWireSource(candidate);
+  if (!required && !options.row.normalized_text?.trim()) return null;
+  const source = await eligibilitySourceRow(db, options.row);
+  if (!source) return required ? false : null;
+  const review = internationalWireEligibility(source.normalized_text!, candidate);
+  if (review.kind === "decline") return false;
+  if (review.kind !== "hold") return null;
+  return insertHeldCandidate(db, { runId: options.runId, row: source, extraFlags: options.extraFlags,
+    held: { shape: "eligibility", feeName: candidate.feeName, amount: candidate.amount, amountMax: null,
+      percent: null, frequency: candidate.frequency, canonicalHint: candidate.canonicalHint,
+      excerpt: review.scope.ownText, ownedPolicy: true, lineShare: candidate.lineShare } });
 }
 
 /** A complete symbolic formula is applicability evidence, never a model-supplied price. */
@@ -1025,10 +1067,24 @@ export async function insertHeldCandidate(
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   let { held } = options;
+  const possibleInternational = (held.shape === "zero" || held.shape === "eligibility")
+    && held.amount !== null && Boolean(held.canonicalHint?.startsWith("wire_"));
+  const internationalCandidate = possibleInternational ? { feeName: held.feeName, amount: held.amount!,
+    canonicalHint: held.canonicalHint!, excerpt: held.excerpt } : null;
+  const internationalRequired = internationalCandidate && requiresInternationalWireSource(internationalCandidate);
+  const internationalSource = internationalCandidate && (internationalRequired || options.row.normalized_text?.trim())
+    ? await eligibilitySourceRow(db, options.row) : options.row;
+  if (!internationalSource && internationalRequired) return false;
+  const internationalReview = internationalCandidate && internationalSource?.normalized_text
+    ? internationalWireEligibility(internationalSource.normalized_text, internationalCandidate) : null;
+  if (internationalReview?.kind === "decline") return false;
+  const internationalOwner = internationalReview?.kind === "hold" ? internationalReview : null;
+  if (internationalOwner) held = { ...held, shape: "eligibility", ownedPolicy: true,
+    excerpt: internationalOwner.scope.ownText, linkedConditions: undefined };
   const possibleCap = held.shape === "eligibility" && held.amount !== null && mayHaveCapFirstItemPrice(held.feeName);
   const possibleSymbolic = held.shape === "eligibility" && held.amount !== null && held.amount > 0
     && mayHaveSymbolicLesserFee(held.feeName, held.canonicalHint ?? "");
-  const capSource = possibleCap || possibleSymbolic ? await eligibilitySourceRow(db, options.row) : options.row;
+  const capSource = possibleCap || possibleSymbolic ? await eligibilitySourceRow(db, options.row) : internationalSource ?? options.row;
   if (!capSource) return false;
   const symbolicReview = possibleSymbolic ? symbolicLesserOfReview(capSource.normalized_text!, held.feeName, held.amount!) : null;
   if (symbolicReview?.kind === "decline") return false;
@@ -1058,13 +1114,15 @@ export async function insertHeldCandidate(
   const flags = [`knox_review:${held.shape}`];
   if (capOwner) flags.push(CAP_FIRST_ELIGIBILITY_FLAG);
   if (symbolicOwner) flags.push(SYMBOLIC_LESSER_ELIGIBILITY_FLAG);
+  if (internationalOwner) flags.push(INTERNATIONAL_WIRE_ELIGIBILITY_FLAG);
   if (toDarwin) flags.push("needs_darwin_verification");
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
   flags.push(...(options.extraFlags ?? []).filter(flag => flag !== CAP_FIRST_ELIGIBILITY_FLAG
-    && flag !== SYMBOLIC_LESSER_ELIGIBILITY_FLAG && (!symbolicOwner || flag !== "needs_darwin_verification")));
-  const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner || symbolicOwner);
+    && flag !== SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag !== INTERNATIONAL_WIRE_ELIGIBILITY_FLAG
+    && ((!symbolicOwner && !internationalOwner) || flag !== "needs_darwin_verification")));
+  const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner || symbolicOwner || internationalOwner);
   const conditions =
     `${toDarwin ? "Knox read a free fee" : `Knox held for review (${held.shape})`} from Rosetta artifact #${documentTextId}. ` +
     `canonical_hint=${held.canonicalHint ?? "none"}; text_hash=${options.row.text_hash ?? "unknown"}; ` +
@@ -1130,7 +1188,7 @@ export async function insertHeldCandidate(
         ), '[]'::jsonb)
        WHERE fr.fee_raw_id=${Number(existing.fee_raw_id)}
          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id=fr.fee_raw_id)
-         AND (${!capOwner && !symbolicOwner} OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
+         AND (${!capOwner && !symbolicOwner && !internationalOwner} OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
          AND (NOT COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
            OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'needs_darwin_verification')
       RETURNING fr.fee_raw_id`;

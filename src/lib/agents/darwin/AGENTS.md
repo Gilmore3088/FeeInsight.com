@@ -1,5 +1,50 @@
 # Darwin Agent Guide
 
+## Paid collection before locked settlement (#2285; shared boundary #1915)
+
+Release-review and adjudication collect every allowed model response before acquiring
+source/artifact/raw admission locks. Each returned call retains its own duration and
+integer cost share immediately. The standalone review settles once; the combined pass
+settles review then shadow in `finally`, including a later stop or collection failure.
+No provider call occurs in settlement. Models, prompts, selectors, call limits, switches
+and strategy versions are unchanged.
+
+Before positive, negative, malformed-response or transport-failure settlement, the row's
+factual locked context must still match the actual full source body/document/artifact
+used by that call and the complete selected raw/upstream-attempt tuple. Changed, busy or
+unavailable inputs defer without an ordinary attempt, feedback or verification. Returned
+provider usage remains accounted for. This is current-input CAS, not a requirement for
+an original generated Knox header; healthy ordinary legacy rows remain supported. An
+unavailable full factual input cannot certify a paid shadow verdict, so its returned
+usage is retained while row settlement is deferred. No source-history, date or Business
+policy is activated by this generic factor.
+
+The same original selector predicates are revalidated for the selected identity after
+calls, before every paid outcome. A newer qualifying model attempt or completed standing
+verdict can remove eligibility without changing the old immutable tuple. Review remains
+not-latest-rel-only; model selection remains newest qualifying, and transient/prior-version
+exceptions remain unchanged. Global scan limits do not remove a selected row's standing,
+and a state lane's global fallback keeps its actual selecting scope. Guarded paid settlers
+share the raw lock; arbitrary CM/manual-attempt append producers are not globally serialized
+by this check, so it is not a claim of serializable phantom protection.
+
+## Prospective international wire applicability (#2278, #2368)
+
+The current shared admission's readonly factual source context supplies the raw row and
+document/artifact snapshots; identity stamps, model fields and caller text are not source
+authority. Private international eligibility provenance, current raw/final international
+classification, literal current international wire/transfer names, and a positive actual own
+international wire clause identify affected uncertainty. Even two stale nonwire keys cannot
+negate those actual facts. A bound original artifact and the own geography/direction must agree
+with the final existing category; the guard never chooses a category or admits a numeric price.
+
+The common verified insert repeats this review after its fresh raw/admission CAS. Normal,
+held, accepted review, recorded pass and zero paths also check before ordinary positive or
+negative settlement. Uncertainty uses the shared transient savepoint protocol, leaves inputs
+pending and teaches no negative lesson. Ordinary domestic and unrelated International Money
+Order unavailable-source behavior remains legacy. This is not original-history recovery,
+source URL replacement, a relabel replay, or a verification/selector epoch change.
+
 ## Current symbolic lesser-of applicability hold (#2335)
 
 The existing current-raw lock also refuses verification when both `knox_review:eligibility`
@@ -128,6 +173,41 @@ can already report authorized live actions; only the shadow packets are assessme
 Parent #2072's activation/deletion decisions and broader switch audit remain open, with no
 additional James task introduced here.
 
+## Selected-batch execution attestation (#2072, 2026-10-19)
+
+New real-ledger rechecks use `darwin.recheck.execution.v1` and a saved
+`darwin.recheck.receipt.v2` reference. The producer requires a supported transaction
+savepoint and valid positive run/step context. Each selected row rechecks the selected
+published/verified/raw/source identities under bounded NOWAIT locks; a held, corrected,
+changed, unavailable or contended target is unresolved, not a completed fee decision.
+A row's strict feedback/audit, actual UPDATE RETURNING and returned attempt ID succeed
+together. Default shared second-look and attempt APIs keep their previous contracts.
+
+A current-run producer event `darwin.recheck.assessed` is persisted in the same recheck
+savepoint. Its actual returned ID, batch key, bounded row witnesses and selected manifest
+identify committed work. Event failure rolls back all recheck effects/attempts/feedback,
+while earlier ordinary raw verification stays intact. Counts returned to a caller remain
+provisional until its transaction commits. The later `step.finished` write uses a separate
+transaction; v2 references the producer event and is not a second measurement. If that
+later write fails, the committed producer witness and attempts remain recoverable. An
+enclosing producer transaction rollback removes the event and all its effects.
+
+Successful empty selection, unavailable required phase, partial assessment, source
+unavailability and actual cadence skips stay distinct. Unavailable counts are not invented
+zeros. Scope is only this selected authorized batch; whole backlog is unknown. Legacy
+shadow reports retain unknown completeness even when a v2 parent references their report.
+Old v1 receipts retain their original producer-reported/unknown meaning. Pending, waiting
+and other-code outcomes are persisted assessments, not archives or final fee/policy decisions;
+the saved summary and activity narration disclose these counts separately.
+
+This changes execution attestation, not the guard epoch: recheck v5, verify v3, source v2,
+all old attempt exclusions, default-off switches, narrow `tier_perk_zero` due authority and
+12-hour/other-run gates remain unchanged. Operational failure writes no terminal recheck
+attempt or right/wrong feedback; the existing bounded ordinary selector can retry it on a
+later run. No replay, new retry loop, paid activation or historical adjudication is added.
+Existing settled decisions and legacy receipts are not reopened or relabeled. The original
+#2072 family enable/delete/count obligations and #1110/#1111 remain open.
+
 ## Authority
 
 - Darwin reads `raw_fee_observations`.
@@ -231,10 +311,11 @@ additional James task introduced here.
   they were rejected under, so this rule does not reach them.
 - A Knox take-over that changes a retired row's category writes `knox_takeover_from:<old>`
   (#1295, `knox/extract.ts`), since the take-over drops the old `canonical_hint:` flags and left
-  no proof. It counts as proof, like `knox_refiled_from:`, only with
-  `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE` on (off, gated on James). Off, each verify step counts and
-  samples the rows only it would add in `detail.category_change_rejudge.takeover_proof`. Measured
-  Oct 16 (read-only): no row carries the flag yet, so it would add 0 today; the pool a take-over
+  no proof. It counts as proof, like `knox_refiled_from:`, since `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`
+  went on Oct 20 under James's sampled-clean rule (#2442; the dry run added 3 rows, 129981, 143924
+  and 152419, each matching the bank's document). Each verify step still counts and samples the
+  rows only the flag adds in `detail.category_change_rejudge.takeover_proof`. Before
+  the switch (Oct 16, read-only) no row carried the flag yet; the pool a take-over
   can reach is 1,356 retired, unverified Knox rows (1,269 with a v3 decision).
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
@@ -1112,6 +1193,32 @@ additional James task introduced here.
   still inherits the raw row's audience). The decision is the audience the batch duplicate key,
   the consumer peer check and the second-source check read, and it is recorded on the
   `verify.rules` attempt (`fee_audience`, `audience_evidence`).
+- Prospective verification also reads a bounded exclusive qualifier on the exact fee's own
+  requested-price clause (#2342, `own-price-audience.ts`). Unknown raw rows take a proved
+  consumer/business-only clause before broader context; conflicting/repeated owner ambiguity
+  is explicit no decision, never a broad `both` fallback. Known raw labels and existing
+  name/product/paired-price meanings stand. This is applicability metadata, not price or
+  category verification authority.
+  `verification-audience.ts` holds factual document → artifact → raw locks through each row's
+  checks and settlement, using native savepoints and NOWAIT at every new lock. An available
+  no-cue source stays locked too. New own-clause authority additionally requires the exact
+  original generated raw artifact/hash; a current own cue without that binding defers.
+  Genuinely unavailable ordinary inputs preserve the documented legacy boundary, not a proof
+  of qualifier absence. Current raw core/optional supplied facts, effective audience and the
+  existing held-release derived frequency are bound again by the shared final writer. Model,
+  caller audience/text and retained historical witnesses supply no new authority.
+  Normal verification, free held sorting, post-response paid review, recorded-pass settlement,
+  conditional-zero resolution and direct release cover negative/duplicate outcomes too.
+  Busy/changed/unresolved inputs roll back their row savepoint and record no ordinary attempt,
+  feedback or pending-state change; parent receipts report counts and at most25 ID/reason
+  samples, without source bodies/stacks. Paid response usage is independent; locks are never
+  acquired across the provider call. Existing provider controls/calls and second-look/copy
+  rules are unchanged.
+  This is prospective behavior on rows existing selectors already admit. `verify.rules` v3,
+  source-check/batch versions and all extraction/reader/relabel epochs/cursors remain unchanged;
+  no historical rejudge, backfill, live relabel or fee mutation is activated. Explicit dry runs
+  and switched-off release previews retain their legacy read-only calculation and do not claim
+  parity with locked live admission. The historical v4 relabel below keeps its default adapter.
 - The audience relabel (`audience-relabel.ts`, step `audience-relabel`, #1059 step 3) gives the
   same decision to live fees verified as `unknown` before migration 20270110000047, reading each
   document's newest text. A fee it cannot decide stays `unknown`. No provider calls. Each step
@@ -1430,7 +1537,11 @@ additional James task introduced here.
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v75 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v75 (Oct 19,
+- The guard is at v77 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v77 (Oct 19,
+  #2388): a card that draws only on credit ("Credit Card Replacement", "Visa Credit Card Rush Fee",
+  "HELOC Access Card Replacement") fails card replacement and rush card; a line that also names a
+  debit, ATM or check card stays. v76 (Oct 19, #2037, James chose "Split"): an ATM used abroad
+  re-files to `atm_international`, its own type again. v75 (Oct 19,
   #2023, James chose "Take down"): `CLUB_WITHDRAWAL_LIVE` is on, so a club or holiday account
   withdrawal ("Christmas Club early withdrawal | $20 per w/d") fails early closure; a read-only check
   of 25 of the 313 live found every one a per-withdrawal charge. Closing a club early still passes.

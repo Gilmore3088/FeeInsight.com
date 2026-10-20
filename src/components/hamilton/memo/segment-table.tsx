@@ -7,6 +7,7 @@
 import { ANSWER_TYPE, More, fmtMoney } from "./memo";
 import { ExhibitFrame } from "./exhibit-view";
 import { feeScheduleUrls, ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
+import { formatPeerAssets } from "@/lib/hamilton/peer-list";
 
 export interface SegmentRow {
   institutionId: number;
@@ -35,12 +36,7 @@ export interface SegmentData {
 
 /** Assets stored in thousands, shown as "$1.2T", "$48.3B" or "$950M"; missing assets say so. */
 export function fmtAssets(thousands: number | null): string {
-  if (thousands == null) return "Not available";
-  const dollars = thousands * 1000;
-  // "$750B", not "$750.0B": a trailing ".0" adds no precision.
-  if (dollars >= 1e12) return `$${(dollars / 1e12).toFixed(1).replace(/\.0$/, "")}T`;
-  if (dollars >= 1e9) return `$${(dollars / 1e9).toFixed(1).replace(/\.0$/, "")}B`;
-  return `$${Math.round(dollars / 1e6)}M`;
+  return formatPeerAssets(thousands == null ? null : thousands * 1000);
 }
 
 const SHOWN = 15;

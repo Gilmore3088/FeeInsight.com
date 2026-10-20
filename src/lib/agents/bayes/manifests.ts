@@ -379,7 +379,9 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   NEWER_COPY_STRATEGY: "Identity witnesses, restore identity and hold guards apply only to pending pairs and future newer copies. Existing v1 decisions stay closed; no historical replay, correction or backfill is queued.",
   // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
   // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
-  HAMILTON_PUBLISH_STRATEGY: "Audience/product-safe duplicate checks retain publish v3 decisions. No historical publish replay or closed-duplicate recovery is queued; ordinary live sweeps use the restricted identity predicate.",
+  // #1055: a v3 refusal for low confidence is decided once more when the row's confidence now
+  // clears the floor (Knox re-scored ~1,037 promoted rates that kept a 0.5 placeholder).
+  HAMILTON_PUBLISH_STRATEGY: "Audience/product-safe duplicate checks retain publish v3 decisions. No historical publish replay or closed-duplicate recovery is queued; ordinary live sweeps use the restricted identity predicate. The one re-decision: a v3 refusal for low confidence whose row's confidence now clears the floor (#1055).",
   // v2 (#1030) changes which institutions a paid search picks next (no live fee first) and what
   // it asks for; earlier searches are not redone, they age off the paid cooldown as before.
   // v3 (2026-10-17, magellan/top-ten-first.ts) puts state top-10 slot holders with nothing live
@@ -495,6 +497,7 @@ export async function loadManifests(): Promise<ReplayManifest[]> {
     // v75 (Oct 19, #2023, James's "Take down"): a club or holiday account withdrawal fails early closure.
     // v76 (Oct 19, #2037, James's "Split"): an ATM used abroad re-files from card_foreign_txn and
     // atm_non_network to atm_international, its own type again.
+    // v77 (Oct 19, #2388): a card that draws only on credit fails card replacement and rush card.
     {
       key: "hamilton.guard_catch_up",
       owner: "hamilton",
