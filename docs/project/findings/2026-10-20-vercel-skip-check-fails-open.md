@@ -18,6 +18,6 @@ is what the tests import. `scripts/vercel-ignore-build.mjs` has no guard: it set
 only when the decision's `build` is literally `false`. A throw, a missing decision or any other
 value exits 1 and builds. `vercel.json`'s `ignoreCommand` is unchanged.
 
-**Guard:** `scripts/vercel-ignore-build.test.ts:106` (no decision or a non-`false` value exits 1;
-`:98` a throw exits 1; `:232` a symlinked path still decides; `:244` production via a symlink
+**Guard:** `scripts/vercel-ignore-build.test.ts:158` (no decision or a non-`false` value exits 1;
+`:150` a throw exits 1; `:308` a symlinked path still decides; `:320` production via a symlink
 builds)

@@ -4,21 +4,30 @@
 //
 // 2026-10-20-preview-build-queue-from-merge-main-pushes: diffing HEAD^..HEAD built a full
 // preview on every "merge main" push and skipped an empty retry after a failed build. A preview
-// now builds only when the PR's own change against main ships code, and something that ships
+// now builds only when the PR's own change against main is visible, and something visible
 // changed since the branch's last successful deployment (VERCEL_GIT_PREVIOUS_SHA).
+//
+// James, 2026-10-20 (DECISIONS.md): previews are for PRs that change what someone sees. The
+// allowlist below is the only list of visible paths; everything else skips the preview, and a
+// build failure there surfaces at the production deploy, which keeps the last good version.
 import { spawnSync } from "node:child_process";
 
-const NOT_SHIPPED_DIRS = ["docs/", "supabase/", "src/lib/agents/", "scripts/", ".github/", ".claude/", "handoff/"];
-const NOT_SHIPPED_SUFFIXES = [".md", ".test.ts", ".test.tsx"];
+const VISIBLE_DIRS = ["src/app/", "src/components/", "public/"];
+const VISIBLE_SUFFIXES = [".css", ".scss"];
+const VISIBLE_ROOT_FILES = ["package.json", "package-lock.json", "vercel.json"];
+const VISIBLE_ROOT_CONFIG = /^(next|tailwind|postcss)\.config\.[a-z]+$/;
+const NEVER_VISIBLE_SUFFIXES = [".md", ".test.ts", ".test.tsx"];
 const MAIN_REF = "refs/remotes/origin/main";
 const MAIN_FETCH_DEPTH = 200;
 const DEEPEN_STEPS = [200, 2000];
 const GIT_TIMEOUT_MS = 60_000;
 
-/** Whether a changed path can change what the preview serves. */
-export function isShippedPath(path) {
-  if (NOT_SHIPPED_DIRS.some((dir) => path.startsWith(dir))) return false;
-  return !NOT_SHIPPED_SUFFIXES.some((suffix) => path.endsWith(suffix));
+/** Whether a changed path can change what a visitor sees on the preview. */
+export function isVisiblePath(path) {
+  if (NEVER_VISIBLE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return false;
+  if (VISIBLE_DIRS.some((dir) => path.startsWith(dir))) return true;
+  if (VISIBLE_SUFFIXES.some((suffix) => path.endsWith(suffix))) return true;
+  return VISIBLE_ROOT_FILES.includes(path) || VISIBLE_ROOT_CONFIG.test(path);
 }
 
 /**
@@ -31,17 +40,17 @@ export function isShippedPath(path) {
 export function decideBuild({ vercelEnv, prFiles, sinceLastDeployFiles }) {
   if (vercelEnv === "production") return { build: true, reason: "production always builds" };
   if (prFiles === null) return { build: true, reason: "merge-base with main not found; building to be safe" };
-  if (!prFiles.some(isShippedPath)) {
-    return { build: false, reason: "the PR changes nothing that ships compared with main" };
+  if (!prFiles.some(isVisiblePath)) {
+    return { build: false, reason: "the PR changes nothing visible compared with main" };
   }
   if (sinceLastDeployFiles === null) {
     return { build: true, reason: "no readable successful deployment for this branch; building" };
   }
-  const shipped = sinceLastDeployFiles.filter(isShippedPath);
-  if (shipped.length === 0) {
-    return { build: false, reason: "nothing that ships changed since the last successful deployment" };
+  const visible = sinceLastDeployFiles.filter(isVisiblePath);
+  if (visible.length === 0) {
+    return { build: false, reason: "nothing visible changed since the last successful deployment" };
   }
-  return { build: true, reason: `${shipped.length} shipped file(s) changed since the last successful deployment` };
+  return { build: true, reason: `${visible.length} visible file(s) changed since the last successful deployment` };
 }
 
 function git(...args) {
@@ -98,7 +107,7 @@ export function decideFromRepo() {
   }
   const base = findMergeBase();
   const prFiles = base ? changedFiles(base) : null;
-  const sinceLastDeployFiles = prFiles?.some(isShippedPath) ? filesSinceLastDeploy(process.env.VERCEL_GIT_PREVIOUS_SHA) : null;
+  const sinceLastDeployFiles = prFiles?.some(isVisiblePath) ? filesSinceLastDeploy(process.env.VERCEL_GIT_PREVIOUS_SHA) : null;
   return decideBuild({ vercelEnv, prFiles, sinceLastDeployFiles });
 }
 

@@ -1,10 +1,13 @@
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
+import { EXPLORER_FEE_LABELS, isExplorerFeeKey } from "@/lib/peer-explorer";
+import { MAX_SAVED_PEER_SET_INSTITUTIONS } from "@/lib/hamilton/peer-set-limits";
 
 /**
  * A peer set handed to Hamilton by a public page (#1981): the institution page's peer explorer links
  * to `/pro/settings?instId=<id>&peers=<id>,<id>&name=<label>&fee=<category>&asof=<YYYY-MM-DD>#peer-sets`
  * (`hamiltonPeerSetHref`, #1779). Settings pre-fills the peer-group form with it; nothing is saved
- * until the user saves the form through the existing `createPeerSet` action.
+ * until the user saves the form through the existing `createPeerSet` action. A set too large to
+ * copy comes without `peers` and with `large=1`, and settings says so in one line (#1997).
  *
  * Every parameter is checked on its own and dropped when it is malformed or unknown, so a bad link
  * never blocks the page. No database access here: unknown institution ids are dropped by
@@ -12,7 +15,7 @@ import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
  */
 
 /** The most institutions a saved peer group holds (the save action and the form enforce it). */
-export const MAX_PEER_SET_INSTITUTIONS = 50;
+export const MAX_PEER_SET_INSTITUTIONS = MAX_SAVED_PEER_SET_INSTITUTIONS;
 /** The longest peer-group name the save action accepts. */
 export const MAX_PEER_SET_NAME_LENGTH = 100;
 
@@ -33,6 +36,7 @@ export type PeerSetPrefillParams = {
   name?: string | string[];
   fee?: string | string[];
   asof?: string | string[];
+  large?: string | string[];
 };
 
 export type ParsedPeerSetPrefill = {
@@ -40,13 +44,17 @@ export type ParsedPeerSetPrefill = {
   name: string | null;
   fee: string | null;
   asOf: string | null;
+  /** The link flagged a set too large to copy (`large=1`, sent only without peers). */
+  tooLarge: boolean;
 };
 
 export type PeerSetPrefill = {
+  /** Empty only when `tooLarge`. */
   peers: { id: number; name: string }[];
   name: string | null;
   fee: { key: string; label: string } | null;
   asOf: string | null;
+  tooLarge: boolean;
 };
 
 /** A repeated parameter (`?peers=1&peers=2`) is not something the link builder writes, so it is ignored. */
@@ -93,17 +101,19 @@ function parseAsOf(raw: string | null, now: Date): string | null {
 
 /** The link's parameters, each checked on its own. Pure: no lookup. */
 export function parsePeerSetPrefillParams(params: PeerSetPrefillParams, now: Date = new Date()): ParsedPeerSetPrefill {
+  const peerIds = parsePeerIds(single(params.peers));
   return {
-    peerIds: parsePeerIds(single(params.peers)),
+    peerIds,
     name: parseName(single(params.name)),
     fee: parseFee(single(params.fee)),
     asOf: parseAsOf(single(params.asof), now),
+    tooLarge: peerIds.length === 0 && single(params.large) === "1",
   };
 }
 
 /** True when the link carried anything worth keeping through a sign-in redirect. */
 export function hasPeerSetPrefill(parsed: ParsedPeerSetPrefill): boolean {
-  return parsed.peerIds.length > 0;
+  return parsed.peerIds.length > 0 || parsed.tooLarge;
 }
 
 /** The checked parameters written back in the link builder's format, for a sign-in return path. */
@@ -113,17 +123,26 @@ export function peerSetPrefillSearch(parsed: ParsedPeerSetPrefill): URLSearchPar
   if (parsed.name) search.set("name", parsed.name);
   if (parsed.fee) search.set("fee", parsed.fee);
   if (parsed.asOf) search.set("asof", parsed.asOf);
+  if (parsed.tooLarge) search.set("large", "1");
   return search;
+}
+
+/** The fee's name as the page that sent the link wrote it, else the taxonomy's (#1997). */
+function feeLabel(key: string): string {
+  return isExplorerFeeKey(key) ? EXPLORER_FEE_LABELS[key] : DISPLAY_NAMES[key];
 }
 
 /**
  * The form's pre-fill: only peers found in institution_sources, in the link's order. Null when no
- * peer is known, since a hand-picked group needs at least one institution to save.
+ * peer is known, since a hand-picked group needs at least one institution to save. A set too large
+ * to copy keeps its name, fee and date with no peers and no lookup.
  */
 export async function resolvePeerSetPrefill(
   parsed: ParsedPeerSetPrefill,
   lookupNames: (ids: number[]) => Promise<Map<number, string>>,
 ): Promise<PeerSetPrefill | null> {
+  const fee = parsed.fee ? { key: parsed.fee, label: feeLabel(parsed.fee) } : null;
+  if (parsed.tooLarge) return { peers: [], name: parsed.name, fee, asOf: parsed.asOf, tooLarge: true };
   if (parsed.peerIds.length === 0) return null;
   let names: Map<number, string>;
   try {
@@ -139,8 +158,9 @@ export async function resolvePeerSetPrefill(
   return {
     peers,
     name: parsed.name,
-    fee: parsed.fee ? { key: parsed.fee, label: DISPLAY_NAMES[parsed.fee] } : null,
+    fee,
     asOf: parsed.asOf,
+    tooLarge: false,
   };
 }
 

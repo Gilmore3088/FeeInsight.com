@@ -181,7 +181,7 @@ export function PeerExplorer({
   const selected = byId.get(selectedId) ?? set.subject;
   const findings = feeFindings(set, fee, selected.id);
   const median = set.medians[fee];
-  const href = hamiltonPeerSetHref(set.subject.id, set.peers.map((peer) => peer.id), setName, fee, set.asOf);
+  const href = hamiltonPeerSetHref(set.subject.id, set.peers.map((peer) => peer.id), setName, fee, set.asOf, Boolean(set.whole));
   const snapshot = peerSnapshot(set, setKey, fee);
   const viewProps = { set, fee, selectedId: selected.id, highlight, onSelect: select };
 

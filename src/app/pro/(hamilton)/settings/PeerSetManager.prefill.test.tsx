@@ -11,8 +11,9 @@ import { PeerSetManager } from "./PeerSetManager";
 const prefill: PeerSetPrefill = {
   peers: [{ id: 10, name: "First Bank" }, { id: 11, name: "Second Credit Union" }],
   name: "Home metro",
-  fee: { key: "overdraft", label: "Overdraft (OD)" },
+  fee: { key: "overdraft", label: "Overdraft" },
   asOf: "2026-10-17",
+  tooLarge: false,
 };
 
 const saved = {
@@ -32,7 +33,7 @@ describe("peer group handed over by a link (#1981)", () => {
   it("opens the form filled in, shows where the set came from, and saves nothing until confirmed", async () => {
     render(<PeerSetManager initialPeerSets={[]} currentUserId="7" minPeers={5} researchInstitutionId={323} prefill={prefill} />);
     expect(screen.getByText("Peers from the link you followed. Nothing is saved until you choose Save this set.")).toBeTruthy();
-    expect(screen.getByText("Fee: Overdraft (OD). Data as of October 17, 2026.")).toBeTruthy();
+    expect(screen.getByText("Fee: Overdraft. Data as of October 17, 2026.")).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Choose institutions by name" })).toHaveProperty("checked", true);
     expect(nameInput()).toHaveProperty("value", "Home metro");
     expect(screen.getByText("First Bank")).toBeTruthy();
@@ -81,7 +82,7 @@ describe("peer group handed over by a link (#1981)", () => {
 
   it("shows the fee alone or the date alone", () => {
     const view = render(<PeerSetManager initialPeerSets={[]} currentUserId="7" minPeers={5} prefill={{ ...prefill, asOf: null }} />);
-    expect(screen.getByText("Fee: Overdraft (OD).")).toBeTruthy();
+    expect(screen.getByText("Fee: Overdraft.")).toBeTruthy();
     view.unmount();
     render(<PeerSetManager initialPeerSets={[]} currentUserId="7" minPeers={5} prefill={{ ...prefill, fee: null }} />);
     expect(screen.getByText("Data as of October 17, 2026.")).toBeTruthy();
@@ -99,5 +100,42 @@ describe("peer group handed over by a link (#1981)", () => {
     render(<PeerSetManager initialPeerSets={[]} workspaceName="Space Coast" canEditWorkspaceSets={false} currentUserId="25" minPeers={5} prefill={prefill} />);
     expect(screen.queryByRole("button", { name: "Save this set" })).toBeNull();
     expect(screen.queryByText("First Bank")).toBeNull();
+  });
+
+  it("tells a team Viewer who followed a link why nothing opened (#1997)", () => {
+    render(<PeerSetManager initialPeerSets={[]} workspaceName="Space Coast" canEditWorkspaceSets={false} currentUserId="25" minPeers={5} prefill={prefill} />);
+    expect(screen.getByRole("status").textContent).toBe(
+      "Viewers can't save peer groups. An owner, admin or analyst on Space Coast's team can save this one.",
+    );
+  });
+
+  it("says nothing to a Viewer who came without a link", () => {
+    render(<PeerSetManager initialPeerSets={[]} workspaceName="Space Coast" canEditWorkspaceSets={false} currentUserId="25" minPeers={5} />);
+    expect(screen.queryByText(/Viewers can't save/)).toBeNull();
+  });
+});
+
+describe("a set too large to copy (#1997)", () => {
+  const large: PeerSetPrefill = { peers: [], name: "Banks in Florida", fee: { key: "overdraft", label: "Overdraft" }, asOf: null, tooLarge: true };
+
+  it("opens the form by charter, state and size and says in one line why no peers were filled in", () => {
+    render(<PeerSetManager initialPeerSets={[]} currentUserId="7" minPeers={5} prefill={large} />);
+    expect(
+      screen.getByText(
+        "Banks in Florida is too large to copy as a peer group, so its institutions aren't filled in. Set up a group like it by charter, state and size, or choose up to 50 institutions by name.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Fee: Overdraft.")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "By charter, state and size" })).toHaveProperty("checked", true);
+    // The set's label describes peers the form does not hold, so it is not put in the name field.
+    expect(nameInput()).toHaveProperty("value", "");
+    expect(screen.getByRole("button", { name: "Save peer group" })).toBeTruthy();
+    expect(screen.queryByText(/Peers from the link you followed/)).toBeNull();
+    expect(actions.create).not.toHaveBeenCalled();
+  });
+
+  it("names the link when the set had no usable name", () => {
+    render(<PeerSetManager initialPeerSets={[]} currentUserId="7" minPeers={5} prefill={{ ...large, name: null }} />);
+    expect(screen.getByText(/^The set from the link you followed is too large to copy as a peer group/)).toBeTruthy();
   });
 });
