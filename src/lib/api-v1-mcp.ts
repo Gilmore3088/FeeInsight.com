@@ -54,7 +54,7 @@ const SERVER_INSTRUCTIONS =
   "Look this up fresh for each request that depends on saved context; do not infer it from conversation history or memory. " +
   "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name, state, city or size, " +
   "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
-  "get_revenue_trend gives call-report fee income by quarter back to 2010, banks (FDIC) and credit unions (NCUA) as separate measures never to be added together; get_fee_changes lists fee changes detected recently. " +
+  "get_revenue_trend gives call-report fee income by quarter back to 2010, banks (FDIC) and credit unions (NCUA) as separate measures never to be added together. Its combined fields (service_charges, institutions, bank_service_charges, credit_union_service_charges) are deprecated because they mix the two regulators; read by_regulator instead. get_fee_changes lists fee changes detected recently. " +
   "get_branches gives bank and credit union branch addresses with latitude/longitude (good for maps); get_local_market lists who competes in an institution's market with deposit share. " +
   "get_peer_comparison places one institution's dollar fees among its peers (median, middle half, percentile); get_rate_fees lists fees stated as a percentage, which are never mixed into dollar figures. " +
   "There is no full fee history yet, so do not infer fee trends from one snapshot. Credit the data as shown in each result's attribution field.";
