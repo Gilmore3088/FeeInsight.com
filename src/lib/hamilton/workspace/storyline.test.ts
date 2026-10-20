@@ -186,6 +186,20 @@ describe("storyline", () => {
     });
   });
 
+  it("states the typical transfer from savings as the statistics contract's median, not the upper middle value (#2029)", () => {
+    const transfers: Record<number, number> = { 1: 5, 2: 12.5, 3: 0 };
+    const rows = structure!.rows.map((r) => {
+      if (r.own) return r;
+      const rest = { ...r.values };
+      delete rest.od_protection_transfer;
+      return { ...r, values: r.institutionId in transfers ? { ...rest, od_protection_transfer: transfers[r.institutionId] } : rest };
+    });
+    const story = buildFeeAnswer(research({ structure: { ...structure!, rows } })).storyline!;
+    const line = story.lenses.market.map((f) => f.text).find((t) => t.includes("transfer from savings"));
+    // Two priced transfers, $5 and $12.50: the median is $8.75 (a $0 transfer is no fee and is not counted).
+    expect(line).toBe("2 of 6 in the group price a transfer from savings, typically $8.75; your schedule in the index shows none.");
+  });
+
   it("shows fee structure beyond the price, with blanks where a schedule shows nothing", () => {
     const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
     expect(story.kind).toBe("structure");

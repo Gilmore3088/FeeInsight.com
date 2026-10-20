@@ -84,17 +84,9 @@ export interface FeeChangeEvent {
   detected_at: string;
 }
 
-import { computePercentile } from "@/lib/fee-institution-value";
+import { computePercentile, medianAmount, roundCents } from "@/lib/fee-institution-value";
 
-export { computePercentile };
-
-/**
- * Rounds to cents, half up, on the decimal value: a median of $4.22 and $4.23 is $4.225, which
- * binary floating point holds as 4.22499..., so plain Math.round(x * 100) / 100 gave $4.22.
- */
-export function roundCents(x: number): number {
-  return Math.round(Number(`${x.toFixed(6)}e2`)) / 100;
-}
+export { computePercentile, roundCents };
 
 export function computeStats(amounts: number[]): {
   min: number | null;
@@ -112,7 +104,7 @@ export function computeStats(amounts: number[]): {
     min: sorted[0],
     max: sorted[sorted.length - 1],
     avg: roundCents(sorted.reduce((s, v) => s + v, 0) / sorted.length),
-    median: roundCents(computePercentile(sorted, 50)),
+    median: medianAmount(sorted),
     p25: roundCents(computePercentile(sorted, 25)),
     p75: roundCents(computePercentile(sorted, 75)),
   };

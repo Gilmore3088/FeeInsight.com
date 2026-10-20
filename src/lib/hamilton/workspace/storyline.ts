@@ -9,6 +9,7 @@
  * are never ranked or picked; nothing here says to raise, lower or drop a fee.
  */
 
+import { medianAmount } from "@/lib/fee-institution-value";
 import { PERCENTILE_METHOD } from "@/lib/percentile";
 import { HISTORICAL_INCOME_CAVEAT } from "./national-income";
 import { revenueLineName } from "./revenue";
@@ -25,6 +26,16 @@ import { countedGroup, theCountedGroup } from "@/lib/segment-words";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, PeerValue, SegmentMember, SourceRef } from "./types";
+
+/**
+ * The "typically $X" transfer from savings in the structure line: the statistics contract's median
+ * of the group's priced transfers (#2029), so an even count gives the median the index publishes,
+ * never the upper middle value. A $0 transfer is no fee and is left out (#2035). The answer eval
+ * recomputes it with this function from the members' live values.
+ */
+export function typicalTransfer(amounts: readonly number[]): number | null {
+  return medianAmount(amounts.filter((a) => a > 0));
+}
 
 /** How the question reads, as far as the storyline needs it. */
 export interface StoryIntent {
@@ -992,10 +1003,9 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const ownRow = set.rows.find((r) => r.own);
     // A $0 transfer is no fee, so it is not counted as pricing one (#2035), as in the structure matrix.
     const withTransfer = others.filter((r) => (r.values.od_protection_transfer ?? 0) > 0);
-    if (others.length >= MIN_PEERS_FOR_POSITION && withTransfer.length > 0) {
+    const typical = typicalTransfer(withTransfer.map((r) => r.values.od_protection_transfer));
+    if (others.length >= MIN_PEERS_FOR_POSITION && typical !== null) {
       const ownTransfer = ownRow?.values.od_protection_transfer;
-      const transfers = withTransfer.map((r) => r.values.od_protection_transfer).sort((a, b) => a - b);
-      const typical = transfers[Math.floor(transfers.length / 2)];
       out.push({
         text:
           ownTransfer !== undefined
