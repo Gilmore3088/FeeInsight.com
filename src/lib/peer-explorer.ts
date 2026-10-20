@@ -578,6 +578,18 @@ export function isHomeMetroKey(key: string): boolean {
   return peerSetChipKey(key) === "metro";
 }
 
+/**
+ * Whether the home metro set holds a credit union, read from the two views' counts: the
+ * banks-only view is the same set without credit unions, so equal counts mean none. With no
+ * banks-only view offered (no bank there publishes fees), every member is a credit union.
+ */
+export function homeMetroHasCreditUnions(options: { key: string; count?: number }[]): boolean {
+  const all = options.find((option) => option.key === "metro");
+  if (!all) return false;
+  const banks = options.find((option) => option.key === BANKS_ONLY_METRO_KEY);
+  return !banks || banks.count !== all.count;
+}
+
 /** How the home metro set finds its members: banks by branch, credit unions by city. */
 export const HOME_METRO_NOTE =
   "Banks are counted by their branches in the metro (FDIC Summary of Deposits). Credit unions report no deposits by branch, so a credit union is counted when it has a branch in one of the metro's cities (NCUA branch file).";
@@ -598,7 +610,7 @@ export function purposeLine(key: string, set: PeerExplorerSet): string {
   switch (key) {
     case "metro":
     case BANKS_ONLY_METRO_KEY:
-      return `${key === "metro" ? "Banks and credit unions" : "Banks"} with branches in the ${set.market?.name ? `${set.market.name} ` : "home "}metro: the local competitors for deposits and customers. They range from ${assetRangeWords(set)} in assets, so compare prices here, not size.`;
+      return `${key === "metro" && set.peers.some((peer) => peer.charter === "credit_union") ? "Banks and credit unions" : "Banks"} with branches in the ${set.market?.name ? `${set.market.name} ` : "home "}metro: the local competitors for deposits and customers. They range from ${assetRangeWords(set)} in assets, so compare prices here, not size.`;
     case "nearest":
       return `${kind} of similar size, for comparing published prices.${spread}`;
     case "size":
