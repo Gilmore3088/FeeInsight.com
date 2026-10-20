@@ -54,3 +54,5 @@ exploits. Other dependency families remain separate work.
 The review receipts record focused and repository gate results against the exact
 candidate. No application runtime source, production data, permission/proxy setting,
 provider, database schema or browser session is changed or exercised by this patch.
+
+**Guard:** `src/lib/proxy-addr-security.test.ts:20` (the installed proxy-addr rejects cross-family trust for short mapped IPv6 and zero-prefix subnets, which 2.0.7 accepted)

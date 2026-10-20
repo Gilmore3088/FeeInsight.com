@@ -128,3 +128,5 @@ the transport policy itself is tested separately, without a production fallback 
 connection boundary and route every new default fee-source path through it. Do not weaken it
 when a bank blocks the crawler; retain a visible refusal and use the existing approved source
 intake/read workflow.
+
+**Guard:** `src/lib/agents/fee-source-fetch.test.ts:50` (the fee-source transport refuses private, loopback, link-local and other non-public addresses; line 154 re-resolves each redirect and refuses rebinding. A new default source path that bypasses the transport is not caught)

@@ -57,3 +57,5 @@ CI runs this database test in its existing disposable PostgreSQL job.
 This change adds no runtime DDL, migration, service, provider activation or production mutation. Existing credentials
 are not cleaned up by the merge. Legacy password rehashing, bounded XLSX parsing, safe fetching,
 safe health errors and remaining dependency advisories remain separate open security work.
+
+**Guard:** `src/app/(auth)/login/actions.test.ts:52` (a rate-limited identifier, known or unknown, is refused before the verifier or a session can run); `src/lib/api-auth.test.ts:101` stops a subscriber key whose payer or holder is disabled or missing
