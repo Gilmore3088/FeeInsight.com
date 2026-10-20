@@ -14,10 +14,11 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// v2 (#2477, James 2026-10-20): every v1 pair is judged again under the current identity, restore
+// v3 (#2477): a copy also pairs with the current copy Magellan superseded it with (another
+// spelling of the page), and every earlier pair is judged again. v2 (#2477, James 2026-10-20): every v1 pair is judged again under the current identity, restore
 // and hold guards (#2117/#2118/#2121). Prod dry run 2026-10-20: 772 pairs, 8 fees retired at 2
 // institutions, 0 restores. Recorded in DECISIONS.md and Bayes VERSIONS_WITHOUT_REPLAY.
-export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 2 } as const;
+export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 3 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
  * any fee is retired. Below it the newer copy is not recognizably the same schedule (an
@@ -330,7 +331,9 @@ export async function retireFeesDroppedFromNewerCopy(
             SELECT n.id
               FROM source_documents n
              WHERE n.institution_id = sd.institution_id
-               AND n.document_url = sd.document_url
+               -- The same page: its exact address, or the current copy Magellan superseded it with,
+               -- which may spell the page another way (www, port, trailing slash; current-copy.ts).
+               AND (n.document_url = sd.document_url OR n.id = sd.superseded_by_id)
                AND n.id <> sd.id
                AND n.crawled_at > sd.crawled_at
                AND n.status = 'success'

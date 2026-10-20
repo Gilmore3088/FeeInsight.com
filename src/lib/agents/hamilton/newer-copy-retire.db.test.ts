@@ -18,7 +18,7 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     db = postgres(connection, { max: 1, ssl: "require", types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } });
     await db`CREATE TEMP TABLE institution_sources (id bigint PRIMARY KEY, state_code text)`;
     await db`CREATE TEMP TABLE source_documents (id bigint PRIMARY KEY, institution_id bigint, document_url text,
-      crawled_at timestamptz, status text, content_hash text)`;
+      crawled_at timestamptz, status text, content_hash text, superseded_by_id bigint)`;
     await db`CREATE TEMP TABLE agent_source_texts (id bigint PRIMARY KEY, source_document_id bigint,
       status text, normalized_text text, text_hash text)`;
     await db`CREATE TEMP TABLE raw_fee_observations (fee_raw_id bigint PRIMARY KEY, institution_id bigint,
@@ -95,6 +95,13 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect((await row()).rolled_back_reason).toBe("newer_copy_drops_fee:#900");
     expect(await verified()).toEqual({ review_status: "rejected", outlier_flags: ["newer_copy_drops_fee"] });
     expect(await attempt()).toMatchObject({ outcome: "ok_partial", detail: { planned_retired: 1, retired: 1 } });
+  });
+
+  it("pairs a copy with the current copy Magellan superseded it with under another spelling of the page", async () => {
+    await db`UPDATE source_documents SET document_url = 'https://www.testbank.example/fees/' WHERE id = 900`;
+    expect((await run(true)).documentsChecked).toBe(0);
+    await db`UPDATE source_documents SET superseded_by_id = 900 WHERE id = 500`;
+    expect((await run()).retired.map((fee) => Number(fee.fee_published_id))).toEqual([4]);
   });
 
   it("accepts a positive normalized same-identity witness independently of its amount", async () => {
@@ -310,17 +317,17 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
     expect((await row(14)).amount_kind).toBe("percent");
   });
 
-  it("keeps an already-decided v2 pair closed", async () => {
-    expect(newerCopyFingerprint(500, 900)).toBe("v2:500:900");
+  it("keeps an already-decided v3 pair closed", async () => {
+    expect(newerCopyFingerprint(500, 900)).toBe("v3:500:900");
     await db`INSERT INTO pipeline_attempts (source_document_id, stage, strategy, input_fingerprint)
-      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v2:500:900')`;
+      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v3:500:900')`;
     expect(await run()).toMatchObject({ documentsChecked: 0, retired: [], restored: 0 });
     expect((await row()).rolled_back_at).toBeNull();
   });
 
-  it("judges a pair decided under v1 again under v2", async () => {
+  it("judges a pair decided under v2 again under v3", async () => {
     await db`INSERT INTO pipeline_attempts (source_document_id, stage, strategy, input_fingerprint)
-      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v1:500:900')`;
+      VALUES (500, 'publish', 'hamilton.newer_copy_check', 'v2:500:900')`;
     expect((await run()).retired.map((fee) => Number(fee.fee_published_id))).toEqual([4]);
   });
 
@@ -471,10 +478,10 @@ describe.skipIf(!connection)("Newer-copy retirement in isolated PostgreSQL (#211
       const [target]=await tx`SELECT rolled_back_reason FROM published_fee_records WHERE fee_published_id=4`;
       expect(target.rolled_back_reason).toBe('newer_copy_drops_fee:#800');
       expect((await tx`SELECT review_status FROM verified_fee_observations WHERE fee_verified_id=1004`)[0].review_status).toBe('rejected');
-      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint IN ('restored:4:9','v2:500:900')`).toHaveLength(0);
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint IN ('restored:4:9','v3:500:900')`).toHaveLength(0);
       expect(await tx`SELECT 1 FROM agent_run_events`).toHaveLength(0);
       expect(await run(false,tx as unknown as Db)).toMatchObject({ restored:1, writeFailed:false, failedRestores:0 });
-      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='v2:500:900'`).toHaveLength(1);
+      expect(await tx`SELECT 1 FROM pipeline_attempts WHERE input_fingerprint='v3:500:900'`).toHaveLength(1);
     });
   });
 });
