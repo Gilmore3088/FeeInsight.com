@@ -155,12 +155,13 @@ interface FeePattern {
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
  * Each maps to the category the taxonomy already gives the fee (returned mail and
- * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
+ * excess-activity fees -> account research, until returned mail got its own type on Oct 15 (#1398); fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
  * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
  * file them; loan refinancing and document fees -> other lending). Returned statements stayed
  * held until v90 (the keys file them as paper statements, a featured fee they would skew); since
  * James's "File them" (Oct 20) the held-name rules file them as returned mail. The hand-checked answer keys file these
- * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
+ * lines as "unmapped", so the gate re-files them with `foldedCategory` and, for returned statements,
+ * `RETURNED_STATEMENT` (answer-key-gate.ts).
  * Kept last in FEE_PATTERNS but for v75's recall families, so they only claim lines no other
  * rule recognizes. Membership,
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
@@ -626,6 +627,9 @@ export const FEE_PATTERNS: FeePattern[] = [
  */
 export const KNOX_HELD_NAME_RULES_LIVE = true;
 
+/** v90: a statement mailed back undelivered ("Returned Statement Fee", "Undeliverable Statement Charge"). */
+export const RETURNED_STATEMENT = /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i;
+
 export const HELD_NAME_PATTERNS: FeePattern[] = [
   { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
   { key: "reconveyance", pattern: /\breconvey(?:ance|ances)?\b/i },
@@ -644,7 +648,7 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
   },
   // v90 (James's decision card, Oct 20 03:51 UTC, "File them"): a statement mailed back undelivered
   // is returned mail, the type made for "returned or undeliverable mail or statements" (#1398).
-  { key: researchSplitTarget("returned_mail"), pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
+  { key: researchSplitTarget("returned_mail"), pattern: RETURNED_STATEMENT },
   { key: "paper_statement", pattern: /\b(?:paper|mailed|printed)\s+(?:member|account|monthly|quarterly|periodic)\s+statements?\b/i },
   { key: "ira_termination", pattern: /\bIRA\b.{0,30}\bclose[- ]?outs?\b/i },
   { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },

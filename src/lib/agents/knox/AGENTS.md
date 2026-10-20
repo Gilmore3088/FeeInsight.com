@@ -259,7 +259,7 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
 other mailed-back statements file as returned mail, the type made for returned or undeliverable
 mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing
-his v26 call that they stay held. The Oct 20 dry run counted 231 such held lines; live returned
+his v26 call that they stay held. 246 held lines at 126 banks match the name, and 231 of them passed the release checks in the Oct 20 dry run; live returned
 statements already sit under returned mail (83 at 82 banks).
 
 v89 (Oct 20, #1102) turns on the held-name rules (`KNOX_HELD_NAME_RULES_LIVE`) under James's

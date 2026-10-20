@@ -9,7 +9,7 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 returned statements under returned mail instead of keeping them held?": "File them". On Oct 7 (v26)
 he had kept them held because no category fit; the returned-mail type made on Oct 15 (#1398) covers
 "returned or undeliverable mail or statements". Knox v90 files them there, the held re-check sends
-the held ones (231 in the Oct 20 dry run) to Darwin, and live ones already sit under returned mail.
+the held ones to Darwin (246 held lines at 126 banks match the name; 231 of them passed the release checks in the Oct 20 dry run), and live ones already sit under returned mail.
 
 **Issues become lessons for the agents, not only checks.** James, 2026-10-20: "I don't want a
 check, I want a lesson for the agents so they get better at their roles. This is the whole point
