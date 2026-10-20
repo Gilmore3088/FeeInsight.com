@@ -24,12 +24,14 @@ import {
   FEE_LABEL,
   lessHeadline,
   money,
+  nationalSource,
   placeAmong,
   previewHeading,
   REPORT_HREF,
   sameAndMore,
   shownNote,
   stateRowLabel,
+  stateSource,
   stateTooFew,
   uncheckedNote,
   versusMedian,
@@ -119,6 +121,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
       <UnstatedAudienceMark show={unstated} />
     </>
   );
+  const refreshedOn = snapshot?.summary.refreshedOn ?? null;
   const unchecked = prices ? uncheckedNote(prices.uncheckedCount, fee) : null;
   const shown = prices ? shownNote(SHOWN, prices.institutions.length) : null;
 
@@ -219,6 +222,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
                 <DistributionChart values={values} median={preview.band.median} />
               </div>
             </div>
+            <p className="text-[12px] text-ink-muted">{nationalSource(preview.count, refreshedOn)}</p>
           </section>
         )}
 
@@ -253,6 +257,7 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
                   <DistributionChart values={values} median={national.band.median} />
                 </div>
               </div>
+              <p className="text-[12px] text-ink-muted">{nationalSource(national.count, refreshedOn)}</p>
             </div>
           </section>
         )}
@@ -271,6 +276,9 @@ export default async function PriceCheckPage({ searchParams }: PageProps) {
                   <p className={H3}>{lessHeadline(statePlace, `${stateName} institutions`, price)}</p>
                   <ShareBar placement={statePlace} />
                   {unchecked && <p className="text-[12px] text-ink-muted">{unchecked}</p>}
+                  <p className="text-[12px] text-ink-muted">
+                    {stateSource(stateName, statePlace.count, prices.institutions.map((i) => i.readAt))}
+                  </p>
                 </div>
 
                 {mapWide && (

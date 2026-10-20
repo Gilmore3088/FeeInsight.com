@@ -1,6 +1,8 @@
 import { computeStats, type InstitutionPoint } from "@/lib/data-store/fees";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
+import { PRODUCT_NAME } from "@/lib/constants";
 import { formatFeeAmount } from "@/lib/format";
+import { formatAbsoluteDate } from "@/lib/public-stats";
 import type { PriceCheckFee } from "@/lib/price-check";
 import { positionIn, type NationalBand, type Position } from "@/app/(public)/fees/[category]/category-view";
 import { axisTop } from "@/app/(public)/fees/[category]/exhibits";
@@ -66,12 +68,22 @@ export interface Placement {
   lower: number;
   same: number;
   higher: number;
-  /** Share charging less, as a whole percent. */
-  lowerShare: number;
+  /** Share charging less, as a whole percent ("<1%" or ">99%" when a few sit on the other side). */
+  lowerShare: string;
   position: Position;
 }
 
 const cents = (value: number) => Math.round(value * 100) / 100;
+
+/** A whole percent that never rounds a nonzero share to 0% or a partial one to 100%. */
+export function percentLabel(part: number, whole: number): string {
+  if (whole <= 0 || part <= 0) return "0%";
+  if (part >= whole) return "100%";
+  const pct = Math.round((part / whole) * 100);
+  if (pct === 0) return "<1%";
+  if (pct === 100) return ">99%";
+  return `${pct}%`;
+}
 
 /** The price placed among one value per institution; null below the site's median floor. */
 export function placeAmong(label: string, values: number[], price: number): Placement | null {
@@ -80,9 +92,10 @@ export function placeAmong(label: string, values: number[], price: number): Plac
   const stats = computeStats(clean);
   if (stats.min === null || stats.p25 === null || stats.median === null || stats.p75 === null || stats.max === null) return null;
   const band: NationalBand = { min: stats.min, p25: stats.p25, median: stats.median, p75: stats.p75, max: stats.max, institutions: clean.length };
+  // Both sides in whole cents, so a stored 29.999999 counts as the same as a $30 price.
   const at = cents(price);
-  const lower = clean.filter((v) => v < at).length;
-  const same = clean.filter((v) => v === at).length;
+  const lower = clean.filter((v) => cents(v) < at).length;
+  const same = clean.filter((v) => cents(v) === at).length;
   return {
     label,
     band,
@@ -90,7 +103,7 @@ export function placeAmong(label: string, values: number[], price: number): Plac
     lower,
     same,
     higher: clean.length - lower - same,
-    lowerShare: Math.round((lower / clean.length) * 100),
+    lowerShare: percentLabel(lower, clean.length),
     position: positionIn(at, band),
   };
 }
@@ -177,4 +190,20 @@ export function previewHeading(institutions: number, fee: PriceCheckFee): string
 export function countyCaption(fee: PriceCheckFee, sodYear: number | string | null): string {
   const source = sodYear ? `FDIC Summary of Deposits, ${sodYear}` : "FDIC Summary of Deposits";
   return `Each county shows its institutions' ${FEE_NOUN[fee]}s, weighted by deposits (${source}), counting $0 fees.`;
+}
+
+const institutionsNoun = (n: number) => (n === 1 ? "institution" : "institutions");
+
+/** Under the national figures: the index, how many institutions, and the date the data was last updated. */
+export function nationalSource(institutions: number, refreshedOn: string | null): string {
+  const date = refreshedOn ? `, updated ${refreshedOn}` : "";
+  return `Source: ${PRODUCT_NAME}, published fees from ${count(institutions)} U.S. ${institutionsNoun(institutions)}${date}.`;
+}
+
+/** Under the state figures, dated by the latest schedule read among the counted institutions. */
+export function stateSource(stateName: string, institutions: number, readAts: Array<string | null>): string {
+  const latest = readAts.filter((r): r is string => r !== null && !Number.isNaN(Date.parse(r))).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+  const date = formatAbsoluteDate(latest ?? null);
+  const read = date ? `, latest read ${date}` : "";
+  return `Source: ${PRODUCT_NAME}, published fees from ${count(institutions)} ${stateName} ${institutionsNoun(institutions)}, each checked against its schedule${read}.`;
 }

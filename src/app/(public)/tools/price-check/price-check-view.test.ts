@@ -9,6 +9,8 @@ import {
   countyCaption,
   FEE_LABEL,
   lessHeadline,
+  nationalSource,
+  percentLabel,
   placeAmong,
   previewHeading,
   REPORT_HREF,
@@ -17,6 +19,7 @@ import {
   sharedDomain,
   shownNote,
   stateRowLabel,
+  stateSource,
   stateTooFew,
   uncheckedNote,
   VERDICT,
@@ -36,7 +39,7 @@ const VALUES = [0, 10, 20, 25, 30, 30, 35, 35, 36, 40];
 describe("placeAmong", () => {
   it("counts lower, same and higher and reads the spread from the same values", () => {
     const p = placeAmong("U.S.", VALUES, 30)!;
-    expect(p).toMatchObject({ count: 10, lower: 4, same: 2, higher: 4, lowerShare: 40 });
+    expect(p).toMatchObject({ count: 10, lower: 4, same: 2, higher: 4, lowerShare: "40%" });
     expect(p.band.median).toBe(30);
     expect(p.band.min).toBe(0);
     expect(p.band.max).toBe(40);
@@ -56,6 +59,53 @@ describe("placeAmong", () => {
 
   it("rounds the price to cents before comparing", () => {
     expect(placeAmong("U.S.", VALUES, 30.004)!.same).toBe(2);
+  });
+
+  it("rounds each value to cents too, so a float a hair off a price still counts as the same", () => {
+    const p = placeAmong("U.S.", [10, 20, 29.999999, 30.000001, 40], 30)!;
+    expect(p).toMatchObject({ lower: 2, same: 2, higher: 1 });
+  });
+
+  it("never shows 0% or 100% when a few institutions sit on the other side", () => {
+    const many = (lowerCount: number) => Array.from({ length: 1000 }, (_, i) => (i < lowerCount ? 10 : 50));
+    expect(placeAmong("U.S.", many(3), 30)!.lowerShare).toBe("<1%");
+    expect(placeAmong("U.S.", many(997), 30)!.lowerShare).toBe(">99%");
+    expect(placeAmong("U.S.", many(0), 30)!.lowerShare).toBe("0%");
+    expect(placeAmong("U.S.", many(1000), 30)!.lowerShare).toBe("100%");
+  });
+});
+
+describe("percentLabel", () => {
+  it("rounds to a whole percent except at the edges", () => {
+    expect(percentLabel(1, 3)).toBe("33%");
+    expect(percentLabel(4, 1000)).toBe("<1%");
+    expect(percentLabel(5, 1000)).toBe("1%");
+    expect(percentLabel(995, 1000)).toBe(">99%");
+    expect(percentLabel(0, 10)).toBe("0%");
+    expect(percentLabel(10, 10)).toBe("100%");
+    expect(percentLabel(0, 0)).toBe("0%");
+  });
+});
+
+describe("source lines", () => {
+  it("cite the index, the institution count and the data's own date", () => {
+    expect(nationalSource(1203, "Oct 5, 2026")).toBe(
+      "Source: Bank Fee Index, published fees from 1,203 U.S. institutions, updated Oct 5, 2026.",
+    );
+  });
+
+  it("leave the date out rather than invent one", () => {
+    expect(nationalSource(1203, null)).toBe("Source: Bank Fee Index, published fees from 1,203 U.S. institutions.");
+  });
+
+  it("date the state figures by the latest schedule read", () => {
+    const line = stateSource("Florida", 84, ["2026-09-30T15:00:00Z", null, "2026-10-03T15:00:00Z"]);
+    expect(line).toBe(
+      "Source: Bank Fee Index, published fees from 84 Florida institutions, each checked against its schedule, latest read Oct 3, 2026.",
+    );
+    expect(stateSource("Ohio", 1, [null])).toBe(
+      "Source: Bank Fee Index, published fees from 1 Ohio institution, each checked against its schedule.",
+    );
   });
 });
 
@@ -167,6 +217,8 @@ describe("visitor words", () => {
     lessHeadline(placeAmong("U.S.", VALUES, 0)!, "U.S. institutions", 0),
     askedSummary("overdraft", 35, "Florida"),
     stateRowLabel("Florida"),
+    nationalSource(1203, "Oct 5, 2026"),
+    stateSource("Florida", 84, ["2026-10-03T15:00:00Z"]),
   ];
 
   it("use no em dashes", () => {
