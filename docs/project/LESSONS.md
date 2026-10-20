@@ -384,8 +384,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (15)
+### Migrations, deploys and builds (16)
 
+- 2026-10-20 — An ISR page that reads the database skips those reads during `next build` (`readOnRequest`), so its build copy never waits on a busy database. — [finding](findings/2026-10-20-isr-pages-build-time-db-reads.md) — Guard: `src/app/build-time-reads.test.ts`
 - 2026-10-20 — A page or route that reads the database must not be prerendered at build; render it on request and cache the data, so the database's load never decides whether a deploy succeeds. — [finding](findings/2026-10-20-sitemap-build-time-db-reads.md) — Guard: `src/app/sitemap-cache.test.ts` (+1 more)
 - 2026-10-20 — A migration number is claimed when any open PR uses it, not when it reaches `main`, so check open PRs before taking one. — [finding](findings/2026-10-20-migration-number-collisions-across-open-prs.md) — Guard: Foundation tracker #1048 line "guard for migration numbers claimed by open PRs"; until then, merge `main` and re-run `migration-version-kill`
 - 2026-10-20 — Agents never run deploy-capable `vc`/`vercel` commands and never write a Vercel token to disk. — [finding](findings/2026-10-20-vercel-env-run-deploys.md) — Guard: Foundation tracker #1048 line "ban deploy-capable vercel commands for agents"

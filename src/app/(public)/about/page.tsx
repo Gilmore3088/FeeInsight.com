@@ -3,6 +3,8 @@
  * invalidates the public read cache its reads carry (#1811). The page reads no session,
  * cookies or search params; the header's signed-in parts are client islands. A render
  * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ * `next build` renders it without the database (`readOnRequest`), as such a render: a busy
+ * database held its build-time reads past Next's 60-second page limit (#1048).
  */
 export const revalidate = 3600;
 
@@ -11,6 +13,7 @@ import { PAGE_HERO_WRAP } from "@/components/public/page-hero";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { readOnRequest } from "@/lib/build-phase";
 import { CONTACT_EMAIL, LEGAL_ENTITY_LINE, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { aboutNextAction, aboutProof } from "./about-view";
 import {
@@ -35,13 +38,17 @@ export const metadata: Metadata = {
 
 export default async function AboutPage() {
   // Both reads come from the public cache; a failed read hides its number or falls back to the request form.
-  const [summary, sample] = await Promise.all([
-    getPublicStatsSummary().catch(() => null),
-    loadSampleReport().then(
-      (report) => ({ live: report !== null, failed: false }),
-      () => ({ live: false, failed: true }),
-    ),
-  ]);
+  const [summary, sample] = await readOnRequest(
+    () =>
+      Promise.all([
+        getPublicStatsSummary().catch(() => null),
+        loadSampleReport().then(
+          (report) => ({ live: report !== null, failed: false }),
+          () => ({ live: false, failed: true }),
+        ),
+      ]),
+    [null, { live: false, failed: true }],
+  );
   if (!summary?.complete || sample.failed) await shortenPageLife();
   const sampleLive = sample.live;
   const proof = summary ? aboutProof(summary) : { figures: [], publishedShare: null, freshness: null };

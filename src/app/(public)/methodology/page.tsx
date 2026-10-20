@@ -1,9 +1,25 @@
+/**
+ * Regenerated in the background (ISR) at most hourly, and sooner when a takedown invalidates
+ * the public read cache its reads carry. `next build` renders it without the database
+ * (`readOnRequest`): a busy database held its build-time reads past Next's 60-second page limit
+ * (#1048). A render with a failed read, the build copy included, is cached for a minute
+ * (`shortenPageLife`), so the first request after a deploy brings back the live figures.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
-import { getPublicCategorySummaries, getPublicStatsSummary, UNAVAILABLE_LABEL } from "@/lib/public-stats";
+import {
+  getPublicCategorySummaries,
+  getPublicStatsSummary,
+  UNAVAILABLE_LABEL,
+  UNAVAILABLE_PUBLIC_STATS,
+} from "@/lib/public-stats";
 import { CONTACT_EMAIL, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { getStatsCached } from "@/lib/data-store/public-cached-reads";
 import { COUNT_SHARED_SCHEDULE_ONCE } from "@/lib/data-store/fee-stats";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { readOnRequest } from "@/lib/build-phase";
 import { computeRules, nextAction, pickExampleBenchmark, pipelineStages } from "./methodology-view";
 import { ComputeRules, ContactLine, Limits, MedianExhibit, MethodologyHero, NextAction, PipelineFlow } from "./methodology-exhibits";
 
@@ -46,12 +62,17 @@ function liveCount(value: number, label: string): number | null {
 
 export default async function MethodologyPage() {
   // Every read is served from the public cache between publishes; a failed read hides its number.
-  const [summary, categories, collection, sampleLive] = await Promise.all([
-    getPublicStatsSummary(),
-    getPublicCategorySummaries(),
-    getStatsCached().catch(() => null),
-    sampleReportAvailable().catch(() => false),
-  ]);
+  const [summary, categories, collection, sampleLive] = await readOnRequest(
+    () =>
+      Promise.all([
+        getPublicStatsSummary(),
+        getPublicCategorySummaries(),
+        getStatsCached().catch(() => null),
+        sampleReportAvailable().catch(() => false),
+      ]),
+    [UNAVAILABLE_PUBLIC_STATS, [], null, false],
+  );
+  if (!summary.complete || categories.length === 0 || !collection) await shortenPageLife();
 
   const stages = pipelineStages({
     monitored: liveCount(summary.monitored, summary.monitoredLabel),

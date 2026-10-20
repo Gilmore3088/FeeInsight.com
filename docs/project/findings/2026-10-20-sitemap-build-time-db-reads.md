@@ -21,7 +21,8 @@ the database-free sitemap (static and taxonomy URLs) uncached.
 
 `/methodology` and `/research/data-sources` still prerender at build and read the database. Each
 read has a `.catch` fallback, so they do not fail a build on an error, but slow reads can still
-push them past the 60-second limit. Not changed here; noted on Foundation tracker #1048.
+push them past the 60-second limit. Not changed here; noted on Foundation tracker #1048, and fixed
+for them, `/about` and `/for-institutions` in `2026-10-20-isr-pages-build-time-db-reads.md`.
 
 **Lesson:** A page or route that reads the database must not be prerendered at build; render it
 on request and cache the data, so the database's load never decides whether a deploy succeeds.

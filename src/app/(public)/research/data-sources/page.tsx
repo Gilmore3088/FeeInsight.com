@@ -3,6 +3,8 @@
  * invalidates the public read cache its reads carry (#1811). The page reads no session,
  * cookies or search params; the header's signed-in parts are client islands. A render
  * with a failed read is cached for a minute instead (`shortenPageLife`, as the homepage).
+ * `next build` renders it without the database (`readOnRequest`), as such a render: a busy
+ * database held its build-time reads past Next's 60-second page limit (#1048).
  */
 export const revalidate = 3600;
 
@@ -13,6 +15,7 @@ import { getPublicStatsSummary, UNAVAILABLE_LABEL } from "@/lib/public-stats";
 import { getDataCoverageSummaryCached, getStatsCached } from "@/lib/data-store/public-cached-reads";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { readOnRequest } from "@/lib/build-phase";
 import { DATA_SOURCES, coverageBar, nextAction, sourceMap, type SourceCounts } from "./data-sources-view";
 import { DataSourcesHero, MethodologyLine, NextAction, SourceMap, SourceTable } from "./data-sources-exhibits";
 
@@ -38,12 +41,16 @@ const JSON_LD = {
 
 export default async function DataSourcesPage() {
   // Every read is served from the public cache between publishes; a failed read hides its number.
-  const [summary, collection, coverage, sampleLive] = await Promise.all([
-    getPublicStatsSummary().catch(() => null),
-    getStatsCached().catch(() => null),
-    getDataCoverageSummaryCached().catch(() => null),
-    sampleReportAvailable().catch(() => false),
-  ]);
+  const [summary, collection, coverage, sampleLive] = await readOnRequest(
+    () =>
+      Promise.all([
+        getPublicStatsSummary().catch(() => null),
+        getStatsCached().catch(() => null),
+        getDataCoverageSummaryCached().catch(() => null),
+        sampleReportAvailable().catch(() => false),
+      ]),
+    [null, null, null, false],
+  );
   if (!summary?.complete || !collection || !coverage) await shortenPageLife();
 
   const counts: SourceCounts = {
