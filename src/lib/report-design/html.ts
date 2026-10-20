@@ -124,8 +124,3 @@ export function rdHeader(doc: Pick<RdDocument, "eyebrow" | "title" | "deck" | "h
 export function rdDocument(doc: RdDocument): string {
   return `<div class="rd">${rdHeader(doc)}${doc.exhibits.map(rdExhibit).join("")}</div>`;
 }
-
-/** Numbers exhibits in order: "Exhibit 1 · Footprint". */
-export function rdExhibitLabel(n: number, topic: string): string {
-  return `Exhibit ${n} · ${topic}`;
-}

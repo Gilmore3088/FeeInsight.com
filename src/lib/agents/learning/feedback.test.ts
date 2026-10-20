@@ -137,6 +137,30 @@ describe("shared learning store", () => {
     expect(calls).toHaveLength(1);
   });
 
+  it("a dry run writes nothing and counts the rows a live sync would upsert (publish-sweeps comparison)", async () => {
+    const fixture=fixtureReference("Consumer Fee Schedule\nStop payment $30\nNSF $25\nWire transfer fee $15");
+    fixture.input.key.confirmedBy="knox-hand-key";
+    fixture.input.key.fees=[
+      {...fixture.input.key.fees[0],id:3,canonicalKey:"stop_payment",amount:30,sourceLine:"Stop payment $30",confirmedBy:"jdoe"},
+      {...fixture.input.key.fees[0],id:4,canonicalKey:"nsf",amount:25,sourceLine:"NSF $25",uncertain:true,confirmedBy:"knox-hand-key"}];
+    const eligibility=fixtureEligibility(fixture);
+    expect(eligibility.cohort.eligibleBanks).toBe(1);
+    vi.spyOn(referenceStore,"readReferenceEligibility").mockResolvedValue(eligibility);
+    const { db, calls } = mockDb([
+      ["to_regclass('public.pipeline_feedback')", [{ ready: true }]],
+      ["FROM published_fee_records fp", [takedown]],
+      ["hamilton.restore:pub:", [{ fee_published_id: 70, about_strategy: "extract.rules", institution_id: 9, source_document_id: 4, fee_raw_id: 50, fee_verified_id: 60, canonical_fee_key: "nsf", amount: "30", fee_name: "NSF fee", taken_down_for: "rules_recheck_unreproduced", restored_by: "rules_recheck_restored:restore_bar" }]],
+      ["category_mismatch", [{ id: 900, institution_id: 9, source_document_id: 4, strategy_version: 3, fee_raw_id: 51, canonical_fee_key: "nsf", amount: "20", reason: "Fee name does not support its category", category_guard_version: "9", fee_name: "Returned mail", outlier_flags: [], source_url: null }]],
+      ["FROM answer_key_fees", [{ id: 3, institution_id: 9, canonical_key: "stop_payment", amount: "30", amount_kind: "flat", source_line: "Stop payment $30", uncertain: false, document_url: null, confirmed_by: "jdoe" }, { id: 4, institution_id: 9, canonical_key: "nsf", amount: "25", amount_kind: "fixed", source_line: "NSF $25", uncertain: true, document_url: null, confirmed_by: "knox-hand-key" }]],
+      ["INSERT INTO pipeline_feedback", [{ id: 1 }, { id: 2 }, { id: 3 }, { id: 4 }, { id: 5 }, { id: 6 }]],
+    ]);
+
+    const result = await syncPipelineFeedback(db, { runId: 7, dryRun: true });
+
+    expect(result).toMatchObject({ ready: true, takedowns: 1, restores: 1, categoryRejects: 1, answerKeyFees: 2, written: 0, wouldWrite: 6 });
+    expect(calls.some((call) => call.query.includes("INSERT INTO pipeline_feedback"))).toBe(false);
+  });
+
   it("fills the store from takedowns, restores, Darwin category rejects and eligible bound answer keys", async () => {
     const fixture=fixtureReference("Consumer Fee Schedule\nStop payment $30\nNSF $25\nWire transfer fee $15");
     fixture.input.key.confirmedBy="knox-hand-key";

@@ -198,3 +198,46 @@ describe("the bank's own documents only (#1033)", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+describe("judged where it landed (#1051)", () => {
+  it("rejects a fee-schedule address that redirects to a checking page", async () => {
+    const productPage = "<h1>Personal Checking</h1><p>Monthly maintenance fee $10.00</p><p>Overdraft fee $32.00</p>" +
+      "<p>Stop payment fee $35.00</p><p>Paper statement fee $3.00</p>";
+    const fetchImpl = vi.fn(async () => {
+      const landed = new Response(productPage, { status: 200, headers: { "content-type": "text/html" } });
+      Object.defineProperty(landed, "url", { value: "https://bank.example/personal/checking" });
+      return landed;
+    });
+
+    const result = await validateFeeCandidate(candidate("https://bank.example/fee-schedule"), fetchImpl);
+
+    expect(result).toMatchObject({ ok: false, verdict: "product_page", finalUrl: "https://bank.example/personal/checking" });
+  });
+  const redirectedTo = (landedUrl: string, body: BodyInit, contentType: string) =>
+    vi.fn(async () => {
+      const landed = new Response(body, { status: 200, headers: { "content-type": contentType } });
+      Object.defineProperty(landed, "url", { value: landedUrl });
+      return landed;
+    });
+
+  it("still reads a .pdf link that lands on a download address with no extension", async () => {
+    const result = await validateFeeCandidate(
+      candidate("https://bank.example/docs/fee-schedule.pdf", 0.95),
+      redirectedTo("https://cdn.example.net/download?id=81", "not a pdf body", "application/octet-stream"),
+    );
+
+    expect(result.verdict).not.toBe("unsupported_type");
+  });
+
+  it("still accepts a short fee page whose fee address lands on a CMS address", async () => {
+    const shortPage = "<h1>Fee Schedule</h1><p>Service charges and fees</p><p>Overdraft fee $30.00</p>";
+    const direct = await validateFeeCandidate(candidate("https://bank.example/fee-schedule", 0.5), serve(shortPage, "text/html"));
+    const result = await validateFeeCandidate(
+      candidate("https://bank.example/fee-schedule", 0.5),
+      redirectedTo("https://bank.example/page.aspx?id=123", shortPage, "text/html"),
+    );
+
+    expect(direct.ok).toBe(true);
+    expect(result).toMatchObject({ ok: true, finalUrl: "https://bank.example/page.aspx?id=123" });
+  });
+});

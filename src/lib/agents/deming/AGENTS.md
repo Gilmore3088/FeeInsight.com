@@ -215,6 +215,27 @@ institutions remains the only human launch workflow.
 - Read-only, deterministic, no model calls, pause-exempt: one SELECT over
   `registry_ingest_partitions` and one over Atlas's newest table sizes.
 
+## Monthly agent review (#1107)
+
+- `monthly-review.ts` (`MONTHLY_REVIEW_VERSION` v1): the `deming-monthly-review` step in Atlas's
+  daily scoreboard run, before `deming-sunday-maintenance`. It runs on the 1st of the month (UTC)
+  only, the same gate as the Sunday email. Each of the four agents reviewed on 2026-10-12
+  (Magellan, Rosetta, Knox, Hamilton the publisher; `docs/plans/*-review-2026-10-12.md`) has a
+  list of named read-only SQL measures, each with a direction (higher or lower is better) and a
+  move limit. A baseline is the review's own figure, or null where the review states none.
+- Each measure runs in its own savepoint with a 30-second statement timeout; a failed or timed-out
+  read is stored as unknown (null with its error), never 0. A measure starts only while it can
+  finish inside the step's 110-second budget at that timeout; the rest are unknown for the month.
+- The answer-key measures read the newest score through `getLatestAnswerKeyScoreRun`: a run on
+  another reference cohort is unknown, never a score. Each reading carries its basis (scorer
+  version and cohort), and a month or baseline on a different basis is shown but never compared
+  or alarmed against. The 2026-10-12 answer-key figures were scored at v1, so they never alarm.
+- A measure that moves the wrong way past its limit since last month (or, with no last month, since
+  the 2026-10-12 figure) is an ALARM in the step summary, on /admin/agents/health and in the next
+  Sunday email. The app has no GitHub access: an alarm is added to that agent's tracker by hand.
+- The step detail (`review`) is the history: last month is read back from the newest earlier
+  ledger row. Read-only, deterministic, no model calls, pause-exempt.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -229,12 +250,13 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
-| `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
+| `FRESH_AUDIT_VERSION` | — | v7 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
+| `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |
 
 ### Prospective corrective source contexts (#2064, protocol 2)
 

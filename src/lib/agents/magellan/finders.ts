@@ -4,6 +4,7 @@ import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { classifyFetchFailure } from "@/lib/agents/learning/outcomes";
 
 import {
+  checkOpenedFeePage,
   fetchWithTimeout,
   looksLikePdfUrl,
   validateFeeCandidate,
@@ -123,13 +124,13 @@ export const FINDERS = {
   homepageLinks: { strategy: "discover.homepage_links", version: 1, pass: 1 },
   // 2: robots.txt Disallow rules respected, /sitemap_index.xml fallback, fee-named PDFs.
   sitemap: { strategy: "discover.sitemap", version: 2, pass: 1 },
-  hubPages: { strategy: "discover.hub_pages", version: 1, pass: 1 },
+  hubPages: { strategy: "discover.hub_pages", version: 2, pass: 1 },
   // 3: guessed-path misses use input learning memory; transient requests remain retryable.
   platformPaths: { strategy: "discover.platform_paths", version: 3, pass: 1 },
   commonPaths: { strategy: "discover.common_paths", version: 2, pass: 1 },
   // 3: the same learning memory for nationwide, live-fee-backed peer guesses.
   peerHint: { strategy: "discover.peer_hint", version: 3, pass: 2 },
-  siteCrawl: { strategy: "discover.site_crawl", version: 1, pass: 2 },
+  siteCrawl: { strategy: "discover.site_crawl", version: 2, pass: 2 },
 } as const;
 
 export type FinderKey = keyof typeof FINDERS;
@@ -250,6 +251,8 @@ export interface SearchContext {
   robots?: string | null;
   /** HTML of same-site pages already opened, so the crawl does not fetch them twice. */
   pages: Map<string, string>;
+  /** Where an opened address redirected to, by its identity (#1051). */
+  redirects?: Map<string, string>;
   /** The learned fee-page classifier, in shadow: scores each opened candidate, decides nothing. */
   pageClassifier?: PageClassifier | null;
   /** The exact applicable guesses used both by the learning fingerprint and the finder. */
@@ -428,6 +431,11 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
       }
       if (validation.html && sameSite(new URL(candidate.url), ctx.site)) ctx.pages.set(identity, validation.html);
+      if (validation.finalUrl) recordRedirect(ctx, identity, validation.finalUrl);
+      if (validation.ok && !acceptableAddress(ctx, candidate.url)) {
+        entry.verdict = "redirects_to_rejected";
+        continue;
+      }
       if (validation.ok) {
         result.found = foundFrom(candidate, validation);
         return true;
@@ -457,6 +465,7 @@ async function openPage(
   try {
     const response = await fetchWithTimeout(ctx.fetchImpl, url);
     entry.verdict = `http_${response.status}`;
+    if (response.url && response.url !== url) recordRedirect(ctx, identity, response.url);
     if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) return null;
     const html = await response.text();
     ctx.pages.set(identity, html);
@@ -467,10 +476,36 @@ async function openPage(
   }
 }
 
-/** A page that itself lists fees (not a hub that merely links to them). */
-function pageIsFeeSchedule(html: string): boolean {
+function recordRedirect(ctx: SearchContext, identity: string, landed: string): void {
+  (ctx.redirects ??= new Map()).set(identity, landed);
+}
+
+/**
+ * False when the address, or where it redirects, is a page Rosetta ruled out or the link a
+ * re-search is replacing. Rosetta records the address it landed on, so an alias that redirects
+ * to a rejected page passed the old check and was saved again (#1051: Wintrust 169, Macatawa 365).
+ */
+function acceptableAddress(ctx: SearchContext, url: string): boolean {
+  const identity = urlIdentity(url);
+  const landed = ctx.redirects?.get(identity);
+  return [identity, ...(landed ? [urlIdentity(landed)] : [])].every((key) => !ctx.rejected.has(key) && !ctx.replacing?.has(key));
+}
+
+/**
+ * A page a finder opened for its links that itself lists fees, judged by the same checks as a
+ * candidate link (`checkOpenedFeePage`, #1051): a product page quoting a few fees is followed
+ * for its links, never accepted.
+ */
+function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): boolean {
+  if (!acceptableAddress(ctx, url)) return false;
+  // A cheap pre-filter on the whole HTML; the candidate check below is what decides.
   const page = scoreFeePage(htmlToScoringText(html));
-  return page.verdict === "fee_page" && !(page.rateTerms >= 4 && page.feeLines < 4);
+  if (page.verdict !== "fee_page" || (page.rateTerms >= 4 && page.feeLines < 4)) return false;
+  const landed = ctx.redirects?.get(urlIdentity(url)) ?? url;
+  return checkOpenedFeePage(
+    { url: landed, requestedUrl: landed === url ? null : url, score: 0, reasons: [], websiteUrl: ctx.site.toString(), institutionName: ctx.institutionName ?? null, nameShared: ctx.nameShared, city: ctx.city ?? null, certNumber: ctx.certNumber ?? null },
+    html,
+  ).ok;
 }
 
 function pathCandidates(ctx: SearchContext, paths: string[], source: LinkSource): LinkCandidate[] {
@@ -723,7 +758,7 @@ export async function findViaHubPages(ctx: SearchContext): Promise<FinderResult>
     const html = await openPage(ctx, result, hub.url, entry);
     if (html == null) continue;
     // The hub itself may be the fee page.
-    if (!ctx.rejected.has(urlIdentity(hub.url)) && !ctx.replacing?.has(urlIdentity(hub.url)) && pageIsFeeSchedule(html)) {
+    if (pageIsFeeSchedule(ctx, hub.url, html)) {
       entry.verdict = "accepted_html";
       result.found = {
         url: hub.url,
@@ -816,7 +851,7 @@ export async function findBySiteCrawl(ctx: SearchContext): Promise<FinderResult>
     result.trail.push(entry);
     const html = await openPage(ctx, result, next.link.url, entry);
     if (html == null) continue;
-    if (!ctx.replacing?.has(identity) && pageIsFeeSchedule(html)) {
+    if (pageIsFeeSchedule(ctx, next.link.url, html)) {
       entry.verdict = "accepted_html";
       result.found = { url: next.link.url, documentType: "html", confidence: 0.84, reason: `Fee page found by crawling the site (depth ${next.depth})` };
       return result;

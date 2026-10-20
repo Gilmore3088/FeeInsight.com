@@ -75,8 +75,6 @@ export interface FeeReversalInput {
   reason: string;
 }
 
-export type CorrectionField = keyof FeeCorrectionInput;
-
 export type Validated<T> = { ok: true; value: T } | { ok: false; errors: Partial<Record<string, string>> };
 
 function oneLine(value: unknown): string {

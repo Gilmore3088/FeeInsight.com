@@ -14,7 +14,7 @@ import { isPeerListContinuationQuestion, peerListFeeFollowUp, peerListFollowUpFe
 function noAccountInstitution(status: string): string {
   const why = status === "ambiguous"
     ? "More than one institution is linked to your account, so Hamilton can't tell which one is \"us\"."
-    : "No institution is linked to your account, so there is no \"us\" to compare.";
+    : "No institution is linked to your account, so there is no \"us\" to compare. To link yours, open Settings & account.";
   return `${why} Hamilton did not treat the institution you are researching as yours.`;
 }
 

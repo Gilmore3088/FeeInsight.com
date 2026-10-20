@@ -101,6 +101,7 @@ vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+  HAMILTON_PUBLISH_MIN_INSTITUTION_FEES: 3,
 }));
 
 vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
@@ -174,7 +175,9 @@ import {
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
+  withLessonsApplied,
 } from "./run-store";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 
 const runRow = {
   id: 101,
@@ -1863,6 +1866,20 @@ describe("recordProRequest", () => {
     await expect(
       recordProRequest({ operation: "thesis", title: "t", status: "failed", summary: "s", userId: null }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("lessons_applied on a finished step", () => {
+  it("records the ids of the role lessons that shaped the step, keeping its own detail", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract-paid" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const expected = lessonIds(lessonsForStep("knox", "extract-paid"));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
+  });
+
+  it("leaves a step whose agent keeps no lessons unchanged", () => {
+    const outcome = { status: "completed" as const, summary: "s", detail: { a: 1 } };
+    expect(withLessonsApplied({ agent: "growth", stepKey: "growth-score" }, outcome)).toBe(outcome);
   });
 });
 

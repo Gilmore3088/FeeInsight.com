@@ -120,6 +120,7 @@ import {
   movedSweepSecondLookIds,
   movedSweepTakedownIds,
   GLOBAL_ONLY_PUBLISH_SWEEPS,
+  SAMPLED_PUBLISH_SWEEPS,
   publishSweepMode,
   PUBLISH_SWEEPS_SPLIT_LIVE,
   runPublishSweepsStep,
@@ -222,6 +223,20 @@ describe("which steps run the moved sweeps", () => {
     expect(MOVED_PUBLISH_SWEEPS.every((key) => runsMovedSweep("sweeps", key) && runsMovedSweep("full", key))).toBe(true);
   });
 
+  it("names the sweeps that sample per run, each one a moved sweep whose module orders by md5 or by the hour", () => {
+    const sources: Record<string, string> = {
+      pageCopyRestore: "page-copy-restore.ts",
+      pageCopyCollapse: "page-copy-collapse.ts",
+      nearNameCollapse: "duplicate-collapse.ts",
+      crossPage: "cross-page-conflict.ts",
+    };
+    expect([...SAMPLED_PUBLISH_SWEEPS].sort()).toEqual(Object.keys(sources).sort());
+    for (const [key, file] of Object.entries(sources)) {
+      expect(MOVED_PUBLISH_SWEEPS as readonly string[]).toContain(key);
+      expect(readFileSync(join(__dirname, file), "utf8")).toMatch(/ORDER BY md5\(/);
+    }
+  });
+
   it("moves the 40 named sweeps and keeps the 11 calls, together the publish step's 51 timed calls", () => {
     expect(MOVED_PUBLISH_SWEEPS).toHaveLength(40);
     expect(new Set(MOVED_PUBLISH_SWEEPS).size).toBe(40);
@@ -290,6 +305,14 @@ describe("sweep counts", () => {
     expect(counts).toHaveProperty("businessSchedule.flagged", 0);
   });
 
+  it("counts the feedback rows a dry run would write, and the rows a live run wrote", () => {
+    const base = results as unknown as MovedSweepResults;
+    const dry = { ...base, feedbackSync: { ...base.feedbackSync, written: 0, wouldWrite: 40, relabeled: 2 } };
+    const live = { ...base, feedbackSync: { ...base.feedbackSync, written: 40, relabeled: 2 } };
+    expect(movedSweepCounts(dry, () => true).feedbackSync).toBe(42);
+    expect(movedSweepCounts(live, () => true).feedbackSync).toBe(42);
+  });
+
   it("list each would-be takedown once, and keep category-guard first looks out of them", () => {
     const base = results as unknown as MovedSweepResults;
     const swept = {
@@ -320,6 +343,7 @@ describe("the publish-sweeps step", () => {
       index_refreshed: false,
     });
     expect((outcome.detail.sweep_counts as Record<string, number>).outlierRollbacks).toBe(1);
+    expect(outcome.detail.sampled_sweeps).toEqual(["pageCopyRestore", "pageCopyCollapse", "nearNameCollapse", "crossPage"]);
     expect(mocks.refreshFeeIndexCache).not.toHaveBeenCalled();
     expect(calls.every((call) => ((call.key === "categoryGuard" ? call.args[0] : call.args[1]) as { dryRun: boolean }).dryRun)).toBe(true);
     expect(outcome.summary).toContain("dry run");

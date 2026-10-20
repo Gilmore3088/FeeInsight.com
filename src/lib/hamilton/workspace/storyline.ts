@@ -40,7 +40,6 @@ export interface StoryIntent {
   list?: boolean;
 }
 
-export const MIN_STORY_EXHIBITS = 3;
 export const MAX_STORY_EXHIBITS = 5;
 /** Rows a structure matrix shows after the bank's own. */
 const MAX_MATRIX_ROWS = 12;

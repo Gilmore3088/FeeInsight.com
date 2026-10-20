@@ -22,6 +22,7 @@ import { buildHamiltonInstitutionBriefingSnapshot, type HamiltonBriefingEvidence
 import { HAMILTON_PAUSED_MESSAGE } from "./provider-paused";
 import { buildHamiltonRequestContractPrompt, type HamiltonRequestContract } from "./request-contract";
 import { writtenAnswerStepSystemPrompt } from "./written-answer-evidence";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 
 export const WRITTEN_ANSWER_ROUTE_ID = "api.research.hamilton";
 const VALID_FOCUS = new Set(["Pricing", "Risk", "Peer Position", "Trend"]);
@@ -62,6 +63,9 @@ export async function buildWrittenAnswerSystemPrompt(input: {
     + "Use only the resulting VALIDATED FINANCIAL CALCULATIONS ledger for derived figures. "
     + "The briefing's financial values are rounded thousands: they support labeled direct facts, never calculation inputs. "
     + "If a requested calculation is absent from the ledger, fetch the missing filing rows or state that it cannot be established. Do not calculate it from the briefing or silently approximate it.\n";
+  // Hamilton's role lessons (agents/hamilton/role-lessons.ts), at most ten, newest first.
+  const roleLessons = lessonsForModel("hamilton", "written-answer");
+  if (roleLessons.system) systemPrompt += `\n${roleLessons.system}\n`;
   const briefingEvidence: HamiltonBriefingEvidence[] = [];
   systemPrompt += buildHamiltonRequestContractPrompt(contract);
   systemPrompt += buildSavedPeerSetPrompt(peerSet);
