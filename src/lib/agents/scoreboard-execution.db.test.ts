@@ -68,6 +68,7 @@ vi.mock("@/lib/agents/scoreboard", () => ({ runScoreboardSnapshot: async ({ db, 
   return { schemaReady: true, stored: true, snapshotDate: "2026-10-19", numbers: {} };
 }, summarizeScoreboard: () => "Synthetic snapshot stored" }));
 vi.mock("@/lib/agents/deming/change-outcomes", () => ({ runChangeOutcomes: () => effect("deming-change-outcomes", { judged: [] }), summarizeChangeOutcomes: () => "Synthetic outcomes" }));
+vi.mock("@/lib/agents/deming/monthly-review", () => ({ MONTHLY_REVIEW_VERSION: 1, runMonthlyReview: () => effect("deming-monthly-review", { ran: false, reason: "fixture", review: null }), summarizeMonthlyReview: () => "Synthetic monthly review" }));
 vi.mock("@/lib/agents/deming/sunday-maintenance", () => ({ runSundayMaintenance: () => effect("deming-sunday-maintenance", { email: null }), summarizeSundayMaintenance: () => "Synthetic maintenance" }));
 vi.mock("@/lib/agents/atlas/city-repair", () => ({ runCityRepair: () => effect("atlas-city-repair"), summarizeCityRepair: () => "Synthetic city repair", cityRepairDetail: () => ({ fixture: true }) }));
 vi.mock("@/lib/agents/atlas/hand-link-repair", () => ({ runHandLinkRepair: () => effect("hand-links", { candidates: [] }), summarizeHandLinkRepair: () => "Synthetic links", handLinkRepairDetail: () => ({ fixture: true }) }));
@@ -135,7 +136,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(new Set(results.map(body => body.runId)).size).toBe(1);
     expect(results.filter(body => !body.reused)).toHaveLength(1);
     expect((await db`SELECT count(*)::int AS n FROM agent_runs`)[0].n).toBe(1);
-    expect(await steps(results[0].runId)).toHaveLength(14);
+    expect(await steps(results[0].runId)).toHaveLength(15);
     expect(state.effects).toEqual([]);
   });
 
@@ -171,12 +172,12 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect((await startAgentRun(input)).run.id).not.toBe(first.run.id);
   });
 
-  it("advances all 14 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
+  it("advances all 15 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = state.marketing = false;
     const firstTick = await (await tick(request("agents/tick"))).json();
-    expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 10, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-live-source-draw" });
+    expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 11, terminal: false }] });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 11, current_stage: "deming-live-source-draw" });
     expect((await db`SELECT agent_run_id FROM fixture_snapshots`)[0].agent_run_id).toBe(body.runId);
     expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
     const secondTick = await (await tick(request("agents/tick"))).json();
@@ -187,8 +188,8 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     state.pipeline = true;
     const resumed = await (await tick(request("agents/tick"))).json();
     expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 4 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 14, progress_total: 14 });
-    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(14);
+    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 15, progress_total: 15 });
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(15);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='run.completed'`)[0].n).toBe(1);
   });
 
@@ -196,10 +197,10 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = pipeline; state.marketing = marketing;
     const first = await (await tick(request("agents/tick"))).json();
-    expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 10 }]);
+    expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 11 }]);
     expect((await db`SELECT count(*)::int AS n FROM fixture_snapshots`)[0].n).toBe(1);
     const tail = await (await tick(request("agents/tick"))).json();
-    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 14 : 10 });
+    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 15 : 11 });
     expect(tail.selected).toBe(pipeline ? 1 : 0);
     expect(state.provider).not.toHaveBeenCalled();
   });

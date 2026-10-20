@@ -93,6 +93,7 @@ import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, run
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
+import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runProSeatCheck, summarizeProSeatCheck } from "@/lib/hamilton/pro-seat-check";
@@ -2578,6 +2579,16 @@ async function executeAgenticStep(
         status: "completed",
         summary: summarizeChangeOutcomes(result),
         detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged, hit_rate: result.hitRate },
+      };
+    }
+    case "deming-monthly-review": {
+      // #1107: on the 1st of the month (UTC) only. Read-only: each measure is one SELECT in its own
+      // savepoint; a failed read is stored as unknown. The ledger row is its only write.
+      const result = await runMonthlyReview({ db: tx });
+      return {
+        status: "completed",
+        summary: summarizeMonthlyReview(result),
+        detail: { version: MONTHLY_REVIEW_VERSION, ran: result.ran, reason: result.reason, review: result.review, alarms: result.review?.alarms ?? [] },
       };
     }
     case "deming-sunday-maintenance": {
