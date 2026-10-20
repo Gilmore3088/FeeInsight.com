@@ -1,5 +1,16 @@
 # Hamilton Agent Guide
 
+## Prospective source-owned paid/returned events (#1918)
+
+Before publishing v1 action rows, bind their exact original artifact/hash and positive own
+price/unit/scope, acquiring existing source-prefix locks before published→verified→raw locks.
+Recheck selected raw applicability, source pointer and event identity after suffix waits, plus
+the existing whole verified-state guard. A new current eligibility hold or unavailable/changed
+proof leaves the attempt undecided with no movement, supersession or negative teaching. Only
+RETURNING counts publication. This selected-row protection is not serializable phantom
+isolation or current-official/PDF-byte certification. No publish/source/rules-recheck version,
+historical selector, switch or held-row release changes.
+
 ## Prospective international wire direction (#2278)
 
 An unpublished international wire must bind its actual verified/raw lineage to the current

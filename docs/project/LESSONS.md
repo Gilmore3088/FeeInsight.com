@@ -204,8 +204,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 248 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
-### Extraction and fee reading (31)
+### Extraction and fee reading (32)
 
+- 2026-10-19 — One literal "NSF Paid/Returned" row publishes two events only when the source owns the pair; a separate overdraft or item price for the same audience holds it. — [finding](findings/2026-10-19-compressed-paid-returned-events.md) — Guard: `src/lib/custom-report/paid-returned-events.test.ts` (+2 more)
 - 2026-10-19 — Wrapped fee bullets lost their title or their own price. — [finding](findings/2026-10-19-wrapped-fee-bullets.md) — Agent lesson: knox/pr-2162-wrapped-bullet-unit
 - 2026-10-19 — A printed bound can be source-supported while the actual charge remains symbolic. — [finding](findings/2026-10-19-symbolic-lesser-of-charge.md) — Guard: The hash-bound full Woodlawn source has a retained functional OLD-red. Pure controls...
 - 2026-10-19 — A queue that re-reads on every version bump needs a guarantee that untouched work still drains. — [finding](findings/2026-10-19-stale-reread-backlog-starved.md) — Guard: `extract.test.ts`

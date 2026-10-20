@@ -5,6 +5,12 @@ version changes, Bayes counts what the older version processed and whether today
 reached it. It runs as an Atlas step (agent `atlas`, `/api/admin/crew/bayes`, daily); it is
 deterministic and makes no model calls.
 
+`PAID_RETURNED_EVENT_VERSION` v1 (#1918) is a prospective proof format only, recorded in
+`VERSIONS_WITHOUT_REPLAY`. It may create newly source-owned action observations without
+rewriting existing same-unit, held or judged lineage. The explicitly approved no-bump exception
+leaves extract88/stale78/lineup73/twin82/verify3/source-check2/recheck5/publish3 and all queues
+settled; no historical re-extract, repair, rejudge or provider/source work follows from it.
+
 ## What it owns
 
 - `replay_jobs` (one row per change, keyed `<manifest>@<version>`) and `replay_job_checks` (one
