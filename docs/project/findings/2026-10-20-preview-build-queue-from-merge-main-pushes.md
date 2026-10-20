@@ -4,7 +4,7 @@ Whether a preview builds should depend on the PR's own change against its merge-
 
 **What happened:** `vercel.json`'s `ignoreCommand` diffs only `HEAD^..HEAD`. On a "merge main"
 push that diff holds all of `main`'s new work, so every such push builds a full preview. On Oct 20
-about 20 deployments in an hour queued a 4-minute build for about 7 minutes. One preview failed
+about 20 deployments in an hour (`vercel ls feeschedule-hub`, 06:53 UTC) queued a 4-minute build for about 7 minutes (that list: created 11 minutes earlier, build duration 4 minutes). One preview failed
 prerendering `/sitemap.xml` on a database timeout.
 
 **Cause:** `HEAD^` of a merge commit is the branch's previous tip, so the diff includes everything

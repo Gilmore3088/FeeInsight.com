@@ -14,7 +14,7 @@ Started 2026-10-05; for anything earlier, see `git log`.
 - Agent lessons: fixed issues become lessons (#2431, #2437); every finding names its guard or lesson (#2439, #2444, #2448, #2455, #2458); a monthly agent health report (#2441).
 
 **Public site**
-- Reports pages, cached /about, /guides and /contact, site audit fixes, the research-brief template and the market report layout (#1935, #1936, #1960, #1732, #1736).
+- Reports pages, cached /about, /guides and /contact, site audit fixes, the research-brief template, the market report layout and the institution page overview with one connected panel (#1935, #1936, #1960, #1732, #1736, #1864).
 - Public counts leave out inactive institutions (#2390); one address per city (#2396).
 
 **Hamilton**

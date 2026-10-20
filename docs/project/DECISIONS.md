@@ -5,7 +5,7 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
-**Legacy event-log partitions are dropped, not trimmed.** James, 2026-10-20. Atlas drops expired
+**Legacy event-log partitions are dropped, not trimmed.** James, 2026-10-19; migration approved 2026-10-20. Atlas drops expired
 legacy `agent_events` partitions through a migration function instead of deleting rows (#2453,
 migration 072). Dry run 04:19 UTC: partitions `_2026_04` to `_2026_07`, about 386 MB.
 
