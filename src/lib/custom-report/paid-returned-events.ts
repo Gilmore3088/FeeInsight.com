@@ -30,13 +30,20 @@ const SEPARATE_EVENT = new RegExp(String.raw`^(?:${BASE}(?:\s+(?:paid|returned?|
 // An overdraft protection transfer, sweep or line is another service, not an overdraft item charge.
 const SEPARATE_TOKEN = new RegExp(String.raw`\b(?:(?:overdrafts?|o\/?d)\b(?!\s+(?:protection|transfers?|sweeps?|lines?\b|limits?))`
   + String.raw`|courtesy\s+pay\b|paid\s+items?\b|return(?:ed)?\s+(?:items?|checks?)\b|items?\s+returned\b`
-  + String.raw`|nsf\b|non[-\s]?sufficient\s+funds?\b|insufficient\s+funds?\b|bounced?\s+checks?\b)`, "i");
+  + String.raw`|nsf\b|non[-\s]?sufficient\s+funds?\b|insufficient\s+funds?\b|bounced?\s+checks?\b`
+  + String.raw`|overdrawn\s+items?\b|(?:unavailable|uncollected)\s+funds?\b|re-?present(?:ed|ment)\b|return(?:ed)?\s+payments?\b)`, "i");
 /**
- * A returned deposited item, a daily or continuous overdraft charge, a transfer and an ACH
- * origination charge are other services priced on their own basis; they do not contradict the
- * item price the pair carries.
+ * Another service only when the service word is part of the charge's own name: a returned
+ * deposited item, a daily, continuous, sustained or extended overdraft charge, an overdraft
+ * transfer or sweep, an ACH origination. A qualifier on an item price ("(deposit accounts)",
+ * "max 5 per day", "checks, ACH, transfers") does not make it another service.
  */
-const OTHER_SERVICE = /\b(?:deposit(?:ed|s)?|daily|continuous|sustained|extended|per\s+day|transfers?|sweeps?|origination)\b/i;
+const OTHER_SERVICE = new RegExp([
+  String.raw`\bdeposited\b`,
+  String.raw`\b(?:daily|continuous|sustained|extended)\s+(?:overdraft|o\/?d|nsf)\b`,
+  String.raw`\b(?:overdraft|o\/?d)\s+(?:(?:protection|from\s+\w+)\s+)?(?:transfers?|sweeps?)\b`,
+  String.raw`\bach\s+origination\b`,
+].join("|"), "i");
 const flat = (text: string) => text.replace(/\s+/g, " ").trim();
 const cleanLabel = (text: string) => flat(text.replace(/^\s*[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/\|\s*$/, ""));
 

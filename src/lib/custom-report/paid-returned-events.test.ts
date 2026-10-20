@@ -72,8 +72,19 @@ describe("complete source-owned paid/returned unit", () => {
       expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
     });
 
+  it.each(["Overdraft Fee (deposit accounts)", "Overdraft Fee - all deposit accounts", "NSF Fee (max 5 per day)",
+    "Overdraft Item Fee, maximum 3 per day", "Overdraft Fee per item (daily limit 4)", "Insufficient Funds Fee - Daily Max 3 Items",
+    "NSF/Overdraft Fee (checks, ACH, transfers)", "Returned Item Fee (checks or ACH transfers)",
+    "Overdraft Item Fee (paid item, deposit account)", "Overdrawn Item Fee", "Unavailable Funds Fee", "Representment Fee",
+    "Re-presented Item Fee", "Returned Payment Fee"])
+    ("refuses %s: a qualifier does not make an item price another service", label => {
+      expect(paidReturnedUnits(source(row, "Stop Payment | $30.00", `${label} | $35.00`))).toEqual([]);
+      expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
+    });
+
   it.each(["Returned Item (Deposited)", "Return Item Chargeback (deposited)", "Returned Check Deposited",
-    "Continuous Overdraft Fee (per day)", "Daily Overdraft Charge", "Overdraft from Savings Transfer"])
+    "Continuous Overdraft Fee (per day)", "Daily Overdraft Charge", "Overdraft from Savings Transfer", "Extended Overdraft Fee",
+    "Overdraft Transfer Fee", "Returned Deposited Item"])
     ("keeps the pair beside a different service priced as %s", label => {
       expect(paidReturnedUnits(source(row, `${label} | $35.00`))).toHaveLength(1);
     });
