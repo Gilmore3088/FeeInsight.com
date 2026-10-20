@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAuditTrail, provenanceToTrail, publishedRange } from "./audit-trail";
+import { STANDARD_METHOD, buildAuditTrail, provenanceToTrail, publishedRange } from "./audit-trail";
 import { WORKSPACE_ENGINE_VERSION } from "./workspace/types";
 import { summarizeLayer } from "./research-layers";
 
@@ -76,5 +76,15 @@ describe("buildAuditTrail", () => {
 
   it("gives no date range when no dates are known", () => {
     expect(publishedRange([null])).toBeNull();
+  });
+});
+
+describe("STANDARD_METHOD (#975)", () => {
+  it("states the several-amounts rule as the committee packet does: peers at their median, the bank's own fee not placed", () => {
+    const method = STANDARD_METHOD.join("\n");
+    expect(method).not.toMatch(/one value per institution: the median of its published amounts/i);
+    expect(method).toContain(
+      "Overdraft counts at its highest tier. For any other fee, a peer that publishes several amounts counts at the median of those amounts. Your own fee at several amounts is shown as a range and not placed against the peers.",
+    );
   });
 });

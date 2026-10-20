@@ -1049,7 +1049,7 @@ function productTable(input: CommitteePacketInput, reads: FeeRead[]): PacketTabl
     subtitle: `Every live row on ${input.institutionName}'s published schedule behind the comparison value.`,
     columns: ["Fee", ownWording ? "Name on the schedule" : "Listed in the index as", "Amount", "Charged", "Conditions", "Source"],
     rows,
-    note: "Overdraft is compared at its highest tier. Any other fee listed here at several amounts is shown as a range and not placed.",
+    note: "Overdraft is compared at its highest tier. Any other fee listed here at several amounts has one row per amount and is not placed against the peers.",
     source: SCHEDULES,
     ownFirst: false,
   };

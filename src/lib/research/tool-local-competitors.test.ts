@@ -55,4 +55,16 @@ describe("local competitor subject prices", () => {
     expect(result).toMatchObject({ your_fees: { stop_payment: 30 } });
     expect(result).not.toHaveProperty("your_several_fees");
   });
+
+  it("should_round_your_several_fees_to_cents_as_your_fees_are (#975)", async () => {
+    mocks.ownFees.mockResolvedValue(new Map([
+      own("garnishment", [{ fee_name: "Levy", amount: 150.004 }, { fee_name: "Garnishment", amount: 175.126 }], 162.565),
+    ]));
+    const result = await run();
+    expect(result).toMatchObject({
+      your_several_fees: {
+        garnishment: { low: 150, high: 175.13, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175.13 }] },
+      },
+    });
+  });
 });

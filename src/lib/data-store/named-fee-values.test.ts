@@ -101,6 +101,14 @@ describe("getOwnFeesForInstitutions", () => {
     expect(fees.get(12)?.get("nsf")).toMatchObject({ price: null, value: 30, low: 25, high: 35, fees: [{ name: "NSF item", amount: 25 }, { name: "NSF ACH", amount: 35 }] });
   });
 
+  it("leaves out inactive institutions, as getContractFeeRows does, so the answer eval never reads a shown member as missing (#975)", async () => {
+    db.unsafe.mockResolvedValueOnce([]);
+    await getOwnFeesForInstitutions([11, 12], ["nsf"]);
+    const query = String(db.unsafe.mock.calls[0][0]);
+    expect(query).toMatch(/JOIN institution_sources ct ON ef\.institution_id = ct\.id/);
+    expect(query).toContain("ct.regulatory_status IS DISTINCT FROM 'inactive'");
+  });
+
   it("gives the same values getFeeValuesForInstitutions gives for statistics", async () => {
     db.unsafe.mockResolvedValueOnce(rows);
     const own = await getOwnFeesForInstitutions([11, 12], ["nsf"]);
