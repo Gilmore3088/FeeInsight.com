@@ -8,6 +8,8 @@ export const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
 export const SANS = { fontFamily: "var(--fi-font-sans)" } as const;
 /** The h1 and section h2s: the homepage serif (landing-serif.ts); a size-matched Times New Roman shows until it loads. */
 export const SERIF = { fontFamily: "var(--fi-home-serif, Georgia), Georgia, serif" } as const;
+/** A serif section heading's size and weight (research, the article pages); pair it with SERIF. */
+export const SERIF_HEAD = "text-[34px] !font-medium leading-[1.06] tracking-[-0.025em] sm:text-[48px]";
 /** The homepage's content width (James's example: 1280px, with a 16px gutter on a phone). */
 export const HOME_WRAP = "mx-auto w-full max-w-[1312px] px-4 sm:px-6 lg:px-8";
 

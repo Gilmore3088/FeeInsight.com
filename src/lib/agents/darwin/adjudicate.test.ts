@@ -19,6 +19,7 @@ import {
   type AdjudicationCandidate,
 } from "./adjudicate";
 import { DARWIN_RELEASE_ACTS } from "./release-held";
+import { providerRefusalSql } from "@/lib/agents/paid-pass";
 
 type DbMock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 
@@ -230,6 +231,7 @@ describe("Darwin layer 3 adjudicator", () => {
     await runDarwinAdjudicate({ db: asDb(db), runId: 1, dryRun: true });
     const query = db.unsafe.mock.calls.map(([q]) => String(q)).find((q) => q.includes("verify.category_model") || q.includes("knox_key"))!;
     expect(query).toMatch(/done\.strategy_version >= \$\d+::int OR done\.outcome <> 'evidence_mismatch'/);
+    expect(query).toContain(`AND NOT ${providerRefusalSql("done")}`);
     expect(DARWIN_ADJUDICATE_STRATEGY.version).toBe(2);
   });
 });

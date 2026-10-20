@@ -227,6 +227,7 @@ export const ROUTES: RouteEntry[] = [
   page("pro/(hamilton)/news/digest/page.tsx", "/pro/news/digest", "News digest"),
   page("pro/(hamilton)/peer-research/[id]/page.tsx", "/pro/peer-research/00000000-0000-4000-8000-000009708999", "Saved peer research (unknown id)"),
   page("pro/(hamilton)/reports/page.tsx", "/pro/reports", "Reports"),
+  page("pro/(hamilton)/reports/committee/page.tsx", "/pro/reports/committee", "Pricing committee brief"),
   page("pro/(hamilton)/saved/page.tsx", "/pro/saved", "Saved answers"),
   page("pro/(hamilton)/settings/page.tsx", "/pro/settings", "Settings"),
   page("pro/(hamilton)/simulate/page.tsx", "/pro/simulate", "Simulate"),
