@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { sqlMock } = vi.hoisted(() => ({ sqlMock: vi.fn() }));
+const { sqlMock, afterMock } = vi.hoisted(() => ({ sqlMock: vi.fn(), afterMock: vi.fn() }));
 vi.mock("@/lib/data-store/connection", () => ({ sql: sqlMock }));
+vi.mock("next/server", () => ({ after: afterMock }));
 
 import { logApiUsage } from "./api-usage";
 
@@ -12,6 +13,7 @@ describe("logApiUsage", () => {
   beforeEach(() => {
     sqlMock.mockReset();
     sqlMock.mockResolvedValue([]);
+    afterMock.mockReset();
   });
 
   it("writes the key that made the call", async () => {
@@ -46,5 +48,35 @@ describe("logApiUsage", () => {
     await expect(logApiUsage(7, null, "api.v1.index", undefined, 41)).resolves.toBeUndefined();
     expect(sqlMock).toHaveBeenCalledTimes(1);
     error.mockRestore();
+  });
+
+  it.each(["api.v1.index", "api.fees.list", "api.fees.category"])("retains the pending %s write through the response lifetime", async (eventType) => {
+    let finish!: () => void;
+    sqlMock.mockReturnValue(new Promise<void>((resolve) => { finish = resolve; }));
+    const task = logApiUsage(7, null, eventType, { status: 200 }, 41);
+
+    expect(sqlMock).toHaveBeenCalledTimes(1);
+    expect(afterMock).toHaveBeenCalledExactlyOnceWith(task);
+    finish();
+    await task;
+    expect(sqlMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("registers a handled failure and preserves fallback outside a Next request", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    afterMock.mockImplementation(() => { throw new Error("No request context"); });
+    sqlMock.mockRejectedValue(new Error("CONNECT_TIMEOUT"));
+    const task = logApiUsage(7, null, "api.v1.index", undefined, 41);
+
+    await expect(task).resolves.toBeUndefined();
+    expect(afterMock).toHaveBeenCalledExactlyOnceWith(task);
+    expect(sqlMock).toHaveBeenCalledTimes(1);
+    error.mockRestore();
+  });
+
+  it("keeps other usage events outside the v1 response lifecycle", async () => {
+    await logApiUsage(7, null, "hamilton.report", undefined, 41);
+    expect(sqlMock).toHaveBeenCalledTimes(1);
+    expect(afterMock).not.toHaveBeenCalled();
   });
 });

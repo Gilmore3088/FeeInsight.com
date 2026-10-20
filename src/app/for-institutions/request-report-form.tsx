@@ -9,6 +9,7 @@ import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { benchmarkReportPath, isFedDistrict, type BenchmarkScope } from "@/lib/benchmark-report";
 import { LEAD_HONEYPOT_FIELD } from "@/lib/lead-capture";
 import { readFirstTouch } from "@/lib/marketing-touch";
+import { REPORT_REQUEST_HREF, reportRequestHref } from "@/lib/report-request-href";
 import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
 import { HoneypotField, honeypotValue } from "@/components/public/honeypot-field";
 import { InstitutionCombobox, type PickedInstitution } from "./institution-combobox";
@@ -22,7 +23,6 @@ const DISTRICT_REPORT_SOURCE = "report_district";
 /** Each bank's free page is the instant own-institution snapshot (James, 8 Oct 2026). */
 const OWN_INSTITUTION_HREF = "/institutions";
 const DEFAULT_SRC = "for-institutions";
-const INSTITUTION_REPORT_HREF = "/reports?report=institution#request";
 const SRC_PATTERN = /^[a-z0-9][a-z0-9_-]{0,39}$/i;
 const FALLBACK_ID_SUFFIX = "-fallback";
 
@@ -80,6 +80,12 @@ interface RequestReportFormProps {
   offer?: "institution" | "free";
   /** Added to every field id, so two forms on one page keep their ids unique. */
   idScope?: string;
+  /**
+   * The paid request as /reports shows it: three fields up front (institution, name, work
+   * email), the optional ones behind one disclosure, and a lighter frame. Same fields, same
+   * submission.
+   */
+  compact?: boolean;
 }
 
 interface Prefill {
@@ -144,6 +150,7 @@ function RequestReportFormInner({
   title,
   offer,
   idScope = "",
+  compact = false,
   prefill,
   idSuffix = "",
 }: RequestReportFormProps & { prefill: Prefill | null; idSuffix?: string }) {
@@ -267,11 +274,67 @@ function RequestReportFormInner({
   }
 
   const institution = reportType === "institution";
+  const optionalFields = institution && (
+    <>
+      <div>
+        <label htmlFor={fieldId("report-role")} className={LABEL_CLASS}>
+          Role <span className="font-normal text-ink-muted">(optional)</span>
+        </label>
+        <input
+          id={fieldId("report-role")}
+          name="role"
+          type="text"
+          autoComplete="organization-title"
+          placeholder="VP Retail Banking"
+          className={INPUT_CLASS}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+        <div>
+          <label htmlFor={fieldId("report-state")} className={LABEL_CLASS}>
+            State <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <select
+            id={fieldId("report-state")}
+            name="state"
+            value={reportState}
+            onChange={(event) => setReportState(event.target.value)}
+            className={INPUT_CLASS}
+          >
+            <option value="">Select</option>
+            {STATE_CODES.map((code) => (
+              <option key={code} value={code}>
+                {STATE_NAMES[code]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label htmlFor={fieldId("report-competitors")} className={LABEL_CLASS}>
+            Competitors to include <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <input
+            id={fieldId("report-competitors")}
+            name="competitors"
+            type="text"
+            maxLength={300}
+            placeholder="e.g. JPMorgan Chase, Amplify Credit Union"
+            className={INPUT_CLASS}
+          />
+        </div>
+      </div>
+    </>
+  );
 
   return (
     <form
       onSubmit={handleSubmit}
-      className="space-y-4 rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6"
+      className={
+        compact
+          ? "space-y-4 rounded-lg border border-[#dfe3ea] bg-white p-5 sm:p-6"
+          : "space-y-4 rounded-2xl border border-border bg-surface-0 p-5 shadow-fi-2 sm:p-6"
+      }
       aria-label="Request a fee report"
     >
       {title && <h2 className="text-[20px] font-semibold tracking-[-0.02em] text-ink sm:text-[22px]">{title}</h2>}
@@ -391,7 +454,7 @@ function RequestReportFormInner({
         <div>
           <div className="mb-1 flex items-baseline justify-between gap-3">
             <label htmlFor={fieldId("report-institution")} className={`${LABEL_CLASS} mb-0`}>
-              Institution
+              {compact ? "Institution name" : "Institution"}
             </label>
             {institutionLocked && (
               <button
@@ -419,7 +482,7 @@ function RequestReportFormInner({
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor={fieldId("report-name")} className={LABEL_CLASS}>
-              Name
+              {compact ? "Your name" : "Name"}
             </label>
             <input
               id={fieldId("report-name")}
@@ -427,6 +490,7 @@ function RequestReportFormInner({
               type="text"
               required
               autoComplete="name"
+              placeholder={compact ? "e.g. Jane Smith" : undefined}
               className={INPUT_CLASS}
             />
           </div>
@@ -440,59 +504,22 @@ function RequestReportFormInner({
               type="email"
               required
               autoComplete="email"
+              placeholder={compact ? "e.g. jane@yourbank.com" : undefined}
               className={INPUT_CLASS}
             />
           </div>
         </div>
 
-        <div>
-          <label htmlFor={fieldId("report-role")} className={LABEL_CLASS}>
-            Role <span className="font-normal text-ink-muted">(optional)</span>
-          </label>
-          <input
-            id={fieldId("report-role")}
-            name="role"
-            type="text"
-            autoComplete="organization-title"
-            placeholder="VP Retail Banking"
-            className={INPUT_CLASS}
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
-          <div>
-            <label htmlFor={fieldId("report-state")} className={LABEL_CLASS}>
-              State <span className="font-normal text-ink-muted">(optional)</span>
-            </label>
-            <select
-              id={fieldId("report-state")}
-              name="state"
-              value={reportState}
-              onChange={(event) => setReportState(event.target.value)}
-              className={INPUT_CLASS}
-            >
-              <option value="">Select</option>
-              {STATE_CODES.map((code) => (
-                <option key={code} value={code}>
-                  {STATE_NAMES[code]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor={fieldId("report-competitors")} className={LABEL_CLASS}>
-              Competitors to include <span className="font-normal text-ink-muted">(optional)</span>
-            </label>
-            <input
-              id={fieldId("report-competitors")}
-              name="competitors"
-              type="text"
-              maxLength={300}
-              placeholder="e.g. JPMorgan Chase, Amplify Credit Union"
-              className={INPUT_CLASS}
-            />
-          </div>
-        </div>
+        {compact ? (
+          <details className="group">
+            <summary className="inline-flex min-h-11 cursor-pointer list-none items-center text-[13px] font-medium text-ink-muted underline decoration-border underline-offset-4 hover:text-ink [&::-webkit-details-marker]:hidden">
+              Add your role, state or competitors (optional)
+            </summary>
+            <div className="mt-2 space-y-4">{optionalFields}</div>
+          </details>
+        ) : (
+          optionalFields
+        )}
         </>
       )}
 
@@ -504,12 +531,16 @@ function RequestReportFormInner({
         {status === "submitting"
           ? "Sending…"
           : institution
-            ? "Request your institution report"
+            ? compact
+              ? "Request your report"
+              : "Request your institution report"
             : "Get the free report"}
       </button>
       <p className="text-xs leading-relaxed text-ink-muted">
         {institution
-          ? "Paid. We reply within one business day with scope and price; you pay once you agree."
+          ? compact
+            ? "No payment today. We'll confirm your scope and price within one business day."
+            : "Paid. We reply within one business day with scope and price; you pay once you agree."
           : "Free. It opens right away, and the link comes by email."}{" "}
         By sending you agree to the{" "}
         <Link href="/terms" className="underline">Terms</Link> and{" "}
@@ -560,14 +591,8 @@ function RequestReportSuccess({
 
 /** The paid-report link after a free report, keeping the bank the reader arrived with. */
 export function institutionReportHref(prefill: Pick<Prefill, "institutionId" | "institutionName" | "src"> | null): string {
-  if (!prefill?.institutionId || !prefill.institutionName) return INSTITUTION_REPORT_HREF;
-  const params = new URLSearchParams({
-    report: "institution",
-    institution: String(prefill.institutionId),
-    name: prefill.institutionName,
-    src: prefill.src,
-  });
-  return `/reports?${params.toString()}#request`;
+  if (!prefill?.institutionId || !prefill.institutionName) return REPORT_REQUEST_HREF;
+  return reportRequestHref({ institution: String(prefill.institutionId), name: prefill.institutionName, src: prefill.src });
 }
 
 function FreeReportSuccess({

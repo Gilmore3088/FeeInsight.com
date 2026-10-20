@@ -39,7 +39,6 @@ import {
   comparisonChart,
   layoutAnalytical,
   layoutStatement,
-  dataFramework,
   escapeHtml,
 } from "../primitives";
 
@@ -56,6 +55,7 @@ import { developmentsContent, feeChangesContent } from "./developments";
 import { regulatoryExtras } from "./regulatory-section";
 import type { RegulatoryContext } from "@/lib/report-assemblers/regulatory-context";
 import { HAMILTON_ATTRIBUTION, SITE_DOMAIN, SITE_NAME } from "@/lib/constants";
+import { financialIncomeLabel, historicalIncomeForDisplay } from "@/lib/report-assemblers/financial-income";
 import type { NationalTrends } from "@/lib/report-assemblers/national-trends";
 import { renderNationalTrendsSection } from "./national-trends-section";
 
@@ -188,7 +188,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   // Payloads stored before the regional and income chapters lack these fields.
   const overdraftDistribution = data.overdraft_distribution ?? [];
   const regional = data.regional ?? { districts: [], sizes: [], states: [] };
-  const incomeSeries = data.income_series ?? [];
+  const financialGroups = (data.financial_income_groups ?? []).map(historicalIncomeForDisplay);
 
   const formattedDate = new Date(data.report_date).toLocaleDateString("en-US", {
     month: "long",
@@ -199,7 +199,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   // ── Cover ──────────────────────────────────────────────────────────────────
   const cover = coverPage({
     title: `National Fee Index, ${data.quarter}`,
-    subtitle: `${data.total_institutions.toLocaleString()} institutions with published fees \u2014 ${d.categories_with_data_count} fee categories. Fees as of ${formattedDate}${data.revenue ? `; call-report income through ${data.revenue.latest_quarter}` : ""}.`,
+    subtitle: `${data.total_institutions.toLocaleString()} institutions with published fees \u2014 ${d.categories_with_data_count} fee categories. Fees as of ${formattedDate}${financialGroups.length ? "; financial measures shown separately by regulator" : ""}.`,
     report_date: formattedDate,
     series: `National Quarterly Report \u2014 ${data.quarter}`,
   });
@@ -234,7 +234,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     {
       number: "04",
       title: "Fee Income in Call Reports",
-      description: "Eight quarters of FDIC and NCUA service-charge income",
+      description: "Separate bank deposit charges and broad credit-union fee income",
     },
     {
       number: "05",
@@ -302,15 +302,11 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
           supporting: `Credit unions' median is higher in ${d.cu_higher_count}; the rest are equal.`,
         }
       : null,
-    data.revenue && data.revenue.total_service_charges > 0
-      ? {
-          number: fmtThousandsAsBillions(data.revenue.total_service_charges),
-          insight: `Service-charge income, ${data.revenue.latest_quarter}`,
-          supporting: data.revenue.yoy_change_pct !== null
-            ? `${data.revenue.yoy_change_pct > 0 ? "+" : ""}${data.revenue.yoy_change_pct.toFixed(1)}% from a year earlier, FDIC and NCUA filings.`
-            : "FDIC and NCUA filings.",
-        }
-      : null,
+    ...financialGroups.filter((g) => g.quarters.length).map((g) => ({
+      number: fmtThousandsAsBillions(g.quarters[0].total_thousands),
+      insight: `${financialIncomeLabel(g.source)}, ${g.quarters[0].report_date}`,
+      supporting: `${g.quarters[0].reported_count.toLocaleString()} ${g.charter_type === "bank" ? "bank" : "credit-union"} filers; standalone quarter.`,
+    })),
     spreadPct !== null
       ? {
           number: `${spreadPct.toFixed(0)}%`,
@@ -514,71 +510,29 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
   const ch3Regional = regionalSections.join("\n");
 
   // ── Ch4: Fee Income in Call Reports ─────────────────────────────────────
-  // Call reports give one service-charge line per institution, not income by fee
-  // category, so this chapter ranks no category by revenue.
+  // These aggregate groups provide no category breakdown; this chapter ranks no
+  // fee category by revenue.
   const ch3Sections: string[] = [
     chapterDivider("04", "Fee Income in Call Reports"),
   ];
 
-  if (data.revenue) {
-    const revenueCards: Array<{ label: string; value: string; delta?: string; source?: string }> = [];
-
-    if (data.revenue.total_service_charges > 0) {
-      revenueCards.push({
-        label: "Service-charge income",
-        value: fmtThousandsAsBillions(data.revenue.total_service_charges),
-        delta: data.revenue.yoy_change_pct !== null ? `${data.revenue.yoy_change_pct > 0 ? "+" : ""}${data.revenue.yoy_change_pct.toFixed(1)}% YoY` : undefined,
-        source: data.revenue.latest_quarter,
-      });
-    }
-
-    if (d.bank_revenue_share_pct !== null) {
-      revenueCards.push({
-        label: "Banks' share",
-        value: `${d.bank_revenue_share_pct.toFixed(1)}%`,
-        source: d.cu_revenue_share_pct !== null ? `credit unions ${d.cu_revenue_share_pct.toFixed(1)}%` : undefined,
-      });
-    }
-
-    if (data.revenue.total_institutions > 0) {
-      revenueCards.push({
-        label: "Reporting institutions",
-        value: data.revenue.total_institutions.toLocaleString(),
-        source: "FDIC + NCUA filings",
-      });
-    }
-
-    if (revenueCards.length > 0) {
-      ch3Sections.push(statCardRow(revenueCards));
-    }
+  for (const group of financialGroups) {
+    const latest = group.quarters[0];
+    if (!latest) continue;
+    const label = financialIncomeLabel(group.source);
+    ch3Sections.push(statCardRow([
+      { label: `${label}, ${latest.report_date}`, value: fmtThousandsAsBillions(latest.total_thousands),
+        delta: latest.yoy_change_pct === null ? undefined : `${signedPct(latest.yoy_change_pct)} YoY`, source: group.publisher },
+      { label: "Reporting institutions", value: latest.reported_count.toLocaleString(), source: `${group.charter_type}; same quarter and source` },
+    ]));
+    if (group.quarters.length > 1) ch3Sections.push(columnChart({
+      title: `${label} by quarter`,
+      columns: [...group.quarters].reverse().map((q) => ({ label: shortQuarter(q.quarter),
+        segments: [{ label, value: q.total_thousands }], displayValue: fmtThousandsShort(q.total_thousands), note: signedPct(q.yoy_change_pct) })),
+      source: `${group.publisher}; ${group.unit}; standalone quarters.`,
+    }));
+    ch3Sections.push(footnote(`${group.definition}. ${group.cohort_rule}`));
   }
-
-  // Oldest quarter on the left.
-  const series = [...incomeSeries].reverse();
-  if (series.length > 1) {
-    ch3Sections.push(
-      columnChart({
-        title: "Service-charge income by quarter",
-        columns: series.map((q) => ({
-          label: shortQuarter(q.quarter),
-          segments: [
-            { label: "Banks (FDIC)", value: q.banks },
-            { label: "Credit unions (NCUA)", value: q.credit_unions },
-          ],
-          displayValue: fmtThousandsShort(q.total),
-          note: signedPct(q.yoy_change_pct),
-        })),
-        source: "FDIC call reports and NCUA 5300 filings; credit-union year-to-date income converted to the quarter.",
-      }),
-    );
-  }
-
-  ch3Sections.push(
-    dataFramework(
-      "What call reports can and cannot show",
-      "FDIC call reports give each bank's quarterly service charges on deposit accounts; NCUA 5300 reports give each credit union's fee income, reported year to date and converted here to the quarter. Neither splits income by fee, so this report does not say which fees earn the most.",
-    )
-  );
 
   ch3Sections.push(hamiltonNarrativeBlock(narratives.revenue_reality.narrative));
 
@@ -648,7 +602,7 @@ export function renderNationalQuarterlyReport(input: NationalQuarterlyReportInpu
     `Maturity: "strong" = 10+ approved observations; "provisional" = 10+ total; "insufficient" = below threshold.`,
     "Charter split computed from charter_type field on institution_sources.",
     "IQR spread = (P75 - P25) / Median. Categories with median below $0.50 excluded from spread analysis.",
-    "Service-charge income from FDIC call reports (quarterly) and NCUA 5300 filings (year to date, converted to the quarter); figures are reported in thousands of dollars.",
+    "Bank deposit service charges from FDIC quarterly reports and broad credit-union fee income from NCUA year-to-date filings converted to standalone quarters are separate measures, in thousands of dollars. They are never combined into a total, mean, revenue share or growth rate.",
     `${SITE_NAME} — ${SITE_DOMAIN} — Generated ${data.report_date}`,
   ].join(" ");
 

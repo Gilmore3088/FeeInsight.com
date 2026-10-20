@@ -12,7 +12,7 @@ vi.mock("./retry-refresh-button", () => ({ RetryRefreshButton: ({ runId }: { run
 
 import FeeCorrectionsAuditPage from "./page";
 
-// H03-T10 (#978): the audit view needs `view`; a refresh retry is offered only with `edit` and
+// H03-T10 (#978): the audit view needs `operate`; a refresh retry is offered only with `edit` and
 // only where the status shows a failure. Earlier versions stay listed.
 
 const failedRefresh = {
@@ -46,9 +46,9 @@ describe("fee corrections audit page", () => {
     ]);
   });
 
-  it("should_need_only_view_and_show_who_what_why_evidence_and_status", async () => {
-    const html = await render("viewer");
-    expect(mocks.requireAuth).toHaveBeenCalledWith("view");
+  it("requires_operator_access_and_shows_who_what_why_evidence_and_status", async () => {
+    const html = await render("analyst");
+    expect(mocks.requireAuth).toHaveBeenCalledWith("operate");
     expect(html).toContain("Reversal");
     expect(html).toContain("Superseded by a later version");
     expect(html).toContain("Amount read from the wrong row");
@@ -66,15 +66,15 @@ describe("fee corrections audit page", () => {
   });
 
   it("should_pass_a_valid_institution_filter_and_ignore_a_bad_one", async () => {
-    await render("viewer", { institution: "7" });
+    await render("analyst", { institution: "7" });
     expect(mocks.list).toHaveBeenLastCalledWith(expect.anything(), { institutionId: 7 });
-    await render("viewer", { institution: "x" });
+    await render("analyst", { institution: "x" });
     expect(mocks.list).toHaveBeenLastCalledWith(expect.anything(), { institutionId: null });
   });
 
   it("should_say_so_when_the_history_cannot_be_read", async () => {
     mocks.list.mockRejectedValue(new Error("db down"));
     vi.spyOn(console, "error").mockImplementation(() => {});
-    expect(await render("viewer")).toContain("could not be read");
+    expect(await render("analyst")).toContain("could not be read");
   });
 });

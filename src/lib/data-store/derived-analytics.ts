@@ -1,5 +1,8 @@
 import { sql } from "./connection";
-import { STATS_ROW_FILTER } from "./fee-stats";
+import { activeInstitutionFilter, STATS_ROW_FILTER } from "./fee-stats";
+import { PRIOR_QUARTER_JOIN, QUARTER_SC } from "./call-reports";
+import type { FinancialSource } from "./financial-sources";
+import { canonicalFinancialSourceSql } from "./financial-peer-contract";
 
 // ── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -89,24 +92,28 @@ export async function getRevenueConcentration(
       SELECT
         fee_category,
         SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) as total_fee_dollars,
-        COUNT(DISTINCT institution_id) as institution_count
+        COUNT(DISTINCT ef.institution_id) as institution_count
       FROM published_fee_catalog ef
-      WHERE fee_category IS NOT NULL
-        AND review_status = 'approved'
+      JOIN institution_sources ct ON ct.id = ef.institution_id
+      WHERE ef.fee_category IS NOT NULL
+        AND ef.review_status = 'approved'
         AND ${sql.unsafe(STATS_ROW_FILTER)}
-        AND amount IS NOT NULL
-        AND amount >= 0
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
       GROUP BY fee_category
       ORDER BY total_fee_dollars DESC
     `;
 
     const totalRow = await sql`
-      SELECT COUNT(DISTINCT institution_id) as total
+      SELECT COUNT(DISTINCT ef.institution_id) as total
       FROM published_fee_catalog ef
-      WHERE review_status = 'approved'
+      JOIN institution_sources ct ON ct.id = ef.institution_id
+      WHERE ef.review_status = 'approved'
         AND ${sql.unsafe(STATS_ROW_FILTER)}
-        AND amount IS NOT NULL
-        AND amount >= 0
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}
+        AND ef.amount IS NOT NULL
+        AND ef.amount >= 0
     `;
 
     if (rows.length === 0) {
@@ -190,35 +197,40 @@ const EMPTY_DEPENDENCY: FeeDependencyTrend = {
 };
 
 export async function getFeeDependencyTrend(
-  quarters = 4
+  quarters = 4,
+  source?: FinancialSource
 ): Promise<FeeDependencyTrend> {
   try {
     const trendRows = await sql`
       SELECT
-        report_date,
+        inf.report_date, inf.source,
         ROUND(AVG(
-          CASE WHEN total_revenue > 0
-               THEN service_charge_income * 1.0 / total_revenue * 100
+          CASE WHEN inf.total_revenue > 0
+               THEN inf.service_charge_income * 1.0 / inf.total_revenue * 100
                ELSE NULL END
         )::numeric, 2) as avg_fee_income_ratio,
-        COUNT(DISTINCT institution_id) as institution_count
-      FROM institution_financial_records
-      WHERE service_charge_income IS NOT NULL
-        AND source IN ('fdic', 'ncua')
-      GROUP BY report_date
-      ORDER BY report_date DESC
+        COUNT(DISTINCT inf.institution_id) FILTER (WHERE inf.total_revenue > 0) as institution_count
+      FROM institution_financial_records inf
+      JOIN institution_sources ct ON ct.id = inf.institution_id
+      WHERE inf.service_charge_income IS NOT NULL
+        AND inf.source IN ('fdic', 'ncua')
+        AND ${sql.unsafe(canonicalFinancialSourceSql("inf", "ct"))}
+        AND (${source ?? null}::text IS NULL OR inf.source = ${source ?? null})
+      GROUP BY inf.report_date, inf.source
+      ORDER BY inf.report_date DESC
       LIMIT ${quarters}
     `;
 
     const trend = trendRows.map((r: Record<string, unknown>) => ({
       report_date: String(r.report_date),
+      source: String(r.source),
       avg_fee_income_ratio: Number(r.avg_fee_income_ratio),
       institution_count: Number(r.institution_count),
     }));
 
-    const signals = computeTrendSignals(
+    const signals = source ? computeTrendSignals(
       trend.map((t) => ({ date: t.report_date, value: t.avg_fee_income_ratio }))
-    );
+    ) : { qoq_change_pct: null, yoy_change_pct: null };
 
     return { trend, signals };
   } catch (e) {
@@ -236,78 +248,85 @@ const EMPTY_RPI: RevenuePerInstitutionTrend = {
 };
 
 export async function getRevenuePerInstitutionTrend(
-  quarters = 4
+  quarters = 4,
+  source?: FinancialSource
 ): Promise<RevenuePerInstitutionTrend> {
   try {
-    // Current: by tier
+    // Convert NCUA YTD to standalone quarters before any cross-section or trend.
+    const scopedSource = source === "fdic" ? "source = 'fdic'" : source === "ncua" ? "source = 'ncua'" : "source IN ('fdic', 'ncua')";
+    const boundedQuarters = Number.isFinite(quarters) ? Math.min(40, Math.max(1, Math.trunc(quarters))) : 4;
+    const quarterly = `SELECT inf.institution_id, inf.report_date, inf.source,
+        inf.total_assets, ct.asset_size_tier, ct.charter_type,
+        ${QUARTER_SC} AS quarter_income
+      FROM institution_financial_records inf
+      JOIN institution_sources ct ON ct.id = inf.institution_id
+      ${PRIOR_QUARTER_JOIN}
+      WHERE inf.source IN ('fdic', 'ncua')
+        AND ${canonicalFinancialSourceSql("inf", "ct")}
+        AND inf.${scopedSource}
+        AND inf.report_date IN (
+          SELECT DISTINCT report_date FROM institution_financial_records
+          WHERE source IN ('fdic', 'ncua') AND ${scopedSource}
+          ORDER BY report_date DESC LIMIT ${boundedQuarters}
+        )`;
     const tierRows = await sql`
-      SELECT
-        ct.asset_size_tier as tier,
-        ROUND(AVG(ifin.service_charge_income * 1000)::numeric, 0) as avg_sc_income,
-        COUNT(DISTINCT ct.id) as institution_count
-      FROM institution_sources ct
-      JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
-      WHERE ifin.service_charge_income IS NOT NULL
-        AND ifin.source IN ('fdic', 'ncua')
-        AND ct.asset_size_tier IS NOT NULL
-        AND ifin.report_date = (
-          SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua')
-        )
-      GROUP BY ct.asset_size_tier
-      ORDER BY AVG(ifin.total_assets) ASC
-    `;
-
-    // Current: by charter
-    const charterRows = await sql`
-      SELECT
-        ct.charter_type as charter,
-        ROUND(AVG(ifin.service_charge_income * 1000)::numeric, 0) as avg_sc_income,
-        COUNT(DISTINCT ct.id) as institution_count
-      FROM institution_sources ct
-      JOIN institution_financial_records ifin ON ct.id = ifin.institution_id
-      WHERE ifin.service_charge_income IS NOT NULL
-        AND ifin.source IN ('fdic', 'ncua')
-        AND ifin.report_date = (
-          SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua')
-        )
-      GROUP BY ct.charter_type
-    `;
-
-    // Trend: time series
-    const trendRows = await sql`
-      SELECT
-        report_date,
-        ROUND(AVG(service_charge_income * 1000)::numeric, 0) as avg_sc_income,
+      WITH quarters AS (${sql.unsafe(quarterly)})
+      SELECT asset_size_tier as tier, source, report_date,
+        ROUND(AVG(quarter_income * 1000)::numeric, 0) as avg_sc_income,
         COUNT(DISTINCT institution_id) as institution_count
-      FROM institution_financial_records
-      WHERE service_charge_income IS NOT NULL
-        AND source IN ('fdic', 'ncua')
-      GROUP BY report_date
+      FROM quarters
+      WHERE quarter_income IS NOT NULL AND asset_size_tier IS NOT NULL
+        AND (${source ?? null}::text IS NULL OR source = ${source ?? null})
+        AND report_date = (SELECT MAX(report_date) FROM quarters WHERE (${source ?? null}::text IS NULL OR source = ${source ?? null}))
+      GROUP BY asset_size_tier, source, report_date
+      ORDER BY AVG(total_assets) ASC
+    `;
+    const charterRows = await sql`
+      WITH quarters AS (${sql.unsafe(quarterly)})
+      SELECT charter_type as charter, source, report_date,
+        ROUND(AVG(quarter_income * 1000)::numeric, 0) as avg_sc_income,
+        COUNT(DISTINCT institution_id) as institution_count
+      FROM quarters
+      WHERE quarter_income IS NOT NULL AND (${source ?? null}::text IS NULL OR source = ${source ?? null})
+        AND report_date = (SELECT MAX(report_date) FROM quarters WHERE (${source ?? null}::text IS NULL OR source = ${source ?? null}))
+      GROUP BY charter_type, source, report_date
+    `;
+    const trendRows = await sql`
+      WITH quarters AS (${sql.unsafe(quarterly)})
+      SELECT report_date, source,
+        ROUND(AVG(quarter_income * 1000)::numeric, 0) as avg_sc_income,
+        COUNT(DISTINCT institution_id) as institution_count
+      FROM quarters
+      WHERE quarter_income IS NOT NULL AND (${source ?? null}::text IS NULL OR source = ${source ?? null})
+      GROUP BY report_date, source
       ORDER BY report_date DESC
       LIMIT ${quarters}
     `;
 
     const byTier = tierRows.map((r: Record<string, unknown>) => ({
       tier: String(r.tier),
+      source: String(r.source), report_date: String(r.report_date),
       avg_sc_income: Number(r.avg_sc_income),
       institution_count: Number(r.institution_count),
     }));
 
     const byCharter = charterRows.map((r: Record<string, unknown>) => ({
       charter: String(r.charter),
+      source: String(r.source), report_date: String(r.report_date),
       avg_sc_income: Number(r.avg_sc_income),
       institution_count: Number(r.institution_count),
     }));
 
     const trend = trendRows.map((r: Record<string, unknown>) => ({
       report_date: String(r.report_date),
+      source: String(r.source),
       avg_sc_income: Number(r.avg_sc_income),
       institution_count: Number(r.institution_count),
     }));
 
-    const signals = computeTrendSignals(
+    const signals = source ? computeTrendSignals(
       trend.map((t) => ({ date: t.report_date, value: t.avg_sc_income }))
-    );
+    ) : { qoq_change_pct: null, yoy_change_pct: null };
 
     return {
       current: { by_tier: byTier, by_charter: byCharter },

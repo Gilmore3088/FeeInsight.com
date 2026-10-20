@@ -17,6 +17,7 @@ import { hamiltonNavigationSelection, isHamiltonSubjectPath } from "@/lib/hamilt
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { loadHamiltonNavigationInstitution } from "@/lib/hamilton/navigation-institution-action";
 import { HamiltonNavigationProvider } from "./hamilton-navigation-context";
+import { institutionFacts } from "@/lib/hamilton/institution-facts";
 
 interface HamiltonShellProps {
   initialRequestPath: string;
@@ -44,6 +45,11 @@ interface HamiltonShellProps {
   /** The server-selected subject's active peer set: its name, null when none is saved, undefined when unread. */
   peerLabel?: string | null;
   accountContext?: Pick<HamiltonAccountContext, "status" | "institution">;
+  /**
+   * The institution the user named at Pro signup that waits for an admin check (#1407), when the
+   * account has no membership yet. Display only: it grants nothing until the link is made.
+   */
+  pendingInstitution?: { name: string; needsInfo: boolean } | null;
   children: React.ReactNode;
 }
 
@@ -65,6 +71,7 @@ export function HamiltonShell({
   selectedInstitutionId,
   peerLabel,
   accountContext,
+  pendingInstitution = null,
   children,
 }: HamiltonShellProps) {
   const pathname = usePathname();
@@ -85,8 +92,8 @@ export function HamiltonShell({
     && (!selection.research || selection.research.scope.kind === "local");
   const seededInstitution = canUseSeed && !selection.invalid && seedId && institutionContext.name
     && (selection.artifact || !selection.institutionId || selection.institutionId === seedId)
-    ? { id: seedId, name: institutionContext.name } : null;
-  const [resolved, setResolved] = useState<{ requestKey: string; institution: { id: string; name: string } | null } | null>(null);
+    ? { id: seedId, name: institutionContext.name, facts: institutionFacts({ stateCode: institutionContext.stateCode, charterType: institutionContext.type, segment: institutionContext.assetTier }) } : null;
+  const [resolved, setResolved] = useState<{ requestKey: string; institution: { id: string; name: string; facts?: string | null } | null } | null>(null);
   const candidateId = selection.institutionId;
   const seededName = seededInstitution?.name;
   useEffect(() => {
@@ -115,7 +122,10 @@ export function HamiltonShell({
   const researchLabel = selection.invalid ? null
     : currentInstitution?.name
     ?? (selection.artifact ? (canUseSeed && institutionContext.name ? institutionContext.name : null) : null);
-  const marketScope = marketScopeLabel(pathname, selection, searchParams.get("view"));
+  // Overview opens on the research institution's briefing (#2042); with none on file it is the U.S. market.
+  const settledWithNone = !seededInstitution && resolved?.requestKey === requestKey && resolved.institution === null;
+  const marketScope = marketScopeLabel(pathname, selection, searchParams.get("view"))
+    ?? (pathname === "/pro/hamilton" && !selection.research && !selection.institutionId && settledWithNone ? "U.S. market" : null);
   // The peer set was read for the server's subject; a different client subject shows none.
   const peerContext = marketScope || !researchLabel || currentInstitution?.id !== selectedInstitutionId ? undefined : peerLabel;
   return (
@@ -150,11 +160,15 @@ export function HamiltonShell({
         <WorkspaceNavigation
           pathname={pathname}
           isAdmin={isAdmin}
-          accountLabel={accountLabel(accountContext)}
-          accountUnlinked={!accountContext || accountContext.status === "unlinked"}
+          accountLabel={accountLabel(accountContext, pendingInstitution)}
+          accountUnlinked={(!accountContext || accountContext.status === "unlinked") && !pendingInstitution}
+          accountNeedsInfo={Boolean(pendingInstitution?.needsInfo) && (!accountContext || accountContext.status === "unlinked")}
           homeName={accountContext?.status === "identified" ? accountContext.institution?.name ?? null : null}
           homeHref={homeId != null ? `/pro/research?instId=${homeId}` : undefined}
           researchLabel={marketScope ?? researchLabel}
+          researchFacts={marketScope || !researchLabel ? null : currentInstitution?.facts ?? null}
+          researchIsMarket={Boolean(marketScope)}
+          subjectNotLinked={!marketScope && Boolean(researchLabel) && !isHome && accountContext?.status === "identified"}
           researchIsHome={!marketScope && isHome}
           peerLabel={peerContext}
         />
@@ -178,10 +192,15 @@ export function HamiltonShell({
   );
 }
 
-function accountLabel(accountContext: HamiltonShellProps["accountContext"]): string {
+export function accountLabel(
+  accountContext: HamiltonShellProps["accountContext"],
+  pendingInstitution: HamiltonShellProps["pendingInstitution"] = null,
+): string {
   if (accountContext?.status === "identified" && accountContext.institution) return accountContext.institution.name;
   if (accountContext?.status === "ambiguous") return "Multiple memberships";
   if (accountContext?.status === "unavailable") return "Unavailable";
+  // The same request Settings names under "Your institution", so the bar and Settings agree.
+  if (pendingInstitution?.name) return `${pendingInstitution.name}, pending verification`;
   return "Not linked";
 }
 
@@ -191,6 +210,6 @@ function marketScopeLabel(pathname: string, selection: ReturnType<typeof hamilto
   if (scope?.kind === "state") return `${STATE_NAMES[scope.stateCode] ?? scope.stateCode} market`;
   if (scope?.kind === "national") return "U.S. market";
   // The monthly briefing (view=institution) reads one institution, named like any other subject.
-  if (!selection.research && view !== "institution" && ["/pro/hamilton", "/pro/intelligence"].includes(pathname)) return "U.S. market";
+  if (!selection.research && view !== "institution" && pathname === "/pro/intelligence") return "U.S. market";
   return null;
 }

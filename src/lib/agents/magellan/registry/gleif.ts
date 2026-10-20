@@ -1,3 +1,5 @@
+import { readFdicIdentityHolds, lockFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
+import { createGleifIdentityVeto } from "@/lib/regulatory/gleif-identity-holds";
 import { sql } from "@/lib/data-store/connection";
 import {
   checkLevel1,
@@ -25,6 +27,7 @@ import {
   type RelationshipChecks,
 } from "@/lib/regulatory/gleif";
 import { registryFetchJson, type RegistryFetchOptions } from "@/lib/regulatory/http";
+import { isLeiMatchPartition, runGleifLeiMatch, type LeiMatchResult } from "./gleif-lei-match";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -35,6 +38,8 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * - level1-<0..7>: GLEIF API records for the LEIs we track (institution_sources.lei) plus every
  *   LEI gleif_relationships names, in eight hash shards, into gleif_entities. Each entity links
  *   to an institution by its LEI, else by an RSSD id in the record, else stays unlinked.
+ * - lei-match-*: links tracked institutions to LEIs into institution_lei_links (gleif-lei-match.ts).
+ *   "The LEIs we track" above means institution_sources.lei plus every linked LEI there.
  */
 
 export const GLEIF_SOURCE = "gleif";
@@ -57,6 +62,8 @@ export interface RegistryGleifOptions {
   dryRun?: boolean;
   db?: RegistryDb;
   fetchOptions?: RegistryFetchOptions;
+  /** Wait between GLEIF calls in the lei-match partitions; tests pass 0. */
+  spacingMs?: number;
 }
 
 export interface RegistryGleifResult {
@@ -72,13 +79,15 @@ export interface RegistryGleifResult {
   writtenRows: number;
   missingFields: string[];
   checks: Level1Checks | RelationshipChecks | null;
+  /** Set for the lei-match-* partitions. */
+  leiMatch: LeiMatchResult | null;
   dryRun: boolean;
   empty: boolean;
   emptyReason: string | null;
 }
 
 function base(options: RegistryGleifOptions): RegistryGleifResult {
-  return { source: GLEIF_SOURCE, partitionKey: options.partitionKey, sourceUrl: null, publishDate: null, seeds: 0, entities: 0, relationships: 0, linked: 0, unlinked: 0, writtenRows: 0, missingFields: [], checks: null, dryRun: Boolean(options.dryRun), empty: false, emptyReason: null };
+  return { source: GLEIF_SOURCE, partitionKey: options.partitionKey, sourceUrl: null, publishDate: null, seeds: 0, entities: 0, relationships: 0, linked: 0, unlinked: 0, writtenRows: 0, missingFields: [], checks: null, leiMatch: null, dryRun: Boolean(options.dryRun), empty: false, emptyReason: null };
 }
 
 async function recordEmpty(db: RegistryDb, options: RegistryGleifOptions, out: RegistryGleifResult, reason: string, detail: Record<string, unknown> = {}) {
@@ -97,14 +106,16 @@ async function recordEmpty(db: RegistryDb, options: RegistryGleifOptions, out: R
   return result;
 }
 
-async function institutionLeis(db: RegistryDb): Promise<Array<{ id: number; lei: string | null; rssd: string | null }>> {
+async function institutionLeis(db: RegistryDb): Promise<Array<{ id: number; lei: string | null; rssd: string | null; source: string; cert: string | null; identityLeis: string[] }>> {
+  // The institution's own LEI, else the one the LEI match linked (institution_lei_links).
   const rows = await db<Array<{ id: number | string; lei: string | null; rssd_id: string | null }>>`
-    SELECT id, lei, rssd_id
-      FROM institution_sources
-     WHERE source IN ('fdic', 'ncua')
-       AND COALESCE(regulatory_status, 'active') <> 'inactive'
+    SELECT s.id, s.source, s.cert_number, s.lei AS own_lei, l.lei AS linked_lei, l.candidate_leis, COALESCE(NULLIF(TRIM(s.lei), ''), TRIM(l.lei)) AS lei, s.rssd_id
+      FROM institution_sources s
+      LEFT JOIN institution_lei_links l ON l.institution_id = s.id
+     WHERE s.source IN ('fdic', 'ncua')
+       AND COALESCE(s.regulatory_status, 'active') <> 'inactive'
   `;
-  return [...(rows as unknown as Array<Record<string, unknown>>)].map((r) => ({ id: Number(r.id), lei: (r.lei as string | null) ?? null, rssd: r.rssd_id === null || r.rssd_id === undefined ? null : String(r.rssd_id) }));
+  return [...(rows as unknown as Array<Record<string, unknown>>)].map((r) => ({ id: Number(r.id), source: String(r.source), cert: r.cert_number == null ? null : String(r.cert_number), identityLeis: [r.own_lei, r.linked_lei, ...(Array.isArray(r.candidate_leis) ? r.candidate_leis : [])].filter((lei): lei is string => typeof lei === "string"), lei: (r.lei as string | null) ?? null, rssd: r.rssd_id === null || r.rssd_id === undefined ? null : String(r.rssd_id) }));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -135,11 +146,13 @@ async function writeRelationships(db: RegistryDb, rows: GleifRelationship[], pub
 }
 
 async function runLevel2(db: RegistryDb, options: RegistryGleifOptions): Promise<RegistryGleifResult> {
+  const holds = await readFdicIdentityHolds(db);
+  const veto = createGleifIdentityVeto(holds);
   let out = { ...base(options), sourceUrl: GLEIF_GOLDEN_COPY_LATEST_URL };
   const index = parseGoldenCopyIndex(await registryFetchJson<unknown>(GLEIF_GOLDEN_COPY_LATEST_URL, options.fetchOptions));
   out = { ...out, publishDate: index.publishDate, missingFields: index.missingFields };
   if (!index.rrCsvUrl || !index.publishDate) return recordEmpty(db, options, out, `The golden-copy index did not carry ${index.missingFields.join(", ")}`);
-  const seeds = new Set((await institutionLeis(db)).map((r) => normalizeLei(r.lei)).filter((l): l is string => l !== null));
+  const seeds = new Set((await institutionLeis(db)).filter((r) => !veto.blocksInstitution(r.id, r.cert, r.source) && !veto.blocksLei(r.lei) && !r.identityLeis.some((lei) => veto.blocksLei(lei))).map((r) => normalizeLei(r.lei)).filter((l): l is string => l !== null));
   out = { ...out, sourceUrl: index.rrCsvUrl, seeds: seeds.size };
   if (seeds.size === 0) return recordEmpty(db, options, out, "No tracked institution carries an LEI, so there is no family to look up");
   const read = await fetchRelationships(index.rrCsvUrl, options.fetchOptions);
@@ -186,8 +199,9 @@ async function rssdAuthorityIds(options: RegistryGleifOptions): Promise<{ ids: S
   };
 }
 
-async function writeEntities(db: RegistryDb, entities: GleifEntity[], rssds: Array<string | null>, links: Array<{ institutionId: number | null; method: string | null }>, url: string, runId: number | null): Promise<number> {
+async function writeEntities(db: RegistryDb, entities: GleifEntity[], rssds: Array<string | null>, links: Array<{ institutionId: number | null; method: string | null }>, url: string, runId: number | null): Promise<{ written: number; links: Array<ReturnType<ReturnType<typeof createGleifLinker>>> }> {
   let written = 0;
+  const appliedLinks: Array<ReturnType<ReturnType<typeof createGleifLinker>>> = [];
   const rows = entities.map((e, i) => ({
     lei: e.lei,
     legal_name: e.legalName,
@@ -213,9 +227,24 @@ async function writeEntities(db: RegistryDb, entities: GleifEntity[], rssds: Arr
   for (const part of chunk(rows, WRITE_CHUNK)) {
     // Parent LEIs come from the newest relationship publish; a child with two parents of one
     // kind (reported in the level2 checks) takes the lowest LEI so the pick is repeatable.
-    const result = await db`
+    const result = await db.begin(async (raw) => {
+      const tx = raw as unknown as RegistryDb;
+      await tx`SET LOCAL statement_timeout = '15s'`;
+      await tx`SET LOCAL lock_timeout = '2s'`;
+      await tx`LOCK TABLE institution_sources IN SHARE MODE`;
+      // Keep own/crosswalk/candidate identity facts stable through entity persistence.
+      await tx`LOCK TABLE institution_lei_links IN SHARE MODE`;
+      await lockFdicIdentityHolds(tx);
+      const holds = await readFdicIdentityHolds(tx);
+      const link = createGleifLinker(await institutionLeis(tx), holds);
+      const liveLinks = part.map((row) => link(row.lei, row.rssd_id));
+      const safe = part.map((row, index) => {
+        const matched = liveLinks[index];
+        return { ...row, institution_id: matched.institutionId, link_method: matched.method };
+      });
+      const changed = await tx`
       WITH r AS (
-        SELECT * FROM jsonb_to_recordset(${JSON.stringify(part)}::jsonb)
+        SELECT * FROM jsonb_to_recordset(${JSON.stringify(safe)}::jsonb)
           AS x(lei text, legal_name text, jurisdiction text, legal_country text, legal_region text, legal_state text,
                legal_city text, hq_country text, category text, legal_form_id text, entity_status text,
                registration_status text, registered_at_id text, registered_as text, rssd_id text, last_update text,
@@ -268,13 +297,18 @@ async function writeEntities(db: RegistryDb, entities: GleifEntity[], rssds: Arr
         fetched_at = NOW()
       RETURNING 1
     `;
-    written += [...(result as unknown as unknown[])].length;
+      return { written: changed.length, links: liveLinks };
+    });
+    written += result.written;
+    appliedLinks.push(...result.links);
   }
-  return written;
+  return { written, links: appliedLinks };
 }
 
 async function runLevel1(db: RegistryDb, options: RegistryGleifOptions, shard: number): Promise<RegistryGleifResult> {
   let out = base(options);
+  const holds = await readFdicIdentityHolds(db);
+  const veto = createGleifIdentityVeto(holds);
   const universe = await institutionLeis(db);
   const relRows = await db<Array<{ lei: string }>>`
     SELECT child_lei AS lei FROM gleif_relationships
@@ -286,11 +320,11 @@ async function runLevel1(db: RegistryDb, options: RegistryGleifOptions, shard: n
   const all = new Set<string>();
   for (const u of universe) {
     const l = normalizeLei(u.lei);
-    if (l) all.add(l);
+    if (l && !veto.blocksInstitution(u.id, u.cert, u.source) && !veto.blocksLei(l) && !u.identityLeis.some((lei) => veto.blocksLei(lei))) all.add(l);
   }
   for (const r of [...(relRows as unknown as Array<{ lei: string }>)]) {
     const l = normalizeLei(r.lei);
-    if (l) all.add(l);
+    if (l && !veto.blocksLei(l)) all.add(l);
   }
   const seeds = [...all].filter((l) => leiShard(l) === shard).sort();
   out = { ...out, seeds: seeds.length };
@@ -312,7 +346,7 @@ async function runLevel1(db: RegistryDb, options: RegistryGleifOptions, shard: n
     entities.push(...read.entities);
   }
   const rssds = entities.map((e) => rssdOf(e, ra.ids));
-  const link = createGleifLinker(universe);
+  const link = createGleifLinker(universe, holds);
   const links = entities.map((e, i) => link(e.lei, rssds[i]));
   const checks = checkLevel1(seeds.length, entities, links, rssds, skipped);
   out = { ...out, sourceUrl: firstUrl, entities: entities.length, linked: checks.linked, unlinked: checks.unlinked, missingFields: [...missing], checks };
@@ -330,24 +364,40 @@ async function runLevel1(db: RegistryDb, options: RegistryGleifOptions, shard: n
   if (entities.length === 0) return recordEmpty(db, options, out, "GLEIF returned no records for this shard's LEIs", detail);
   if (options.dryRun) return out;
   const written = await writeEntities(db, entities, rssds, links, firstUrl ?? "", options.runId ?? null);
+  const committedChecks = checkLevel1(seeds.length, entities, written.links, rssds, skipped);
   await recordRegistryPartition(db, {
     source: GLEIF_SOURCE,
     partitionKey: options.partitionKey,
     status: "succeeded",
     rowCount: entities.length,
-    matchedCount: checks.linked,
-    unmatchedCount: checks.unlinked,
-    insertedCount: written,
+    matchedCount: committedChecks.linked,
+    unmatchedCount: committedChecks.unlinked,
+    insertedCount: written.written,
     sourceUrl: firstUrl,
     runId: options.runId ?? null,
     nextAttemptAfterHours: LEVEL1_REFRESH_HOURS,
-    detail: { ...detail, written_rows: written },
+    detail: { ...detail, checks: committedChecks, written_rows: written.written },
   });
-  return { ...out, writtenRows: written };
+  return { ...out, linked: committedChecks.linked, unlinked: committedChecks.unlinked, checks: committedChecks, writtenRows: written.written };
 }
 
 export async function runRegistryGleif(options: RegistryGleifOptions): Promise<RegistryGleifResult> {
   const db = options.db ?? sql;
+  if (isLeiMatchPartition(options.partitionKey)) {
+    const m = await runGleifLeiMatch({ runId: options.runId, partitionKey: options.partitionKey, dryRun: options.dryRun, db, fetchOptions: options.fetchOptions, spacingMs: options.spacingMs });
+    return {
+      ...base(options),
+      sourceUrl: m.sourceUrl,
+      entities: m.read,
+      linked: m.coverage?.linked ?? 0,
+      unlinked: m.coverage ? m.coverage.institutions - m.coverage.linked : 0,
+      writtenRows: m.writtenRows,
+      missingFields: Array.isArray(m.detail.missing_fields) ? (m.detail.missing_fields as string[]) : [],
+      leiMatch: m,
+      empty: m.empty,
+      emptyReason: m.emptyReason,
+    };
+  }
   if (options.partitionKey === GLEIF_LEVEL2_PARTITION) return runLevel2(db, options);
   const shard = level1ShardOf(options.partitionKey);
   if (shard === null) throw new Error(`Invalid GLEIF partition: ${options.partitionKey}`);

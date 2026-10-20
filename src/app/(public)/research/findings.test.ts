@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FeeCategorySummary } from "@/lib/data-store";
-import { computeFindings, lowerName, shareLabel } from "./findings";
+import { computeFindings, evidenceHref, lowerName, shareLabel } from "./findings";
 
 function fee(fee_category: string, o: Partial<FeeCategorySummary> = {}): FeeCategorySummary {
   return {
@@ -11,32 +11,62 @@ function fee(fee_category: string, o: Partial<FeeCategorySummary> = {}): FeeCate
 }
 
 describe("computeFindings", () => {
-  it("builds findings only from what the data supports", () => {
+  it("leads with banks against credit unions, never with overdraft alone, and builds only what the data supports", () => {
     const findings = computeFindings([
       fee("overdraft", { median_amount: 25, bank_median_amount: 30, cu_median_amount: 20 }),
       fee("wire_intl_outgoing", { p25_amount: 10, p75_amount: 45, bank_median_amount: 40, cu_median_amount: 38 }),
       fee("atm_non_network", { zero_count: 30 }),
     ]);
+    expect(findings.map((f) => f.key)).toEqual(["charter-count", "charter-gap", "spread", "free"]);
     const byKey = Object.fromEntries(findings.map((f) => [f.key, f]));
-    expect(byKey.overdraft.headline).toBe("The median overdraft fee is $25.");
+    expect(byKey["charter-count"].figure).toBe("3 of 3");
+    expect(byKey["charter-count"].headline).toBe("Credit unions have the lower median on 3 of 3 everyday fees.");
+    expect(byKey["charter-count"].fee_category).toBeUndefined();
+    expect(evidenceHref(byKey["charter-count"])).toBe("#benchmarks");
     expect(byKey["charter-gap"].figure).toBe("$10");
     expect(byKey["charter-gap"].headline).toBe("Credit union overdraft fees are $10 lower at the median.");
-    expect(byKey["charter-gap"].detail).toContain("lower on 3 of the 3 fees");
+    expect(evidenceHref(byKey["charter-gap"])).toBe("/fees/overdraft");
     expect(byKey.spread.figure).toBe("4.5×");
+    expect(byKey.spread.headline).toBe("Outgoing international wire prices vary the most of 3 everyday fees compared.");
+    expect(byKey.spread.detail).toBe("The middle 50% of 100 institutions runs from $10 to $45. The 75th percentile is 4.5 times the 25th.");
     expect(byKey.free.figure).toBe("30%");
-    expect(byKey.spread.headline).toBe("Outgoing international wire fees vary the most of these 3 fees.");
-    expect(byKey.spread.detail).toBe("A quarter of institutions list $10 or less, and a quarter list $45 or more.");
-    expect(byKey.free.headline).toBe("30% of institutions publish only $0 out-of-network ATM prices.");
-    expect(byKey.overdraft.about).toContain("at its highest published overdraft price");
+    expect(byKey.free.headline).toBe("At 30% of institutions, all observed out-of-network ATM prices are $0.");
+    expect(byKey.free.about).toContain("doesn't show every account is free");
     for (const f of findings) {
       expect(f.about).toBeTruthy();
-      expect(`${f.headline} ${f.detail}`).not.toMatch(/ pay | charge/);
+      expect(`${f.headline} ${f.detail}`).not.toMatch(/ pay | charge|publish only/);
     }
+  });
+
+  it("words a tie without naming a lower side", () => {
+    const [first] = computeFindings([
+      fee("overdraft", { bank_median_amount: 30, cu_median_amount: 20 }),
+      fee("nsf", { bank_median_amount: 20, cu_median_amount: 30 }),
+      fee("stop_payment", { bank_median_amount: 25, cu_median_amount: 25 }),
+    ]);
+    expect(first.headline).toBe("Banks and credit unions each have the lower median on 1 of 3 everyday fees.");
+    expect(first.detail).toBe("Lower at credit unions: overdraft; lower at banks: NSF; the medians match on 1.");
+  });
+
+  it("counts only the fees the spread can be measured on, and says what was left out", () => {
+    const spread = computeFindings([
+      fee("overdraft", { p25_amount: 10, p75_amount: 40 }),
+      fee("nsf", { p25_amount: 20, p75_amount: 30 }),
+      fee("atm_non_network", { p25_amount: 0, p75_amount: 3 }),
+    ]).find((f) => f.key === "spread")!;
+    expect(spread.headline).toBe("Overdraft prices vary the most of 2 everyday fees compared.");
+    expect(spread.about).toContain("One fee is left out because its 25th percentile is $0.");
+  });
+
+  it("says the widest charter gap is in dollars", () => {
+    const gap = computeFindings([fee("overdraft", { bank_median_amount: 30, cu_median_amount: 20 })]).find((f) => f.key === "charter-gap")!;
+    expect(gap.detail).toContain("the widest gap in dollars");
   });
 
   it("skips charter findings when a charter median is missing", () => {
     const findings = computeFindings([fee("nsf", { cu_median_amount: null })]);
     expect(findings.map((f) => f.key)).not.toContain("charter-gap");
+    expect(findings.map((f) => f.key)).not.toContain("charter-count");
   });
 
   it("returns nothing for no data", () => {

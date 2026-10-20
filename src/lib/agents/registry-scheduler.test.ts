@@ -125,7 +125,9 @@ describe("registry scheduler", () => {
     expect(isParserStale("ncua-financials", "succeeded", 3)).toBe(false);
     // A partition claimed under the current parser follows its normal retry time instead of looping.
     expect(isParserStale("ncua-financials", "scheduled", 1, 3)).toBe(false);
-    expect(isParserStale("ncua-financials", "failed", 1)).toBe(false);
+    expect(isParserStale("ncua-financials", "failed", 1)).toBe(true);
+    expect(isParserStale("ncua-financials", "failed", 3)).toBe(false);
+    expect(isParserStale("ncua-financials", "failed", null, 3)).toBe(false);
     expect(isParserStale("fdic-financials", "succeeded", null)).toBe(false);
     // An "empty" recorded by an older parser is checked again (census v1 misread errors as unpublished).
     expect(isParserStale("census-acs", "empty", null)).toBe(true);

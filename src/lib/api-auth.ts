@@ -3,6 +3,7 @@ import { hashApiKey } from "@/lib/api-keys";
 import { subscriberKeyAllowed, subscriberKeyUserId, subscriberUserIdFromSlug } from "@/lib/api-subscriber-access";
 import { seatStillCovered } from "@/lib/api-subscriber-keys";
 import { CONTACT_EMAIL } from "@/lib/constants";
+import { retainV1BackgroundTask } from "@/lib/api-v1-background";
 
 /** Why a key that was sent was turned away; each is its own v1 error code. */
 export type ApiKeyErrorCode = "invalid_api_key" | "key_revoked" | "subscription_inactive" | "seat_removed";
@@ -13,6 +14,8 @@ export interface ApiKeyValidation {
   tier: string;
   /** The api_keys row that was accepted; set only when `valid`. */
   keyId?: number | null;
+  /** Authenticated subscriber key holder, never the payer inferred from a partner key. */
+  subscriberUserId?: number | null;
   error?: string;
   /** Set together with `error`. */
   code?: ApiKeyErrorCode;
@@ -77,10 +80,28 @@ export async function validateApiKey(
   // A Pro subscriber's key works only while their subscription does (cancel stops it), and
   // a team seat's key only while that person still holds a seat on the payer's workspace.
   const subscriberId = subscriberUserIdFromSlug(row.slug);
+  let subscriberHolderId: number | null = null;
   if (subscriberId !== null) {
-    const users = await sql<{ subscription_status: string | null; past_due_since: string | null }[]>`
-      SELECT subscription_status, past_due_since FROM users WHERE id = ${subscriberId} LIMIT 1
+    const holderId = subscriberKeyUserId(row.name) ?? subscriberId;
+    const users = await sql<{
+      subscription_status: string | null; past_due_since: string | null;
+      payer_active: boolean | null; holder_active: boolean | null;
+    }[]>`
+      SELECT payer.subscription_status, payer.past_due_since,
+             payer.is_active AS payer_active, holder.is_active AS holder_active
+        FROM users payer
+        LEFT JOIN users holder ON holder.id = ${holderId}
+       WHERE payer.id = ${subscriberId} LIMIT 1
     `;
+    if (users[0]?.payer_active !== true || users[0]?.holder_active !== true) {
+      return {
+        valid: false,
+        organizationId: null,
+        tier: "free",
+        error: `This API key's account is unavailable. Contact ${CONTACT_EMAIL} for help with account access.`,
+        code: "invalid_api_key",
+      };
+    }
     if (!subscriberKeyAllowed(users[0] ?? null)) {
       return {
         valid: false,
@@ -90,8 +111,7 @@ export async function validateApiKey(
         code: "subscription_inactive",
       };
     }
-    const holderId = subscriberKeyUserId(row.name);
-    if (holderId !== null && holderId !== subscriberId && !(await seatStillCovered(holderId, subscriberId))) {
+    if (holderId !== subscriberId && !(await seatStillCovered(holderId, subscriberId))) {
       return {
         valid: false,
         organizationId: null,
@@ -101,19 +121,24 @@ export async function validateApiKey(
         code: "seat_removed",
       };
     }
+    // Only issued per-person names and the known legacy payer key bind private context.
+    // Other keys keep their existing public-data access without inheriting the payer's settings.
+    subscriberHolderId = subscriberKeyUserId(row.name) ?? (row.name === "Pro subscription" ? subscriberId : null);
   }
 
-  // Fire-and-forget: update last_used_at
-  sql`
+  const lastUsedTask = sql`
     UPDATE api_keys SET last_used_at = NOW() WHERE id = ${row.id}
   `.catch(() => {
     // Silent — non-critical timestamp update
   });
+  // Other API-key callers retain their current lifecycle; v1 keeps this write alive.
+  if (new URL(request.url).pathname.startsWith("/api/v1/")) retainV1BackgroundTask(lastUsedTask);
 
   return {
     valid: true,
     organizationId: row.organization_id,
     tier: row.tier ?? "pro",
     keyId: row.id == null ? null : Number(row.id),
+    subscriberUserId: subscriberHolderId,
   };
 }

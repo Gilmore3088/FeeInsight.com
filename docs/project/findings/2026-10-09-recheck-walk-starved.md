@@ -21,3 +21,5 @@ Fix:
 - Peak FCU (8414) joins Atlas's read-now requests. SCCU is already on the list.
 
 The new selection takes 75 ms on prod for the WA lane (read-only EXPLAIN ANALYZE).
+
+**Agent lesson:** knox/pr-933-retidy-keeps-conditions

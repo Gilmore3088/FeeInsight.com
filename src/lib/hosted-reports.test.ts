@@ -171,7 +171,7 @@ describe("lookupHostedReport", () => {
 
   it("links to the free request form prefilled for the institution", () => {
     expect(hostedReportRequestHref(FIXTURE["fedcba9876543210"], "hosted_report_expired")).toBe(
-      "/for-institutions?institution=860&name=Bank+of+the+Pacific&src=hosted_report_expired#report",
+      "/reports?report=institution&institution=860&name=Bank+of+the+Pacific&src=hosted_report_expired#request",
     );
   });
 });

@@ -3,6 +3,7 @@ import { HIGHEST_TIER_CATEGORIES, countedRepresentatives, countedValuePerInstitu
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/maturity";
 import { buildHistogramBuckets, type HistogramBucket } from "@/lib/fee-histogram-buckets";
 import { STATE_NAMES } from "@/lib/us-states";
+import { UNIT_LABELS } from "@/lib/fee-unit";
 
 /**
  * The Bank Fee Index explorer's numbers, all from one read (the category's published rows)
@@ -93,6 +94,7 @@ export function accountName(raw: string | null): string | null {
 }
 
 const FREQUENCY: Record<string, string> = {
+  ...UNIT_LABELS,
   monthly: "a month",
   annual: "a year",
   quarterly: "a quarter",
@@ -253,6 +255,11 @@ export function countedAs(fee: string): {
         of: "the median",
         headline: "Median of each institution's median published price",
       };
+}
+
+/** What the histogram's $0 bar counts, in the words the shared definition uses (#1955). */
+export function zeroBarNote(fee: string): string {
+  return `$0 bar: institutions whose ${HIGHEST_TIER_CATEGORIES.has(fee) ? "highest" : "middle"} published price is $0.`;
 }
 
 export function money(n: number): string {

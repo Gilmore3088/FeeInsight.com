@@ -1,8 +1,8 @@
 # Hamilton complaint-to-evidence matrix (H07-T01)
 
-- **Version:** 2026-10-17.1
+- **Version:** 2026-10-19.1
 - **Code copy:** `src/lib/hamilton/release-acceptance.ts` version 2 holds the stable complaint, task and case ids and, for each case, its automated tests and named manual check (section "Acceptance case checks"). Its test fails if a case loses both, if a listed test file is missing, or if this file stops listing a case or a manual check id. Status, owners and PRs live only here.
-- **What it is:** the H07-T01 matrix for #982. It maps each original complaint to its H01-H06 tasks, acceptance cases, implementing PRs and release checks, and names what blocks a release.
+- **What it is:** the H07-T01 matrix for #982 (closed 2026-10-19; the open H06/H07 items are now checklist lines on #975). It maps each original complaint to its H01-H06 tasks, acceptance cases, implementing PRs and release checks, and names what blocks a release.
 - **How to update it:** change a row only with a link to the evidence (PR, CI run, issue comment, screenshot). Add a dated line to the change log at the bottom for every change. Never delete a row or a case; a dropped case goes under "Scope changes" with its date, reason and James's acceptance.
 - **What it is not:** this matrix records evidence. It claims no acceptance. Nothing here is accepted until an issue comment records James's acceptance, and no such comment exists for any task or case today.
 
@@ -130,28 +130,28 @@ Owner: Unassigned for remaining tasks (#981 body); a ChatGPT lane claimed it on 
 |---|---|---|---|---|---|---|
 | H06-T01 | Numerical-confidence containment | Unassigned | Merged, not accepted | #995 (merged; carries #974, which closed unmerged) | [#981 comment, Oct 10](https://github.com/Gilmore3088/FeeInsight.com/issues/981#issuecomment-6096169372) | Inspected new-output examples not recorded |
 | H06-T02 | Shared evidence/fact contract | Unassigned | Merged, not accepted | #995 (merged) | same comment; commit `1d7d450e` | Needs review with H01-T02 |
-| H06-T03 | Evidence through data reads | Unassigned | Merged, not accepted | #995 (merged); #1705 (open) adds rate fees in peer lists | commit `1d7d450e` (H06-T02/T03) | none recorded |
-| H06-T04 | Bind displayed facts to records | Unassigned | In progress | #1678 (regression set only); #1705 (open) binds written-answer sentences | [Triage, Oct 15](https://github.com/Gilmore3088/FeeInsight.com/issues/981#issuecomment-6190404844) lists it open; #1524 body says it stays open | none recorded |
+| H06-T03 | Evidence through data reads | Unassigned | Merged, not accepted | #995, #1705 (merged; #1705 adds rate fees in peer lists) | commit `1d7d450e` (H06-T02/T03) | none recorded |
+| H06-T04 | Bind displayed facts to records | Claude | Merged, not accepted | #1678 (regression set); #1705 (merged 2026-10-17, `9c207e44`: peer medians carry their record ids and bind only as the median) | `peer-median-evidence.test.ts` | Live check MC-H06-AC1 (one live written answer; not yet listed in #1726) |
 | H06-T05 | Explicit derived comparisons | Unassigned | Merged, not accepted | #995, #1524 (merged) | #1524 body: signed readings with both inputs and dates | Rendered on no screen yet |
-| H06-T06 | Bound narrative and failures | Unassigned | In progress | #1240, #1430, #1435 (merged; partial); #1705 (open) | [Hold live, Oct 15](https://github.com/Gilmore3088/FeeInsight.com/issues/981#issuecomment-6191928539) with James's chosen line | #1524 body (after #1435) still lists T06 open |
-| H06-T07 | Confidence language, old outputs | Unassigned | In progress | #995 (merged); #1705 (open; legacy High shows as Medium) | [#981 comment, Oct 10](https://github.com/Gilmore3088/FeeInsight.com/issues/981#issuecomment-6096514869) | Compatibility policy not approved |
-| H06-T08 | Saved/export evidence parity | Unassigned | In progress | #995, #1636, #1678 (merged; partial) | none inspected | Export inspection not done |
-| H06-T09 | Human-reviewed regression set | Unassigned | Merged, not accepted | #1524 (merged 2026-10-15) | #1524 body: 25 invented cases, version `2026-10-15.2`; `HUMAN_REVIEW` says no person has reviewed the expected outcomes | Human review not done (#629 is open: 0 of 117 answer keys checked by a person) |
-| H06-T10 | Trust acceptance | Unassigned | Not started | none | none | Waits on T04, T06, T08 |
+| H06-T06 | Bound narrative and failures | Claude | Merged, not accepted | #1240, #1430, #1435, #1705 (merged; #1705 adds `written-answer-binding.ts` and `narrative-bound.ts`) | [Hold live, Oct 15](https://github.com/Gilmore3088/FeeInsight.com/issues/981#issuecomment-6191928539) with James's chosen line; `written-answer-binding.test.ts`, `narrative-bound.test.ts` | Live check MC-H06-AC1 (one live written answer; not yet listed in #1726) |
+| H06-T07 | Confidence language, old outputs | Claude | Merged, not accepted | #995, #1705 (merged; legacy High shows as Medium, saved records never rewritten) | [#981 comment, Oct 10](https://github.com/Gilmore3088/FeeInsight.com/issues/981#issuecomment-6096514869); `confidence-legacy.test.tsx` | Live check MC-H06-AC4 (#1726) |
+| H06-T08 | Saved/export evidence parity | Claude | Merged, not accepted | #995, #1636, #1678 (merged) | `evidence-export.test.ts`, `actions.h06-reopen.test.ts` | Export inspection is section 2 of #1726 |
+| H06-T09 | Regression set | Unassigned | Merged, not accepted | #1524 (merged 2026-10-15) | #1524 body: 25 invented cases, version `2026-10-15.2`; `HUMAN_REVIEW` says no person has reviewed the expected outcomes | No per-case human review: dropped by James on 2026-10-19 (no manual fee or answer-key checks; #629 closed). Nothing replaces it for these 25 cases; MC-H06-AC1's #629 half lapses with it |
+| H06-T10 | Trust acceptance | James | Not started | none | none | James's live checks in #1726 |
 
 ### H07 #982: acceptance, release safety, readiness
 Owner: Unassigned (#982 body); a ChatGPT lane claimed it on 2026-10-10. James is approver.
 
 | Task id | What | Owner | Status | PRs | Evidence | Blocker |
 |---|---|---|---|---|---|---|
-| H07-T01 | Complaint-to-evidence matrix | Claude | In progress | #996 (code v1); `acct2/hamilton-h07-release` (code v2, matrix 2026-10-17.1) | This file; `release-acceptance.test.ts` | Review; James's acceptance |
-| H07-T02 | Isolated reusable fixtures | Claude | In progress | #996 (in-memory fixtures); `acct2/hamilton-h07-release` (`tests/e2e/hamilton/fixtures.ts`) | `fixtures.db.test.ts`: seed, re-seed, teardown of only fixture rows, loopback-only guard | Second linked login and a correction-history seed are synthetic only |
-| H07-T03 | Automated signed-in journey | Claude | In progress | `acct2/hamilton-h07-release` (`research-journey.pw.ts`) | Local run 2026-10-17: see "Local journey run" below | Runs locally only (T05); synthetic data |
-| H07-T04 | Automated admin correction journey | Claude | In progress | `acct2/hamilton-h07-release` (`admin-correction.pw.ts`) | Local run 2026-10-17: 4 of 4 passed | Old-source replay through the UI not driven (covered in `fee-corrections.db.test.ts`) |
-| H07-T05 | Trustworthy CI evidence | Unassigned | Not started | none | none | Its own PR, once the suite is stable; costs Actions minutes |
-| H07-T06 | Release protections and overlap | Unassigned | In progress | none | Read, Oct 17 (public API): `main` at `86fd3f2c` reports `"protected": false`; `rules/branches/main` returns `[]` | James applies the approved ruleset (B8) |
-| H07-T07 | Failure recovery and rollback | Claude | In progress | `acct2/hamilton-h07-release` | Runbook `docs/project/findings/2026-10-17-hamilton-release-runbook.md`; journey: no-key refusal, stale tab, 401s | Database-outage and cache-refresh fault injection not built |
-| H07-T08 | Release-candidate packet | Unassigned | In progress | #996 (validator only) | `assessHamiltonReleaseCandidate` requires all 28 cases passed on one SHA | No case has passed |
+| H07-T01 | Complaint-to-evidence matrix | Claude | Merged, not accepted | #996 (code v1); #1705 (merged; code v2, matrix 2026-10-17.1) | This file; `release-acceptance.test.ts` | James's acceptance |
+| H07-T02 | Isolated reusable fixtures | Claude | Merged, not accepted | #996; #1705 (merged; `tests/e2e/hamilton/fixtures.ts`) | `fixtures.db.test.ts`: seed, re-seed, teardown of only fixture rows, loopback-only guard | Fixture schema lacks decision tables (#2170) |
+| H07-T03 | Automated signed-in journey | Claude | Merged, not accepted | #1705, #2005, #2169 (merged; `research-journey.pw.ts`, `billing-access.pw.ts`, `answer-workflow.pw.ts`) | Local run 2026-10-17: see "Local journey run" below | Runs locally only (T05); synthetic data; #2170 |
+| H07-T04 | Automated admin correction journey | Claude | Merged, not accepted | #1705 (merged; `admin-correction.pw.ts`) | Local run 2026-10-17: 4 of 4 passed | Old-source replay through the UI not driven (covered in `fee-corrections.db.test.ts`) |
+| H07-T05 | Trustworthy CI evidence | Unassigned | Not started | none | none | Its own PR once #2170 makes the suite stable; costs Actions minutes. Tracked on #975 |
+| H07-T06 | Release protections and overlap | James | Done | #1641 (merged; `app-tests` reports on every PR); #1642 (closed) | Read, 2026-10-19 (REST): `rules/branches/main` returns `deletion`, `non_fast_forward`, `required_status_checks` | None |
+| H07-T07 | Failure recovery and rollback | Claude | In progress | #1705 (merged) | Runbook `docs/project/findings/2026-10-17-hamilton-release-runbook.md`; journey: no-key refusal, stale tab, 401s | Database-outage and cache-refresh fault injection not built. Tracked on #975 |
+| H07-T08 | Release-candidate packet | Unassigned | In progress | #996 (validator only) | `assessHamiltonReleaseCandidate` requires all 28 cases passed on one SHA; the Oct 18 go-live release matrix (`/mnt/project-files/hamilton-redesign/release-matrix-oct18.md`) | No case has passed; launch gates #1921, #1925, #1926 open |
 | H07-T09 | Release approval and deployed check | Unassigned | Not started | none | none | Waits on T08 |
 | H07-T10 | Readiness decision | Unassigned | Not started | none | none | Waits on T09 and James |
 
@@ -248,9 +248,9 @@ No setting was changed. Making `app-tests` required is a permissions change and 
 | B3 | H03 correction workflow is not built. James answered the four T01 questions on Oct 16 (see scope changes). | Build T02-T12 (in progress, branch `acct2/978-fee-corrections`); its migration waits for James's yes; run H03-AC1 to AC4. |
 | B4 | H04 one-composer work (T03, T04, T06) is not done. #979 was reopened on Oct 16. | Build T03, T04 and T06, then run H04-AC1 to AC4. |
 | B5 | H05 has no presentation contract; it needs James's design review via #1284/#1368. | James approves a contract; build T03-T07; run H05-AC1 to AC4. |
-| B6 | H06-T04, T06, T08, T10 are open, and the regression set's expected outcomes have no human review (#629: 0 of 117 answer keys checked by a person). | Finish those tasks; a person reviews the 25 regression cases and the record is linked. |
+| B6 | H06-T10 has not run: no live acceptance of bound answers, old-answer display or export parity. | MC-H06-AC4 and the export checks in #1726 section 2; MC-H06-AC1's live written answer is not yet listed in #1726. |
 | B7 | H02-T08 export parity and paging past 50 are not built; the proposed half-to-double asset default awaits James's review. | Build or formally defer them (dated, James-accepted); James decides the default. |
-| B8 | Main is unprotected: on Oct 16 and again on Oct 17 the public API reported `"protected": false` and no rulesets, so nothing makes `app-tests` required. James approved the plan on Oct 16: require `app-tests`, block force-push and deletion, no required reviewer. | `test.yml` now runs on every PR so `app-tests` always reports (docs-only PRs pass in seconds); James applies the ruleset in GitHub settings (steps in the JAMES TO DO issue); then re-read the protection API. |
+| B8 | Cleared. Read 2026-10-19 (REST): `main` has a ruleset blocking deletion and force-push and requiring status checks (#1642 closed). | None. |
 | B9 | Most H01, H02, H04 and H06 code is already merged to main, and merged PRs deploy. James decided on Oct 16 that the production version is the release candidate (see scope changes). | Run the read checks per initiative against production, recording the deployed main SHA with each result; James's live computer-use check covers the signed-in cases. |
 | B10 | Cleared. Read-only production check, Oct 16: the `hamilton.rules_recheck` flag on #121441 was cleared (`takedown_cleared` and `flag_cleared`, 2026-10-11 04:26 UTC), and #121441 is live in `published_fee_catalog`. The repeat #121442 was retired as a `same_line_duplicate` on 2026-10-11 01:08 UTC. NSF #121439 and #121440 are both live. | None. |
 | B11 | Cleared on `acct2/hamilton-h07-release`: `src/lib/hamilton/release-acceptance.ts` version 2 keeps only stable ids and case checks; this file is the one matrix for status. | None. |
@@ -270,6 +270,7 @@ No formal scope change accepted by James under #975 protocol step 7 is recorded.
 | 2026-10-15 | Blockers #1005 (browser credential state) and #1006 (intake WIP cap) closed, both as "not planned". The underlying need for live acceptance stays (B1, B2). | #1005, #1006 state | Not recorded |
 | 2026-10-16 | James accepted the defaults for H03-T02: a correction is a new version and the old one is kept as superseded (a new table, so a migration that waits for his yes); only admins correct, analysts can still hold; a correction needs a source excerpt and its location, not a reason alone; a hold rebuilds Hamilton's national index straight away. | Decision card in the Hamilton lane thread, Oct 16 05:00 UTC | Yes |
 | 2026-10-16 | Release checks: #979 reopened (B4); main protection plan approved (B8); H07-T08/T09 treat the production version as the release candidate and run read checks per initiative (B9). No case dropped. | Same card | Yes |
+| 2026-10-19 | #981 (H06) and #982 (H07) closed at James's request. No task or case dropped: the open items (H06-T10, H07-T05, T07 fault injection, T08 to T10, gates #1921, #1925, #1926) are checklist lines on #975, and this file stays the status record. H06-T09's per-case human review is dropped (James, 2026-10-19: no manual fee or answer-key checks); the regression set stays as tests only. | [#981](https://github.com/Gilmore3088/FeeInsight.com/issues/981), [#982](https://github.com/Gilmore3088/FeeInsight.com/issues/982) | Yes (James asked to resolve both, Oct 19) |
 
 ## Change log
 
@@ -277,3 +278,4 @@ No formal scope change accepted by James under #975 protocol step 7 is recorded.
 - 2026-10-16 (.2): added James's live run of the #976/#977 steps (H01-AC2, H02-AC1, H02-AC3 now "Run, failing"), and the Oct 16 release-protection read (H07-T06, B8). H02-T01 moved to "In progress" (no matrix document found).
 - 2026-10-16 (.3): James's Oct 16 decisions on H03-T02, B4, B8 and B9 recorded as scope changes; B3, B4, B8 and B9 updated; B10 cleared by a production read.
 - 2026-10-17 (.1): B11 cleared: `release-acceptance.ts` version 2 holds ids and case checks only. Added "Acceptance case checks" (each case's automated tests and its named manual check). Statuses refreshed from the 2026-10-17 audit (#1569, #1604, #1623, #1636, #1649, #1678, #1705). H03 rows rewritten after #1649. H07-T01 to T04 and T07 now in progress, with the local journey run of Oct 17. The protection read was repeated on Oct 17.
+- 2026-10-19 (.1): #1705 merged on 2026-10-17, so H06-T03/T04/T06/T07/T08 and H07-T01 to T04 move to "Merged, not accepted". H07-T06 done and B8 cleared (ruleset on `main`). B6 narrowed to H06-T10. H06-T09 renamed "Regression set" since its human review is dropped. H06-T04 now cites the peer-median binding; written-answer binding is credited to T06. #981 and #982 closed; open items carried to #975.

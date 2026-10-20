@@ -49,7 +49,7 @@ export default async function PeerDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const { id } = await params;
   const targetId = parseInt(id, 10);
@@ -77,7 +77,7 @@ export default async function PeerDetailPage({
       <div className="mb-6">
         <Breadcrumbs items={[
           { label: "Dashboard", href: "/admin" },
-          { label: "Peer Index", href: "/admin/peers" },
+          { label: "Fee Catalog", href: "/admin/fees/catalog" },
           { label: institution.institution_name },
         ]} />
         <h1 className="text-xl font-bold tracking-tight text-gray-900">

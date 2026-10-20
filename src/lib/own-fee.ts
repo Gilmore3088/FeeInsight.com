@@ -3,7 +3,8 @@
  * different fees (a $175 garnishment and a $150 levy), the bank has no single price for it:
  * their median ($162.50) is a statistic, not a fee its schedule states. Medians and
  * percentiles use `value`; every place that shows the institution's own price uses `price`,
- * or the range and the named fees when `price` is null.
+ * or the range and the named fees when `price` is null. The same holds for a named competitor
+ * or peer: its row shows its stated price, or `SeveralFees` when it states several (#1931).
  */
 import { formatAmount } from "./format";
 
@@ -49,13 +50,65 @@ export function ownFeeFrom(
   return { category, value, price: single ? low : standardTier ? value : null, low, high, fees };
 }
 
+/**
+ * `ownFeeFrom` over raw catalog rows: keeps the rows the statistics contract counts (a
+ * non-negative amount, read from a number or numeric text) and drops the rest.
+ */
+export function ownFeeFromRows(
+  category: string,
+  rows: readonly { fee_name?: string | null; amount: unknown }[],
+  value: number,
+  standardTier: boolean,
+): InstitutionOwnFee | null {
+  const counted: { fee_name: string | null; amount: number }[] = [];
+  for (const row of rows) {
+    const raw = row.amount;
+    if (raw === null || raw === undefined || (typeof raw === "string" && raw.trim() === "")) continue;
+    const amount = Number(raw);
+    if (Number.isFinite(amount) && amount >= 0) counted.push({ fee_name: typeof row.fee_name === "string" ? row.fee_name : null, amount });
+  }
+  return ownFeeFrom(category, counted, value, standardTier);
+}
+
+/** A named institution's fees in one category when its schedule states several different ones. */
+export type SeveralFees = Pick<InstitutionOwnFee, "low" | "high" | "fees">;
+
+/** The range and named fees when the schedule states several different fees; undefined when it states one price. */
+export function severalFeesOf(fee: InstitutionOwnFee | null | undefined): SeveralFees | undefined {
+  if (!fee || fee.price !== null) return undefined;
+  return { low: fee.low, high: fee.high, fees: fee.fees };
+}
+
+type Money = (amount: number) => string;
+
 /** "$150.00", or "$150.00 to $175.00" when the schedule states several different fees. */
-export function ownFeeLabel(fee: Pick<InstitutionOwnFee, "price" | "low" | "high">): string {
-  if (fee.price !== null) return formatAmount(fee.price);
-  return `${formatAmount(fee.low)} to ${formatAmount(fee.high)}`;
+export function ownFeeLabel(fee: Pick<InstitutionOwnFee, "price" | "low" | "high">, money: Money = formatAmount): string {
+  if (fee.price !== null) return money(fee.price);
+  return `${money(fee.low)} to ${money(fee.high)}`;
 }
 
 /** "Levy $150.00; Garnishment $175.00": each fee by name. */
-export function ownFeeList(fee: Pick<InstitutionOwnFee, "fees">): string {
-  return fee.fees.map((f) => `${f.name} ${formatAmount(f.amount)}`).join("; ");
+export function ownFeeList(fee: Pick<InstitutionOwnFee, "fees">, money: Money = formatAmount): string {
+  return fee.fees.map((f) => `${f.name} ${money(f.amount)}`).join("; ");
+}
+
+/**
+ * A named institution's figure: its stated price (`amount` when `several` is absent), or the
+ * range of the fees it states.
+ */
+export function statedFeeLabel(amount: number, several?: SeveralFees | null, money: Money = formatAmount): string {
+  return several ? ownFeeLabel({ price: null, low: several.low, high: several.high }, money) : money(amount);
+}
+
+/** The same in one line of text: "$150.00 to $175.00 (Levy $150.00; Garnishment $175.00)". */
+export function statedFeeText(amount: number, several?: SeveralFees | null, money: Money = formatAmount): string {
+  return several ? `${statedFeeLabel(amount, several, money)} (${ownFeeList(several, money)})` : money(amount);
+}
+
+/** All stored schedule links behind a named price/range; a legacy single link stays usable. */
+export function feeScheduleUrls(urls?: readonly string[] | null, legacy?: string | null): string[] {
+  return [...new Set([...(urls ?? []), ...(legacy ? [legacy] : [])])].filter((value) => {
+    try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) && !url.username && !url.password; }
+    catch { return false; }
+  });
 }

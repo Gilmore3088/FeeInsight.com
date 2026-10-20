@@ -14,16 +14,34 @@ export interface FeeRangeProps {
   format?: (v: number) => string;
   /** The figure at the row's right: the bank's fee (default) or the market median, for ladders where every row shares one bank fee. */
   figure?: "value" | "median";
+  /** Who the dot is, as screen readers hear it ("this bank" unless a page says otherwise). */
+  subjectLabel?: string;
+  /** The true low and high named to screen readers, when the drawn whisker is clipped to the domain. */
+  spread?: { min: number; max: number };
   className?: string;
 }
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
 /** The house chart: a fee's spread across the market as a horizontal box plot. */
-export function FeeRange({ label, min, q1, median, q3, max, value, domain = [0, 50], format = money, figure = "value", className }: FeeRangeProps) {
+export function FeeRange({
+  label,
+  min,
+  q1,
+  median,
+  q3,
+  max,
+  value,
+  domain = [0, 50],
+  format = money,
+  figure = "value",
+  subjectLabel = "this bank",
+  spread,
+  className,
+}: FeeRangeProps) {
   const [lo, hi] = domain;
   const x = (v: number) => `${((v - lo) / (hi - lo)) * 100}%`;
-  const summary = `${label}: market ${format(min)} to ${format(max)}, median ${format(median)}${value != null ? `, this bank ${format(value)}` : ""}`;
+  const summary = `${label}: market ${format(spread?.min ?? min)} to ${format(spread?.max ?? max)}, median ${format(median)}${value != null ? `, ${subjectLabel} ${format(value)}` : ""}`;
   return (
     <div className={["fi-range", className].filter(Boolean).join(" ")}>
       <div className="fi-range-label">{label}</div>

@@ -39,6 +39,7 @@ import {
 } from "@/components/hamilton/PeerBaselineSelector";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
 import type { HamiltonContextSource } from "@/lib/hamilton/context-source";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
 
 interface InstitutionContext {
   name?: string;
@@ -517,6 +518,7 @@ export function SimulateWorkspace({
           <strong style={{ color: "var(--hamilton-on-surface)" }}>Evidence posture:</strong>{" "}
           Verified-only distribution. {benchmarkPosture} {currentPointPosture}
         </div>
+        {distribution?.stamp ? <DatasetNote className="mt-2" figures={[{ label: activePeerLabel, stamp: distribution.stamp }]} /> : null}
       </div>
 
       {/* Section 1: Scenario Setup ─────────────────────────────────────────── */}

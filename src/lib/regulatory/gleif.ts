@@ -1,4 +1,7 @@
+import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
+import { createGleifIdentityVeto } from "./gleif-identity-holds";
 import { createHash } from "node:crypto";
+import { normalizeLei } from "./lei";
 import { readZipLines } from "./economy";
 import { registryFetch, registryFetchJson, type RegistryFetchOptions } from "./http";
 import { CsvStreamParser } from "./industry-events";
@@ -29,9 +32,18 @@ export const GLEIF_LICENSE_NOTE = "GLEIF data, CC0 1.0 under GLEIF's terms of us
 export const GLEIF_LEVEL2_PARTITION = "level2";
 export const GLEIF_LEVEL1_SHARDS = 8;
 
-/** Level 2 first, so the level-1 shards also pick up the parents and siblings it names. */
+/**
+ * LEI matching for tracked institutions (#1868), keys before the name search. Only the
+ * partition keys live here; the matching is gleif-lei-match.ts.
+ */
+export const GLEIF_LEI_MATCH_PARTITIONS = ["lei-match-rssd", "lei-match-fdic", "lei-match-ncua", "lei-match-name"] as const;
+
+/**
+ * LEI matching first, so level 2 has LEIs to look up; then level 2, so the level-1 shards also
+ * pick up the parents and siblings it names.
+ */
 export function gleifPartitions(): string[] {
-  return [GLEIF_LEVEL2_PARTITION, ...Array.from({ length: GLEIF_LEVEL1_SHARDS }, (_, i) => `level1-${i}`)];
+  return [...GLEIF_LEI_MATCH_PARTITIONS, GLEIF_LEVEL2_PARTITION, ...Array.from({ length: GLEIF_LEVEL1_SHARDS }, (_, i) => `level1-${i}`)];
 }
 
 export function level1ShardOf(partitionKey: string): number | null {
@@ -40,12 +52,7 @@ export function level1ShardOf(partitionKey: string): number | null {
   return Number.isInteger(n) && n >= 0 && n < GLEIF_LEVEL1_SHARDS ? n : null;
 }
 
-const LEI_RE = /^[A-Z0-9]{18}[0-9]{2}$/;
-
-export function normalizeLei(value: unknown): string | null {
-  const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
-  return LEI_RE.test(raw) ? raw : null;
-}
+export { normalizeLei };
 
 export function leiShard(lei: string): number {
   return createHash("sha1").update(lei).digest()[0] % GLEIF_LEVEL1_SHARDS;
@@ -210,6 +217,9 @@ export function rssdOf(entity: Pick<GleifEntity, "registeredAtId" | "registeredA
 
 export interface GleifUniverseInstitution {
   id: number;
+  source?: string | null;
+  cert?: string | null;
+  identityLeis?: string[];
   lei: string | null;
   rssd: string | null;
 }
@@ -217,7 +227,9 @@ export interface GleifUniverseInstitution {
 export type GleifLinkMethod = "lei" | "rssd";
 
 /** Link by the institution's own LEI, else by an RSSD in the GLEIF record; one institution only. */
-export function createGleifLinker(universe: GleifUniverseInstitution[]) {
+export function createGleifLinker(universe: GleifUniverseInstitution[], holds: readonly FdicIdentityHold[] = []) {
+  const veto = createGleifIdentityVeto(holds);
+  const heldIds = new Set(universe.filter((u) => veto.blocksInstitution(u.id, u.cert, u.source) || veto.blocksLei(u.lei) || u.identityLeis?.some((lei) => veto.blocksLei(lei))).map((u) => u.id));
   const byLei = new Map<string, Set<number>>();
   const byRssd = new Map<string, Set<number>>();
   const add = (m: Map<string, Set<number>>, k: string | null, id: number) => {
@@ -230,13 +242,12 @@ export function createGleifLinker(universe: GleifUniverseInstitution[]) {
     add(byRssd, u.rssd && /^\d+$/.test(u.rssd.trim()) ? String(Number(u.rssd)) : null, u.id);
   }
   return (lei: string, rssd: string | null): { institutionId: number | null; method: GleifLinkMethod | null; ambiguous: boolean } => {
-    let ambiguous = false;
-    for (const [method, set] of [["lei", byLei.get(lei)], ["rssd", rssd ? byRssd.get(rssd) : undefined]] as const) {
-      if (!set) continue;
-      if (set.size === 1) return { institutionId: [...set][0], method, ambiguous: false };
-      ambiguous = true;
-    }
-    return { institutionId: null, method: null, ambiguous };
+    const leiIds = byLei.get(normalizeLei(lei) ?? "");
+    const rssdIds = rssd ? byRssd.get(rssd) : undefined;
+    const candidates = new Set([...(leiIds ?? []), ...(rssdIds ?? [])]);
+    if (veto.blocksLei(lei) || [...candidates].some((id) => heldIds.has(id))) return { institutionId: null, method: null, ambiguous: true };
+    if (candidates.size !== 1) return { institutionId: null, method: null, ambiguous: candidates.size > 1 };
+    return { institutionId: [...candidates][0], method: leiIds?.size === 1 ? "lei" : "rssd", ambiguous: false };
   };
 }
 

@@ -29,6 +29,7 @@ export const PUBLISHER_STEP_KEYS: readonly string[] = [
   "publish",
   "publish-index",
   "publish-context",
+  "publish-sweeps",
   "category-guard",
   "frequency-fill",
   "source-link-repair",

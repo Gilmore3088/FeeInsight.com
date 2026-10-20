@@ -32,7 +32,8 @@ unconfirmed, never guessed.
 
 Every table a source writes has a size budget in MB (`size-budgets.ts`): 7,000 for
 `institution_call_report_items` and 2,000 for `area_statistics` (about double their Oct 17, 2026
-sizes after the back-fill), and 1,000 for every other
+sizes after the back-fill), 1,600 for `institution_financial_records` (Oct 19 measured history,
+eight more quarters and 25% headroom; `docs/plans/financial-records-budget-2026-10-19.md`), and 1,000 for every other
 table until a measured size says otherwise. Atlas's daily storage step measures each one. While a
 table with its own budget is over it, the registry scheduler starts no partition for any source
 that writes it; a table over the unmeasured 1,000 MB default is only warned about, until a PR
@@ -82,6 +83,17 @@ vault's account and bucket, under `public-data-cold/`, or `R2_COLD_BUCKET`). The
 - Struck sources and parts, and the rows they loaded before they were struck, are listed in
   `src/lib/data-store/struck-sources.ts`; every reader excludes them.
 - Every run writes a visible run, step and event, and honours the pipeline pause.
+- The shared registry dispatcher records unhandled loader errors against the owning partition
+  claim. Failures retain their attempt count and parser version; a late or repeated writer
+  cannot replace a newer or finished claim. HTTP 401/403 records an unavailable publisher and
+  waits a week, other permanent 4xx waits a day, transient/parser errors at least six hours.
+  A deployed parser change can retry a failed partition immediately. Dry runs write no receipt.
+
+OEWS archive selection ignores AppleDouble/resource metadata, matches the requested level's
+exact basename and year, and inspects directory entries before inflating one bounded workbook.
+Two genuine matching workbooks remain an error with bounded names in the receipt. The 2022
+selection repair retains parser v1, so six successful years are not replayed; the failed year
+uses its existing normal retry/backoff. Contract fixtures do not certify the publisher's bytes.
 
 ## Order of work
 
@@ -100,6 +112,31 @@ James's rule (2026-10-17): "Let's get the data first." The order follows the pub
    a zod-checked measure and scope, bound parameters only, and a refusal with a plain reason for
    anything not servable. Wiring it into Hamilton's chat tools is a separate PR.
 6. Shared roll-ups by peer, state, metro and size (`src/lib/peer-set-dimensions.ts`).
+
+## Offers Zelle, from each institution's own documents (#1875)
+
+Zelle's participant list was struck on 2026-10-17 (#1840): its terms allow only personal,
+non-commercial use. `registry-bank-zelle` (`magellan/registry/bank-zelle.ts`) reads the fact
+from each institution's own documents the pipeline already stores (the current copy in
+`source_documents`, its text in `agent_source_texts`) and fetches nothing. A document on
+Zelle's own sites (`ZELLE_LIST_HOSTS`, `struck-sources.ts`) is never read or cited.
+
+- Rules (`bank-zelle-match.ts`, `BANK_ZELLE_MATCHER_VERSION`): deterministic text, no model call.
+  Each sentence that names Zelle is read as offers (a fee or limit line, "send money with Zelle",
+  enrolling, Zelle in "our" app, the brand notice a participant prints), does not offer (only a
+  plain, unconditional "not offered": any condition or scope such as "until", "on weekends", "to
+  recipients outside the U.S." or "at this time" makes it a mention) or a mention (scam and safety
+  warnings such as "never send money with Zelle to someone you don't know"; "only" and "trust" count only as "only send ... to" and "know and trust"; app lists). "Send
+  money with Zelle" counts as offers only beside "our app", "your account" or enrolling. Offers only
+  is `offers`; does-not-offer only is `does_not_offer`; both, or mentions only, is `unclear`. No
+  mention means no row: silence is never "does not offer".
+- Rows (`institution_payment_features`, feature `zelle`) carry the evidence sentence and the
+  link to the institution's own document.
+- Bounded: one partition (`current`) walks institutions in id order, 300 per run, every query
+  under a 30 s statement timeout; the next batch runs an hour later, and a finished pass waits a
+  week. A new matcher version restarts the pass.
+- Read through `queryData` as `fact:offers_zelle`, one institution at a time (yes, no or unclear,
+  with the document link). The catalog licence is `fee-insight`, as for the published fees.
 
 ## Daily health check (contract)
 
@@ -148,3 +185,73 @@ and new runs alike and a run queued before the switch is reused, not doubled.
 reads the `hoovie` row once per process (`registryLedgerAgent` in `registry-scheduler.ts`). While
 the row is missing, or the read fails, runs keep the name `magellan` and record why in
 `params_json.ledger_agent_fallback`.
+
+## Bounded HMDA identity repair (#2264)
+
+`hmda-identity-repair.ts` is one manual-only run-ledger step with a server-owned ten-bank
+manifest. Its admin queue route never executes work, and the ordinary cron drain excludes
+its step key. Preview changes no source data but records its ledger run; apply and rollback
+remain disabled by `HMDA_REPAIR_WRITES_ENABLED`. Both ordinary identity rollout flags and
+`FDIC_IDENTITY_HOLD_WRITES_ENABLED` in `hmda-repair-release.ts` are also false. Do not enable
+those flags as part of the pilot. The #2266 hold schema and collection require separate
+authorization before deployment and broader release.
+
+The repair owns its transaction after the fixed public-source fetch. It checks running admin
+run/step ownership and cancellation state, shares annual lock namespace 2253 with the complete
+normal HMDA database phase, and takes short-wait table locks to protect row sets and ownership.
+All exact before-images and permitted-field-only post-images must match the reviewed hashes.
+The immutable apply/rollback receipt is inserted into `agent_run_events` in that same
+transaction. Retry safety and rollback rely on that receipt and current post-images, never
+only on whether the enclosing step later completed. No request-time DDL.
+
+`institution_identity_holds` is append-only unresolved FDIC conflict evidence, protected
+against update, delete and truncate. A complete raw FDIC universe produces holds for shared
+LEIs, stored/source disagreements and contradictory rows for one certificate before profile
+filtering or chunks. Holds retain all implicated identifiers and first-observation source
+digest/time/run lineage; later clean, missing, failed or older runs never clear them. No
+runtime resolution path exists in this release. Hold writes and own-LEI propagation share a
+transaction, with canonical-table then hold-table locks; the running registry run/step must
+own the write. Every matching path reads global holds unconditionally, including untracked
+and inactive owners, and fails closed on missing schema or corrupt evidence. HMDA and GLEIF
+writers lock canonical institutions, then crosswalks, then holds through decisions and writes.
+GLEIF link writes serialize crosswalk changes; HMDA and entity writes keep them stable with
+shared locks. Held owners remain in uniqueness
+indexes. Family roots, cached member associations and trusted-coverage readers apply the same
+veto. If ordinary HMDA identity writes are off, an affected state transaction refuses to
+propagate a previously stored held identity (#2300).
+
+## LEI links (#1868)
+
+The `gleif` source's `lei-match-*` partitions (`magellan/registry/gleif-lei-match.ts`) link each
+tracked bank and credit union to its GLEIF LEI in `institution_lei_links`, with the basis:
+the institution's own LEI, then the record GLEIF holds under the Fed's National Information
+Center (RSSD), the FDIC (cert) or the NCUA (charter), each authority found by name in GLEIF's
+list, then one record with the exact legal name in the institution's state. A name alone never
+links; two candidates are never settled by picking one. Rows with status `ambiguous` or
+`unmatched` are the one review queue. A key link replaces a name link; two keys that disagree go
+to review. `getLeiLinkCoverage` gives the share linked; Hamilton reads a family through
+`queryData` with measure `family:lei`.
+
+Database load: every statement runs under a 15 s statement timeout, writes go in chunks of 250,
+and one run writes at most 1,000 changed rows (key partitions) or 60 institutions (name search,
+one GLEIF call a second). Leftover work waits for the next run of the partition, an hour or two
+later; a register longer than 75 pages is walked over several runs (`detail.walk_resume`), and
+only a walk that read every page in one run may clear a link its key no longer finds.
+
+The source-health brief includes the newest nonblocked empty partition’s actual recorded reason
+when a source has loaded nothing. It bounds and redacts that evidence; holds and newer failures
+keep precedence. Missing legacy reasons remain unknown. A recorded parser/weight/URL problem
+must be repaired at its source, never replaced with guessed data to make the status fresh.
+
+## Call-report quarterly income (James, 2026-10-20)
+
+The raw FDIC and NCUA filings stay in `institution_financial_records`. Each filing's standalone
+quarter (NCUA 5300 income is year-to-date) is computed once per load, not on every page read:
+`registry-call-report-summaries` (`magellan/registry/call-report-summaries.ts`, contract
+`connection: "derived"`) writes `call_report_quarterly_income`, rebuilding only the
+regulator-years whose filings changed (count and row hash in `call_report_summary_groups`) in the
+step's one transaction. A successful `fdic-financials`, `ncua-financials` or `fdic-universe` run
+makes it due at once; it is a priority source, so it runs before the backfill continues.
+Readers: `data-store/call-reports.ts` and the district/state hub. While the table is missing or
+empty they fall back to the per-request SQL (`call-reports-legacy.ts`) and log a warning.
+`call-report-quarters.db.test.ts` proves both paths return the same numbers.

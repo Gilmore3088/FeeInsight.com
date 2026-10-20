@@ -6,11 +6,14 @@ import type { DimensionBreakdown, FeeCategorySummary } from "@/lib/data-store/fe
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { GuideCalculator } from "./guide-calculator";
+import { GuideAnimation } from "./fee-animation/guide-animation";
 import {
+  ActionsBlock,
   BreakdownBlock,
   CapScopeBlock,
   ComplaintsBlock,
   DistributionBlock,
+  NetworkMentionsBlock,
   OutcomesBlock,
   PathsBlock,
   PolicyTableBlock,
@@ -268,6 +271,22 @@ function ComparisonBlock({
   );
 }
 
+/**
+ * The ATM calculator starts from the receipt's two live fees when the page has them, so the
+ * calculator and the receipt above it agree; otherwise from the guide's illustrative values.
+ */
+function calculatorStart(
+  block: Extract<GuideBlock, { type: "calculator" }>,
+  extras: GuideExtras,
+): { defaults: Record<string, number>; note?: string } {
+  const example = extras.atmExample;
+  if (block.kind !== "atm" || !example) return { defaults: block.defaults };
+  return {
+    defaults: { ...block.defaults, operatorFee: example.owner.amount, bankFee: example.holder.amount },
+    note: `Starting fees are the receipt's: ${example.owner.institutionName}'s surcharge and ${example.holder.institutionName}'s fee. ${block.defaults.withdrawals ?? 4} withdrawals is an example amount. Enter your own account's terms.`,
+  };
+}
+
 export function GuideBlockRenderer({
   block,
   summaries,
@@ -309,19 +328,25 @@ export function GuideBlockRenderer({
               <Prose text={block.intro} summaries={summaries} />
             </p>
           )}
-          <GuideCalculator kind={block.kind} defaults={block.defaults} />
+          <GuideCalculator kind={block.kind} {...calculatorStart(block, extras)} />
         </div>
       );
     case "breakdown":
-      return <BreakdownBlock block={block} />;
+      return <BreakdownBlock block={block} extras={extras} />;
+    case "actions":
+      return <ActionsBlock block={block} summaries={summaries} />;
     case "distribution":
       return <DistributionBlock block={block} extras={extras} />;
     case "cap_scope":
       return <CapScopeBlock extras={extras} />;
+    case "network_mentions":
+      return <NetworkMentionsBlock block={block} extras={extras} />;
     case "policy_table":
       return <PolicyTableBlock block={block} summaries={summaries} />;
     case "complaints":
       return <ComplaintsBlock block={block} summaries={summaries} extras={extras} />;
+    case "animation":
+      return <GuideAnimation scene={block.scene} actions={block.actions} />;
     case "updates":
       return <UpdatesBlock block={block} summaries={summaries} />;
   }

@@ -9,6 +9,11 @@ vars never picked up.
 
 ## Evidence
 
+The detailed public health message below is historical outage evidence. Since the #2152
+hardening, `/api/health` failures return `503 {"status":"error","message":"Service temporarily unavailable"}`.
+Use protected server logs for the failed phase (`database_ping` or `live_fee_count`) and a
+validated machine error code; exception text is no longer returned or logged by this handler.
+
 - Vercel build log (`vercel inspect … --logs`): prerender of `/` fails with
   `password authentication failed for user "postgres"`.
 - `GET https://feeinsight.com/api/health` → `503 {"status":"error","message":"…password

@@ -1,4 +1,6 @@
 import { registryFetchJson, type RegistryFetchOptions } from "./http";
+import { validCoordinates } from "./coordinates";
+import { normalizeLei } from "./lei";
 import { fdicRepdte, quarterEndDate, type Quarter } from "./quarters";
 
 /**
@@ -63,6 +65,7 @@ export const FDIC_INSTITUTION_FIELDS = [
   "ACTIVE",
   "INACTIVE",
   "FED_RSSD",
+  "LEI",
   "RSSDHCR",
   "NAMEHCR",
   "REGAGNT",
@@ -101,17 +104,40 @@ async function fetchAllPages(
   endpoint: string,
   params: Record<string, string | number>,
   options: RegistryFetchOptions,
+  requireComplete = false,
 ): Promise<{ rows: FdicRecord[]; url: string }> {
   const rows: FdicRecord[] = [];
   let firstUrl = "";
+  let expectedTotal: number | null = null;
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const url = buildUrl(endpoint, { ...params, limit: PAGE_LIMIT, offset: page * PAGE_LIMIT, format: "json" });
     if (page === 0) firstUrl = url;
     const body = await registryFetchJson<FdicResponse>(url, options);
+    if (requireComplete) {
+      const total = body?.meta?.total;
+      if (!Number.isSafeInteger(total) || Number(total) < 0 || Number(total) > MAX_PAGES * PAGE_LIMIT
+          || !Array.isArray(body?.data)
+          || body.data.some((item) => !item || !item.data || typeof item.data !== "object" || Array.isArray(item.data))) {
+        throw new Error("FDIC active universe has malformed pagination or records; refusing an incomplete identity snapshot.");
+      }
+      if (expectedTotal !== null && expectedTotal !== total) {
+        throw new Error("FDIC active universe total changed during pagination; refusing an incomplete identity snapshot.");
+      }
+      expectedTotal = Number(total);
+      if (body.data.length !== Math.min(PAGE_LIMIT, expectedTotal - rows.length)) {
+        throw new Error("FDIC active universe page is incomplete; refusing an incomplete identity snapshot.");
+      }
+      if (body.data.some(({ data }) => !/^\d+$/.test(String(data!.CERT ?? "").trim()) || Number(data!.ACTIVE) !== 1)) {
+        throw new Error("FDIC active universe has an invalid certificate or active flag; refusing an incomplete identity snapshot.");
+      }
+    }
     const pageRows = (body.data ?? []).map((item) => item.data ?? {});
     rows.push(...pageRows);
     const total = Number(body.meta?.total ?? rows.length);
     if (pageRows.length < PAGE_LIMIT || rows.length >= total) break;
+  }
+  if (requireComplete && rows.length !== expectedTotal) {
+    throw new Error("FDIC active universe pagination limit reached; refusing an incomplete identity snapshot.");
   }
   return { rows, url: firstUrl };
 }
@@ -132,6 +158,7 @@ export async function fetchFdicActiveInstitutions(options: RegistryFetchOptions 
     "institutions",
     { filters: "ACTIVE:1", fields: FDIC_INSTITUTION_FIELDS.join(","), sort_by: "CERT", sort_order: "ASC" },
     options,
+    true,
   );
 }
 
@@ -333,6 +360,8 @@ export interface FdicInstitutionRow {
   name: string;
   active: boolean;
   rssd_id: string | null;
+  /** The institution's own LEI reported by FDIC, never its holding company's identifier. */
+  lei: string | null;
   holding_company_rssd: string | null;
   holding_company_name: string | null;
   primary_regulator: string | null;
@@ -369,6 +398,7 @@ export function parseFdicInstitution(record: FdicRecord): FdicInstitutionRow | n
     name,
     active,
     rssd_id: rssd && rssd !== "0" ? rssd : null,
+    lei: normalizeLei(record.LEI),
     holding_company_rssd: hcRssd && hcRssd !== "0" ? hcRssd : null,
     holding_company_name: str(record.NAMEHCR),
     primary_regulator: regulatorLabel(record.REGAGNT),
@@ -442,6 +472,9 @@ export function parseFdicSod(record: FdicRecord): FdicSodRow | null {
   const branch = int(record.BRNUM);
   if (cert === null || year === null || branch === null) return null;
   const msa = int(record.MSABR);
+  const latitude = num(record.SIMS_LATITUDE);
+  const longitude = num(record.SIMS_LONGITUDE);
+  const coordinatesValid = validCoordinates(latitude, longitude);
   return {
     cert,
     year,
@@ -456,7 +489,7 @@ export function parseFdicSod(record: FdicRecord): FdicSodRow | null {
     county_fips: int(record.STCNTYBR),
     msa_code: msa && msa > 0 ? msa : null,
     msa_name: str(record.MSANAMB),
-    latitude: num(record.SIMS_LATITUDE),
-    longitude: num(record.SIMS_LONGITUDE),
+    latitude: coordinatesValid ? latitude : null,
+    longitude: coordinatesValid ? longitude : null,
   };
 }

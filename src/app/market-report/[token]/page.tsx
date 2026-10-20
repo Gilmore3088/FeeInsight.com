@@ -27,10 +27,9 @@ interface PageProps {
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
-const PRIMARY_BUTTON =
-  "inline-flex items-center rounded-md bg-brick px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brick-ink";
-const SECONDARY_BUTTON =
-  "inline-flex items-center rounded-md border border-border px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brick hover:text-brick";
+// The district and state pages' button styles (Button in @/brand/components).
+const PRIMARY_BUTTON = "fi-btn fi-btn-primary min-h-11";
+const SECONDARY_BUTTON = "fi-btn fi-btn-secondary min-h-11";
 
 export const metadata: Metadata = {
   title: "Competitive Fee Position Report",
@@ -73,7 +72,7 @@ export default async function MarketReportPage({ params }: PageProps) {
         }}
       />
       <ReportChrome preparedFor={name} />
-      <main className="mx-auto max-w-page px-6 pb-24 pt-10">
+      <main className="mx-auto max-w-page px-4 pb-16 pt-8 sm:px-6 sm:pb-24 sm:pt-10">
         <MarketReportBody
           report={report}
           revenue={revenue}
@@ -85,21 +84,23 @@ export default async function MarketReportPage({ params }: PageProps) {
           contactHref={contactHref(name)}
           actions={
             <>
-              <PrintButton className={PRIMARY_BUTTON} />
               {report.analysis.readiness.ready && (
-                <a href={`/market-report/${token}/csv`} className={SECONDARY_BUTTON}>
-                  Download CSV
-                </a>
+                <>
+                  <PrintButton className={PRIMARY_BUTTON} />
+                  <a href={`/market-report/${token}/csv`} className={SECONDARY_BUTTON}>
+                    Download CSV
+                  </a>
+                </>
               )}
-              <a href={contactHref(name)} className={SECONDARY_BUTTON}>
+              <a href={contactHref(name)} className={report.analysis.readiness.ready ? SECONDARY_BUTTON : PRIMARY_BUTTON}>
                 Ask us about this report
               </a>
             </>
           }
           correctionNote={
             <>
-              If a figure does not match your current schedule,{" "}
-              <a href={contactHref(name)} className="underline">
+              If a figure does not match {name}&apos;s current schedule,{" "}
+              <a href={contactHref(name)} className="inline-flex min-h-11 items-center underline sm:min-h-0">
                 tell us through the contact form
               </a>{" "}
               and we will correct it. This link resolves until {DATE.format(verified.expiresOn)}.
@@ -107,7 +108,7 @@ export default async function MarketReportPage({ params }: PageProps) {
           }
         />
       </main>
-      <p className="mx-auto max-w-page px-6 pb-6 text-[12px] leading-relaxed text-ink-muted">
+      <p className="mx-auto max-w-page px-4 pb-6 text-[12px] leading-relaxed text-ink-muted sm:px-6">
         Compiled from each institution&apos;s published fee schedule. It is market information, not financial, legal
         or compliance advice; confirm current fees with the institution.
       </p>

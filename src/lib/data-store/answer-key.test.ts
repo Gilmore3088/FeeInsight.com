@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { banksToCheck, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
+import { banksToCheck, confirmAnswerKeyInstitution, documentHashAfterEdit, feeCheckedBy, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, saveAnswerKeyDocument, seriesBreaks } from "./answer-key";
 
 describe("normalizeFeeAmount", () => {
   it("derives the amount kind when it is missing", () => {
@@ -67,6 +67,59 @@ describe("person-checked answer keys", () => {
     const rows = [bank(1, "confirmed", "knox-hand-key", 38), bank(2, "confirmed", "james", 5), bank(3, "prefilled", null, 21), bank(4, "confirmed", "knox-hand-key", 14)];
     expect(banksToCheck(rows).map((row) => row.id)).toEqual([4, 3, 1]);
   });
+
+  it("a person's bank-level confirm covers rows a Claude thread keyed, so nobody re-presses Confirm", () => {
+    expect(feeCheckedBy("knox-hand-key", { status: "confirmed", confirmed_by: "hello@bankfeeindex.com" })).toBe("hello@bankfeeindex.com");
+    expect(feeCheckedBy("knox-hand-key", { status: "confirmed", confirmed_by: "knox-hand-key" })).toBe("knox-hand-key");
+    expect(feeCheckedBy("knox-hand-key", { status: "prefilled", confirmed_by: null })).toBe("knox-hand-key");
+    expect(feeCheckedBy("james", { status: "confirmed", confirmed_by: "hello@bankfeeindex.com" })).toBe("james");
+  });
+
+  it("Confirm all re-stamps rows a Claude thread keyed to the person, not only unconfirmed rows (#629)", async () => {
+    const queries: { text: string; values: unknown[] }[] = [];
+    const tx = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries.push({ text: strings.join("?"), values });
+      return [];
+    });
+    const db = { begin: async (fn: (tx: unknown) => Promise<void>) => fn(tx) };
+    await confirmAnswerKeyInstitution(12, "hello@bankfeeindex.com", db as never);
+    const feeUpdate = queries[0];
+    expect(feeUpdate.text).toContain("UPDATE answer_key_fees");
+    expect(feeUpdate.text).toContain("confirmed_by = ANY(");
+    expect(feeUpdate.text).not.toContain("COALESCE(confirmed_by");
+    expect(feeUpdate.values).toEqual(["hello@bankfeeindex.com", 12, ["knox-hand-key"]]);
+    expect(queries[1].text).toContain("UPDATE answer_key_institutions");
+  });
+});
+
+describe("document edits and the stored content hash (#2466)", () => {
+  const stored = { document_url: "https://bank.example/old-fees.pdf", content_hash: "a".repeat(64) };
+
+  it("clears the pre-filled old hash when the document URL changes", () => {
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: "a".repeat(64) })).toBeNull();
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: ` ${"A".repeat(64)} ` })).toBeNull();
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: null })).toBeNull();
+  });
+
+  it("keeps a hash entered for the new URL, and the submitted hash when the URL is unchanged", () => {
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: "b".repeat(64) })).toBe("b".repeat(64));
+    expect(documentHashAfterEdit(stored, { document_url: stored.document_url, content_hash: "a".repeat(64) })).toBe("a".repeat(64));
+    expect(documentHashAfterEdit(stored, { document_url: stored.document_url, content_hash: "" })).toBeNull();
+  });
+
+  it("writes the cleared hash when a URL edit resubmits the old one", async () => {
+    const queries: { text: string; values: unknown[] }[] = [];
+    const tx = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries.push({ text: strings.join("?"), values });
+      return queries.length === 1 ? [stored] : [];
+    });
+    const db = { begin: async (fn: (tx: unknown) => Promise<void>) => fn(tx) };
+    await saveAnswerKeyDocument(7, { document_url: "https://bank.example/new-fees", document_type: "html",
+      content_hash: stored.content_hash, notes: null }, "james", db as never);
+    expect(queries[0].text).toContain("FOR UPDATE");
+    expect(queries[1].text).toContain("UPDATE answer_key_institutions");
+    expect(queries[1].values.slice(0, 3)).toEqual(["https://bank.example/new-fees", "html", null]);
+  });
 });
 
 describe("scoreboard snapshots and the answer-key scorer version (#1354)", () => {
@@ -86,9 +139,10 @@ describe("scoreboard snapshots and the answer-key scorer version (#1354)", () =>
       { snapshot_day: "2026-10-15", accuracy_recall: null, accuracy_score_run_id: null, run_scorer_version: null, detail: {} },
     ]);
     const rows = await listScoreboardSnapshots(30, db as never);
+    expect(rows.map((row) => row.legacy_accuracy_recall)).toEqual([0.575, 0.53, null]);
     expect(rows.map((row) => [row.snapshot_date, row.accuracy_recall, row.accuracy_scorer_version])).toEqual([
-      ["2026-10-13", 0.575, 1],
-      ["2026-10-14", 0.53, 3],
+      ["2026-10-13", null, 1],
+      ["2026-10-14", null, 3],
       ["2026-10-15", null, null],
     ]);
   });

@@ -62,10 +62,11 @@ export const HOURLY_CHECK_VERSION = 2;
  */
 export const HOURLY_FREQUENCY_LIVE = true;
 /**
- * v2's switch for fees read from their line, not their name. Off until James has seen the full
- * dry-run count (`countHourlyFees`, the verify step's `hourly_full_count` param, `would_set_from_line`).
+ * v2's switch for fees read from their line, not their name. On after James's yes (decision card,
+ * 2026-10-20 01:53 UTC) on the Oct 19 dry run: 2,077 live fees at 1,619 banks, 31 exempt, 50 of 50
+ * sampled lines truly per hour. Roll back by setting it to false.
  */
-export const HOURLY_LINE_LIVE = false;
+export const HOURLY_LINE_LIVE = true;
 /** Live fees read per step, each with its stored line. */
 export const HOURLY_CHECK_BATCH = 2_000;
 export const HOURLY_CHECK_SAMPLES = 20;
@@ -149,7 +150,7 @@ export function hourlyVerdict(
   // v2: a name silent on the hour is read on its own line, which must print the fee's price.
   const basis: HourlyBasis | null = partial || HOURLY_WORDING.test(text)
     ? "name"
-    : hourlyFromLine(sourceLine, amount ?? null) ? "line" : null;
+    : hourlyFromLine(sourceLine, amount ?? null, name) ? "line" : null;
   if (!basis) return null;
   if (partial) return { action: "exempt", exemptReason: "partial_hour", basis };
   if (canonicalFeeKey != null && HOURLY_EXEMPT_KEYS.has(canonicalFeeKey)) return { action: "exempt", exemptReason: "category", basis };

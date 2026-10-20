@@ -94,6 +94,35 @@ export function getCharterLabel(charterType: string | null | undefined): string 
 
 const SMALL_WORDS = new Set(["of", "and", "the", "on", "at", "in", "by", "de", "la", "del"]);
 
+/**
+ * A place name as printed: ALL-CAPS is title-cased, and a lowercase word after the first is
+ * capitalised ("Fort lauderdale" as "Fort Lauderdale", #1953). Small words stay lowercase.
+ */
+export function placeName(value: string | null | undefined): string | null {
+  const titled = toTitleCase(value);
+  if (!titled) return titled;
+  return titled.replace(/(?<=\s)([a-z])([a-z]*)/g, (word, first: string, rest: string) =>
+    SMALL_WORDS.has(word) ? word : first.toUpperCase() + rest,
+  );
+}
+
+/** Registry abbreviations in holding-company names, spelled as the company prints them. */
+const HOLDING_WORDS: [RegExp, string][] = [
+  [/^U S\b/, "U.S."],
+  [/\bBcorp\b/g, "Bancorp"],
+  [/\bFinl\b/g, "Financial"],
+  [/\bWafd\b/g, "WaFd"],
+  [/\bInc$/, "Inc."],
+  [/\bCorp$/, "Corp."],
+];
+
+/** A holding company's registry name, readable: "U S BCORP" as "U.S. Bancorp" (#1953). */
+export function holdingCompanyName(value: string | null | undefined): string | null {
+  const titled = toTitleCase(value);
+  if (!titled) return titled;
+  return HOLDING_WORDS.reduce((name, [pattern, replacement]) => name.replace(pattern, replacement), titled);
+}
+
 /** Title-cases ALL-CAPS strings only; mixed-case input is returned unchanged. */
 export function toTitleCase(value: string | null | undefined): string | null {
   if (!value) return null;

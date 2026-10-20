@@ -1,6 +1,6 @@
 import { sql } from "./connection";
-import { boundedSearchTerm, escapeLikePattern } from "@/lib/api-hardening/query-caps";
-import { statsRowFilter } from "./fee-stats";
+import { boundedSearchTerm } from "@/lib/api-hardening/query-caps";
+import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import {
   classifyInstitutionQuality,
   getFeePublicationStatus,
@@ -125,7 +125,8 @@ function searchQualityCte(scopeSql: string): string {
     WHERE NOT EXISTS (
         SELECT 1
         FROM scope_catalog pfc
-        WHERE pfc.fee_verified_id = fv.fee_verified_id
+        WHERE pfc.institution_id = fv.institution_id
+          AND pfc.fee_verified_id = fv.fee_verified_id
           AND pfc.review_status <> 'rejected'
       )
     GROUP BY fv.institution_id
@@ -231,13 +232,22 @@ export async function searchInstitutions(params: {
   pageSize?: number;
 }): Promise<{ rows: InstitutionSearchResult[]; total: number }> {
   const conditions: string[] = [];
-  const queryParams: (string | number)[] = [];
+  const queryParams: (string | number | string[])[] = [];
   let paramIdx = 0;
 
   if (params.query && params.query.trim().length >= 2) {
-    paramIdx++;
-    conditions.push(`ct.institution_name ILIKE $${paramIdx}`);
-    queryParams.push(`%${escapeLikePattern(params.query.trim())}%`);
+    // The same name match as the typeahead, so "M&T" or "US Bank" finds the same banks on Enter.
+    // Bounded like the typeahead: at most 100 characters, at least two letters or digits. A typed
+    // name with fewer ("--", "&&", "a.") matches nothing: dropping the condition would list, and
+    // count, every institution for each junk query.
+    const term = boundedSearchTerm(params.query);
+    if (!term) return { rows: [], total: 0 };
+    const { pattern, squashed, aliases } = institutionSearchPatterns(term);
+    conditions.push(`(ct.institution_name ~* $${paramIdx + 1}
+      OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $${paramIdx + 2}
+      OR ct.institution_name ILIKE ANY($${paramIdx + 3}::text[]))`);
+    queryParams.push(pattern, squashed, aliases);
+    paramIdx += 3;
   }
   if (params.state_code) {
     paramIdx++;
@@ -359,23 +369,42 @@ function squashName(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9& ]+/g, "").replace(/\s+/g, " ").trim();
 }
 
-/** The name patterns a typed query searches: as typed, with punctuation dropped, and a short-name prefix. */
+/**
+ * The name patterns a typed query searches: as typed, with punctuation dropped, and a short-name
+ * prefix. The first two match only from the start of a word, so "US Bank" finds U.S. Bank and
+ * First US Bank but not Pegasus Bank or Focus Bank.
+ */
 export function institutionSearchPatterns(query: string): { pattern: string; squashed: string; aliases: string[] } {
   const term = query.trim();
   const squashedTerm = squashName(term);
   const short = squashedTerm.replace(/\s+bank$/, "");
   const alias = SHORT_NAMES[squashedTerm] ?? SHORT_NAMES[short] ?? SHORT_NAMES[short.replace(/&/g, "")];
-  // The typed term is matched literally (`%` and `_` escaped). A term with under two letters or
-  // digits once punctuation is dropped would squash to `%%` and match every institution, so its
-  // squashed pattern falls back to the literal one.
-  const pattern = `%${escapeLikePattern(term)}%`;
-  const squashed = squashedTerm.replace(/[^a-z0-9]/g, "").length >= 2 ? `%${squashedTerm}%` : pattern;
-  return { pattern, squashed, aliases: alias ? [`${alias}%`] : [] };
+  // The typed text is a literal (every regex character escaped), anchored at a word start (\m)
+  // when it begins with a letter or digit.
+  const literal = term.replace(/[\\^$.|?*+()[\]{}]/g, (c) => `\\${c}`);
+  return {
+    pattern: /^[a-z0-9]/i.test(term) ? `\\m${literal}` : literal,
+    // Matched against " " + the squashed name, so the leading space anchors it at a word start. A
+    // query with under two letters or digits once punctuation is dropped ("&", "..") matches no
+    // squashed name rather than every name.
+    squashed: squashedTerm.replace(/[ &]/g, "").length >= 2 ? `% ${squashedTerm}%` : "",
+    aliases: alias ? [`${alias}%`] : [],
+  };
+}
+
+/** 0 when a row's name is the institution the query names (its short name, or the name itself); else 1. */
+export function institutionNameRank(name: string, query: string): number {
+  const { aliases } = institutionSearchPatterns(query);
+  const lower = name.toLowerCase();
+  if (aliases.some((alias) => lower.startsWith(alias.slice(0, -1).toLowerCase()))) return 0;
+  const typed = squashName(query);
+  const squashed = squashName(name);
+  return typed.length > 0 && (squashed === typed || squashed.startsWith(`${typed} `)) ? 0 : 1;
 }
 
 // Matches the typed name, the name with punctuation dropped, or a short name's registry prefix.
-const NAME_MATCH = `(ct.institution_name ILIKE $1
-  OR regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g') LIKE $4
+const NAME_MATCH = `(ct.institution_name ~* $1
+  OR (' ' || regexp_replace(lower(ct.institution_name), '[^a-z0-9& ]+', '', 'g')) LIKE $4
   OR ct.institution_name ILIKE ANY($5::text[]))`;
 
 /** An autocomplete list is a handful of suggestions: 1 to 25 rows, whatever a caller passes. */
@@ -436,10 +465,59 @@ export async function autocompleteInstitutions(query: string, limit = 8): Promis
   return rows.map(mapInstitutionSearchRow);
 }
 
+/** The most institutions the largest-institutions list reads, whatever a caller passes. */
+export const LARGEST_INSTITUTIONS_MAX = 100;
+
+/**
+ * The largest institutions by total assets (of one type when `charter_type` is set), largest
+ * first, with the same fee counts as a search row. The directory's opening list: a bounded read
+ * (the scope is the top `limit` rows by assets, so the fee counts cover only those) that the
+ * plain directory can show without a search or a state.
+ */
+export async function getLargestInstitutions(params: { charter_type?: string; limit?: number } = {}): Promise<InstitutionSearchResult[]> {
+  const limit = Math.min(Math.max(1, Math.floor(params.limit ?? 25)), LARGEST_INSTITUTIONS_MAX);
+  const charter = params.charter_type || null;
+  const scope = `SELECT ct.id FROM institution_sources ct
+    WHERE ct.asset_size IS NOT NULL AND ($2::text IS NULL OR ct.charter_type = $2)
+    ORDER BY ct.asset_size DESC, ct.id
+    LIMIT $1`;
+  const rows = await sql.unsafe<InstitutionSearchRow[]>(
+    `${searchQualityCte(scope)}
+    SELECT ct.id, ct.institution_name, ct.city, ct.state_code,
+           ct.charter_type, ct.asset_size_tier, ct.asset_size,
+           ct.source, ct.cert_number, ct.website_url, ct.fee_schedule_url,
+           (
+             COALESCE(cc.visible_fee_count, 0)
+             + COALESCE(vuc.verified_unpublished_fee_count, 0)
+             + COALESCE(ruc.raw_unverified_fee_count, 0)
+           ) as fee_count,
+           COALESCE(cc.published_fee_count, 0) as published_fee_count,
+           (
+             COALESCE(cc.catalog_provisional_fee_count, 0)
+             + COALESCE(vuc.verified_unpublished_fee_count, 0)
+             + COALESCE(ruc.raw_unverified_fee_count, 0)
+           ) as provisional_fee_count,
+           ld.latest_source_status,
+           COALESCE(ld.latest_extracted_fee_count, 0) as latest_extracted_fee_count,
+           ld.latest_source_error,
+           ld.latest_source_collected_at
+    FROM institution_sources ct
+    LEFT JOIN catalog_counts cc ON cc.institution_id = ct.id
+    LEFT JOIN verified_unpublished_counts vuc ON vuc.institution_id = ct.id
+    LEFT JOIN raw_unverified_counts ruc ON ruc.institution_id = ct.id
+    LEFT JOIN latest_docs ld ON ld.institution_id = ct.id
+    WHERE ct.id IN (SELECT id FROM scope)
+    ORDER BY ct.asset_size DESC, ct.id`,
+    [limit, charter],
+  );
+  return rows.map(mapInstitutionSearchRow);
+}
+
 export async function getInstitutionStateDirectorySummaries(params: {
   charter_type?: string;
 } = {}): Promise<InstitutionStateDirectorySummary[]> {
-  const conditions = ["ct.state_code IS NOT NULL", "btrim(ct.state_code) <> ''"];
+  // The same institutions as the directory's "Institutions monitored" figure (#2190).
+  const conditions = ["ct.state_code IS NOT NULL", "btrim(ct.state_code) <> ''", activeInstitutionFilter("ct")];
   const queryParams: string[] = [];
 
   if (params.charter_type) {

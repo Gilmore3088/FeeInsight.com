@@ -68,21 +68,40 @@ export async function loadGuide(slug: string): Promise<Guide | null> {
   return SEED_GUIDES.find((g) => g.slug === slug) ?? null;
 }
 
+/**
+ * The guides for a fee, the guide written about that fee first (#1953: /fees/nsf linked the
+ * overdraft guide, which only cites the NSF median). When the stored guides have none whose
+ * primary fee this is, the seed's guide for it leads, as loadGuide serves seed guides too.
+ */
 export async function loadGuidesForCategory(
   category: string,
   audience?: GuideAudience,
 ): Promise<Guide[]> {
+  const seed = primaryFirst(
+    SEED_GUIDES.filter(
+      (g) =>
+        guideCategories(g).includes(category) &&
+        (audience === undefined || g.audience === audience),
+    ),
+    category,
+  );
   try {
     const { getGuidesForCategory } = await import("@/lib/data-store/guides");
-    const stored = await getGuidesForCategory(category, audience);
-    if (stored.length > 0) return stored;
+    const stored = primaryFirst(await getGuidesForCategory(category, audience), category);
+    if (stored.length > 0) {
+      const seedPrimary = seed[0]?.primaryCategory === category ? seed[0] : null;
+      if (stored[0].primaryCategory === category || !seedPrimary) return stored;
+      return [seedPrimary, ...stored.filter((g) => g.slug !== seedPrimary.slug)];
+    }
   } catch {
     // Fall through to the seed.
   }
-  return SEED_GUIDES.filter(
-    (g) =>
-      guideCategories(g).includes(category) &&
-      (audience === undefined || g.audience === audience),
+  return seed;
+}
+
+function primaryFirst(guides: Guide[], category: string): Guide[] {
+  return [...guides].sort(
+    (a, b) => Number(b.primaryCategory === category) - Number(a.primaryCategory === category),
   );
 }
 

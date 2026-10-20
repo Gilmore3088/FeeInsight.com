@@ -52,6 +52,8 @@ export interface FlowSnapshot {
  * took over publishing in #1075 step 2, so Hamilton (the product) has no column.
  */
 export type FlowWaiting = Record<Exclude<AdminAgent, "atlas" | "growth" | "hamilton" | "hoovie">, number> & { published: number; total: number };
+/** The waiting counts as cached, with when they were counted (the Live page shows their age). */
+export type FlowWaitingCounts = FlowWaiting & { computedAt?: string };
 
 export type Sample = Record<string, unknown>;
 

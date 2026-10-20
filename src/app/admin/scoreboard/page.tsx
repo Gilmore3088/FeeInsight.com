@@ -12,6 +12,13 @@ import {
 import { runScoreboardNowAction } from "../answer-key/actions";
 import { GOAL_WINDOW_DAYS, READER_MISS_KINDS, type GoalScorecard } from "@/lib/agents/goal-scorecard";
 import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
+import { readAccuracyHistory, type AccuracyHistory } from "@/lib/agents/deming/accuracy-history";
+import { accuracyStatusLabel, formatAccuracyBound } from "@/lib/agents/deming/accuracy-measure";
+import { AccuracyHistoryPanel } from "./accuracy-history";
+import { LiveSourceAuditPanel } from "./live-source-audit-panel";
+import { QueueBoardPanel } from "./queue-board-panel";
+import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
+import type { LiveAuditComponent } from "@/lib/agents/deming/live-source-audit-records";
 
 interface Metric {
   key: keyof ScoreboardSnapshotRow;
@@ -24,7 +31,7 @@ interface Metric {
   /** Why this is a diagnostic, not a goal measure (#1040). */
   caveat?: string;
   /** Snapshots compare only when this matches: the trend breaks and the change is hidden where it differs. */
-  series?: (row: ScoreboardSnapshotRow) => number | null;
+  series?: (row: ScoreboardSnapshotRow) => string | number | null;
 }
 
 const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -65,10 +72,10 @@ const METRICS: Metric[] = [
     label: "Accuracy",
     unit: "% precision against the answer key (end to end)",
     format: percent,
-    detail: (row) => `recall ${row.accuracy_recall == null ? "—" : percent(row.accuracy_recall)}${row.accuracy_scorer_version == null ? "" : `, scorer v${row.accuracy_scorer_version}`}`,
-    caveat: "The answer key's newest score, not dated here. The goal measure is Deming's 7-day accuracy above.",
+    detail: (row) => `recall ${row.accuracy_recall == null ? "—" : percent(row.accuracy_recall)}, ${(row.accuracy_reference_state ?? "legacy_ungated").replaceAll("_", " ")}${row.accuracy_reference ? `; ${row.accuracy_reference.eligibleBanks} eligible / ${row.accuracy_reference.excludedBanks} excluded` : ""}${row.legacy_accuracy_precision != null ? `; historical ungated precision ${percent(row.legacy_accuracy_precision)} (excluded from current measurement)` : ""}${row.accuracy_scorer_version == null ? "" : `, scorer v${row.accuracy_scorer_version}`}`,
+    caveat: "Reference eligibility and exact fee snapshots define this cohort. A changed reference starts a separate measure; it is not evidence of a better pipeline. Launch accuracy uses the weekly live 50-institution batch.",
     // A new scorer version rescores the same fees: its numbers start a new line (#1354).
-    series: (row) => row.accuracy_scorer_version,
+    series: (row) => row.accuracy_series ?? null,
   },
   {
     key: "freshness_median_days",
@@ -81,10 +88,10 @@ const METRICS: Metric[] = [
   },
 ];
 
-function Sparkline({ values, series }: { values: Array<number | null>; series?: Array<number | null> }) {
+function Sparkline({ values, series }: { values: Array<number | null>; series?: Array<string | number | null> }) {
   const points = values
     .map((value, index) => (value == null ? null : { x: index, y: value, key: series?.[index] ?? null }))
-    .filter((point): point is { x: number; y: number; key: number | null } => point != null);
+    .filter((point): point is { x: number; y: number; key: string | number | null } => point != null);
   if (points.length < 2) return <p className="text-[10px] text-gray-400">Trend appears after two days.</p>;
   const width = 200;
   const height = 36;
@@ -112,7 +119,7 @@ function Sparkline({ values, series }: { values: Array<number | null>; series?: 
         })}
       </svg>
       {breaks.length > 1 ? (
-        <p className="text-[10px] text-gray-400">Scorer {breaks.map((run) => `v${run.key}`).join(", then ")}: the line breaks where the scorer changed.</p>
+        <p className="text-[10px] text-gray-400">The line breaks where the scorer or reference cohort changed.</p>
       ) : null}
     </>
   );
@@ -123,10 +130,14 @@ export default async function ScoreboardPage({
 }: {
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { message } = await searchParams;
   const ready = await scoreboardSchemaReady().catch(() => false);
-  const rows = ready ? await listScoreboardSnapshots(30) : [];
+  const [rows, accuracyHistory,liveSourceAudit]: [ScoreboardSnapshotRow[], AccuracyHistory | null,Awaited<ReturnType<typeof readLiveSourceAudit>>] = ready ? await Promise.all([
+    listScoreboardSnapshots(30),
+    readAccuracyHistory().catch((error) => { console.error("Accuracy history read failed", error); return null; }),
+    readLiveSourceAudit().catch(()=>null),
+  ]) : [[], null,null];
   const latest = rows.at(-1) ?? null;
   const previous = rows.length > 1 ? rows.at(-2) ?? null : null;
 
@@ -156,6 +167,10 @@ export default async function ScoreboardPage({
         <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-200">{message}</p>
       ) : null}
 
+      {ready ? <GoalSection rows={rows} current={liveSourceAudit} /> : null}
+
+      {ready ? <QueueBoardPanel board={latest?.queues ?? null} date={latest?.queues ? latest.snapshot_date : null} /> : null}
+
       {!ready ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
           The scoreboard migration (20270106050000_answer_key_and_scoreboard.sql) is not applied yet.
@@ -164,11 +179,18 @@ export default async function ScoreboardPage({
         <p className="py-12 text-center text-sm text-gray-400">No snapshots yet. The daily Atlas run records the first one, or press Score now.</p>
       ) : (
         <>
-        <GoalSection rows={rows} />
         <details className="admin-card p-4">
           <summary className="cursor-pointer text-sm font-semibold text-gray-700 dark:text-gray-300">
             Pipeline diagnostics (older numbers, not goal measures)
           </summary>
+          <section className="admin-card mt-3 space-y-1 p-4" aria-labelledby="stored-copy-title">
+            <h2 id="stored-copy-title" className="text-sm font-semibold">Stored-copy support (secondary)</h2>
+            <p className="text-2xl font-bold tabular-nums">{share(latest.goal?.accuracy?.accuracy)}</p>
+            <p className="text-xs text-gray-500">Sampled dollar fees supported by stored documents over 7 days; diagnostic target {ACCURACY_TARGET_LABEL}. This does not independently check the current official schedule.</p>
+            <div className="text-[11px] text-gray-500">{latest.goal?.accuracy ? <AccuracyDetail accuracy={latest.goal.accuracy} /> : "Could not be read."}</div>
+            <p className="font-mono text-[10px] text-gray-400">query: goal.deming_accuracy_7d</p>
+          </section>
+          <AccuracyHistoryPanel history={accuracyHistory} />
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {METRICS.map((metric) => {
             const value = latest[metric.key] as number | null;
@@ -242,14 +264,6 @@ const GOAL_CARDS: GoalCardSpec[] = [
     detail: (goal) => goal.liveInstitutions
       ? `${n(goal.liveInstitutions.addedThisWeek)} added: live now, no live fee 7 days ago (refreshes add nothing).${goal.liveInstitutions.droppedThisWeek == null ? "" : ` ${n(goal.liveInstitutions.droppedThisWeek)} dropped: live 7 days ago, no live fee now.`}`
       : "Could not be read.",
-  },
-  {
-    label: "Accuracy",
-    query: "goal.deming_accuracy_7d",
-    value: (goal) => goal.accuracy?.accuracy,
-    format: share,
-    unit: `of audited live fees right on amount, category, source, line and name (target ${ACCURACY_TARGET_LABEL})`,
-    detail: (goal) => goal.accuracy ? <AccuracyDetail accuracy={goal.accuracy} /> : "Could not be read.",
   },
   {
     label: "Wrong after publish",
@@ -339,20 +353,19 @@ function weekBefore(rows: ScoreboardSnapshotRow[], latest: ScoreboardSnapshotRow
   return [...rows].reverse().find((row) => row.goal && new Date(`${row.snapshot_date}T00:00:00Z`).getTime() <= cutoff) ?? null;
 }
 
-function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
+function GoalSection({ rows, current }: { rows: ScoreboardSnapshotRow[]; current: LiveAuditComponent | null }) {
   const withGoal = rows.filter((row) => row.goal);
   const latest = withGoal.at(-1) ?? null;
-  if (!latest?.goal) {
-    return (
-      <p className="admin-card p-4 text-sm text-gray-500">
-        No goal numbers yet. Atlas stores them with the next daily scoreboard; press Score now to read them today.
-      </p>
-    );
-  }
-  const before = weekBefore(withGoal, latest);
+  const before = latest ? weekBefore(withGoal, latest) : null;
   return (
     <section className="space-y-3">
       <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">The goal</h2>
+      <LiveSourceAuditPanel current={current} history={rows.map(row=>({date:row.snapshot_date,detail:{goal:row.goal}}))} />
+      {!latest?.goal ? (
+        <p className="admin-card p-4 text-sm text-gray-500">
+          Other goal numbers appear with the next daily scoreboard; press Score now to read them today.
+        </p>
+      ) : <>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {GOAL_CARDS.map((card) => {
           const value = card.value(latest.goal!);
@@ -380,6 +393,7 @@ function GoalSection({ rows }: { rows: ScoreboardSnapshotRow[] }) {
       </div>
       {latest.goal.spend ? <SpendTable goal={latest.goal} /> : null}
       <ReaderMisses goal={latest.goal} />
+      </>}
     </section>
   );
 }
@@ -514,7 +528,9 @@ function AccuracyDetail({ accuracy }: { accuracy: NonNullable<GoalScorecard["acc
   return (
     <>
       {n(accuracy.right)} of {n(accuracy.scorable)} scorable fees over {accuracy.audits} Deming audits
-      {accuracy.range ? `; 95% range ${percent(accuracy.range.low)}–${percent(accuracy.range.high)}` : ""}.
+      {accuracy.range ? `; 95% range ${formatAccuracyBound(accuracy.range.low, "low")}–${formatAccuracyBound(accuracy.range.high, "high")}` : ""}.
+      <span className="block">Target {ACCURACY_TARGET_LABEL}: {accuracyStatusLabel(accuracy)}.</span>
+      <span className="block">{accuracy.series ?? "Legacy — versions unknown"}; unknown {accuracy.unknown == null ? "not recorded" : n(accuracy.unknown)}; repeated fees excluded {n(accuracy.repeatedFees ?? 0)}; other scoring series excluded {n(accuracy.excludedAudits ?? 0)}.</span>
       {misses ? (
         <span className="block">
           Misses: amount {n(misses.amount)} · category {n(misses.category)} · not the bank&apos;s schedule {n(misses.evidence)} · not a fee line {n(misses.notAFee)} · bad name {n(misses.name)}

@@ -3,7 +3,7 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-gua
 import { SOURCE_CHECK_STRATEGY, traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { severityFor, type Severity } from "@/lib/agents/deming/severity";
 import { ARTICLE_PAGE_CHECK, isArticlePage } from "@/lib/agents/hamilton/article-page";
-import { PRODUCT_PAGE_CONFLICT_CHECK, productPageConflictSql } from "@/lib/agents/hamilton/product-page-conflict";
+import { PRODUCT_PAGE_CONFLICT_CHECK, isSameItemConflict, productPageConflictSql, type ConflictRow } from "@/lib/agents/hamilton/product-page-conflict";
 import {
   OTHER_BANK_DOCUMENT_CHECK,
   UNCONFIRMED_HOST_CHECK,
@@ -11,8 +11,9 @@ import {
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
 import { nameHasCutShape } from "@/lib/fee-name-fragments";
-import { dropsCondition, isCutoffName, repairCutoffName } from "@/lib/agents/knox/name-retidy";
+import { dropsCondition, isCutoffName, repairCutoffName, NAME_RETIDY_STRATEGY } from "@/lib/agents/knox/name-retidy";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { ACCURACY_DAILY_SAMPLE, ACCURACY_MIN_SCORABLE, ACCURACY_REPORTING_VERSION, type AuditObservation, type AuditVerdict } from "./accuracy-measure";
 
 type SqlTag = typeof sql;
 
@@ -38,11 +39,15 @@ type SqlTag = typeof sql;
  * purpose, is not a bad name (`nameQuality`).
  * v5 (#1196): a name that opens on a cut cents figure ("00 Monthly fee") or a table row number
  * ("14 | Insufficient funds") is a cut name, through Darwin's `nameHasCutShape`.
+ * v6 (#2440): a product-page fee is a miss only when its schedule prices the same item
+ * differently (`isSameItemConflict`), the rule Hamilton's own conflict check uses.
+ * v7: that rule counts only schedule lines on the page's own host, priced above $0 and fetched
+ * no earlier than the page, and pairs names only when they are the same item word for word.
  */
-export const FRESH_AUDIT_VERSION = 5;
-export const FRESH_AUDIT_SAMPLE = 200;
+export const FRESH_AUDIT_VERSION = 7;
+export const FRESH_AUDIT_SAMPLE = ACCURACY_DAILY_SAMPLE;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
-export const FRESH_AUDIT_MIN_SCORABLE = 30;
+export const FRESH_AUDIT_MIN_SCORABLE = ACCURACY_MIN_SCORABLE;
 const MISS_LIMIT = 50;
 
 export interface FreshAuditFee extends LiveFeeRow {
@@ -101,6 +106,8 @@ export interface FreshAuditScore {
   misses: FreshAuditMiss[];
   /** Every sampled `fee_published_id`, in draw order, so a reviewer can re-check the same rows. */
   sampleIds: number[];
+  /** Full sample, including unknowns; weekly confidence counts each published fee once. */
+  observations: AuditObservation[];
 }
 
 export interface FreshAuditResult extends FreshAuditScore {
@@ -108,6 +115,7 @@ export interface FreshAuditResult extends FreshAuditScore {
   seed: string;
   categoryGuardVersion: number;
   sourceCheckVersion: number;
+  requestedSampleSize?: number;
 }
 
 /** Pure: score a sample against its institutions' stored texts. */
@@ -131,8 +139,11 @@ export function scoreFreshAudit(
     bySeverity: { critical: 0, major: 0, minor: 0, info: 0 },
     misses: [],
     sampleIds: fees.map((fee) => Number(fee.fee_published_id)),
+    observations: [],
   };
-  const miss = (fee: FreshAuditFee, check: string, reason: string) => {
+  const observe = (fee: FreshAuditFee, verdict: AuditVerdict) => score.observations.push([Number(fee.fee_published_id), verdict]);
+  const miss = (fee: FreshAuditFee, check: string, reason: string, verdict: AuditVerdict) => {
+    observe(fee, verdict);
     const severity = severityFor(check, reason);
     score.bySeverity[severity] += 1;
     score.misses.push({
@@ -154,41 +165,43 @@ export function scoreFreshAudit(
     const verdict = traceLiveFee(fee, textsByInstitution.get(Number(fee.institution_id)) ?? []);
     if (verdict.kind === "untraceable" && verdict.reason === "no_source_text") {
       score.noText += 1;
+      observe(fee, "unknown");
       continue;
     }
     score.scorable += 1;
     if (verdict.kind === "untraceable") {
       score.amountMiss += 1;
-      miss(fee, "hamilton.source_check", verdict.reason);
+      miss(fee, "hamilton.source_check", verdict.reason, "amount");
       continue;
     }
     const category = checkFeeCategory(fee.canonical_fee_key, fee.fee_name);
     if (!category.ok) {
       score.categoryMiss += 1;
-      miss(fee, "hamilton.category_guard", category.code);
+      miss(fee, "hamilton.category_guard", category.code, "category");
       continue;
     }
     const evidenceCheck = evidenceFailure(fee, evidence);
     if (evidenceCheck) {
       score.evidenceMiss += 1;
-      miss(fee, evidenceCheck, evidenceCheck.replace(/^hamilton\./, ""));
+      miss(fee, evidenceCheck, evidenceCheck.replace(/^hamilton\./, ""), "evidence");
       continue;
     }
     const texts = textsByInstitution.get(Number(fee.institution_id)) ?? [];
     const own = texts.find((text) => Number(text.source_document_id) === verdict.sourceDocumentId);
     if (own && zeroIsAPerk(fee, own.normalized_text)) {
       score.notAFee += 1;
-      miss(fee, NOT_A_FEE_CHECK, "perk_not_a_price");
+      miss(fee, NOT_A_FEE_CHECK, "perk_not_a_price", "notAFee");
       continue;
     }
     const nameProblem = nameQuality(fee.fee_name);
     if (nameProblem) {
       score.nameMiss += 1;
-      miss(fee, NAME_QUALITY_CHECK, nameProblem);
+      miss(fee, NAME_QUALITY_CHECK, nameProblem, "name");
       continue;
     }
     if (verdict.kind === "relinked") score.relinked += 1;
     score.right += 1;
+    observe(fee, "right");
   }
   score.accuracy = score.scorable >= FRESH_AUDIT_MIN_SCORABLE ? score.right / score.scorable : null;
   const order: Record<Severity, number> = { critical: 0, major: 1, minor: 2, info: 3 };
@@ -248,7 +261,7 @@ export async function runFreshAudit({
   sampleSize = FRESH_AUDIT_SAMPLE,
 }: { db?: SqlTag; now?: Date; sampleSize?: number } = {}): Promise<FreshAuditResult> {
   const seed = now.toISOString().slice(0, 10);
-  const versions = { seed, categoryGuardVersion: CATEGORY_GUARD_VERSION, sourceCheckVersion: SOURCE_CHECK_STRATEGY.version };
+  const versions = { seed, categoryGuardVersion: CATEGORY_GUARD_VERSION, sourceCheckVersion: SOURCE_CHECK_STRATEGY.version, requestedSampleSize: sampleSize };
   try {
     const fees = await db<FreshAuditFee[]>`
       SELECT c.id AS fee_id, c.fee_published_id, c.fee_verified_id AS lineage_ref, c.fee_raw_id, c.institution_id, c.source,
@@ -305,7 +318,7 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
               AND later.created_at >= open.created_at
          )
     `,
-    db.unsafe<{ fee_published_id: number | string }[]>(productPageConflictSql("fees"), [feeIds]),
+    db.unsafe<ConflictRow[]>(productPageConflictSql("fees"), [feeIds]),
   ]);
   const ids = (rows: HostRow[]) => new Set(rows.filter((row) => !ownBank(row)).map((row) => Number(row.fee_published_id)));
   const sampled = new Set(feeIds);
@@ -313,7 +326,7 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
     otherBank: ids(other),
     unconfirmedHost: ids(unconfirmed),
     pending: new Set(pending.map((row) => Number(row.fee_published_id))),
-    productPageConflict: new Set(conflicts.map((row) => Number(row.fee_published_id)).filter((id) => sampled.has(id))),
+    productPageConflict: new Set(conflicts.filter(isSameItemConflict).map((row) => Number(row.fee_published_id)).filter((id) => sampled.has(id))),
   };
 }
 
@@ -330,10 +343,13 @@ export function summarizeFreshAudit(result: FreshAuditResult): string {
 export function freshAuditDetail(result: FreshAuditResult) {
   return {
     version: FRESH_AUDIT_VERSION,
+    reporting_version: ACCURACY_REPORTING_VERSION,
     readable: result.readable,
     seed: result.seed,
     category_guard_version: result.categoryGuardVersion,
     source_check_version: result.sourceCheckVersion,
+    name_check_version: NAME_RETIDY_STRATEGY.version,
+    sample_requested: result.requestedSampleSize ?? FRESH_AUDIT_SAMPLE,
     sampled: result.sampled,
     scorable: result.scorable,
     right: result.right,
@@ -349,5 +365,6 @@ export function freshAuditDetail(result: FreshAuditResult) {
     by_severity: result.bySeverity,
     misses: result.misses.slice(0, MISS_LIMIT),
     sample_fee_published_ids: result.sampleIds,
+    observations: result.observations,
   };
 }

@@ -15,3 +15,5 @@
 
 ## Rule
 - Put `next/font` variable classes on `<html>`, never only on `<body>`, whenever a token on `:root` refers to them.
+
+**Guard:** `src/app/layout-fonts.test.tsx:20` (renders the root layout: the `next/font` variable classes are on `<html>`)

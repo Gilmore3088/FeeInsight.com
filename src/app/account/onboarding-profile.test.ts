@@ -33,7 +33,7 @@ describe("saveOnboardingProfile", () => {
 
     const result = await saveOnboardingProfile(form({ institution_id: "2945", job_role: "marketing" }));
 
-    expect(result).toEqual({ success: true, institutionName: "First Bank" });
+    expect(result).toEqual({ success: true, institutionName: "First Bank", institutionId: 2945 });
     expect(mocks.adoptInstitution).toHaveBeenCalledWith({
       userId: 7,
       institutionId: 2945,
@@ -43,12 +43,21 @@ describe("saveOnboardingProfile", () => {
     });
   });
 
-  it("only fills the profile for a user without Pro", async () => {
+  it("saves the bank picked before paying, marked so checkout's pick can replace it (#1958)", async () => {
+    // postgres.js returns users.id (bigint) as a string.
+    mocks.getCurrentUser.mockResolvedValue({ id: "26" });
     mocks.canAccessPremium.mockReturnValue(false);
 
-    await saveOnboardingProfile(form({ institution_id: "2945" }));
+    const result = await saveOnboardingProfile(form({ institution_id: "2945" }));
 
-    expect(mocks.adoptInstitution).toHaveBeenCalledWith(expect.objectContaining({ setWorkspace: false }));
+    expect(result).toEqual({ success: true, institutionName: "First Bank", institutionId: 2945 });
+    expect(mocks.adoptInstitution).toHaveBeenCalledWith({
+      userId: "26",
+      institutionId: 2945,
+      setWorkspace: true,
+      source: "profile",
+      intent: "before_pro_checkout",
+    });
   });
 
   it("keeps a free-text organization when no institution is picked", async () => {

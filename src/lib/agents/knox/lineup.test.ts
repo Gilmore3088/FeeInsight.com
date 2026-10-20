@@ -379,14 +379,14 @@ describe("account names read from page text (whole-record sample, 9 Oct)", () =>
     expect(accountHeadingAbove(rnb, "Monthly Service Charge: $2 fee if balance falls below $100 minimum (waived for students and minors)")).toBeNull();
   });
 
-  it("corrects the link name and clears the tagline", () => {
+  it("corrects link and tagline labels to their printed account owner", () => {
     const stored = (productName: string) => ({ productName, minBalanceToAvoid: null, minOpeningDeposit: null, waiverText: null });
     expect(
       lineupCorrections({ feeName: "Monthly Service Charge", excerpt: "Monthly Service Charge: $12.95" }, stored("Learn more about Advantage Checking"), fibt),
     ).toEqual([{ field: "productName", old: "Learn more about Advantage Checking", new: "Advantage Checking" }]);
     const excerpt = "Monthly Service Charge: $2 fee if balance falls below $100 minimum (waived for students and minors)";
     expect(lineupCorrections({ feeName: "Monthly Service Charge", excerpt }, stored("For all customers with savings needs…"), rnb)).toEqual([
-      { field: "productName", old: "For all customers with savings needs…", new: null },
+      { field: "productName", old: "For all customers with savings needs…", new: "Personal Savings" },
     ]);
   });
 });

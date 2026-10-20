@@ -3,3 +3,4 @@
 **Cause:** `snapshotLink` in `src/lib/agents/growth/outreach.ts` points at `/institution/[id]/market`, but that page (commit 9bbe7e3f) is only on the Marketing branch, not main. The summaries ignored the dry-run flag.
 **Fix:** this PR makes both summaries say "would" in a dry run. The 404 links are for the Marketing thread, which owns the snapshot page and the outreach drafts. No draft has been sent. Follow-up (02:35 UTC): `src/app/(public)/institution/[id]/market/route.ts` now answers those links with a 307 to the institution profile, keeping the UTM tags, so all 23 load until the snapshot page (draft PR 669) replaces it.
 **Lesson:** when an agent writes a link into a draft, check that the route exists on main. NORMAN's destination check now catches this daily.
+**Guard:** `src/lib/agents/growth/norman.test.ts` (NORMAN's destination check puts broken outreach links first)

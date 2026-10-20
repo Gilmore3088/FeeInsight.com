@@ -1,3 +1,4 @@
+import { ProviderResponseOperation, AI_PROVIDER_TIMEOUT_MS, assertCompletedProviderFinish, withProviderResponseOperation, requireCompletedProviderUIStream } from "@/lib/ai-response-budget";
 import { withApiRoutePolicy } from "@/lib/api-hardening/route-wrapper";
 import {
   streamText,
@@ -13,6 +14,8 @@ import {
   ProviderBudgetBlockedError,
   ProviderCircuitOpenError,
   recordProviderUsage,
+  observedProviderUsage,
+  type ProviderUsage,
   trackAnthropicRequest,
   estimateAnthropicCostMicrousd,
 } from "@/lib/ai-provider-usage";
@@ -52,6 +55,7 @@ import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
 import { withHamiltonAccountContext } from "@/lib/hamilton/account-context-store";
 import { accountIdentitySnapshot } from "@/lib/hamilton/account-context";
 import { getInstitutionById } from "@/lib/data-store";
+import { writtenAnswerStepSystemPrompt } from "@/lib/hamilton/written-answer-evidence";
 
 export const maxDuration = 300;
 
@@ -212,7 +216,7 @@ async function handlePOST(request: Request) {
   if (prompt.status === "institution_not_found") {
     return Response.json({ error: "Institution not found" }, { status: 404 });
   }
-  const { systemPrompt, focus } = prompt;
+  const { systemPrompt, focus, briefingEvidence } = prompt;
 
   const providerContext = {
     provider: "anthropic" as const,
@@ -225,6 +229,25 @@ async function handlePOST(request: Request) {
   };
   let providerStartedAt: number | null = null;
   let providerFailed = false;
+  let failureRecorded = false;
+  let terminalFailure: unknown;
+  let failureUsage: ProviderUsage | undefined;
+  let responseOperation: ProviderResponseOperation | undefined;
+  const failProvider = async (error: unknown, observed?: ProviderUsage) => {
+    responseOperation?.dispose();
+    if (observed) failureUsage = observed;
+    if (!providerFailed) terminalFailure = error;
+    providerFailed = true;
+  };
+  const flushProviderFailure = async () => {
+    if (!providerFailed || failureRecorded || providerStartedAt === null) return;
+    failureRecorded = true;
+    const failure = responseOperation?.error ?? terminalFailure;
+    await recordProviderUsage(providerContext, "failed", failureUsage ?? {}, {
+      latencyMs: Date.now() - providerStartedAt, error: failure instanceof Error ? failure.message : String(failure),
+      usageObservation: failureUsage ? "observed" : "unknown",
+    });
+  };
 
   try {
     // Buffered (gated) path: for report-generation callers. Trades off
@@ -235,19 +258,24 @@ async function handlePOST(request: Request) {
     if (gateCitations) {
       const { generated: result } = await trackAnthropicRequest(
         providerContext,
-        async () => {
+        () => withProviderResponseOperation(AI_PROVIDER_TIMEOUT_MS, async (scope) => {
           const generated = await generateText({
-            model: getAnthropicLanguageModel(agent.model, "hamilton"),
+            model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
             system: cachedSystem(systemPrompt),
             messages: await convertToModelMessages(messages),
-            prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+            prepareStep: ({ messages: stepMessages, steps }) => ({
+              messages: cacheLatestMessage(stepMessages),
+              system: cachedSystem(writtenAnswerStepSystemPrompt(systemPrompt, steps)),
+            }),
             tools: agent.tools,
             maxOutputTokens: agent.maxTokens,
             stopWhen: stepCountIs(agent.maxSteps),
+            abortSignal: scope.signal,
           });
+          assertCompletedProviderFinish(generated.finishReason, observedProviderUsage(generated.totalUsage));
           // The ledger records `usage`: every tool step's tokens and cache reads and writes (#1418).
           return { generated, usage: trackerUsage(generated.totalUsage) };
-        },
+        }),
       );
 
       // totalUsage spans every tool step; usage is only the last step.
@@ -287,6 +315,9 @@ async function handlePOST(request: Request) {
         result.text ?? "",
         (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => toolResult.output)),
         questionOnly(lastUserText),
+        { briefingEvidence, toolResults: (result.steps ?? []).flatMap((step) => step.toolResults.map((toolResult) => ({
+          toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+        }))), institutionId },
       );
       if (!evidence.passed) {
         return Response.json(
@@ -331,17 +362,26 @@ async function handlePOST(request: Request) {
     const holdsAnswers = mode === "analyze" && HELD_ANSWER_MESSAGE !== null;
     let resolveVerdict: (verdict: AnswerVerdict | null) => void = () => {};
     const verdict = new Promise<AnswerVerdict | null>((resolve) => { resolveVerdict = resolve; });
+    const scope = responseOperation = new ProviderResponseOperation({ timeoutMs: AI_PROVIDER_TIMEOUT_MS });
     const result = streamText({
-      model: getAnthropicLanguageModel(agent.model, "hamilton"),
+      model: getAnthropicLanguageModel(agent.model, "hamilton", scope),
+      abortSignal: scope.signal,
       // Tools and system are identical on every step, and each step re-sends the earlier
       // tool results: cache both so later steps read them instead of paying full input.
       system: cachedSystem(systemPrompt),
       messages: await convertToModelMessages(messages),
-      prepareStep: ({ messages: stepMessages }) => ({ messages: cacheLatestMessage(stepMessages) }),
+      prepareStep: ({ messages: stepMessages, steps }) => ({
+        messages: cacheLatestMessage(stepMessages),
+        system: cachedSystem(writtenAnswerStepSystemPrompt(systemPrompt, steps)),
+      }),
       tools: agent.tools,
       maxOutputTokens: agent.maxTokens,
       stopWhen: stepCountIs(agent.maxSteps),
-      onFinish: async ({ totalUsage, text, steps }) => {
+      onFinish: async ({ totalUsage, text, steps, finishReason }) => {
+        if (providerFailed) { resolveVerdict(null); resolveSaved(null); await failProvider(terminalFailure, observedProviderUsage(totalUsage)); return; }
+        try { scope.assertHealthy(); assertCompletedProviderFinish(finishReason); }
+        catch (error) { resolveVerdict(null); resolveSaved(null); await failProvider(error, observedProviderUsage(totalUsage)); return; }
+        scope.dispose();
         identityContext = identityFor(steps);
         // The Analyze screen's answer is saved here, not only from the browser, so a closed
         // tab or a failed browser call never loses it.
@@ -351,7 +391,11 @@ async function handlePOST(request: Request) {
           // resolve (a promise keeps its first value), so the reader is never left waiting and
           // the usage below is still recorded.
           try {
-            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText));
+            const check = writtenAnswerCheck(text, toolOutputs, questionOnly(lastUserText), {
+              briefingEvidence, toolResults: steps.flatMap((step) => step.toolResults.map((toolResult) => ({
+                toolName: toolResult.toolName, input: toolResult.input, output: toolResult.output,
+              }))), institutionId,
+            });
             // Each sentence bound to the fee records the tools returned (#981, H06-T06). An answer
             // with nothing left once the contradicted sentences go is held like a failing one.
             const binding = writtenAnswerBinding(text, toolOutputs, questionOnly(lastUserText));
@@ -424,23 +468,24 @@ async function handlePOST(request: Request) {
           // Non-critical — don't fail the response
         }
       },
-      onAbort: () => {
-        resolveVerdict(null);
-        resolveSaved(null);
+      onAbort: async () => {
+        resolveVerdict(null); resolveSaved(null);
+        scope.abort("cancelled");
+        await failProvider(scope.error);
       },
       onError: async ({ error }) => {
-        resolveVerdict(null);
-        resolveSaved(null);
-        providerFailed = true;
-        await recordProviderUsage(providerContext, "failed", {}, {
-          latencyMs: providerStartedAt === null ? undefined : Date.now() - providerStartedAt,
-          error: error instanceof Error ? error.message : String(error),
-        });
+        resolveVerdict(null); resolveSaved(null);
+        await failProvider(error);
       },
     });
 
     // Run to the end even if the reader's browser drops the stream, so onFinish saves the answer.
-    void result.consumeStream();
+    const observeFailure = (error: unknown) => {
+      resolveVerdict(null); resolveSaved(null);
+      void failProvider(error); // Captures synchronously; never waits for consumer/final accounting.
+    };
+    // The public observer is essential: consumeStream catches reader errors and otherwise resolves.
+    void Promise.resolve(result.consumeStream({ onError: observeFailure })).catch(observeFailure).finally(async () => { scope.dispose(); await flushProviderFailure(); });
 
     // The saved row's id follows the answer as message metadata, after the text has streamed.
     return createUIMessageStreamResponse({
@@ -460,12 +505,12 @@ async function handlePOST(request: Request) {
             // A held answer's binding is known before its text replays, so it rides on the start
             // and a left-out sentence never shows while the text arrives.
             const startBinding = heldVerdict?.binding ?? null;
-            writer.merge(result.toUIMessageStream({
+            writer.merge(requireCompletedProviderUIStream(result.toUIMessageStream({
               onError: (error) => (isProviderLimitError(error) ? HAMILTON_PAUSED_MESSAGE : "Hamilton couldn't finish this answer."),
               ...(startBinding
                 ? { messageMetadata: ({ part }: { part: { type: string } }) => (part.type === "start" ? { narrativeBinding: startBinding } : undefined) }
                 : {}),
-            }));
+            })));
           }
           const id = await savedId;
           const verdictNow = heldVerdict ?? (await verdict);
@@ -487,13 +532,8 @@ async function handlePOST(request: Request) {
     const message =
       err instanceof Error ? err.message : "An unexpected error occurred";
 
-    if (providerStartedAt !== null && !providerFailed) {
-      providerFailed = true;
-      await recordProviderUsage(providerContext, "failed", {}, {
-        latencyMs: Date.now() - providerStartedAt,
-        error: message,
-      });
-    }
+    await failProvider(err);
+    await flushProviderFailure();
 
     if (isProviderLimitError(err)) {
       return Response.json({ error: HAMILTON_PAUSED_MESSAGE, code: "provider_paused" }, { status: 503 });

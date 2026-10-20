@@ -1,4 +1,5 @@
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import type { SeveralFees } from "@/lib/own-fee";
 
 /** Existing callers keep their defaults. Homepage demos must opt into their own scope. */
 export const DEFAULT_LOCAL_MARKET_CATEGORIES = [
@@ -93,4 +94,25 @@ export function selectMarketFees(fees: Record<string, number>, categories: reado
     if (Object.prototype.hasOwnProperty.call(fees, category) && Number.isFinite(amount)) selected[category] = amount;
   }
   return selected;
+}
+
+/**
+ * A named institution's requested fees as its schedule states them (#1931): `fees` holds each
+ * stated price, and a category where it states several different fees moves to `several`
+ * (their range and each by name), never shown as one median price.
+ */
+export function selectMarketStated(
+  fees: Record<string, number>,
+  several: Record<string, SeveralFees> | undefined,
+  categories: readonly string[],
+): { fees: Record<string, number>; several: Record<string, SeveralFees> } {
+  const selected = selectMarketFees(fees, categories);
+  const out: Record<string, SeveralFees> = {};
+  for (const category of Object.keys(selected)) {
+    const span = several && Object.prototype.hasOwnProperty.call(several, category) ? several[category] : undefined;
+    if (!span) continue;
+    out[category] = span;
+    delete selected[category];
+  }
+  return { fees: selected, several: out };
 }

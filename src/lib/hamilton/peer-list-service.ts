@@ -14,7 +14,7 @@ import { isPeerListContinuationQuestion, peerListFeeFollowUp, peerListFollowUpFe
 function noAccountInstitution(status: string): string {
   const why = status === "ambiguous"
     ? "More than one institution is linked to your account, so Hamilton can't tell which one is \"us\"."
-    : "No institution is linked to your account, so there is no \"us\" to compare.";
+    : "No institution is linked to your account, so there is no \"us\" to compare. To link yours, open Settings & account.";
   return `${why} Hamilton did not treat the institution you are researching as yours.`;
 }
 
@@ -189,6 +189,7 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
         const active = intent.saved || (!explicitFilters && intent.peerBased)
           ? await getActivePeerSet({ userId: user.id, institutionId: subject.institutionId })
           : null;
+        // No saved group: "list my peers" keeps half to twice the assets, and the reader can save their own (James, Oct 19, #2097).
         const planned = planPeerList(intent, subject, active);
         if (!planned.criteria) return message("needs_criteria", planned.problem ?? "Specify peer criteria.");
         const criteria = planned.criteria;
@@ -232,3 +233,4 @@ export async function answerPeerList(user: PeerAsker, body: PeerAskBody, recordA
   }).catch((error) => console.error("[hamilton-peer-list] activity receipt failed", error));
   return result;
 }
+

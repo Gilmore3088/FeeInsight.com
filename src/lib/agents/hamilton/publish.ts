@@ -1,3 +1,5 @@
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, recordIdentitySkips, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
+import { productKey, productKeySql, sameProduct } from "@/lib/fee-product";
 import type { FeeAudience } from "@/lib/fee-audience";
 import { CHECKING_ONLY_CATEGORIES, heldAccountType } from "@/lib/account-type";
 import { ADMIN_HOLD_PREFIX } from "@/lib/fee-hold-rules";
@@ -21,7 +23,7 @@ import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-gua
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
-import { dropsCondition, isCutoffName, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
+import { dropsCondition, isCutoffName, nameBeforeSentenceClauses, retidiedFeeName } from "@/lib/agents/knox/name-retidy";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { PERCENT_FEE_RANGES, isPercentFee, percentFeeAllowed, ratePercentOf, type RateFields } from "@/lib/percent-fees";
 import { recordHamiltonMonitorSignal } from "@/lib/hamilton/monitor-signals";
@@ -59,6 +61,15 @@ import {
   PUBLISH_REFUSE_PAGE_COPIES_LIVE,
   selectPageCopyKeeper,
 } from "@/lib/agents/hamilton/page-copy-refuse";
+import {
+  PublicationEvidenceUnavailable,
+  publicationEvidenceValue,
+  readPublicationEvidence,
+  type PublicationEvidenceCheck,
+  type PublishEvidenceCheck,
+} from "./publication-evidence";
+import { deferInternationalPublication, withInternationalPublicationWrite, type InternationalPublicationDeferral, type InternationalPublicationWrite } from "./international-publication";
+import type { LockedSourceSnapshot } from "../darwin/locked-raw-source";
 
 type SqlTag = typeof sql;
 
@@ -106,6 +117,9 @@ const BLOCKING_FLAGS = new Set([
 ]);
 
 export interface VerifiedFeeRow extends RateFields {
+  /** PostgreSQL snapshot of every consumed verification field; compare after the write lock. */
+  selected_verified_state?: string;
+  product_name?: string | null;
   fee_audience?: FeeAudience;
   fee_verified_id: number | string;
   fee_raw_id: number | string;
@@ -138,7 +152,8 @@ export interface VerifiedFeeRow extends RateFields {
   free_read?: boolean | null;
 }
 
-export interface PriorPublishedFeeRow extends RateFields {
+export interface PriorPublishedFeeRow extends RateFields, Partial<Omit<PublishedIdentity, "fee_published_id">> {
+  product_name?: string | null;
   fee_published_id: number | string;
   amount: number | string | null;
   fee_name: string;
@@ -151,6 +166,13 @@ export interface PriorPublishedFeeRow extends RateFields {
 }
 
 export interface HamiltonPublishResult {
+  /** Selected state changed under the final lock: visible guard skip, no settled fingerprint. */
+  identityDeferred?: boolean;
+  /** Required evidence was unavailable; leave this exact input undecided and retryable. */
+  evidenceDeferred?: boolean;
+  unavailableEvidence?: PublicationEvidenceCheck[];
+  /** Source direction or a live differing-price peer remains unresolved; no primary settlement. */
+  internationalDeferred?: InternationalPublicationDeferral;
   feeVerifiedId: number;
   institutionId: number;
   feeName: string;
@@ -222,6 +244,12 @@ export interface RunHamiltonPublishResult {
   processedVerifiedFees: number;
   publishedFees: number;
   skippedFees: number;
+  /** Still-undecided selected-state guard skips, included in skippedFees. */
+  identityDeferredFees?: number;
+  evidenceDeferredFees?: number;
+  internationalDeferredFees?: number;
+  internationalCheck?: { protocol: "publish.international_scope.v1"; deferred: number;
+    samples: Array<{ fee_verified_id: number; reason: string; conflicting_published_ids: number[] }> };
   /** Live rows closed because the same fee was published at a new amount. */
   supersededFees: number;
   /** Published rows that are explicit $0 (free) fees. */
@@ -243,6 +271,7 @@ export interface RunHamiltonPublishResult {
   sweepCheck: PublishSweepCheck;
   /** Rows the page-copy collapse would close after this step publishes them (page-copy-refuse.ts). */
   pageCopyCheck: PublishPageCopyCheck;
+  evidenceCheck?: PublishEvidenceCheck;
   /** Rows the loop left for the next step because it reached `deadlineAt`, and whether the top-up was skipped. */
   timeBox: { stopped: boolean; rowsLeft: number; topUpSkipped: boolean };
 }
@@ -295,6 +324,9 @@ export function normalizedConfidence(value: number | string | null): number {
 export function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
+
+/** The refusal reason for a row below the publish confidence floor (re-selected once it clears it). */
+export const BELOW_CONFIDENCE_REASON = "Below publish confidence threshold";
 
 export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
@@ -352,7 +384,7 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const limit = isPercentFee(row) ? null : limitGuardVerdict(row);
   if (limit) return `Transaction limit, not a price: ${limit.detail}`;
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
-    return "Below publish confidence threshold";
+    return BELOW_CONFIDENCE_REASON;
   }
   return null;
 }
@@ -410,10 +442,12 @@ export async function rejectVerifiedFee(db: SqlTag, feeVerifiedId: number, flag:
  * has since passed under a newer guard, whose guard rejection does not count. Without the
  * second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
  */
-function undecidedAtThisVersionSql(params: Array<number | string | number[]>): string {
+function undecidedAtThisVersionSql(params: Array<number | string | number[]>, minConfidence: number): string {
   const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
   const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
   const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
+  const confidenceParam = `$${params.push(minConfidence)}`;
+  const confidenceReasonParam = `$${params.push(BELOW_CONFIDENCE_REASON)}`;
   return `AND NOT EXISTS (
          SELECT 1
            FROM pipeline_attempts pa
@@ -467,10 +501,19 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>): s
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
+            -- A row refused only for low confidence is decided once more when its confidence
+            -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
+            -- 0.5 placeholder (#1055). A row still below the floor stays decided.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail->>'reason' = ${confidenceReasonParam}
+              AND COALESCE(fv.extraction_confidence, 0) >= ${confidenceParam}
+            )
        )`;
 }
 
-async function selectVerifiedFees(
+/** The verified rows Hamilton picks next, whole documents oldest first (`publish-selection.db.test.ts`). */
+export async function selectVerifiedFees(
   db: SqlTag,
   limit: number,
   learning: boolean,
@@ -530,11 +573,35 @@ async function selectVerifiedFees(
       ),`;
     filters.push(`AND fv.institution_id IN (SELECT deep.institution_id FROM deep)`);
   }
-  if (learning) filters.push(undecidedAtThisVersionSql(params));
+  if (learning) filters.push(undecidedAtThisVersionSql(params, minConfidence));
+  // Narrow first, project after (findings/2026-10-19-publish-eligibility-projection.md): the
+  // eligible CTE keeps only what selection and the whole-document batch need, and the costly
+  // per-row reads (the two pipeline_attempts look-ups, the verified-row snapshot) run only for
+  // the picked rows. One statement, one snapshot, so the picked rows read exactly as before.
   return db.unsafe<VerifiedFeeRow[]>(
     `
-      WITH ${deepCte} eligible AS (
+      WITH picked_rows AS (
+      WITH ${deepCte} eligible AS MATERIALIZED (
       SELECT fv.fee_verified_id,
+             COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
+             fv.created_at AS batch_created_at
+        FROM verified_fee_observations fv
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN institution_sources inst ON inst.id = fv.institution_id
+       WHERE fv.review_status IN ('verified', 'approved')
+         AND fv.outlier_flags ? 'agentic_darwin_verified'
+         ${filters.join("\n         ")}
+         AND NOT EXISTS (
+           SELECT 1
+             FROM published_fee_records fp
+            WHERE fp.lineage_ref = fv.fee_verified_id
+              AND fp.rolled_back_at IS NULL
+         )
+      )
+      ${WHOLE_DOCUMENT_BATCH}
+      )
+      SELECT fv.fee_verified_id,
+             to_jsonb(fv)::text AS selected_verified_state,
              fv.fee_raw_id,
              fv.institution_id,
              fv.source_url,
@@ -555,9 +622,9 @@ async function selectVerifiedFees(
              fv.rate_basis,
              fr.agent_event_id AS raw_agent_event_id,
              fr.source_document_id,
+             fr.product_name,
              sd.crawled_at AS document_crawled_at,
-             -- Read through jsonb so this works before the companion-pages migration.
-             to_jsonb(sd)->>'companion_source_id' AS document_stream,
+             sd.companion_source_id::text AS document_stream,
              sd.document_url,
              inst.institution_name,
              EXISTS (
@@ -579,24 +646,14 @@ async function selectVerifiedFees(
                        OR ${QUALIFIER_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
              ) AS same_line_reselect,
              COALESCE(COALESCE(fr.extraction_note, fr.conditions) LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
-             COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
-             fv.created_at AS batch_created_at
-        FROM verified_fee_observations fv
+             picked_rows.batch_document_key,
+             picked_rows.batch_created_at
+        FROM picked_rows
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = picked_rows.fee_verified_id
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
         JOIN institution_sources inst ON inst.id = fv.institution_id
-       WHERE fv.review_status IN ('verified', 'approved')
-         AND fv.outlier_flags ? 'agentic_darwin_verified'
-         ${filters.join("\n         ")}
-         AND NOT EXISTS (
-           SELECT 1
-             FROM published_fee_records fp
-            WHERE fp.lineage_ref = fv.fee_verified_id
-              AND fp.rolled_back_at IS NULL
-         )
-      )
-      ${WHOLE_DOCUMENT_BATCH}
-       ORDER BY eligible.batch_created_at ASC, eligible.fee_verified_id ASC
+       ORDER BY picked_rows.batch_created_at ASC, picked_rows.fee_verified_id ASC
     `,
     params,
   );
@@ -626,7 +683,7 @@ async function institutionFeeDepth(
   const depth = new Map<number, Set<string>>();
   if (institutionIds.length === 0) return new Map();
   const params: Array<number | string | number[]> = [institutionIds];
-  const undecided = learning ? undecidedAtThisVersionSql(params) : "";
+  const undecided = learning ? undecidedAtThisVersionSql(params, minConfidence) : "";
   const rows = await db.unsafe<InstitutionDepthRow[]>(
     `
       -- institution_fee_depth
@@ -685,9 +742,7 @@ export function correctedReason(block: CorrectionBlock | null): string | null {
     : `Protected by an admin correction (correction #${block.correctionId})`;
 }
 
-export async function insertPublishedFee(
-  db: SqlTag,
-  options: {
+interface PublishedInsertOptions {
     runId: number;
     batchId: string;
     row: VerifiedFeeRow;
@@ -697,8 +752,33 @@ export async function insertPublishedFee(
     priorFeePublishedId?: number | null;
     /** Called when an admin correction of the same logical fee blocked this publish. */
     onCorrected?: (block: CorrectionBlock) => void;
-  },
-): Promise<number | null> {
+    onInternationalDeferred?: (detail: InternationalPublicationDeferral) => void;
+}
+
+/** All exported direct insertions enter the same actual-lineage gate as the normal owner. */
+export async function insertPublishedFee(db: SqlTag, options: PublishedInsertOptions): Promise<number | null> {
+  const guarded = await withInternationalPublicationWrite(db, {
+    feeVerifiedId: Number(options.row.fee_verified_id), expectedVerifiedState: options.row.selected_verified_state,
+    expectedCategory: options.row.canonical_fee_key,
+  }, async (scope, actual, current) => {
+    // Direct ordinary callers do not have the normal owner's final identity guard.
+    // Lock only the candidate suffix, nonwaiting, and compare the complete preflight
+    // verification before an ordinary→international transition could use old fields.
+    await scope`SELECT fee_verified_id FROM verified_fee_observations
+      WHERE fee_verified_id=${Number(current.fee_verified_id)} FOR UPDATE NOWAIT`;
+    if (current.fee_raw_id != null) await scope`SELECT fee_raw_id FROM raw_fee_observations
+      WHERE fee_raw_id=${Number(current.fee_raw_id)} FOR UPDATE NOWAIT`;
+    const unchanged = await scope`SELECT fee_verified_id FROM verified_fee_observations
+      WHERE fee_verified_id=${Number(current.fee_verified_id)} AND to_jsonb(verified_fee_observations)::text=${current.selected_verified_state!}`;
+    if (unchanged.length === 0) return deferInternationalPublication("selected_changed");
+    return writePublishedFee(scope, { ...options, row: actual ?? options.row });
+  });
+  if (guarded.kind === "deferred") { options.onInternationalDeferred?.(guarded.detail); return null; }
+  return guarded.value;
+}
+
+/** Called only under the direct or normal owner's completed guard; no second source acquisition. */
+async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): Promise<number | null> {
   const feeVerifiedId = Number(options.row.fee_verified_id);
   const institutionId = Number(options.row.institution_id);
   const confidence = normalizedConfidence(options.row.extraction_confidence);
@@ -804,15 +884,26 @@ export async function insertPublishedFee(
   return inserted[0]?.fee_published_id == null ? null : Number(inserted[0].fee_published_id);
 }
 
+/** Real normal rows come from the existing selector and retain its mandatory final CAS.
+ * An ordinary→international mutation fails that CAS before any private insertion. Do not
+ * add a new source/availability read to every ordinary publication. Never exported to callers.
+ */
+async function withSelectedInternationalPublication<T>(db: SqlTag, row: VerifiedFeeRow,
+  work: (tx: SqlTag, actual: VerifiedFeeRow | null, current: VerifiedFeeRow,
+    sources: ReadonlyMap<number, LockedSourceSnapshot> | null) => Promise<T>): Promise<InternationalPublicationWrite<T>> {
+  if (!row.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(db, null, row, null) };
+  return withInternationalPublicationWrite(db, { feeVerifiedId: Number(row.fee_verified_id),
+    expectedVerifiedState: row.selected_verified_state, expectedCategory: row.canonical_fee_key }, work);
+}
+
 /** Live rows for the same fee (institution, canonical key, variant, frequency), newest first. */
 async function selectLivePublishedFees(
   db: SqlTag,
   row: VerifiedFeeRow,
-  options: { anyVariant?: boolean } = {},
+  options: { anyVariant?: boolean; required?: boolean } = {},
 ): Promise<PriorPublishedFeeRow[]> {
   const anyVariant = options.anyVariant === true;
-  try {
-    return await inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
+  const read = await readPublicationEvidence<PriorPublishedFeeRow[]>("live_prior", () => inSavepoint(db, (scope) => scope<PriorPublishedFeeRow[]>`
       SELECT fp.fee_published_id,
              fp.amount,
              fp.amount_kind,
@@ -821,26 +912,25 @@ async function selectLivePublishedFees(
              fp.published_at,
              fp.source_url,
              fr.source_document_id,
+             fr.product_name,
              sd.crawled_at AS document_crawled_at,
              to_jsonb(sd)->>'companion_source_id' AS document_stream,
-             sd.document_url
+             sd.document_url, ${scope.unsafe(PUBLISHED_IDENTITY_COLUMNS)}
         FROM published_fee_records fp
         LEFT JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
         LEFT JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
        WHERE fp.institution_id = ${Number(row.institution_id)}
          AND fp.canonical_fee_key = ${row.canonical_fee_key}
+         AND ${scope.unsafe(productKeySql("fr.product_name"))} = ${productKey(row.product_name)}
          AND fp.fee_audience = ${row.fee_audience ?? "unknown"}
          AND fp.quarantined_at IS NULL
          AND (${anyVariant} OR COALESCE(fp.variant_type, '') = COALESCE(${row.variant_type}, ''))
          AND (${anyVariant} OR COALESCE(fp.frequency, '') = COALESCE(${row.frequency}, ''))
          AND fp.rolled_back_at IS NULL
        ORDER BY fp.published_at DESC, fp.fee_published_id DESC
-    `);
-  } catch (error) {
-    console.error("selectLivePublishedFees failed:", error);
-    return [];
-  }
+    `));
+  return publicationEvidenceValue(read, [], options.required);
 }
 
 function sameDocument(a: number | string | null | undefined, b: number | string | null | undefined): boolean {
@@ -924,7 +1014,7 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
   if (ADDON_PRICE_NAME.test(name.trim())) return { code: "price_is_addon", reason: "Name ends in \"plus\": the amount is an add-on to the fee's price, not the fee" };
   // A name cut from a sentence or a table that Knox's repair cannot turn into a fee's name
   // ("GUASFCU charges a") is not published as it is.
-  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey)) {
+  if (isCutoffName(name) && !retidiedFeeName(name, canonicalKey) && !clauseCutName(name, canonicalKey)) {
     return { code: "cutoff_name", reason: "Name is cut from a sentence or a table and has no repaired form" };
   }
   // A name that would show only a condition ("(balance falls below $1,000)", cut from "(balance
@@ -934,6 +1024,19 @@ export function publishNameHold(name: string, canonicalKey: string, amount: numb
     return { code: "condition_only_name", reason: "Name is only a parenthetical condition; the fee it belongs to is in another cell" };
   }
   return null;
+}
+
+/**
+ * A name whose cut-off shape is only a comma clause after it ("Stop Payment, all items including ACH
+ * and bill pay") publishes under the name before the clause, when that still names the row's own
+ * category and the cut drops no condition. Beacon's $30 stop payment and $125 legal process fee were
+ * held as `cutoff_name` for this (verified 191900, 191887; Oct 19).
+ */
+function clauseCutName(name: string, canonicalKey: string): string | null {
+  const head = nameBeforeSentenceClauses(name);
+  // The clause must not change what the name reads as ("Wire Transfer Outgoing, including international").
+  if (!head || classifyFeeText(head) !== canonicalKey || classifyFeeText(name) !== canonicalKey || !checkFeeCategory(canonicalKey, head).ok) return null;
+  return dropsCondition(name, head, canonicalKey) ? null : head;
 }
 
 const CONDITION_ONLY_NAME = /^\s*\([^()]*\)\s*$/;
@@ -970,6 +1073,8 @@ export function publishedFeeName(name: string, canonicalKey: string): string {
     // $7,500)" went live as "Minimum Balance Fee" (107240, 9 Oct) beside the $1,000 and $2,500
     // lines it is not. Retidy v15's `dropsCondition` is the same bar.
     if (retidied && checkFeeCategory(canonicalKey, retidied).ok && !dropsCondition(current, retidied, canonicalKey)) return retidied;
+    const clauseless = isCutoffName(current) ? clauseCutName(current, canonicalKey) : null;
+    if (clauseless) return clauseless;
   }
   // Reads Knox made before the footnote strip (PR 545) still carry "Fee1"; publish drops it too.
   const repaired = repairNameShape(stripFootnoteMarks(current));
@@ -1013,6 +1118,7 @@ export function decidePriorFee(
   live: PriorPublishedFeeRow[],
   apart: (prior: PriorPublishedFeeRow) => boolean = () => false,
 ): PriorFeeDecision {
+  live = live.filter((prior) => sameProduct(prior.product_name, row.product_name));
   if (live.length === 0) return { kind: "new" };
   // A rate and a dollar amount are different values: "1%" is never identical to "$1.00".
   // A live line at the same price that is another line of the page (\`apart\`) is not this fee.
@@ -1427,20 +1533,20 @@ function escapeRegExp(text: string): string {
 }
 
 /** The current read of a document (\`agent_source_texts\`), for the same-line check. */
-async function selectDocumentText(db: SqlTag, documentId: number | string | null | undefined): Promise<string | null> {
-  if (documentId == null) return null;
-  try {
-    const [row] = await inSavepoint(db, (scope) => scope<{ normalized_text: string | null }[]>`
+async function selectDocumentText(db: SqlTag, documentId: number | string | null | undefined, required = false): Promise<string | null> {
+  if (documentId == null) {
+    if (required) throw new PublicationEvidenceUnavailable("document_text");
+    return null;
+  }
+  const read = await readPublicationEvidence<{ normalized_text: string | null }[]>("document_text", () => inSavepoint(db, (scope) => scope<{ normalized_text: string | null }[]>`
       SELECT normalized_text FROM agent_source_texts
        WHERE source_document_id = ${Number(documentId)} AND normalized_text IS NOT NULL
        ORDER BY id DESC
        LIMIT 1
-    `);
-    return row?.normalized_text ?? null;
-  } catch (error) {
-    console.error("selectDocumentText failed:", error);
-    return null;
-  }
+    `));
+  const text = publicationEvidenceValue(read, [], required)[0]?.normalized_text ?? null;
+  if (required && !text?.trim()) throw new PublicationEvidenceUnavailable("document_text");
+  return text;
 }
 
 /**
@@ -1450,10 +1556,10 @@ async function selectDocumentText(db: SqlTag, documentId: number | string | null
  * Source spot checks of 20 such rows, 9 Oct: words alone 13, 10 and 14 of 20; with the page check
  * see docs/project/findings/2026-10-09-identical-skip-ignored-name.md.
  */
-async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): Promise<Set<PriorPublishedFeeRow>> {
+async function linesApartFrom(db: SqlTag, row: VerifiedFeeRow, live: PriorPublishedFeeRow[], required = false): Promise<Set<PriorPublishedFeeRow>> {
   const { candidates, balanced } = sameValueLines(row, live);
   if (candidates.length === 0 && balanced.length === 0) return new Set();
-  return sameValueLinesApart(row, live, await selectDocumentText(db, row.source_document_id));
+  return sameValueLinesApart(row, live, await selectDocumentText(db, row.source_document_id, required));
 }
 
 function sameValueLines(row: VerifiedFeeRow, live: PriorPublishedFeeRow[]): { candidates: PriorPublishedFeeRow[]; balanced: PriorPublishedFeeRow[] } {
@@ -1515,19 +1621,15 @@ export interface ListedFeeLine {
 }
 
 /** Every line Knox read from these documents, for the same-name price check below. */
-export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>): Promise<ListedFeeLine[]> {
+export async function selectListedFeeLines(db: SqlTag, documentIds: Array<number | string | null | undefined>, options: { required?: boolean } = {}): Promise<ListedFeeLine[]> {
   const ids = documentIds.filter((id) => id != null).map(Number);
   if (ids.length === 0) return [];
-  try {
-    return await inSavepoint(db, (scope) => scope<ListedFeeLine[]>`
+  const read = await readPublicationEvidence<ListedFeeLine[]>("listed_fee_lines", () => inSavepoint(db, (scope) => scope<ListedFeeLine[]>`
       SELECT source_document_id, fee_name, amount
         FROM raw_fee_observations
        WHERE source_document_id = ANY(${ids}::bigint[])
-    `);
-  } catch (error) {
-    console.error("selectListedFeeLines failed:", error);
-    return [];
-  }
+    `));
+  return publicationEvidenceValue(read, [], options.required);
 }
 
 /**
@@ -1998,8 +2100,10 @@ const NO_MOVEMENT = {
   movementDirection: null,
 } as const;
 
-function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome {
+function attemptOutcome(result: HamiltonPublishResult): AttemptOutcome | null {
+  if (result.evidenceDeferred || result.internationalDeferred) return null;
   if (result.status === "published") return "ok";
+  if (result.identityDeferred) return "evidence_mismatch";
   return result.reason === "Identical fee already published" ||
     result.reason === "Duplicate published row" ||
     result.reason === OLDER_DOCUMENT_REASON
@@ -2072,7 +2176,7 @@ export async function runHamiltonPublish(
   const results: HamiltonPublishResult[] = [];
   const twinUnreproduced = await unreproducedTwins(db, rows);
   // #1069 step 2: the sweeps' own rules, read once for the batch. Counted always; refused only
-  // while `refuseSweepRulesLive` is on. A failed read refuses nothing.
+  // while `refuseSweepRulesLive` is on. A failed required read leaves input pending.
   const sweepReads = await selectPublishSweepRefusals(db, rows.map((row) => Number(row.fee_verified_id)));
   // #1069: of the rows on one exact-duplicate collapse line, the copy the collapse would keep is
   // decided first, and a later twin is refused against it (`exactDuplicateDecision`), so a step
@@ -2084,7 +2188,13 @@ export async function runHamiltonPublish(
       canonicalFeeKey: row.canonical_fee_key,
       variantType: row.variant_type,
       amount: percent ? null : normalizedAmount(row.amount),
+      amountKind: percent ? "percent" : "flat",
       ratePercent: percent ? ratePercentOf(row) : null,
+      rateMinAmount: percent ? normalizedAmount(row.rate_min_amount ?? null) : null,
+      rateMaxAmount: percent ? normalizedAmount(row.rate_max_amount ?? null) : null,
+      rateBasis: percent ? row.rate_basis : null,
+      feeAudience: row.fee_audience,
+      productName: row.product_name,
       feeName: publishedFeeName(row.fee_name, row.canonical_fee_key),
     };
   };
@@ -2137,85 +2247,88 @@ export async function runHamiltonPublish(
     // Dry runs read the prior live row too, so they report the same skips, movements
     // and supersedes a real run would.
     let decision: PriorFeeDecision | null = null;
-    if (!skipReason) {
-      const live = await selectLivePublishedFees(db, row);
-      const apart = await linesApartFrom(db, row, live);
-      decision = decidePriorFee(row, live, (prior) => apart.has(prior));
-      // A row decided once more after the same-line check may since have had its frequency or
-      // variant re-read ("per_item" to none), so the live line it was identical to no longer
-      // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
-      // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
-      // check reads every live line of the category on its own document, and another
-      // document's line only under the same name (an older crawl of the same schedule: 72051
-      // "Loan Late Payment" $25 beside 6464 on Feb's copy). Another document's line under
-      // another name is a different printed line ("Overdraft" $25 beside another document's
-      // "Debit Card Overdraft" $25, #1314).
-      if (row.same_line_reselect && decision.kind !== "identical") {
-        const wide = (await selectLivePublishedFees(db, row, { anyVariant: true })).filter(
-          (prior) => sameDocument(prior.source_document_id, row.source_document_id) || nameCore(prior.fee_name ?? "") === nameCore(row.fee_name ?? ""),
-        );
-        const wideApart = await linesApartFrom(db, row, wide);
-        const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
-        if (wideDecision.kind === "identical") decision = wideDecision;
+    let priorReadsAvailable = true;
+    const unavailableEvidence: PublicationEvidenceCheck[] = [];
+    const requiredUnavailable: PublicationEvidenceCheck[] = [];
+    const unavailable = (check: PublicationEvidenceCheck, required: boolean) => {
+      if (!unavailableEvidence.includes(check)) unavailableEvidence.push(check);
+      if (required && !requiredUnavailable.includes(check)) requiredUnavailable.push(check);
+    };
+    try {
+      if (!skipReason) {
+        const live = await selectLivePublishedFees(db, row, { required: true });
+        const apart = await linesApartFrom(db, row, live, true);
+        decision = decidePriorFee(row, live, (prior) => apart.has(prior));
+        // A row decided once more after the same-line check may since have had its frequency or
+        // variant re-read ("per_item" to none), so the live line it was identical to no longer
+        // matches the key above and it went live as a new fee beside it (104684 "Wire Transfers -
+        // Outgoing: Outgoing Wire Fee" beside 23698 "Outgoing Wire Fee", 9 Oct). Its identical
+        // check reads every live line of the category on its own document, and another
+        // document's line only under the same name (an older crawl of the same schedule: 72051
+        // "Loan Late Payment" $25 beside 6464 on Feb's copy). Another document's line under
+        // another name is a different printed line ("Overdraft" $25 beside another document's
+        // "Debit Card Overdraft" $25, #1314).
+        if (row.same_line_reselect && decision.kind !== "identical") {
+          const wide = (await selectLivePublishedFees(db, row, { anyVariant: true, required: true })).filter(
+            (prior) => sameDocument(prior.source_document_id, row.source_document_id) || nameCore(prior.fee_name ?? "") === nameCore(row.fee_name ?? ""),
+          );
+          const wideApart = await linesApartFrom(db, row, wide, true);
+          const wideDecision = decidePriorFee(row, wide, (prior) => wideApart.has(prior));
+          if (wideDecision.kind === "identical") decision = wideDecision;
+        }
       }
-    }
-    if (decision?.kind === "older_document" && newerCopyPrintsLine(row, await selectDocumentText(db, decision.prior.source_document_id))) {
-      decision = { kind: "additional_line" };
-    }
-    if (
-      decision?.kind === "supersede" &&
-      listsBothPrices(await selectListedFeeLines(db, [row.source_document_id, decision.prior.source_document_id]), row, decision.prior)
-    ) {
-      decision = { kind: "additional_line" };
+      if (decision?.kind === "older_document" && newerCopyPrintsLine(row, await selectDocumentText(db, decision.prior.source_document_id, true))) {
+        decision = { kind: "additional_line" };
+      }
+      if (
+        decision?.kind === "supersede" &&
+        listsBothPrices(await selectListedFeeLines(db, [row.source_document_id, decision.prior.source_document_id], { required: true }), row, decision.prior)
+      ) {
+        decision = { kind: "additional_line" };
+      }
+    } catch (error) {
+      if (!(error instanceof PublicationEvidenceUnavailable)) throw error;
+      // A partial prior-line decision is not proof of identical/older/supersede.
+      decision = null;
+      priorReadsAvailable = false;
+      unavailable(error.check, true);
     }
     const priorPublishedFee = decision?.kind === "supersede" ? decision.prior : null;
-    // #1069: a row about to publish whose line is already live under the collapse's own test
-    // (same category, variant, value and name; frequencies that agree) is closed by the exact
-    // duplicate collapse later. Counted always; refused only while `refuseDuplicatesLive` is on.
-    // Copies published earlier in this step are marked, and a dry run, which inserts nothing,
-    // adds the ones it would have published.
     let exactDuplicate: ExactDuplicateDecision = { kind: "none" };
     const line = collapseLineOf(row);
     const lineKey = collapseLineKey(line);
-    if (!skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document") {
+    const needsGate = !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document";
+    if (needsGate && priorReadsAvailable) {
+      // In-step copies remain evidence even when the external read is unavailable.
       const inStep = stepCopies.get(lineKey) ?? [];
       const inStepIds = new Set(inStep.map((copy) => Number(copy.fee_published_id)));
-      const live = (await selectExactCopies(db, line)).map((copy) =>
+      const read = await selectExactCopies(db, line);
+      if (read.state === "unavailable") unavailable(read.check, refuseDuplicatesLive);
+      const live = (read.state === "available" ? read.value : []).map((copy) =>
         inStepIds.has(Number(copy.fee_published_id)) ? { ...copy, in_step: true } : copy,
       );
       const liveIds = new Set(live.map((copy) => Number(copy.fee_published_id)));
       exactDuplicate = exactDuplicateDecision(row, [
-        ...live,
-        ...inStep.filter((copy) => !liveIds.has(Number(copy.fee_published_id))),
+        ...live, ...inStep.filter((copy) => !liveIds.has(Number(copy.fee_published_id))),
       ]);
     }
-    const sweepRule =
-      !skipReason && decision?.kind !== "identical" && decision?.kind !== "older_document"
-        ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null)
-        : null;
-    // A dollar row whose line is already live from another copy of the same page ("?print=1",
-    // "www.") is closed by the page-copy collapse later; read with its own test, and refused only
-    // while `refusePageCopiesLive` is on (page-copy-refuse.ts).
-    const pageCopyOf =
-      !skipReason &&
-      decision?.kind !== "identical" &&
-      decision?.kind !== "older_document" &&
-      exactDuplicate.kind !== "refuse" &&
-      !sweepRule &&
-      line.amount != null &&
-      line.ratePercent == null &&
-      row.source_document_id != null
-        ? await selectPageCopyKeeper(db, {
-            institutionId: line.institutionId,
-            canonicalFeeKey: line.canonicalFeeKey,
-            variantType: line.variantType,
-            amount: line.amount,
-            feeName: line.feeName,
-            frequency: row.frequency,
-            feeAudience: row.fee_audience,
-            sourceDocumentId: Number(row.source_document_id),
-          })
-        : null;
+    const sweepRule = needsGate ? (sweepReads.refusals.get(Number(row.fee_verified_id)) ?? null) : null;
+    if (needsGate) {
+      for (const check of sweepReads.unavailable) unavailable(check, refuseSweepRulesLive);
+    }
+    let pageCopyOf: number | null = null;
+    if (needsGate && priorReadsAvailable &&
+        exactDuplicate.kind !== "refuse" && !sweepRule && line.amount != null &&
+        line.ratePercent == null && row.source_document_id != null) {
+      const read = await selectPageCopyKeeper(db, {
+        institutionId: line.institutionId, canonicalFeeKey: line.canonicalFeeKey,
+        variantType: line.variantType, amount: line.amount, feeName: line.feeName,
+        frequency: row.frequency, feeAudience: row.fee_audience, productName: row.product_name,
+        sourceDocumentId: Number(row.source_document_id),
+      });
+      if (read.state === "available") pageCopyOf = read.value;
+      else unavailable(read.check, refusePageCopiesLive);
+    }
     if (skipReason) {
       result = { ...base, status: "skipped", reason: skipReason, feePublishedId: null, ...NO_MOVEMENT };
     } else if (decision?.kind === "identical") {
@@ -2262,8 +2375,18 @@ export async function runHamiltonPublish(
         feePublishedId: null,
         ...NO_MOVEMENT,
       };
-    } else if (dryRun) {
+    } else if (requiredUnavailable.length > 0) {
       result = {
+        ...base, status: "skipped", feePublishedId: null, ...NO_MOVEMENT,
+        reason: "Required publication evidence unavailable: " + requiredUnavailable.join(", ") + "; left pending",
+        evidenceDeferred: true,
+      };
+    } else if (dryRun) {
+      const guarded = await withSelectedInternationalPublication(db, row, async () => true);
+      result = guarded.kind === "deferred" ? {
+        ...base, status: "skipped", reason: "International wire evidence or identity is unresolved; left pending",
+        feePublishedId: null, ...NO_MOVEMENT, internationalDeferred: guarded.detail,
+      } : {
         ...base,
         status: "published",
         reason: null,
@@ -2277,11 +2400,35 @@ export async function runHamiltonPublish(
       // fee, and never a closed row without its replacement.
       let heldBy: number | null = null;
       let correctedBy: CorrectionBlock | null = null;
-      const written = await inSavepoint(db, async (scope) => {
-        const feePublishedId = await insertPublishedFee(scope, {
+      const guarded = await withSelectedInternationalPublication(db, row,
+      async (prefixed, actual) => withPublishedIdentityWrite(prefixed, async (scope) => {
+        if (actual && row.source_document_id !== undefined
+          && Number(actual.source_document_id) !== Number(row.source_document_id)) return deferInternationalPublication("selected_changed");
+        const defer = async () => {
+          await recordIdentitySkips(scope, options.runId, "publish", 1);
+          return { feePublishedId: null, superseded: false, changeRecorded: false, identityChanged: true };
+        };
+        // Real selectors carry product ownership even when unassigned. Legacy pure/test rows
+        // omit the field; they keep their established contract. Lock before validating the
+        // selected raw lineage so product metadata cannot change under this insertion.
+        if (row.product_name !== undefined) {
+          if (!row.selected_verified_state) return defer();
+          const prior = priorPublishedFee?.published_state ? [priorPublishedFee as PublishedIdentity] : [];
+          const unchanged = await unchangedPublishedIdentities(scope, prior, [Number(row.fee_verified_id)]);
+          const current = await scope<{ fee_raw_id: number | string; product_name: string | null }[]>`
+            SELECT fv.fee_raw_id, fr.product_name FROM verified_fee_observations fv
+            JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+            WHERE fv.fee_verified_id = ${Number(row.fee_verified_id)} AND fv.fee_raw_id = ${Number(row.fee_raw_id)}
+              AND to_jsonb(fv)::text = ${row.selected_verified_state}
+              AND ${scope.unsafe(productKeySql("fr.product_name"))} = ${productKey(row.product_name)}`;
+          if (current.length === 0 || (prior.length && !unchanged.has(Number(prior[0].fee_published_id)))) {
+            return defer();
+          }
+        }
+        const feePublishedId = await writePublishedFee(scope, {
           runId: options.runId,
           batchId,
-          row,
+          row: actual ?? row,
           onHeld: (heldId) => { heldBy = heldId; },
           priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
           onCorrected: (block) => { correctedBy = block; },
@@ -2296,19 +2443,25 @@ export async function runHamiltonPublish(
           feePublishedId,
         });
         return { feePublishedId, ...supersede };
-      });
+      }));
+      const written = guarded.kind === "written" ? guarded.value
+        : { feePublishedId: null, superseded: false, changeRecorded: false };
       const { feePublishedId } = written;
       result = {
         ...base,
         status: feePublishedId ? "published" : "skipped",
-        reason: feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? "Duplicate published row",
+        reason: guarded.kind === "deferred" ? "International wire evidence or identity is unresolved; left pending"
+          : feePublishedId ? null : heldBy ? `Held by an operator (fee #${heldBy})` : correctedReason(correctedBy) ?? ("identityChanged" in written && written.identityChanged ? "Selected verification, product or lineage changed; deferred" : "Duplicate published row"),
         feePublishedId,
+        ...("identityChanged" in written && written.identityChanged ? { identityDeferred: true } : {}),
+        ...(guarded.kind === "deferred" ? { internationalDeferred: guarded.detail } : {}),
         ...(feePublishedId ? movementFor(priorPublishedFee, row) : NO_MOVEMENT),
         supersededFeePublishedId:
           written.superseded && priorPublishedFee ? Number(priorPublishedFee.fee_published_id) : null,
         changeRecorded: written.changeRecorded,
       };
     }
+    if (unavailableEvidence.length) result.unavailableEvidence = unavailableEvidence;
     if (exactDuplicate.kind !== "none") result.exactDuplicate = exactDuplicate;
     if (sweepRule) result.sweepRule = sweepRule;
     if (pageCopyOf != null) result.pageCopyOf = pageCopyOf;
@@ -2319,6 +2472,7 @@ export async function runHamiltonPublish(
           fee_published_id: result.feePublishedId ?? 0,
           frequency: row.frequency ?? null,
           fee_audience: row.fee_audience ?? null,
+          product_name: row.product_name ?? null,
           published_at: null,
           in_step: true,
         },
@@ -2326,14 +2480,17 @@ export async function runHamiltonPublish(
     }
     results.push(result);
 
-    if (learning) {
+    // A stale selected tuple is not a decision about the current verified input. Its guard
+    // event is durable; leave the ordinary pending input eligible without replaying history.
+    const outcome = attemptOutcome(result);
+    if (learning && !result.identityDeferred && outcome != null) {
       await recordAttempt(db, {
         institutionId: result.institutionId,
         stage: "publish",
         strategy: HAMILTON_PUBLISH_STRATEGY.strategy,
         version: HAMILTON_PUBLISH_STRATEGY.version,
         fingerprint: verifiedFeeFingerprint(result.feeVerifiedId),
-        outcome: attemptOutcome(result),
+        outcome,
         yieldCount: result.status === "published" ? 1 : 0,
         costMicrousd: 0,
         runId: options.runId,
@@ -2418,15 +2575,48 @@ export async function runHamiltonPublish(
       amount: result.amount,
     })),
   };
+  const unavailableByCheck: PublishEvidenceCheck["unavailableByCheck"] = {};
+  for (const result of results) {
+    for (const check of result.unavailableEvidence ?? []) {
+      unavailableByCheck[check] = (unavailableByCheck[check] ?? 0) + 1;
+    }
+  }
+  const unavailableChecks = [...new Set<PublicationEvidenceCheck>([
+    ...sweepReads.unavailable, ...Object.keys(unavailableByCheck) as PublicationEvidenceCheck[],
+  ])];
+  const evidenceCheck: PublishEvidenceCheck = {
+    protocol: "publish.evidence.v1",
+    readState: unavailableChecks.length ? "unavailable" : "available",
+    unavailableChecks,
+    deferred: results.filter((result) => result.evidenceDeferred).length,
+    unavailableByCheck,
+    samples: results.filter((result) => result.unavailableEvidence?.length).slice(0, 20).map((result) => ({
+      fee_verified_id: result.feeVerifiedId, checks: result.unavailableEvidence!, deferred: result.evidenceDeferred === true,
+    })),
+  };
   return {
     selectedVerifiedFees: selected.length,
     processedVerifiedFees: results.length,
     publishedFees: published.length,
     skippedFees: results.length - published.length,
+    identityDeferredFees: results.filter((result) => result.identityDeferred).length,
+    evidenceDeferredFees: evidenceCheck.deferred,
+    ...(results.some(result => result.internationalDeferred) ? {
+      internationalDeferredFees: results.filter(result => result.internationalDeferred).length,
+      internationalCheck: { protocol: "publish.international_scope.v1" as const,
+        deferred: results.filter(result => result.internationalDeferred).length,
+        samples: results.filter(result => result.internationalDeferred).slice(0, 20).map(result => ({
+          fee_verified_id: result.feeVerifiedId, reason: result.internationalDeferred!.reason,
+          conflicting_published_ids: result.internationalDeferred!.conflictingPublishedIds.slice(0, 20),
+        })) },
+    } : {}),
     supersededFees: results.filter((result) => result.supersededFeePublishedId != null).length,
     zeroFeesPublished: published.filter((result) => result.amount === 0).length,
     learning,
-    outcomes: learning ? countOutcomes(results.map(attemptOutcome)) : {},
+    outcomes: learning ? countOutcomes(results.flatMap((result) => {
+      const outcome = attemptOutcome(result);
+      return outcome == null ? [] : [outcome];
+    })) : {},
     limit,
     minConfidence,
     minInstitutionFees,
@@ -2438,6 +2628,7 @@ export async function runHamiltonPublish(
     duplicateCheck,
     sweepCheck,
     pageCopyCheck,
+    evidenceCheck,
     timeBox: { stopped: rowsLeft > 0, rowsLeft, topUpSkipped },
   };
 }

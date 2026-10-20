@@ -22,6 +22,8 @@ import { PricingJump } from "./pricing-jump";
 import { StickyCta } from "./sticky-cta";
 import { TrackView } from "@/components/track-view";
 import { getProPricingInstitution } from "@/lib/data-store/pro-accounts";
+import { sql } from "@/lib/data-store/connection";
+import { chosenProInstitutionId } from "@/lib/pro-checkout-institution";
 import { NON_INSTITUTION_TIER, PRO_TIERS, assetsDetail, isProTier, proTier, tierAmountLabel, tierForAssets } from "@/lib/pro-tiers";
 import { GatedOptions, OtherOptions, PricingFaq } from "./pricing-sections";
 import { chosenPriceLine, closingHeading, fromPriceLine, pricingCtaLabel, type ChosenInstitutionPrice } from "./plan-cta";
@@ -68,6 +70,8 @@ interface SubscribeSearchParams {
   band?: string;
   /** "1" when the buyer backed out of Stripe Checkout. */
   canceled?: string;
+  /** "1" after "Change": show the search instead of the institution already chosen. */
+  change?: string;
 }
 
 const SEAT_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
@@ -148,8 +152,14 @@ export default async function SubscribePage({
       : [];
   const inviteMode = params.invite === "workspace" || pendingInvitations.length > 0;
 
-  // Who the plan covers sets the tier; checkout works it out again from the same id.
-  const institutionId = Number(params.inst);
+  // Who the plan covers sets the tier; checkout works it out again from the same id. With no
+  // ?inst=, a signed-in buyer's own choice (linked, waiting for the link check, or saved before
+  // paying) is priced, so the bank isn't asked for twice (#1958); "Change" still searches.
+  const savedChoice =
+    user && !params.inst && params.org !== "other" && params.change !== "1"
+      ? await chosenProInstitutionId(sql, user.id)
+      : null;
+  const institutionId = savedChoice ?? Number(params.inst);
   const pricingInstitution =
     Number.isSafeInteger(institutionId) && institutionId > 0
       ? await getProPricingInstitution(institutionId).catch(() => null)
@@ -263,6 +273,7 @@ export default async function SubscribePage({
                   problem={chooserProblem}
                   bandChoices={needsBand ? PRO_TIERS.map((t) => ({ key: t.key, label: t.assetsLabel })) : null}
                   pickedBand={selection?.tierPicked ? selection.tier : null}
+                  institutionId={pricingInstitution?.id ?? null}
                   entry={entryPoint}
                 />
               }
@@ -278,7 +289,8 @@ export default async function SubscribePage({
               destination={entry.page}
               registerHref={{ annual: registerHrefFor("annual"), monthly: registerHrefFor("monthly") }}
               initialPlan={requestedPlan}
-              autoStartPlan={selection ? autoStartPlan : null}
+              // A saved choice is shown first, never sent to Stripe unseen.
+              autoStartPlan={selection && !savedChoice ? autoStartPlan : null}
               entry={entryPoint}
             />
             {!isLoggedIn && (

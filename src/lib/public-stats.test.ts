@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   UNAVAILABLE_LABEL,
@@ -46,5 +48,18 @@ describe("benchmarkBasis", () => {
     expect(benchmarkBasis({ median_amount: null, institution_count: 1, total_observations: 1 }, null)).toBe(
       "1 institution · 1 published fee entry",
     );
+  });
+});
+
+describe("national counts use the states' institution rule (#1980)", () => {
+  const source = readFileSync(join(process.cwd(), "src/lib/public-stats.ts"), "utf8");
+  const body = (name: string) => {
+    const start = source.indexOf(`async function ${name}`);
+    return source.slice(start, source.indexOf("\n}\n", start));
+  };
+
+  it("counts monitored and fee-publishing institutions only where the regulator has not marked them inactive", () => {
+    expect(body("countMonitoredInstitutions")).toContain('activeInstitutionFilter("ct")');
+    expect(body("readHeadlineCounts")).toContain('activeInstitutionFilter("ct")');
   });
 });

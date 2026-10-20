@@ -13,9 +13,22 @@ const liveFeeCount = cachedPublicRead("health-live-fee-count", async (): Promise
   return Number(row?.cnt ?? 0);
 });
 
+function machineErrorCode(error: unknown): string {
+  try {
+    const code = error !== null && (typeof error === "object" || typeof error === "function")
+      ? (error as { code?: unknown }).code : undefined;
+    return typeof code === "string" && code.length > 0 && code.length <= 32 && !/[^A-Z0-9_]/.test(code) ? code : "unknown";
+  } catch {
+    // A thrown proxy/getter must not turn the generic failure response into another error.
+    return "unknown";
+  }
+}
+
 async function handleGET() {
+  let stage: "database_ping" | "live_fee_count" = "database_ping";
   try {
     await sql`SELECT 1`;
+    stage = "live_fee_count";
     const feeCount = await liveFeeCount();
 
     return NextResponse.json({
@@ -24,8 +37,14 @@ async function handleGET() {
       timestamp: new Date().toISOString(),
     });
   } catch (e) {
+    try {
+      // Never log arbitrary messages, SQL, connection strings, causes or stacks here.
+      console.error("Health check failed", { stage, code: machineErrorCode(e) });
+    } catch {
+      // Logging availability must not change the public failure contract.
+    }
     return NextResponse.json(
-      { status: "error", message: String(e) },
+      { status: "error", message: "Service temporarily unavailable" },
       { status: 503 }
     );
   }

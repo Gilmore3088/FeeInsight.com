@@ -28,8 +28,10 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   version number or a shared check its gates use), or a new migration: a PR that adds one always
   merges `main` and re-runs `migration-version-kill` before merging, since a clashing number shows
   no conflict.
-- Every change a review finds is documented as its own issue under a tracker: one tracker per
-  agent, plus the Foundation tracker for infrastructure, documentation and process work that
+- A review finding the PR can fix is fixed in that PR before merge. Anything else becomes a
+  checklist line on the issue for its root cause, or on the tracker if no such issue exists. A new
+  issue is opened only for a new root cause (James, 2026-10-19; DECISIONS). There is one tracker
+  per agent, plus the Foundation tracker for infrastructure, documentation and process work that
   belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
   pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
   The lane that owns an agent keeps that agent's tracker current (Data quality: Magellan, Rosetta,
@@ -44,6 +46,9 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   rule, and a PR merges only with that record. The day's merges go to James as one digest with
   screenshots; he can ask for any of them to be reverted. Migrations, production-data changes and
   the other actions Standing rules excludes still need James's yes.
+- A PR that closes an issue whose root cause is in a pipeline agent adds a lesson to that agent's
+  `src/lib/agents/<agent>/role-lessons.ts` in the same PR, so the agent gets better at its role,
+  not only a check (James, 2026-10-20; DECISIONS). `scripts/ci-guards.sh lesson-kill` checks the files.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
   its PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and
@@ -58,6 +63,11 @@ No branch deletion, force-push or direct main push under a general cleanup instr
 - A rule that holds, rejects or re-files a fee ships with its live re-check in Darwin, in the same
   PR, with a dry-run count of the live fees it would take down. Darwin re-checks live fees against
   today's rules (`docs/project/DECISIONS.md`, 2026-10-15).
+- Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
+  first fix the pipeline step that caused it (discovery, document capture, extraction,
+  categorisation or verification) so the whole class of error is fixed, then re-run and validate
+  the output. A one-off data fix (an admin correction, hold or re-file) comes only as the last step
+  after that process fix, never instead of it.
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.

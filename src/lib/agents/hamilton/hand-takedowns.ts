@@ -750,7 +750,137 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
   { feePublishedId: 59691, institutionId: 418, canonicalFeeKey: "atm_non_network", amount: 1, feeName: "Non-Penn Community Bank network ATM transactions",
     reason: "source_mismatch: #1946", issue: 1946, kind: "wrong_amount",
     evidence: "Penn Community Bank (doc 13627, text 1096): \"Non-Penn Community Bank network ATM transactions | $01\" among rows of \"$0\": $0 with footnote 1, not $1." },
+  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees the v74
+  // guard cannot reach by name, each confirmed against its stored text. 8 entries, under the
+  // fewer-than-20 rule; James is asked before the PR that lists them merges.
+  { feePublishedId: 154182, institutionId: 2954, canonicalFeeKey: "paper_statement", amount: 3, feeName: "per month with eStatements4 Paper statements available for an additional",
+    reason: "duplicate of #154181 (#2018)", issue: 2018, kind: "duplicate",
+    // The taxonomy fold (HAND_REFILES) renames 154181 earlier in the same publish, so this waits on its new name.
+    requiresLive: { feePublishedId: 154181, amount: 3, feeName: "Paper statements" },
+    evidence: "Lyon County State Bank (doc 22417, text 19093, mylcsb.com/personal/personal-checking): \"Yes Paper Statements available for $3 per month\", the same page and line as live 154181 (doc 37121), which is renamed and kept." },
+  { feePublishedId: 154134, institutionId: 7603, canonicalFeeKey: "early_closure", amount: 10, feeName: "Holiday Account Early Withdrawal",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",
+    evidence: "Charlotte Fire Department CU (doc 30581, text 28188): \"Holiday Account Early Withdrawal | $10.00 each\": a withdrawal from a holiday club account, not closing an account early." },
+  { feePublishedId: 152985, institutionId: 4522, canonicalFeeKey: "early_closure", amount: 10, feeName: "Savings Accounts: Holiday Savings Account early withdrawal",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",
+    evidence: "LAFCU (doc 37237, text 35348): \"Holiday Savings Account early withdrawal | Per withdrawal | $10 (fee waived for withdrawals made Nov. 1 to Dec. 25)\": a per-withdrawal club fee, not closing an account early." },
+  { feePublishedId: 154075, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 7, feeName: "Monthly fee",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "not_on_schedule",
+    evidence: "Natbank (doc 37789, text 35890) is nbc.ca/en/business/accounts.html, National Bank of Canada's Canadian business packages (\"Digital Package ... Monthly fee | $7\", Interac e-Transfer, ABM deposits), not Natbank's U.S. schedule." },
+  { feePublishedId: 154076, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 10, feeName: "Monthly fee",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "not_on_schedule",
+    evidence: "Natbank (doc 37789, text 35890): a Canadian business package's monthly fee on National Bank of Canada's nbc.ca page, not Natbank's U.S. schedule." },
+  { feePublishedId: 154101, institutionId: 2675, canonicalFeeKey: "bill_pay", amount: 1.5, feeName: "Interac e-Transfer service fee (beyond included transactions)",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "not_on_schedule",
+    evidence: "Natbank (doc 37789, text 35890): an Interac e-Transfer fee (a Canadian payment network) on National Bank of Canada's nbc.ca business page, not Natbank's U.S. schedule." },
+  { feePublishedId: 152916, institutionId: 7756, canonicalFeeKey: "check_image", amount: 2, feeName: "Members enrolled in Mobile or Online Banking have unlimited access to check copies",
+    reason: "duplicate of #144344 (#2018)", issue: 2018, kind: "duplicate",
+    requiresLive: { feePublishedId: 144344, amount: 2, feeName: "Copy of Member Check" },
+    evidence: "Utilities Employees CU (doc 13722, text 1224): \"Copy of Member Check (mailed to member) Please Note: Members enrolled in Mobile or Online Banking have unlimited access to check copies. $2.00 per check\": the note became the name; the fee is already live as 144344 \"Copy of Member Check\" $2 (doc 34338)." },
+  { feePublishedId: 152612, institutionId: 54, canonicalFeeKey: "atm_non_network", amount: 0, feeName: "Other out-of-network ATMs",
+    reason: "source_mismatch: #2018", issue: 2018, kind: "wrong_category",
+    evidence: "Associated Bank (doc 6978, text 981): \"Other out-of-network ATMs ....... No charge\" sits in the balance inquiry rows beside \"MoneyPass® surcharge-free network ATMs ... No charge\": a free balance inquiry, not a withdrawal price." },
+  // #2022 (Natbank, Oct 19; James chose "Do all three"): the 12 live Natbank fees read from National
+  // Bank of Canada's Canadian pages, each document checked read-only that day (both name Interac, a
+  // Canadian network; Natbank's U.S. pages do not). Its U.S. fee 124809 (doc 17161) stays.
+  { feePublishedId: 127400, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 2.5, feeName: "Monthly fee",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's chequing page (doc 26833, text 24104, nbc.ca/personal/accounts/chequing.html: Canadian chequing packages with \"Unlimited Interac e-Transfers\"), not Natbank's U.S. schedule." },
+  { feePublishedId: 127468, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 15.95, feeName: "Connected monthly fee",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's chequing page (doc 26833, text 24104, nbc.ca/personal/accounts/chequing.html: Canadian chequing packages with \"Unlimited Interac e-Transfers\"), not Natbank's U.S. schedule." },
+  { feePublishedId: 127469, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 28.95, feeName: "The Total monthly fee",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's chequing page (doc 26833, text 24104, nbc.ca/personal/accounts/chequing.html: Canadian chequing packages with \"Unlimited Interac e-Transfers\"), not Natbank's U.S. schedule." },
+  { feePublishedId: 127470, institutionId: 2675, canonicalFeeKey: "monthly_maintenance", amount: 3.95, feeName: "Minimalist monthly fee",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's chequing page (doc 26833, text 24104, nbc.ca/personal/accounts/chequing.html: Canadian chequing packages with \"Unlimited Interac e-Transfers\"), not Natbank's U.S. schedule." },
+  { feePublishedId: 127401, institutionId: 2675, canonicalFeeKey: "bill_pay", amount: 2, feeName: "Bill payment service",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127402, institutionId: 2675, canonicalFeeKey: "paper_statement", amount: 3.5, feeName: "Paper statement",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127403, institutionId: 2675, canonicalFeeKey: "bill_pay", amount: 1.25, feeName: "Withdrawal for bill payment",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127404, institutionId: 2675, canonicalFeeKey: "bill_pay", amount: 2.5, feeName: "Withdrawal, transfer, and withdrawal for bill payment",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127405, institutionId: 2675, canonicalFeeKey: "nsf", amount: 10, feeName: "and returned or rejected due to insufficient funds",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127406, institutionId: 2675, canonicalFeeKey: "nsf", amount: 5, feeName: "And returned or rejected due to insufficient funds",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127407, institutionId: 2675, canonicalFeeKey: "od_protection_transfer", amount: 5, feeName: "Overdraft protection",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  { feePublishedId: 127408, institutionId: 2675, canonicalFeeKey: "overdraft", amount: 5, feeName: "Transaction that leads to or increases overdraft",
+    reason: "source_mismatch: #2022", issue: 2022, kind: "not_on_schedule",
+    evidence: "Natbank: National Bank of Canada's \"Fee Guide for Personal Banking Solutions\" (doc 26834, text 24103, nbc.ca 17692-fee-guide-pbs.pdf, with Interac e-Transfer fees), not Natbank's U.S. schedule." },
+  // #2032: Beacon Bank & Trust (96). Its fee link moved from the loan-servicing page to the consumer
+  // fee schedule PDF (doc 37581); this row is the loan page's, filed as legal process.
+  { feePublishedId: 99795, institutionId: 96, canonicalFeeKey: "legal_process", amount: 20, feeName: "Extended Service Fee Document Request / Subpoena / Research",
+    reason: "source_mismatch: #2032", issue: 2032, kind: "not_on_schedule",
+    evidence: "Beacon's consumer fee schedule (doc 37581) prices \"Legal Process Fee, per occurrence ... $125.00\" and \"Subpoena Research Fee, per hour ... $75.00\"; the $20 is a loan-servicing document request from consumer-loan-servicing-fee-schedule." },
+  // #2133 (W43, Oct 19): a nonfee independently checked against its own completed stored
+  // text and fresh official sources. No replacement: New Valley's genuine $34/$5 NSF prices
+  // remain a separate extraction gap; a missing fee is never a free fee.
+  { feePublishedId: 138326, institutionId: 2191, canonicalFeeKey: "nsf", amount: 20, feeName: "Your account has already been charged a total of 4 NSF fees",
+    reason: "source_mismatch: #2133", issue: 2133, kind: "not_a_fee",
+    evidence: "New Valley (doc 30445, text 28058 line 267; text SHA256 87f273f9620df562a917346a2adae223d42e8b665126837a9fe6c3cb30630543): $20 is the cumulative four-fee exception for the 18/65 product, not an item price; line 263 prices each item at $5. Fresh consumer-fees HTML and Consumer-Schedule-of-Fees.pdf p3 agree." },
 ];
+
+/**
+ * Re-reads of a hand takedown (#1905 triage, Oct 19). A takedown rejects only that one verified row,
+ * so when Knox reads the same line again (a newer copy of the page, or the page at a new address),
+ * the same wrong fee publishes again: Navy Federal's #1765 and #1905 takedowns (154638-154640) came
+ * back from its Oct 19 re-read (doc 37977), TD's #1774 "Monthly fee" (152525) from its checking page
+ * at a new address (doc 37065), and one #1772 and one #1755 row the same way.
+ *
+ * So every listed entry whose fault is in the line itself also names the line: a live row at the
+ * same institution with the same name (case, spaces and punctuation aside) and amount is the same
+ * wrong fee and comes down with the entry's reason, its verified row rejected. Which entries:
+ *   - `wrong_amount` and `not_a_fee`: the line under any category;
+ *   - `wrong_category`: only under the listed category, since a re-file to the right one is the fix;
+ *   - never `duplicate` (the line is the kept fee's) or `not_on_schedule` (the fault is the
+ *     document: Texas Capital's #1880 lines published again from its current PDF, doc 37594, may be
+ *     right there).
+ *
+ * Dry run, prod read-only, Oct 19: 6 live rows match (154157, 154638, 154639, 154640, 153311,
+ * 152525), all published after their entry came down. Off, the step reports them (`returns`) and
+ * writes nothing; on, they come down with the listed takedowns. On after James's yes (decision
+ * card, 2026-10-20 01:53 UTC).
+ */
+export const HAND_TAKEDOWN_RETURNS_LIVE = true;
+const RETURN_KINDS: ReadonlySet<HandTakedown["kind"]> = new Set(["wrong_amount", "not_a_fee", "wrong_category"]);
+
+/** Pure: a fee name compared without case, spaces or punctuation. */
+export function lineKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** Pure: the live rows that re-read a listed line (see `HAND_TAKEDOWN_RETURNS_LIVE`), never a listed row itself. */
+export function planHandTakedownReturns(live: LiveTakedownRow[], list: readonly HandTakedown[] = HAND_TAKEDOWNS): PlannedHandTakedown[] {
+  const listed = new Set(list.map((entry) => entry.feePublishedId));
+  const planned: PlannedHandTakedown[] = [];
+  const seen = new Set<number>();
+  for (const row of [...live].sort((a, b) => Number(a.fee_published_id) - Number(b.fee_published_id))) {
+    const id = Number(row.fee_published_id);
+    if (listed.has(id) || seen.has(id)) continue;
+    const entry = list.find((candidate) =>
+      RETURN_KINDS.has(candidate.kind) &&
+      candidate.institutionId === Number(row.institution_id) &&
+      sameAmount(row.amount, candidate.amount) &&
+      lineKey(candidate.feeName) === lineKey(row.fee_name) &&
+      (candidate.kind !== "wrong_category" || candidate.canonicalFeeKey === row.canonical_fee_key));
+    if (!entry) continue;
+    seen.add(id);
+    planned.push({ feePublishedId: id, feeVerifiedId: row.lineage_ref == null ? null : Number(row.lineage_ref), reason: `${entry.reason} (re-read of #${entry.feePublishedId})` });
+  }
+  return planned;
+}
 
 export interface LiveTakedownRow {
   fee_published_id: number | string;
@@ -774,6 +904,9 @@ export interface HandTakedownResult {
   skipped: Array<{ feePublishedId: number; reason: string }>;
   /** Listed waiting verified rows rejected (`HAND_WAITING_REJECTIONS`); on a dry run, those it would reject. */
   waitingRejected: number[];
+  /** Live re-reads of a listed line (`HAND_TAKEDOWN_RETURNS_LIVE`): taken down when on, else what it would take down. */
+  returns: PlannedHandTakedown[];
+  returnsLive: boolean;
   /** A failed read or write (nothing written); also a `step.warning` run event. */
   error: string | null;
 }
@@ -823,18 +956,21 @@ export async function applyHandTakedowns(
   db: SqlTag,
   options: {
     runId: number; stepId?: number | null; batchId: string; dryRun: boolean;
-    list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[];
+    list?: readonly HandTakedown[]; waiting?: readonly HandWaitingRejection[]; returnsLive?: boolean;
   },
 ): Promise<HandTakedownResult> {
   const list = options.list ?? HAND_TAKEDOWNS;
   const waiting = options.waiting ?? HAND_WAITING_REJECTIONS;
-  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], error: null };
+  const returnsLive = options.returnsLive ?? HAND_TAKEDOWN_RETURNS_LIVE;
+  const result: HandTakedownResult = { dryRun: options.dryRun, takenDown: [], skipped: [], waitingRejected: [], returns: [], returnsLive, error: null };
   if (list.length === 0 && waiting.length === 0) return result;
   // Each listed row, and each live row an entry waits on (`requiresLive`).
   const ids = [...new Set(list.flatMap((entry) => entry.requiresLive ? [entry.feePublishedId, entry.requiresLive.feePublishedId] : [entry.feePublishedId]))];
   const waitingIds = [...new Set(waiting.map((entry) => entry.feeVerifiedId))];
   let live: LiveTakedownRow[] = [];
   let pending: Array<{ fee_verified_id: number | string; institution_id: number | string }> = [];
+  let returnCandidates: LiveTakedownRow[] = [];
+  const returnInstitutions = [...new Set(list.filter((entry) => RETURN_KINDS.has(entry.kind)).map((entry) => entry.institutionId))];
   try {
     if (ids.length > 0) {
       live = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
@@ -856,17 +992,33 @@ export async function applyHandTakedowns(
            )
       `);
     }
+    // Every live row at a listed institution, for re-reads of a listed line.
+    if (returnInstitutions.length > 0) {
+      returnCandidates = await inSavepoint(db, (scope) => scope<LiveTakedownRow[]>`
+        SELECT fp.fee_published_id, fp.lineage_ref, fp.institution_id, fp.canonical_fee_key, fp.fee_name, fp.amount
+          FROM published_fee_records fp
+         WHERE fp.institution_id = ANY(${returnInstitutions}::bigint[])
+           AND fp.rolled_back_at IS NULL
+           AND fp.amount IS NOT NULL
+      `);
+    }
   } catch (error) {
     console.error("hand takedowns read failed:", error);
     return { ...result, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns read", error }) };
   }
   const plan = planHandTakedowns(live, list);
   result.skipped = plan.skipped;
+  // A listed row coming down in this step is never also a re-read.
+  const planned = new Set(plan.takenDown.map((item) => item.feePublishedId));
+  result.returns = planHandTakedownReturns(returnCandidates, list).filter((item) => !planned.has(item.feePublishedId));
+  const returns = returnsLive ? result.returns : [];
   const waitingPlan = pending
     .filter((row) => waiting.some((entry) => entry.feeVerifiedId === Number(row.fee_verified_id) && entry.institutionId === Number(row.institution_id)))
     .map((row) => Number(row.fee_verified_id));
   if (options.dryRun) return { ...result, takenDown: plan.takenDown, waitingRejected: waitingPlan };
-  if (plan.takenDown.length === 0 && waitingPlan.length === 0) return result;
+  // Switch off with nothing else to write: the step's detail carries the would-be re-reads.
+  if (plan.takenDown.length === 0 && waitingPlan.length === 0 && returns.length === 0) return result;
+  const takenReturns: PlannedHandTakedown[] = [];
 
   try {
     await inSavepoint(db, async (scope) => {
@@ -897,6 +1049,29 @@ export async function applyHandTakedowns(
           `;
         }
         result.takenDown.push(item);
+      }
+      for (const item of returns) {
+        const updated = await scope<{ fee_published_id: number | string }[]>`
+          UPDATE published_fee_records
+             SET rolled_back_at = NOW(),
+                 rolled_back_by_batch_id = ${options.batchId},
+                 rolled_back_reason = ${item.reason}
+           WHERE fee_published_id = ${item.feePublishedId}
+             AND rolled_back_at IS NULL
+          RETURNING fee_published_id
+        `;
+        if (updated.length === 0) continue;
+        if (item.feeVerifiedId != null) {
+          await scope`
+            UPDATE verified_fee_observations
+               SET review_status = 'rejected',
+                   outlier_flags = CASE WHEN outlier_flags ? ${HAND_TAKEDOWN_FLAG} THEN outlier_flags
+                                        ELSE COALESCE(outlier_flags, '[]'::jsonb) || jsonb_build_array(${HAND_TAKEDOWN_FLAG}::text) END
+             WHERE fee_verified_id = ${item.feeVerifiedId}
+               AND review_status IN ('verified', 'approved')
+          `;
+        }
+        takenReturns.push(item);
       }
       const feedback: FeedbackRow[] = result.takenDown.map((item) => {
         const entry = list.find((candidate) => candidate.feePublishedId === item.feePublishedId)!;
@@ -935,10 +1110,11 @@ export async function applyHandTakedowns(
         `;
         if (rejected.length > 0) result.waitingRejected.push(feeVerifiedId);
       }
-      if (result.takenDown.length > 0 || result.waitingRejected.length > 0) {
-        const message = result.waitingRejected.length > 0
+      if (result.takenDown.length > 0 || result.waitingRejected.length > 0 || takenReturns.length > 0) {
+        const message = (result.waitingRejected.length > 0
           ? `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text and rejected ${result.waitingRejected.length} waiting cop${result.waitingRejected.length === 1 ? "y" : "ies"}`
-          : `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`;
+          : `Took down ${result.takenDown.length} listed live fee(s) confirmed wrong against their bank's own text`)
+          + (takenReturns.length > 0 ? `, and ${takenReturns.length} re-read(s) of a listed line` : "");
         await scope`
           INSERT INTO agent_run_events (agent_run_id, step_id, event_type, status, message, detail)
           VALUES (
@@ -951,6 +1127,8 @@ export async function applyHandTakedowns(
                 fee_verified_id: feeVerifiedId,
                 reason: waiting.find((entry) => entry.feeVerifiedId === feeVerifiedId)!.reason,
               })),
+              returns_live: returnsLive,
+              returns: (returnsLive ? takenReturns : result.returns).map((item) => ({ fee_published_id: item.feePublishedId, fee_verified_id: item.feeVerifiedId, reason: item.reason })),
             })}::jsonb
           )
         `;
@@ -958,9 +1136,10 @@ export async function applyHandTakedowns(
     });
   } catch (error) {
     console.error("hand takedowns write failed:", error);
-    return { ...result, takenDown: [], waitingRejected: [], error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
+    return { ...result, takenDown: [], waitingRejected: [], returns: returnsLive ? [] : result.returns, error: await recordStepWarning(db, { runId: options.runId, stepId: options.stepId, check: HAND_TAKEDOWN_CHECK, what: "Hand takedowns write", error }) };
   }
-  if (result.takenDown.length > 0) invalidatePublicReadCache();
+  if (returnsLive) result.returns = takenReturns;
+  if (result.takenDown.length > 0 || takenReturns.length > 0) invalidatePublicReadCache();
   return result;
 }
 

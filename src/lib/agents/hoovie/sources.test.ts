@@ -17,6 +17,7 @@ function code(path: string): string {
 /**
  * The loader's registry module and every registry module it imports, directly or not: shared
  * writers such as `economy.ts` (upsertAreaStats) and `identity.ts` (upsertIdentityLinks) live there.
+ * Also inspect directly imported data-store helpers, where durable identity evidence is persisted.
  */
 function registryModules(loader: string): Map<string, string> {
   const seen = new Map<string, string>();
@@ -27,6 +28,10 @@ function registryModules(loader: string): Map<string, string> {
     const text = code(join(REGISTRY, `${name}.ts`));
     seen.set(name, text);
     for (const match of text.matchAll(/from\s+"\.\/([a-z0-9-]+)"/g)) queue.push(match[1]);
+    for (const match of text.matchAll(/from\s+"@\/lib\/data-store\/([a-z0-9-]+)"/g)) {
+      const key = `data-store:${match[1]}`;
+      if (!seen.has(key)) seen.set(key, code(join(LIB, "data-store", `${match[1]}.ts`)));
+    }
   }
   return seen;
 }

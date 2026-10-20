@@ -14,14 +14,14 @@ beforeEach(()=>{
   vi.clearAllMocks();m.analytics.mockResolvedValue(undefined);m.verify.mockReturnValue({id:"evt_test",type:"checkout.session.completed"});
   m.headers.mockResolvedValue(new Map([["stripe-signature","signed"]]));
   m.record.mockResolvedValue(true);m.apply.mockResolvedValue({welcome:[],reportPaid:[],reportDuplicate:[],reportRefunded:[]});
-  m.stage.mockResolvedValue(undefined);m.drain.mockResolvedValue(undefined);m.status.mockResolvedValue({pending:0,review:0});
+  m.stage.mockResolvedValue([]);m.drain.mockResolvedValue(undefined);m.status.mockResolvedValue({pending:0,review:0});
   m.tx.mockImplementation(async(callback:(tx:unknown)=>Promise<unknown>)=>callback("transaction"));
 });
 describe("transactional webhook delivery",()=>{
   it("stages the obligation in the payment transaction before draining",async()=>{
     const order:string[]=[];
     m.tx.mockImplementation(async(callback:(tx:unknown)=>Promise<void>)=>{order.push("begin");await callback("transaction");order.push("commit");});
-    m.stage.mockImplementation(async(tx:unknown)=>{expect(tx).toBe("transaction");order.push("stage");});
+    m.stage.mockImplementation(async(tx:unknown)=>{expect(tx).toBe("transaction");order.push("stage");return [];});
     m.drain.mockImplementation(async()=>{order.push("drain");});
     expect((await POST(request())).status).toBe(200);expect(order).toEqual(["begin","stage","commit","drain"]);
   });
@@ -41,9 +41,15 @@ describe("transactional webhook delivery",()=>{
     m.status.mockResolvedValueOnce({pending:0,review:1});expect((await POST(request())).status).toBe(200);
   });
   it("counts activations once, not again on a delivery retry",async()=>{
-    m.apply.mockResolvedValue({welcome:[{email:"fixture@example.invalid",name:null}],reportPaid:[],reportDuplicate:[],reportRefunded:[]});
+    m.stage.mockResolvedValue(["fixture@example.invalid"]);
     await POST(request());m.record.mockResolvedValue(false);await POST(request());
     expect(m.analytics).toHaveBeenCalledTimes(1);expect(m.analytics).toHaveBeenCalledWith("pro_activated",{source:"webhook"});
+  });
+  it("counts no activation when the checkout's welcome was already staged by another event (#1972)",async()=>{
+    m.apply.mockResolvedValue({welcome:[{email:"fixture@example.invalid",name:null,checkoutSessionId:"cs_1",userId:7}],reportPaid:[],reportDuplicate:[],reportRefunded:[]});
+    m.stage.mockResolvedValueOnce(["fixture@example.invalid"]).mockResolvedValueOnce([]);
+    await POST(request());m.verify.mockReturnValue({id:"evt_async",type:"checkout.session.async_payment_succeeded"});await POST(request());
+    expect(m.stage).toHaveBeenCalledTimes(2);expect(m.analytics).toHaveBeenCalledTimes(1);
   });
   it("rejects missing or invalid signatures before any database access",async()=>{
     m.headers.mockResolvedValueOnce(new Map());expect((await POST(request())).status).toBe(400);

@@ -14,8 +14,9 @@ import { inferFeeCategory } from "./hamilton/infer-category";
 
 // Tripwire for Python↔TS drift. If you change these numbers, update the
 // Guards the canonical taxonomy keys used by public pages and agentic admin flows.
-// 52 once excess withdrawals and returned mail leave account research (#1398, `RESEARCH_SPLIT_LIVE`).
-const EXPECTED_TAXONOMY_COUNT = RESEARCH_SPLIT_LIVE ? 52 : 50;
+// 52 once excess withdrawals and returned mail leave account research (#1398, `RESEARCH_SPLIT_LIVE`),
+// plus International ATM split back out (James, Oct 19, #2037).
+const EXPECTED_TAXONOMY_COUNT = RESEARCH_SPLIT_LIVE ? 53 : 51;
 // 200 once the research split adds the `excess_withdrawal` identity key; main's 199 while it is off.
 const EXPECTED_CANONICAL_KEY_COUNT = RESEARCH_SPLIT_LIVE ? 200 : 199;
 
@@ -124,6 +125,7 @@ describe("public fee types (top 50 by institution count)", () => {
     expect(types.size).toBe(Math.min(50, TAXONOMY_COUNT));
     // With no counts (a failed read) the two types added after the top 50 are the ones left out.
     for (const key of RESEARCH_SPLIT_KEYS) expect(types.has(key)).toBe(!RESEARCH_SPLIT_LIVE);
+    expect(types.has("atm_international")).toBe(false);
   });
 
   test("ranks by institution count, so a new type with more institutions is listed and the two smallest are not", () => {

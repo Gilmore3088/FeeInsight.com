@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { labelDedupeKey, loadLabelQueue, NAME_LABEL_KIND, NO_CATEGORY_LABEL, recordNameLabel } from "@/lib/agents/knox/label-queue";
 
 function mockDb(handler: (text: string, values: unknown[]) => unknown[]) {
-  return vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => Promise.resolve(handler(strings.join(" "), values))) as never;
+  return Object.assign(vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => Promise.resolve(handler(strings.join(" "), values))), { unsafe: vi.fn(() => []) }) as never;
 }
 
 describe("Knox weekly label queue", () => {

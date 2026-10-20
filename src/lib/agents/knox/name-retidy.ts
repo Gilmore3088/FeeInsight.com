@@ -197,6 +197,37 @@ export function isCutoffName(name: string): boolean {
   );
 }
 
+/**
+ * The name before the comma clauses that read as a sentence ("Stop Payment, all items including
+ * ACH and bill pay" is "Stop Payment"; "Legal Process Fee, per occurrence, or such lesser rate as
+ * may be set by law" is "Legal Process Fee, per occurrence"; Beacon Bank & Trust, doc 37581), or
+ * null when no clause is cut or what is left names no fee. Publish only (`publishNameHold`,
+ * `publishedFeeName`): live names keep `retidiedFeeName`, so no live fee is renamed by it.
+ */
+const MAX_CLAUSE_HEAD_WORDS = 6;
+/**
+ * The clauses cut: what the fee covers ("all items including ACH and bill pay", "including
+ * On-us"), the legal cap ("or such lesser rate as may be set by law") and a waiver note ("which
+ * can be waived ..."). Any other clause may be a condition the fee needs, so the name stays held.
+ */
+const QUALIFYING_CLAUSE = /^(?:(?:all|any)\s+[\w\s]{0,20}?)?\b(?:including|includes)\b|^(?:or\s+)?such\s+lesser\s+(?:rate|amount)\b|^which\s+can\s+be\s+waived\b/i;
+/** A fee's name opens on a capitalised word, never on the words that open a sentence ("For each item paid ...", "To avoid ..."). */
+const CLAUSE_HEAD = /^(?!(?:for|to|in|an?|any|the|per|note|if|when|by|with|this|our|your|each|cost|fee|under|after|simply|choose)\b)[A-Z]/i;
+export function nameBeforeSentenceClauses(name: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  // A line cut off mid-sentence ("..., will be charged a", "... Network is") or holding two
+  // sentences is no name with a clause after it.
+  if (current.includes("|") || SENTENCE_END.test(current) || TRAILING_RANGE.test(current) || FEE_OF_SENTENCE.test(current) || /[.:;]\s/.test(current)) return null;
+  // Commas inside a parenthesis are the parenthesis's own ("(Check, ACH, or other item ...)").
+  const clauses = current.split(/,\s+(?![^()]*\))/);
+  while (clauses.length > 1 && QUALIFYING_CLAUSE.test(clauses[clauses.length - 1])) clauses.pop();
+  const head = clauses.join(", ").replace(/[\s,;:\-–—]+$/u, "").trim();
+  if (head === current || !/^[A-Z]/.test(head) || !CLAUSE_HEAD.test(head) || /[\d.%$]/.test(head) || (head.match(/\(/g)?.length ?? 0) !== (head.match(/\)/g)?.length ?? 0)) return null;
+  const words = head.split(/\s+/).length;
+  if (words < 2 || words > MAX_CLAUSE_HEAD_WORDS || !FEE_NOUN.test(head) || sentenceShaped(head) || isCutoffName(head)) return null;
+  return head;
+}
+
 
 /**
  * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",

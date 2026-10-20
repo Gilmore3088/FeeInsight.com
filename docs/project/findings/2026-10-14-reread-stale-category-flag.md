@@ -28,3 +28,5 @@ on category must say what happens when the category changed.
 Also measured: most retired free-pass rows that are not live were rejected by Darwin before the
 re-read retired them (668 of 721 on a current document), so the original "1,646 lost" count was
 mostly Darwin rejections, not re-read losses.
+
+**Agent lesson:** knox/pr-1291-reread-replaces-hint
