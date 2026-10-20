@@ -148,6 +148,8 @@ interface WorkspaceBase {
    * for is left out: their median is no price of its own (#1913). ownCategories lists both.
    */
   ownValues: Map<string, number>;
+  /** Per fee the bank states several different amounts for: the range and each named fee (#2030). */
+  ownSeveral?: Map<string, SeveralFees>;
   /** Every fee category the bank publishes, priced or not. */
   ownCategories: Set<string>;
   /** Per fee, the narrowest peer group with enough institutions publishing it. */
@@ -266,6 +268,22 @@ async function groupCoverage(institutionId: number, candidates: HamiltonPeerFilt
   }
 }
 
+/**
+ * The bank's own fees split by what its schedule states: one price per fee (`ownValues`), or,
+ * for a fee it states several different amounts for, the range and each named fee
+ * (`ownSeveral`). A fee in neither is not published; one in `ownSeveral` is never "missing" (#2030).
+ */
+export function splitOwnFees(ownFees: ReadonlyMap<string, InstitutionOwnFee>): { ownValues: Map<string, number>; ownSeveral: Map<string, SeveralFees> } {
+  const ownValues = new Map<string, number>();
+  const ownSeveral = new Map<string, SeveralFees>();
+  for (const [category, fee] of ownFees) {
+    if (fee.price !== null) ownValues.set(category, fee.price);
+    const several = severalFeesOf(fee);
+    if (several) ownSeveral.set(category, several);
+  }
+  return { ownValues, ownSeveral };
+}
+
 async function loadBase(
   institutionId: number,
   categories?: string[],
@@ -274,8 +292,7 @@ async function loadBase(
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
   const ownFees = await getInstitutionOwnFees(institutionId, categories);
-  const ownValues = new Map<string, number>();
-  for (const [category, fee] of ownFees) if (fee.price !== null) ownValues.set(category, fee.price);
+  const { ownValues, ownSeveral } = splitOwnFees(ownFees);
   const ownCategories = new Set(ownFees.keys());
   const wanted = categories ?? [...ownCategories];
   // The anchor fee is always read: it picks the one peer group every answer uses (#2046).
@@ -312,6 +329,7 @@ async function loadBase(
     readAt,
     peerLabel: peerLabel(candidates[groupIndex]),
     ownValues,
+    ownSeveral,
     ownCategories,
     peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, groupOptions),
   };
@@ -1275,6 +1293,7 @@ export async function getFeeResearch(
     feeCategory,
     displayName: getDisplayName(feeCategory),
     current,
+    ownSeveral: base.ownSeveral?.get(feeCategory) ?? null,
     peerLabel: chosen?.label ?? base.peerLabel,
     peers,
     peerGroupSaved: chosen?.saved ?? false,

@@ -783,6 +783,13 @@ function keyFigures(research: FeeResearch, name: string): KeyFigure[] {
       label: `${subjectPossessive(research)} ${name} fee`,
       source: { label: `${subjectPossessive(research)} published fee schedule`, table: "published_fee_catalog", url: own?.documentUrl ?? own?.sourceUrl ?? undefined, asOf: own?.publishedAt?.slice(0, 10) ?? null },
     });
+  } else if (research.ownSeveral) {
+    // Several different fees in one category: their range, never their median (#2030).
+    out.push({
+      value: ownFeeLabel({ price: null, ...research.ownSeveral }, money),
+      label: `${subjectPossessive(research)} ${name} fees`,
+      source: { label: `${subjectPossessive(research)} published fee schedule`, table: "published_fee_catalog", url: own?.documentUrl ?? own?.sourceUrl ?? undefined, asOf: own?.publishedAt?.slice(0, 10) ?? null },
+    });
   }
   const seg = research.segment;
   if (seg && seg.problem === null && seg.band) {

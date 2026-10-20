@@ -223,6 +223,24 @@ interface ReconcileInput {
   live: LiveFeeValues | null;
 }
 
+/** The bank's own live amounts, as the statistics contract counts them: non-negative numbers. */
+function ownAmounts(rows: StatsInputRow[], institutionId: number): number[] {
+  return rows
+    .filter((r) => Number(r.institution_id) === institutionId && r.amount !== null && r.amount !== "")
+    .map((r) => Number(r.amount))
+    .filter((a) => Number.isFinite(a) && a >= 0);
+}
+
+/** A stated range of several own fees that does not match the bank's live rows; null when it does. */
+function severalFeesFailure(several: { low: number; high: number }, amounts: number[]): string | null {
+  const stated = `${money(several.low)} to ${money(several.high)}`;
+  if (amounts.length === 0) return `your fee: the answer uses ${stated}, and the catalog has no live row for it`;
+  const low = Math.min(...amounts);
+  const high = Math.max(...amounts);
+  if (near(several.low, low) && near(several.high, high)) return null;
+  return `your fee: the answer uses ${stated}, the catalog has ${near(low, high) ? money(low) : `${money(low)} to ${money(high)}`}`;
+}
+
 /** Steps 1 and 2: the values and statistics, and the anchors a figure may tie to; null when unchecked. */
 function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: string[]; anchors: number[]; singles: number[] } | null {
   const { question, research, schedule, live } = input;
@@ -236,7 +254,12 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
   if (research) {
     const values = valuePerInstitution(live.rows);
     const own = values.get(research.institutionId) ?? null;
-    if (!near(research.current, own)) {
+    const several = research.current === null ? research.ownSeveral ?? null : null;
+    if (several) {
+      // Several different fees are stated as their range, not one value (#2030): check its ends.
+      const failure = severalFeesFailure(several, ownAmounts(live.rows, research.institutionId));
+      if (failure) failures.push(failure);
+    } else if (!near(research.current, own)) {
       failures.push(
         own === null
           ? `your fee: the answer uses ${money(research.current!)}, and the catalog has no live row for it`
