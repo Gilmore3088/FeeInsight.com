@@ -117,8 +117,8 @@ interface HeadlineCounts {
   categories: number;
   /** The 50 states with at least one verified fee. */
   states: number;
+  /** When the newest published fee was approved: the only date the site calls an update. */
   lastFeeAt: string | null;
-  lastCrawlAt: string | null;
 }
 
 /**
@@ -136,7 +136,6 @@ async function readHeadlineCounts(): Promise<HeadlineCounts | null> {
       categories: string[] | null;
       states: string[] | null;
       last_fee_at: string | Date | null;
-      last_crawl_at: string | Date | null;
     }[]>`
       WITH approved AS MATERIALIZED (
         SELECT ef.institution_id, ef.fee_name, ef.amount, ef.frequency, ef.variant_type,
@@ -155,8 +154,7 @@ async function readHeadlineCounts(): Promise<HeadlineCounts | null> {
         (SELECT COUNT(DISTINCT institution_id) FROM us) AS institutions,
         ARRAY(SELECT DISTINCT fee_category FROM approved WHERE fee_category IS NOT NULL) AS categories,
         ARRAY(SELECT DISTINCT state_code FROM approved WHERE state_code IS NOT NULL) AS states,
-        (SELECT MAX(created_at) FROM approved) AS last_fee_at,
-        (SELECT MAX(crawled_at) FROM source_documents WHERE status = 'success') AS last_crawl_at`;
+        (SELECT MAX(created_at) FROM approved) AS last_fee_at`;
     const iso = (v: string | Date | null): string | null => (v instanceof Date ? v.toISOString() : v ? String(v) : null);
     return {
       observations: Number(row.observations),
@@ -164,7 +162,6 @@ async function readHeadlineCounts(): Promise<HeadlineCounts | null> {
       categories: (row.categories ?? []).filter((category) => CANONICAL_CATEGORIES.has(category)).length,
       states: (row.states ?? []).filter((code) => US_STATES_ONLY.has(code)).length,
       lastFeeAt: iso(row.last_fee_at),
-      lastCrawlAt: iso(row.last_crawl_at),
     };
   } catch (error) {
     return logFailedRead("headline counts", error);
@@ -188,7 +185,9 @@ async function countMonitoredInstitutions(): Promise<number | null> {
 
 async function computePublicStatsSummary(): Promise<PublicStatsSummary> {
   const [counts, monitored] = await Promise.all([readHeadlineCounts(), countMonitoredInstitutions()]);
-  const refreshedOn = formatAbsoluteDate(counts?.lastFeeAt ?? counts?.lastCrawlAt ?? null);
+  // Only a published fee dates the data. A crawl publishes nothing, so with no fee date the
+  // date stays unknown ("Data refresh pending") rather than showing a crawl as an update (#1811).
+  const refreshedOn = formatAbsoluteDate(counts?.lastFeeAt ?? null);
   // The catalog is never really empty: zero institutions means the read went wrong.
   const institutions = counts && counts.institutions > 0 ? counts.institutions : null;
   if (counts && institutions === null) logFailedRead("institutions", "headline counts returned 0 institutions");
