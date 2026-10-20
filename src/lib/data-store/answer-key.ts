@@ -434,6 +434,21 @@ export async function deleteAnswerKeyFee(feeId: number, db: SqlTag = sql): Promi
   await db`DELETE FROM answer_key_fees WHERE id = ${feeId}`;
 }
 
+/**
+ * The hash a document edit stores. The form pre-fills the stored hash, so a new URL submitted
+ * with that same hash would bind the new document to the old one's bytes and never match (#2466).
+ * A new URL keeps only a hash entered for it; otherwise the hash is cleared.
+ */
+export function documentHashAfterEdit(
+  stored: { document_url: string; content_hash: string | null },
+  input: { document_url: string; content_hash: string | null },
+): string | null {
+  const submitted = input.content_hash?.trim() || null;
+  if (input.document_url.trim() === stored.document_url.trim()) return submitted;
+  if (!submitted || submitted.toLowerCase() === stored.content_hash?.trim().toLowerCase()) return null;
+  return submitted;
+}
+
 /** Corrects the document. A changed document means the bank needs confirming again. */
 export async function saveAnswerKeyDocument(
   answerKeyId: number,
@@ -441,17 +456,28 @@ export async function saveAnswerKeyDocument(
   actor: string,
   db: SqlTag = sql,
 ): Promise<void> {
-  await db`
-    UPDATE answer_key_institutions
-       SET document_url = ${input.document_url},
-           document_type = ${input.document_type},
-           content_hash = ${input.content_hash},
-           notes = ${input.notes},
-           confirmed_by = ${actor},
-           confirmed_at = NOW(),
-           updated_at = NOW()
-     WHERE id = ${answerKeyId}
-  `;
+  await db.begin(async (txRaw) => {
+    const tx = txRaw as unknown as SqlTag;
+    const [stored] = await tx`
+      SELECT document_url, content_hash FROM answer_key_institutions WHERE id = ${answerKeyId} FOR UPDATE
+    `;
+    if (!stored) return;
+    const contentHash = documentHashAfterEdit(
+      { document_url: String(stored.document_url), content_hash: (stored.content_hash as string | null) ?? null },
+      input,
+    );
+    await tx`
+      UPDATE answer_key_institutions
+         SET document_url = ${input.document_url},
+             document_type = ${input.document_type},
+             content_hash = ${contentHash},
+             notes = ${input.notes},
+             confirmed_by = ${actor},
+             confirmed_at = NOW(),
+             updated_at = NOW()
+       WHERE id = ${answerKeyId}
+    `;
+  });
 }
 
 /**
