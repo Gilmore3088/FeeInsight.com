@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { User } from "@/lib/auth";
 import { ManageBillingButton } from "./manage-billing-button";
 import { isInPaymentGrace } from "@/lib/access";
+import { utilityButton } from "@/components/utility/form-style";
 
 /**
  * Says why Pro is not active when a subscription has lapsed. Without it a past-due or
@@ -13,7 +14,7 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
 
   if (user.subscription_status === "past_due") {
     return (
-      <div role="status" className="mb-8 rounded-xl border border-brick/30 bg-brick-tint/40 p-5 text-ink">
+      <div role="status" className="mb-8 rounded-xl border border-brick/30 bg-brick-tint/40 p-5 text-ink shadow-sm">
         <p className="text-[14px] font-semibold">Your Hamilton payment is past due.</p>
         <p className="mt-1 text-[13px]">
           {isInPaymentGrace(user as User)
@@ -22,7 +23,7 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
         </p>
         {user.stripe_customer_id && (
           <div className="mt-3">
-            <ManageBillingButton />
+            <ManageBillingButton variant="primary" label="Update payment method" />
           </div>
         )}
       </div>
@@ -31,14 +32,14 @@ export function SubscriptionStatusNotice({ user }: { user: Pick<User, "role" | "
 
   if (user.subscription_status === "canceled") {
     return (
-      <div role="status" className="mb-8 rounded-xl border border-border bg-white/70 p-5">
+      <div role="status" className="mb-8 rounded-xl border border-border bg-surface-0 p-5 shadow-sm">
         <p className="text-[14px] font-semibold text-ink">Your Hamilton subscription has ended.</p>
         <p className="mt-1 text-[13px] text-ink-muted">
           Your saved institutions and fee alerts are kept. Restart Hamilton any time to get the workspace back.
         </p>
         <Link
           href="/subscribe"
-          className="mt-3 inline-flex items-center rounded-md bg-brick px-4 py-2 text-[13px] font-semibold text-white hover:bg-brick-ink"
+          className={`mt-3 ${utilityButton("primary")}`}
         >
           Restart Hamilton
         </Link>

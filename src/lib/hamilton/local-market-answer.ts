@@ -7,8 +7,8 @@
  */
 import { sql } from "@/lib/data-store/connection";
 import type { HamiltonIdentitySnapshot } from "./account-context";
-import { statsRowFilter } from "@/lib/data-store/fee-stats";
 import { getLocalMarketCompetitors } from "@/lib/data-store/local-market";
+import { getInstitutionOwnFees } from "@/lib/data-store/fee-index";
 import { getBranchesForInstitution, getMarketBranchFootprint } from "@/lib/data-store/branches";
 import { getMarketStudyData } from "@/lib/data-store/market-study";
 import { getBranchlessIds, getLiveFeeFacts, summarizeMarketCoverage, type MarketCoverage } from "@/lib/data-store/competitor-coverage";
@@ -16,7 +16,8 @@ import { bankStyles, footprintLegend, footprintMap, responsive } from "@/lib/ham
 import { branchNetworkMap, type NetworkCity } from "@/lib/hamilton/branch-network-map";
 import { geoContains } from "d3-geo";
 import { countyFeature } from "@/lib/geo/counties";
-import { DEFAULT_LOCAL_MARKET_CATEGORIES, resolveLocalMarketCategories, selectMarketFees } from "./local-market-request";
+import { DEFAULT_LOCAL_MARKET_CATEGORIES, resolveLocalMarketCategories, selectMarketFees, selectMarketStated } from "./local-market-request";
+import { severalFeesOf, type SeveralFees } from "@/lib/own-fee";
 
 /** The fees compared across the market, in reading order. */
 export const MARKET_FEES = DEFAULT_LOCAL_MARKET_CATEGORIES;
@@ -31,8 +32,14 @@ export interface MarketCompetitor {
   branches: number | null;
   /** Deposits held in the market's branches, whole dollars; null for credit unions (NCUA reports none by branch). */
   deposits: number | null;
-  /** Median published amount per requested fee category. */
+  /**
+   * One value per requested fee category under the statistics contract, for counts: the stated
+   * price, except where `several` has the category (#1931). There it is the median of several
+   * different fees, and a cell shows `several` instead.
+   */
   fees: Record<string, number>;
+  /** Categories where its schedule states several different fees: their range and each by name. */
+  several?: Record<string, SeveralFees>;
   evidenceUrl?: string | null;
   evidenceDate?: string | null;
 }
@@ -52,6 +59,8 @@ export interface LocalMarketAnswer {
     /** Where the bank's branches are, most first. */
     cities: NetworkCity[];
     fees: Record<string, number>;
+    /** Categories where the bank's schedule states several different fees. */
+    several?: Record<string, SeveralFees>;
   };
   /** Bank deposits across the market's branches, whole dollars (FDIC SOD). */
   marketDeposits: number | null;
@@ -104,12 +113,6 @@ function marketMap(
 
 const MAX_COMPETITORS = 20;
 
-function num(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
 type BranchPoint = { city: string | null; state: string | null; latitude?: number | null; longitude?: number | null };
 
 /** The bank's branches grouped by city, most first, each placed at the mean of its located branches. */
@@ -138,37 +141,42 @@ export function citiesOf(rows: BranchPoint[]): NetworkCity[] {
  * unions report no deposits by branch), then by deposits. Institutions with no branch count and
  * no fee on file are left out, since nothing about them can be shown.
  */
+/** How many requested fees a competitor publishes: stated prices and several-fee categories alike. */
+export function feesOnFile(c: Pick<MarketCompetitor, "fees" | "several">): number {
+  return new Set([...Object.keys(c.fees), ...Object.keys(c.several ?? {})]).size;
+}
+
 export function rankCompetitors(list: MarketCompetitor[]): MarketCompetitor[] {
   return list
-    .filter((c) => (c.branches ?? 0) > 0 || Object.keys(c.fees).length > 0)
+    .filter((c) => (c.branches ?? 0) > 0 || feesOnFile(c) > 0)
     .sort(
       (a, b) =>
         (b.branches ?? 0) - (a.branches ?? 0) ||
         (b.deposits ?? -1) - (a.deposits ?? -1) ||
-        Object.keys(b.fees).length - Object.keys(a.fees).length ||
+        feesOnFile(b) - feesOnFile(a) ||
         a.name.localeCompare(b.name),
     )
     .slice(0, MAX_COMPETITORS);
 }
 
-async function ownFees(institutionId: number, categories: readonly string[]): Promise<Record<string, number>> {
-  const rows = await sql`
-    SELECT c.fee_category,
-           CASE WHEN c.fee_category = 'overdraft' THEN MAX(c.amount)
-                ELSE PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY c.amount) END AS amount
-      FROM published_fee_catalog c
-     WHERE c.institution_id = ${institutionId}
-       AND c.review_status = 'approved'
-       AND c.amount IS NOT NULL AND c.amount >= 0
-       AND ${sql.unsafe(statsRowFilter("c"))}
-       AND c.fee_category = ANY(${[...categories]})
-     GROUP BY c.fee_category`;
-  const out: Record<string, number> = {};
-  for (const r of rows) {
-    const amount = num(r.amount);
-    if (amount !== null) out[String(r.fee_category)] = Math.round(amount * 100) / 100;
+/** The price the institution's schedule states per category; a category with several different fees gives their range instead. */
+async function ownFees(institutionId: number, categories: readonly string[]): Promise<{ fees: Record<string, number>; several: Record<string, SeveralFees> }> {
+  const own = await getInstitutionOwnFees(institutionId, [...categories]);
+  const fees: Record<string, number> = {};
+  const several: Record<string, SeveralFees> = {};
+  for (const [category, fee] of own) {
+    if (fee.price !== null) fees[category] = Math.round(fee.price * 100) / 100;
+    const span = severalFeesOf(fee);
+    if (span) several[category] = span;
   }
-  return out;
+  return { fees, several };
+}
+
+/** The bank's own requested fees: stated prices, and the several-fee categories with their range. */
+function ownStated(own: { fees: Record<string, number>; several: Record<string, SeveralFees> }, categories: readonly string[]) {
+  const several: Record<string, SeveralFees> = {};
+  for (const category of categories) if (Object.prototype.hasOwnProperty.call(own.several, category)) several[category] = own.several[category];
+  return { fees: selectMarketStated(own.fees, undefined, categories).fees, ...(Object.keys(several).length > 0 ? { several } : {}) };
 }
 
 /** Null when no market can be located for the institution. */
@@ -198,7 +206,7 @@ export async function getLocalMarketAnswer(
   const [footprint, ownBranches, fees, study] = await Promise.all([
     getMarketBranchFootprint(market.county_fips.map(String), market.sod_year).catch(() => null),
     getBranchesForInstitution(institutionId, { limit: 500, offset: 0 }).catch(() => null),
-    ownFees(institutionId, categories).catch(() => ({})),
+    ownFees(institutionId, categories).catch(() => ({ fees: {}, several: {} })),
     mainCounty ? getMarketStudyData(institutionId, mainCounty).catch(() => null) : Promise.resolve(null),
   ]);
   let drawn: Pick<LocalMarketAnswer, "map" | "colours">;
@@ -220,13 +228,16 @@ export async function getLocalMarketAnswer(
     names.filter(row => !options.charter || options.charter === "all" || row.charter_type === options.charter).map((row) => {
       const id = Number(row.id);
       const spot = footprint?.byInstitution[id];
+      const values = feeBy.get(id)?.fees ?? {};
+      const stated = selectMarketStated(values, feeBy.get(id)?.several, categories);
       return {
         institutionId: id,
         name: String(row.institution_name),
         charterType: row.charter_type ? String(row.charter_type) : null,
         branches: spot?.branches ?? null,
         deposits: spot?.deposits ?? null,
-        fees: selectMarketFees(feeBy.get(id)?.fees ?? {}, categories),
+        fees: selectMarketFees(values, categories),
+        ...(Object.keys(stated.several).length > 0 ? { several: stated.several } : {}),
         evidenceUrl: feeBy.get(id)?.document_url ?? null,
         evidenceDate: feeBy.get(id)?.document_date ?? null,
       };
@@ -250,7 +261,7 @@ export async function getLocalMarketAnswer(
       branchesInMarket: own?.branches ?? null,
       depositsInMarket: own?.deposits ?? null,
       cities,
-      fees: selectMarketFees(fees, categories),
+      ...ownStated(fees, categories),
     },
     marketDeposits: footprint?.totalDeposits ?? null,
     marketBranches: footprint?.totalBranches ?? null,

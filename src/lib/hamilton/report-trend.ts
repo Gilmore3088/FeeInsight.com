@@ -4,6 +4,9 @@
  * the deterministic methods in ./econometrics; the model only narrates them.
  */
 import { getIndicatorTimeSeries, getServiceChargeHistory } from "@/lib/data-store/financial";
+import { getInstitutionById } from "@/lib/data-store/core";
+import { financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
+import type { FinancialSource } from "@/lib/data-store/financial-sources";
 import { formatCompactDollars } from "@/lib/format";
 import {
   adfTest,
@@ -94,7 +97,8 @@ export function buildFeeIncomeTrend(params: {
   const brk = structuralBreak(seasonal.adjusted);
   const years = annualTotals(nominalCovered, real.series);
 
-  const industryNominal = industryQuarters(params.industryServiceCharges);
+  // The available industry series is bank deposit charges, not broad credit-union fees.
+  const industryNominal = nominal.source === "fdic" ? industryQuarters(params.industryServiceCharges) : [];
   const industryReal = deflate(industryNominal, deflator, real.base);
   const industryYears = industryReal ? annualTotals(industryNominal, industryReal.series) : [];
   const industryByYear = new Map(industryYears.map((y) => [y.year, y]));
@@ -160,18 +164,18 @@ export function buildFeeIncomeTrend(params: {
     {
       id: "fee_income_trend",
       title,
-      subtitle: `Full calendar years from the ${nominal.source === "ncua" ? "NCUA 5300" : "FDIC call"} report. Real figures are in ${real.base} dollars, deflated by BEA's chained GDP price index. The industry is all FDIC-insured institutions.${breakNote}`,
-      columns: ["Year", "Reported", `Real (${real.base} $)`, "Real change", "Industry real change"],
+      subtitle: `Full calendar years from the ${nominal.source === "ncua" ? "NCUA 5300" : "FDIC call"} report. Real figures are in ${real.base} dollars, deflated by BEA's chained GDP price index. ${nominal.source === "fdic" ? "The industry comparison covers FDIC-insured banks." : "No comparable credit-union industry series is supplied; bank deposit charges are excluded."}${breakNote}`,
+      columns: ["Year", "Reported", `Real (${real.base} $)`, "Real change", ...(nominal.source === "fdic" ? ["Bank industry real change"] : [])],
       rows: data.years.map((y) => [
         String(y.year),
         formatCompactDollars(y.nominal),
         formatCompactDollars(y.real),
         pct(y.real_change_pct),
-        pct(y.industry_real_change_pct),
+        ...(nominal.source === "fdic" ? [pct(y.industry_real_change_pct)] : []),
       ]),
       note:
         nominal.source === "ncua"
-          ? "Credit unions report total fee income year to date; each quarter is the year-to-date figure less the prior quarter's. The industry line covers banks, not credit unions."
+          ? "Credit unions report total fee income year to date; each quarter is the year-to-date figure less the prior quarter's. A comparable credit-union industry series is unavailable; bank deposit service charges are excluded."
           : null,
     },
     {
@@ -259,15 +263,19 @@ function toDatedValue(o: { observation_date: unknown; value: unknown }): DatedVa
  * trend. Null when there are too few quarters. Shared by Hamilton reports and the
  * per-bank peer brief so both cite the same numbers.
  */
-export async function getFeeIncomeTrend(institutionId: number, institutionName: string): Promise<FeeIncomeTrendResult | null> {
+export async function getFeeIncomeTrend(institutionId: number, institutionName: string, expectedSource?: FinancialSource | null): Promise<FeeIncomeTrendResult | null> {
+  const source = expectedSource === undefined
+    ? financialSourceForCharter((await getInstitutionById(institutionId))?.charter_type)
+    : expectedSource;
+  if (source !== "fdic" && source !== "ncua") return null;
   const [records, gdp, industry] = await Promise.all([
     getServiceChargeHistory(institutionId),
     getIndicatorTimeSeries("GDPCTPI", { fromDate: "2009-01-01" }),
-    getIndicatorTimeSeries("QBPQYTNIYSRVDP", { fromDate: "2009-01-01" }),
+    source === "fdic" ? getIndicatorTimeSeries("QBPQYTNIYSRVDP", { fromDate: "2009-01-01" }) : Promise.resolve([]),
   ]);
   return buildFeeIncomeTrend({
     institutionName,
-    records,
+    records: records.filter((record) => record.source === source),
     gdpPriceIndex: gdp.map(toDatedValue),
     industryServiceCharges: industry.map(toDatedValue),
   });

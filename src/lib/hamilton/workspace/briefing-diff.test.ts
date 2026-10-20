@@ -126,6 +126,17 @@ describe("diffBriefings", () => {
   });
 });
 
+describe("filed income meaning", () => {
+  it.each([["ncua", "broad credit-union fee income"], ["fdic", "deposit service charge income"]] as const)("preserves %s meaning in briefing change text", (source, label) => {
+    const financials = (quarterEnd: string) => ({ source, label, quarters: [{ quarterEnd, amount: 120000 }], latestTtm: null, priorTtm: null, yoyPct: null, quarterEnd, sourceRef: { label: source }, peerMedian: null });
+    const diff = diffBriefings(
+      { quarter: "2026-Q1", briefing: briefing({ institutionFinancials: financials("2026-03-31") }) },
+      { quarter: "2026-Q2", briefing: briefing({ institutionFinancials: financials("2026-06-30") }) },
+    );
+    expect(diff.changes[0].text).toContain(`New filing: ${label}`);
+  });
+});
+
 describe("quarter labels (#1083)", () => {
   it("writes a stored quarter as a reader does and finds the next one", () => {
     expect(quarterLabel("2026-Q4")).toBe("Q4 2026");

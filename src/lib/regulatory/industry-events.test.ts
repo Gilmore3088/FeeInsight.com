@@ -9,6 +9,7 @@ import {
   CsvStreamParser,
   eventDate,
   exactNameKey,
+  fetchNcuaMergers,
   fetchPublishedList,
   findDataLinks,
   h2ReleaseDates,
@@ -24,6 +25,7 @@ import {
   scanSecFilingText,
   yearValue,
 } from "./industry-events";
+import { blockedHost, RegistryUnreachableError } from "./http";
 
 describe("value readers", () => {
   it("never turns a blank into zero", () => {
@@ -114,6 +116,39 @@ describe("tables", () => {
       { url: "https://www.fhfa.gov/files/members-2026q2.xlsx", text: "FHLBank members Q2", kind: "xlsx" },
       { url: "https://www.fhfa.gov/data/x.pdf", text: "Member report", kind: "pdf" },
     ]);
+  });
+
+  it("downloads at most maxFiles data files from a page", async () => {
+    const page = '<a href="/a/insurance-report-activity-mar-2026.zip">March 2026</a><a href="/a/insurance-report-activity-dec-2025.zip">December 2025</a>';
+    const fetchImpl = vi.fn(async (url: string) =>
+      String(url).endsWith(".zip") ? new Response(zipSync({ "notes.pdf": new Uint8Array([1]) }), { status: 200 }) : new Response(page, { status: 200 }),
+    ) as unknown as typeof fetch;
+    const list = await fetchPublishedList(["https://ncua.gov/x"], /insurance-report-activity/i, NCUA_LIQUIDATION_SPEC, ["name", "date"], { fetchImpl, backoffMs: 0 }, 1);
+    expect(list.candidates).toHaveLength(2);
+    expect(vi.mocked(fetchImpl).mock.calls.map((c) => String(c[0]))).toEqual(["https://ncua.gov/x", "https://ncua.gov/a/insurance-report-activity-mar-2026.zip"]);
+  });
+
+  it("fails, never an empty check, when every landing page returns 404 (#2306, run 8051)", async () => {
+    const pages = ["https://ncua.gov/analysis/cuso-economic-data/merger-activity-reports", "https://ncua.gov/analysis/credit-union-corporate-call-report-data/mergers"];
+    const fetchImpl = vi.fn(async () => new Response("Not Found", { status: 404 })) as unknown as typeof fetch;
+    const error = await fetchNcuaMergers({ fetchImpl, backoffMs: 0 }, pages).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(RegistryUnreachableError);
+    const unreachable = error as RegistryUnreachableError;
+    expect(unreachable.status).toBe(404);
+    expect(unreachable.pagesTried.map((p) => p.status)).toEqual(["not_found", "not_found"]);
+    expect(unreachable.message).toBe(`No landing page could be fetched; every page returned 404: ${pages[0]} 404; ${pages[1]} 404`);
+    // A refused page is the publisher's block (#1806), recorded as a named missing source.
+    const refused = vi.fn(async () => new Response("Forbidden", { status: 403 })) as unknown as typeof fetch;
+    const block = await fetchNcuaMergers({ fetchImpl: refused, backoffMs: 0 }, pages).catch((e: unknown) => e);
+    expect(blockedHost(block)).toMatchObject({ host: "ncua.gov", status: 403 });
+  });
+
+  it("still reads the list when one landing page is dead and another answers", async () => {
+    const page = "<table><tr><th>Credit Union</th><th>Liquidation Date</th></tr><tr><td>Acme FCU</td><td>2025-01-05</td></tr></table>";
+    const fetchImpl = vi.fn(async (url: string) => String(url).includes("old") ? new Response("", { status: 404 }) : new Response(page, { status: 200 })) as unknown as typeof fetch;
+    const list = await fetchPublishedList(["https://ncua.gov/old", "https://ncua.gov/new"], /liquidat/i, NCUA_LIQUIDATION_SPEC, ["name", "date"], { fetchImpl, backoffMs: 0 });
+    expect(list.pagesTried.map((p) => p.status)).toEqual(["not_found", "ok"]);
+    expect(list.table?.rows).toHaveLength(1);
   });
 
   it("falls back to an HTML table on the page and reports PDF-only pages", async () => {

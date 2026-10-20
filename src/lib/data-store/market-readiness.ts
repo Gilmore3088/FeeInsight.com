@@ -288,7 +288,7 @@ export async function getMarketReadiness(db: SqlTag = sql): Promise<MarketReadin
   const rows = await db<
     { state_code: string; charter_type: string; institutions: string; rich: string; rich_via_district: string }[]
   >`
-    WITH coverage AS (${headlineCoverageSql(keys, undefined, db)}),
+    WITH coverage AS (${headlineCoverageSql(keys, db)}),
     districts AS (
       SELECT s.fed_district, s.charter_type, COUNT(*) AS rich
       FROM institution_sources s
@@ -309,23 +309,7 @@ export async function getMarketReadiness(db: SqlTag = sql): Promise<MarketReadin
   return rows.map(toMarketReadiness);
 }
 
-/**
- * Distinct headline categories live per institution, the same count getMarketReadiness
- * uses. Institutions with none are returned as 0, so every requested id has an entry.
- */
-export async function getInstitutionHeadlineCoverage(ids: number[]): Promise<Map<number, number>> {
-  const wanted = [...new Set(ids.filter((id) => Number.isInteger(id) && id > 0))];
-  const coverage = new Map<number, number>(wanted.map((id) => [id, 0]));
-  if (wanted.length === 0) return coverage;
-  const keys = [...HEADLINE_FEE_KEYS];
-  const rows = await sql<{ institution_id: number; categories: string }[]>`
-    WITH coverage AS (${headlineCoverageSql(keys, wanted)})
-    SELECT institution_id, categories FROM coverage`;
-  for (const row of rows) coverage.set(Number(row.institution_id), Number(row.categories));
-  return coverage;
-}
-
-function headlineCoverageSql(keys: string[], institutionIds?: number[], db: SqlTag = sql) {
+function headlineCoverageSql(keys: string[], db: SqlTag = sql) {
   return db`
     SELECT institution_id, COUNT(DISTINCT canonical_fee_key) AS categories
     FROM (
@@ -335,6 +319,5 @@ function headlineCoverageSql(keys: string[], institutionIds?: number[], db: SqlT
       SELECT institution_id, canonical_fee_key FROM published_fee_rate_catalog
     ) live
     WHERE canonical_fee_key = ANY(${keys})
-      ${institutionIds ? db`AND institution_id = ANY(${institutionIds})` : db``}
     GROUP BY institution_id`;
 }

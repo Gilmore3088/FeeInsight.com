@@ -7,6 +7,8 @@ import {
   markRestoredForSourceCheck,
   READER_LOSS_RESTORES_ON,
   readerLostLine,
+  restorableExcerpt,
+  restoreStillPrinted,
   restorableName,
   importedTwinFingerprint,
   linkImportedFeesToTwins,
@@ -90,6 +92,68 @@ describe("restorableName", () => {
     ]) {
       expect(restorableName(name)).toBe(false);
     }
+  });
+});
+
+describe("restorableExcerpt", () => {
+  // Lane speed's sample of restores, Oct 20 (data-quality/switch-samples-2026-10-20.md).
+  const sampled = (id: number, name: string, amount: string, key: string, excerpt: string) => ({
+    ...knoxFee(id, name, amount, excerpt),
+    canonical_fee_key: key,
+  });
+
+  it("holds back the five the sample found wrong on the stored line", () => {
+    for (const row of [
+      sampled(30893, "Replacement Credit Card Rush", "25", "rush_card", "$30 Replacement Credit Card Rush | $25 Replace Key"),
+      sampled(14460, "Non-Member Check Cashing Fee", "10", "check_cashing", "$10 Non-Member Check Cashing Fee"),
+      sampled(14461, "Notary Public Fee: Members", "5", "notary_fee", "$5 Notary Public Fee: Members"),
+      sampled(62929, "Return Deposited Items", "6.25", "deposited_item_return", "$6.25 | Return Deposited Items"),
+      sampled(20693, "Notary Fee Free for members", "5", "notary_fee", "Notary Fee Free for members $5.00"),
+      // Review probes: a heading repeating the name's first word, a word inside another word, two spaces after "$".
+      sampled(1, "Wire Transfer International", "15", "wire_intl_outgoing", "Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer International"),
+      sampled(2, "Card Replacement", "25", "card_replacement", "Discard fee $30 Card Replacement | $25 Replace Key"),
+      sampled(3, "Replacement Credit Card Rush", "25", "rush_card", "$  30 Replacement Credit Card Rush | $25 Replace Key"),
+      // Re-sample, Oct 20: "$25.00 for Incoming – Foreign Wires / $50.00 for Outgoing – Foreign Wires".
+      sampled(90951, "Incoming – Foreign Wires", "50", "wire_intl_incoming", "for Incoming – Foreign Wires $50.00"),
+    ]) {
+      expect(restorableExcerpt(row)).toBe(false);
+    }
+  });
+
+  it("still puts back the ones the sample confirmed, name first", () => {
+    for (const row of [
+      sampled(13942, "Wire Transfer – Domestic", "25", "wire_domestic_outgoing", "Wire Transfer – Domestic $25.00 Charge for outgoing wire transfers"),
+      sampled(16759, "Account Research/ Reconciliation", "25", "account_research", "Account Research/ Reconciliation $25.00 per hour Club Account Withdrawal Fee $5.00 each"),
+      sampled(49636, "Wire Transfers Outgoing- Domestic (USA)", "15", "wire_domestic_outgoing", "Wire Transfers Outgoing- Domestic (USA) $15.00 Per transfer"),
+      sampled(57745, "Verification of Deposit or Loan", "10", "account_verification", "or range of checks Verification of Deposit or Loan $10.00"),
+      stopPayment,
+    ]) {
+      expect(restorableExcerpt(row)).toBe(true);
+    }
+  });
+});
+
+describe("restoreStillPrinted", () => {
+  const doc = (text: string) => [{ source_document_id: 7, normalized_text: text, updated_at: REREAD_AT }];
+  // Re-sample of restores, Oct 20: a column-read PDF still prints the name and, elsewhere, the price.
+  it("needs the re-read to find the name and to print the price somewhere in the document", () => {
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $32.00 $5.00"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $5.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $320.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("$32.00"), "name_not_in_text")).toBe(false);
+    expect(restoreStillPrinted({ ...stopPayment, fee_name: "Return Deposited Items", amount: "6.25" }, doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted({ ...stopPayment, fee_name: "Return Deposited Items", amount: "6.25" }, doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment\nLine of credit up to $32,000"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment\nWire $132.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Overdraft $35.00 $32.00"), "amount_not_the_fee")).toBe(false);
+  });
+  it("reads only the fee's own document", () => {
+    const texts = [
+      { source_document_id: 7, normalized_text: "Stop Payment Request EFT", updated_at: REREAD_AT },
+      { source_document_id: 8, normalized_text: "Stop Payment $32.00", updated_at: REREAD_AT },
+    ];
+    expect(restoreStillPrinted(stopPayment, texts, "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted({ ...stopPayment, source_document_id: null }, texts, "amount_not_the_fee")).toBe(false);
   });
 });
 

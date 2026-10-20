@@ -6,6 +6,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-lists.ts (runRegistryUrbanDebt), regulatory/state-lists.ts (datacatalog.urban.org
     // debt-america page, county/state CSVs); writes area_statistics (economy.ts upsertAreaStats)
     source: "urban-debt-in-america",
+    loader: "state-lists",
     publisher: "Urban Institute (Debt in America)",
     licence: {
       status: "open-licence",
@@ -23,6 +24,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/alltheplaces.ts, regulatory/alltheplaces.ts (data.alltheplaces.xyz runs/latest.json,
     // weekly run output.zip read by HTTP Range; ATP_LICENSE "CC0-1.0")
     source: "alltheplaces",
+    loader: "alltheplaces",
     publisher: "AllThePlaces (alltheplaces.xyz)",
     licence: { status: "open-licence", licenceName: "CC0 1.0", attribution: "AllThePlaces (alltheplaces.xyz), CC0 1.0", note: "Cite as \"AllThePlaces (alltheplaces.xyz), CC0 1.0\" (ATP_ATTRIBUTION)." },
     connection: "bulk-file",
@@ -33,8 +35,12 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   },
   {
     // magellan/registry/gleif.ts, regulatory/gleif.ts (api.gleif.org level 1 API; goldencopy.gleif.org level 2 RR file;
-    // GLEIF_LICENSE_NOTE). Level 1 is the API; level 2 is a streamed golden-copy file.
+    // GLEIF_LICENSE_NOTE). Level 1 is the API; level 2 is a streamed golden-copy file. The lei-match-*
+    // partitions (magellan/registry/gleif-lei-match.ts, #1868) link institutions to LEIs by RSSD, FDIC cert,
+    // NCUA charter (the registered id under each regulator's GLEIF registration authority), else exact
+    // legal name plus state; unmatched and ambiguous institutions stay in institution_lei_links for review.
     source: "gleif",
+    loader: "gleif",
     publisher: "Global Legal Entity Identifier Foundation (GLEIF)",
     licence: {
       status: "open-licence",
@@ -44,19 +50,22 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     connection: "rest-api",
     cadence: "irregular",
     grain: ["institution", "holding-company"],
-    linkKeys: ["lei", "rssd"],
-    tables: ["gleif_relationships", "gleif_entities"],
+    linkKeys: ["lei", "rssd", "fdic-cert", "ncua-charter", "institution-name", "state"],
+    tables: ["institution_lei_links", "gleif_relationships", "gleif_entities"],
   },
   {
     // magellan/registry/state-lists.ts (runRegistryStateNonbankLenders), regulatory/state-lists.ts (Socrata
     // datasets named in STATE_LENDER_DATASETS; SOCRATA_APP_TOKEN optional); counts via economy.ts upsertAreaStats
     source: "state-nonbank-lenders",
+    loader: "state-lists",
     publisher: "State open-data portals (Socrata), per configured state dataset",
     licence: {
       status: "terms-unconfirmed",
       note: "Each dataset's own Socrata licence is recorded per run (dataset_license); the code rates these portals OK (mostly open licences) but confirms none.",
     },
     connection: "rest-api",
+    // Sent as X-App-Token when set, for a higher Socrata rate limit; every dataset loads without it.
+    optionalEnvKeys: ["SOCRATA_APP_TOKEN"],
     cadence: "irregular",
     grain: ["institution", "county", "state"],
     linkKeys: ["state", "county-fips", "zip"],
@@ -66,6 +75,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-lists.ts (runRegistryStateDepositories), regulatory/state-lists.ts
     // (STATE_DEPOSITORY_LISTS: empty; Florida's CFO list was removed on 2026-10-17)
     source: "state-public-depositories",
+    loader: "state-lists",
     publisher: "State public-funds programs (none wired)",
     licence: {
       status: "terms-unconfirmed",
@@ -81,6 +91,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/sec-market-value.ts, regulatory/sec-market-value.ts (data.sec.gov/api/xbrl/companyfacts),
     // CIKs from accepted sec_cik identity links
     source: "sec-market-value",
+    loader: "sec-market-value",
     publisher: "US Securities and Exchange Commission (SEC EDGAR)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -93,6 +104,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/sec.ts (runRegistrySecLinks), regulatory/sec.ts (sec.gov company_tickers_exchange.json and
     // data.sec.gov submissions per CIK for SIC), magellan/registry/identity.ts (upsertIdentityLinks)
     source: "sec-links",
+    loader: "sec",
     publisher: "US Securities and Exchange Commission (SEC EDGAR)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -104,6 +116,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/sec.ts (runRegistrySecFilings), regulatory/sec.ts (data.sec.gov submissions and companyfacts)
     source: "sec-filings",
+    loader: "sec",
     publisher: "US Securities and Exchange Commission (SEC EDGAR)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -115,6 +128,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/fed.ts (runRegistryBeigeBook; "publishes 8 times a year"), regulatory/fed.ts (federalreserve.gov)
     source: "beige-book",
+    loader: "fed",
     publisher: "Board of Governors of the Federal Reserve System",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -128,6 +142,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // api.bls.gov, BLS_API_KEY optional; apps.bea.gov NIPA, BEA_API_KEY; federalreserve.gov FRB_h15_xml.zip).
     // The source key keeps its FRED-era name so the step and its history stay joined.
     source: "fred",
+    loader: "fed",
+    checkEveryHours: 24, // FRED_REFRESH_HOURS
     publisher: "US Bureau of Labor Statistics, US Bureau of Economic Analysis and the Federal Reserve Board (H.15)",
     licence: {
       status: "public-domain",
@@ -143,6 +159,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/fed.ts (runRegistryFomcMinutes), regulatory/fed.ts (federalreserve.gov FOMC calendar)
     source: "fomc-minutes",
+    loader: "fed",
+    checkEveryHours: 24, // FOMC_REFRESH_HOURS
     publisher: "Board of Governors of the Federal Reserve System (FOMC)",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -154,6 +172,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/fed-publications.ts, regulatory/fed-banks.ts (fedinprint.org/rss, Reserve Banks' own feeds)
     source: "fed-publications",
+    loader: "fed-publications",
+    checkEveryHours: 24, // FED_PUBLICATIONS_REFRESH_HOURS
     publisher: "The 12 regional Federal Reserve Banks (via Fed in Print)",
     licence: {
       status: "terms-unconfirmed",
@@ -168,6 +188,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
   {
     // magellan/registry/reg-news.ts, data-store/news.ts FEEDS (Fed, FDIC via govdelivery, OCC, CFPB press RSS)
     source: "reg-news",
+    loader: "reg-news",
+    checkEveryHours: 24, // REG_NEWS_REFRESH_HOURS
     publisher: "Federal Reserve Board, FDIC, OCC and CFPB",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -180,6 +202,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/federal-register.ts, regulatory/federal-register.ts (federalregister.gov/api/v1/documents.json;
     // writes only when FEDERAL_REGISTER_TRACKER_LIVE=true)
     source: "federal-register",
+    loader: "federal-register",
+    checkEveryHours: 24, // FEDERAL_REGISTER_REFRESH_HOURS
     publisher: "Office of the Federal Register (Federal Register)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -192,6 +216,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/federal-bills.ts, regulatory/congress-gov.ts (api.congress.gov/v3/bill; needs CONGRESS_GOV_API_KEY;
     // writes only when FEDERAL_BILLS_TRACKER_LIVE=true)
     source: "federal-bills",
+    loader: "federal-bills",
+    checkEveryHours: 24, // FEDERAL_BILLS_REFRESH_HOURS
     publisher: "Library of Congress (Congress.gov)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -205,6 +231,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-bills.ts, regulatory/open-states.ts (v3.openstates.org/bills; needs OPEN_STATES_API_KEY;
     // writes only when STATE_BILLS_TRACKER_LIVE=true)
     source: "state-bills",
+    loader: "state-bills",
     publisher: "Open States (state legislature bill data)",
     licence: {
       status: "public-domain",
@@ -221,6 +248,8 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-reg-news.ts, regulatory/state-regulators.ts (agency sites), regulatory/state-news.ts
     // (feeds or news pages; writes only when STATE_NEWS_TRACKER_LIVE=true, source "state:XX")
     source: "state-reg-news",
+    loader: "state-reg-news",
+    checkEveryHours: 24, // REFRESH_HOURS
     publisher: "State banking and credit union regulators (New York, North Carolina and Florida struck)",
     licence: {
       status: "terms-unconfirmed",
@@ -236,6 +265,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-bill-news.ts, regulatory/state-news.ts (news.google.com/rss/search; writes only when
     // STATE_NEWS_TRACKER_LIVE=true, source "news:XX")
     source: "state-bill-news",
+    loader: "state-bill-news",
     publisher: "News outlets, found through Google News RSS search",
     licence: {
       status: "held",
@@ -251,6 +281,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-regulators.ts: syncs the reviewed STATE_REGULATORS constant in
     // regulatory/state-regulators.ts and tags credit unions' chartering agency; nothing is fetched
     source: "state-regulators",
+    loader: "state-regulators",
     publisher: "Fee Insight's reviewed list of state banking regulators (agency names and websites)",
     licence: {
       status: "public-domain",
@@ -266,6 +297,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/enforcement.ts, regulatory/enforcement.ts (apps.occ.gov EASearch JSON export,
     // federalreserve.gov enforcementactions.csv); matched by name and state or to a holding company
     source: "enforcement",
+    loader: "enforcement",
     publisher: "Office of the Comptroller of the Currency (OCC) and Federal Reserve Board",
     licence: { status: "public-domain" },
     connection: "bulk-file",
@@ -278,6 +310,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/state-enforcement.ts, regulatory/state-enforcement.ts (STATE_ORDER_SOURCES pages);
     // matched by name within the state
     source: "state-enforcement",
+    loader: "state-enforcement",
     publisher: "State banking departments (New Jersey, Illinois, Maryland, Washington, Texas)",
     licence: {
       status: "terms-unconfirmed",
@@ -293,6 +326,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/wire-research.ts (provider step): picks held reg_articles and reg_tracker_items, re-reads each
     // item's own page with a plain fetch, and has a model write a note (paidModelCall); shadow until REG_WIRE_SUMMARIES_LIVE=true
     source: "wire-research",
+    loader: "wire-research",
     publisher: "Fee Insight model notes on federal agency releases, state regulator posts and state fee bills",
     licence: {
       status: "terms-unconfirmed",
@@ -303,5 +337,38 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     grain: ["document"],
     linkKeys: [],
     tables: ["reg_wire_research"],
+  },
+  {
+    // magellan/registry/bank-zelle.ts, bank-zelle-match.ts (#1875): reads the current copy of each institution's own
+    // stored documents (source_documents, agent_source_texts); fetches nothing. Never Zelle's participant list (struck #1840).
+    source: "bank-zelle",
+    loader: "bank-zelle",
+    publisher: "Each institution's own website and fee schedule",
+    licence: {
+      status: "fee-insight",
+      note: "Fee Insight's own reading of the documents the published fees come from. Each row is one fact with one evidence sentence and the link to the institution's own document. Zelle's participant list is never read (struck 2026-10-17, #1840).",
+    },
+    connection: "derived",
+    cadence: "weekly",
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["institution_payment_features"],
+  },
+  {
+    // magellan/registry/call-report-summaries.ts: reads institution_financial_records (the fdic and ncua
+    // rows the financials loaders wrote) and stores each filing's standalone quarter; fetches nothing.
+    source: "call-report-summaries",
+    loader: "call-report-summaries",
+    publisher: "FDIC and NCUA call reports, as already loaded (each filing's own quarter, split once per load)",
+    licence: {
+      status: "public-domain",
+      note: "A recomputation of the FDIC and NCUA call-report figures already held; no new publisher data.",
+    },
+    connection: "derived",
+    cadence: "quarterly",
+    checkEveryHours: 24,
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["call_report_quarterly_income", "call_report_summary_groups"],
   },
 ];

@@ -1,0 +1,727 @@
+// @vitest-environment node
+import { createServer,connect as connectSocket,type Socket } from "node:net";
+import { inLiveAuditTransaction,withLiveAuditReceiptPhase } from "./live-source-sql";
+import { mkdtemp,rm } from "node:fs/promises";
+import { randomBytes,createHash } from "node:crypto";
+import postgres from "postgres";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { JSON_TEXT_PASSTHROUGH, NUMERIC_AS_NUMBER, TEXT_WITHOUT_NUL } from "./connection";
+import { createLiveAuditDraw, currentLiveAuditMatches, latestLiveAuditDraw, claimLiveAuditChunk, settleLiveAuditChunk, readLiveAuditProgress, type LiveAuditContext } from "./live-source-audit";
+import { LIVE_AUDIT_EVENTS, LIVE_AUDIT_STEPS, LIVE_SOURCE_AUDIT_SERIES, liveAuditUnknown, auditHash,makeLiveAuditDraw,LIVE_SOURCE_AUDIT } from "@/lib/agents/deming/live-source-audit";
+
+import { requestLiveSourceCaptures,readLiveCaptureRequest,latestLiveCaptureDisposition,claimLiveSourceCapture,settleLiveSourceCapture,expireLiveCaptureEpisodes } from "./live-source-capture";
+import { archiveLiveSourceAudit,readLiveSourceAudit,readHistoricalLiveSourceAudit } from "./live-source-audit-read";
+import { runLiveSourceCapture } from "@/lib/agents/magellan/live-audit-capture";
+import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedule";
+
+import { runStorageRetention } from "@/lib/agents/atlas/storage-retention";
+
+type AdmittedReceipt={client:postgres.Sql;commands:string[];used:boolean};
+const runtime=vi.hoisted(()=>({receipt:null as AdmittedReceipt|null,db:null as postgres.Sql|null,provider:vi.fn(),observer:null as typeof import("@/lib/agents/deming/live-source-observer").observeLiveAuditGroup|null}));
+// Only the real-caller COMMIT control injects an already-admitted owned client.
+// Ordinary/cold-start controls still use the unchanged native receipt constructor.
+vi.mock("./live-source-sql",async(original)=>{
+  const actual=await original<typeof import("./live-source-sql")>();
+  return {...actual,inLiveAuditTransaction:((...args:Parameters<typeof actual.inLiveAuditTransaction>)=>{
+    const [supplied,work,deadline]=args,fixture=runtime.receipt;
+    if(!fixture||deadline===undefined||deadline-Date.now()>450)return actual.inLiveAuditTransaction(supplied,work,deadline);
+    runtime.receipt=null;
+    return actual.withLiveAuditReceiptPhase(supplied,deadline,scope=>actual.inLiveAuditTransaction(scope,work,deadline),{
+      clientFactory:()=>{fixture.used=true;return fixture.client as unknown as typeof supplied;},
+    });
+  }) as typeof actual.inLiveAuditTransaction};
+});
+vi.mock("@/lib/data-store/connection",async(original)=>({...await original<typeof import("./connection")>(),
+  sql:new Proxy(()=>{}, {apply:(_target,_this,args)=>Reflect.apply(runtime.db!,runtime.db,args),get:(_target,key)=>{const value=Reflect.get(runtime.db!,key);return typeof value==="function"?value.bind(runtime.db):value;}}),
+  withTransaction:async(callback:(tx:postgres.TransactionSql)=>Promise<unknown>)=>runtime.db!.begin(callback),
+}));
+vi.mock("@/lib/automation-control",()=>({getPipelineControl:async()=>({enabled:true}),getMarketingControl:async()=>({enabled:true}),
+  getAutomationControl:runtime.provider,assertAutomationEnabled:runtime.provider}));
+vi.mock("@/lib/agents/deming/live-source-observer",async original=>{const actual=await original<typeof import("@/lib/agents/deming/live-source-observer")>();
+  return {...actual,observeLiveAuditGroup:(...args:Parameters<typeof actual.observeLiveAuditGroup>)=>(runtime.observer??actual.observeLiveAuditGroup)(...args)};});
+vi.mock("@/lib/agents/document-vault",async(original)=>({...await original<typeof import("@/lib/agents/document-vault")>(),getDocumentVault:()=>({configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()})}));
+import { writeScoreboardSnapshot,type ScoreboardNumbers } from "@/lib/agents/scoreboard";
+import type { GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { summarizeLiveAudit } from "@/lib/agents/deming/live-source-audit-records";
+import { executeAgentRun } from "@/lib/agents/run-store";
+
+const connection = process.env.E2E_DATABASE_URL;
+if (connection && !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connection).hostname)) throw new Error("Live-source fixtures require an isolated loopback database");
+const schema = `live_source_${randomBytes(8).toString("hex")}`;
+const tables = { agent_runs: "id", agent_run_steps: "id", agent_run_events: "id", institution_sources: "id", source_documents: "id",
+  raw_fee_observations: "fee_raw_id", verified_fee_observations: "fee_verified_id", published_fee_records: "fee_published_id",
+  pipeline_feedback: "id", pipeline_scoreboard_snapshots: "id",published_fee_corrections:"id" };
+let admin: postgres.Sql, db: postgres.Sql;
+const seed = "a".repeat(64);
+const appDb = () => db as unknown as Parameters<typeof createLiveAuditDraw>[0]["db"];
+
+/** Admission is a fixture precondition for tests of behavior after admission.
+ * Preserve the supplied host/auth/TLS/schema/type options; own and close this client.
+ * Cold/startup-exhaustion controls below keep the production constructor/deadline.
+ */
+async function admittedReceipt(supplied:postgres.Sql=db):Promise<AdmittedReceipt>{
+  const commands:string[]=[];
+  const client=postgres({...supplied.options,max:1,connect_timeout:1,debug:(_connection:number,query:string)=>{commands.push(query);}} as unknown as postgres.Options<Record<string,postgres.PostgresType>>);
+  try{
+    for(const key of ['host','port','database','user','ssl','connection','types','transform'] as const)expect(client.options[key]).toEqual(supplied.options[key]);
+    expect(client.options.pass===supplied.options.pass).toBe(true); // Compare auth without printing it.
+    const [ready]=await client`SELECT current_schema() AS schema,1.25::numeric AS amount,'{"bound":true}'::jsonb AS metadata,
+      (SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()) AS ssl`;
+    expect(ready).toEqual({schema,amount:1.25,metadata:{bound:true},ssl:supplied.options.ssl!==false});
+    return {client,commands,used:false};
+  }catch(error){await client.end({timeout:0});throw error;}
+}
+
+describe.skipIf(!connection)("live audit actual ledger and immutable frame SQL", () => {
+  beforeAll(async () => {
+    admin = postgres(connection!, { ssl: "require", prepare: false, max: 1 });
+    await admin.unsafe(`CREATE SCHEMA ${schema}`);
+    for (const [table, id] of Object.entries(tables)) {
+      await admin.unsafe(`CREATE TABLE ${schema}.${table} (LIKE public.${table} INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES)`);
+      await admin.unsafe(`ALTER TABLE ${schema}.${table} ALTER COLUMN ${id} DROP DEFAULT, ALTER COLUMN ${id} ADD GENERATED BY DEFAULT AS IDENTITY`);
+    }
+    await admin.unsafe(`CREATE TABLE ${schema}.institution_source_profiles (LIKE public.institution_source_profiles INCLUDING ALL)`);
+    const [view] = await admin`SELECT pg_get_viewdef('public.published_fee_catalog'::regclass,true) AS definition`;
+    // Fixture mirrors the deployed lineage product projection, not the older dump's NULL placeholder.
+    const definition = String(view.definition).replaceAll("public.", `${schema}.`).replace(/NULL::text AS account_product_type/, "fr.product_name AS account_product_type");
+    db = postgres(connection!, { ssl: "require", prepare: false, max: 5,
+      connection: { search_path: `${schema}, public` },
+      types: { numeric: NUMERIC_AS_NUMBER, json: JSON_TEXT_PASSTHROUGH, text: TEXT_WITHOUT_NUL } }) as unknown as postgres.Sql;
+    runtime.db=db;
+    await db.unsafe(`CREATE VIEW ${schema}.published_fee_catalog AS ${definition}`);
+  });
+  beforeEach(async () => {
+    await db.unsafe(`TRUNCATE ${Object.keys(tables).join(",")},institution_source_profiles RESTART IDENTITY`);
+    await db`INSERT INTO institution_sources(id,institution_name,state_code,website_url,fee_schedule_url,charter_type,source) VALUES
+      (1,'Synthetic fixture institution','VT','https://fixture.invalid/','https://fixture.invalid/fees.pdf','bank','fixture')`;
+    await db`INSERT INTO source_documents(id,institution_id,document_url,content_hash,status) VALUES
+      (10,1,'https://fixture.invalid/fees.pdf',${"a".repeat(64)},'fetched')`;
+    await db`INSERT INTO institution_source_profiles(institution_id,state_code,canonical_source_url,read_strategy,last_source_hash,last_successful_source_document_id)
+      VALUES(1,'VT','https://fixture.invalid/fees.pdf','html_dom',${"a".repeat(64)},10)`;
+    for (const [id,category,name,amount] of [[1,"overdraft","Overdraft Fee",35],[2,"stop_payment","Stop Payment",30],[3,"wire_domestic_outgoing","Outgoing Wire",20]] as const) {
+      await db`INSERT INTO raw_fee_observations(fee_raw_id,institution_id,source_document_id,source_url,agent_event_id,fee_name,amount,amount_kind,frequency,fee_audience,audience_evidence)
+        VALUES(${id},1,10,'https://fixture.invalid/fees.pdf',gen_random_uuid(),${name},${amount},'flat','per_item','consumer','Consumer Fee Schedule')`;
+      await db`INSERT INTO verified_fee_observations(fee_verified_id,fee_raw_id,institution_id,canonical_fee_key,fee_name,amount,amount_kind,review_status,fee_audience,audience_evidence,verified_by_agent_event_id)
+        VALUES(${id},${id},1,${category},${name},${amount},'flat','verified','consumer','Consumer Fee Schedule',gen_random_uuid())`;
+      await db`INSERT INTO published_fee_records(fee_published_id,lineage_ref,institution_id,canonical_fee_key,fee_name,amount,amount_kind,fee_audience,audience_evidence,frequency,published_by_adversarial_event_id)
+        VALUES(${id},${id},1,${category},${name},${amount},'flat','consumer','Consumer Fee Schedule','per_item',gen_random_uuid())`;
+    }
+  });
+  afterAll(async () => { if(db)await db.end(); if(admin){ await admin.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`); await admin.end(); } });
+
+  it("cancels an actual slow SQL statement, rolls back earlier writes and closes only its owned client",async()=>{
+    const fixture=await admittedReceipt(),at=Date.now();
+    try{
+      await expect(withLiveAuditReceiptPhase(appDb()!,at+450,scope=>inLiveAuditTransaction(scope,async tx=>{
+        const [changed]=await tx`UPDATE published_fee_records SET amount=99 WHERE fee_published_id=1 RETURNING amount`;
+        expect(changed.amount).toBe(99);
+        await tx`SELECT pg_sleep(5) /* live_source_owned_deadline */`;
+      }),{clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow();
+      expect(fixture.used).toBe(true);expect(fixture.commands).toContain('BEGIN');
+      expect(fixture.commands.some(query=>query.includes('live_source_owned_deadline'))).toBe(true);
+      expect(Date.now()-at).toBeLessThan(1500);
+      expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
+      const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database()
+        AND state='active' AND query LIKE '%pg_sleep(5)%live_source_owned_deadline%' AND pid<>pg_backend_pid()`;
+      expect(active.n).toBe(0);await expect(fixture.client`SELECT 1`).rejects.toThrow();
+    }finally{await fixture.client.end({timeout:0});}
+  });
+
+  it("rejects an ordinary receipt-phase statement outside its explicit transaction before any backend work",async()=>{
+    const fixture=await admittedReceipt();let entered=false;
+    try{
+      await expect(withLiveAuditReceiptPhase(appDb()!,Date.now()+300,scope=>{entered=true;return scope`SELECT pg_sleep(5) /* outside_receipt_transaction */`;},
+        {clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow('live_audit_receipt_transaction_required');
+      expect(fixture.used).toBe(true);expect(entered).toBe(true);expect(fixture.commands.some(query=>query.includes('pg_sleep'))).toBe(false);
+      const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname=current_database() AND state='active'
+        AND query LIKE '%pg_sleep(5)%outside_receipt_transaction%' AND pid<>pg_backend_pid()`;expect(active.n).toBe(0);
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
+    }finally{await fixture.client.end({timeout:0});}
+  });
+
+  it("enforces a cumulative SQL budget and preserves the supplied schema, serializers and TLS",async()=>{
+    const positive=await admittedReceipt();
+    try{await withLiveAuditReceiptPhase(appDb()!,Date.now()+1000,scope=>inLiveAuditTransaction(scope,async tx=>{
+      const [value]=await tx`SELECT current_schema() AS schema,1.25::numeric AS amount,'{"bound":true}'::jsonb AS metadata`;
+      expect(value).toEqual({schema,amount:1.25,metadata:{bound:true}});
+    }),{clientFactory:()=>{positive.used=true;return positive.client as unknown as NonNullable<ReturnType<typeof appDb>>;}});
+      expect(positive.used).toBe(true);
+    }finally{await positive.client.end({timeout:0});}
+    const fixture=await admittedReceipt(),at=Date.now();let completedStatements=0;
+    try{
+      await expect(withLiveAuditReceiptPhase(appDb()!,at+430,scope=>inLiveAuditTransaction(scope,async tx=>{
+        const [changed]=await tx`UPDATE published_fee_records SET amount=98 WHERE fee_published_id=1 RETURNING amount`;
+        expect(changed.amount).toBe(98);
+        for(let i=0;i<5;i++){await tx`SELECT pg_sleep(0.12) /* live_source_cumulative_deadline */`;completedStatements++;}
+      }),{clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toThrow();
+      expect(fixture.used).toBe(true);expect(fixture.commands).toContain('BEGIN');expect(completedStatements).toBeGreaterThanOrEqual(2);
+      expect(fixture.commands.filter(query=>query.includes('live_source_cumulative_deadline')).length).toBeGreaterThanOrEqual(3);
+      expect(Date.now()-at).toBeLessThan(1500);expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
+    }finally{await fixture.client.end({timeout:0});}
+  });
+
+  it("reports an actual slow deferred COMMIT as unknown, then observes its controlled completion",async()=>{
+    const fixture=await admittedReceipt();let pid:number|null=null;
+    try{
+      await db.unsafe(`CREATE FUNCTION ${schema}.slow_live_audit_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.8); RETURN NEW; END $$`);
+      await db.unsafe(`CREATE CONSTRAINT TRIGGER slow_live_audit_commit AFTER UPDATE ON published_fee_records DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_live_audit_commit()`);
+      const at=Date.now();
+      await expect(withLiveAuditReceiptPhase(appDb()!,at+450,scope=>inLiveAuditTransaction(scope,async tx=>{pid=Number((await tx`SELECT pg_backend_pid() AS pid`)[0].pid);await tx`UPDATE published_fee_records SET amount=97 WHERE fee_published_id=1`;}),
+        {clientFactory:()=>{fixture.used=true;return fixture.client as unknown as NonNullable<ReturnType<typeof appDb>>;}})).rejects.toMatchObject({name:"LiveAuditSqlBudgetError",commitOutcome:"unknown"});
+      expect(fixture.used).toBe(true);expect(pid).not.toBeNull();expect(fixture.commands).toContain('COMMIT');
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
+      expect(Date.now()-at).toBeLessThan(1500);
+      await vi.waitFor(async()=>{const [active]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity WHERE pid=${pid!} AND xact_start IS NOT NULL`;expect(active.n).toBe(0);},{timeout:2500,interval:10});
+      // Already-sent COMMIT may finish after client termination. Never claim rollback.
+      expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(97);
+    }finally{await fixture.client.end({timeout:0});await db.unsafe(`DROP TRIGGER IF EXISTS slow_live_audit_commit ON published_fee_records`);await db.unsafe(`DROP FUNCTION IF EXISTS ${schema}.slow_live_audit_commit()`);}
+  });
+
+  it("terminates only its native data client without opening an auxiliary cancellation channel",async()=>{
+    const sockets=new Set<Socket>();const cancelSockets:Socket[]=[];let cancellationChannels=0,completed=false,entered=false;
+    const track=(socket:Socket)=>{sockets.add(socket);socket.on('close',()=>sockets.delete(socket));socket.on('error',()=>undefined);return socket;};
+    const server=createServer(socket=>{track(socket);socket.once('data',first=>{
+      if(first.length>=8&&first.readInt32BE(4)===80877102){cancellationChannels++;cancelSockets.push(socket);socket.write(Buffer.from([90,0,0,0,5,73]));return;}
+      const upstream=track(connectSocket({host:'127.0.0.1',port:Number(new URL(connection!).port)},()=>upstream.write(first)));
+      // The proxy owns a second connection: forward actual client closure to its peer.
+      socket.once('close',()=>upstream.destroy());upstream.once('close',()=>socket.destroy());
+      socket.pipe(upstream);upstream.pipe(socket);
+    });});
+    await new Promise<void>(done=>server.listen(0,'127.0.0.1',done));const address=server.address();if(!address||typeof address==='string')throw new Error('fixture_port');
+    const supplied=postgres({...db.options,host:['127.0.0.1'],port:[address.port],ssl:false} as unknown as postgres.Options<Record<string,postgres.PostgresType>>);
+    let fixture:AdmittedReceipt|undefined,result:Promise<unknown>|undefined;
+    try{
+      const admitted=fixture=await admittedReceipt(supplied);
+      result=withLiveAuditReceiptPhase(supplied as unknown as NonNullable<ReturnType<typeof appDb>>,Date.now()+450,scope=>inLiveAuditTransaction(scope,async tx=>{
+        entered=true;await tx`SELECT pg_sleep(5) /* live_source_proxy_work */`;
+      }),{clientFactory:()=>{admitted.used=true;return admitted.client as unknown as NonNullable<ReturnType<typeof appDb>>;}});
+      void result.then(()=>{completed=true;},()=>{completed=true;});
+      await expect(result).rejects.toThrow();expect(admitted.used).toBe(true);expect(entered).toBe(true);expect(admitted.commands).toContain('BEGIN');
+      expect(admitted.commands.some(query=>query.includes('live_source_proxy_work'))).toBe(true);
+      expect(completed).toBe(true);expect(cancellationChannels).toBe(0);expect(cancelSockets).toEqual([]);
+      await expect(admitted.client`SELECT 1`).rejects.toThrow();
+      await vi.waitFor(()=>expect([...sockets].every(socket=>socket.closed)).toBe(true),{timeout:700,interval:10});
+    }finally{await fixture?.client.end({timeout:0});for(const socket of sockets)socket.destroy();await supplied.end({timeout:0});await result?.catch(()=>undefined);await new Promise<void>(done=>server.close(()=>done()));}
+  });
+
+  it("preserves a supplied Unix path, TLS and startup role through an isolated local PostgreSQL proxy",async()=>{
+    const directory=await mkdtemp('/tmp/fee-audit-unix-'),path=`${directory}/.s.PGSQL.fixture`,sockets=new Set<Socket>();
+    const track=(value:Socket)=>{sockets.add(value);value.on('close',()=>sockets.delete(value));value.on('error',()=>undefined);return value;};
+    const server=createServer(socket=>{track(socket);const upstream=track(connectSocket({host:'127.0.0.1',port:Number(new URL(connection!).port)}));socket.pipe(upstream);upstream.pipe(socket);});
+    await new Promise<void>(done=>server.listen(path,done));
+    const supplied=postgres({...db.options,path,host:[directory],connection:{...db.options.connection,role:'postgres'}} as unknown as postgres.Options<Record<string,postgres.PostgresType>>);
+    try{await inLiveAuditTransaction(supplied as unknown as NonNullable<ReturnType<typeof appDb>>,async tx=>{
+      const [row]=await tx`SELECT current_schema() AS schema,current_user AS role,1.25::numeric AS amount`;
+      expect(row).toEqual({schema,role:'postgres',amount:1.25});
+    });}finally{await supplied.end({timeout:0});for(const socket of sockets)socket.destroy();await new Promise<void>(done=>server.close(()=>done()));await rm(directory,{recursive:true,force:true});}
+  });
+
+  it("aborts actual local stalled TLS startup without opening a transaction or using the global client",async()=>{
+    const sockets=new Set<Socket>(),server=createServer(socket=>{sockets.add(socket);socket.on("close",()=>sockets.delete(socket));});
+    await new Promise<void>(done=>server.listen(0,"127.0.0.1",done));
+    const address=server.address();if(!address||typeof address==='string')throw new Error("fixture_port");
+    const stalled=postgres({host:"127.0.0.1",port:address.port,database:"owned_fixture",user:"fixture",ssl:"require",prepare:false}),work=vi.fn();
+    try{const at=Date.now();await expect(withLiveAuditReceiptPhase(stalled as unknown as NonNullable<ReturnType<typeof appDb>>,at+220,work)).rejects.toThrow();
+      expect(Date.now()-at).toBeLessThan(1500);expect(work).not.toHaveBeenCalled();
+    }finally{await stalled.end({timeout:0});for(const socket of sockets)socket.destroy();await new Promise<void>(done=>server.close(()=>done()));}
+  });
+
+  async function context(step: string = LIVE_AUDIT_STEPS.draw): Promise<LiveAuditContext> {
+    const agent=step===LIVE_AUDIT_STEPS.capture?"magellan":"atlas";
+    const [run] = await db`INSERT INTO agent_runs(agent_name,run_kind,title,status,params_json,backend)
+      VALUES(${agent},'workflow','Synthetic live audit','running',${JSON.stringify({source:step===LIVE_AUDIT_STEPS.draw||step==='atlas-storage-retention'?'atlas.scoreboard':'deming.live_source_audit'})}::jsonb,'agentic_v1') RETURNING id`;
+    const [row] = await db`INSERT INTO agent_run_steps(agent_run_id,step_key,agent_name,title,status,sequence)
+      VALUES(${run.id},${step},${agent},'Synthetic draw','running',1) RETURNING id`;
+    return { runId: Number(run.id), stepId: Number(row.id), stepKey: step };
+  }
+  const draw = async (ctx?: LiveAuditContext) => createLiveAuditDraw({ db: appDb(), context: ctx ?? await context(), seed });
+
+  it("freezes the current represented catalog, exact bytes and shared policy in one real receipt", async () => {
+    const event = await draw(); expect(event.valid).toBe(true);
+    expect(event.detail).toMatchObject({ state: "ready", populationCount: 3, series: LIVE_SOURCE_AUDIT_SERIES });
+    expect(event.detail!.rows).toHaveLength(3); expect(event.detail!.groups).toHaveLength(1);
+    expect(event.detail!.groups[0].policy.websiteUrl).toBe("https://fixture.invalid/");
+    expect((await latestLiveAuditDraw(appDb()))?.id).toBe(event.id);
+    const matches = await currentLiveAuditMatches(appDb()!,event.detail!.rows,event.detail!.groups);
+    expect([...matches.values()]).toEqual([true,true,true]);
+  });
+  it("serializes concurrent daily draws and retains the first frame instead of redrawing", async () => {
+    const contexts = await Promise.all(Array.from({ length: 4 }, () => context()));
+    const events = await Promise.all(contexts.map((ctx) => draw(ctx)));
+    expect(new Set(events.map((e)=>e.id)).size).toBe(1);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.draw}`)[0].n).toBe(1);
+    await db`UPDATE published_fee_records SET amount=40 WHERE fee_published_id=1`;
+    expect((await draw()).detail!.rows.find((r)=>r.id===1)!.catalog.amount).toBe(35);
+  });
+  it("invalidates price, source and policy drift with actual current-state SQL", async () => {
+    const event=await draw();
+    await db`UPDATE published_fee_records SET amount=40 WHERE fee_published_id=1`;
+    let matches=await currentLiveAuditMatches(appDb()!,event.detail!.rows,event.detail!.groups);
+    expect(matches.get(1)).toBe(false); expect(matches.get(2)).toBe(true);
+    await db`UPDATE institution_source_profiles SET correction_version=1 WHERE institution_id=1`;
+    matches=await currentLiveAuditMatches(appDb()!,event.detail!.rows,event.detail!.groups);
+    expect([...matches.values()]).toEqual([false,false,false]);
+  });
+  it("makes an oversized selected record visibly unavailable without replacing it with a smaller fee", async () => {
+    await db`UPDATE raw_fee_observations SET conditions=${"x".repeat(9000)} WHERE fee_raw_id=1`;
+    expect((await draw()).detail).toMatchObject({ state: "unavailable", reason: "row_cap", rows: [], populationCount: null });
+  });
+  it("a latest malformed draw is a tombstone, never an older supported frame fallback", async () => {
+    const first=await draw(); const ctx=await context();
+    await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.draw},'Malformed fixture',${JSON.stringify({day:first.detail!.day,protocol:1,series:LIVE_SOURCE_AUDIT_SERIES})}::jsonb,clock_timestamp())`;
+    expect(await latestLiveAuditDraw(appDb())).toMatchObject({ valid:false,detail:null });
+    expect(await draw()).toMatchObject({ valid:false,detail:null });
+  });
+  it("rejects receipts from an unrelated real step rather than claiming persistence", async () => {
+    await expect(draw(await context("scoreboard-snapshot"))).rejects.toThrow(/wrong_step/);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events`)[0].n).toBe(0);
+  });
+  it("grants one concurrent lease and one settlement, then records exactly the frozen group",async()=>{
+    const origin=await draw();const contexts=await Promise.all([context(LIVE_AUDIT_STEPS.observe),context(LIVE_AUDIT_STEPS.observe)]);
+    const claims=await Promise.all(contexts.map(ctx=>claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id})));
+    expect(claims.filter(Boolean)).toHaveLength(1);const index=claims.findIndex(Boolean),lease=claims[index]!;
+    const options={db:appDb(),context:contexts[index],origin,claim:lease.claim,nextGroup:1,graphs:[],
+      observations:origin.detail!.rows.map(f=>liveAuditUnknown(f,new Date().toISOString(),"fixture_unknown"))};
+    const results=await Promise.all([settleLiveAuditChunk(options),settleLiveAuditChunk(options)]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await readLiveAuditProgress(appDb()!,origin)).toMatchObject({valid:true,cursor:1});
+    expect((await readLiveAuditProgress(appDb()!,origin)).observations).toHaveLength(3);
+  });
+  it("performs the final price/policy comparison in the settlement write rather than trusting a preflight",async()=>{
+    const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
+    const lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
+    const graph={fixture:true},at=new Date().toISOString();const observations=origin.detail!.rows.map(f=>({...liveAuditUnknown(f,at,"own_current_fee_supported"),
+      status:"supported" as const,sourceLine:f.catalog.fee_name+" $"+f.catalog.amount,requestedUrl:f.source.url,finalUrl:f.source.url,
+      contentHash:"b".repeat(64),textHash:"c".repeat(64),graphHash:auditHash(graph)}));
+    await db`UPDATE published_fee_records SET amount=40 WHERE fee_published_id=1`;
+    expect(await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs:[graph],observations})).toBeTypeOf("number");
+    const progress=await readLiveAuditProgress(appDb()!,origin);expect(progress.valid).toBe(true);
+    expect(progress.observations.find(o=>o.feeId===1)).toMatchObject({status:"unknown",reason:"identity_changed_during_observation"});
+    expect(progress.observations.find(o=>o.feeId===2)?.status).toBe("supported");
+  });
+  it("does not persist from a cancelled owner or a stale lease generation",async()=>{
+    const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
+    const lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
+    await db`UPDATE agent_runs SET status='cancelled' WHERE id=${ctx.runId}`;
+    expect(await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs:[],
+      observations:origin.detail!.rows.map(f=>liveAuditUnknown(f,new Date().toISOString(),"cancelled"))})).toBeNull();
+    expect((await readLiveAuditProgress(appDb()!,origin)).cursor).toBe(0);
+  });
+  it("a malformed latest chunk is visible unavailable rather than an older successful cursor fallback",async()=>{
+    const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
+    await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.chunk},'Malformed fixture',${JSON.stringify({drawId:origin.id})}::jsonb,clock_timestamp())`;
+    expect(await readLiveAuditProgress(appDb()!,origin)).toMatchObject({valid:false,cursor:0});
+    expect(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id})).toBeNull();
+  });
+
+  async function observed(contentHash="b".repeat(64)){
+    const origin=await draw(),ctx=await context(LIVE_AUDIT_STEPS.observe);
+    const lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
+    const graph={officialFixture:true},at=new Date().toISOString();
+    const observations=origin.detail!.rows.map(f=>({...liveAuditUnknown(f,at,"own_current_fee_supported"),status:"supported" as const,
+      sourceLine:f.catalog.fee_name+" $"+f.catalog.amount,requestedUrl:"https://fixture.invalid/new-fees.pdf",finalUrl:"https://fixture.invalid/new-fees.pdf",
+      contentHash,textHash:"c".repeat(64),graphHash:auditHash(graph)}));
+    await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs:[graph],observations});
+    return {origin,ctx};
+  }
+  it("serializes capture admission per immutable source identity across fees and concurrent chunks",async()=>{
+    const {origin,ctx}=await observed();
+    const ids=await Promise.all([requestLiveSourceCaptures(appDb()!,ctx,origin.id),requestLiveSourceCaptures(appDb()!,ctx,origin.id)]);
+    expect(ids.flat()).toHaveLength(1);
+    const request=await readLiveCaptureRequest(appDb()!,ids.flat()[0]);
+    expect(request).toMatchObject({drawId:origin.id,institutionId:1,episode:1,contentHash:"b".repeat(64)});
+    expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+  });
+  it("rejects forged latest claim provenance and a request rebound to another chunk",async()=>{
+    const {origin,ctx}=await observed(),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id),worker=await context(LIVE_AUDIT_STEPS.capture);
+    const lease=(await claimLiveSourceCapture(appDb()!,worker,id))!;
+    const {eventId,...claim}=lease.claim;expect(eventId).toBeGreaterThan(0);
+    await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.captureClaim},'Wrong actual producer fixture',${JSON.stringify({...claim,ownerRunId:ctx.runId,ownerStepId:ctx.stepId})}::jsonb,clock_timestamp())`;
+    expect(await claimLiveSourceCapture(appDb()!,worker,id)).toBeNull();
+    expect(await settleLiveSourceCapture(appDb()!,worker,lease.request,lease.claim,{state:"blocked",reason:"fixture"})).toBe(false);
+    await db`DELETE FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.captureClaim}`;
+    await db`UPDATE agent_run_events SET detail=jsonb_set(detail,'{chunkId}',to_jsonb(${origin.id}::bigint)) WHERE id=${id}`;
+    const fetchImpl=vi.fn();
+    expect(await runLiveSourceCapture({db:appDb()!,context:worker,requestId:id,fetchImpl,vault:{configured:true,store:vi.fn(),read:vi.fn(),presign:vi.fn()}})).toMatchObject({persisted:true,reason:"capture_origin_identity_changed"});
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+  it("does not trust a newest disposition from a wrong real step/source",async()=>{
+    const {origin,ctx}=await observed(),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id),worker=await context(LIVE_AUDIT_STEPS.capture);
+    await runLiveSourceCapture({db:appDb()!,context:worker,requestId:id,vault:{configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});
+    const [valid]=await db`SELECT detail FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.disposition}`;
+    await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.disposition},'Forged producer fixture',${JSON.stringify(valid.detail)}::jsonb,clock_timestamp())`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toBe('invalid');
+    expect((await readLiveSourceAudit(appDb()!))?.summary.capture).toMatchObject({requested:1,blocked:1,captured:0});
+    expect(await claimLiveSourceCapture(appDb()!,worker,id)).toBeNull();
+  });
+
+  it("requires a fresh later observation after cooldown and caps linked capture episodes",async()=>{
+    async function ageLedger(){
+      const delta=25*3600000;
+      const shift=(value:unknown):unknown=>{if(Array.isArray(value))return value.map(shift);if(value&&typeof value==='object'){
+        const object=Object.fromEntries(Object.entries(value).map(([key,v])=>[key,typeof v==='string'&&['asOf','deadline','observedAt','expiresAt','leaseUntil','at','retryAt'].includes(key)?new Date(Date.parse(v)-delta).toISOString():shift(v)]));
+        if(typeof object.asOf==='string'&&'day' in object)object.day=object.asOf.slice(0,10);return object;}return value;};
+      for(const event of await db`SELECT id,detail FROM agent_run_events`)await db`UPDATE agent_run_events SET detail=${JSON.stringify(shift(event.detail))}::jsonb,created_at=created_at-interval '25 hours' WHERE id=${event.id}`;
+    }
+    let previous:number|null=null;
+    for(let episode=1;episode<=3;episode++){
+      const {origin,ctx}=await observed(),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+      expect(await readLiveCaptureRequest(appDb()!,id)).toMatchObject({episode,previousRequestId:previous});
+      const worker=await context(LIVE_AUDIT_STEPS.capture);
+      await runLiveSourceCapture({db:appDb()!,context:worker,requestId:id,vault:{configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});
+      expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+      previous=id;await ageLedger();
+    }
+    const fresh=await observed();expect(await requestLiveSourceCaptures(appDb()!,fresh.ctx,fresh.origin.id)).toEqual([]);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.capture}`)[0].n).toBe(3);
+  });
+
+  it("binds observation, claim and draw history to their actual step agents",async()=>{
+    const {origin,ctx}=await observed();expect((await readLiveAuditProgress(appDb()!,origin)).valid).toBe(true);
+    await db`UPDATE agent_run_steps SET agent_name='magellan' WHERE id=${ctx.stepId}`;
+    expect((await readLiveAuditProgress(appDb()!,origin)).valid).toBe(false);expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+    await db`UPDATE agent_run_steps SET agent_name='atlas' WHERE id=${ctx.stepId}`;
+    expect((await readLiveAuditProgress(appDb()!,origin)).valid).toBe(true);
+    const [drawStep]=await db`SELECT step_id FROM agent_run_events WHERE id=${origin.id}`;
+    await db`UPDATE agent_run_steps SET agent_name='magellan' WHERE id=${drawStep.step_id}`;
+    expect(await latestLiveAuditDraw(appDb())).toMatchObject({valid:false});expect(await readLiveSourceAudit(appDb()!)).toBeNull();
+  });
+
+  it("consumes a not-configured capture as terminal blocked with no HTTP or source/fee mutation",async()=>{
+    const {origin,ctx}=await observed();const [id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const fetchImpl=vi.fn();const worker=await context(LIVE_AUDIT_STEPS.capture);
+    const result=await runLiveSourceCapture({db:appDb()!,context:worker,requestId:id,fetchImpl,vault:{configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});
+    expect(result).toMatchObject({claimed:true,persisted:true,reason:"capture_vault_not_configured"});expect(fetchImpl).not.toHaveBeenCalled();
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:"blocked",attempt:1});
+    expect((await db`SELECT count(*)::int AS n FROM source_documents`)[0].n).toBe(1);
+    expect((await db`SELECT count(*)::int AS n FROM pipeline_feedback`)[0].n).toBe(0);
+    expect(await claimLiveSourceCapture(appDb()!,worker,id)).toBeNull();
+  });
+  it("bounds ignored transport cancellation and exhausts exactly three attempts",async()=>{
+    const {origin,ctx}=await observed();const [id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const worker=await context(LIVE_AUDIT_STEPS.capture),controller=new AbortController();
+    const fetchImpl=vi.fn(()=>new Promise<Response>(()=>undefined));
+    const timer=setTimeout(()=>controller.abort(),20);
+    const result=await runLiveSourceCapture({db:appDb()!,context:worker,requestId:id,fetchImpl,signal:controller.signal,
+      vault:{configured:true,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});clearTimeout(timer);
+    expect(result.persisted).toBe(true);expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:"retry",attempt:1});
+    const request=(await readLiveCaptureRequest(appDb()!,id))!;
+    await db`UPDATE agent_run_events SET detail=jsonb_set(detail,'{retryAt}',to_jsonb('2000-01-01T00:00:00.000Z'::text))
+      WHERE event_type=${LIVE_AUDIT_EVENTS.disposition}`;
+    const second=(await claimLiveSourceCapture(appDb()!,worker,id))!;
+    expect(second.claim.attempt).toBe(2);
+    await settleLiveSourceCapture(appDb()!,worker,request,second.claim,{state:"retry",reason:"fixture_transient_failure"});
+    await db`UPDATE agent_run_events SET detail=jsonb_set(detail,'{retryAt}',to_jsonb('2000-01-01T00:00:00.000Z'::text))
+      WHERE event_type=${LIVE_AUDIT_EVENTS.disposition}`;
+    const third=(await claimLiveSourceCapture(appDb()!,worker,id))!;
+    await settleLiveSourceCapture(appDb()!,worker,request,third.claim,{state:"retry",reason:"fixture_transient_failure"});
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:"failed",attempt:3});
+    expect(await claimLiveSourceCapture(appDb()!,worker,id)).toBeNull();
+    expect(await requestLiveSourceCaptures(appDb()!,ctx,origin.id)).toEqual([]);
+  });
+  it("gives an unattempted aged capture a real terminal disposition once, without HTTP or an immortal pending queue",async()=>{
+    const {origin,ctx}=await observed(),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const expires=new Date(Date.now()-1000).toISOString();
+    await db`UPDATE agent_run_events SET detail=jsonb_set(detail,'{expiresAt}',to_jsonb(${expires}::text)),created_at=clock_timestamp()-interval '25 hours' WHERE id=${id}`;
+    const archivist=await context(LIVE_AUDIT_STEPS.archive);
+    expect(await expireLiveCaptureEpisodes(appDb()!,archivist)).toBe(1);expect(await expireLiveCaptureEpisodes(appDb()!,archivist)).toBe(0);
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:'failed',claimId:null,attempt:0,reason:'capture_episode_expired'});
+    expect(await claimLiveSourceCapture(appDb()!,await context(LIVE_AUDIT_STEPS.capture),id)).toBeNull();
+    expect((await readLiveSourceAudit(appDb()!))?.summary.capture).toMatchObject({requested:1,pending:0,failed:1});
+  });
+
+  it("archives late completion into the original snapshot without rewriting other goal metrics",async()=>{
+    const origin=await draw();
+    await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"unchangedFixture":42}}'::jsonb)`;
+    const before=await readLiveSourceAudit(appDb()!);expect(before?.summary.state).toBe("partial");
+    const ctx=await context(LIVE_AUDIT_STEPS.observe),lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
+    await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:1,graphs:[],
+      observations:origin.detail!.rows.map(f=>liveAuditUnknown(f,new Date().toISOString(),"fixture_unreadable"))});
+    const archivist=await context(LIVE_AUDIT_STEPS.archive);
+    expect(await archiveLiveSourceAudit(appDb()!,archivist,origin.id)).toBe(true);
+    const [snapshot]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;
+    expect(snapshot.detail.goal.unchangedFixture).toBe(42);
+    expect(readHistoricalLiveSourceAudit(snapshot.detail)?.summary).toMatchObject({state:"complete",unknown:3,support:null,archiveState:"archived"});
+    expect(await archiveLiveSourceAudit(appDb()!,archivist,origin.id)).toBe(true);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.archived}`)[0].n).toBe(1);
+  });
+  it("does not fabricate history when the daily snapshot is absent",async()=>{
+    const {origin}=await observed();expect(await archiveLiveSourceAudit(appDb()!,await context(LIVE_AUDIT_STEPS.archive),origin.id)).toBe(false);
+    expect((await db`SELECT count(*)::int AS n FROM pipeline_scoreboard_snapshots`)[0].n).toBe(0);
+  });
+  it("queues one actual consumed ledger workflow across concurrent ticks and hard no-ops paused/backend-off",async()=>{
+    const origin=await draw();vi.stubEnv("EXECUTION_BACKEND","agentic_v1");
+    try{
+      const outcomes=await Promise.all(Array.from({length:4},()=>scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true})));
+      expect(outcomes.reduce((n,r)=>n+r.scheduled,0)).toBe(1);expect(new Set(outcomes.map(r=>r.runId)).size).toBe(1);
+      const [run]=await db`SELECT id,params_json FROM agent_runs WHERE id=${outcomes[0].runId!}`;expect(run.params_json.drawId).toBe(origin.id);
+      expect((await db`SELECT step_key FROM agent_run_steps WHERE agent_run_id=${run.id} ORDER BY sequence`).map(r=>r.step_key)).toEqual([LIVE_AUDIT_STEPS.observe,LIVE_AUDIT_STEPS.archive]);
+      expect(await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:false,backendEnabled:true})).toMatchObject({scheduled:0,runId:null});
+      expect(await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:false})).toMatchObject({scheduled:0,runId:null});
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("stores the exact observed bytes as an ordinary Magellan side copy while preserving current-copy/profile/fees",async()=>{
+    const bytes=new TextEncoder().encode("%PDF-synthetic official fixture"),hash=createHash("sha256").update(bytes).digest("hex");
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const store=vi.fn(async(actualBytes:Uint8Array,actualHash:string,type:string|null,options?:{signal?:AbortSignal})=>{expect(actualBytes).toEqual(bytes);expect(actualHash).toBe(hash);expect(type).toBe("application/pdf");expect(options?.signal).toBeInstanceOf(AbortSignal);return {status:"stored" as const,key:hash.slice(0,2)+"/"+hash};});
+    const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{"content-type":"application/pdf","etag":"fixture-etag"}})),
+      vault:{configured:true,store,read:vi.fn(),presign:vi.fn()}});
+    expect(result).toMatchObject({persisted:true,reason:"exact_observed_bytes_stored"});
+    const disposition=await latestLiveCaptureDisposition(appDb()!,id);expect(disposition).toMatchObject({state:"captured"});
+    expect((await db`SELECT count(*)::int AS n FROM source_documents WHERE content_hash=${hash} AND status='success' AND superseded_by_id IS NULL`)[0].n).toBe(1);
+    expect((await db`SELECT superseded_by_id FROM source_documents WHERE id=10`)[0].superseded_by_id).toBeNull();
+    expect((await db`SELECT last_source_hash FROM institution_source_profiles`)[0].last_source_hash).toBe("a".repeat(64));
+    expect((await db`SELECT amount FROM published_fee_records WHERE fee_published_id=1`)[0].amount).toBe(35);
+    expect(store.mock.calls[0][3]?.signal).toBeInstanceOf(AbortSignal);
+  });
+  it.each(['different_url','failed','missing_key','already_valid'] as const)("preserves an existing %s source byte-for-byte and records only an exact side copy or an honest conflict",async(mode)=>{
+    const bytes=new TextEncoder().encode('%PDF-owned sidecopy identity fixture'),hash=createHash('sha256').update(bytes).digest('hex'),key=hash.slice(0,2)+'/'+hash;
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const url=mode==='different_url'?'https://fixture.invalid/other-edition.pdf':'https://fixture.invalid/new-fees.pdf';
+    await db`INSERT INTO source_documents(id,institution_id,document_url,content_hash,status,document_r2_key,error_message)
+      VALUES(20,1,${url},${hash},${mode==='failed'?'failed':'success'},${mode==='already_valid'?key:null},'untouched original fixture')`;
+    const [before]=await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`;
+    const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{'content-type':'application/pdf'}})),
+      vault:{configured:true,store:vi.fn(async()=>({status:'stored' as const,key})),read:vi.fn(),presign:vi.fn()}});
+    expect(result.persisted).toBe(true);expect((await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`)[0]).toEqual(before);
+    const disposition=await latestLiveCaptureDisposition(appDb()!,id);
+    if(mode==='different_url'||mode==='missing_key'){
+      // Canonical partial uniqueness forbids another successful, nonduplicate copy.
+      expect(disposition).toMatchObject({state:'blocked',reason:'capture_sidecopy_identity_conflict',sourceDocumentId:null});
+      expect((await db`SELECT count(*)::int AS n FROM source_documents WHERE content_hash=${hash}`)[0].n).toBe(1);return;
+    }
+    expect(disposition).toMatchObject({state:'captured'});
+    if(!disposition||disposition==='invalid')throw new Error('missing_fixture_capture');
+    const [captured]=await db`SELECT id,document_url,content_hash,status,document_r2_key FROM source_documents WHERE id=${disposition.sourceDocumentId!}`;
+    expect(captured).toMatchObject({document_url:'https://fixture.invalid/new-fees.pdf',content_hash:hash,status:'success',document_r2_key:key});
+    expect(Number(captured.id)===20).toBe(mode==='already_valid');
+    expect((await db`SELECT count(*)::int AS n FROM source_documents WHERE content_hash=${hash}`)[0].n).toBe(mode==='already_valid'?1:2);
+  });
+  it("records blocked when a source uniqueness rule prevents a safe new side copy, without repairing the conflicting row",async()=>{
+    const bytes=new TextEncoder().encode('%PDF-owned uniqueness fixture'),hash=createHash('sha256').update(bytes).digest('hex'),key=hash.slice(0,2)+'/'+hash;
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    await db`INSERT INTO source_documents(id,institution_id,document_url,content_hash,status) VALUES(20,1,'https://fixture.invalid/different.pdf',${hash},'success')`;
+    const [before]=await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`;
+    await db.unsafe('CREATE UNIQUE INDEX owned_capture_hash_conflict ON source_documents(institution_id,content_hash)');
+    try{const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{'content-type':'application/pdf'}})),
+      vault:{configured:true,store:vi.fn(async()=>({status:'stored' as const,key})),read:vi.fn(),presign:vi.fn()}});
+      expect(result.persisted).toBe(true);expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:'blocked',reason:'capture_sidecopy_identity_conflict',sourceDocumentId:null});
+      expect((await db`SELECT to_jsonb(sd) AS value FROM source_documents sd WHERE id=20`)[0]).toEqual(before);
+    }finally{await db.unsafe('DROP INDEX owned_capture_hash_conflict');}
+  });
+
+  it("rejects a captured receipt after its exact URL or successful source status changes",async()=>{
+    const bytes=new TextEncoder().encode('%PDF-owned captured provenance fixture'),hash=createHash('sha256').update(bytes).digest('hex'),key=hash.slice(0,2)+'/'+hash;
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{'content-type':'application/pdf'}})),
+      vault:{configured:true,store:vi.fn(async()=>({status:'stored' as const,key})),read:vi.fn(),presign:vi.fn()}});
+    const disposition=await latestLiveCaptureDisposition(appDb()!,id);expect(disposition).toMatchObject({state:'captured'});
+    if(!disposition||disposition==='invalid')throw new Error('missing_fixture_capture');
+    await db`UPDATE source_documents SET document_url='https://fixture.invalid/unrelated.pdf' WHERE id=${disposition.sourceDocumentId!}`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toBe('invalid');
+    await db`UPDATE source_documents SET document_url='https://fixture.invalid/new-fees.pdf',status='failed' WHERE id=${disposition.sourceDocumentId!}`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toBe('invalid');
+    await db`UPDATE source_documents SET status='success' WHERE id=${disposition.sourceDocumentId!}`;
+    expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:'captured'});
+  });
+
+  it("aborts an injected stalled vault and rejects its late result without a source row",async()=>{
+    const bytes=new TextEncoder().encode("%PDF-synthetic storage stall"),hash=createHash("sha256").update(bytes).digest("hex");
+    const {origin,ctx}=await observed(hash),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const controller=new AbortController();let resolve!:(value:{status:"stored";key:string})=>void;
+    const store=vi.fn((actualBytes:Uint8Array,actualHash:string,type:string|null,options?:{signal?:AbortSignal})=>{
+      expect(actualBytes).toEqual(bytes);expect(actualHash).toBe(hash);expect(type).toBe("application/pdf");
+      expect(options?.signal).toBeInstanceOf(AbortSignal);setTimeout(()=>controller.abort(),10);return new Promise<{status:"stored";key:string}>(done=>{resolve=done;});});
+    const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,signal:controller.signal,
+      fetchImpl:vi.fn(async()=>new Response(bytes,{headers:{"content-type":"application/pdf"}})),vault:{configured:true,store,read:vi.fn(),presign:vi.fn()}});
+    expect(result.persisted).toBe(true);expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:"retry"});
+    resolve({status:"stored",key:hash.slice(0,2)+"/"+hash});await Promise.resolve();
+    expect((await db`SELECT count(*)::int AS n FROM source_documents`)[0].n).toBe(1);
+  });
+  it("ends changed-again bytes and concurrent fee drift as stale, never captured",async()=>{
+    const {origin,ctx}=await observed(),[id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    const store=vi.fn();
+    const result=await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      fetchImpl:vi.fn(async()=>new Response("different body",{headers:{"content-type":"text/plain"}})),vault:{configured:true,store,read:vi.fn(),presign:vi.fn()}});
+    expect(result.persisted).toBe(true);expect(await latestLiveCaptureDisposition(appDb()!,id)).toMatchObject({state:"stale",reason:"capture_observed_edition_changed"});
+    expect(store).not.toHaveBeenCalled();
+  });
+
+  it("retains capture totals/IDs in a validated archive and marks intervening policy drift unknown",async()=>{
+    const {origin,ctx}=await observed();const [id]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    await runLiveSourceCapture({db:appDb()!,context:await context(LIVE_AUDIT_STEPS.capture),requestId:id,
+      vault:{configured:false,store:vi.fn(),read:vi.fn(),presign:vi.fn()}});
+    await db`UPDATE institution_source_profiles SET correction_version=1 WHERE institution_id=1`;
+    await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"baseline":17}}'::jsonb)`;
+    expect(await archiveLiveSourceAudit(appDb()!,await context(LIVE_AUDIT_STEPS.archive),origin.id)).toBe(true);
+    const [row]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;
+    const retained=readHistoricalLiveSourceAudit(row.detail)!;
+    expect(retained.summary).toMatchObject({supported:0,unknown:3,capture:{requested:1,blocked:1,pending:0}});
+    expect(retained.archive?.captureRequestIds).toEqual([id]);expect(row.detail.goal.baseline).toBe(17);
+  });
+  async function agedDraw(){
+    const origin=await draw(),oldAt=new Date(Date.now()-98*86400000).toISOString();
+    const old=makeLiveAuditDraw({day:oldAt.slice(0,10),asOf:oldAt,seed,populationIds:origin.detail!.populationIds,rows:origin.detail!.rows,groups:origin.detail!.groups});
+    await db`UPDATE agent_run_events SET detail=${JSON.stringify(old)}::jsonb,created_at=${oldAt}::timestamptz WHERE id=${origin.id}`;
+    await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${old.day}::date,'{"goal":{"otherMetric":19}}'::jsonb)`;
+    await draw(); // A newer real event makes the old event eligible under the existing retention policy.
+    return {origin,old};
+  }
+  it("writes finite retention degradation before releasing an unarchived origin, preserving other snapshot fields",async()=>{
+    const {origin,old}=await agedDraw(),ctx=await context("atlas-storage-retention");
+    const result=await db.begin(async tx=>runStorageRetention({db:tx as unknown as NonNullable<Parameters<typeof runStorageRetention>[0]>["db"],context:ctx,
+      live:{legacy_event_log:false,run_events:true,attempt_repeats:false}}));
+    expect(result.trims.find(t=>t.policy==="run_events")?.error).toBeUndefined();
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE id=${origin.id}`)[0].n).toBe(0);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.unavailable} AND detail->>'drawId'=${String(origin.id)}`)[0].n).toBe(1);
+    const [snapshot]=await db`SELECT detail FROM pipeline_scoreboard_snapshots WHERE snapshot_date=${old.day}::date`;
+    expect(snapshot.detail.goal).toMatchObject({otherMetric:19,liveSourceAudit:null,liveSourceAuditUnavailable:{reason:"origin_retention_exhausted"}});
+  });
+  it("releases malformed orphan origins only after a durable bounded degradation receipt",async()=>{
+    const ctx=await context(LIVE_AUDIT_STEPS.observe);
+    const [orphan]=await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.chunk},'Old orphan fixture','{"malformed":true}'::jsonb,clock_timestamp()-interval '98 days') RETURNING id`;
+    await db`INSERT INTO agent_run_events(agent_run_id,step_id,event_type,message,detail,created_at)
+      VALUES(${ctx.runId},${ctx.stepId},${LIVE_AUDIT_EVENTS.chunk},'Newer orphan fixture','{"malformed":true}'::jsonb,clock_timestamp())`;
+    const storage=await context('atlas-storage-retention');
+    const result=await db.begin(tx=>runStorageRetention({db:tx as unknown as NonNullable<Parameters<typeof runStorageRetention>[0]>['db'],context:storage,live:{legacy_event_log:false,run_events:true,attempt_repeats:false}}));
+    expect(result.trims.find(t=>t.policy==='run_events')?.error).toBeUndefined();
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE id=${orphan.id}`)[0].n).toBe(0);
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.unavailable} AND detail->>'originEventId'=${String(orphan.id)}`)[0].n).toBe(1);
+  });
+  it("a failed degradation write rolls back its trim instead of silently losing provenance",async()=>{
+    const {origin}=await agedDraw(),ctx=await context("atlas-storage-retention");
+    await db.unsafe(`CREATE FUNCTION ${schema}.reject_degradation() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN IF NEW.event_type='live_fee_audit.provenance_unavailable' THEN RAISE EXCEPTION 'synthetic bounded tombstone failure'; END IF; RETURN NEW; END$$`);
+    await db.unsafe(`CREATE TRIGGER reject_degradation BEFORE INSERT ON agent_run_events FOR EACH ROW EXECUTE FUNCTION ${schema}.reject_degradation()`);
+    try{
+      const result=await db.begin(async tx=>runStorageRetention({db:tx as unknown as NonNullable<Parameters<typeof runStorageRetention>[0]>["db"],context:ctx,
+        live:{legacy_event_log:false,run_events:true,attempt_repeats:false}}));
+      expect(result.trims.find(t=>t.policy==="run_events")?.error).toMatch(/synthetic bounded/);
+      expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE id=${origin.id}`)[0].n).toBe(1);
+    }finally{await db`DROP TRIGGER reject_degradation ON agent_run_events`;await db.unsafe(`DROP FUNCTION ${schema}.reject_degradation()`);}
+  });
+
+  // The >64-history control constructs 70 real claim/settle pairs (140 owned sessions).
+  // This aggregate allowance leaves every operation's receipt deadline unchanged.
+  it("reads a legitimate 70-chunk partial-group continuation without dropping the remaining cohort",async()=>{
+    await db`INSERT INTO institution_sources(id,institution_name,state_code,website_url,fee_schedule_url,charter_type,source)
+      SELECT i,'Synthetic institution '||i,'VT','https://fixture.invalid/','https://fixture.invalid/fees.pdf','bank','fixture' FROM generate_series(2,70)i`;
+    await db`INSERT INTO source_documents(id,institution_id,document_url,content_hash,status)
+      SELECT i+10,i,'https://fixture.invalid/fees.pdf',${"a".repeat(64)},'fetched' FROM generate_series(2,70)i`;
+    await db`INSERT INTO raw_fee_observations(fee_raw_id,institution_id,source_document_id,source_url,agent_event_id,fee_name,amount,amount_kind,frequency,fee_audience,audience_evidence)
+      SELECT 3*(i-1)+k,i,i+10,'https://fixture.invalid/fees.pdf',gen_random_uuid(),'Synthetic Fee '||k,10,'flat','per_item','consumer','Consumer Fee Schedule'
+      FROM generate_series(2,70)i CROSS JOIN generate_series(1,3)k`;
+    await db`INSERT INTO verified_fee_observations(fee_verified_id,fee_raw_id,institution_id,canonical_fee_key,fee_name,amount,amount_kind,review_status,fee_audience,audience_evidence,verified_by_agent_event_id)
+      SELECT fee_raw_id,fee_raw_id,institution_id,CASE fee_raw_id%3 WHEN 1 THEN 'overdraft' WHEN 2 THEN 'stop_payment' ELSE 'wire_domestic_outgoing' END,
+        fee_name,amount,'flat','verified','consumer','Consumer Fee Schedule',gen_random_uuid() FROM raw_fee_observations WHERE institution_id>1`;
+    await db`INSERT INTO published_fee_records(fee_published_id,lineage_ref,institution_id,canonical_fee_key,fee_name,amount,amount_kind,fee_audience,audience_evidence,frequency,published_by_adversarial_event_id)
+      SELECT fee_verified_id,fee_verified_id,institution_id,canonical_fee_key,fee_name,amount,'flat','consumer','Consumer Fee Schedule','per_item',gen_random_uuid()
+      FROM verified_fee_observations WHERE institution_id>1`;
+    const origin=await draw();expect(origin.detail?.groups).toHaveLength(70);
+    const ctx=await context(LIVE_AUDIT_STEPS.observe);
+    for(let i=0;i<70;i++){
+      const lease=(await claimLiveAuditChunk({db:appDb(),context:ctx,drawId:origin.id}))!;
+      expect(lease.claim.fromGroup).toBe(i);
+      const ids=new Set(origin.detail!.groups[i].feeIds);
+      expect(await settleLiveAuditChunk({db:appDb(),context:ctx,origin,claim:lease.claim,nextGroup:i+1,graphs:[],
+        observations:origin.detail!.rows.filter(f=>ids.has(f.id)).map(f=>liveAuditUnknown(f,new Date().toISOString(),"fixture_partial_group"))})).toBeTypeOf("number");
+    }
+    const progress=await readLiveAuditProgress(appDb()!,origin);expect(progress).toMatchObject({valid:true,cursor:70});
+    expect(progress.chunks).toHaveLength(70);expect(progress.observations).toHaveLength(210);
+    expect((await readLiveSourceAudit(appDb()!))?.summary).toMatchObject({state:"complete",unknown:210,unattempted:0,support:null});
+  },60000);
+
+  it("executes the real scheduler-created Magellan capture then its Atlas archive step with exact owner/source provenance",async()=>{
+    const {origin,ctx}=await observed();const [requestId]=await requestLiveSourceCaptures(appDb()!,ctx,origin.id);
+    await db`UPDATE agent_run_steps SET status='completed' WHERE id=${ctx.stepId}`;await db`UPDATE agent_runs SET status='completed' WHERE id=${ctx.runId}`;
+    await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"baseline":23}}'::jsonb)`;
+    vi.stubEnv("EXECUTION_BACKEND","agentic_v1");runtime.provider.mockClear();
+    try{
+      const scheduled=await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true});
+      const [run]=await db`SELECT agent_name FROM agent_runs WHERE id=${scheduled.runId!}`;expect(run.agent_name).toBe("magellan");
+      expect((await db`SELECT step_key,agent_name FROM agent_run_steps WHERE agent_run_id=${scheduled.runId!} ORDER BY sequence`).map(s=>[s.step_key,s.agent_name]))
+        .toEqual([[LIVE_AUDIT_STEPS.capture,"magellan"],[LIVE_AUDIT_STEPS.archive,"atlas"]]);
+      expect(await executeAgentRun(scheduled.runId!,{maxSteps:2,allowProviderSteps:false,deadlineAt:Date.now()+240000})).toMatchObject({terminal:true,executedSteps:2});
+      expect(await latestLiveCaptureDisposition(appDb()!,requestId)).toMatchObject({state:"blocked",reason:"capture_vault_not_configured"});
+      const [snapshot]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;expect(readHistoricalLiveSourceAudit(snapshot.detail)?.summary.capture).toMatchObject({requested:1,blocked:1});
+      expect(snapshot.detail.goal.baseline).toBe(23);expect(runtime.provider).not.toHaveBeenCalled();
+    }finally{vi.unstubAllEnvs();}
+  });
+
+  it("preserves only a validated final archive on actual snapshot retries",async()=>{
+    const {origin}=await observed();await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"baseline":7}}'::jsonb)`;
+    await archiveLiveSourceAudit(appDb()!,await context(LIVE_AUDIT_STEPS.archive),origin.id);
+    const [saved]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;const valid=saved.detail.goal.liveSourceAudit;
+    const partial={summary:summarizeLiveAudit(origin.id,origin.detail!,{valid:true,reason:null,cursor:0,graphBytes:0,observations:[],chunks:[],captureRequestIds:[]},new Date()),archive:null,archiveEventId:null};
+    const numbers:ScoreboardNumbers={coverage:{rate:0.5,numerator:1,denominator:2},rightDocument:null,knoxYield:null,depth:{median:null,liveInstitutions:1},accuracy:null,freshness:{medianDays:null,liveFees:3},knoxSurvival:{rate:null,live:0,published:0,byStrategy:[]},reportReady:null};
+    const goal={liveSourceAudit:partial,otherFixture:41} as unknown as GoalScorecard;
+    const write=()=>writeScoreboardSnapshot({db:appDb()!,snapshotDate:origin.detail!.day,runId:null,numbers,goal,agentHealth:null});
+    await write();let row=(await db`SELECT detail,coverage_rate FROM pipeline_scoreboard_snapshots`)[0];
+    expect(row.detail.goal.liveSourceAudit).toEqual(valid);expect(row.detail.goal.otherFixture).toBe(41);expect(row.coverage_rate).toBe(0.5);
+    for(const invalid of [{archive:{untrusted:true}},{...valid,summary:{...valid.summary,supported:0}}]){
+      await db`UPDATE pipeline_scoreboard_snapshots SET detail=jsonb_set(detail,'{goal,liveSourceAudit}',${JSON.stringify(invalid)}::jsonb)`;
+      await write();row=(await db`SELECT detail FROM pipeline_scoreboard_snapshots`)[0];expect(row.detail.goal.liveSourceAudit).toEqual(partial);expect(row.detail.goal.otherFixture).toBe(41);
+    }
+  });
+
+  it("records the real observer caller's unknown commit failure and does not duplicate a later committed chunk on retry",async()=>{
+    const fixture=await admittedReceipt(),originalBudget=LIVE_SOURCE_AUDIT.settleMs;
+    try{
+      const origin=await draw();vi.stubEnv('EXECUTION_BACKEND','agentic_v1');
+      runtime.observer=async group=>({entryUrl:group.policy.websiteUrl,pages:[],candidateUrls:[],complete:false,reason:'owned_fixture_unreadable'});
+      await db.unsafe(`CREATE FUNCTION ${schema}.slow_live_chunk_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.event_type='live_fee_audit.chunk' THEN PERFORM pg_sleep(0.8); END IF; RETURN NEW; END $$`);
+      await db.unsafe(`CREATE CONSTRAINT TRIGGER slow_live_chunk_commit AFTER INSERT ON agent_run_events DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${schema}.slow_live_chunk_commit()`);
+      Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:450,configurable:true});
+      const scheduled=await scheduleLiveSourceAudit({db:appDb(),pipelineEnabled:true,backendEnabled:true});
+      runtime.receipt=fixture;
+      const result=await executeAgentRun(scheduled.runId!,{allowProviderSteps:false,maxSteps:1});
+      expect(fixture.used).toBe(true);expect(fixture.commands).toContain('COMMIT');
+      await expect(fixture.client`SELECT 1`).rejects.toThrow();
+      expect(result.status).toBe('failed');
+      const [failure]=await db`SELECT message FROM agent_run_events WHERE agent_run_id=${scheduled.runId!} AND event_type='step.failed' ORDER BY id DESC LIMIT 1`;
+      expect(failure.message).toContain('commit_outcome_unknown');
+      await vi.waitFor(async()=>expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.chunk}`)[0].n).toBe(1),{timeout:2500,interval:10});
+      const [row]=await db`SELECT detail,id FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.claim}`;
+      const claim={...row.detail,eventId:Number(row.id)},stepContext={runId:claim.ownerRunId,stepId:claim.ownerStepId,stepKey:LIVE_AUDIT_STEPS.observe};
+      const progress=await readLiveAuditProgress(appDb()!,origin);expect(progress).toMatchObject({valid:true,cursor:1});
+      expect(await settleLiveAuditChunk({db:appDb(),context:stepContext,origin,claim,nextGroup:1,observations:progress.observations,graphs:[]})).toBeNull();
+      expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE event_type=${LIVE_AUDIT_EVENTS.chunk}`)[0].n).toBe(1);
+      expect((await readLiveSourceAudit(appDb()!))?.summary).toMatchObject({selected:3,attempted:3,unknown:3,supported:0,support:null});
+      expect(runtime.provider).not.toHaveBeenCalled();
+    }finally{runtime.receipt=null;await fixture.client.end({timeout:0});Object.defineProperty(LIVE_SOURCE_AUDIT,'settleMs',{value:originalBudget,configurable:true});runtime.observer=null;vi.unstubAllEnvs();
+      await db.unsafe(`DROP TRIGGER IF EXISTS slow_live_chunk_commit ON agent_run_events`);await db.unsafe(`DROP FUNCTION IF EXISTS ${schema}.slow_live_chunk_commit()`);}
+  });
+
+  it("rechecks catalog state after a real snapshot row-lock wait and never archives prewait support",async()=>{
+    const {origin}=await observed();await db`INSERT INTO pipeline_scoreboard_snapshots(snapshot_date,detail) VALUES(${origin.detail!.day}::date,'{"goal":{"preserve":29}}'::jsonb)`;
+    const archivist=await context(LIVE_AUDIT_STEPS.archive);
+    let release!:()=>void,locked!:()=>void;
+    const held=new Promise<void>(done=>{locked=done;}),resume=new Promise<void>(done=>{release=done;});
+    const blocker=db.begin(async transaction=>{
+      const tx=transaction as unknown as typeof db;
+      await tx`SELECT id FROM pipeline_scoreboard_snapshots WHERE snapshot_date=${origin.detail!.day}::date FOR UPDATE`;
+      locked();await resume;await tx`UPDATE published_fee_records SET amount=40 WHERE fee_published_id=1`;
+    });
+    await held;const archive=archiveLiveSourceAudit(appDb()!,archivist,origin.id);
+    try{
+      await vi.waitFor(async()=>{const [row]=await admin`SELECT count(*)::int AS n FROM pg_stat_activity
+        WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%pipeline_scoreboard_snapshots%FOR UPDATE%'`;
+        expect(row.n).toBeGreaterThan(0);},{timeout:3000,interval:10});
+    }finally{release();await blocker;}
+    expect(await archive).toBe(true);
+    const [snapshot]=await db`SELECT detail FROM pipeline_scoreboard_snapshots`;
+    expect(readHistoricalLiveSourceAudit(snapshot.detail)?.summary).toMatchObject({supported:2,unknown:1,mismatch:0});
+    expect(snapshot.detail.goal.preserve).toBe(29);
+  });
+
+});

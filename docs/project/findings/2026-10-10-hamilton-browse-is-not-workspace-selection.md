@@ -106,3 +106,5 @@ work. Existing erroneous saved preferences are not automatically rewritten.
 No fee data, migrations, membership permissions, provider prompts or production
 settings change. No merge/deployment authorization is implied. Keep independent
 of #974 (confidence containment) and #939 (broader design work).
+
+**Agent lesson:** hamilton/pr-985-subject-not-account

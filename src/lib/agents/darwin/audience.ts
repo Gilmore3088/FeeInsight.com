@@ -1,5 +1,6 @@
-import { suggestAudience } from "@/lib/agents/knox/audience-context";
+import { nameAudience, suggestAudience } from "@/lib/agents/knox/audience-context";
 import type { FeeAudience } from "@/lib/fee-audience";
+import { ownPriceAudience } from "./own-price-audience";
 
 /**
  * Darwin's audience decision for a fee it verifies (#1059; James, Oct 13: Darwin's audience is the
@@ -21,8 +22,23 @@ export function darwinAudience(
   row: { fee_audience?: FeeAudience | null; source_url: string | null; fee_name: string },
   amount: number | null,
   sourceText: string | null | undefined,
+  options: { ownPriceClause?: true } = {},
 ): DarwinAudience | null {
   if (row.fee_audience && row.fee_audience !== "unknown") return null;
+  // Prospective verification may opt in after source/price admission. Historical relabel v4
+  // keeps its existing call/default semantics, including its cursor and title-only rejudges.
+  // Existing name/product/exception semantics stand; a contradictory own exclusive clause
+  // does not turn one definite audience into the other, or allow a broader default.
+  if (options.ownPriceClause) {
+    const fromName = nameAudience(row.fee_name);
+    const own = ownPriceAudience(sourceText ?? "", row.fee_name, amount);
+    if (own.kind === "ambiguous") return null;
+    if (own.kind === "qualified" && fromName != null && fromName !== own.audience) return null;
+    if (own.kind === "qualified" && fromName == null) return {
+      feeAudience: own.audience,
+      audienceEvidence: `${DARWIN_AUDIENCE_PREFIX}fee_exclusive_price_clause: ${own.evidence}`.slice(0, MAX_EVIDENCE_CHARS),
+    };
+  }
   const suggestion = suggestAudience({ documentUrl: row.source_url, text: sourceText ?? null, feeName: row.fee_name, amount });
   if (!suggestion) return null;
   return {

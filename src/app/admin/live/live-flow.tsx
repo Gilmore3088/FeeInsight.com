@@ -2,15 +2,21 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState } from "react";
-import { FLOW_AGENTS, isWentLive, latestPerInstitution, type FlowMove, type FlowNow, type FlowSnapshot, type FlowWaiting, type MoveTone } from "@/lib/agents/flow-model";
+import { FLOW_AGENTS, isWentLive, latestPerInstitution, type FlowMove, type FlowNow, type FlowSnapshot, type FlowWaiting, type FlowWaitingCounts, type MoveTone } from "@/lib/agents/flow-model";
 import type { AdminAgent } from "@/lib/agents/types";
 import { formatAdminTime } from "@/lib/admin-time";
 
-const POLL_MS = 10_000;
+/**
+ * One poll every 30 s, never two at once: the next starts only after the last one ends, and a
+ * poll is abandoned after POLL_TIMEOUT_MS. Hidden tabs do not poll. On 2026-10-18 a 10 s
+ * `setInterval` stacked a new request every 10 s while each hung 300 s on a saturated pool (#2016).
+ */
+export const POLL_MS = 30_000;
+export const POLL_TIMEOUT_MS = 15_000;
 
-type Data = FlowSnapshot & { waiting: FlowWaiting | null };
-/** The data agents institutions flow through; growth (marketing) handles no institutions. */
-type Worker = Exclude<AdminAgent, "atlas" | "growth" | "hamilton">;
+type Data = FlowSnapshot & { waiting: FlowWaitingCounts | null };
+/** The data agents institutions flow through; growth (marketing) and hoovie (public data) handle no institutions. */
+type Worker = Exclude<AdminAgent, "atlas" | "growth" | "hamilton" | "hoovie">;
 
 const WORKERS: Worker[] = ["magellan", "rosetta", "knox", "darwin", "gutenberg"];
 
@@ -23,6 +29,7 @@ const AGENT_COLOR: Record<AdminAgent, { bar: string; badge: string; dot: string;
   darwin: { bar: "bg-teal-500", badge: "bg-teal-600 text-white", dot: "bg-teal-500", flash: "rgb(20 184 166 / 0.15)" },
   hamilton: { bar: "bg-[var(--brand-primary)]", badge: "bg-[var(--brand-primary)] text-white", dot: "bg-[var(--brand-primary)]", flash: "rgb(194 65 12 / 0.12)" },
   gutenberg: { bar: "bg-emerald-500", badge: "bg-emerald-600 text-white", dot: "bg-emerald-500", flash: "rgb(16 185 129 / 0.15)" },
+  hoovie: { bar: "bg-indigo-500", badge: "bg-indigo-600 text-white", dot: "bg-indigo-500", flash: "rgb(99 102 241 / 0.15)" },
   growth: { bar: "bg-rose-500", badge: "bg-rose-600 text-white", dot: "bg-rose-500", flash: "rgb(244 63 94 / 0.15)" },
 };
 
@@ -34,6 +41,13 @@ const TONE: Record<MoveTone, { mark: string; label: string; text: string; ring: 
 
 function clock(iso: string): string {
   return formatAdminTime(iso);
+}
+
+/** How old the cached queue counts were when this update was made, in plain words. */
+export function countsAge(computedAt: string, generatedAt: string): string {
+  const minutes = Math.max(0, Math.round((Date.parse(generatedAt) - Date.parse(computedAt)) / 60_000));
+  if (!Number.isFinite(minutes)) return "age unknown";
+  return minutes < 1 ? "under a minute old" : `${minutes} min old`;
 }
 
 function number(value: number): string {
@@ -233,26 +247,53 @@ export function LiveFlow({ initial }: { initial: Data }) {
   useEffect(() => {
     if (paused) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight: AbortController | null = null;
+    const schedule = () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      timer = setTimeout(load, POLL_MS);
+    };
     async function load() {
-      if (document.visibilityState !== "visible") return;
+      timer = null;
+      if (cancelled || inFlight || document.visibilityState !== "visible") return;
+      const controller = new AbortController();
+      inFlight = controller;
+      const abort = setTimeout(() => controller.abort(), POLL_TIMEOUT_MS);
       try {
-        const response = await fetch("/api/admin/flow", { cache: "no-store" });
+        const response = await fetch("/api/admin/flow", { cache: "no-store", signal: controller.signal });
         if (!response.ok) throw new Error(String(response.status));
         const body = (await response.json()) as Data;
         if (cancelled) return;
         const arrived = new Set(body.moves.filter((move) => !seen.current.has(move.key)).map((move) => move.key));
         for (const key of arrived) seen.current.add(key);
         setFresh(arrived);
-        setData(body);
+        // Counts not ready in time arrive as null: keep the last ones (their age is shown).
+        setData((previous) => ({ ...body, waiting: body.waiting ?? previous.waiting }));
         setFailed(false);
       } catch {
         if (!cancelled) setFailed(true);
+      } finally {
+        clearTimeout(abort);
+        inFlight = null;
+        schedule();
       }
     }
-    const timer = setInterval(load, POLL_MS);
+    // A hidden tab stops polling; showing it again polls at once, then every POLL_MS.
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        return;
+      }
+      if (!timer && !inFlight) void load();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    schedule();
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      if (timer) clearTimeout(timer);
+      inFlight?.abort();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [paused]);
 
@@ -272,8 +313,9 @@ export function LiveFlow({ initial }: { initial: Data }) {
               {working.length > 0 ? ` · ${working.join(", ")} working now` : ""}
             </p>
             <p className="text-xs text-gray-500">
-              {paused ? "Paused" : "Updates every 10 seconds"} · last update {clock(data.generatedAt)}
+              {paused ? "Paused" : "Updates every 30 seconds"} · last update {clock(data.generatedAt)}
               {failed ? " · last update failed, showing the previous one" : ""}
+              {data.waiting?.computedAt ? ` · queue counts from ${clock(data.waiting.computedAt)} (${countsAge(data.waiting.computedAt, data.generatedAt)})` : ""}
             </p>
             <p className="text-xs text-gray-500">
               <span className={`mr-1.5 inline-block h-2 w-2 rounded-full ${AGENT_COLOR.growth.dot}`} aria-hidden />

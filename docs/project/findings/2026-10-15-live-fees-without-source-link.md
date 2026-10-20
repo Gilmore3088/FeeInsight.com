@@ -15,3 +15,5 @@ document's URL when the verified row has none. A hand-started step (`source-link
 first) fills live rows from their own document or takes them down, one rollback record per row.
 **Lesson:** "lineage" must mean a link a visitor can open to the bank's document. A file key or a
 document id alone passes a check and still shows nothing on the page.
+
+**Agent lesson:** gutenberg/pr-1345-visitor-link

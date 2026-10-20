@@ -1,3 +1,5 @@
+import { collectPayloadNumbers } from "./figure-check";
+import { dollarsFromUnit } from "./monetary-units";
 /**
  * Hamilton's paid answer eval (#1079): a small daily sample through the paid memo path, scored
  * the way the free eval scores the Ask engine. James set the budget on 2026-10-15: five paid
@@ -300,9 +302,6 @@ const FEE_PRICE_KEY = /amount|median|^p\d{2}|avg|mean|average|^min|^max|price|fe
 /** Never money: ids, counts and ranks, whatever else the key says. */
 const NOT_MONEY_KEY = /(^|_)(id|ids|n|rank)$|count|number|^total$/i;
 
-/** A public-data row whose unit is dollars; rates, counts and indexes are not money. */
-const DOLLAR_UNIT = /usd|dollar/i;
-
 /** The dollar values in a queryData public-data result (rows of { value, unit }), compacted or not. */
 function publicDataDollars(output: unknown): number[] {
   let parsed = output;
@@ -313,11 +312,17 @@ function publicDataDollars(output: unknown): number[] {
       return [];
     }
   }
+  if (parsed && typeof parsed === "object" && (parsed as { _shortened?: unknown })._shortened === true) {
+    try {
+      parsed = JSON.parse(String((parsed as { text?: unknown }).text ?? ""));
+    } catch { return []; }
+  }
   const rows = (parsed as { rows?: unknown } | null)?.rows;
   if (!Array.isArray(rows)) return [];
   return rows.flatMap((row) => {
     const { value, unit } = (row ?? {}) as { value?: unknown; unit?: unknown };
-    return typeof value === "number" && Number.isFinite(value) && typeof unit === "string" && DOLLAR_UNIT.test(unit) ? [value] : [];
+    const dollars = dollarsFromUnit(value, unit);
+    return dollars === null ? [] : [dollars];
   });
 }
 
@@ -343,31 +348,16 @@ function catalogDerived(result: { toolName: string; input?: unknown }): boolean 
 
 export function toolMoneyFigures(results: ReadonlyArray<{ toolName: string; input?: unknown; output: unknown }>): number[] {
   const out: number[] = [];
-  const walk = (value: unknown, key: string, depth: number, otherSource: boolean) => {
-    if (depth > 8 || value === null || value === undefined) return;
-    const money = !NOT_MONEY_KEY.test(key) && (OTHER_MONEY_KEY.test(key) || (otherSource && FEE_PRICE_KEY.test(key)));
-    if (typeof value === "number") {
-      if (Number.isFinite(value) && money) out.push(value);
-    } else if (typeof value === "string") {
-      const text = value.trim();
-      // Compacted tool results carry their JSON as text.
-      if (text.startsWith("{") || text.startsWith("[")) {
-        try {
-          walk(JSON.parse(text), key, depth + 1, otherSource);
-        } catch {
-          // Not JSON: nothing to read.
-        }
-      } else if (money && /^-?\$?\d[\d,]*(\.\d+)?$/.test(text)) out.push(Number(text.replace(/[$,]/g, "")));
-    } else if (Array.isArray(value)) {
-      for (const item of value) walk(item, key, depth + 1, otherSource);
-    } else if (typeof value === "object") {
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) walk(v, k, depth + 1, otherSource);
-    }
-  };
   for (const r of results) {
     if (catalogDerived(r)) continue;
     if (publicDataQuery(r)) out.push(...publicDataDollars(r.output));
-    else walk(r.output, "", 0, OTHER_SOURCE_TOOLS.has(r.toolName));
+    else {
+      for (const number of collectPayloadNumbers(r.output)) {
+        const money = !NOT_MONEY_KEY.test(number.key)
+          && (OTHER_MONEY_KEY.test(number.key) || (OTHER_SOURCE_TOOLS.has(r.toolName) && FEE_PRICE_KEY.test(number.key)));
+        if (money && number.dollars !== null) out.push(number.dollars ?? number.value);
+      }
+    }
   }
   return out;
 }

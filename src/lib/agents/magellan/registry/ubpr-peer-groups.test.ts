@@ -27,7 +27,8 @@ const tsv = (rows: string[][]) => strToU8(rows.map((r) => r.map((c) => `"${c}"`)
 
 const page = (products: string[]) => `<input name="__VIEWSTATE" value="v" /><input name="__VIEWSTATEGENERATOR" value="g" />
   <select name="ctl00$MainContentHolder$ListBox1">${products.map((p, i) => `<option value="P${i}">${p}</option>`).join("")}</select>
-  <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="1">06/30/2026</option></select>`;
+  <select name="ctl00$MainContentHolder$DatesDropDownList"><option value="1">06/30/2026</option></select>
+  <input type="radio" name="ctl00$MainContentHolder$FormatType" value="TSVRadioButton" />`;
 
 /** Fakes the bulk page: HTML until the Download post, then the zip for the chosen product (P0, P1...). */
 function bulkFetch(products: string[], zips: Uint8Array[]) {
@@ -91,6 +92,27 @@ describe("registry ubpr-peer-groups", () => {
     expect(r.writtenBankRows).toBe(2);
     expect(r.averagesEmptyReason).toMatch(/No UBPR peer statistics product/);
     expect(statements.some((s) => s.text.includes("INSERT INTO ubpr_peer_group_averages"))).toBe(false);
+  });
+
+  it("names the page's title, message and fields when the download answers with HTML (#1806)", async () => {
+    const { db, statements } = createDb();
+    const formPage = `<title>CDR Bulk Data</title>${page(["UBPR Ratio -- Single Period"])}
+      <span id="lblMessage">Select a format.</span>
+      <input type="radio" name="ctl00$MainContentHolder$FormatType" value="XBRLRadioButton" />
+      <input type="submit" name="ctl00$MainContentHolder$TabStrip1$Download_1" value="Download" />`;
+    const posted: URLSearchParams[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      posted.push(new URLSearchParams(String(init?.body ?? "")));
+      return new Response(formPage, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } });
+    }) as unknown as typeof fetch;
+    const run = runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl } });
+    await expect(run).rejects.toThrow(/text\/html; charset=utf-8 instead of the UBPR bulk zip for "UBPR Ratio -- Single Period" 2026-06-30/);
+    await expect(runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl } })).rejects.toThrow(
+      /tab-delimited format offered\)\. Page: title "CDR Bulk Data"; messages: "Select a format\."; fields: .*FormatType\[radio=XBRLRadioButton\]/,
+    );
+    // The Download control the page names is the one posted.
+    expect(posted.at(-1)?.get("ctl00$MainContentHolder$TabStrip1$Download_1")).toBe("Download");
+    expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 
   it("records an empty partition when the ratio product is not listed", async () => {

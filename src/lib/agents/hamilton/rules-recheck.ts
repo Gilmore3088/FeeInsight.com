@@ -9,6 +9,8 @@ import { FAMILY_EXPERTS } from "@/lib/agents/knox/families";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists } from "@/lib/agents/knox/specialists";
 import { KNOX_TABLE_STRATEGY } from "@/lib/agents/knox/table-rows";
 import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { refusesStackedFeePrice } from "@/lib/custom-report/stacked-fee-prices";
+import { checkWireClausePrice } from "@/lib/custom-report/wire-clause-prices";
 import { checkFeeCategory } from "@/lib/fee-category-guard";
 import { markRestoredForSourceCheck } from "@/lib/agents/hamilton/source-check";
 import { disputedRestoreVerdict } from "@/lib/agents/hamilton/restore-guard";
@@ -533,7 +535,13 @@ export async function rollBackUnreproducedFees(
       const fee = asFee(row);
       const key = fee.amount == null ? null : feeKey(row.canonical_fee_key, fee.amount);
       const lessonKey = fee.amount == null ? null : lessonReadKey(row, fee.amount);
-      const reproduced = key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
+      // Equal category/amount can belong to a different physical service (#2241). An
+      // explicit own-price refusal still needs the existing independent source/second look.
+      const ownershipRefused = fee.amount != null && (
+        refusesStackedFeePrice(textFor(row).normalized_text, row.fee_name, fee.amount, row.canonical_fee_key) ||
+        checkWireClausePrice(textFor(row).normalized_text, row.fee_name, fee.amount, row.canonical_fee_key, ".")?.ok === false
+      );
+      const reproduced = !ownershipRefused && key != null && (reads.has(key) || (lessonKey != null && reads.has(lessonKey)));
       if (reproduced && kept.has(row)) {
         passingIds.push(fee.feePublishedId);
         continue;

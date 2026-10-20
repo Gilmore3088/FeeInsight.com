@@ -23,6 +23,22 @@ describe("compactToolResult", () => {
     expect(big.fees.verified).toHaveLength(200);
   });
 
+  it("preserves both financial measure groups and their metadata while shortening their rows", () => {
+    const groups = ["fdic", "ncua"].map((source) => ({
+      financial_source: source,
+      comparison: { report_date: "2026-06-30", subject_included: false, sample_size: 80, period_basis: "standalone_quarter", definition: `${source} own measure` },
+      data: Array.from({ length: 80 }, (_, i) => fee(i)),
+    }));
+    const out = compactToolResult({ financial_groups: groups }, 4_000) as { financial_groups: typeof groups; _shortened: string };
+    expect(out.financial_groups.map((group) => group.financial_source)).toEqual(["fdic", "ncua"]);
+    expect(out.financial_groups[0].comparison).toEqual(groups[0].comparison);
+    expect(out.financial_groups[1].comparison).toEqual(groups[1].comparison);
+    expect(out.financial_groups.every((group) => group.data.length > 0 && group.data.length < 80)).toBe(true);
+    expect(out._shortened).not.toContain("financial_groups: first");
+    expect(out._shortened).toContain("financial_groups[1].data:");
+    expect(JSON.stringify(out).length).toBeLessThan(4_400);
+  });
+
   it("handles a top-level array and a result with no lists", () => {
     const rows = compactToolResult(Array.from({ length: 300 }, (_, i) => fee(i)), 5_000) as { _shortened: string; rows: unknown[] };
     expect(rows.rows.length).toBeLessThan(300);

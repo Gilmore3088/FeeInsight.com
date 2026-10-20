@@ -145,6 +145,8 @@ export const AGENT_RUN_STEPS: Record<AdminAgent, Array<{ key: string; title: str
   // Hamilton's product steps run from their own crons; a "run" addressed to Hamilton runs as Gutenberg.
   hamilton: [],
   gutenberg: [{ key: "publish", title: "Publish verified fees" }],
+  // Hoovie's registry loads run from the registry tick, one partition at a time; the command bar does not start them.
+  hoovie: [],
   // Growth runs from its own crons (content, marketing); the command bar does not start it.
   growth: [],
 };

@@ -21,14 +21,17 @@
  *
  * Layout version 4: a dot-leader fee list beside a table is read as its own column
  * (`leaderListColumns`).
+ * Layout version 5: two independent stacked label/next-line bullet-price lists
+ * read column by column. Mixed label/amount rows and monetary gutter crossings
+ * refuse this detector; they retain the existing baseline reading.
  */
 
 import { CELL_SEPARATOR } from "./html-dom";
 
 /**
  * Recorded on each `read.pdf_layout` attempt (`detail.pdf_layout`). Version 2 reads prose
- * columns column by column; a text an older layout read across the columns is read again
- * once (`INTERLEAVED_PROSE_CELLS_SQL` in read.ts).
+ * columns column by column. Prose rereads keep their layout4 floor; stacked-list
+ * repairs use a separate current-copy witness and one bounded free check (#2219).
  */
 import { PDF_LAYOUT_VERSION } from "./reader-versions";
 // The number lives in reader-versions.ts (bump it there); the history stays above.
@@ -257,14 +260,69 @@ function leaderListColumns(all: PositionedItem[]): Band[] | null {
   return null;
 }
 
+/** Independent stacked price lists, rather than a table's label and amount columns. */
+function stackedFeeListColumns(all: PositionedItem[]): Band[] | null {
+  const gutters = pageGutters(all);
+  if (!gutters) return null;
+  const { items, left, right, middles } = gutters;
+  for (const middle of middles) {
+    const crossing = items.filter((item) => item.x < middle && item.end > middle);
+    if (crossing.length > Math.floor(items.length * MAX_CROSSING_SHARE)) continue;
+    // Unlike a title or footer, a fee or eligibility line crossing the proposed
+    // gutter is evidence that the two bands cannot safely be read independently.
+    if (baselineLines(items).some((line) => line.some((item) => crossing.includes(item))
+      && linesText(line).some((text) => PRICE.test(text)
+        || /\b(?:fees?|charges?|waiv\w*|balances?|minimum|maximum|exempt\w*|overdrafts?)\b/i.test(text)))) continue;
+    const columns = [items.filter((item) => item.end <= middle), items.filter((item) => item.x >= middle)];
+    if (columns.some((column) => column.length === 0)) continue;
+    const bands: Band[] = columns.map((column) => [
+      Math.min(...column.map((item) => item.x)), Math.max(...column.map((item) => item.end)),
+    ]);
+    if (bands.some(([start, end]) => end - start < (right - left) * MIN_COLUMN_SHARE)) continue;
+    const labelLine = (line: string) => /^[A-Z]/.test(line) && line.length <= 90 && !PRICE.test(line)
+      && !line.includes(CELL_SEPARATOR.trim()) && !/[.!?]$/.test(line);
+    const columnLines = columns.map((column) => baselineLines(column).map((line) => ({
+      text: linesText(line).join(" "),
+      y: line[0].y,
+      size: Math.max(...line.map((item) => item.size)),
+    })));
+    if (columnLines.some((lines) => lines.filter((line) => line.text.includes(CELL_SEPARATOR.trim())).length
+      > lines.length * MAX_LIST_CELL_SHARE)) continue;
+    // A mixed page may have an ordinary label/amount table above its stacked lists.
+    // A price cell with no preceding label in its own column still belongs to the
+    // opposite label on that baseline. Splitting the whole page would orphan it.
+    const hasTableRows = columnLines.some((lines, column) => lines.some((line, index) => {
+      if (!/^(?:[•*\-]\s*)?\$\s?\d/.test(line.text)) return false;
+      const previous = lines[index - 1];
+      if (previous && labelLine(previous.text) && previous.y - line.y <= line.size * 2.5) return false;
+      return columnLines[1 - column].some((other) => labelLine(other.text)
+        && Math.abs(other.y - line.y) <= Math.max(2, line.size * 0.5));
+    }));
+    if (hasTableRows) continue;
+    if (!columns.every((column) => {
+      const lines = linesText(column);
+      let pairs = 0;
+      for (let index = 1; index < lines.length; index += 1) {
+        const label = lines[index - 1];
+        if (/^[•*\-]\s*(?:\|\s*)?\$\s?\d/.test(lines[index]) && labelLine(label)) pairs += 1;
+      }
+      return pairs >= 3;
+    })) continue;
+    return bands;
+  }
+  return null;
+}
+
 /**
  * Text of one page with one line per baseline. A page in prose columns reads each column
  * top to bottom; a line that crosses the gutters (a title) closes the columns above it.
  */
-export function layoutPageText(items: PdfTextItem[]): string {
+export function layoutPageResult(items: PdfTextItem[]): { text: string; stackedColumns: boolean } {
   const all = positioned(items);
-  const bands = proseColumns(all) ?? leaderListColumns(all);
-  if (!bands) return linesText(all).join("\n");
+  const earlierBands = proseColumns(all) ?? leaderListColumns(all);
+  const stackedBands = earlierBands ? null : stackedFeeListColumns(all);
+  const bands = earlierBands ?? stackedBands;
+  if (!bands) return { text: linesText(all).join("\n"), stackedColumns: false };
   const out: string[] = [];
   let block: PositionedItem[] = [];
   const flush = () => {
@@ -280,7 +338,11 @@ export function layoutPageText(items: PdfTextItem[]): string {
     out.push(...linesText(line));
   }
   flush();
-  return out.join("\n");
+  return { text: out.join("\n"), stackedColumns: stackedBands != null };
+}
+
+export function layoutPageText(items: PdfTextItem[]): string {
+  return layoutPageResult(items).text;
 }
 
 export function layoutDocumentText(pages: PdfTextItem[][]): string {

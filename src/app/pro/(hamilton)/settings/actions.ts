@@ -15,6 +15,7 @@ import {
   revokeInstitutionWorkspaceMembership,
 } from "@/lib/hamilton/institution-membership";
 import { hasOpenSeat, seatLimitMessage } from "@/lib/hamilton/workspace-seats";
+import { MAX_PEER_SET_INSTITUTIONS, MAX_PEER_SET_NAME_LENGTH } from "@/lib/hamilton/peer-set-prefill";
 import {
   INVITE_SECRET_MISSING_MESSAGE,
   buildWorkspaceInvitePath,
@@ -251,7 +252,7 @@ export async function revokeWorkspaceAccess(
     return { success: false, error: "Only institution owners or admins can revoke workspace access." };
   }
 
-  const rows = await sql<Array<{ user_id: number; membership_role: string }>>`
+  const rows = await sql<Array<{ user_id: number | string; membership_role: string }>>`
     SELECT user_id, membership_role
     FROM institution_workspace_memberships
     WHERE id = ${parsed.data.membership_id}
@@ -261,7 +262,8 @@ export async function revokeWorkspaceAccess(
   `;
   const target = rows[0];
   if (!target) return { success: false, error: "Active workspace membership not found." };
-  if (target.user_id === user.id) {
+  // user_id is a bigint and arrives as text ("26"); user.id is a number (#1970).
+  if (Number(target.user_id) === user.id) {
     return { success: false, error: "You cannot revoke your own active workspace access here." };
   }
   if (target.membership_role === "owner" && user.role !== "admin") {
@@ -337,11 +339,11 @@ const PEER_SET_ASSET_TIERS = [
 ] as const;
 
 const MAX_SAVED_PEER_SETS = 10;
-const MAX_CHOSEN_PEERS = 50;
+const MAX_CHOSEN_PEERS = MAX_PEER_SET_INSTITUTIONS;
 
 const PeerSetSchema = z
   .object({
-    name: z.string().trim().max(100),
+    name: z.string().trim().max(MAX_PEER_SET_NAME_LENGTH),
     mode: z.enum(["filters", "institutions"]),
     charter_type: z.enum(["bank", "credit_union"]).nullable(),
     asset_tiers: z.array(z.enum(PEER_SET_ASSET_TIERS)).optional(),
@@ -535,7 +537,7 @@ export interface IntelligenceSnapshot {
 
 export async function getIntelligenceSnapshot(): Promise<IntelligenceSnapshot> {
   const user = await getCurrentUser();
-  if (!user) return { tier: "Unknown", savedAnalyses: 0, savedScenarios: 0, lastActivity: null };
+  if (!user || !canAccessPremium(user)) return { tier: "Unknown", savedAnalyses: 0, savedScenarios: 0, lastActivity: null };
 
   let savedAnalyses = 0;
   let savedScenarios = 0;

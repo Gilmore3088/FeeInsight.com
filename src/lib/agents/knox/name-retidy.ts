@@ -197,6 +197,37 @@ export function isCutoffName(name: string): boolean {
   );
 }
 
+/**
+ * The name before the comma clauses that read as a sentence ("Stop Payment, all items including
+ * ACH and bill pay" is "Stop Payment"; "Legal Process Fee, per occurrence, or such lesser rate as
+ * may be set by law" is "Legal Process Fee, per occurrence"; Beacon Bank & Trust, doc 37581), or
+ * null when no clause is cut or what is left names no fee. Publish only (`publishNameHold`,
+ * `publishedFeeName`): live names keep `retidiedFeeName`, so no live fee is renamed by it.
+ */
+const MAX_CLAUSE_HEAD_WORDS = 6;
+/**
+ * The clauses cut: what the fee covers ("all items including ACH and bill pay", "including
+ * On-us"), the legal cap ("or such lesser rate as may be set by law") and a waiver note ("which
+ * can be waived ..."). Any other clause may be a condition the fee needs, so the name stays held.
+ */
+const QUALIFYING_CLAUSE = /^(?:(?:all|any)\s+[\w\s]{0,20}?)?\b(?:including|includes)\b|^(?:or\s+)?such\s+lesser\s+(?:rate|amount)\b|^which\s+can\s+be\s+waived\b/i;
+/** A fee's name opens on a capitalised word, never on the words that open a sentence ("For each item paid ...", "To avoid ..."). */
+const CLAUSE_HEAD = /^(?!(?:for|to|in|an?|any|the|per|note|if|when|by|with|this|our|your|each|cost|fee|under|after|simply|choose)\b)[A-Z]/i;
+export function nameBeforeSentenceClauses(name: string): string | null {
+  const current = name.replace(/\s+/g, " ").trim();
+  // A line cut off mid-sentence ("..., will be charged a", "... Network is") or holding two
+  // sentences is no name with a clause after it.
+  if (current.includes("|") || SENTENCE_END.test(current) || TRAILING_RANGE.test(current) || FEE_OF_SENTENCE.test(current) || /[.:;]\s/.test(current)) return null;
+  // Commas inside a parenthesis are the parenthesis's own ("(Check, ACH, or other item ...)").
+  const clauses = current.split(/,\s+(?![^()]*\))/);
+  while (clauses.length > 1 && QUALIFYING_CLAUSE.test(clauses[clauses.length - 1])) clauses.pop();
+  const head = clauses.join(", ").replace(/[\s,;:\-–—]+$/u, "").trim();
+  if (head === current || !/^[A-Z]/.test(head) || !CLAUSE_HEAD.test(head) || /[\d.%$]/.test(head) || (head.match(/\(/g)?.length ?? 0) !== (head.match(/\)/g)?.length ?? 0)) return null;
+  const words = head.split(/\s+/).length;
+  if (words < 2 || words > MAX_CLAUSE_HEAD_WORDS || !FEE_NOUN.test(head) || sentenceShaped(head) || isCutoffName(head)) return null;
+  return head;
+}
+
 
 /**
  * #1443: the words a fee's real name ends on, case-free ("Overdraft Fee", "Stop Payment",
@@ -654,8 +685,15 @@ function fullyTidiedName(name: string, canonicalKey: string): string | null {
  * fragment and waits for #1443. 30 live fees carried a mark on 2026-10-17; 24 take the rename.
  * v22 (#1810): an all-caps name reads in title case, acronyms kept ("OVERDRAFT FEE" -> "Overdraft
  * Fee", `capsCasedName`). 770 of 81,775 live names at 113 institutions were all caps on 2026-10-17.
+ * v23 (#1596, James's live-fee check Oct 18): every category's name loses its footnote marks, not
+ * only maintenance and minimum balance ("Wire Transfer1: Domestic – Outgoing", "Domestic Outgoing
+ * Wire Transfer†", "Non-Sufficient Funds Fee^", "Cashier's check**"), with "^", "*" and "∞" read as
+ * marks and a number glued before a ":" or ")" ("ATM1:", "items4)") read as one. Product codes, plain
+ * words' glued numbers and quotes still leave only maintenance and minimum balance names. A rename
+ * that lands on a name another live row of the institution's category has, at any price, or that two
+ * rows would share ("Wire (MT103)" and "Wire (MT202)"), is left.
  */
-export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 22 } as const;
+export const NAME_RETIDY_STRATEGY = { strategy: "knox.name_retidy", version: 23 } as const;
 export const NAME_RETIDY_KIND = "name_retidied";
 /**
  * Institutions the scan visits first after a version change, then the rest in id order. v9:
@@ -678,10 +716,11 @@ export const NAME_RETIDY_FIRST_INSTITUTIONS = [
   68, 229, 745, 1141, 2193, 2341, 2524, 2993, 4818, 6133, 7911, 8221, 8448,
 ];
 
-/** v21 (#1450): the categories whose live names lose their footnote marks. */
-export const FOOTNOTE_MARK_KEYS: ReadonlySet<string> = new Set(["monthly_maintenance", "minimum_balance"]);
-/** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"). */
-const FOOTNOTE_GLYPHS = /\s*[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]+/gu;
+/** A footnote glyph the bank prints after a word ("Charge¹", "Checking†", "accounts) †"); v23: "^", "*" and "∞" too ("Fee^", "check**"). */
+const FOOTNOTE_GLYPHS = /\s*[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]+/gu;
+/** v23: a footnote number glued to a word before a ":" or ")" ("Wire Transfer1:", "ATM3:", "(all items4)"). */
+const GLUED_MARK_BEFORE_PUNCTUATION =
+  /\b(?!(?:tier|level|step|option|plan|zone|group|class|type|package|phase|section|part|item|form|age|term|months?|years?|days?|weeks?|page|grade|kids|covid)\d)([A-Za-z]{3,})\d{1,2}(?=[:)])/gi;
 /** A product code in parentheses after an account's name ("Rewards Checking (CK06)", "(CB02)*"). */
 const PRODUCT_CODE = /\s*\([A-Z]{1,4}-?\d{1,4}\)\*?/g;
 /** A footnote number glued to a plain word of a monthly fee's name ("Monthly2", "Account5", "Checking09"). */
@@ -695,13 +734,30 @@ const QUOTED_OPENING = /^(?:(?:a|an|the)\s+)?[“"]([^“”"]+)[”"]/i;
  * on a mark ("¹A service charge", a footnote's sentence), in lower case, with "No", with a
  * condition or a verb is a fragment and waits for #1443 or a re-read.
  */
-export function footnoteMarkFreeName(name: string): string | null {
+export function footnoteMarkFreeName(name: string, canonicalKey?: string): string | null {
   const current = name.replace(/\s+/g, " ").trim();
+  // v23: the v21 product-code, glued-word and quote cuts stay with the account-named categories.
+  const accountNamed = canonicalKey == null || ACCOUNT_NAMED_KEYS.has(canonicalKey);
   if (/^[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰]/u.test(current)) return null;
-  let next = current.replace(FOOTNOTE_GLYPHS, "").replace(PRODUCT_CODE, "").replace(GLUED_WORD_MARK, "$1");
-  const quoted = next.match(QUOTED_OPENING);
+  // v23: a mark standing alone before words ("^^ If your account balance ...") opens a footnote's sentence.
+  if (/^[\^*∞]+\s/u.test(current)) return null;
+  // v23: so does a mark glued to the next word mid-name ("ATM Withdrawals§ §Non-TEFCU owned ATMs only").
+  if (/\s[†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]+[A-Za-z]/u.test(current)) return null;
+  // v23: "^" or "*" between numbers or standing alone between words is arithmetic ("2^3", "$25 * hours").
+  if (/\d\s*[\^*]+\s*\d/.test(current) || /\S\s+[\^*]+\s+[^\s†‡§¹²³⁴⁵⁶⁷⁸⁹⁰^*∞]/u.test(current)) return null;
+  // v23: a web page's footnote link ("Inactive Account Fee[4](#disclaimer4)").
+  let next = current.replace(/\[\d{1,2}\]\(#[^)\s]*\)/g, "");
+  if (accountNamed) next = next.replace(PRODUCT_CODE, "");
+  next = next.replace(FOOTNOTE_GLYPHS, "");
+  if (accountNamed) next = next.replace(GLUED_WORD_MARK, "$1");
+  next = next
+    .replace(GLUED_MARK_BEFORE_PUNCTUATION, "$1")
+    // v23: a heading's colon left doubled once its mark is gone ("Domestic Wires**: : Incoming").
+    .replace(/:\s*:/g, ":");
+  const quoted = accountNamed ? next.match(QUOTED_OPENING) : null;
   if (quoted) next = `${quoted[1].charAt(0).toUpperCase()}${quoted[1].slice(1)}${next.slice(quoted[0].length)}`;
-  next = next.replace(/\s+/g, " ").replace(/\s+([,:;)])/g, "$1").trim();
+  // v23: a separator left dangling where marks were ("OD Charge‡, ‡‡").
+  next = next.replace(/\s+/g, " ").replace(/\s+([,:;)])/g, "$1").replace(/[\s,;]+$/, "").trim();
   if (!next || next === current) return null;
   if (/^[a-z]/.test(next) || NOT_A_NAME.test(next) || CONDITION_TAIL.test(next) || SENTENCE_VERB.test(next) || next.includes("|") || /[“”"]/.test(next)) return null;
   return next;
@@ -1469,13 +1525,25 @@ export function planRetidy(
   const lineKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key" | "amount">, name: string) =>
     `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${fee.amount == null ? "" : Number(fee.amount).toFixed(2)}|${name.trim().toLowerCase()}`;
   const taken = new Set(liveFees.map((fee) => lineKey(fee, fee.fee_name)));
+  // v23: a mark-free name is a twin when another live row of the institution's category has it at any
+  // price, or when another row's marks come off to the same name ("Wire (MT103)", "Wire (MT202)").
+  const nameKey = (fee: Pick<LiveFeeRow, "institution_id" | "canonical_fee_key">, name: string) =>
+    `${Number(fee.institution_id)}|${fee.canonical_fee_key}|${name.trim().toLowerCase()}`;
+  const namedBy = new Map<string, Set<number>>();
+  const claim = (key: string, id: number) => namedBy.set(key, (namedBy.get(key) ?? new Set()).add(id));
+  for (const fee of liveFees) {
+    claim(nameKey(fee, fee.fee_name), Number(fee.fee_published_id));
+    const off = footnoteMarkFreeName(fee.fee_name, fee.canonical_fee_key);
+    if (off) claim(nameKey(fee, off), Number(fee.fee_published_id));
+  }
   const shared = sharedNameFeeIds(liveFees);
   for (const stored of fees) {
     // v15: a name v14 trimmed past its condition gets the condition back from its logged old name.
     // v16: or a condition publish cut off Knox's name.
     const last = logged.get(Number(stored.fee_published_id)) ?? publishCutName(stored);
     // v21 (#1450): a maintenance name whose only flaw is its footnote marks loses them, and nothing else.
-    const marksOff = FOOTNOTE_MARK_KEYS.has(stored.canonical_fee_key) ? footnoteMarkFreeName(stored.fee_name) : null;
+    // v23: in every category.
+    const marksOff = footnoteMarkFreeName(stored.fee_name, stored.canonical_fee_key);
     // v22 (#1810): an all-caps name reads in title case, and nothing else changes.
     const markFree = capsCasedName(marksOff ?? stored.fee_name) ?? marksOff;
     if (markFree) {
@@ -1485,9 +1553,11 @@ export function planRetidy(
       }
       // A change of case alone keys the same as the fee's own row, so only another live row counts.
       const caseOnly = lineKey(stored, markFree) === lineKey(stored, stored.fee_name);
-      const twin = caseOnly
-        ? liveFees.some((other) => Number(other.fee_published_id) !== Number(stored.fee_published_id) && lineKey(other, other.fee_name) === lineKey(stored, markFree))
-        : taken.has(lineKey(stored, markFree));
+      const twin =
+        (caseOnly
+          ? liveFees.some((other) => Number(other.fee_published_id) !== Number(stored.fee_published_id) && lineKey(other, other.fee_name) === lineKey(stored, markFree))
+          : taken.has(lineKey(stored, markFree))) ||
+        (marksOff != null && [...(namedBy.get(nameKey(stored, marksOff)) ?? [])].some((id) => id !== Number(stored.fee_published_id)));
       if (twin) {
         skipped.same_name_live += 1;
         continue;
@@ -1959,7 +2029,7 @@ export async function retidyLiveFeeNames(
       (fee) =>
         isMessyName(fee.fee_name) ||
         // v21 (#1450): a maintenance name with footnote marks.
-        (FOOTNOTE_MARK_KEYS.has(fee.canonical_fee_key) && footnoteMarkFreeName(fee.fee_name) != null) ||
+        footnoteMarkFreeName(fee.fee_name) != null ||
         // v22 (#1810): an all-caps name.
         capsCasedName(fee.fee_name) != null ||
         shared.has(Number(fee.fee_published_id)) ||

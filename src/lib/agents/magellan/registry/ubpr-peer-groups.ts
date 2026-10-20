@@ -30,7 +30,8 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const UBPR_PEER_GROUPS_SOURCE = "ubpr-peer-groups";
-export const UBPR_PEER_GROUPS_PARSER_VERSION = 1;
+/** v3 (#2204): follow the actual TSV radio postback handler, or submit a non-postback radio with Download. */
+export const UBPR_PEER_GROUPS_PARSER_VERSION = 3;
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 2_000;
 

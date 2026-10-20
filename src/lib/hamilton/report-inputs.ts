@@ -8,6 +8,7 @@
 import { reportGoal, type ReportClientGoal } from "@/lib/hamilton/report-goal";
 import { accountIdentitySnapshot, type HamiltonAccountContext } from "@/lib/hamilton/account-context";
 import { getFeesByInstitution, getFinancialsByInstitution, getInstitutionById } from "@/lib/data-store";
+import { financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { getCategoryChargeBases } from "@/lib/data-store/fee-index";
 import { getInstitutionPeerRanking, getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
@@ -328,8 +329,10 @@ export async function assembleReportInputs(input: {
     selectedVerifiedFees.length > 0 ||
     selectedProvisionalFees.length > 0 ||
     pipelineFeeCount > 0;
-  // ffiec rows duplicate fdic quarters at other scales; reports read the thousands-scale sources.
-  const latestFinancial = selectedFinancials.find((record) => record.source !== "ffiec") ?? null;
+  // The canonical charter determines which regulator's financial definition the report can use.
+  const financialSource = financialSourceForCharter(selectedInstitution?.charter_type);
+  const comparableFinancials = selectedFinancials.filter((record) => financialSource !== null && record.source === financialSource);
+  const latestFinancial = comparableFinancials[0] ?? null;
 
   if (
     params.institutionId &&
@@ -348,6 +351,7 @@ export async function assembleReportInputs(input: {
       latestSourceStatus: selectedInstitution.latest_source_status ?? null,
       latestFinancial: latestFinancial
         ? {
+            source: latestFinancial.source,
             report_date: latestFinancial.report_date,
             total_assets: latestFinancial.total_assets,
             service_charge_income: latestFinancial.service_charge_income,
@@ -426,7 +430,7 @@ export async function assembleReportInputs(input: {
     deltas: selectedFeeDeltas,
     peerLabel: peerIndex.label,
     market: localMarket,
-    serviceCharges: annualServiceCharges(selectedFinancials),
+    serviceCharges: annualServiceCharges(comparableFinancials),
     feeScheduleUrl: selectedInstitution?.fee_schedule_url ?? null,
     moves: localMoves,
   });
@@ -447,7 +451,7 @@ export async function assembleReportInputs(input: {
   // Fee income over time: real (GDP price index), seasonally adjusted, tested for
   // trend, stationarity and structural breaks, against the industry. Computed, never modeled.
   const feeIncomeTrend = selectedInstitution
-    ? await getFeeIncomeTrend(selectedInstitution.id, institutionName).catch(() => null)
+    ? await getFeeIncomeTrend(selectedInstitution.id, institutionName, financialSource).catch(() => null)
     : null;
   const exhibitData = { ...exhibitSet.data, regulatory: regulatory.data, fee_income_trend: feeIncomeTrend?.data ?? null };
   const withExpertRules = (context: string) => `${withStateRules(context)}\n\n${REGULATORY_REPORT_RULES}`;

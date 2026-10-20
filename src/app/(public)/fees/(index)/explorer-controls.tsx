@@ -25,17 +25,23 @@ export function ExplorerControls({
   fee,
   state,
   charter,
+  keep = {},
 }: {
   fees: FeeOption[];
   states: { code: string; name: string }[];
   fee: string;
   state: string | null;
   charter: string;
+  /** Other choices the form carries along, such as the state map's view. */
+  keep?: Record<string, string>;
 }) {
   const families = [...new Set(fees.map((f) => f.family))];
   const submit = (e: React.ChangeEvent<HTMLSelectElement>) => e.currentTarget.form?.requestSubmit();
   return (
     <Form action="/fees" scroll={false} className="grid gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+      {Object.entries(keep).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
       <div className="block">
         <span id="fee-picker-label" className="text-[13px] font-medium text-ink">
           Fee

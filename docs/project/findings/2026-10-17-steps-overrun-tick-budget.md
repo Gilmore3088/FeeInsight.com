@@ -30,3 +30,5 @@ A step measured at 105 s that really takes 278 s passes the check late in a tick
 - A held step writes a `step.deferred` event.
 
 **Lesson:** expected runtimes drift as steps gain work. Re-measure them from `agent_run_steps` whenever a step grows, at p99 rather than p90, and whenever `step.reaped` events appear. A long step needs its own time box, not just a good estimate. A step that cannot be told where its time goes needs `phase_ms` before anyone can shorten it.
+
+**Agent lesson:** atlas/pr-1844-price-at-p99, gutenberg/pr-1844-publish-time-box

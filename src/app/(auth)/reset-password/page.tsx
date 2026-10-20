@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { parsePasswordResetToken } from "@/lib/password-reset";
-import { AUTH_FORM_CLASS, AuthCard } from "../auth-card";
+import { AuthCard } from "../auth-card";
+import { UTILITY_CARD, UTILITY_LINK } from "@/components/utility/form-style";
 import { ResetPasswordForm } from "./reset-password-form";
 
 export const metadata: Metadata = {
@@ -20,9 +21,9 @@ export default async function ResetPasswordPage({ searchParams }: { searchParams
       {parsed ? (
         <ResetPasswordForm token={token} />
       ) : (
-        <div role="status" className={AUTH_FORM_CLASS}>
-          <p className="text-sm text-ink">This reset link has expired or isn&apos;t complete.</p>
-          <Link href="/forgot-password" className="text-sm font-medium text-brick hover:underline">
+        <div role="status" className={`${UTILITY_CARD} space-y-4`}>
+          <p className="text-[15px] leading-relaxed text-ink">This reset link has expired or isn&apos;t complete.</p>
+          <Link href="/forgot-password" className={`text-[14px] ${UTILITY_LINK}`}>
             Get a new link
           </Link>
         </div>

@@ -1,14 +1,27 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly (#1811); publishing, editing or
+ * unpublishing an article from admin revalidates it at once. The page reads no session,
+ * cookies or search params. Views are counted from the browser (view-count.tsx), since the
+ * server render no longer runs once per reader.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getArticleBySlug, incrementViewCount, getPublishedArticles } from "@/lib/data-store/articles";
-import { ensureResearchTables } from "@/lib/research/history";
+import { getArticleBySlug, getPublishedArticles } from "@/lib/data-store/articles";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { SITE_NAME } from "@/lib/constants";
 import { linkPreview } from "@/lib/link-preview";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 import { renderArticleMarkdown } from "@/lib/article-markdown";
 import { PAGE_HEADER } from "@/components/public/page-header";
+import { ArticleViewCount } from "./view-count";
+
+/** Nothing is rendered at build time; each article renders on its first visit, then from cache. */
+export function generateStaticParams() {
+  return [];
+}
 
 export async function generateMetadata({
   params,
@@ -16,7 +29,6 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  await ensureResearchTables();
   const article = await getArticleBySlug(slug);
   if (!article || article.status !== "published") {
     return { title: "Article Not Found" };
@@ -38,14 +50,11 @@ export default async function ArticlePage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  await ensureResearchTables();
   const article = await getArticleBySlug(slug);
 
   if (!article || article.status !== "published") {
     notFound();
   }
-
-  await incrementViewCount(slug);
 
   const relatedArticles = (await getPublishedArticles(4)).filter((a) => a.slug !== slug).slice(0, 3);
 
@@ -59,6 +68,7 @@ export default async function ArticlePage({
 
   return (
     <div className="mx-auto max-w-page px-6 py-14">
+      <ArticleViewCount slug={slug} />
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -110,11 +120,11 @@ export default async function ArticlePage({
               Work at a bank or credit union?
             </p>
             <p className="mt-1 text-[13px] text-ink-muted">
-              Request a free competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
+              Request a competitive fee report: every fee your institution publishes, benchmarked against a verified peer set.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Link
-                href="/for-institutions#report"
+                href={REPORT_REQUEST_HREF}
                 className="inline-flex items-center rounded-md bg-brick px-4 py-2 text-[12px] font-semibold text-white hover:bg-brick-ink transition-colors"
               >
                 Request your report

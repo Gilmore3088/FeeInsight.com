@@ -260,3 +260,15 @@ export async function resolvePeerRequest(subject: PeerSubject, request: PeerSetR
   const home = request.market === "same" ? await getHomeMarket(subject.id) : null;
   return resolvePeerSet(definitionFor(subject, request, home), subject);
 }
+
+/**
+ * Every institution in a resolved peer group, for readers that roll a group up from tables
+ * other than the fee index (public data at each peer's headquarters, call-report lines). It
+ * is the same membership the fee index reads: hand-picked or resolved ids as they are, and a
+ * basic definition (charter, tier, district, states) as every institution that meets it.
+ * Empty when no institution meets the definition.
+ */
+export async function peerSetMemberIds(resolved: ResolvedPeerSet): Promise<number[]> {
+  if (!resolved.filters) return [];
+  return peerInstitutionIds(resolved.filters) ?? resolvePeerInstitutionIds(resolved.definition, null);
+}

@@ -12,7 +12,7 @@ vi.mock("@/lib/hamilton/institution-context", () => ({
   getHamiltonInstitutionContext: mocks.getInstitution,
 }));
 
-import { resolveHamiltonInstitutionContext } from "./workspace-context";
+import { resolveHamiltonInstitutionContext, setHamiltonWorkspaceContext } from "./workspace-context";
 
 const subject = { id: 2945, name: "Research Bank" };
 const savedBank = { id: 8109, name: "Synthetic Home Credit Union" };
@@ -44,6 +44,13 @@ describe("Hamilton workspace context", () => {
       const parsed = Number(value);
       return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
     });
+  });
+
+  it("clears the pre-checkout mark when a later write names no intent, so checkout won't replace that choice (#1958)", async () => {
+    await setHamiltonWorkspaceContext({ userId: 7, institutionId: savedBank.id });
+    const [strings, ...values] = mocks.sql.mock.calls[0];
+    expect(strings.join("?")).toMatch(/last_intent = COALESCE\(EXCLUDED\.last_intent, NULLIF\(hamilton_workspace_contexts\.last_intent, \?\)\)/);
+    expect(values).toContain("before_pro_checkout");
   });
 
   it("rejects invalid subject IDs before institution or workspace reads", async () => {
@@ -100,7 +107,7 @@ describe("Hamilton workspace context", () => {
   it("saves only an explicit validated selection and records its intent", async () => {
     const result = await resolveHamiltonInstitutionContext({ userId: 7, instId: "2945", makeDefault: true, intent: " competitive-brief " });
     expectExplicitWrite();
-    expect(mocks.sql.mock.calls[0].slice(1)).toEqual([7, 2945, "url", "competitive-brief"]);
+    expect(mocks.sql.mock.calls[0].slice(1)).toEqual([7, 2945, "url", "competitive-brief", "before_pro_checkout"]);
     expect(result).toEqual({ institution: subject, error: null, source: "url", workspaceInstitutionId: 2945, isWorkspaceBank: true });
   });
 

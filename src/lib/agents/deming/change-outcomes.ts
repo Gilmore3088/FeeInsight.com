@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import registry from "./should-move.json";
+import { referenceScoreCohort, sameReferenceCohort } from "@/lib/data-store/answer-key-reference-store";
 
 type SqlTag = typeof sql;
 
@@ -54,7 +55,26 @@ export function sameScorer(before: Record<string, unknown> | null | undefined, a
   const version = (row: Record<string, unknown> | null | undefined) =>
     row?.accuracy_scorer_version == null ? null : Number(row.accuracy_scorer_version);
   const a = version(before);
-  return a != null && a === version(after);
+  const cohort = (row: Record<string, unknown> | null | undefined) => {
+    const detail = typeof row?.detail === "string" ? JSON.parse(row.detail) : row?.detail;
+    return referenceScoreCohort(row?.accuracy_reference ?? (detail as Record<string, unknown> | null)?.accuracy_reference);
+  };
+  try {
+    const left = cohort(before), right = cohort(after);
+    return a != null && a === version(after) && left?.state === "measured" && right?.state === "measured" && sameReferenceCohort(left, right);
+  } catch { return false; }
+}
+
+/** Stored-copy accuracy changes are not data improvements when a checker/reporting series changed. */
+export function sameAuditSeries(before: Record<string, unknown> | null | undefined, after: Record<string, unknown> | null | undefined): boolean {
+  const series = (row: Record<string, unknown> | null | undefined) => {
+    try {
+      const detail = typeof row?.detail === "string" ? JSON.parse(row.detail) : row?.detail;
+      return (detail as { goal?: { accuracy?: { series?: unknown } } } | null | undefined)?.goal?.accuracy?.series;
+    } catch { return undefined; }
+  };
+  const a = series(before);
+  return typeof a === "string" && a.length > 0 && a === series(after);
 }
 
 /** Pure: the metric's value in one snapshot row, or null when it is not there. */
@@ -256,17 +276,18 @@ export async function runChangeOutcomes(options: {
     let afterValue = metricValue(after, entry.metric);
     // A new scorer version is not a change in the pipeline: never compare across one (#1354).
     let scorerChanged = false;
-    if (SCORER_METRICS.has(entry.metric)) {
+    const auditMetric = entry.metric.startsWith("detail.goal.accuracy.");
+    if (SCORER_METRICS.has(entry.metric) || auditMetric) {
       const beforeDay = isoDay(row.before_snapshot_date);
       const [beforeRow] = beforeDay
         ? await db<Array<Record<string, unknown>>>`
-            SELECT COALESCE((s.detail->>'accuracy_scorer_version')::int, r.scorer_version) AS accuracy_scorer_version
+            SELECT s.detail, COALESCE((s.detail->>'accuracy_scorer_version')::int, r.scorer_version) AS accuracy_scorer_version
               FROM pipeline_scoreboard_snapshots s
               LEFT JOIN answer_key_score_runs r ON r.id = s.accuracy_score_run_id
              WHERE s.snapshot_date = ${beforeDay}::date
           `
         : [];
-      scorerChanged = !sameScorer(beforeRow, after);
+      scorerChanged = !(auditMetric ? sameAuditSeries(beforeRow, after) : sameScorer(beforeRow, after));
       if (scorerChanged) afterValue = null;
     }
     const verdict = changeVerdict(entry, before, afterValue);
@@ -296,5 +317,5 @@ export function summarizeChangeOutcomes(result: ChangeOutcomesResult): string {
     .map((row) => `#${row.pr} ${row.verdict === "wrong_way" ? "moved the wrong way" : "did not move"} ${row.metric}`);
   const rescored = result.judged.filter((row) => row.scorerChanged).length;
   const hitRate = result.hitRate ? ` So far ${hitRateLine(result.hitRate)}.` : "";
-  return `Checked ${judged} change${judged === 1 ? "" : "s"} a week after merge: ${count("moved_as_expected")} moved as expected, ${count("no_change")} no change, ${count("wrong_way")} the wrong way, ${count("unreadable")} unreadable${rescored > 0 ? ` (${rescored} because the answer-key scorer changed in between)` : ""}. Started ${result.started}; ${result.pending} still within their week.${flagged.length > 0 ? ` To explain or revert: ${flagged.join("; ")}.` : ""}${hitRate}`;
+  return `Checked ${judged} change${judged === 1 ? "" : "s"} a week after merge: ${count("moved_as_expected")} moved as expected, ${count("no_change")} no change, ${count("wrong_way")} the wrong way, ${count("unreadable")} unreadable${rescored > 0 ? ` (${rescored} because the scoring series changed or was unknown)` : ""}. Started ${result.started}; ${result.pending} still within their week.${flagged.length > 0 ? ` To explain or revert: ${flagged.join("; ")}.` : ""}${hitRate}`;
 }

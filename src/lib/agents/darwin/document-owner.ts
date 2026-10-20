@@ -1111,6 +1111,8 @@ export interface DocumentOwnerResult {
   /** Pending second-look flags cleared because the fee's pair passes now (takedown on only). */
   cleared: number;
   takenDown: number[];
+  /** Institutions whose fee link was another institution's document and came off (`releaseOwnerLinks`). */
+  linksReleased: number[];
 }
 
 /** Re-reads per step with the takedown on, apart from the new-pair cap, so they never starve new pairs. */
@@ -1142,6 +1144,7 @@ export function documentOwnerDetail(result: DocumentOwnerResult | null) {
     waiting: result.waiting,
     cleared: result.cleared,
     taken_down: result.takenDown.length,
+    links_released: result.linksReleased,
     samples: result.wouldTakeDown.slice(0, 20).map((fee) => ({
       fee_published_id: fee.feePublishedId,
       institution_id: fee.institutionId,
@@ -1217,7 +1220,7 @@ export async function recheckDocumentOwners(
   const rereadLimit = live ? Math.max(0, Math.min(options.rereadLimit ?? DOCUMENT_OWNER_REREAD_LIMIT, 500)) : 0;
   const result: DocumentOwnerResult = {
     live, skipped: false, selected: 0, pairs: 0, rereads: 0, verdicts: {}, siblingSharedDocuments: 0, wouldTakeDown: [],
-    flagged: 0, waiting: 0, cleared: 0, takenDown: [],
+    flagged: 0, waiting: 0, cleared: 0, takenDown: [], linksReleased: [],
   };
   const watermark = await readWatermark(db, live, options.now ?? new Date());
   if (watermark.skip) {
@@ -1254,6 +1257,7 @@ export async function recheckDocumentOwners(
   if (pairs.length > 0) {
     await judgePairs(db, options, live, pairs, result);
   }
+  if (live) result.linksReleased = await releaseOwnerLinks(db);
   await recordStepEvent(db, options, live, watermark.now, result);
   return result;
 }
@@ -1488,6 +1492,104 @@ async function archive(db: SqlTag, runId: number, fees: DocumentOwnerFee[]): Pro
     return closed;
   } catch (error) {
     console.error("[darwin] document owner takedown failed", error instanceof Error ? error.message : error);
+    return [];
+  }
+}
+
+export const DOCUMENT_OWNER_LINK_FAILURE = "darwin_document_owner";
+
+/**
+ * The fee links a document-owner takedown leaves behind (James's 20-defect register, #2018, item 13).
+ * An institution whose fee link is a document whose fees for it all came down as another
+ * institution's (`document_owner: names institution N`) would read the same schedule again:
+ * Bluegrass Community FCU kept UK FCU's PDF as its link after its 25 fees came down, and 5Star Bank
+ * kept Horizons North's. The link goes back to discovery the way `other_bank_document` sends it:
+ * rejected for this institution, off its fee link and canonical source, and the record marked
+ * pending with the reason, unless a person's correction locked it. No fee changes. It runs with
+ * the takedown on, on each step that reads pairs (at most hourly), after the takedowns. Pure SQL so the
+ * read-only dry count is the same statement (`documentOwnerLinksSql`).
+ */
+export function documentOwnerLinksSql(): string {
+  return `
+    WITH down AS (
+      SELECT DISTINCT fp.institution_id, sd.id AS source_document_id, btrim(sd.document_url) AS document_url,
+             substring(fp.rolled_back_reason from 'names institution ([0-9]+)') AS other_institution_id
+        FROM published_fee_records fp
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN source_documents sd ON sd.id = fr.source_document_id
+       WHERE fp.rolled_back_reason LIKE '${DOCUMENT_OWNER_REASON}:%'
+    )
+    SELECT d.institution_id, d.source_document_id, d.document_url, d.other_institution_id
+      FROM down d
+      JOIN institution_sources inst ON inst.id = d.institution_id
+     WHERE btrim(COALESCE(inst.fee_schedule_url, '')) = d.document_url
+       AND NOT EXISTS (
+         SELECT 1 FROM institution_source_profiles profile
+          WHERE profile.institution_id = inst.id AND profile.locked_by_correction IS TRUE
+       )
+       AND NOT EXISTS (
+         SELECT 1
+           FROM published_fee_records live
+           JOIN verified_fee_observations lv ON lv.fee_verified_id = live.lineage_ref
+           JOIN raw_fee_observations lr ON lr.fee_raw_id = lv.fee_raw_id
+          WHERE live.institution_id = d.institution_id
+            AND lr.source_document_id = d.source_document_id
+            AND live.rolled_back_at IS NULL
+            AND live.quarantined_at IS NULL
+       )
+     ORDER BY d.institution_id
+  `;
+}
+
+interface OwnerLinkRow {
+  institution_id: number | string;
+  source_document_id: number | string;
+  document_url: string;
+  other_institution_id: string | null;
+}
+
+/** Release each left-behind link (`documentOwnerLinksSql`); the institutions released, or none on a failed write. */
+export async function releaseOwnerLinks(db: SqlTag): Promise<number[]> {
+  try {
+    return await inSavepoint(db, async (scope) => {
+      const rows = await scope.unsafe<OwnerLinkRow[]>(documentOwnerLinksSql());
+      const released: number[] = [];
+      for (const row of Array.isArray(rows) ? rows : []) {
+        const institutionId = Number(row.institution_id);
+        const note = `${row.document_url} is institution ${row.other_institution_id ?? "?"}'s schedule (its fees here came down as ${DOCUMENT_OWNER_REASON})`;
+        const rejected = JSON.stringify([{ url: row.document_url, reason: DOCUMENT_OWNER_REASON, at: new Date().toISOString() }]);
+        await scope`
+          UPDATE institution_source_profiles
+             SET rejected_source_urls = (
+                   SELECT COALESCE(jsonb_agg(entry), '[]'::jsonb)
+                     FROM jsonb_array_elements(COALESCE(rejected_source_urls, '[]'::jsonb)) entry
+                    WHERE entry->>'url' IS DISTINCT FROM ${row.document_url}
+                 ) || ${rejected}::jsonb,
+                 canonical_source_url = CASE
+                   WHEN locked_by_correction OR btrim(COALESCE(canonical_source_url, '')) IS DISTINCT FROM ${row.document_url} THEN canonical_source_url
+                   ELSE NULL
+                 END,
+                 updated_at = NOW()
+           WHERE institution_id = ${institutionId}
+        `;
+        const updated = await scope`
+          UPDATE institution_sources inst
+             SET fee_schedule_url = NULL,
+                 rescue_status = 'pending',
+                 failure_reason = ${DOCUMENT_OWNER_LINK_FAILURE},
+                 failure_reason_note = ${note},
+                 failure_reason_updated_at = NOW()
+           WHERE inst.id = ${institutionId}
+             AND btrim(COALESCE(inst.fee_schedule_url, '')) = ${row.document_url}
+          RETURNING inst.id
+        `;
+        if (updated.length > 0 && !released.includes(institutionId)) released.push(institutionId);
+      }
+      return released;
+    });
+  } catch (error) {
+    console.warn("[darwin] document owner link release failed", error instanceof Error ? error.message : error);
     return [];
   }
 }

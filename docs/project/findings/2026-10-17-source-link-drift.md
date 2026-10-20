@@ -34,3 +34,5 @@ other 2,040 are left as they are.
 **Lesson:** a fee's document has two addresses: the one Magellan stored and the one Rosetta read.
 Compare a fee's link with both. Any step that moves a row to another document must move its link
 too, in the same write.
+
+**Agent lesson:** gutenberg/pr-1756-link-moves-with-row

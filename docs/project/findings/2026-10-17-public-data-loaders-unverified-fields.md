@@ -116,3 +116,5 @@
   `cra` partitions retry on the bump. The fixed-width flat-file column positions are still unverified.
 - Round-2 first run, 13:40-13:55 UTC: only `ffiec-call-detail` v4 had run (123,955 rows written) and
   `bls-qcew` (16,828). The other round-2 sources had not reached the scheduler yet.
+
+**Agent lesson:** hoovie/pr-1786-check-fields-against-file

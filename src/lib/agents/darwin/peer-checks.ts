@@ -1,3 +1,4 @@
+import { sameProduct } from "@/lib/fee-product";
 import type { sql } from "@/lib/data-store/connection";
 import { countsAsPersonal, isAudienceUnstated, type FeeAudience } from "@/lib/fee-audience";
 import { isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
@@ -287,6 +288,7 @@ export class PeerLevelCache {
 }
 
 export interface SourceCopy {
+  productName?: string | null;
   feeRawId: number;
   institutionId: number;
   sourceDocumentId: number;
@@ -315,6 +317,7 @@ export function secondSourceCheck(
     canonicalFeeKey: string;
     amount: number;
     feeAudience: FeeAudience;
+    productName?: string | null;
   },
   copies: readonly SourceCopy[],
 ): SecondSourceResult | null {
@@ -326,6 +329,7 @@ export function secondSourceCheck(
   const others = copies.filter((copy) =>
     copy.institutionId === row.institutionId &&
     copy.canonicalFeeKey === row.canonicalFeeKey &&
+    sameProduct(copy.productName, row.productName) &&
     audienceMatches(copy.feeAudience) &&
     copy.sourceDocumentId !== row.sourceDocumentId &&
     copy.feeRawId !== row.feeRawId,
@@ -365,9 +369,10 @@ export async function loadSourceCopies(
     outlier_flags: unknown;
     conditions: string | null;
     fee_audience: FeeAudience | null;
+    product_name: string | null;
   }>>`
     SELECT fr.fee_raw_id, fr.institution_id, fr.source_document_id, fr.amount, fr.outlier_flags, COALESCE(fr.extraction_note, fr.conditions) AS conditions,
-           fr.fee_audience
+           fr.fee_audience, fr.product_name
       FROM raw_fee_observations fr
      WHERE fr.source = 'knox'
        AND fr.institution_id = ANY(${institutionIds}::int[])
@@ -386,6 +391,7 @@ export async function loadSourceCopies(
       canonicalFeeKey,
       amount: Number(row.amount),
       feeAudience: row.fee_audience ?? "unknown",
+      productName: row.product_name,
     });
   }
   return copies;

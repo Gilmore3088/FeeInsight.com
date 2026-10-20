@@ -1,9 +1,10 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
+import { activeInstitutionFilter } from "./fee-stats";
 import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
-// Dollar amounts are stored in whole dollars (migration 023 + Phase 60.1
-// ingest scaling). No query-layer multiplication needed.
+// FDIC/NCUA dollar columns retain stored thousands (financial-sources.ts).
+// Readers preserve those values; tool/presentation contracts carry their units.
 
 const numOrNull = (v: unknown): number | null =>
   v !== null && v !== undefined ? Number(v) : null;
@@ -46,33 +47,9 @@ export interface InstitutionFinancial {
   overdraft_revenue: number | null;
 }
 
-export interface FinancialStats {
-  fdic_records: number;
-  ncua_records: number;
-  institutions_with_financials: number;
-  complaint_records: number;
-  institutions_with_complaints: number;
-}
-
 export interface ComplaintSummary {
   product: string;
   complaint_count: number;
-}
-
-export async function getFinancialStats(): Promise<FinancialStats> {
-  const [fdic] = await sql`SELECT COUNT(*) as cnt FROM institution_financial_records WHERE source = 'fdic'`;
-  const [ncua] = await sql`SELECT COUNT(*) as cnt FROM institution_financial_records WHERE source = 'ncua'`;
-  const [instFin] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_financial_records WHERE source IN ('fdic', 'ncua')`;
-  const [complaints] = await sql`SELECT COUNT(*) as cnt FROM institution_complaint_records`;
-  const [instComp] = await sql`SELECT COUNT(DISTINCT institution_id) as cnt FROM institution_complaint_records`;
-
-  return {
-    fdic_records: Number((fdic as unknown as { cnt: number }).cnt),
-    ncua_records: Number((ncua as unknown as { cnt: number }).cnt),
-    institutions_with_financials: Number((instFin as unknown as { cnt: number }).cnt),
-    complaint_records: Number((complaints as unknown as { cnt: number }).cnt),
-    institutions_with_complaints: Number((instComp as unknown as { cnt: number }).cnt),
-  };
 }
 
 export async function getFinancialsByInstitution(
@@ -172,30 +149,6 @@ export async function getMarketConcentration(opts?: {
   return [...rows] as unknown as MarketConcentration[];
 }
 
-export async function getMarketConcentrationForInstitution(
-  targetId: number,
-  year?: number
-): Promise<MarketConcentration | null> {
-  const y = year ?? 2024;
-  const [row] = await sql`
-    SELECT mc.msa_code, mc.msa_name, mc.total_deposits,
-           mc.institution_count, mc.hhi, mc.top3_share, mc.year
-    FROM market_concentration mc
-    JOIN institution_branch_deposits bd ON bd.msa_code = mc.msa_code AND bd.year = mc.year
-    WHERE bd.institution_id = ${targetId} AND mc.year = ${y} AND bd.is_main_office = true
-    LIMIT 1`;
-  if (!row) return null;
-  return {
-    msa_code: Number(row.msa_code),
-    msa_name: String(row.msa_name),
-    total_deposits: Number(row.total_deposits),
-    institution_count: Number(row.institution_count),
-    hhi: Number(row.hhi),
-    top3_share: Number(row.top3_share),
-    year: Number(row.year),
-  };
-}
-
 // --- Demographics (Census ACS) ---
 
 export interface DemographicData {
@@ -219,21 +172,6 @@ export async function getStateDemographics(
     WHERE geo_type = 'state' AND state_fips = ${stateFips}
     ORDER BY year DESC LIMIT 1`;
   return (row as DemographicData | undefined) ?? null;
-}
-
-export async function getCountyDemographics(
-  stateFips: string
-): Promise<DemographicData[]> {
-  const rows = await sql`
-    SELECT * FROM (
-      SELECT DISTINCT ON (geo_id) geo_id, geo_type, geo_name, state_fips,
-             median_household_income, poverty_count, total_population, year
-      FROM demographics
-      WHERE geo_type = 'county' AND state_fips = ${stateFips}
-      ORDER BY geo_id, year DESC
-    ) latest
-    ORDER BY total_population DESC NULLS LAST`;
-  return [...rows] as DemographicData[];
 }
 
 // --- Economic Indicators (BLS / BEA / Fed Board; older NY Fed and OFR rows) ---
@@ -340,70 +278,6 @@ export async function getCpiContext(): Promise<CpiContext> {
   return {
     bankFees,
     allItems: await getYoY(ALL_ITEMS, bankFees ? isoDay(bankFees.date) : undefined),
-  };
-}
-
-// --- Revenue Benchmarks (aggregated fee income ratios) ---
-
-export interface RevenueIndex {
-  report_date: string;
-  institution_count: number;
-  median_ratio: number | null;
-  p25_ratio: number | null;
-  p75_ratio: number | null;
-  avg_service_charge: number | null;
-}
-
-export async function getRevenueIndexByDate(reportDate?: string): Promise<RevenueIndex | null> {
-  let rows: { fee_income_ratio: number; service_charge_income: number | null }[];
-
-  if (reportDate) {
-    rows = await sql`
-      SELECT fee_income_ratio, service_charge_income
-      FROM institution_financial_records
-      WHERE fee_income_ratio IS NOT NULL AND report_date = ${reportDate}
-        AND source IN ('fdic', 'ncua')
-      ORDER BY fee_income_ratio` as typeof rows;
-  } else {
-    rows = await sql`
-      SELECT fee_income_ratio, service_charge_income
-      FROM institution_financial_records
-      WHERE fee_income_ratio IS NOT NULL
-        AND source IN ('fdic', 'ncua')
-        AND report_date = (SELECT MAX(report_date) FROM institution_financial_records WHERE source IN ('fdic', 'ncua'))
-      ORDER BY fee_income_ratio` as typeof rows;
-  }
-
-  if (rows.length === 0) return null;
-
-  const ratios = rows.map((r) => r.fee_income_ratio);
-  const n = ratios.length;
-  const p25Idx = Math.floor(n * 0.25);
-  const medIdx = Math.floor(n * 0.5);
-  const p75Idx = Math.floor(n * 0.75);
-
-  const svcCharges = rows
-    .map((r) => r.service_charge_income)
-    .filter((v): v is number => v !== null);
-  const avgSvc = svcCharges.length > 0
-    ? Math.round(svcCharges.reduce((a, b) => a + b, 0) / svcCharges.length)
-    : null;
-
-  let rd: string;
-  if (reportDate) {
-    rd = reportDate;
-  } else {
-    const [maxRow] = await sql`SELECT MAX(report_date) as d FROM institution_financial_records WHERE source IN ('fdic', 'ncua')`;
-    rd = (maxRow as { d: string }).d;
-  }
-
-  return {
-    report_date: rd,
-    institution_count: n,
-    median_ratio: ratios[medIdx],
-    p25_ratio: ratios[p25Idx],
-    p75_ratio: ratios[p75Idx],
-    avg_service_charge: avgSvc,
   };
 }
 
@@ -729,6 +603,8 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
         FROM institution_sources s
         JOIN institution_financial_records f ON f.institution_id = s.id
        WHERE s.id = ${targetId} AND f.source IN ('fdic', 'ncua')
+         AND ((s.charter_type = 'bank' AND f.source = 'fdic')
+           OR (s.charter_type = 'credit_union' AND f.source = 'ncua'))
        ORDER BY f.report_date DESC
        LIMIT 1
     )
@@ -753,6 +629,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
       JOIN institution_sources s
         ON s.charter_type = me.charter_type
        AND s.asset_size_tier IS NOT DISTINCT FROM me.asset_size_tier
+       AND (${sql.unsafe(activeInstitutionFilter("s"))} OR s.id = ${targetId})
       JOIN institution_financial_records f
         ON f.institution_id = s.id AND f.report_date = me.report_date AND f.source = me.source
      GROUP BY me.report_date, me.source`;
@@ -770,7 +647,7 @@ export async function getPeerFinancialMedians(targetId: number): Promise<PeerFin
     tier1_capital_ratio: capitalRatioPct(row.tier1_capital_ratio, row.source),
     leverage_ratio: numOrNull(row.leverage_ratio),
     total_capital_ratio: numOrNull(row.total_capital_ratio),
-    fee_income_ratio: numOrNull(row.fee_income_ratio),
+    fee_income_ratio: Number(row.fee_income_peer_count) >= 5 ? numOrNull(row.fee_income_ratio) : null,
     fee_income_peer_count: Number(row.fee_income_peer_count ?? 0),
   };
 }
@@ -826,6 +703,8 @@ export async function getPeerPercentiles(targetId: number): Promise<PeerPercenti
         FROM institution_sources s
         JOIN institution_financial_records f ON f.institution_id = s.id
        WHERE s.id = $1 AND f.source IN ('fdic', 'ncua')
+         AND ((s.charter_type = 'bank' AND f.source = 'fdic')
+           OR (s.charter_type = 'credit_union' AND f.source = 'ncua'))
        ORDER BY f.report_date DESC
        LIMIT 1
     ),
@@ -849,6 +728,7 @@ export async function getPeerPercentiles(targetId: number): Promise<PeerPercenti
         JOIN institution_sources s
           ON s.charter_type = me.charter_type
          AND s.asset_size_tier IS NOT DISTINCT FROM me.asset_size_tier
+         AND (${activeInstitutionFilter("s")} OR s.id = $1)
         JOIN institution_financial_records f
           ON f.institution_id = s.id AND f.report_date = me.report_date AND f.source = me.source
         LEFT JOIN institution_financial_records p

@@ -35,3 +35,9 @@ export function plainName(name: string): string {
     .replace(/\s+Federal Credit Union$/i, " FCU")
     .trim();
 }
+
+/** "overdraft item", or "NSF / returned item" as it is: never "returned item item" (#2035). */
+export function feeItem(name: string, plural = false): string {
+  const base = /\bitem$/i.test(name) ? name : `${name} item`;
+  return plural ? `${base}s` : base;
+}

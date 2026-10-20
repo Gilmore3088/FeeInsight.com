@@ -6,6 +6,8 @@
  */
 
 /** Categories whose median is built from CD or IRA fees, where such a fee is the expected product. */
+import { specialUnitReason } from "@/lib/fee-unit";
+
 const CD_IRA_CATEGORIES: ReadonlySet<string> = new Set(["ira_termination", "ira_administration"]);
 
 const CD_IRA_TOKEN = /\b(?:CDs?|IRAs?)\b/;
@@ -93,7 +95,7 @@ export function basisMismatchSql(alias: string): string {
       .map(([c]) => `'${c}'`)
       .join(", ");
     const frequencies = CONTRADICTING_FREQUENCIES[basis].map((f) => `'${f}'`).join(", ");
-    return `(${alias}.fee_category IN (${categories}) AND lower(btrim(${alias}.frequency)) IN (${frequencies}))`;
+    return `(${alias}.fee_category IN (${categories}) AND lower(btrim(${alias}.frequency, E' \\t\\r\\n')) IN (${frequencies}))`;
   });
   // COALESCE: a blank frequency or category is never a mismatch, and NOT NULL would drop the row.
   return `COALESCE(${arms.join(" OR ")}, false)`;
@@ -131,6 +133,8 @@ export function notComparableReason(
   if (!category) return null;
   const basis = basisMismatchReason(category, frequency);
   if (basis) return basis;
+  const unit = specialUnitReason(frequency);
+  if (unit) return unit;
   if (!SCREEN.test([feeName ?? "", accountProduct ?? "", sourceLine ?? ""].join(" "))) return null;
   if (SAFE_DEPOSIT_RENT_CATEGORIES.has(category) && SAFE_DEPOSIT_SERVICE.test(feeName ?? "")) {
     return SAFE_DEPOSIT_SERVICE_REASON;

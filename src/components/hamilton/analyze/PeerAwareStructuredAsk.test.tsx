@@ -24,7 +24,7 @@ describe("peer-first Ask rendering", () => {
     await screen.findByRole("table");
     expect(screen.getByRole("link", { name: "Alpha CU" }).getAttribute("href")).toBe("/pro/hamilton?instId=202");
     expect(screen.getAllByRole("link", { name: "Public page" })[0].getAttribute("href")).toBe("/institution/202");
-    expect(screen.getByText("$1,000,000,000")).toBeTruthy();
+    expect(screen.getByText("$1B")).toBeTruthy();
     expect(screen.getAllByText("Jun 2026").length).toBe(2);
     expect(screen.queryByText("Existing fee-answer path")).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();

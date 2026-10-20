@@ -10,7 +10,8 @@
  */
 
 import { checkNarrativeFigures, type FigureCheckOptions, type FigureCheckResult } from "./figure-check";
-import { PIPELINE_TERMS, RECOMMENDATION } from "./workspace/four-roles";
+import { PIPELINE_TERMS, findUnrequestedAdvice } from "./workspace/four-roles";
+import { checkAnswerInterpretations } from "./answer-interpretations";
 
 /** Price position is "lower" or "higher", never "cheapest". */
 export const CHEAP_WORDING = /\bcheap(?:er|est)?\b/i;
@@ -30,12 +31,13 @@ export function checkAnswerEvidence(text: string, data: unknown, options: Figure
   const figureCheck = checkNarrativeFigures(text, data, options);
   const problems: string[] = [];
   if (figureCheck.unmatched.length > 0) problems.push(`These figures are not in DATA: ${figureCheck.unmatched.join(", ")}.`);
-  const advice = text.match(RECOMMENDATION);
+  const advice = findUnrequestedAdvice(text);
   if (advice) problems.push(`This reads as advice: "${advice[0]}". Lay out the paths without choosing.`);
   const internal = text.match(PIPELINE_TERMS);
   if (internal) problems.push(`Internal name in the text: "${internal[0]}".`);
   const cheap = text.match(CHEAP_WORDING);
   if (cheap) problems.push(`"${cheap[0]}" is not house wording. Say "lower" or "higher" price.`);
+  problems.push(...checkAnswerInterpretations(text, data, options.question));
   return { passed: problems.length === 0, problems, figureCheck };
 }
 

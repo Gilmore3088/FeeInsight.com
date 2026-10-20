@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 const trackAnthropicRequest = vi.fn(async (_context: unknown, request: () => PromiseLike<unknown>) => request());
@@ -26,12 +27,38 @@ function templateText(strings: unknown): string {
 }
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) => {
-    if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+  const text = rows.map(row => `${row.fee_name} | $${Number(row.amount).toFixed(2)}`).join("\n");
+  const document = {
+    id: 20, institution_id: 10, document_url: "https://bank.example/fees.pdf", status: "success",
+    superseded_by_id: null, duplicate_of_id: null, content_hash: createHash("sha256").update("adjudication fixture bytes").digest("hex")
+  };
+  const artifact = {
+    id: 30, source_document_id: 20, institution_id: 10, source_url: document.document_url,
+    source_hash: document.content_hash, status: "completed", normalized_text: text, text_hash: createHash("sha256").update(text).digest("hex")
+  };
+  const state = (row: Record<string, unknown>) => JSON.stringify([row, { id: 1_000 + Number(row.fee_raw_id) }]);
+  const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = templateText(strings);
+    if (query.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+    if (query.includes("paid_source_snapshot")) return Promise.resolve([{ ...artifact, artifact_id: artifact.id, document_state: JSON.stringify(document), artifact_state: JSON.stringify(artifact) }]);
+    if (query.includes("paid_input_state")) {
+      const selected = rows.find(row => Number(row.fee_raw_id) === Number(values[3]));
+      return Promise.resolve(selected ? [{ state: state(selected), document_state: JSON.stringify(document), artifact_state: JSON.stringify(artifact) }] : []);
+    }
+    if (query.includes("SELECT fr.*") && query.includes("FROM raw_fee_observations fr")) return Promise.resolve(rows.filter(row => Number(row.fee_raw_id) === Number(values[0])).map(row => ({ ...row, binding_state: JSON.stringify(row) })));
+    if (query.includes("FROM source_documents") && query.includes("FOR SHARE NOWAIT")) return Promise.resolve([document]);
+    if (query.includes("SELECT id, source_document_id, institution_id, text_hash, source_hash, status")) return Promise.resolve([{ id: artifact.id, source_document_id: artifact.source_document_id, institution_id: artifact.institution_id, text_hash: artifact.text_hash, source_hash: artifact.source_hash, status: artifact.status }]);
+    if (query.includes("FROM agent_source_texts")) return Promise.resolve([artifact]);
     return Promise.resolve([]);
   }) as DbMock;
   // The release review's candidates come first; these tests have none.
-  db.unsafe = vi.fn((query: string) => Promise.resolve(query.includes("rel.detail->>'verdict' = 'review'") ? [] : rows));
+  db.unsafe = vi.fn((query: string, params: unknown[] = []) => Promise.resolve(query.includes("rel.detail->>'verdict' = 'review'") ? [] : rows
+    .filter(row => !query.includes(" AND fr.fee_raw_id = $") || Number(row.fee_raw_id) === Number(params.at(-1)))
+    .map(row => ({
+    ...row,
+    selected_attempt_id: 1_000 + Number(row.fee_raw_id), selected_policy_state: state(row),
+    }))));
+  Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
   return db;
 }
 
@@ -133,7 +160,9 @@ describe("Darwin layer 3 adjudicator", () => {
       [DARWIN_ADJUDICATE_STRATEGY.strategy, "ok", "knox"],
     ]);
     // Shadow: no write outside the attempt log.
-    const writes = db.mock.calls.map(([strings]) => templateText(strings)).filter((text) => /INSERT|UPDATE|DELETE/.test(text));
+    // FOR UPDATE is a read lock, not a shadow mutation. Continue requiring every
+    // actual data-changing statement to be only the existing attempt insert.
+    const writes = db.mock.calls.map(([strings]) => templateText(strings)).filter((text) => /^\s*(?:INSERT|UPDATE|DELETE)\b/.test(text));
     expect(writes.every((text) => text.includes("INSERT INTO pipeline_attempts"))).toBe(true);
   });
 

@@ -9,8 +9,10 @@ import {
 import { schedulePriorityInstitutionRuns } from "@/lib/agents/atlas/priority-institutions";
 import { schedulePriorityStateResearchRuns } from "@/lib/agents/atlas/priority-state-research";
 import { scheduleGuardCatchUpRun } from "@/lib/agents/hamilton/guard-catch-up";
+import { schedulePublishSweepsRun } from "@/lib/agents/hamilton/publish-sweeps-schedule";
 import { scheduleAudienceRelabelRun } from "@/lib/agents/darwin/audience-relabel-schedule";
 import { scheduleStaleOutreachWithdrawal } from "@/lib/agents/growth/withdraw";
+import { scheduleLiveSourceAudit } from "@/lib/agents/deming/live-source-schedule";
 import { scheduleDueStateLaneRuns, STATE_LANE_LIMIT_PER_TICK } from "@/lib/agents/state-lane-scheduler";
 import { getMarketingControl, getPipelineControl } from "@/lib/automation-control";
 import { matchesConfiguredCronSecret } from "@/lib/cron-secret";
@@ -29,7 +31,8 @@ export const maxDuration = 300;
 const DEFAULT_MAX_STEPS_PER_RUN = 10;
 /**
  * Runs advanced per tick, one after another except up to PARALLEL_STATE_LANES state lanes side by side (see executeQueuedAgentRuns),
- * until the step-start deadline. No run starts past the deadline except the first.
+ * until the step-start deadline. Other first runs may take a progress step; the
+ * daily scoreboard must fit the deadline even when selected first.
  */
 const DEFAULT_RUN_LIMIT = 10;
 /**
@@ -79,10 +82,9 @@ async function handleGET(request: NextRequest) {
       changedBy: marketing.changedBy,
     },
   };
-  // The pipeline pause and the marketing pause are separate: with only the pipeline
-  // paused, the tick still drains growth's marketing runs (and the reverse). Only when
-  // both are paused, or execution is off, does the tick do nothing.
-  if ((!pipeline.enabled && !marketing.enabled) || !execution.enabled) {
+  // Backend off is a hard stop. Paused controls may still permit the existing
+  // daily scoreboard's measurement steps, handled by a narrowly scoped drain below.
+  if (!execution.enabled) {
     return NextResponse.json({
       ok: true,
       paused: true,
@@ -110,6 +112,32 @@ async function handleGET(request: NextRequest) {
   const runLimit = parsePositiveInt(request.nextUrl.searchParams.get("runLimit"), DEFAULT_RUN_LIMIT, 10);
   const maxStepsPerRun = parsePositiveInt(request.nextUrl.searchParams.get("maxStepsPerRun"), DEFAULT_MAX_STEPS_PER_RUN, 10);
   const stateLaneLimit = parsePositiveInt(request.nextUrl.searchParams.get("stateLaneLimit"), STATE_LANE_LIMIT_PER_TICK, 10);
+
+  if (!pipeline.enabled && !marketing.enabled) {
+    // Do not broaden the pause exception to alerts, digests or other reporting runs.
+    // This path schedules nothing and never consults/opens a provider budget.
+    const scope = { agent: "atlas", kind: "workflow", source: "atlas.scoreboard" } as const;
+    const reaped = await reapStaleAgentSteps({ scope });
+    const result = await executeQueuedAgentRuns({
+      runLimit,
+      maxStepsPerRun,
+      allowProviderSteps: false,
+      deadlineAt: tickStartedAt + STEP_FINISH_BUDGET_MS,
+      paused: { pipeline: true, marketing: true },
+      scope,
+      pauseExemptOnly: true,
+    });
+    return NextResponse.json({
+      ok: true,
+      paused: true,
+      measurementOnly: true,
+      pauseReason: "Pipeline and marketing are paused; only queued daily scoreboard measurements may advance.",
+      ...controls,
+      reaped,
+      scheduledStateLanes: { selected: 0, scheduled: 0, reused: 0, failed: [], results: [] },
+      ...result,
+    });
+  }
 
   // Recover steps a killed invocation left running before selecting new work.
   const reaped = await reapStaleAgentSteps();
@@ -167,6 +195,9 @@ async function handleGET(request: NextRequest) {
   let priorityStateResearch: Awaited<ReturnType<typeof schedulePriorityStateResearchRuns>> | { error: string } | null = null;
   // A deployed guard or frequency fix re-checks every live fee now, not at the next publish step.
   let guardCatchUp: Awaited<ReturnType<typeof scheduleGuardCatchUpRun>> | { error: string } | null = null;
+  // The sweeps a state lane's publish hands off (hamilton/publish-sweeps.ts): one run at a time,
+  // after a lane publish; a dry run at most hourly while PUBLISH_SWEEPS_SPLIT_LIVE is off.
+  let publishSweeps: Awaited<ReturnType<typeof schedulePublishSweepsRun>> | { error: string } | null = null;
   // Darwin's audience relabel (#1059): a daily dry run while off, once when switched on.
   let audienceRelabel: Awaited<ReturnType<typeof scheduleAudienceRelabelRun>> | { error: string } | null = null;
   if (pipeline.enabled) {
@@ -175,6 +206,12 @@ async function handleGET(request: NextRequest) {
     } catch (error) {
       console.error("Guard catch-up scheduling failed:", error);
       guardCatchUp = { error: error instanceof Error ? error.message : String(error) };
+    }
+    try {
+      publishSweeps = await schedulePublishSweepsRun();
+    } catch (error) {
+      console.error("Publish sweeps scheduling failed:", error);
+      publishSweeps = { error: error instanceof Error ? error.message : String(error) };
     }
     try {
       audienceRelabel = await scheduleAudienceRelabelRun();
@@ -205,6 +242,9 @@ async function handleGET(request: NextRequest) {
     console.error("Stale outreach withdrawal scheduling failed:", error);
     staleOutreachWithdraw = { error: error instanceof Error ? error.message : String(error) };
   }
+  const liveSourceAudit=pipeline.enabled
+    ?await scheduleLiveSourceAudit({pipelineEnabled:true,backendEnabled:true}).catch((error:unknown)=>({error:error instanceof Error?error.message:"Live-source admission failed"}))
+    :null;
   const result = await executeQueuedAgentRuns({
     runLimit,
     maxStepsPerRun,
@@ -231,8 +271,10 @@ async function handleGET(request: NextRequest) {
     priorityInstitutions,
     priorityStateResearch,
     guardCatchUp,
+    publishSweeps,
     audienceRelabel,
     staleOutreachWithdraw,
+    liveSourceAudit,
     ...result,
   });
 }

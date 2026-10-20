@@ -1,13 +1,20 @@
 import { sql } from "./connection";
-import { financialSourceFilter } from "./financial-sources";
-import type { RichIndicator } from "./fed";
+import { financialSourceFilter, type FinancialSource } from "./financial-sources";
 
-export type { RichIndicator };
+export type { RichIndicator } from "./fed";
+
+export interface HealthIndicator {
+  current: number | null;
+  history: { date: string; value: number | null; institution_count: number }[];
+  trend: "rising" | "falling" | "stable" | "insufficient_data";
+  asOf: string;
+  minimum_median_count: number;
+}
 
 export interface IndustryHealthMetrics {
-  roa: RichIndicator | null;
-  roe: RichIndicator | null;
-  efficiency_ratio: RichIndicator | null;
+  roa: HealthIndicator | null;
+  roe: HealthIndicator | null;
+  efficiency_ratio: HealthIndicator | null;
 }
 
 export interface GrowthTrend {
@@ -22,47 +29,61 @@ export interface HealthByCharter {
   credit_union: IndustryHealthMetrics;
 }
 
-// Compute a RichIndicator from institution_financial_records for a given numeric column,
-// aggregating per quarter (median across all institutions for that quarter).
+// Source-scoped health medians, retaining actual counts and holding thin current periods.
 async function buildHealthIndicator(
   column: "roa" | "roe" | "efficiency_ratio",
-  quarterCount = 12
-): Promise<RichIndicator | null> {
+  quarterCount = 12,
+  source?: FinancialSource
+): Promise<HealthIndicator | null> {
   try {
     const rows = await sql.unsafe(
-      `SELECT
-         TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
-         MIN(inf.report_date::text)                                            AS quarter_date,
-         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.${column})           AS median_value
+      `WITH recent_dates AS (
+         SELECT DISTINCT report_date
+         FROM institution_financial_records
+         WHERE source IN ('fdic', 'ncua') AND ($2::text IS NULL OR source = $2)
+         ORDER BY report_date DESC LIMIT $1
+       )
+       SELECT
+         TO_CHAR(inf.report_date::date, 'YYYY-"Q"Q') AS quarter,
+         inf.report_date::text AS quarter_date,
+         COUNT(DISTINCT inf.institution_id)::int AS institution_count,
+         CASE WHEN COUNT(DISTINCT inf.institution_id) >= 5
+           THEN PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.${column}) END AS median_value
        FROM institution_financial_records inf
+       JOIN institution_sources ct ON ct.id = inf.institution_id
        WHERE inf.${column} IS NOT NULL AND inf.${column} != 0
          AND ${financialSourceFilter("inf")}
-       GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
-       ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
+         AND ((ct.charter_type = 'bank' AND inf.source = 'fdic')
+           OR (ct.charter_type = 'credit_union' AND inf.source = 'ncua'))
+         AND ($2::text IS NULL OR inf.source = $2)
+         AND inf.report_date IN (SELECT report_date FROM recent_dates)
+       GROUP BY inf.report_date
+       ORDER BY inf.report_date DESC
        LIMIT $1`,
-      [quarterCount]
-    ) as { quarter: string; quarter_date: string; median_value: number | string }[];
+      [quarterCount, source ?? null]
+    ) as { quarter: string; quarter_date: string; institution_count: number | string; median_value: number | string | null }[];
 
     if (rows.length === 0) return null;
 
     const history = rows.map((r) => ({
       date: r.quarter,
-      value: Number(r.median_value),
+      value: Number(r.institution_count) >= 5 && r.median_value !== null ? Number(r.median_value) : null,
+      institution_count: Number(r.institution_count),
     }));
 
     const current = history[0].value;
     const asOf = rows[0].quarter_date ?? history[0].date;
 
-    let trend: "rising" | "falling" | "stable" = "stable";
-    if (history.length >= 3) {
-      const recent = history.slice(0, 3).reduce((s, h) => s + h.value, 0) / 3;
-      const older = history.slice(-3).reduce((s, h) => s + h.value, 0) / 3;
+    let trend: HealthIndicator["trend"] = "insufficient_data";
+    if (history.length >= 3 && history.every((h) => h.value !== null)) {
+      const recent = history.slice(0, 3).reduce((s, h) => s + (h.value ?? 0), 0) / 3;
+      const older = history.slice(-3).reduce((s, h) => s + (h.value ?? 0), 0) / 3;
       const delta = recent - older;
       const threshold = 0.05 * Math.abs(older || 1);
       trend = Math.abs(delta) < threshold ? "stable" : delta > 0 ? "rising" : "falling";
     }
 
-    return { current, history, trend, asOf };
+    return { current, history, trend, asOf, minimum_median_count: 5 };
   } catch {
     return null;
   }
@@ -71,58 +92,20 @@ async function buildHealthIndicator(
 async function buildHealthIndicatorByCharter(
   column: "roa" | "roe" | "efficiency_ratio",
   charterType: "bank" | "credit_union"
-): Promise<RichIndicator | null> {
-  try {
-    const rows = await sql.unsafe(
-      `SELECT
-         TO_CHAR(DATE_TRUNC('quarter', inf.report_date::date), 'YYYY-"Q"Q') AS quarter,
-         MIN(inf.report_date::text)                                            AS quarter_date,
-         PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY inf.${column})           AS median_value
-       FROM institution_financial_records inf
-       JOIN institution_sources ct ON ct.id = inf.institution_id
-       WHERE inf.${column} IS NOT NULL AND inf.${column} != 0
-         AND ${financialSourceFilter("inf")}
-         AND ct.charter_type = $1
-       GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
-       ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
-       LIMIT 8`,
-      [charterType]
-    ) as { quarter: string; quarter_date: string; median_value: number | string }[];
-
-    if (rows.length === 0) return null;
-
-    const history = rows.map((r) => ({
-      date: r.quarter,
-      value: Number(r.median_value),
-    }));
-    const current = history[0].value;
-    const asOf = rows[0].quarter_date ?? history[0].date;
-
-    let trend: "rising" | "falling" | "stable" = "stable";
-    if (history.length >= 3) {
-      const recent = history.slice(0, 3).reduce((s, h) => s + h.value, 0) / 3;
-      const older = history.slice(-3).reduce((s, h) => s + h.value, 0) / 3;
-      const delta = recent - older;
-      const threshold = 0.05 * Math.abs(older || 1);
-      trend = Math.abs(delta) < threshold ? "stable" : delta > 0 ? "rising" : "falling";
-    }
-
-    return { current, history, trend, asOf };
-  } catch {
-    return null;
-  }
+): Promise<HealthIndicator | null> {
+  return buildHealthIndicator(column, 8, charterType === "bank" ? "fdic" : "ncua");
 }
 
-export async function getIndustryHealthMetrics(): Promise<IndustryHealthMetrics> {
+export async function getIndustryHealthMetrics(source?: FinancialSource): Promise<IndustryHealthMetrics> {
   const [roa, roe, efficiency_ratio] = await Promise.all([
-    buildHealthIndicator("roa"),
-    buildHealthIndicator("roe"),
-    buildHealthIndicator("efficiency_ratio"),
+    buildHealthIndicator("roa", 12, source),
+    buildHealthIndicator("roe", 12, source),
+    buildHealthIndicator("efficiency_ratio", 12, source),
   ]);
   return { roa, roe, efficiency_ratio };
 }
 
-export async function getHealthMetricsByCharter(): Promise<HealthByCharter> {
+export async function getHealthMetricsByCharter(source?: FinancialSource): Promise<HealthByCharter> {
   const [bankRoa, bankRoe, bankEff, cuRoa, cuRoe, cuEff] = await Promise.all([
     buildHealthIndicatorByCharter("roa", "bank"),
     buildHealthIndicatorByCharter("roe", "bank"),
@@ -133,14 +116,15 @@ export async function getHealthMetricsByCharter(): Promise<HealthByCharter> {
   ]);
 
   return {
-    bank: { roa: bankRoa, roe: bankRoe, efficiency_ratio: bankEff },
-    credit_union: { roa: cuRoa, roe: cuRoe, efficiency_ratio: cuEff },
+    bank: source === "ncua" ? { roa: null, roe: null, efficiency_ratio: null } : { roa: bankRoa, roe: bankRoe, efficiency_ratio: bankEff },
+    credit_union: source === "fdic" ? { roa: null, roe: null, efficiency_ratio: null } : { roa: cuRoa, roe: cuRoe, efficiency_ratio: cuEff },
   };
 }
 
 async function buildGrowthTrend(
   column: "total_deposits" | "total_loans",
-  quarterCount = 8
+  quarterCount = 8,
+  source?: FinancialSource
 ): Promise<GrowthTrend | null> {
   try {
     // Fetch quarterCount + 4 so we can compute YoY for each quarter
@@ -151,12 +135,16 @@ async function buildGrowthTrend(
          MIN(inf.report_date::text)                                            AS quarter_date,
          SUM(inf.${column})                                                    AS absolute
        FROM institution_financial_records inf
+       JOIN institution_sources ct ON ct.id = inf.institution_id
        WHERE inf.${column} IS NOT NULL AND inf.${column} > 0
          AND ${financialSourceFilter("inf")}
+         AND ((ct.charter_type = 'bank' AND inf.source = 'fdic')
+           OR (ct.charter_type = 'credit_union' AND inf.source = 'ncua'))
+         AND ($2::text IS NULL OR inf.source = $2)
        GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
        ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
        LIMIT $1`,
-      [fetchCount]
+      [fetchCount, source ?? null]
     ) as { quarter: string; quarter_date: string; absolute: number | string }[];
 
     if (rows.length === 0) return null;
@@ -199,15 +187,17 @@ async function buildGrowthTrend(
 }
 
 export async function getDepositGrowthTrend(
-  quarterCount = 8
+  quarterCount = 8,
+  source?: FinancialSource
 ): Promise<GrowthTrend | null> {
-  return buildGrowthTrend("total_deposits", quarterCount);
+  return buildGrowthTrend("total_deposits", quarterCount, source);
 }
 
 export async function getLoanGrowthTrend(
-  quarterCount = 8
+  quarterCount = 8,
+  source?: FinancialSource
 ): Promise<GrowthTrend | null> {
-  return buildGrowthTrend("total_loans", quarterCount);
+  return buildGrowthTrend("total_loans", quarterCount, source);
 }
 
 export interface InstitutionCountTrend {
@@ -223,7 +213,8 @@ export interface InstitutionCountTrend {
 // "Active" = at least one filing in institution_financial_records for that quarter.
 // Per D-02: "Count distinct institutions with filings per quarter. No filing = presumed inactive."
 export async function getInstitutionCountTrends(
-  quarterCount = 8
+  quarterCount = 8,
+  source?: FinancialSource
 ): Promise<InstitutionCountTrend[]> {
   try {
     const rows = await sql.unsafe(
@@ -234,10 +225,13 @@ export async function getInstitutionCountTrends(
        FROM institution_financial_records inf
        JOIN institution_sources ct ON ct.id = inf.institution_id
        WHERE ${financialSourceFilter("inf")}
+         AND ((ct.charter_type = 'bank' AND inf.source = 'fdic')
+           OR (ct.charter_type = 'credit_union' AND inf.source = 'ncua'))
+         AND ($2::text IS NULL OR inf.source = $2)
        GROUP BY DATE_TRUNC('quarter', inf.report_date::date)
        ORDER BY DATE_TRUNC('quarter', inf.report_date::date) DESC
        LIMIT $1`,
-      [quarterCount]
+      [quarterCount, source ?? null]
     ) as { quarter: string; bank_count: number | string; cu_count: number | string }[];
 
     if (rows.length === 0) return [];

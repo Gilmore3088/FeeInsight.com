@@ -34,3 +34,5 @@ on prod; the mean is from before its Oct 8 rewrite and the `pipeline_feedback_ki
 **Still slow, needs a schema decision.** The national publish fill still checks about 75k
 already-decided verified rows against `pipeline_attempts` on every lane (about 4-10 s). A marker
 on the verified row for the publish rule version that decided it would remove that scan.
+
+**Guard:** `src/lib/agents/hamilton/publish.test.ts:870` (publish counts each institution's fees once in a materialized grouped read, never in a subquery correlated per verified row); `src/lib/agents/magellan/second-document.test.ts:135` runs the stored-text tests only on banks that pass the cheap filters

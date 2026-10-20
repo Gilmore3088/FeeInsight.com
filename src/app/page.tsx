@@ -20,20 +20,25 @@ export const revalidate = 900;
 import type { Metadata } from "next";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import { CONTACT_EMAIL, LEGAL_ENTITY_NAME, PRODUCT_NAME, SITE_NAME, SITE_URL } from "@/lib/constants";
-import { loadSampleReport } from "@/lib/custom-report/sample-report";
+import { DEMO_SAMPLE_INSTITUTION_ID, loadSampleReport } from "@/lib/custom-report/sample-report";
+import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
+import { getReportPeerContextCached, getReportPeerFinancialCached, peerLinesFor } from "@/lib/custom-report/peer-context";
+import { createReadBudget } from "@/lib/read-deadline";
+import type { MarketBranchFootprint } from "@/lib/data-store/branches";
 import { ConsumerNav } from "@/components/consumer-nav";
 import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import type { IndexRow } from "@/lib/data-store";
-import { getIndexRowsCached } from "@/lib/data-store/public-cached-reads";
+import { getIndexRowsCached, getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import { getSpotlightCategories, publicFeeTypes } from "@/lib/fee-taxonomy";
 import { LandingHero, LandingProof } from "./landing-hero";
 import { LandingHamilton } from "./landing-hamilton";
 import { LandingResearch } from "./landing-research-section";
+import { LandingDeliverable } from "./landing-deliverable";
 import { LandingPricing } from "./landing-pricing";
 import { buildIndexCard } from "./landing-index";
-import { homeReadsCacheable } from "./landing-shared";
+import { HOME_READ_BUDGET_MS, homeReadsCacheable } from "./landing-shared";
 import { homeSerif } from "./landing-serif";
 import "./landing-motion.css";
 
@@ -85,31 +90,51 @@ export default async function LandingPage() {
   // Counts come from the one shared snapshot, so they match the fee index, research hub and
   // directory to the number. The hero card reads each free fee's published rows, the same cached
   // read /fees makes; a failed fee read only leaves that fee out of the card. The live sample
-  // report (the one /for-institutions and the sample page show) gives the Hamilton examples
-  // their figures; a failed read shows the examples without figures. It is null both when none
-  // passes the bar today and on error.
+  // report (the one /for-institutions and the sample page show) gives the One question demo
+  // its figures; a failed read shows the demo without figures. It is null both when none
+  // passes the bar today and on error. The One question section draws on it, the sample bank's
+  // reported service-charge income and Call Report peers (the reads the sample report page shows),
+  // and that page's peer-context and branch-footprint reads, from the same cache. The same report
+  // draws the first page of the sample before the plans.
   const { summary, categories } = await getPublicSnapshot();
   // The fee types the public site lists (the top 50, as /fees counts them) that have published fees.
   const listed = publicFeeTypes(categories);
   const publicKeys = new Set(categories.filter((c) => listed.has(c.fee_category) && Number(c.institution_count ?? 0) > 0).map((c) => c.fee_category));
   const cardFees = getSpotlightCategories().filter((fee) => publicKeys.has(fee));
+  // One deadline for every read below (#1988): a slow read during an ISR prerender or a
+  // saturated pool leaves its part of the page out instead of holding the render or failing
+  // the build. Every read is optional; a fallback counts as a failed read, so the render is
+  // cached for a minute (shortenPageLife), not fifteen.
+  const budget = createReadBudget(HOME_READ_BUDGET_MS, "Home");
+  const optional = <T,>(read: Promise<T>, label: string) =>
+    budget.optional(read.then((value) => ({ value, failed: false })), label, { value: null as T | null, failed: true });
   const [sampleRead, indexReads] = await Promise.all([
-    loadSampleReport().then(
-      (report) => ({ report, failed: false }),
-      (error: unknown) => {
-        console.error("[home] sample report read failed; Hamilton examples shown without figures", error);
-        return { report: null, failed: true };
-      },
-    ),
+    optional(loadSampleReport(), "sample report").then(async ({ value: report, failed }) => {
+      if (!report) return { report: null, revenue: null, financial: null, peers: null, branches: null, failed };
+      const id = report.data.subject.institution_id;
+      const market = report.data.market;
+      const [revenue, financial, peers, branches] = await Promise.all([
+        optional(getRevenueContextCached(id), "sample bank revenue"),
+        optional(getReportPeerFinancialCached(id), "sample bank peer financial"),
+        // The One question section's size-peer fee median and market footprint: the sample
+        // report page's own reads, with the same arguments, so they share its cache entries.
+        optional(getReportPeerContextCached(id, peerLinesFor(report.analysis.lines)), "sample bank peer context"),
+        market
+          ? optional(getMarketBranchFootprintCached(market.county_fips, market.sod_year), "sample market footprint")
+          : Promise.resolve({ value: null as MarketBranchFootprint | null, failed: false }),
+      ]);
+      return {
+        report,
+        revenue: revenue.value,
+        financial: financial.value,
+        peers: peers.value,
+        branches: branches.value,
+        failed: revenue.failed || financial.failed || peers.failed || branches.failed,
+      };
+    }),
     Promise.all(
       cardFees.map((fee) =>
-        getIndexRowsCached(fee).then(
-          (rows) => ({ fee, rows, failed: false }),
-          (error: unknown) => {
-            console.error(`[home] index rows for ${fee} failed; left out of the hero card`, error);
-            return { fee, rows: [] as IndexRow[], failed: true };
-          },
-        ),
+        optional(getIndexRowsCached(fee), `index rows for ${fee}`).then(({ value, failed }) => ({ fee, rows: value ?? ([] as IndexRow[]), failed })),
       ),
     ),
   ]);
@@ -121,7 +146,8 @@ export default async function LandingPage() {
   });
   // A render with a failed read is cached for a minute, not fifteen (see the note at the top).
   if (!cacheable) await shortenPageLife();
-  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])));
+  // The demo bank's own fees come from the same rows, so the card can mark it with no extra read.
+  const index = buildIndexCard(new Map(indexReads.map((r) => [r.fee, r.rows])), [DEMO_SAMPLE_INSTITUTION_ID]);
 
   return (
     <div className={`${homeSerif.variable} min-h-screen overflow-x-clip bg-paper consumer-brand`}>
@@ -135,12 +161,20 @@ export default async function LandingPage() {
       />
       <ConsumerNav />
       <main id="main-content">
-        {/* James's example (Oct 17): the hero with the working Index, the proof strip, Hamilton's
-            examples, the connected research, then the plans. */}
+        {/* James's landing critique (Oct 17, §8), six sections: the hero, live data (the Index card
+            and the proof strip), the Hamilton introduction, the One question demo (James's review, Oct 19:
+            the one interactive demonstration), the sample report's first page, the plans. */}
         <LandingHero index={index} freshness={summary.refreshedOn || summary.freshnessLabel} />
         <LandingProof summary={summary} feeTypes={publicKeys.size} />
-        <LandingHamilton report={sampleRead.report} />
-        <LandingResearch />
+        <LandingHamilton />
+        <LandingResearch
+          report={sampleRead.report}
+          revenue={sampleRead.revenue}
+          financial={sampleRead.financial}
+          peers={sampleRead.peers}
+          branches={sampleRead.branches}
+        />
+        <LandingDeliverable report={sampleRead.report} preparedOn={new Date()} />
         <LandingPricing />
       </main>
       <CustomerFooter />

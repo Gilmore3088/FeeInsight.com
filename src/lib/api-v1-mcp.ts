@@ -28,6 +28,7 @@ export interface McpV1Handlers {
   market: V1Handler;
   peers: V1Handler;
   rateFees: V1Handler;
+  hamiltonContext: V1Handler;
 }
 
 const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
@@ -40,6 +41,7 @@ const ENDPOINT_PATHS: Record<keyof McpV1Handlers, string> = {
   market: "/api/v1/market",
   peers: "/api/v1/peers",
   rateFees: "/api/v1/rate-fees",
+  hamiltonContext: "/api/v1/hamilton-context",
 };
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -48,6 +50,8 @@ const LATEST_PROTOCOL_VERSION = SUPPORTED_PROTOCOL_VERSIONS[0];
 const SERVER_INSTRUCTIONS =
   `${PRODUCT_NAME} (${SITE_URL}) publishes bank and credit union fees read from each institution's own fee schedule, ` +
   "plus FDIC/NCUA call report figures and CFPB complaint counts. Amounts are US dollars. " +
+  "For 'my' or 'our' institution or peers, call get_hamilton_context first to read the current key holder's saved Hamilton institution and permitted peer sets. " +
+  "Look this up fresh for each request that depends on saved context; do not infer it from conversation history or memory. " +
   "Start with get_fee_index for typical fees in a state or nationally, find_institutions to look a bank up by name, state, city or size, " +
   "rank_institutions_by_fee for who charges the most or least for one fee, and get_institution for one institution's fees with source links. " +
   "get_revenue_trend gives market-wide fee revenue by quarter back to 2010; get_fee_changes lists fee changes detected recently. " +
@@ -103,6 +107,18 @@ function compact(params: Record<string, string | undefined>): Record<string, str
 }
 
 const TOOLS: ToolDefinition[] = [
+  {
+    name: "get_hamilton_context",
+    title: "Your Hamilton context",
+    description:
+      "Read the authenticated subscriber key holder's saved Hamilton institution, permitted saved peer sets and active peer-set id. Takes no arguments. Call fresh before using 'my' or 'our' institution or peers; conversation history and memory do not establish account context.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    endpoint: "hamiltonContext",
+    toParams: (args) => {
+      if (Object.keys(args).length > 0) throw new ToolArgumentError("get_hamilton_context takes no arguments");
+      return {};
+    },
+  },
   {
     name: "get_fee_index",
     title: "Typical fees",
@@ -338,25 +354,32 @@ const TOOLS: ToolDefinition[] = [
     name: "get_peer_comparison",
     title: "Fees against peers",
     description:
-      `One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to ${MAX_CHOSEN_PEERS} with peer_ids. ` +
-      `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Fees stated as a rate are listed apart, not compared.`,
+      "The key holder's saved Hamilton institution and permitted active peer set supply defaults when applicable; call get_hamilton_context first for 'my' or 'our' institution or peers. Select another permitted set with saved_peer_set_id. saved_peer_set_id, peer_ids and peer-group filters cannot be combined. Set use_saved_context=false to disable automatic institution and peer defaults; institution_id is then required, while an explicit saved_peer_set_id remains subject to authorization. " +
+      `One institution's published dollar fees, category by category, next to its peers: the peer median, 25th and 75th percentiles, how many peers publish the fee, and the institution's percentile among them (the share of peers with a lower amount, counting half of ties). Without applicable saved peers, peers default to the same charter type, asset size and Fed district. Or define them with any of charter, asset_tier, asset_min, asset_max, state, district, regulator, cu_charter, holding_company, market and nearest (only those given apply; \"same\" means the institution's own value), or name up to ${MAX_CHOSEN_PEERS} with peer_ids. ` +
+      `Figures are left out when fewer than ${MIN_INSTITUTIONS_FOR_MEDIAN} peers publish a fee. Where the institution charges several different fees in one category, amount and percentile are null and fees lists each one by name. Fees stated as a rate are listed apart, not compared.`,
     inputSchema: {
       type: "object",
       properties: {
-        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions" },
+        institution_id: { type: "integer", minimum: 1, description: "Institution id from find_institutions; omitted to use the key holder's saved Hamilton institution" },
+        saved_peer_set_id: { type: "integer", minimum: 1, description: "Permitted saved peer-set id from get_hamilton_context; cannot be combined with peer_ids or peer-group filters" },
+        use_saved_context: { type: "boolean", default: true, description: "Use saved institution and peer defaults when applicable. False requires institution_id and disables automatic defaults; an explicit saved_peer_set_id still requires permission." },
         peer_ids: {
           type: "string",
           description: "Optional institution ids to compare against instead of the default peers, comma-separated, at most 25, e.g. 12,48,301",
         },
         ...Object.fromEntries(PEER_GROUP_PARAMS.map((p) => [p.name, { type: "string", description: `${p.description}, e.g. ${p.example}` }])),
       },
-      required: ["institution_id"],
       additionalProperties: false,
     },
     endpoint: "peers",
     toParams: (args) => {
+      const allowed = new Set(["institution_id", "saved_peer_set_id", "use_saved_context", "peer_ids", ...PEER_GROUP_PARAMS.map((p) => p.name)]);
+      if (Object.keys(args).some((name) => !allowed.has(name))) throw new ToolArgumentError("Unsupported peer comparison argument");
       const id = optionalNumber(args, "institution_id");
-      if (!id) throw new ToolArgumentError("institution_id is required");
+      const savedPeerSetId = optionalNumber(args, "saved_peer_set_id");
+      const useSavedContext = args.use_saved_context;
+      if (useSavedContext !== undefined && typeof useSavedContext !== "boolean") throw new ToolArgumentError("use_saved_context must be true or false");
+      if (useSavedContext === false && !id) throw new ToolArgumentError("institution_id is required when use_saved_context is false");
       const peerIds = args.peer_ids;
       let peers: string | undefined;
       if (Array.isArray(peerIds)) {
@@ -371,7 +394,17 @@ const TOOLS: ToolDefinition[] = [
         const value = args[p.name];
         return [p.name, typeof value === "number" ? String(value) : optionalString(args, p.name)];
       }));
-      return compact({ institution_id: id, peer_ids: peers, ...group });
+      const hasGroup = Object.values(group).some((value) => value !== undefined);
+      if ((savedPeerSetId && (peers || hasGroup)) || (peers && hasGroup)) {
+        throw new ToolArgumentError("saved_peer_set_id, peer_ids and peer-group filters cannot be combined");
+      }
+      return compact({
+        institution_id: id,
+        saved_peer_set_id: savedPeerSetId,
+        use_saved_context: typeof useSavedContext === "boolean" ? String(useSavedContext) : undefined,
+        peer_ids: peers,
+        ...group,
+      });
     },
   },
   {

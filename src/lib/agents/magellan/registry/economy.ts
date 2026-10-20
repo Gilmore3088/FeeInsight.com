@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { CensusKeyError } from "@/lib/regulatory/census-acs";
 import type { GeocodeInput } from "@/lib/regulatory/census-geocoder";
+import { validCoordinates } from "@/lib/regulatory/coordinates";
 import {
   BeaKeyError,
   checkAreaStats,
@@ -24,12 +25,14 @@ import {
   industryStats,
   parseHudCrosswalk,
   parseNationalWideCsv,
-  parseRemittancePrices,
+  locateRpwWorkbook,
+  parseRemittanceFile,
   placeAddressesInTracts,
   placePointInTract,
+  readRpwBytes,
   REMITTANCE_PRICES_ATTRIBUTION,
   REMITTANCE_PRICES_LICENCE,
-  RPW_URL_ENV,
+  RpwFileTooLargeError,
   RUCC_VINTAGES,
   sumIndustry,
   type AreaFetch,
@@ -57,6 +60,14 @@ import { chunk, mapWithConcurrency, recordRegistryPartition, type RegistryDb } f
  */
 
 export const ECONOMY_PARSER_VERSION = 1;
+export const BRANCH_TRACT_PARSER_VERSION = 2;
+export const BEA_PARSER_VERSION = 3;
+
+/**
+ * The remittance source's own reader version, so a change to it re-runs only that source.
+ * v2: reads the RPW workbook from the World Bank's data page with no env var set.
+ */
+export const REMITTANCE_PARSER_VERSION = 2;
 
 export const ECONOMY_SOURCES = {
   rucc: "usda-rucc",
@@ -240,7 +251,7 @@ async function recordEmpty(
     sourceUrl,
     runId: options.runId ?? null,
     nextAttemptAfterHours: retryHours,
-    detail: { parser_version: ECONOMY_PARSER_VERSION, reason, ...extra },
+    detail: { parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION, reason, ...extra },
   });
 }
 
@@ -316,7 +327,9 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   const byGeo: Record<string, number> = {};
   for (const r of rows) byGeo[r.geo_type] = (byGeo[r.geo_type] ?? 0) + 1;
   const detail = {
-    parser_version: ECONOMY_PARSER_VERSION,
+    parser_version: options.source === ECONOMY_SOURCES.bea ? BEA_PARSER_VERSION : ECONOMY_PARSER_VERSION,
+    ...(fetched.unavailableParts?.length ? {partial:true,unavailable_parts:fetched.unavailableParts,
+      partial_reason:`Unavailable upstream requests: ${fetched.unavailableParts.map(part=>part.key).join(", ")}; ${fetched.unavailableParts[0].reason}`} : {}),
     rows: rows.length,
     rows_by_geo_type: byGeo,
     series: [...new Set(rows.map((r) => r.series_key))],
@@ -332,7 +345,14 @@ async function runAreaSource(db: RegistryDb, options: RegistryEconomyOptions, fe
   if (options.dryRun) {
     return result(options, { sourceUrl: fetched.url, rows: rows.length, missingFields: fetched.missingFields, checks, summary: `${plan.label} ${options.partitionKey}: read ${n(rows.length)} values (${geoText})${gaps} (dry run).`, detail });
   }
-  const written = await upsertAreaStats(db, options.source, rows, fetched.url, options.runId ?? null);
+  // BEA combines state and county tables: preserve each request's redacted URL on its own rows.
+  const requests = new Map<string|null,AreaStat[]>();
+  for (const row of rows) {
+    const url = options.source === ECONOMY_SOURCES.bea ? row.source_url ?? fetched.url : fetched.url;
+    const group = requests.get(url) ?? []; group.push(row); requests.set(url,group);
+  }
+  let written = 0;
+  for (const [url,group] of requests) written += await upsertAreaStats(db,options.source,group,url,options.runId ?? null);
   await recordRegistryPartition(db, {
     source: options.source,
     partitionKey: options.partitionKey,
@@ -559,7 +579,7 @@ async function runBranchTracts(db: RegistryDb, options: RegistryEconomyOptions):
     });
     // Address not matched but coordinates on file (SOD carries them; NCUA offices once geocoded): one lookup each.
     const retry = withAddress
-      .filter((r) => placements.get(`${r.branch_kind}|${r.branch_key}`)?.status !== "matched" && r.latitude !== null && r.longitude !== null)
+      .filter((r) => placements.get(`${r.branch_kind}|${r.branch_key}`)?.status !== "matched" && validCoordinates(r.latitude, r.longitude))
       .slice(0, BRANCH_POINT_LOOKUPS);
     pointLookups = retry.length;
     await mapWithConcurrency(retry, 4, async (r) => {
@@ -569,7 +589,10 @@ async function runBranchTracts(db: RegistryDb, options: RegistryEconomyOptions):
   }
   const counts: Record<string, number> = {};
   for (const p of placements.values()) counts[p.status] = (counts[p.status] ?? 0) + 1;
-  const base = { parser_version: ECONOMY_PARSER_VERSION, pending_before: pending, batch: rows.length, sent_to_geocoder: withAddress.length, point_lookups: pointLookups, outcomes: counts };
+  const invalidCoordinates = rows.filter(r => (r.latitude !== null || r.longitude !== null)
+    && !validCoordinates(r.latitude, r.longitude)).length;
+  const base = { parser_version: BRANCH_TRACT_PARSER_VERSION, pending_before: pending, batch: rows.length,
+    sent_to_geocoder: withAddress.length, point_lookups: pointLookups, invalid_coordinates: invalidCoordinates, outcomes: counts };
   if (options.dryRun) {
     return result(options, {
       rows: rows.length,
@@ -773,15 +796,29 @@ async function runFdicIndustry(db: RegistryDb, options: RegistryEconomyOptions):
 
 async function runRemittances(db: RegistryDb, options: RegistryEconomyOptions): Promise<RegistryEconomyResult> {
   const env = options.env ?? process.env;
-  const url = env[RPW_URL_ENV]?.trim();
-  if (!url) return skipFor(db, options, "World Bank remittance prices", `No ${RPW_URL_ENV} set; the RPW dataset is published as a workbook and no CSV download is confirmed`, HOURS.week);
+  // The env var is an optional override; unset, the workbook is found on the World Bank's data page.
+  const located = await locateRpwWorkbook(env, options.fetchOptions);
+  const url = located.url;
   const response = await registryFetch(url, { timeoutMs: 180_000, ...options.fetchOptions });
-  const parsed = parseRemittancePrices(await response.text());
+  let bytes: Uint8Array;
+  try {
+    bytes = await readRpwBytes(response, url);
+  } catch (error) {
+    if (!(error instanceof RpwFileTooLargeError)) throw error;
+    const detail = { parser_version: REMITTANCE_PARSER_VERSION, problem: error.problem, bytes_at_refusal: error.bytes, located_via: located.via, page_problem: located.pageProblem };
+    await recordEmpty(db, options, error.message, HOURS.week, url, detail);
+    return result(options, { sourceUrl: url, empty: true, emptyReason: error.message, summary: `World Bank remittance prices: nothing loaded. ${error.message}${dry(Boolean(options.dryRun))}.`, detail });
+  }
+  const parsed = parseRemittanceFile(bytes);
   const unique = [...new Map(parsed.rows.map((r) => [`${r.period}|${r.destination_country}|${r.firm}|${r.product ?? ""}`, r])).values()];
   const detail = {
-    parser_version: ECONOMY_PARSER_VERSION,
+    parser_version: REMITTANCE_PARSER_VERSION,
     licence: REMITTANCE_PRICES_LICENCE,
     attribution: REMITTANCE_PRICES_ATTRIBUTION,
+    located_via: located.via,
+    page_problem: located.pageProblem,
+    file_bytes: bytes.length,
+    sheets: parsed.sheets ?? null,
     rows: unique.length,
     duplicate_keys: parsed.rows.length - unique.length,
     non_us_rows: parsed.nonUsRows,
