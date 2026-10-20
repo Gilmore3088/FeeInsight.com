@@ -19,7 +19,7 @@ type Db = Parameters<typeof correctPublishedFee>[0];
 
 describe.skipIf(!connection)("prospective corrective source context in actual PostgreSQL", () => {
   let raw: postgres.Sql, db: Db, oldId: number, correctionId: number, originRunId: number;
-  let metadataSql="";
+  let metadataSql=""; let metadataParams:unknown[]=[];
   async function anotherCorrection(key: string = randomUUID(), evidenceDoc = DOC) {
     const event = randomUUID();
     const [r] = await raw`INSERT INTO raw_fee_observations(institution_id,source_document_id,agent_event_id,fee_name,amount,frequency,source)
@@ -58,7 +58,7 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
   }
   beforeAll(async () => {
     if (!connection || !["127.0.0.1", "localhost", "[::1]"].includes(new URL(connection).hostname)) throw new Error("Loopback fixture required");
-    raw = postgres(connection, { ssl: "require", max: 1, debug: (_id,query) => { if(query.includes("SELECT id,case_bytes::int,database_digest FROM eligible ORDER BY id LIMIT")) metadataSql=query; }, types: { json: JSON_TEXT_PASSTHROUGH, numeric: NUMERIC_AS_NUMBER, text: TEXT_WITHOUT_NUL } });
+    raw = postgres(connection, { ssl: "require", max: 1, debug: (_id,query,params) => { if(query.includes("SELECT id,case_bytes::int,database_digest FROM eligible ORDER BY id LIMIT")) { metadataSql=query; metadataParams=params; } }, types: { json: JSON_TEXT_PASSTHROUGH, numeric: NUMERIC_AS_NUMBER, text: TEXT_WITHOUT_NUL } });
     db = raw as unknown as Db;
     resetCorrectionsReadyCache();
     await clearFixture();
@@ -533,7 +533,7 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
         console.info("CORRECTIVE_MAX_STAGE",JSON.stringify({phase:"metadata_read",rows:metadata.length,metadataMs}));
         expect(metadata.map((m)=>m.id)).toEqual(ids);
         expect(metadataSql).toContain("SELECT id,case_bytes");
-        const [explain]=await native.unsafe("EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) "+metadataSql,[300]);
+        const [explain]=await native.unsafe("EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) "+metadataSql,metadataParams as never[]);
         const plan=explain["QUERY PLAN"];
         expect(Array.isArray(plan)).toBe(true); expect(plan[0]["Execution Time"]).toBeLessThan(2000);
         console.info("CORRECTIVE_NATIVE_PLAN",JSON.stringify({executionMs:plan[0]["Execution Time"],planningMs:plan[0]["Planning Time"],plan:plan[0].Plan}));

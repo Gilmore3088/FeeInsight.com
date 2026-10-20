@@ -187,7 +187,7 @@ const admitted = (rows = "published_fee_corrections") => `WITH admissible AS MAT
    AND c.action='correct'
 )`;
 const ADMITTED = admitted();
-const ENROLLMENT = `${ADMITTED}, text_ids AS MATERIALIZED (
+const enrollment = (admittedRows: string) => `${admittedRows}, text_ids AS MATERIALIZED (
  SELECT DISTINCT document->>'astId' AS id FROM admissible
 ), current_texts AS MATERIALIZED (
  SELECT a.id,a.source_document_id,a.institution_id,a.status,a.source_hash,a.text_hash,
@@ -203,13 +203,37 @@ const ENROLLMENT = `${ADMITTED}, text_ids AS MATERIALIZED (
    AND d.document_url=document->>'documentUrl' AND d.content_hash=document->>'contentHash'
    AND NOT EXISTS(SELECT 1 FROM eval_cases x WHERE x.case_key='corrective:'||c.id::text||':source_snapshot_v2')
 )`;
+const ENROLLMENT = enrollment(ADMITTED);
+/**
+ * Each admission/replay listing statement checks at most this many stored corrections. A
+ * maximum context is ~800 KB that must be serialised, counted, searched and hashed (~3 ms each
+ * locally, roughly double on a CI runner), so 50 rows stay far inside the 2 s cap; one statement
+ * over all 300 did not. Windows are taken in the listing's own order and invalid rows are still
+ * dropped before they count toward the LIMIT, so the result is the one a single read would give.
+ */
+const WINDOW_ROWS = 50;
+const ENROLLMENT_WINDOW = enrollment(admitted("(SELECT * FROM published_fee_corrections pc WHERE pc.id>$2 AND pc.id<=$3 OFFSET 0)"));
 
 export interface CorrectiveMetadata { id: number; case_bytes: number; database_digest: string }
 /** Actually used by Deming. Invalid metadata/origins are excluded before LIMIT, not dropped afterwards. */
 export async function loadCorrectiveCaseCandidates(db: Db, limit = 300): Promise<CorrectiveMetadata[]> {
-  const rows = await scope(db, (sp) => sp.unsafe<CorrectiveMetadata[]>(`${ENROLLMENT}
-    SELECT id,case_bytes::int,database_digest FROM eligible ORDER BY id LIMIT $1`, [limit]));
-  return rows.map((row) => ({ ...row, id: Number(row.id) }));
+  const found: CorrectiveMetadata[] = [];
+  let after = 0;
+  while (found.length < limit) {
+    const page = await scope(db, async (sp) => {
+      const [window] = await sp<Array<{ last: number | string | null; rows: number }>>`
+        SELECT max(id) AS last,count(*)::int AS rows FROM (SELECT id FROM published_fee_corrections WHERE id>${after} ORDER BY id LIMIT ${WINDOW_ROWS}) w`;
+      if (!window || window.rows === 0 || window.last == null) return null;
+      const rows = await sp.unsafe<CorrectiveMetadata[]>(`${ENROLLMENT_WINDOW}
+        SELECT id,case_bytes::int,database_digest FROM eligible ORDER BY id LIMIT $1`, [limit - found.length, after, Number(window.last)]);
+      return { last: Number(window.last), scanned: window.rows, rows };
+    });
+    if (!page) break;
+    found.push(...page.rows.map((row) => ({ ...row, id: Number(row.id) })));
+    after = page.last;
+    if (page.scanned < WINDOW_ROWS) break;
+  }
+  return found;
 }
 const enrollmentForId = () => ENROLLMENT.replace("AND c.action='correct'", "AND c.action='correct' AND c.id=$1");
 interface StoredCase { id: number; status: string; receipt: CorrectiveReceipt; input?: CorrectiveInput }
@@ -264,6 +288,29 @@ const REPLAY = `${admitted(`(SELECT * FROM published_fee_corrections pc WHERE EX
     AND member.dataset='regression' AND member.status IN('candidate','active')
     AND member.check_name='${CORRECTIVE_CHECK}') OFFSET 0)`)}, ${DUE}`;
 
+const memberOrder = (offset: string, rows: string) => `FROM eval_cases member
+  WHERE member.case_key LIKE 'corrective:%:source_snapshot_v2' AND member.dataset='regression'
+  AND member.status IN('candidate','active') AND member.check_name='${CORRECTIVE_CHECK}'
+  ORDER BY member.last_checked_at NULLS FIRST,member.id LIMIT ${rows} OFFSET ${offset}`;
+// Same membership, one window of member cases in replay order; DUE's own order matches it.
+const REPLAY_WINDOW = `${admitted(`(SELECT pc.* FROM published_fee_corrections pc WHERE pc.id::text IN(
+  SELECT split_part(member.case_key,':',2) ${memberOrder("$2", "$3")}) OFFSET 0)`)}, ${DUE}`;
+async function loadDue(db: Db, limit: number): Promise<Array<{ case_id: number; case_status: string; case_bytes: number; database_digest: string }>> {
+  const found: Array<{ case_id: number; case_status: string; case_bytes: number; database_digest: string }> = [];
+  for (let offset = 0; found.length < limit; offset += WINDOW_ROWS) {
+    const page = await scope(db, async (sp) => {
+      const [window] = await sp.unsafe<Array<{ rows: number }>>(`SELECT count(*)::int AS rows FROM (SELECT 1 ${memberOrder("$1", "$2")}) w`, [offset, WINDOW_ROWS]);
+      const rows = await sp.unsafe<typeof found>(`${REPLAY_WINDOW}
+        SELECT case_id,case_status,case_bytes::int,database_digest FROM due
+        ORDER BY last_checked_at NULLS FIRST,case_id LIMIT $1`, [limit - found.length, offset, WINDOW_ROWS]);
+      return { scanned: window?.rows ?? 0, rows };
+    });
+    found.push(...page.rows);
+    if (page.scanned < WINDOW_ROWS) break;
+  }
+  return found;
+}
+
 const replayForId = () => REPLAY.replace("AND c.action='correct'", "AND c.action='correct' AND c.id::text=(SELECT input->'receipt'->'payload'->'canonical'->>'id' FROM eval_cases WHERE id=$1)");
 
 export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 300, replayLimit = 400 }: {
@@ -306,9 +353,7 @@ export async function runCorrectiveSource({ db, runId, dryRun, promoteLimit = 30
   }
   let due: Array<{ case_id: number; case_status: string; case_bytes: number; database_digest: string }>;
   try {
-    due = await scope(db, (sp) => sp.unsafe(`${REPLAY}
-      SELECT case_id,case_status,case_bytes::int,database_digest FROM due
-      ORDER BY last_checked_at NULLS FIRST,case_id LIMIT $1`, [replayLimit]));
+    due = await loadDue(db, replayLimit);
   } catch (error) { noteWarning(result, "replay_read", error); return result; }
   result.replayLimitReached = due.length === replayLimit && replayLimit > 0;
   budget = 0;

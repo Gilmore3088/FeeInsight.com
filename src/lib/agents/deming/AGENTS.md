@@ -45,7 +45,8 @@ institutions remains the only human launch workflow.
   human corrective contexts, retains unbound source takedowns as availability-only diagnostics,
   retires a limit case whose fee was restored, and reports an active evaluated rule failure as a
   regression. Historical source cases are preserved without supplying replay denominators.
-  Each corrective read runs under a 2 s statement cap; a failed or timed-out phase leaves its rows
+  Each corrective read runs under a 2 s statement cap; admission and replay listings check stored
+  bodies 50 corrections per statement, in listing order. A failed or timed-out phase leaves its rows
   unknown and writes one `step.warning` run event per phase (`corrective.warnings` in the detail).
 - `__fixtures__/regression-cases.json` + `regression-gate.test.ts`: the CI gate. Every case must
   still be caught with its expected reason. Refresh it from `eval_cases where status = 'active'`
