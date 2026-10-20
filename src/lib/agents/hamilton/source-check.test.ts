@@ -135,17 +135,31 @@ describe("restorableExcerpt", () => {
 
 describe("restoreStillPrinted", () => {
   const doc = (text: string) => [{ source_document_id: 7, normalized_text: text, updated_at: REREAD_AT }];
-  // Re-sample of restores, Oct 20: a column-read PDF still prints the name and, elsewhere, the price.
-  it("needs the re-read to find the name and to print the price somewhere in the document", () => {
-    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $32.00 $5.00"), "amount_not_the_fee")).toBe(true);
-    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $5.00"), "amount_not_the_fee")).toBe(false);
+  const fee = (name: string, amount: string) => ({ ...stopPayment, fee_name: name, amount });
+  it("needs the name and, first after it on the same line, the fee's price", () => {
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment | $32.00 per item"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted(fee("Return Deposited Items", "6.25"), doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
+    expect(restoreStillPrinted(fee("Return Deposited Items", "6.25"), doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
     expect(restoreStillPrinted(stopPayment, doc("Stop Payment $320.00"), "amount_not_the_fee")).toBe(false);
-    expect(restoreStillPrinted(stopPayment, doc("$32.00"), "name_not_in_text")).toBe(false);
-    expect(restoreStillPrinted({ ...stopPayment, fee_name: "Return Deposited Items", amount: "6.25" }, doc("Return Deposited Items $6.25"), "amount_not_the_fee")).toBe(true);
-    expect(restoreStillPrinted({ ...stopPayment, fee_name: "Return Deposited Items", amount: "6.25" }, doc("Return Deposited Items $6.00"), "amount_not_the_fee")).toBe(false);
-    expect(restoreStillPrinted(stopPayment, doc("Stop Payment\nLine of credit up to $32,000"), "amount_not_the_fee")).toBe(false);
-    expect(restoreStillPrinted(stopPayment, doc("Stop Payment\nWire $132.00"), "amount_not_the_fee")).toBe(false);
-    expect(restoreStillPrinted(stopPayment, doc("Overdraft $35.00 $32.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment up to $32,000"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $32.00"), "name_not_in_text")).toBe(false);
+  });
+  // Re-sample of restores after #2457, Oct 20: each passed on a price printed elsewhere.
+  it("refuses a price printed on another row or column", () => {
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment Request EFT\nOverdraft $35.00 $32.00 $5.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(fee("ATM Surcharge Rev", "8"), doc("ATM Fees | ATM Surcharge Rev Cashier's Checks | $ 5.00\nReturned Wire | $ 8.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(fee("Stop Payments", "30"), doc("Outgoing Domestic Wire | $30.00 Stop Payments | $35.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(fee("Deposit item return fee", "15"), doc("Re-opening an account | $15.00\n$30.00 | Deposit item return fee"), "amount_not_the_fee")).toBe(false);
+    // A column-split schedule: names in one run, prices in another (supported by hand, but unprovable here).
+    expect(restoreStillPrinted(fee("Photocopy", "5"), doc("Stop Payment\nPhotocopy\nNotary\n$32.00/Item $5.00/Copy $5.00"), "amount_not_the_fee")).toBe(false);
+  });
+  it("refuses a name glued to the column before it, and reads only the name's first place on a line", () => {
+    expect(restoreStillPrinted(fee("Orders Inactive Par Value Share Account", "1"), doc("Money Orders Inactive Par Value Share Account $1.00 / Item Inactive for 12 Months & Balance < $50 $5.00 / Month"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $35.00 Stop Payment $32.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Fees: Stop Payment $32.00"), "amount_not_the_fee")).toBe(true);
+  });
+  it("refuses a cut word as the end of the name", () => {
+    expect(restoreStillPrinted(fee("See Safe Deposit Fee Schedul", "25"), doc("See Safe Deposit Fee Schedule for details. Signature Guarantee | $25.00"), "amount_not_the_fee")).toBe(false);
   });
   it("reads only the fee's own document", () => {
     const texts = [
