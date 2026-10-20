@@ -3215,6 +3215,12 @@ ALTER TABLE public.fee_change_records
 -- #2127 / #978: current admin correction conditions and evidence on public dollar fees.
 \ir ../../supabase/migrations/20270110000066_published_fee_correction_catalog_overlay.sql
 
+-- #978: an agent takedown never closes a fee with a current admin correction.
+\ir ../../supabase/migrations/20270110000068_keep_admin_corrected_fees_live.sql
+
+-- Atlas drops expired monthly partitions of the retired agent_events log through this function.
+\ir ../../supabase/migrations/20270110000072_drop_expired_legacy_event_partition.sql
+
 -- #2170: prod has the fee alert functions from 20260813062152_physical_institution_data_contracts.sql,
 -- which skips a database built without the legacy tables, so the snapshot carries them here.
 CREATE OR REPLACE FUNCTION public.upsert_institution_fee_alert_subscription(

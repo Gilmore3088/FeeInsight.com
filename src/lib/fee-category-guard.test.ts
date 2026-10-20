@@ -2053,6 +2053,85 @@ describe("guard v76 (#2037, James's \"Split\"): International ATM is its own typ
     expect(checkFeeCategory("atm_international", "Foreign ATM Transaction Fee").ok).toBe(false);
   });
 
+  it("v77 refuses a card that draws only on credit (W43 live check, Oct 19)", () => {
+    for (const name of [
+      "Credit Card Replacement",
+      "Replace a Visa Credit Card",
+      "Credit Replacement Card",
+      "Orion Credit Cards: Card Replacement Fee",
+      "HELOC Access Card Replacement",
+      "Credit Card Replacement Fee (Subsequent occurrence within 6 months)",
+      "Lost/Replacement Credit Card",
+      "Travel Rewards Credit Card Replacement",
+      "CreditCard Replacement",
+      "Reemplazo de tarjeta de crédito",
+    ]) {
+      expect(checkFeeCategory("card_replacement", name).ok, name).toBe(false);
+      // No other type takes it: the fee keeps its key and fails, so it is not published.
+      expect(refileCategory("card_replacement", name), name).toBe("card_replacement");
+    }
+    for (const name of ["Credit Card Rush Fee", "Credit Card Replacement - Expedited", "Plastic Card Rush (Credit)"]) {
+      expect(checkFeeCategory("rush_card", name).ok, name).toBe(false);
+    }
+    for (const name of [
+      "Debit/Credit Card Replacement",
+      "ATM, Credit, or Check Card – Replacement",
+      "Interest Compounded Daily CREDIT/DEBITLost Credit/Debit Card Replacement",
+      "Card Replacement (Credit, Debit, and Travel Card)",
+      "Credit Union Membership Card (Replacement Fee)",
+      "Replacement card (fee credited back if fraud)",
+      "Debit Card Replacement",
+      // Review of #2389: a refund, a hyphenated credit union, "debit" glued to the card brand.
+      "Replacement Card ($5 credit to your account if fraud)",
+      "Card Replacement - credit given for fraud",
+      "Credit-Union Card Replacement",
+      "VisaDebit/Credit Card Replacement",
+      "Replacement Travel Card",
+      "Replacement card (credit back if card stolen)",
+      "Card replacement; credit to card if fraud",
+    ]) {
+      expect(checkFeeCategory("card_replacement", name), name).toEqual({ ok: true });
+    }
+    expect(checkFeeCategory("rush_card", "Debit or Credit Card Rush Delivery")).toEqual({ ok: true });
+  });
+
+  it("guards account verification by name and re-files what its name places elsewhere (v78)", () => {
+    for (const name of [
+      "Verification of Deposit",
+      "Audit Confirmation",
+      "Account Verification Letter",
+      "VOD (Verification of Deposit)",
+      "Solicitud de carta o cer=ficación",
+      "Account reconciliation/research/verification of deposit fee (per hour)",
+      "Account/Deposit Certification (Account Balance) Bank Form",
+      "Proof of Funds",
+      "Bank Reference",
+      "Credit Reference",
+      "Audit Request",
+    ]) {
+      expect(checkFeeCategory("account_verification", name), name).toEqual({ ok: true });
+    }
+    // Live, Oct 20: each bank's own line prices a signature guarantee, research or a wire. The
+    // answer keys leave a signature guarantee unmapped, so it fails rather than moving.
+    for (const name of ["Medallion Stamp (per stamp)", "Signature Guarantee (member - per signature)", "Medallion Signature Guarantee (Non-member)"]) {
+      expect(checkFeeCategory("account_verification", name), name).toMatchObject({ ok: false, code: "name_contradicts" });
+      expect(refileCategory("account_verification", name), name).toBe("account_verification");
+    }
+    expect(refileCategory("account_verification", "Membership Services Research & Reconciliation")).toBe("account_research");
+    expect(refileCategory("account_verification", "Wire Transfer Fee - Domestic")).toBe("wire_domestic_outgoing");
+    expect(refileCategory("account_verification", "Incoming Wire Transfer")).toBe("account_verification");
+    for (const name of ["Positive Pay - Per month per service (ACH and/or Check)", "Wave Checking™", "Fresh Start Spending……………………………"]) {
+      expect(checkFeeCategory("account_verification", name), name).toMatchObject({ ok: false, code: "name_unsupported" });
+      expect(refileCategory("account_verification", name), name).toBe("account_verification");
+    }
+    // Lending and collection letters are not account verification (review of #2449).
+    for (const name of ["Letter of Credit", "Payoff Letter", "Collection Letter"]) {
+      expect(checkFeeCategory("account_verification", name).ok, name).toBe(false);
+    }
+    // Global CU: "Account Verification ....NC" beside "Bank wire: Domestic ... $20.00 per wire".
+    expect(checkFeeCategory("account_verification", "Account Verification NC: Domestic").ok).toBe(false);
+  });
+
   it("refuses a dollar amount on a line that states a rate", () => {
     expect(checkFeeCategory("atm_international", "International ATM withdrawal 1% of amount", { amount: 1 }).ok).toBe(false);
   });

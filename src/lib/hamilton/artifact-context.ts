@@ -5,6 +5,14 @@ export type HamiltonArtifactContextLookup =
   | { kind: "scenario"; artifactId: string }
   | { kind: "report"; artifactId: string };
 
+// Saved analyses, scenarios and reports are keyed by Postgres uuid columns. Any other id text
+// makes the query throw, so a hand-edited or truncated link must be caught before the read.
+const SAVED_ARTIFACT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isSavedArtifactId(value: string): boolean {
+  return SAVED_ARTIFACT_ID_PATTERN.test(value);
+}
+
 function cleanArtifactId(value: string | null): string | null {
   const text = value?.trim();
   return text || null;
@@ -13,7 +21,7 @@ function cleanArtifactId(value: string | null): string | null {
 export function resolveArtifactContextInstitutionId(params: {
   urlInstitutionId?: string | null;
   artifactInstitutionId?: string | number | null;
-  /** Saved-answer views use the authorized record, never URL/default substitution. */
+  /** Saved-artifact views use the authorized record, never URL/default substitution. */
   preferArtifact?: boolean;
 }): string | undefined {
   if (params.preferArtifact) {
@@ -42,16 +50,16 @@ export function getHamiltonArtifactContextLookup(params: {
     if (reportId) return { kind: "report", artifactId: reportId };
   }
 
-  // An explicit institution may configure a scenario. It cannot retarget a saved
-  // analysis/report; those lookups above are authorized and resolved first.
-  if (cleanArtifactId(params.searchParams.get("instId"))) return null;
-
   if (params.pathname === "/pro/simulate") {
     const artifactId =
       cleanArtifactId(params.searchParams.get("scenario_id")) ??
       cleanArtifactId(params.searchParams.get("scenario"));
     return artifactId ? { kind: "scenario", artifactId } : null;
   }
+
+  // Report creation may be configured explicitly. Reopening a saved simulation,
+  // analysis or report above always keeps the authorized artifact's institution.
+  if (cleanArtifactId(params.searchParams.get("instId"))) return null;
 
   if (params.pathname === "/pro/reports") {
     const artifactId = cleanArtifactId(params.searchParams.get("scenario_id"));

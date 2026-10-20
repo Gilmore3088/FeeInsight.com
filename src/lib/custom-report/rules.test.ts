@@ -27,4 +27,12 @@ describe("fee line rules", () => {
     expect(counts("overdraft", "Paid Item Fee (waived on items below $10)")).toBe(true);
     expect(counts("overdraft", "Overdraft Fee - up to $35 per item")).toBe(true);
   });
+
+  it("counts an out-of-network ATM fee that also covers inquiries, and not an inquiry-only fee", () => {
+    expect(counts("atm_non_network", "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM")).toBe(true);
+    expect(counts("atm_non_network", "ATM Withdrawal/Inquiry on all other networks")).toBe(true);
+    expect(counts("atm_non_network", "Foreign ATM Inquiry or Transfer Fee")).toBe(true);
+    expect(counts("atm_non_network", "Foreign ATM balance inquiry")).toBe(false);
+    expect(counts("atm_non_network", "ATM card replacement")).toBe(false);
+  });
 });

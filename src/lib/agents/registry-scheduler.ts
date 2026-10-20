@@ -2,7 +2,7 @@ import { sql } from "@/lib/data-store/connection";
 import { startAgentRun } from "@/lib/agents/run-store";
 import type { AgentRunTriggerSource } from "@/lib/agents/types";
 import { FDIC_FINANCIALS_SOURCE, FDIC_FILING_LAG_DAYS } from "@/lib/agents/magellan/registry/fdic-financials";
-import { FDIC_UNIVERSE_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
+import { FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION, FDIC_UNIVERSE_SOURCE } from "@/lib/agents/magellan/registry/fdic-universe";
 import { FFIEC_OVERDRAFT_PARSER_VERSION, FFIEC_OVERDRAFT_SOURCE, ffiecOverdraftPartitions } from "@/lib/agents/magellan/registry/ffiec-overdraft";
 import { FDIC_SOD_SOURCE, SOD_FIRST_YEAR, latestSodYear } from "@/lib/agents/magellan/registry/fdic-sod";
 import {
@@ -52,7 +52,7 @@ import {
 import {
   HMDA_APOR_PARSER_VERSION,
   HMDA_APOR_SOURCE,
-  HMDA_PARSER_VERSION,
+  HMDA_SCHEDULED_PARSER_VERSION,
   HMDA_SOURCE,
   hmdaPartitions,
 } from "@/lib/agents/magellan/registry/hmda";
@@ -98,6 +98,7 @@ import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/a
 import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
 import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
 import { BANK_ZELLE_SOURCE } from "@/lib/agents/magellan/registry/bank-zelle";
+import { CALL_REPORT_SUMMARIES_SOURCE } from "@/lib/agents/magellan/registry/call-report-summaries";
 import { BANK_ZELLE_MATCHER_VERSION } from "@/lib/agents/magellan/registry/bank-zelle-match";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
@@ -153,7 +154,7 @@ const CLAIM_RETRY_HOURS = 6;
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
   [FRED_SOURCE]: FED_INDICATORS_PARSER_VERSION,
-  [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
+  [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_SCHEDULED_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
   [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,
   [STATE_REG_NEWS_SOURCE]: STATE_NEWS_PARSER_VERSION,
@@ -186,7 +187,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [SEC_MARKET_VALUE_SOURCE]: SEC_MARKET_VALUE_PARSER_VERSION,
   [INDUSTRY_EVENTS_SOURCE]: INDUSTRY_EVENTS_PARSER_VERSION,
   [PAYMENT_NETWORKS_SOURCE]: PAYMENT_NETWORKS_PARSER_VERSION,
-  [HMDA_SOURCE]: HMDA_PARSER_VERSION,
+  [HMDA_SOURCE]: HMDA_SCHEDULED_PARSER_VERSION,
   [HMDA_APOR_SOURCE]: HMDA_APOR_PARSER_VERSION,
   [DESIGNATION_LISTS_SOURCE]: DESIGNATION_LISTS_PARSER_VERSION,
   [CRA_SOURCE]: CRA_PARSER_VERSION,
@@ -359,12 +360,14 @@ export function registryPartitionsBySource(
  * partitions is due, so the closed-institution and merger checks (Atlas marks closed or merged
  * charters inactive from these) keep their cadence however many data sources are added. The
  * FDIC universe and NCUA 5300 syncs set `institution_sources.status`; ffiec-overdraft feeds the
- * overdraft income series. Every other source shares the remaining runs round-robin.
+ * overdraft income series; call-report-summaries rebuilds the readers' quarterly income right
+ * after a call-report load makes it due. Every other source shares the remaining runs round-robin.
  */
 export const PRIORITY_REGISTRY_SOURCES: readonly string[] = [
   FDIC_UNIVERSE_SOURCE,
   NCUA_FINANCIALS_SOURCE,
   FFIEC_OVERDRAFT_SOURCE,
+  CALL_REPORT_SUMMARIES_SOURCE,
 ];
 
 function roundRobin(lists: Array<{ source: string; partitions: string[] }>): RegistryPartitionCandidate[] {

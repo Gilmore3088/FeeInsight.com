@@ -18,3 +18,5 @@ refresh in place, and report wrong-after-publish as a trust number.
 
 **Lesson:** Count fees added and fees taken down as wrong, never raw publishes. A check that runs
 after publishing is a detector, not a gate.
+
+**Agent lesson:** gutenberg/issue-1069, gutenberg/issue-1068

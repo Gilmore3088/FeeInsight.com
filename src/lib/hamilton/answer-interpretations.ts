@@ -15,7 +15,7 @@ SOURCE MEANING:
 - State period limits as observations, not advice: "This is a six-month total; no full-year estimate is established." Do not tell the reader that they "should" or "should not" annualize it.
 - A current fee schedule is a price, not realized revenue or a historical record of prices, waivers, refunds or charged items. A $0 overdraft price cannot establish zero overdraft income or zero paying members in a prior period. Broad fee income cannot identify either figure; say unavailable unless a dedicated reported line answers it.
 - Broad NCUA fee income includes overdraft fees among other member-service and membership fees. Say "not overdraft-only income" or "overdraft income cannot be isolated from this total"; never say this broad line is not overdraft income or excludes overdraft fees. Retain the qualifier in every section, including summary bullets; a later precise definition does not repair an earlier exclusion.
-- A cross-sectional peer median describes the filers for that date. Do not call changes between separately selected quarterly peer populations growth, outperformance, keeping pace or falling behind. A common comparable cohort, including merger treatment, is needed first. You may report the current median, its date and coverage.
+- A cross-sectional peer median describes the filers for that date. Do not call changes between separately selected quarterly peer populations growth, outperformance, keeping pace or falling behind. Identical charter IDs do not establish an unchanged economic perimeter or merger adjustment. Current historical tools establish dated cross-sections only; retain exact reporter lists, coverage and lifecycle uncertainty. You may report each dated median and its coverage, including correctly labeled year-to-date figures. Never relabel YTD as a standalone quarter or broad NCUA income as FDIC deposit service charges.
 - Do not invent a reason for an unqueried peer filter. A nationwide sample does not establish that a Fed-district group would be too small. Read the exact district and otherwise matching group first, or say its coverage has not been checked.
 - A missing, unreported or unusable overdraft figure in the available evidence does not establish that NCUA's filing has no overdraft line or field. Describe the evidence's missing usable figure; do not infer absence from the publisher's schema.
 - For an explicit quarter-only question, answer that standalone quarter or say plainly that the requested comparison cannot be computed. A correctly labeled year-to-date figure is related context, not an answer to Q2. Never subtract separately rolled peer medians: quarter medians require matched per-institution quarter differences before aggregation.
@@ -469,6 +469,98 @@ function quarterQuestionProblems(text: string, question: string | undefined, evi
   return answeredRequestedQuarter || clearRefusal ? [] : [failure];
 }
 
+/** A withdrawal governs its own assertion; an earlier disclaimer never excuses a later claim. */
+function historicalAssertionWithdrawn(clause: string, assertion: RegExpMatchArray): boolean {
+  const before = clause.slice(0, assertion.index);
+  const after = clause.slice((assertion.index ?? 0) + assertion[0].length);
+  const coordinated = /\bnot\s+(?:(?:a|an|the)\s+)?(?:constant[ -]cohort|merger[ -]adjusted)(?:\s*(?:,|or|and)\s*(?:constant[ -]cohort|merger[ -]adjusted))*\s*(?:,|or|and)\s*$/i.test(before);
+  const uncertainAlternatives = /\b(?:cannot|can't|do not|don't|does not|doesn't)\s+(?:infer|conclude|establish|prove|determine|show|know|say|tell)\s+(?:whether|if|how)\s+(?:size|scale|assets?|pricing|prices?|market|member volume|volume)(?:\s*(?:,|or|and)\s*(?:size|scale|assets?|pricing|prices?|market|member volume|volume))*\s*(?:,|or|and)\s*$/i.test(before);
+  const tail = after.replace(/^\s*(?:(?:,|or|and)\s*(?:constant[ -]cohort|merger[ -]adjusted)\s*)*/i, "");
+  return explicitlyWithdrawn(clause, assertion)
+    || coordinated
+    || uncertainAlternatives
+    || /\b(?:not|never)\s+(?:(?:a|an|the)\s+)?$/i.test(before)
+    || /^\s*(?:do not|don't|does not|doesn't)\s+(?:establish|show|prove|imply|mean)\b/i.test(after)
+    || /^\s*(?:(?:growth|comparison|trend|series|benchmark|claim|result|cohort)\s+){0,3}(?:(?:(?:is|was|remains?)\s+)?(?:unavailable|unknown|not (?:established|supported|known))\b|(?:cannot|can't)\s+be\s+(?:concluded|established|determined|inferred)\b)/i.test(tail)
+    || /\bno\s+(?:causal\s+)?(?:evidence|basis)\s+(?:(?:shows?|establishes?|proves?|that|the)\s+)*$/i.test(before);
+}
+
+function historicalPeerProblems(text: string, data: unknown, evidence: Evidence): string[] {
+  const history = record(record(data)?.validated_call_peer_history);
+  if (!evidence.ncua && !evidence.financialPeerComparison && history?.observed !== true) return [];
+  const problems = new Set<string>();
+  if (history?.invalid === true) problems.add("The observed call-report peer history has inconsistent source, measure, unit or period-basis metadata. Refresh the read before presenting this comparison.");
+  const observations = Array.isArray(history?.observations) ? history.observations.map(record).filter((value): value is RecordValue => value !== null) : [];
+  const clauses = text.split(/\r?\n+|(?<=[.!?])\s+|;\s*|,\s*(?:but|yet|however|therefore|thus|so)\s+|\s+(?:but|however|therefore|thus)\s+|\s+and\s+(?=(?:its?|their|the|NCUA|FDIC|FFIEC|\w+'s)\s+)/i);
+  for (const raw of clauses) {
+    const clause = raw.replace(/^\s*[-*#]+\s*/, "").trim();
+    if (!clause.trim() || (/^\s*(?:how|what|which|could|can|would|does|do)\b/i.test(clause) && clause.endsWith("?"))) continue;
+    if (/\b(?:posted|published|schedule|fee[ -]price)\b/i.test(clause) && !/\b(?:income|revenue|financial|filers?|filings?|call reports?)\b/i.test(clause)) continue;
+    const topic = /\b(?:peers?|cohort|group|benchmark|median|reporting population)\b/i;
+    const trend = /(?<![\w-])\b(?:peers?(?:'s|s')?|(?:constant[ -])?cohort|group|benchmark|(?:fee[ -]income\s+)?median|reporting population)\b.{0,85}\b(?:grew|grow\w*|rose|increas\w*|decreas\w*|fell|declin\w*|outperform\w*|pace|pulling\s+(?:further\s+)?ahead|falling behind)\b|\b(?:growth|grew|grows?|outperform\w*|keeping pace|pulling\s+(?:further\s+)?ahead|falling behind)\b.{0,60}\b(?:peers?|cohort|group|benchmark|median)\b/gi;
+    for (const assertion of clause.matchAll(trend)) if (!historicalAssertionWithdrawn(clause, assertion)) {
+      problems.add("Separate dated peer medians are cross-sections, not comparable-cohort growth. Report the current median and coverage; hold peer-growth conclusions until membership and merger treatment are established.");
+    }
+    const adjusted = /\b(?:merger[ -]adjusted|unchanged economic perimeter|constant[ -]cohort|apples[ -]to[ -]apples)\b/gi;
+    for (const assertion of clause.matchAll(adjusted)) if (!historicalAssertionWithdrawn(clause, assertion)) {
+      problems.add("Matching institution or charter IDs does not establish an unchanged economic perimeter or a merger-adjusted trend. Retain the lifecycle uncertainty and report dated cross-sections.");
+    }
+    const stability = /\b(?:same|identical|unchanged|constant|stable|balanced|matched)\s+(?:(?:reporting|charter|institution|peer)\s+){0,3}(?:IDs|institutions|reporters|population|membership|cohort)\b|\b(?:reporting population|cohort membership|reporters)\b.{0,35}\b(?:same|identical|unchanged|constant|stable|balanced|matched)\b/gi;
+    for (const assertion of clause.matchAll(stability)) if (!historicalAssertionWithdrawn(clause, assertion)) {
+      if (/\bcharter\s+IDs\b/i.test(assertion[0])) {
+        problems.add("Matching database reporter IDs does not establish historical regulator charter-ID stability. The identity references are current registry links, not dated identity history.");
+      } else if (history?.matching_reporter_ids !== true) {
+        problems.add("Population stability needs complete matching dated reporter-ID lists for the same measure, source, unit and basis. Counts, current membership and truncated lists do not establish it.");
+      }
+    }
+    const causes = [
+      { pattern: /\b(?:gap|difference|income|revenue|comparison|lead|rank(?:ing)?|position)\b.{0,80}\b(?:reflects?|explained by|due to|driven by|results? from|comes? from|stems? from|because of)\b.{0,50}\b(?:size|scale|assets?)\b/gi,
+        problem: "A dollar-income peer gap does not establish that size, rather than pricing, caused it. State the unadjusted comparison and the missing causal evidence." },
+      { pattern: /\b(?:market|pricing|prices?|zero[ -]fee|overdraft fees?)\b.{0,80}\b(?:driv\w*|drove|caus\w*|keeps?|kept|explains?|remov\w*|responsible)\b|\b(?:growth|income|revenue)\b.{0,70}\b(?:driven|caused|explained)\s+by\b.{0,50}\b(?:market|pricing|prices?|fees?)\b/gi,
+        problem: "Observed totals and peer correlations do not establish a pricing or market cause, or rank dividend-cost changes against unmeasured fee changes. State the observation and the missing causal evidence." },
+    ];
+    if (evidence.financialPeerComparison || history?.observed === true) for (const { pattern, problem } of causes) {
+      for (const assertion of clause.matchAll(pattern)) if (!historicalAssertionWithdrawn(clause, assertion)) {
+        problems.add(problem);
+      }
+    }
+    if ((history?.catalog_observed !== true && history?.national_financial_observed !== true) || !topic.test(clause)) continue;
+    const figures = extractFigures(clause); const sizes = tierBoundsAsSize(clause, figures);
+    const periods = claimedPeriods(clause);
+    for (const figure of figures.filter((value) => value.kind === "usd" && !value.denominatorUnit && !sizes.has(value))) {
+      const ytd = /\b(?:year[ -]to[ -]date|YTD|six[ -]month total)\b/i.test(clause);
+      const quarter = !ytd && /\b(?:standalone|quarter[ -]only|Q[1-4]|(?:first|second|third|fourth) quarter)\b/i.test(clause);
+      const explicitQuarter = /\b(?:standalone|quarter[ -]only)\b/i.test(clause);
+      const ncuaClaim = /\bNCUA\b|\b(?:broad|credit[ -]union)\s+fee income\b/i.test(clause);
+      const bankClaim = /\b(?:FDIC|FFIEC)\b|\b(?:bank|deposit[ -]account|deposit[ -]only)\s+(?:fee income|service[ -]charges?)\b/i.test(clause);
+      const feeIncome = /\b(?:fee[ -]income|service[ -]charge(?:s| income)?)\b/i.test(clause);
+      const metricMatches = (measure: unknown) => {
+        if (/\b(?:deposit[ -]account|deposit[ -]only)\s+service[ -]charges?\b|\bservice[ -]charges?\s+on\s+deposits\b/i.test(clause)) return measure === "call:service_charges_deposits_ytd";
+        if (/\bATM\b/i.test(clause) && feeIncome) return ["call:consumer_atm_fees_ytd", "call:atm_income_ytd"].includes(String(measure));
+        if (/\bmaintenance\b/i.test(clause) && feeIncome) return measure === "call:consumer_maintenance_charges_ytd";
+        if (/\bwire\b/i.test(clause) && feeIncome) return measure === "call:wire_transfer_income_ytd";
+        if (feeIncome) return measure === "call:acct_131" || measure === "call:service_charges_deposits_ytd";
+        if (/\bdividend\s+expense\b/i.test(clause)) return measure === "call:acct_380";
+        if (/\btotal assets\b/i.test(clause)) return measure === "call:total_assets";
+        if (/\btotal deposits\b/i.test(clause)) return measure === "call:total_deposits";
+        if (/\bshare[ -]draft balances?\b/i.test(clause)) return measure === "call:acct_902";
+        return true;
+      };
+      const candidates = observations.filter((row) => row.unit === "USD"
+        && (!ncuaClaim || row.source === "ncua") && (!bankClaim || row.source === "ffiec")
+        && metricMatches(row.measure)
+        && (!ytd || row.period_basis === "ytd") && (!quarter || row.period_basis === "standalone_quarter" || (!explicitQuarter && row.period_basis === "point_in_time")
+          || (row.period_basis === "ytd" && String(row.period).endsWith("03-31")))
+        && periods.length <= 1 && (periods.length === 0 || String(row.period).startsWith(periods[0])));
+      if (!candidates.some((row) => (Array.isArray(row.values) ? (/\bmedian\b/i.test(clause) ? [row.median] : row.values) : [])
+        .some((value) => finite(value) !== null && Math.abs(Number(value) - figure.value) <= figure.tolerance))) {
+        problems.add("State each call-report peer figure with its observed measure, regulator, reporting date, unit and period basis. A year-to-date median is not a later standalone quarter, and NCUA broad income is not FDIC deposit service charges.");
+      }
+    }
+  }
+  return [...problems];
+}
+
 /** Specific known interpretation failures, with actionable feedback for regeneration. */
 export function checkAnswerInterpretations(text: string, data: unknown, question?: string): string[] {
   // The written-answer boundary reconstructs this verdict from its observed reads.
@@ -477,8 +569,9 @@ export function checkAnswerInterpretations(text: string, data: unknown, question
     return ["Conflicting filed financial peer reads need to be refreshed before presenting this answer. Keep the selected institution, source, quarter and peer filters consistent."];
   }
   const evidence = evidenceFrom(data);
-  if (!evidence.ncua && !evidence.financialPeerComparison) return [];
-  const problems = new Set<string>();
+  const historyProblems = historicalPeerProblems(text, data, evidence);
+  if (!evidence.ncua && !evidence.financialPeerComparison) return historyProblems;
+  const problems = new Set<string>(historyProblems);
   if (evidence.ncua && evidence.incomplete) problems.add("The NCUA interpretation check could not inspect all structured evidence within its limits. Narrow the evidence before presenting this answer.");
   if (evidence.ncua) for (const problem of quarterQuestionProblems(text, question, evidence)) problems.add(problem);
   if (evidence.financialPeerComparison) for (const sentence of text.split(/\r?\n+|(?<=[.!?])\s+/)) {

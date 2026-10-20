@@ -62,6 +62,24 @@ function toFact(row: MemoryRow): MemoryFact {
   };
 }
 
+/**
+ * The fee categories a user watches (`hamilton_watchlists.fee_categories`, set from Monitor), in
+ * saved order; empty when none are saved or the read fails.
+ */
+export async function getWatchedFeeCategories(userId: number, db: Db = sql): Promise<string[]> {
+  try {
+    const rows = (await db`
+      SELECT fee_categories FROM hamilton_watchlists WHERE user_id = ${userId} LIMIT 1
+    `) as unknown as { fee_categories: unknown }[];
+    const raw = rows[0]?.fee_categories;
+    const list = typeof raw === "string" ? (JSON.parse(raw) as unknown) : raw;
+    if (!Array.isArray(list)) return [];
+    return [...new Set(list.filter((c): c is string => typeof c === "string" && /^[a-z0-9_]+$/.test(c)))];
+  } catch {
+    return [];
+  }
+}
+
 /** The bank's current facts (superseded rows left out), newest first. */
 export async function getMemoryFacts(userId: number, institutionId: number, db: Db = sql): Promise<MemoryFact[]> {
   const rows = (await db`

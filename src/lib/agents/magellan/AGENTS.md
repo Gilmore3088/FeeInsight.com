@@ -464,6 +464,29 @@ is a bot wall on every spelling and stays with the paid fetch below; a person's 
 correction is never re-spelled. The `fetch` step's `address_variants` detail counts banks
 selected, tried, recovered and failed.
 
+## Pages live fees come from (`live-source-refetch.ts`)
+
+The plain fetch asks for one address per bank and judges the bank due by its own last crawl; it
+never looks at which document the bank's live fees cite. When the remembered address moved, or a
+single failure stopped a page being asked for, the page the live fees were read from was never
+fetched again, and superseding works only within one address, so its old copy stayed current
+(#1200: on 20 Oct 2026, 101 such pages at 101 banks, 1,219 live fees, had no copy in 30 days;
+Partner Colorado's and Railway's fee PDFs had answered 403 once in April and were never asked for
+again). After the saved-link pass in every `fetch` step, up to `LIVE_SOURCE_PAGES_PER_STEP` (10)
+pages within `LIVE_SOURCE_BUDGET_MS` (45 s) are fetched: a page live fees cite that is not a
+companion page, not the address the plain fetch asks for, and has no successful copy in
+`LIVE_SOURCE_REFETCH_DAYS` (30), oldest first, then the most live fees. Each goes through
+`fetchAndRecordLink` as a side copy (`keepRemembered`, attempt strategy `fetch.live_source`):
+the copy is stored under the page's own address and supersedes that page's old copy, so the usual
+read, verify, publish and current-copy checks judge the live fees against what the bank serves
+today; the bank's fetch address, failure count, saved link and playbook are left alone. When the
+bank still serves the same bytes, the cited documents' `last_checked_at` moves to now. Retries
+key on the attempt detail's `live_page`: after 1, 3, 7 and then every 30 days of failures in a
+row (`LIVE_SOURCE_RETRY_DAYS`), never given up. A person's locked correction, an offline profile
+and manual review are skipped. `LIVE_SOURCE_REFETCH_LIVE` is on: it fetches only pages live fees
+already come from, as the plain fetch re-fetches every bank's main page monthly. The `fetch`
+step's `live_sources` detail counts pages selected, tried, stored, matched and failed.
+
 ## Paid fetch for refused links (`blocked-fetch.ts`)
 
 A fee link on the bank's own site whose last plain fetch (`fetch.http`) was refused (HTTP
@@ -559,6 +582,7 @@ items wait.
 | `registry-state-bill-news` | held: nothing scheduled (`HELD_REGISTRY_SOURCES`; Google News RSS terms unconfirmed, 2026-10-18) | `reg_articles` source `news:XX`, which no reader returns (Google News RSS coverage of each fee bill in the `state-bills` partition rows, plus fee legislation news for a quarter of the states each day; shadow mode, nothing stored, until `STATE_NEWS_TRACKER_LIVE=true`) |
 | `registry-wire-research` | `current` (every 12 hours) | `reg_wire_research` (Regulatory Wire research notes: the newest federal releases, state regulator banking posts and state fee bills without a note, 20 a run (`REG_WIRE_SUMMARIES_PER_RUN`, at most 30); reads each item's own page with a plain fetch (a PDF's text layer through Rosetta's `layoutDocumentText`, first 8 pages; a scan stays unreadable) and asks `claude-haiku-4-5-20251001` (`REG_WIRE_SUMMARY_MODEL`) for a JSON summary from that text only, through `paidModelCall`; a date the text does not state is dropped in code; press is never summarised. Shadow mode until `REG_WIRE_SUMMARIES_LIVE=true`: picks and reads the items and logs them, no model call, nothing stored) |
 | `registry-enforcement` | `current` | `institution_enforcement_actions` (OCC EASearch export and Fed enforcement CSV; institution actions only, matched by name and state or to a holding company) |
+| `registry-call-report-summaries` | `current` (due at once after a `fdic-financials`, `ncua-financials` or `fdic-universe` run; otherwise daily) | `call_report_quarterly_income`, `call_report_summary_groups`: each fdic/ncua filing's standalone quarter (NCUA year-to-date split by both the window rule and the exact prior-quarter-end rule), rebuilt only for the regulator-years whose filings changed, in the step's one transaction; fetches nothing. The call-report readers (`data-store/call-reports.ts`, the district/state hub) read it and fall back, logged, to the per-request SQL only while it is empty (James, 2026-10-20) |
 
 - Pure HTTP clients and parsers are in `src/lib/regulatory/` and never write to the DB.
 - `src/lib/agents/registry-scheduler.ts` runs from the cron tick and keeps one registry run in flight. It runs the institution-roster sources in `PRIORITY_REGISTRY_SOURCES` (fdic-universe, ncua-financials, ffiec-overdraft) first whenever one is due, so closed-institution and merger checks keep their cadence, then merges the rest round-robin across sources, newest partition first, and backfills to `REGISTRY_BACKFILL_FROM` (default `2010Q1`).
@@ -601,6 +625,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `OPERATOR_SCHEDULE_STRATEGY` | `discover.operator_schedule` | v1 | `magellan/operator-schedules.ts` |
 | `PAGE_CLASSIFIER_VERSION` | — | v2 | `magellan/page-classifier.ts` |
 | `SAVED_LINK_FETCH_STRATEGY` | `fetch.saved_link` | v1 | `magellan/saved-link-fetch.ts` |
+| `LIVE_SOURCE_REFETCH_STRATEGY` | `fetch.live_source` | v1 | `magellan/live-source-refetch.ts` |
 | `PAID_FIND_STRATEGY` | `discover.paid_web_search` | v2 (top-10 first) | `magellan/paid-find.ts` |
 | `PAID_PICK_STRATEGY` | `discover.paid_pick` | v1 | `magellan/paid-find.ts` |
 | `KEEP_REFUSED_ANSWER_STRATEGY` | `discover.keep_refused_answer` | v1 | `magellan/refused-answers.ts` |
@@ -634,7 +659,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `INDUSTRY_EVENTS_PARSER_VERSION` | — | v3 (CourtListener fee lawsuits removed; v2 reads H.2 release links when relative) | `magellan/registry/industry-events.ts` |
 | `PAYMENT_NETWORKS_PARSER_VERSION` | — | v1 | `magellan/registry/payment-networks.ts` |
 | `BANK_ZELLE_MATCHER_VERSION` | — | v1 (offers Zelle from each institution's own stored documents, #1875) | `magellan/registry/bank-zelle-match.ts` |
-| `HMDA_PARSER_VERSION` | — | v2 (reads the public LAR's "derived_msa-md" header) | `magellan/registry/hmda.ts` |
+| `HMDA_PARSER_VERSION` | — | v3 (prepared exact identity matching and complete annual writer lock; scheduled version stays2 while ordinary identity writes are held, #2265) | `magellan/registry/hmda.ts` |
 | `HMDA_APOR_PARSER_VERSION` | — | v2 | `magellan/registry/hmda.ts` |
 | `DESIGNATION_LISTS_PARSER_VERSION` | — | v2 (Bank On list removed) | `magellan/registry/designation-lists.ts` |
 | `CRA_PARSER_VERSION` | — | v2 (FFIEC ratings and flat-file URLs; headerless ratings file, ID by regulator; revised 2022-23 files) | `magellan/registry/cra.ts` |
@@ -643,7 +668,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `UBPR_PEER_GROUPS_PARSER_VERSION` | — | v3 (TSV radio name/value and postback handler read from the page, or submit-only without a handler; no guessed target; v2 added Download/page diagnostics, #1806) | `magellan/registry/ubpr-peer-groups.ts` |
 | `CFPB_CARD_AGREEMENTS_PARSER_VERSION` | — | v1 | `magellan/registry/cfpb-card-agreements.ts` |
 | `ENFORCEMENT_MATCHER_VERSION` | — | v3 | `magellan/registry/enforcement.ts` |
-| `FDIC_UNIVERSE_PARSER_VERSION` | — | v2 | `magellan/registry/fdic-universe.ts` |
+| `FDIC_UNIVERSE_PARSER_VERSION` | — | v3 (prepared own-LEI collection; default-off gate holds scheduled version2 and all LEI propagation, #2265; ordinary release waits on durable identity holds #2266) | `magellan/registry/fdic-universe.ts` |
 | `FFIEC_OVERDRAFT_PARSER_VERSION` | — | v2 | `magellan/registry/ffiec-overdraft.ts` |
 | `NCUA_PARSER_VERSION` | — | v3 | `magellan/registry/ncua-financials.ts` |
 | `SEC_LINKS_PARSER_VERSION` | — | v2 | `magellan/registry/sec.ts` |

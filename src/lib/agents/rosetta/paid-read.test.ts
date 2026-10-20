@@ -173,6 +173,21 @@ describe("Rosetta paid read (pass 3)", () => {
     expect(attempts(db)).toEqual([]);
   });
 
+  it("stops on a billing refusal without recording, so the scan stays queued (#1056)", async () => {
+    const db = paidDb([scan(1), scan(2)]);
+    const create = vi.fn(async () => {
+      throw Object.assign(new Error("400 Your credit balance is too low to access the Anthropic API."), { status: 400 });
+    });
+
+    const result = await runRosettaPaidRead({ runId: 905, db: asDb(db), create, fetchImpl: pdfFetch(), pageCounter: async () => 2 });
+
+    expect(result).toMatchObject({ processed: 0, budgetStopped: true, costMicrousd: 0 });
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(attempts(db)).toEqual([]);
+    // An attempt a billing refusal ended before this fix does not settle the scan either.
+    expect(String(db.unsafe.mock.calls[0][0])).toContain("AND NOT COALESCE(paid.detail->>'error', '') ~* ");
+  });
+
   it("records an empty transcription with its cost and leaves the text queued", async () => {
     const db = paidDb([scan(3)]);
     const result = await runRosettaPaidRead({

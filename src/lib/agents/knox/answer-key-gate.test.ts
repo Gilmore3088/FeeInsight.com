@@ -46,8 +46,11 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // direction/physical owner is unresolved. Across both gates, 15 keyed reads are withheld;
 // a separate prior-wrong River City total75 also leaves. This is no numeric fix/rescore.
 // international-wire-answer-key-boundaries.test.ts binds every original text/reason.
+// v90 (#2454, James chose "File them", Oct 20): returned statements file as returned mail, and the
+// gate scores the keys' "unmapped" returned statement lines there too; all from main's 577 / 11 to
+// 578 / 11 (tid 2436 "Return Statement Processing Fee" is now a right read); held out stayed 53 / 4.
 const FLOORS = {
-  all: { right: 576, wrong: 12 },
+  all: { right: 578, wrong: 11 },
   holdout: { right: 53, wrong: 4 },
 };
 

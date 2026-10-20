@@ -14,3 +14,5 @@ ISR cache.
 
 **Lesson.** A prerendered page's reads run once per build, and builds run per push on every
 branch. Prerender only pages that read nothing from the database.
+
+**Guard:** `src/app/(public)/guides/[slug]/page.test.ts:16` (`generateStaticParams` returns no guides, so no build prerenders one against the database)

@@ -557,7 +557,6 @@ export function ruleFor(canonicalFeeKey: string, feeName: string | null | undefi
 }
 
 export type FlagRule = "non_customer_price" | "wire_shared_line";
-export const FLAG_RULES: readonly FlagRule[] = ["non_customer_price", "wire_shared_line"];
 const FLAG_WHY: Readonly<Record<FlagRule, string>> = {
   non_customer_price: "A price for non-customers, published beside the bank's own customer price (Flag until James decides Flag or Hide)",
   wire_shared_line: "A wire fee read from a line that names both scopes and carries two prices; the column read needs a second look",

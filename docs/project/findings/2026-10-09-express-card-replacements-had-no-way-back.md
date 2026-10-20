@@ -20,3 +20,5 @@ two copies of one fee.
 They include nsf to deposited_item_return (45 candidates) and nsf to overdraft (14), plus a
 few sentence-shaped names (13854, 15087, 14623, 14411). Each move needs its own spot check
 before it joins `RESTORE_REFILES` in `src/lib/agents/hamilton/category-guard.ts`.
+
+**Agent lesson:** gutenberg/pr-954-refile-before-takedown

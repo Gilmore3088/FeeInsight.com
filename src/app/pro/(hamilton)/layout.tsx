@@ -86,7 +86,8 @@ async function HamiltonLayoutInner({
     : requestSearchParams.get("instId");
   const selectedIntent = requestSearchParams.get("intent");
   const artifactLookup = hasResearch ? null : getHamiltonArtifactContextLookup({ pathname, searchParams: requestSearchParams });
-  const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report";
+  const savedArtifactRequested = artifactLookup?.kind === "analysis" || artifactLookup?.kind === "report"
+    || (pathname === "/pro/simulate" && artifactLookup?.kind === "scenario");
   const artifactInstitutionId = await getHamiltonArtifactInstitutionId({
     userId: user.id,
     lookup: artifactLookup,

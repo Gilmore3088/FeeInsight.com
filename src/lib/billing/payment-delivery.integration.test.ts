@@ -18,7 +18,7 @@ import { stagePaymentEmails, drainPaymentEmails, paymentEmailStatus } from "./pa
 import { claimPaymentEmail, finishPaymentEmail, resolvePaymentEmail } from "@/lib/data-store/payment-outbox";
 const url=process.env.PAYMENT_DELIVERY_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
-let db:ReturnType<typeof postgres>;
+let db:postgres.Sql<{ json: unknown }>;
 const provider=new Map<string,string>();
 const effects=(more:Partial<StripeEventEffects>={}):StripeEventEffects=>({welcome:[],reportPaid:[],reportDuplicate:[],reportRefunded:[],...more});
 async function stage(data:StripeEventEffects,event="evt_outbox"){

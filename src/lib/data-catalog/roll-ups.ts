@@ -1,6 +1,7 @@
 import type { sql } from "@/lib/data-store/connection";
 import type { AreaGeoType } from "@/lib/data-store/economy-aggregates";
 import { ncuaCallMeasure } from "./ncua-call-measures";
+import { MAX_COHORT_REPORTERS } from "./call-cohort-history";
 
 /**
  * Roll-ups computed when they are read, over the tables that already hold the figures. Nothing is
@@ -60,6 +61,8 @@ export interface CallRollupRow extends RollupRow {
   sources: string[] | null;
   /** Whether the scoped subject actually reported in this source/period group; null without a subject. */
   subject_included?: boolean | null;
+  reporting_institution_ids?: number[];
+  reporter_ids_complete?: boolean;
 }
 
 /**
@@ -133,6 +136,8 @@ export async function callPeerRollup(
            percentile_cont(0.25) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS p25,
            percentile_cont(0.75) WITHIN GROUP (ORDER BY ${tx.unsafe(CALL_VALUE_SQL)})::float8 AS p75,
            count(DISTINCT c.institution_id)::int AS institution_count,
+           (array_agg(DISTINCT c.institution_id ORDER BY c.institution_id))[1:${MAX_COHORT_REPORTERS}] AS reporting_institution_ids,
+           count(DISTINCT c.institution_id) <= ${MAX_COHORT_REPORTERS} AS reporter_ids_complete,
            c.period_basis,
            CASE WHEN ${args.subjectId ?? null}::bigint IS NULL THEN NULL
              ELSE COALESCE(BOOL_OR(c.institution_id = ${args.subjectId ?? null}::bigint), FALSE) END AS subject_included,
@@ -155,7 +160,7 @@ export async function callPeerRollup(
      ORDER BY c.report_date DESC, 2, c.period_basis, c.source
      LIMIT ${args.limit}
   `;
-  return [...rows];
+  return rows.map((row) => ({ ...row, reporting_institution_ids: row.reporting_institution_ids?.map(Number) }));
 }
 
 export interface CallInstitutionRow {

@@ -22,9 +22,10 @@ import {
   subscriptionPageUrl,
 } from "./subscription-token";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 
 export const SAMPLE_REPORT_PDF_PATH = REPORT_SHOWCASE.pdfHref;
-export const REPORT_REQUEST_PATH = "/for-institutions#report";
+export const REPORT_REQUEST_PATH = REPORT_REQUEST_HREF;
 
 export interface LeadCaptureNotificationInput {
   email: string;

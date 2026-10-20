@@ -28,9 +28,6 @@ export const US_STATES_ONLY = new Set<string>(
 // All valid US jurisdiction codes (50 states + DC + territories)
 export const VALID_US_CODES = new Set<string>(Object.keys(STATE_NAMES));
 
-// Freely Associated States — not US jurisdictions, should be excluded from aggregations
-export const EXCLUDED_CODES = new Set(["FM", "MH", "PW"]);
-
 // Compatibility export — 50 states + DC (excludes overseas territories)
 export const STATE_CODES = Object.keys(STATE_NAMES).filter(
   (code) => !["PR", "VI", "GU", "AS"].includes(code)

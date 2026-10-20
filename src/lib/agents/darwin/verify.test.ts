@@ -919,9 +919,9 @@ describe("category change re-judge (#1295)", () => {
     expect(categoryChangeCandidates([input], canonicalHintFrom).length).toBe(qualifies ? 1 : 0);
   });
 
-  it("ships with the take-over proof switched off (gated on James)", async () => {
+  it("ships with the take-over proof switched on (sampled clean, Oct 20)", async () => {
     const real = await vi.importActual<typeof import("./category-change")>("./category-change");
-    expect(real.DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE).toBe(false);
+    expect(real.DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE).toBe(true);
   });
 
   // Production rows (read-only, Oct 16): raw 308091 "By fax" $5 (institution 97) and raw 353324

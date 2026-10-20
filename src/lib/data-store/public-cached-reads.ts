@@ -18,6 +18,7 @@ import {
   getFeeRevenueData,
   getTierFeeRevenueSummary,
 } from "./fee-revenue";
+import { getFeeRevenueResearchPreview } from "./fee-revenue-research";
 import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
 import { getNationalIndicators, isEmptyNationalIndicators } from "./economic-context";
@@ -132,6 +133,11 @@ export const getMarketConcentrationCached = cachedPublicRead("market-concentrati
 export const getStateDemographicsCached = cachedPublicRead("state-demographics", getStateDemographics);
 export const getCountyFeeMapCached = cachedPublicRead("county-fee-map", getCountyFeeMap, (map) => map.counties.length === 0);
 export const getFeeRevenueDataCached = cachedPublicRead("fee-revenue-data", getFeeRevenueData);
+export const getFeeRevenueResearchCached = cachedPublicRead(
+  "fee-revenue-research-source-date-preview-v1",
+  getFeeRevenueResearchPreview,
+  (result) => result.groups.length === 0,
+);
 export const getCharterFeeRevenueSummaryCached = cachedPublicRead(
   "charter-fee-revenue-summary",
   getCharterFeeRevenueSummary,
@@ -191,7 +197,11 @@ export const getNationalIndicatorsCached = cachedPublicRead(
   isEmptyNationalIndicators,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
-export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
+// v6: the shared source check now passes a waiver's "otherwise" price (#1797), so a copy saved
+// before it can still be missing a record the institution profile shows.
+// v7: a row read under its section heading takes the category word from that heading (#1835),
+// so Capital City Bank's incoming domestic wire ($25) enters its report.
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v7", getCustomReportMarketData);
 /**
  * Every institution's headline coverage, shared by all institution pages. Each page used to
  * recount the whole catalog for its own report rule check: about a second, 830 times an hour
@@ -226,7 +236,7 @@ export async function getInstitutionHeadlineCoverageCached(ids: number[]): Promi
   }
   return coverage;
 }
-export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint-v2", getMarketBranchFootprint);
 /** The city a ZIP code belongs to, from the branch records; the fee check reads it per ZIP. */
 export const getBranchCityForZipCached = cachedPublicRead("branch-city-for-zip-v1", getBranchCityForZip);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */

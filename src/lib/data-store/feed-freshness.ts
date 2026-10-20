@@ -26,6 +26,15 @@ export interface RegistryFeedFreshness {
   lastLoadedAt?: string | null;
   emptyReason?: string | null;
   emptyPartition?: string | null;
+  /**
+   * Partitions where no landing page answered (each 404 or an error), so nothing was checked
+   * (#2306). Never a success, and named even while other partitions of the source succeed.
+   */
+  unreachable?: number;
+  /** The newest unreachable partition. */
+  unreachablePartition?: string | null;
+  /** The pages it tried and what each answered, or its failure message. */
+  unreachablePages?: string | null;
   partial?: number;
   partialReason?: string | null;
   nextAttemptAt: string | null;
@@ -87,17 +96,39 @@ export const SCHEDULED_REPORT_TRIGGERS = [
 ] as const;
 
 export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<RegistryFeedFreshness[]> {
+  // `unreachable` (#2306): no landing page answered, so nothing was checked. New runs record it as
+  // a failure (`failure_kind`); rows written before that are empty with every `pages_tried` failed.
+  // Either way it is never a successful check.
   const rows = await db<Array<Record<string, unknown>>>`
+    WITH p AS (
+      SELECT *,
+             COALESCE(
+               (status = 'failed' AND detail->>'failure_kind' = 'landing_pages_unreachable')
+               OR (status = 'empty' AND NOT (detail ? 'missing_source')
+                   AND jsonb_typeof(detail->'pages_tried') = 'array'
+                   AND detail->'pages_tried' <> '[]'::jsonb
+                   AND NOT (detail->'pages_tried' @> '[{"status":"ok"}]'::jsonb)),
+               false) AS unreachable,
+             CASE WHEN jsonb_typeof(detail->'pages_tried') = 'array' THEN
+               (SELECT string_agg(COALESCE(page->>'url', '?') || ' ' ||
+                         CASE WHEN page->>'status' = 'not_found' THEN '404' ELSE COALESCE(page->>'status', '?') END, '; ')
+                  FROM jsonb_array_elements(detail->'pages_tried') AS page)
+             END AS pages_text
+        FROM registry_ingest_partitions
+    )
     SELECT source,
            (ARRAY_AGG(partition_key ORDER BY partition_key DESC) FILTER (WHERE status = 'succeeded'))[1] AS latest_period,
            MAX(fetched_at) FILTER (
-             WHERE status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source'))
+             WHERE status = 'succeeded' OR (status = 'empty' AND NOT (detail ? 'missing_source') AND NOT unreachable)
            ) AS last_success_at,
            MAX(updated_at) AS last_attempt_at,
            (ARRAY_AGG(COALESCE(detail->>'empty_reason',detail->>'reason',detail->>'problem') ORDER BY updated_at DESC)
-             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source')))[1] AS empty_reason,
+             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source') AND NOT unreachable))[1] AS empty_reason,
            (ARRAY_AGG(partition_key ORDER BY updated_at DESC)
-             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source')))[1] AS empty_partition,
+             FILTER (WHERE status = 'empty' AND NOT (detail ? 'missing_source') AND NOT unreachable))[1] AS empty_partition,
+           COUNT(*) FILTER (WHERE unreachable)::int AS unreachable,
+           (ARRAY_AGG(partition_key ORDER BY updated_at DESC) FILTER (WHERE unreachable))[1] AS unreachable_partition,
+           (ARRAY_AGG(COALESCE(pages_text, last_error, detail->>'reason') ORDER BY updated_at DESC) FILTER (WHERE unreachable))[1] AS unreachable_pages,
            MAX(fetched_at) FILTER (WHERE status = 'succeeded' AND row_count > 0) AS last_loaded_at,
            MIN(next_attempt_after) FILTER (WHERE status IN ('scheduled', 'failed')) AS next_attempt_at,
            COUNT(*) FILTER (WHERE status = 'failed')::int AS failed,
@@ -112,7 +143,7 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
            COUNT(*) FILTER (WHERE status = 'succeeded')::int AS succeeded,
            MAX(updated_at) FILTER (WHERE status = 'failed') AS last_failed_at,
            MAX(fetched_at) FILTER (WHERE status = 'empty' AND detail ? 'missing_source') AS last_blocked_at
-      FROM registry_ingest_partitions
+      FROM p
      GROUP BY source
      ORDER BY source`;
   return rows.map((r) => ({
@@ -123,6 +154,9 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
     lastLoadedAt: iso(r.last_loaded_at),
     emptyReason: r.empty_reason ? String(r.empty_reason) : null,
     emptyPartition: r.empty_partition ? String(r.empty_partition) : null,
+    unreachable: Number(r.unreachable ?? 0),
+    unreachablePartition: r.unreachable_partition ? String(r.unreachable_partition) : null,
+    unreachablePages: r.unreachable_pages ? String(r.unreachable_pages) : null,
     nextAttemptAt: iso(r.next_attempt_at),
     failed: Number(r.failed),
     partial: Number(r.partial ?? 0),
@@ -134,6 +168,43 @@ export async function getRegistryFeedFreshness(db: typeof sql = sql): Promise<Re
     succeeded: Number(r.succeeded ?? 0),
     lastFailedAt: iso(r.last_failed_at),
     lastBlockedAt: iso(r.last_blocked_at),
+  }));
+}
+
+/** One period partition's newest state (keys that start with a year: 2026, 2026Q2, 2026-08, 2025-OH). */
+export interface RegistryPeriodPartition {
+  source: string;
+  partitionKey: string;
+  status: string;
+  /** A success that recorded unavailable upstream requests (`detail.partial`). */
+  partial: boolean;
+  rowCount: number;
+  /** Empty because the publisher's host refused production (`detail.missing_source`). */
+  blocked: boolean;
+  fetchedAt: string | null;
+}
+
+/**
+ * Read-only: every period partition's state, for expected-period completeness (#2228), which is
+ * reported apart from fetch health. Family and batch partitions are not periods and are left out.
+ */
+export async function getRegistryPeriodPartitions(db: typeof sql = sql): Promise<RegistryPeriodPartition[]> {
+  const rows = await db<Array<Record<string, unknown>>>`
+    SELECT source, partition_key, status, COALESCE(row_count, 0)::int AS row_count,
+           COALESCE(detail->>'partial' = 'true', false) AS partial,
+           COALESCE(detail ? 'missing_source', false) AS blocked,
+           fetched_at
+      FROM registry_ingest_partitions
+     WHERE partition_key ~ '^[0-9]{4}'
+     ORDER BY source, partition_key`;
+  return rows.map((r) => ({
+    source: String(r.source),
+    partitionKey: String(r.partition_key),
+    status: String(r.status),
+    partial: r.partial === true,
+    rowCount: Number(r.row_count ?? 0),
+    blocked: r.blocked === true,
+    fetchedAt: iso(r.fetched_at),
   }));
 }
 

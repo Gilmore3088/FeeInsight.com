@@ -10,3 +10,5 @@ lane's state, so First United (OK) and Cornerstone (ND) waited for their own sta
 covers every state on each pass.
 **Lesson:** a rule that fixes known-bad rows should reach them on the next pass, not the next time
 their state's lane comes around. A page a person checked does not need a second failure as proof.
+
+**Agent lesson:** magellan/pr-795-hand-found-first

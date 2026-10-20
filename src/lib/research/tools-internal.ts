@@ -641,7 +641,7 @@ async function handleCallReports(
     ]);
     return {
       ...financialGroup(financialSource),
-      units: "dollar amounts in thousands; yoy_change_pct is a percentage",
+      units: "dollar amounts in thousands; historical groups are dated cross-sections; yoy_change_pct is withheld because comparable economic-cohort growth is not established",
       ...(trend === undefined ? {} : { trend }),
       ...(topInstitutions === undefined ? {} : { top_institutions: topInstitutions }),
       ...(byTier === undefined ? {} : { by_tier: byTier }),

@@ -135,7 +135,22 @@ describe("renderNationalQuarterlyReport", () => {
     expect(html).toContain("4,000");
     expect(html).toContain("3,760");
     expect(html).toContain("not constant-cohort or merger-adjusted");
-    expect(html).toContain("+8.2% YoY");
+    // The two periods use changing filing populations; no economic-cohort growth is established.
+    expect(html).not.toContain("+8.2% YoY");
+  });
+
+  it("does not revive unreviewed growth from a saved report payload", () => {
+    const saved = { ...payload, financial_income_groups: payload.financial_income_groups!.map((group) => ({ ...group,
+      quarters: group.quarters.map((quarter) => ({ ...quarter, yoy_change_pct: 88.8 })) })) };
+    const output = renderNationalQuarterlyReport({ data: saved, narratives: {
+      executive_summary: narrative, fee_differentiation: narrative, banks_vs_credit_unions: narrative,
+      revenue_reality: narrative, industry_blind_spot: narrative, future_strategy: narrative,
+    } });
+    expect(output).not.toContain("88.8%");
+    expect(output).toContain("$9.3B");
+    expect(output).toContain("3,760");
+    expect(output).toContain("not constant-cohort or merger-adjusted");
+    expect(saved.financial_income_groups[0].quarters[0].yoy_change_pct).toBe(88.8);
   });
 
   it("ranks states by overdraft median", () => {

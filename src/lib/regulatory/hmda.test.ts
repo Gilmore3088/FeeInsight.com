@@ -101,19 +101,53 @@ describe("HMDA panel and aggregations", () => {
     expect(panel.rssdField).toBe("RESPONDENT_RSSD");
     expect(panel.lenders.get("LEI1")).toMatchObject({ rssdId: "480228", respondentName: "Bank A" });
     expect(panel.duplicateLeis).toBe(1);
+    expect(panel.conflictingLeis).toEqual([]);
     expect(panel.missingFields).toContain("PARENT_RSSD");
   });
 
-  it("treats a missing panel as unavailable, not fatal", async () => {
+  it("deduplicates only a shared positive respondent RSSD, ignoring numeric padding", () => {
+    const panel = parseHmdaPanel("lei,respondent_rssd\nLEI1,000480228\nlei1,480228\n", "u");
+    expect(panel.lenders.get("LEI1")?.rssdId).toBe("480228");
+    expect(panel.duplicateLeis).toBe(1);
+    expect(panel.conflictingLeis).toEqual([]);
+  });
+
+  it.each([["480228", "999"], ["480228", ""], ["-1", "480228"], ["", ""], ["0", "NA"]])(
+    "holds conflicting or missing duplicate respondent keys (%s, %s) in either order",
+    (first, second) => {
+      for (const values of [[first, second], [second, first]]) {
+        const panel = parseHmdaPanel(`lei,respondent_rssd\nLEI1,${values[0]}\nlei1,${values[1]}\n`, "u");
+        expect(panel.lenders.get("LEI1")?.rssdId).toBeNull();
+        expect(panel.duplicateLeis).toBe(1);
+        expect(panel.conflictingLeis).toEqual(["LEI1"]);
+      }
+    },
+  );
+
+  it("does not restore a conflicted LEI when a later row repeats one candidate", () => {
+    const panel = parseHmdaPanel("lei,respondent_rssd\nLEI1,480228\nLEI1,999\nLEI1,480228\n", "u");
+    expect(panel.conflictingLeis).toEqual(["LEI1"]);
+    expect(panel.lenders.get("LEI1")?.rssdId).toBeNull();
+    expect(panel.duplicateLeis).toBe(2);
+  });
+
+  it("reads the actual 2023 TOPHOLDER_RSSD header without treating it as respondent identity", () => {
+    const panel = parseHmdaPanel("lei,respondent_rssd,parent_rssd,topholder_rssd\nLEI1,-1,999,888\n", "u");
+    expect(panel.lenders.get("LEI1")).toMatchObject({ rssdId: null, parentRssd: "999", topHolderRssd: "888" });
+    expect(panel.missingFields).not.toContain("TOPHOLDER_RSSD");
+  });
+
+  it.each([2024, 2025])("does not send an HTTP request for the retired %s panel", async (year) => {
     const fetchImpl = vi.fn(async () => new Response("no", { status: 404 })) as unknown as typeof fetch;
-    const panel = await fetchHmdaPanel(2025, { fetchImpl, backoffMs: 0 });
-    expect(panel).toMatchObject({ available: false, note: "panel not published (404)" });
+    const panel = await fetchHmdaPanel(year, { fetchImpl, backoffMs: 0 });
+    expect(panel).toMatchObject({ available: false, note: expect.stringContaining("discontinued") });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("unzips the panel csv", async () => {
-    const zip = zipSync({ "2024_public_panel_csv.csv": strToU8("lei,id_rssd\nLEI1,1\n") });
+    const zip = zipSync({ "2023_public_panel_csv.csv": strToU8("lei,id_rssd\nLEI1,1\n") });
     const fetchImpl = vi.fn(async () => new Response(zip as unknown as BodyInit, { status: 200 })) as unknown as typeof fetch;
-    const panel = await fetchHmdaPanel(2024, { fetchImpl, backoffMs: 0 });
+    const panel = await fetchHmdaPanel(2023, { fetchImpl, backoffMs: 0 });
     expect(panel.rssdField).toBe("ID_RSSD");
     expect(panel.lenders.get("LEI1")?.rssdId).toBe("1");
   });

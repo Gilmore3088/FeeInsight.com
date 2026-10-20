@@ -3,6 +3,7 @@ import { prepareVerificationAudience, VerificationAudienceDeferred } from "./ver
 import { requireInternationalVerification } from "./international-verification";
 import { capturePaidSourceInputs, requireCurrentPaidInput, type SelectedPaidInput } from "./paid-input";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -13,6 +14,7 @@ import {
   type PaidMessageCreator,
   type PaidPassResult,
   type PaidStepOptions,
+  providerRefusalSql,
 } from "@/lib/agents/paid-pass";
 import { BUSINESS_SCHEDULE_RESTORED_KIND, feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -718,6 +720,7 @@ async function selectReviewCandidates(
               AND done.strategy = $4
               AND done.strategy_version = $5
               AND done.outcome NOT IN (${TRANSIENT_OUTCOMES.map((outcome) => `'${outcome}'`).join(", ")})
+              AND NOT ${providerRefusalSql("done")}
          )
          AND NOT EXISTS (SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id = fr.fee_raw_id)
        ORDER BY rel.created_at ASC, fr.fee_raw_id ASC
@@ -987,6 +990,8 @@ export async function stageDarwinReleaseReview(
     }
     return result;
   };
+  // Darwin's role lessons (learning/lesson-reader.ts), beside the per-key review lessons above.
+  const roleLessons = lessonsForModel("darwin", "verify-paid");
   try {
     for (let start = 0; start < candidates.length; start += RELEASE_REVIEW_FEES_PER_CALL) {
       const batch = candidates.slice(start, start + RELEASE_REVIEW_FEES_PER_CALL);
@@ -1001,10 +1006,11 @@ export async function stageDarwinReleaseReview(
           params: {
             model,
             max_tokens: MAX_OUTPUT_TOKENS,
+            ...(roleLessons.system ? { system: roleLessons.system } : {}),
             messages: [{ role: "user", content: releaseReviewPrompt(batch, batchLessons) }],
           },
           create: options.create,
-          metadata: { fee_raw_ids: batch.map(({ row }) => Number(row.fee_raw_id)) },
+          metadata: { fee_raw_ids: batch.map(({ row }) => Number(row.fee_raw_id)), lessons_applied: roleLessons.lessonIds },
         });
       } catch (error) {
         if (isStopError(error)) {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildCallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { buildFinancialIncomeGroup } from "./financial-income";
 
 describe("national financial income boundary", () => {
@@ -8,6 +9,13 @@ describe("national financial income boundary", () => {
     expect(buildFinancialIncomeGroup("fdic", [pooled]).quarters).toEqual([]);
     expect(buildFinancialIncomeGroup("ncua", [pooled]).quarters).toEqual([]);
     expect(buildFinancialIncomeGroup("ncua", [{ ...pooled, total_service_charges: 100, cu_service_charges: 0 }]).quarters).toEqual([]);
+  });
+
+  it("preserves the source history contract and cannot reintroduce unreviewed growth", () => {
+    const history = buildCallCohortHistory({ requestedIds: null, periods: [] });
+    const group = buildFinancialIncomeGroup("ncua", [{ quarter: "2026-Q2", total_service_charges: 20, bank_service_charges: 0, cu_service_charges: 20, total_institutions: 5, yoy_change_pct: 99 }], 8, "United States", history);
+    expect(group.cohort_history).toBe(history);
+    expect(group.quarters[0].yoy_change_pct).toBeNull();
   });
 
   it("retains a CU's own measure, dates, cohort and denominator without claiming missing filers", () => {

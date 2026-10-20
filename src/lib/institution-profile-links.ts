@@ -1,3 +1,5 @@
+import { reportRequestHref } from "./report-request-href";
+
 export interface InstitutionProfileLinkParams {
   institutionId: number;
   institutionName: string;
@@ -59,11 +61,10 @@ export function buildPublicInstitutionProfileLinks({
   const instId = String(institutionId);
   const plans = (from: string) => `/subscribe?inst=${instId}&from=${encodeURIComponent(from)}#pro`;
   const gate = (proHref: string) => (isAuthenticated ? proHref : plans(proHref));
-  const reportContext = new URLSearchParams({ institution: instId, name: institutionName, src: "profile" });
   return {
     correctSourceHref: `/submit-fees?institution=${instId}`,
     claimHref: `/submit-fees?institution=${instId}&claim=1`,
-    reportOfferHref: `/for-institutions?${reportContext.toString()}#report`,
+    reportOfferHref: reportRequestHref({ institution: instId, name: institutionName, src: "profile" }),
     plansHref: plans(`/institution/${instId}`),
     analyzeHref: gate(`/pro/analyze?instId=${instId}&intent=institution`),
     briefHref: gate(`/pro/reports?instId=${instId}&intent=competitive-brief`),

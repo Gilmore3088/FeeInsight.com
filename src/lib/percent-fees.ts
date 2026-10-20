@@ -6,8 +6,6 @@
  * over its rates on their own.
  */
 
-export type AmountKind = "flat" | "percent";
-
 export type RateBasis = "transaction" | "settlement" | "advance" | "balance_transferred" | "balance" | "loan_balance";
 
 /**

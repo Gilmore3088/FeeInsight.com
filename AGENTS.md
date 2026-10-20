@@ -27,6 +27,13 @@ whole class of error is fixed, then re-run the affected institutions and validat
 one-off data fix (an admin correction, hold or re-file) comes only as the last step after that
 process fix, never instead of it.
 
+Issues become lessons for the agents, not only checks (James, 2026-10-20). A PR that closes an
+issue whose root cause is in a pipeline agent adds a lesson to that agent's
+`src/lib/agents/<agent>/role-lessons.ts` in the same PR: one or two plain sentences on how the agent
+should do its role differently, the root cause, the evidence and the steps it shapes. Every run
+reads its agent's lessons and records them as `lessons_applied`; model-calling steps send them as
+instructions. `scripts/ci-guards.sh lesson-kill` checks the files (`src/lib/agents/learning/AGENTS.md`).
+
 ## Current Runtime
 
 - Agent runs start in `agent_runs`, advance through `agent_run_steps`, and write `agent_run_events`.
@@ -151,7 +158,7 @@ Use these current semantic tables and read models:
 - Agent ledger: `agent_runs`, `agent_run_steps`, `agent_run_events`.
 - Provider safety: `automation_control`, `ai_api_usage_events`.
 - Marketing (Growth): `content_drafts`, `pipeline_feedback`.
-- Hamilton Pro persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
+- Hamilton persistence: `hamilton_saved_analyses`, `hamilton_scenarios`, `hamilton_reports`, `hamilton_watchlists`, `hamilton_workspace_contexts`, `hamilton_signals`, `hamilton_priority_alerts`, `hamilton_refresh_jobs`, `hamilton_conversations`, `hamilton_messages`.
 
 Do not use retired runtime contracts such as `fee_crawler`, `ops_jobs`, Modal worker IDs, old crawler table aliases, or request-time DDL.
 
@@ -177,6 +184,6 @@ Before calling agentic work done, run the narrow tests for the touched code and 
 - `npx tsc --noEmit`
 - `npm run lint`
 - `npx vitest run` (full suite; CI runs all of these)
-- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton Pro flows.
+- Focused route/browser checks for public institution, submit-source, admin quality, and Hamilton flows.
 
 For database-affecting work, verify against the actual current schema and add a migration only through the project migration workflow. Do not edit production-applied migrations in place.

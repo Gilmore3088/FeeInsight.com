@@ -1,11 +1,12 @@
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
-import { ProviderBudgetBlockedError, estimateAnthropicCostMicrousd, observedProviderUsage, incompleteProviderResponse } from "@/lib/ai-provider-usage";
+import { ProviderBudgetBlockedError, ProviderCircuitOpenError, estimateAnthropicCostMicrousd, observedProviderUsage, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { detectFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
@@ -14,6 +15,7 @@ import {
   PAID_PASS_ITEMS_PER_RUN,
   PAID_PASS_MODELS,
   paidModelCall,
+  providerRefusalSql,
   paidResponseText,
   type PaidMessageCreator,
   type PaidPassResult,
@@ -201,6 +203,7 @@ async function selectPaidReadCandidates(
               AND paid.input_fingerprint = doc.content_hash
               AND paid.strategy = ${paidParam}
               AND paid.outcome <> ALL(${retryableParam}::text[])
+              AND NOT ${providerRefusalSql("paid")}
          )
        ORDER BY (adt.status = 'needs_ocr') DESC, adt.updated_at DESC, adt.id DESC
        LIMIT ${limitParam}
@@ -210,7 +213,8 @@ async function selectPaidReadCandidates(
 }
 
 function isBudgetStop(error: unknown): boolean {
-  return error instanceof ProviderBudgetBlockedError || error instanceof EmergencyStopActiveError;
+  // A provider billing refusal (#1056) is the account's state, not the scan's: stop, record nothing.
+  return error instanceof ProviderBudgetBlockedError || error instanceof EmergencyStopActiveError || error instanceof ProviderCircuitOpenError;
 }
 
 function callFailureOutcome(error: unknown): AttemptOutcome {
@@ -243,6 +247,8 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
   const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const pageCounter = options.pageCounter ?? countPdfPages;
   const model = PAID_PASS_MODELS.read();
+  // Rosetta's role lessons ride every paid read as instructions (learning/lesson-reader.ts).
+  const roleLessons = lessonsForModel("rosetta", "read-paid");
 
   for (const row of rows) {
     const startedAt = Date.now();
@@ -347,7 +353,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
         operation: "paid_read",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, source_document_id: sourceDocumentId, source_hash: row.content_hash, step_id: options.stepId ?? null, pages },
+        metadata: { institution_id: institutionId, source_document_id: sourceDocumentId, source_hash: row.content_hash, step_id: options.stepId ?? null, pages, lessons_applied: roleLessons.lessonIds },
         responsePolicy: (message) => {
           responseReceived = true;
           const usage = observedProviderUsage(message?.usage);
@@ -376,6 +382,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
         params: {
           model,
           max_tokens: PAID_READ_MAX_TOKENS,
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [
             {
               role: "user",

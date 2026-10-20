@@ -22,7 +22,13 @@ describe("saved analysis identity", () => {
     expect(getHamiltonArtifactContextLookup({ pathname: "/pro/analyze", searchParams: new URLSearchParams("analysis=saved-a&instId=8109&setBank=1") })).toEqual({ kind: "analysis", artifactId: "saved-a" });
   });
   it("does not change explicit scenario routing", () => {
-    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/simulate", searchParams: new URLSearchParams("scenario_id=saved-a&instId=8109") })).toBeNull();
+    // Simulate's board-summary hand-off names the institution explicitly; it stays URL-configured.
+    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/reports", searchParams: new URLSearchParams("scenario_id=saved-a&instId=8109") })).toBeNull();
+    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/simulate", searchParams: new URLSearchParams("instId=8109") })).toBeNull();
+  });
+  it("reopens a saved simulation as its authorized record despite a conflicting URL subject", () => {
+    expect(getHamiltonArtifactContextLookup({ pathname: "/pro/simulate", searchParams: new URLSearchParams("scenario_id=saved-a&instId=8109") }))
+      .toEqual({ kind: "scenario", artifactId: "saved-a" });
   });
   it("looks up a saved report and pins its authorized subject despite a conflicting URL", () => {
     expect(getHamiltonArtifactContextLookup({ pathname: "/pro/reports", searchParams: new URLSearchParams("report_id=saved-a&instId=1535") }))

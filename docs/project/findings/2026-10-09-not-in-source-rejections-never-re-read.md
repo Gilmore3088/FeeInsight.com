@@ -96,3 +96,5 @@ reach the rows they were written for.
 
 A dry read proves the rule it runs; a hand check of what the rule verified is the only proof of
 the verification. The first 20 verified rows get the hand check before the re-select keeps going.
+
+**Agent lesson:** darwin/pr-883-rule-version-recheck, darwin/pr-928-fee-own-cell

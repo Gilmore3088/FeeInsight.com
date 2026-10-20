@@ -34,3 +34,5 @@ The two slow queries, from `pg_stat_statements` since 2026-10-05:
 - Of the 79 deferrals recorded in those top-of-hour ticks, 48 would have fit with the time back, 15 of them publishes. Each deferral was judged on its own, so this is an upper bound, not a simulation of the steps that would then have run.
 
 **Lesson:** anything the tick does before its step loop comes out of every step's budget, and the deadline logic cannot see it as a step. Heavy periodic work belongs in its own visible step on its own schedule, priced and measured like any other step.
+
+**Agent lesson:** atlas/pr-2017-lane-sync-own-step

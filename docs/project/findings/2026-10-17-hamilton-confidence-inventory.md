@@ -55,3 +55,5 @@ sentence binding (`narrative-bound.ts`), and the legacy-vs-current tests in
 
 **Lesson:** a rating needs one owner per surface and one read-time policy for history. Find the
 read paths before changing a label, and change the display, not the stored record.
+
+**Guard:** `src/lib/hamilton/confidence-legacy.test.tsx:47` (a stored high analysis displays as medium with the legacy line and its record is untouched; line 67 checks no current save is high, and line 89 shows a stored High report decision as Medium)

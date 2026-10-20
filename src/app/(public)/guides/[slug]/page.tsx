@@ -34,7 +34,7 @@ import {
 } from "@/lib/data-store/public-cached-reads";
 import { getPublicSnapshot } from "@/lib/public-stats";
 import type { FeeCategorySummary } from "@/lib/data-store/fees";
-import { getDisplayName, getSpotlightCategories } from "@/lib/fee-taxonomy";
+import { getDisplayName, getSpotlightCategories, sentenceFeeName } from "@/lib/fee-taxonomy";
 import { formatAmount } from "@/lib/format";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import {
@@ -221,7 +221,7 @@ export default async function GuidePage({ params }: PageProps) {
   const spotlight = new Set(getSpotlightCategories());
   const primaryName = getDisplayName(guide.primaryCategory);
   // For prose: "overdraft", not "overdraft (od)".
-  const primaryNamePlain = primaryName.replace(/\s*\([^)]*\)/g, "").toLowerCase();
+  const primaryNamePlain = sentenceFeeName(primaryName);
   const crawlDate = formatDate(freshness.last_crawl_at);
   const reviewDate = formatDate(guide.reviewedAt);
   const plain = (text: string) => resolveTokensToText(text, allSummaries);

@@ -20,3 +20,5 @@ a Knox change for later.
 PDF texts that layout v3 read across columns get one read with v4. This is the existing
 `INTERLEAVED_PROSE_CELLS` re-read, and Northern Trust's text qualifies with 32 joins. A text
 whose reading doesn't change keeps its hash, so Knox doesn't read it again.
+
+**Agent lesson:** rosetta/pr-858-columns-read-apart

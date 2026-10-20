@@ -97,6 +97,15 @@ old one, moves the profile's canonical link unless a correction locked it, takes
 pages off `rejected_source_urls` and sets the wrong pages aside there. Step detail `hand_links`.
 On by James's decision (Oct 19, "Do all three"). Add later checks to the list, never edit a past one.
 
+## Role lesson sync (`learning/lesson-sync.ts`)
+
+`atlas-lesson-sync`, before the city repair in the daily scoreboard run, copies every agent's role
+lessons (`src/lib/agents/<agent>/role-lessons.ts`) into `agent_lessons` and retires, never
+deletes, a lesson the repo no longer has. It writes only that table, makes no model call and
+reports new, updated, unchanged and retired counts and any agent skipped for having no
+`agent_registry` row. Atlas's own lessons are in `atlas/role-lessons.ts`; the design is in
+`src/lib/agents/learning/AGENTS.md` ("Role lessons").
+
 ## Storage watch and retention (`storage-retention.ts`)
 
 `atlas-storage-retention`, after the city repair in the daily scoreboard run, records the database
@@ -117,6 +126,38 @@ per step and any with a cost) and `attempt_repeats` (attempt-log rows over 30 da
 extract, verify and publish stages that have an identical twin both before and after them; first
 and last copies stay; rows with no institution stay). Fees and audit records are never in scope. It deletes rows, so the pipeline
 pause holds it.
+
+Legacy event-log partitions (`legacy-event-partitions.ts`, James, Oct 19, 2026): before the row
+trim, every `public.agent_events_YYYY_MM` partition whose whole month ends before the 60-day
+cutoff is dropped whole, which returns its disk (a row delete does not). It is found through
+`pg_inherits`; the default partition, `*_archived` tables, the month the cutoff falls in (its
+old rows stay with the row trim) and current or future months are never selected, and
+`agent_auth_log` is not in scope. Each partition goes in its own committed transaction on a
+connection outside the step's (3 s lock timeout): lock the parent, count, refuse (roll back) if
+any row is newer than the cutoff, record an `atlas.storage.partition_dropped` run event on the
+step, then call `public.drop_expired_legacy_event_partition` (migration 20270110000072), which
+re-checks the scope in the database (direct child, not default or archived, upper bound before
+the cutoff) and detaches and drops it. No DDL lives in `src` (`runtime-ddl-kill`).
+A dry run, or the switch off, only lists and measures them in the step detail
+(`trims[].partitions`). It is a deterministic step, not a provider step.
+
+### Document vault (`vault-retention.ts`, #1041)
+
+The same step measures the R2 document vault from `source_documents` (one object per distinct
+vault key, its recorded `byte_size`): files and MB, the HTML/PDF/other split, and what was first
+stored in the last 7 days, in `detail.vault` and the step summary. Above 10,240 MB stored or
+5,120 MB added in 7 days it adds a warning to `alerts`, which the morning brief emails; James sets
+the real thresholds by PR. It also counts, every run, the objects the retention rule would delete:
+every row holding the bytes (by key or content hash) was judged `wrong_document` by Rosetta over 30
+days ago, has no other text, extracted no fees and was not fetched or re-checked in 30 days, and no
+fee lineage reaches it (`FEE_LINEAGE_REFS`: raw, verified and published fee tiers by document and
+key, corrections, archives, snapshots, eval cases, feedback, pipeline attempts, witnesses, profile
+pointers, answer-key documents by content hash and by bank and URL, answer-key eligibility checks,
+and live-fee audit captures). A missing fee tier stops the count. Deletion (at most 500 objects a
+run) runs only while `VAULT_RETENTION_LIVE` is true, which a PR sets after James's yes; it is off.
+When on, each object is re-checked and its rows' `document_r2_key` cleared in a committed
+transaction first, then checked again for any new row or citation of the bytes, and only then
+deleted; a failed delete puts the key back. Storing cleaned text instead of large raw HTML is not done.
 
 ## Direct state re-search (`priority-state-research.ts`)
 

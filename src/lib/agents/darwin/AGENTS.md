@@ -321,10 +321,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   they were rejected under, so this rule does not reach them.
 - A Knox take-over that changes a retired row's category writes `knox_takeover_from:<old>`
   (#1295, `knox/extract.ts`), since the take-over drops the old `canonical_hint:` flags and left
-  no proof. It counts as proof, like `knox_refiled_from:`, only with
-  `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE` on (off, gated on James). Off, each verify step counts and
-  samples the rows only it would add in `detail.category_change_rejudge.takeover_proof`. Measured
-  Oct 16 (read-only): no row carries the flag yet, so it would add 0 today; the pool a take-over
+  no proof. It counts as proof, like `knox_refiled_from:`, since `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`
+  went on Oct 20 under James's sampled-clean rule (#2442; the dry run added 3 rows, 129981, 143924
+  and 152419, each matching the bank's document). Each verify step still counts and samples the
+  rows only the flag adds in `detail.category_change_rejudge.takeover_proof`. Before
+  the switch (Oct 16, read-only) no row carried the flag yet; the pool a take-over
   can reach is 1,356 retired, unverified Knox rows (1,269 with a v3 decision).
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being
@@ -949,7 +950,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   a fee whose name is silent on the hour but whose own stored line prices it by the hour
   ("Account Research Fee $20 per hour") is read too, by `hourlyFromLine` on Knox's `excerpt="..."`,
   which must print the fee's price; the same exemptions apply and matches carry `basis` (`name` or
-  `line`); a line-only fee is also exempt for a period word anywhere on its line. Line-only fees are written only with `HOURLY_LINE_LIVE` on (off until James sees the
+  `line`); a line-only fee is also exempt for a period word anywhere on its line. Line-only fees are written only with `HOURLY_LINE_LIVE` on (on since 2026-10-20, James's yes on the Oct 19 dry run: 2,077 fees at 1,619 banks; was off until James saw the
   count); step detail `would_set_from_line` counts them, and the whole-table count reads any fee
   whose name or line mentions the hour. Prod read Oct 18: 1,894 live fees at 1,433 institutions
   print "$X per/an hour" on their line with a silent name and a non-hourly frequency (a regex
@@ -1546,7 +1547,18 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v75 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v75 (Oct 19,
+- The guard is at v78 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v78 (Oct 20,
+  #2449, category-guard gap): account verification is guarded by name. Research or reconciling without a
+  verification re-files to account research and a domestic wire to the outgoing wire fee; a
+  medallion stamp or signature guarantee (unmapped in the answer keys), a checking or spending
+  account or a positive pay name fails and goes to the second look, as does a verification glued to
+  a wire's direction row ("Account Verification NC: Domestic", borrowed direction). The live sweep
+  re-files only `RESTORE_REFILES`, so the one live domestic wire (a twin of the bank's live outgoing
+  wire) goes to the second look too. v77 (Oct 19,
+  #2388): a card that draws only on credit ("Credit Card Replacement", "Visa Credit Card Rush Fee",
+  "HELOC Access Card Replacement") fails card replacement and rush card; a line that also names a
+  debit, ATM or check card stays. v76 (Oct 19, #2037, James chose "Split"): an ATM used abroad
+  re-files to `atm_international`, its own type again. v75 (Oct 19,
   #2023, James chose "Take down"): `CLUB_WITHDRAWAL_LIVE` is on, so a club or holiday account
   withdrawal ("Christmas Club early withdrawal | $20 per w/d") fails early closure; a read-only check
   of 25 of the 313 live found every one a per-withdrawal charge. Closing a club early still passes.

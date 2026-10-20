@@ -16,6 +16,7 @@ import {
   reverseFeeCorrection,
 } from "./fee-corrections";
 import { holdPublishedFee } from "./fee-hold";
+import { fillBlankFrequencies } from "@/lib/agents/hamilton/frequency-fill";
 import { readerFeeConditions } from "./fee-conditions";
 
 const connection = process.env.E2E_DATABASE_URL;
@@ -262,6 +263,45 @@ describe.skipIf(!connection)("admin fee corrections in isolated PostgreSQL", () 
     const rows = await raw`SELECT COUNT(*)::int AS n, COUNT(*) FILTER (WHERE quarantined_at IS NULL)::int AS live
                              FROM published_fee_records WHERE institution_id = ${INST} AND canonical_fee_key = 'stop_payment'`;
     expect(rows[0]).toMatchObject({ n: 4, live: 1 });
+  });
+
+  it("should_keep_a_corrected_fee_live_when_an_agent_check_takes_it_down_but_let_the_correction_workflow_replace_it", async () => {
+    const [current] = await raw`SELECT fee_published_id FROM published_fee_corrections WHERE fee_chain_id = ${wrongFeeId} AND status = 'current'`;
+    const correctedId = Number(current.fee_published_id);
+    // The shape every agent takedown takes (rules re-check, taxonomy fold, duplicates): it reads the
+    // corrected row through its original Knox lineage and closes it against the old document.
+    const closed = await raw`UPDATE published_fee_records
+         SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'hamilton-rules-recheck-978', rolled_back_reason = 'knox_rules_recheck'
+       WHERE fee_published_id = ${correctedId} AND rolled_back_at IS NULL
+       RETURNING fee_published_id`;
+    expect(closed).toHaveLength(0);
+    const [still] = await raw`SELECT rolled_back_at FROM published_fee_records WHERE fee_published_id = ${correctedId}`;
+    expect(still.rolled_back_at).toBeNull();
+    // A fee nobody corrected still comes down as before.
+    const overdraft = await raw`UPDATE published_fee_records SET rolled_back_at = NOW(), rolled_back_by_batch_id = 'hamilton-rules-recheck-978'
+       WHERE fee_published_id = ${overdraftFeeId} RETURNING fee_published_id`;
+    expect(overdraft).toHaveLength(1);
+    await raw`UPDATE published_fee_records SET rolled_back_at = NULL, rolled_back_by_batch_id = NULL WHERE fee_published_id = ${overdraftFeeId}`;
+  });
+
+  it("should_leave_a_corrected_fee_out_of_the_frequency_fill_while_reading_an_uncorrected_one", async () => {
+    const [current] = await raw`SELECT fee_published_id FROM published_fee_corrections WHERE fee_chain_id = ${wrongFeeId} AND status = 'current'`;
+    const correctedId = Number(current.fee_published_id);
+    // Both rows now read as frequency-fill candidates: a per-event fee stored as daily, on a line it
+    // can re-read. Only the one no admin corrected may be rewritten.
+    for (const id of [correctedId, overdraftFeeId]) {
+      await raw`UPDATE published_fee_records SET frequency = 'daily' WHERE fee_published_id = ${id}`;
+      await raw`UPDATE raw_fee_observations fr SET extraction_note = 'excerpt="Fee | $35.00 per item"'
+                  FROM verified_fee_observations fv, published_fee_records fp
+                 WHERE fp.fee_published_id = ${id} AND fv.fee_verified_id = fp.lineage_ref AND fr.fee_raw_id = fv.fee_raw_id`;
+    }
+    const result = await fillBlankFrequencies(db as never, { runId: rereadRunId, dryRun: true, institutionId: INST });
+    const touched = [...result.filled, ...result.held, ...result.planWouldHold].map((fee) => fee.feePublishedId);
+    expect(result.scanned).toBe(1);
+    expect(touched).not.toContain(correctedId);
+    for (const id of [correctedId, overdraftFeeId]) {
+      await raw`UPDATE published_fee_records SET frequency = 'per_item' WHERE fee_published_id = ${id}`;
+    }
   });
 
   it("should_let_only_one_of_two_concurrent_editors_win", async () => {

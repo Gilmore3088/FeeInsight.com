@@ -155,11 +155,13 @@ interface FeePattern {
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
  * Each maps to the category the taxonomy already gives the fee (returned mail and
- * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
+ * excess-activity fees -> account research, until returned mail got its own type on Oct 15 (#1398); fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
  * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
- * file them; loan refinancing and document fees -> other lending). Returned statements stay
- * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
- * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
+ * file them; loan refinancing and document fees -> other lending). Returned statements stayed
+ * held until v90 (the keys file them as paper statements, a featured fee they would skew); since
+ * James's "File them" (Oct 20) the held-name rules file them as returned mail. The hand-checked answer keys file these
+ * lines as "unmapped", so the gate re-files them with `foldedCategory` and, for returned statements,
+ * `RETURNED_STATEMENT` (answer-key-gate.ts).
  * Kept last in FEE_PATTERNS but for v75's recall families, so they only claim lines no other
  * rule recognizes. Membership,
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
@@ -219,7 +221,7 @@ const SHORT_WINDOW = String.raw`(?:\b(?:less than|within|before|prior to)|\bw\/i
  * the 50 types: a family the key files under a retired key (mortgage payoff, reconveyance, lien
  * release, IRA distribution) takes that key's fold home (`RETIRED_CATEGORIES` in
  * fee-fold.ts), never the retired key. Kept after every other name rule (see FEE_PATTERNS).
- * Returned statements stay held (James's call since v26), and so does a bare "Wire Transfer Fee":
+ * Returned statements file through the held-name rules (v90). A bare "Wire Transfer Fee" stays held:
  * about 1 in 5 such lines say incoming or international after the price, which a name rule cannot see.
  * A family the Texas or seven-state gate keys leave unfiled (printouts, instant-issue cards, travel
  * and reloadable cards, loan coupon books, remote deposit capture) stays held too, so the gates add
@@ -601,7 +603,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // read at all (Knox recall diagnosis, 17 Oct 2026). Each files under one of the 50 types (a
   // retired key's fold home, never the retired key). Last, after the fold too, so they only claim
   // lines no rule above names: a club's excess withdrawals and a faxed payoff request stay where
-  // the fold files them. Returned statements stay held (James's call since v26).
+  // the fold files them. Returned statements are the held-name rules' (v90).
   ...RECALL_FAMILY_PATTERNS,
   ...V78_RECALL_PATTERNS,
 ];
@@ -613,12 +615,20 @@ export const FEE_PATTERNS: FeePattern[] = [
  * after every rule above, so they only claim names no rule recognizes. A bare "Wire Transfer
  * Fee" is left out: about 1 in 5 such lines say incoming or international after the price.
  *
- * Off until James switches it on (`KNOX_HELD_NAME_RULES_LIVE`, with a rules version bump in the
- * same change): on, new reads file these names, the held re-check sends the held lines to
+ * On since Oct 20 (v89) under James's sampled-clean rule (his decision card, 01:54 UTC, "all eight
+ * with rules"), with the returned-statement rule dropped to keep his v26 call; v90 restores it
+ * (his decision card, Oct 20 03:51 UTC, "File them"). The global dry run released 478 held lines,
+ * 440 passing Darwin's checks (231 returned statements, early closure 121, stop payment 62, box
+ * sizes 12, paper statements 10, IRA close-outs 4), and a random 20 of the 478 were all printed on
+ * the bank's document. On (it takes a
+ * rules version bump to switch, either way), new reads file these names, the held re-check sends the held lines to
  * Darwin (`knox_promoted_from_held`, plus `knox_held_name_rule`), and Hamilton's rules re-check
  * reads them the same way. Off, only the extract step's read-only preview applies them.
  */
-export const KNOX_HELD_NAME_RULES_LIVE = false;
+export const KNOX_HELD_NAME_RULES_LIVE = true;
+
+/** v90: a statement mailed back undelivered ("Returned Statement Fee", "Undeliverable Statement Charge"). */
+export const RETURNED_STATEMENT = /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i;
 
 export const HELD_NAME_PATTERNS: FeePattern[] = [
   { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
@@ -636,10 +646,9 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
       "i",
     ),
   },
-  // A statement mailed back undelivered is returned mail: its own type while `RESEARCH_SPLIT_LIVE`
-  // is on (v77), account research while it is off (`SPLIT_CATEGORIES.paper_statement` in
-  // fee-fold.ts). Returned mail on its own stays unclassified (v14).
-  { key: researchSplitTarget("returned_mail"), pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
+  // v90 (James's decision card, Oct 20 03:51 UTC, "File them"): a statement mailed back undelivered
+  // is returned mail, the type made for "returned or undeliverable mail or statements" (#1398).
+  { key: researchSplitTarget("returned_mail"), pattern: RETURNED_STATEMENT },
   { key: "paper_statement", pattern: /\b(?:paper|mailed|printed)\s+(?:member|account|monthly|quarterly|periodic)\s+statements?\b/i },
   { key: "ira_termination", pattern: /\bIRA\b.{0,30}\bclose[- ]?outs?\b/i },
   { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },

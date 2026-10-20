@@ -7,8 +7,6 @@ import { registryFetch, type RegistryFetchOptions } from "./http";
  */
 
 export const FED_BASE = "https://www.federalreserve.gov";
-export const BEIGE_BOOK_INDEX_URL = `${FED_BASE}/monetarypolicy/beige-book-default.htm`;
-export const BEIGE_BOOK_ARCHIVE_URL = `${FED_BASE}/monetarypolicy/beige-book-archive.htm`;
 
 /** District slug in the release URL -> Federal Reserve district number. */
 export const BEIGE_BOOK_DISTRICTS: Array<{ slug: string; district: number }> = [
@@ -184,22 +182,6 @@ interface BlsResponse {
 export function parseBlsCatalogTitle(body: unknown): string | null {
   const title = (body as BlsResponse)?.Results?.series?.[0]?.catalog?.series_title;
   return typeof title === "string" && title.trim() ? title.trim() : null;
-}
-
-/** Monthly observations (period M01-M12) from a BLS timeseries response; annual averages (M13) are skipped. */
-export function parseBlsSeries(body: unknown): IndicatorObservation[] {
-  const response = body as BlsResponse;
-  if (response?.status !== "REQUEST_SUCCEEDED") return [];
-  const out: IndicatorObservation[] = [];
-  for (const series of response.Results?.series ?? []) {
-    for (const point of series.data ?? []) {
-      const month = /^M(0[1-9]|1[0-2])$/.exec(point.period ?? "");
-      const value = Number(point.value);
-      if (!month || !/^\d{4}$/.test(point.year ?? "") || !Number.isFinite(value)) continue;
-      out.push({ observation_date: `${point.year}-${month[1]}-01`, value });
-    }
-  }
-  return out.sort((a, b) => a.observation_date.localeCompare(b.observation_date));
 }
 
 export const FOMC_CALENDAR_URL = `${FED_BASE}/monetarypolicy/fomccalendars.htm`;
