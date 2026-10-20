@@ -56,4 +56,14 @@ export const ROSETTA_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-09",
   },
+  {
+    id: "issue-1056-billing-refusal-is-not-the-scan",
+    agent: "rosetta",
+    stage: "paid read",
+    lesson: "A paid read the provider refuses for billing (credits exhausted, a usage limit, a quota) says nothing about the scan: stop the pass, record no attempt for the scan, and keep it queued for the next budget window. Only an answer about the document itself settles it.",
+    why: "On Oct 5 and Oct 9 the provider answered 'credit balance is too low' with HTTP 400. The paid passes recorded that as http_other, a settled outcome, so 145 items (88 adjudications, 29 release reviews, 23 paid extractions and 1 scan) were never selected again after billing was fixed.",
+    evidence: { issues: [1056], prs: [], files: ["docs/project/findings/2026-10-20-billing-refusal-settled-paid-items.md", "src/lib/agents/paid-pass.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

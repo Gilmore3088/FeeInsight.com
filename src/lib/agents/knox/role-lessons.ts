@@ -325,4 +325,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-19",
   },
+  {
+    id: "issue-1056-billing-refusal-is-not-the-text",
+    agent: "knox",
+    stage: "paid extract",
+    lesson: "A paid extraction the provider refuses for billing says nothing about the text: stop the pass, record no attempt for the text, and keep it queued. Only an answer about the text itself settles it.",
+    why: "On Oct 5 and Oct 9 the provider answered 'credit balance is too low' with HTTP 400. The paid passes recorded that as http_other, a settled outcome, so 145 items (88 adjudications, 29 release reviews, 23 paid extractions and 1 scan) were never selected again after billing was fixed.",
+    evidence: { issues: [1056], prs: [], files: ["docs/project/findings/2026-10-20-billing-refusal-settled-paid-items.md", "src/lib/agents/paid-pass.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

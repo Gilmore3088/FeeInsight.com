@@ -132,7 +132,7 @@ export function extractAnthropicText(response: { content?: unknown }): string {
  * a monthly usage limit, exhausted credits, or a billing quota. Retrying does not help
  * until billing changes, so readers see Hamilton's "paused" line instead of an error.
  */
-const PROVIDER_LIMIT_MARKERS = [
+export const PROVIDER_LIMIT_MARKERS = [
   "usage limit",
   "credit balance is too low",
   "insufficient credits",
