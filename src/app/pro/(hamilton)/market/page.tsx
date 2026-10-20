@@ -12,7 +12,8 @@ import {
 } from "@/lib/data-store/fed";
 import { getPublishedArticles } from "@/lib/data-store/articles";
 import { getDisplayName } from "@/lib/fee-taxonomy";
-import { getDataFreshnessCached, getPublicStatsCached } from "@/lib/data-store/public-cached-reads";
+import { getPublicStatsCached } from "@/lib/data-store/public-cached-reads";
+import { getPublicStatsSummary } from "@/lib/public-stats";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { formatAmount } from "@/lib/format";
 import { timeAgo } from "@/lib/format";
@@ -41,15 +42,9 @@ export default async function ProMarketPage() {
 
   const { entries: allEntries, stamp: indexStamp } = await getNationalIndexCachedStamped();
   const stats = await getPublicStatsCached();
-  const freshness = await getDataFreshnessCached();
-
-  const lastUpdated = freshness.last_crawl_at
-    ? new Date(freshness.last_crawl_at).toLocaleDateString("en-US", {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-    : "Date not recorded";
+  // When the newest published fee was approved, the date every public page shows (public-stats.ts).
+  // A document crawl publishes nothing, so it never dates the fee data.
+  const { refreshedOn } = await getPublicStatsSummary();
 
   const spotlightEntries = SPOTLIGHT_CATS
     .map((cat) => allEntries.find((e) => e.fee_category === cat))
@@ -89,7 +84,7 @@ export default async function ProMarketPage() {
         dek={
           <>
             National medians for the fees that matter most, the Federal Reserve&apos;s latest reading of each
-            district and published research. Fee data last checked {lastUpdated}.
+            district and published research.{refreshedOn ? ` Fee data last updated ${refreshedOn}.` : ""}
           </>
         }
       />
@@ -98,7 +93,7 @@ export default async function ProMarketPage() {
         <Figure label="Institutions" value={stats.total_institutions.toLocaleString()} />
         <Figure label="Fees on file" value={stats.total_observations.toLocaleString()} />
         <Figure label="Fee categories" value={String(stats.total_categories)} />
-        <Figure label="Last updated" value={lastUpdated} />
+        <Figure label="Last updated" value={refreshedOn ?? "Not yet known"} />
       </div>
 
       {spotlightEntries.length > 0 && (

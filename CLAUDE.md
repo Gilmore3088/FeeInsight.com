@@ -54,7 +54,8 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and
   `copy-editing` skills, follow `growth-os/context/editorial-policy.md` (every number has a
   source) and `.agents/product-marketing.md`, and add a short copy-review note to the PR.
-- Vercel builds a preview for every PR; check customer-facing changes there.
+- Vercel builds a preview only for PRs that change visible files (pages, components, styles,
+  public files, build config, dependencies); check customer-facing changes there.
 - Outreach and marketing sends stay parked.
 No branch deletion, force-push or direct main push under a general cleanup instruction.
 

@@ -3,17 +3,20 @@
  * group is never computed two ways. The pages read a set's values or medians through the
  * fee index; nothing here adds a filter of its own.
  */
-import { getPeerIndexes, type IndexEntry } from "./fee-index";
+import { getPeerIndexes, peerInstitutionIds, type IndexEntry } from "./fee-index";
+import { explorerMemberIds } from "./peer-explorer";
 import type { PeerSetChoice } from "./peer-fee-rank";
 import {
   PeerSetError,
   getPeerSubject,
   resolvePeerRequest,
+  describePeerSet,
   resolvePeerSet,
   type PeerRegulator,
   type PeerSetDefinition,
   type PeerSetRequest,
   type PeerSubject,
+  type ResolvedPeerSet,
 } from "./peer-sets";
 
 /** How many institutions closest in assets make the "nearest" set. */
@@ -56,18 +59,44 @@ export async function getInstitutionPeerChoices(institutionId: number): Promise<
   const subject = await getPeerSubject(institutionId);
   if (!subject) return [];
   const resolved = await Promise.all(
-    INSTITUTION_PEER_SET_KEYS.map(async (key): Promise<PeerSetChoice | null> => {
+    INSTITUTION_PEER_SET_KEYS.map(async (key): Promise<ResolvedChoice | null> => {
       try {
         const set = await resolvePeerRequest(subject, institutionPeerRequest(key, subject));
-        return { key, label: set.label, filters: set.filters };
+        return { key, label: set.label, filters: set.filters, resolved: set };
       } catch (error) {
         if (error instanceof PeerSetError) return null;
         throw error;
       }
     }),
   );
-  return resolved.filter((choice): choice is PeerSetChoice => choice !== null);
+  return keepExplorerMembers(resolved.filter((choice): choice is ResolvedChoice => choice !== null));
 }
+
+/**
+ * A chosen set (nearest, home metro, regulator) keeps only the institutions the peer explorer
+ * lists (explorerMemberIds), so its count is the explorer's. The home metro once counted every
+ * bank with a branch there (17 in Tallahassee) while the explorer showed the 14 that are active
+ * and publish fees (James's Oct 20 review of #1887). A set left with nobody is not offered.
+ * Filter sets (state, district, size) carry no count and pass through unchanged. The nearest
+ * set's label is rebuilt from the members kept, so it never names more than the explorer shows.
+ */
+async function keepExplorerMembers(choices: ResolvedChoice[]): Promise<PeerSetChoice[]> {
+  const strip = (choice: ResolvedChoice): PeerSetChoice => ({ key: choice.key, label: choice.label, filters: choice.filters });
+  const chosen = new Set(choices.flatMap((choice) => (choice.filters ? (peerInstitutionIds(choice.filters) ?? []) : [])));
+  if (chosen.size === 0) return choices.map(strip);
+  const members = await explorerMemberIds([...chosen]);
+  return choices.map((choice) => {
+    const ids = choice.filters ? peerInstitutionIds(choice.filters) : null;
+    if (!ids) return strip(choice);
+    const kept = ids.filter((id) => members.has(id));
+    const { definition, market } = choice.resolved;
+    const label = definition.nearest !== undefined && kept.length > 0 ? describePeerSet(definition, market, kept.length) : choice.label;
+    return { ...strip(choice), label, filters: kept.length > 0 ? { ...choice.filters, institutionIds: kept } : null };
+  });
+}
+
+/** A choice with the resolved set it came from, so a trimmed nearest set can be renamed. */
+type ResolvedChoice = PeerSetChoice & { resolved: ResolvedPeerSet };
 
 const STATE_SIZE_TIERS = ["community_small", "community_mid", "community_large", "regional"] as const;
 const STATE_REGULATORS: PeerRegulator[] = ["occ", "fdic", "fed"];

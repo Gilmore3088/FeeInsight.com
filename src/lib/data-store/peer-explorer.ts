@@ -70,6 +70,36 @@ interface FactRow {
 }
 
 /**
+ * SQL: an institution the explorer lists as a peer. Active (activeInstitutionFilter, #2190) and
+ * publishing at least one approved fee. Alias is code, not input.
+ */
+export function explorerMemberSql(alias: string): string {
+  return `${activeInstitutionFilter(alias)} AND EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = ${alias}.id AND p.review_status = 'approved')`;
+}
+
+/** Whether a member may be named as a peer at all (buildPeerExplorerSet leaves the rest out). */
+export function isNamedPeer(name: string | null | undefined): boolean {
+  return !HIDDEN_INSTITUTION.test(name ?? "");
+}
+
+/**
+ * The given institutions the explorer would list as peers: the same membership rule and the same
+ * hidden-name rule getPeerExplorerSet applies. The institution page's chosen sets (nearest, home
+ * metro, regulator) resolve through this, so the count a link or chip names is the count the
+ * explorer shows ("14 peers selected"), never every institution with a branch there.
+ */
+export async function explorerMemberIds(ids: number[]): Promise<Set<number>> {
+  if (ids.length === 0) return new Set();
+  const rows = (await sql`
+    SELECT s.id, s.institution_name
+      FROM institution_sources s
+     WHERE s.id = ANY(${ids}::bigint[])
+       AND ${sql.unsafe(explorerMemberSql("s"))}
+  `) as { id: number | string; institution_name: string | null }[];
+  return new Set(rows.filter((row) => isNamedPeer(row.institution_name)).map((row) => Number(row.id)));
+}
+
+/**
  * Builds the explorer's set from the institutions' facts and their fee values. The subject is
  * kept apart; a hidden institution is left out of the peers, so every count, median and dot on
  * the page is drawn from the same institutions a visitor can see.
@@ -102,7 +132,7 @@ export function buildPeerExplorerSet(
   const subjectRow = facts.find((row) => Number(row.id) === subjectId);
   if (!subjectRow || HIDDEN_INSTITUTION.test(subjectRow.institution_name ?? "")) return null;
   const peers = facts
-    .filter((row) => Number(row.id) !== subjectId && !HIDDEN_INSTITUTION.test(row.institution_name ?? ""))
+    .filter((row) => Number(row.id) !== subjectId && isNamedPeer(row.institution_name))
     .map(toInstitution);
   const medians: Partial<Record<ExplorerFeeKey, ExplorerMedian>> = {};
   for (const key of EXPLORER_FEE_KEYS) {
@@ -143,9 +173,7 @@ export async function getPeerExplorerSet(
     SELECT s.id, s.institution_name, s.asset_size, s.city, s.state_code, s.charter_type
       FROM institution_sources s
      WHERE s.id = ANY(${ids}::bigint[])
-       AND (s.id = ${institutionId}
-            OR (${sql.unsafe(activeInstitutionFilter("s"))}
-                AND EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = s.id AND p.review_status = 'approved')))
+       AND (s.id = ${institutionId} OR (${sql.unsafe(explorerMemberSql("s"))}))
   `) as FactRow[];
   const set = await readCappedSet(institutionId, facts);
   if (!set || !homeMarket) return set;

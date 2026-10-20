@@ -405,6 +405,11 @@ export interface FeeResearch {
   displayName: string;
   /** The bank's published amount; null when its schedule has none. */
   current: number | null;
+  /**
+   * When the bank's schedule states several different amounts for this fee (so `current` is
+   * null): the range and each named fee (#2030). Null or absent when it states one price or none.
+   */
+  ownSeveral?: SeveralFees | null;
   peerLabel: string;
   peers: PeerValue[];
   /** True when `peers` is the bank's own saved peer group; false when Hamilton picked it. Absent on older payloads. */

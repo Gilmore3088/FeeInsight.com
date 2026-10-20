@@ -1,8 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { loadPeerExplorerSection } from "./peer-explorer-actions";
+import { revealPeers } from "./peer-reveal";
 
 /**
  * The peer explorer's query state, read in the browser (#1811). The institution page is cached
@@ -69,6 +70,21 @@ function PeerExplorerFromAddress({
       live = false;
     };
   }, [institutionId, defaultSet, peers]);
+
+  // A change of ?peers= after the first render came from a link: once the new set shows, reveal it.
+  const lastPeers = useRef(peers);
+  const pendingReveal = useRef(false);
+  const settled = (loaded !== null && loaded.peers === peers) || peers === null || peers === defaultSet || (failed !== null && failed.peers === peers);
+  useEffect(() => {
+    if (lastPeers.current !== peers) {
+      lastPeers.current = peers;
+      pendingReveal.current = true;
+    }
+    if (settled && pendingReveal.current) {
+      pendingReveal.current = false;
+      revealPeers();
+    }
+  }, [peers, settled]);
 
   if (loaded && loaded.peers === peers) return <>{loaded.node}</>;
   // Back on the default set with nothing else chosen, or the asked-for set could not load: the

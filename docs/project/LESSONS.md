@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-182 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+183 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — Previews build only for PRs that change visible files. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Newer-copy check v2 reopens every settled pair. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Legacy event-log partitions are dropped, not trimmed. — [decision](DECISIONS.md#2026-10-20)
@@ -384,21 +385,22 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (15)
+### Migrations, deploys and builds (16)
 
+- 2026-10-20 — A check whose exit 0 means "skip the build" must default to building; only an explicit skip decision may exit 0. — [finding](findings/2026-10-20-vercel-skip-check-fails-open.md) — Guard: `scripts/vercel-ignore-build.test.ts:158` (+3 more)
 - 2026-10-20 — A page or route that reads the database must not be prerendered at build; render it on request and cache the data, so the database's load never decides whether a deploy succeeds. — [finding](findings/2026-10-20-sitemap-build-time-db-reads.md) — Guard: `src/app/sitemap-cache.test.ts` (+1 more)
 - 2026-10-20 — A migration number is claimed when any open PR uses it, not when it reaches `main`, so check open PRs before taking one. — [finding](findings/2026-10-20-migration-number-collisions-across-open-prs.md) — Guard: Foundation tracker #1048 line "guard for migration numbers claimed by open PRs"; until then, merge `main` and re-run `migration-version-kill`
 - 2026-10-20 — Agents never run deploy-capable `vc`/`vercel` commands and never write a Vercel token to disk. — [finding](findings/2026-10-20-vercel-env-run-deploys.md) — Guard: Foundation tracker #1048 line "ban deploy-capable vercel commands for agents"
-- 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: `scripts/vercel-ignore-build.test.ts:144` (+2 more)
+- 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: `scripts/vercel-ignore-build.test.ts:233` (+2 more)
 - 2026-10-19 — Schema changes go in `supabase/migrations` with James's approval, never in request code. — [finding](findings/2026-10-19-runtime-schema-ddl.md) — Guard: `scripts/ci-guards.sh runtime-ddl-kill` (+3 more)
 - 2026-10-19 — A required read on a prerendered page failed the deploy. — [finding](findings/2026-10-19-required-read-fails-build.md) — Guard: `src/app/(public)/institutions/directory-deadline.test.tsx:110`
 - 2026-10-17 — Vercel usage: the agents tick is the compute bill. — [finding](findings/2026-10-17-vercel-usage-agents-tick.md) — Guard: `src/lib/vercel-config.test.ts:32` (+1 more)
-- 2026-10-16 — On a page PR, make sure the last commit of each push touches non-test, non-doc code, or check the Vercel comment says "Ready" and not "Ignored" before sending preview links. — [finding](findings/2026-10-16-vercel-skip-last-commit-only.md) — Guard: `scripts/vercel-ignore-build.test.ts:74`
+- 2026-10-16 — On a page PR, make sure the last commit of each push touches non-test, non-doc code, or check the Vercel comment says "Ready" and not "Ignored" before sending preview links. — [finding](findings/2026-10-16-vercel-skip-last-commit-only.md) — Guard: `scripts/vercel-ignore-build.test.ts:96`
 - 2026-10-16 — Vercel's preview skip check ran without a git repository and failed every preview. — [finding](findings/2026-10-16-vercel-skip-check-without-git.md) — Guard: `src/lib/vercel-config.test.ts:21` (+3 more)
 - 2026-10-15 — Migration 048 was cancelled by its own 5-second lock timeout, then applied on retry. — [finding](findings/2026-10-15-migration-lock-timeout.md) — Guard: `scripts/ci-guards.sh migration-lock-kill` (+2 more)
 - 2026-10-15 — Brand headings rendered in a system font, not Geist. — [finding](findings/2026-10-15-geist-font-variable-scope.md) — Guard: `src/app/layout-fonts.test.tsx:20` (+2 more)
 - 2026-10-10 — H01 preview build: Google font parser failure. — [finding](findings/2026-10-10-next-font-build-reproduction.md) — Guard: `src/app/layout-fonts.test.tsx:28` (+2 more)
-- 2026-10-09 — Branch preview builds held up the Vercel build queue. — [finding](findings/2026-10-09-vercel-preview-build-queue.md) — Guard: `scripts/vercel-ignore-build.test.ts:69` (+1 more)
+- 2026-10-09 — Branch preview builds held up the Vercel build queue. — [finding](findings/2026-10-09-vercel-preview-build-queue.md) — Guard: `scripts/vercel-ignore-build.test.ts:91` (+1 more)
 - 2026-10-09 — Two PRs merged the same migration number. — [finding](findings/2026-10-09-parallel-migration-numbers.md) — Guard: `scripts/ci-guards.sh migration-version-kill` (+1 more)
 - 2026-10-09 — Every deploy prerendered the ten guides against the production database. — [finding](findings/2026-10-09-builds-prerendered-guides-against-prod.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:16` (+1 more)
 

@@ -50,6 +50,7 @@ vi.mock("@/lib/data-store/public-cached-reads", () => ({
   getComparableMarketIndexCached: vi.fn(async () => []),
   getInstitutionPeerSetsCached: vi.fn(async () => null),
   getPeerExplorerSetCached: vi.fn(async () => null),
+  getMarketPositionCached: vi.fn(async () => null),
   getInstitutionFinancialHistoryCached: vi.fn(async () => []),
   getInstitutionCallItemHistoryCached: vi.fn(async () => []),
   getFeeShareCohortCached: vi.fn(async () => null),

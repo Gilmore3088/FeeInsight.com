@@ -186,6 +186,20 @@ describe("storyline", () => {
     });
   });
 
+  it("states the typical transfer from savings as the statistics contract's median, not the upper middle value (#2029)", () => {
+    const transfers: Record<number, number> = { 1: 5, 2: 12.5, 3: 0 };
+    const rows = structure!.rows.map((r) => {
+      if (r.own) return r;
+      const rest = { ...r.values };
+      delete rest.od_protection_transfer;
+      return { ...r, values: r.institutionId in transfers ? { ...rest, od_protection_transfer: transfers[r.institutionId] } : rest };
+    });
+    const story = buildFeeAnswer(research({ structure: { ...structure!, rows } })).storyline!;
+    const line = story.lenses.market.map((f) => f.text).find((t) => t.includes("transfer from savings"));
+    // Two priced transfers, $5 and $12.50: the median is $8.75 (a $0 transfer is no fee and is not counted).
+    expect(line).toBe("2 of 6 in the group price a transfer from savings, typically $8.75; your schedule in the index shows none.");
+  });
+
   it("shows fee structure beyond the price, with blanks where a schedule shows nothing", () => {
     const story = buildFeeAnswer(research(), { story: { structure: true } }).storyline!;
     expect(story.kind).toBe("structure");
@@ -362,6 +376,19 @@ describe("storyline", () => {
     const local = answer.storyline!.exhibits.find((e) => e.exhibit.kind === "competitor_range" && /market/.test(e.actionTitle))!;
     expect(local.actionTitle).toBe("All 2 competitors in your market charge more than your $160; their range is $162.50 to $170.");
     expect(local.actionTitle).not.toContain("$150");
+  });
+
+  it("counts a 'the N largest' group as 'n of the N largest' in the structure exhibit (#2028)", () => {
+    const largest = { ...structure!, groupLabel: "the 25 largest $1B to $10B credit unions" };
+    const story = buildFeeAnswer(research({ structure: largest }), { story: { structure: true } }).storyline!;
+    const matrix = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!;
+    expect(matrix.actionTitle).toBe("Of 6 of the 25 largest $1B to $10B credit unions: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.");
+    const whole = { ...structure!, groupLabel: "the 6 largest credit unions in Tennessee" };
+    const all = buildFeeAnswer(research({ structure: whole }), { story: { structure: true } }).storyline!;
+    expect(all.exhibits.find((e) => e.exhibit.kind === "structure_matrix")!.actionTitle).toBe(
+      "Of the 6 largest credit unions in Tennessee: 4 charge an NSF fee, 2 a transfer fee, 1 a daily cap.",
+    );
+    expect(JSON.stringify([story, all])).not.toMatch(/\d the \d/);
   });
 
   it("shows a structure cell with several fees as their range and names, a single fee as its price (#1931)", () => {
@@ -561,6 +588,18 @@ describe("storyline: checking lineup", () => {
     const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
     expect(piece.actionTitle).toBe("Your lineup includes a no-fee account; 2 of 6 peers offer a no-fee account.");
     expect(piece.exhibit.note).toBe("A blank balance means the schedule states none.");
+  });
+
+  it("counts a 'the N largest' group as 'n of the N largest' in the lineup exhibit (#2028)", () => {
+    const largest = { ...lineup!, groupLabel: "the 25 largest $1B to $10B credit unions" };
+    const story = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: largest, structure: null })).storyline!;
+    const piece = story.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
+    expect(piece.actionTitle).toBe("Your lowest monthly fee is $5; 2 of 6 of the 25 largest $1B to $10B credit unions offer a no-fee account.");
+    const few = { ...largest, rows: largest.rows.slice(0, 3) };
+    const thin = buildFeeAnswer(research({ feeCategory: "monthly_maintenance", lineup: few, structure: null })).storyline!;
+    const thinPiece = thin.exhibits.find((e) => e.exhibit.kind === "structure_matrix" && e.exhibit.title.startsWith("Checking lineup"))!;
+    expect(thinPiece.actionTitle).toBe("Your lowest monthly fee is $5; too few of the 25 largest $1B to $10B credit unions publish their lineup to compare.");
+    expect(JSON.stringify([story, thin])).not.toMatch(/\d the \d/);
   });
 
   it("shows no lineup when the bank publishes none", () => {

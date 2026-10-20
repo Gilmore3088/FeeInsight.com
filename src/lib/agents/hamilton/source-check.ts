@@ -742,11 +742,12 @@ export async function takeDownUntraceableFees(
     });
   } catch (error) {
     console.error("takeDownUntraceableFees write failed:", error);
+    // The savepoint rolled back every write, so no count survives: the step detail must not show
+    // checked institutions or fees next to a failed status (#2235).
     return {
-      ...result,
-      relinked: 0,
+      ...EMPTY_RESULT,
       takedowns: [],
-      restored: 0,
+      keptDown: [],
       status: "failed",
       failedPhase: "write",
       error: await recordStepWarning(db, {
