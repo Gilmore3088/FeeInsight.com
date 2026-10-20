@@ -237,8 +237,9 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
 // action takes any id from the address, and an empty list would otherwise reach the database on
 // every request. A failed read throws and is not cached.
 // v4: a chosen set keeps only the institutions the explorer lists, so its count is the explorer's.
+// v5: the home metro holds banks and credit unions, with a banks-only view (metro_banks).
 const getInstitutionPeerChoicesEntryCached = cachedPublicRead(
-  "institution-peer-sets-v4",
+  "institution-peer-sets-v5",
   async (institutionId: number) => ({ choices: await getInstitutionPeerChoices(institutionId) }),
   () => false,
 );
@@ -262,7 +263,8 @@ export async function getInstitutionPeerSetsCached(institutionId: number, reques
  */
 // v3: fees carry their source link and date; a home metro set carries branch cities and deposit presence.
 // v6: peers the regulator marks inactive are left out (#2190).
-export const getPeerExplorerSetCached = cachedPublicRead("peer-explorer-set-v6", getPeerExplorerSet);
+// v7: each institution carries its charter, for a home metro set of banks and credit unions.
+export const getPeerExplorerSetCached = cachedPublicRead("peer-explorer-set-v7", getPeerExplorerSet);
 /** The state page's peer sets (size, regulator, credit union charter) with their fee medians. */
 export const getStatePeerSetIndexesCached = cachedPublicRead("state-peer-sets-v1", getStatePeerSetIndexes);
 /**

@@ -23,6 +23,12 @@ describe("public peer sets", () => {
     expect(institutionPeerRequest("regulator", { id: 1, charter_type: "credit_union" })).toEqual({ charter_type: "same", cu_charter: "same" });
   });
 
+  it("should_take_banks_and_credit_unions_in_the_home_metro_with_a_banks_only_variant", () => {
+    expect(institutionPeerRequest("metro", { id: 1, charter_type: "bank" })).toEqual({ market: "same" });
+    expect(institutionPeerRequest("metro", { id: 1, charter_type: "credit_union" })).toEqual({ market: "same" });
+    expect(institutionPeerRequest("metro_banks", { id: 1, charter_type: "credit_union" })).toEqual({ charter_type: "bank", market: "same" });
+  });
+
   it("leaves out a choice the institution has no value for, such as a metro", async () => {
     vi.mocked(sql as unknown as ReturnType<typeof vi.fn>).mockResolvedValue([subjectRow]);
     vi.mocked((sql as unknown as { unsafe: ReturnType<typeof vi.fn> }).unsafe).mockResolvedValue([{ id: 4 }]);
@@ -113,9 +119,81 @@ describe("public peer sets", () => {
     const sets = pickPeerSet(323, null, choices, all, "metro");
     const linkCount = sets?.options.find((option) => option.key === "metro")?.count;
     expect(sets?.selected.key).toBe("metro");
+    // No credit union in the set, so its name says banks alone (James, 2026-10-20).
+    expect(choices.find((choice) => choice.key === "metro")?.label).toBe("Banks in the Tallahassee, FL metro");
 
     const explorer = await getPeerExplorerSet(323, sets!.selectedFilters);
     expect(explorer?.peers.map((peer) => peer.id)).toEqual([2, 5, 8, 9, 10, 11, 12, 13]);
     expect(linkCount).toBe(explorer?.peers.length);
+  });
+
+  it("should_list_credit_unions_in_the_home_metro_and_count_both_views_as_the_explorer_lists_them", async () => {
+    // Tallahassee: nine banks and nine credit unions with a branch there besides the subject. One
+    // credit union publishes no approved fee, so the explorer lists seventeen, and banks only nine.
+    const bankIds = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const cuIds = [30, 31, 32, 33, 34, 35, 36, 37];
+    const members = [
+      ...bankIds.map((id) => ({ id, name: `Peer Bank ${id}`, charter: "bank", publishes: true })),
+      ...cuIds.map((id) => ({ id, name: `Peer Credit Union ${id}`, charter: "credit_union", publishes: true })),
+      { id: 38, name: "Quiet Credit Union", charter: "credit_union", publishes: false },
+    ];
+    const MEMBER_RULE = "<explorer member rule>";
+    const member = (id: number) => members.some((m) => m.id === id && m.publishes);
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe.mockImplementation((query: string, params?: unknown[]) => {
+      if (params === undefined) return query.includes("published_fee_catalog") ? MEMBER_RULE : query;
+      if (!query.includes("SELECT s.id FROM institution_sources")) return Promise.resolve([]);
+      if (query.includes("LIMIT")) return Promise.resolve([{ id: 2 }]);
+      const ids = params.find((p): p is number[] => Array.isArray(p) && typeof p[0] === "number") ?? [];
+      const charter = query.includes("s.charter_type =") ? params[0] : null;
+      const kept = [323, ...members.map((m) => m.id)].filter((id) => ids.includes(id) && id !== 323);
+      return Promise.resolve(kept.filter((id) => !charter || members.find((m) => m.id === id)?.charter === charter).map((id) => ({ id })));
+    });
+    db.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      const ids = (values.find(Array.isArray) as number[] | undefined) ?? [];
+      const ruled = values.includes(MEMBER_RULE);
+      const rows = members.filter((m) => ids.includes(m.id) && (!ruled || member(m.id)));
+      if (query.includes("s.asset_size, s.city")) {
+        return Promise.resolve([
+          { id: 323, institution_name: "Subject Bank", asset_size: 4_447_362, city: "TALLAHASSEE", state_code: "FL", charter_type: "bank" },
+          ...rows.map((m) => ({ id: m.id, institution_name: m.name, asset_size: 1_000_000, city: "TALLAHASSEE", state_code: "FL", charter_type: m.charter })),
+        ]);
+      }
+      if (query.includes("s.institution_name")) return Promise.resolve(rows.map((m) => ({ id: m.id, institution_name: m.name })));
+      return Promise.resolve([subjectRow]);
+    });
+    vi.mocked(getHomeMarket).mockResolvedValue({ code: 45220, name: "Tallahassee, FL" });
+    vi.mocked(getMarketInstitutionIds).mockResolvedValue({ market: { code: 45220, name: "Tallahassee, FL" }, ids: new Set([323, ...members.map((m) => m.id)]) });
+
+    const choices = await getInstitutionPeerChoices(323);
+    const metro = choices.find((choice) => choice.key === "metro");
+    const banks = choices.find((choice) => choice.key === "metro_banks");
+    expect(metro?.label).toBe("Banks and credit unions in the Tallahassee, FL metro");
+    expect(banks?.label).toBe("Banks in the Tallahassee, FL metro");
+    expect(metro?.filters).toEqual({ institutionIds: [...bankIds, ...cuIds] });
+    expect(banks?.filters).toEqual({ institutionIds: bankIds });
+
+    const all: PeerRankValue[] = [323, ...members.map((m) => m.id)].map((id) => [id, "overdraft", 30, "bank", "FL", 6, "community_large"]);
+    const picked = pickPeerSet(323, null, choices, all, "metro");
+    const explorer = await getPeerExplorerSet(323, picked!.selectedFilters);
+    expect(explorer?.peers.filter((peer) => peer.charter === "credit_union").map((peer) => peer.id)).toEqual(cuIds);
+    expect(explorer?.peers).toHaveLength(17);
+    expect(picked?.options.find((option) => option.key === "metro")?.count).toBe(explorer?.peers.length);
+
+    const banksOnly = pickPeerSet(323, null, choices, all, "metro_banks");
+    expect(banksOnly?.selected.key).toBe("metro_banks");
+    const banksExplorer = await getPeerExplorerSet(323, banksOnly!.selectedFilters);
+    expect(banksOnly?.options.find((option) => option.key === "metro_banks")?.count).toBe(banksExplorer?.peers.length);
+  });
+
+  it("should_never_open_on_the_banks_only_metro_view_by_default", () => {
+    const banks = [2, 3, 4, 5, 6, 7, 8, 9, 10];
+    const all: PeerRankValue[] = [323, ...banks, 30].map((id) => [id, "overdraft", 30, "bank", "FL", 6, "community_large"]);
+    const choices = [
+      { key: "metro_banks", label: "Banks in the Tallahassee, FL metro", filters: { institutionIds: banks } },
+      { key: "metro", label: "Banks and credit unions in the Tallahassee, FL metro", filters: { institutionIds: [...banks, 30] } },
+    ];
+    expect(pickPeerSet(323, null, choices, all, null)?.selected.key).toBe("metro");
   });
 });

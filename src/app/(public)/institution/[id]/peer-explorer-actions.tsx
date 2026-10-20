@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { getInstitutionPeerSetsCached, getPeerExplorerSetCached } from "@/lib/data-store/public-cached-reads";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
+import { isHomeMetroKey } from "@/lib/peer-explorer";
 import { createReadBudget } from "@/lib/read-deadline";
 import { PAGE_READ_BUDGET_MS } from "./profile-budget";
 import { PeerExplorerSection, peerSetHrefs } from "./peer-explorer-section";
@@ -33,7 +34,7 @@ export async function loadPeerExplorerSection(input: {
   const sets = await budget.optional(() => getInstitutionPeerSetsCached(institutionId, value(input.peers)), "peer sets", null);
   if (!sets) return null;
   const set = await budget.optional(
-    () => getPeerExplorerSetCached(institutionId, sets.selectedFilters, sets.selected.key === "metro"),
+    () => getPeerExplorerSetCached(institutionId, sets.selectedFilters, isHomeMetroKey(sets.selected.key)),
     "peer explorer",
     null,
   );

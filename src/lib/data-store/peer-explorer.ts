@@ -126,6 +126,7 @@ export function buildPeerExplorerSet(
       assets: Number.isFinite(thousands) && thousands > 0 ? thousands * 1000 : null,
       city: row.city ? displayCity(row.city) : null,
       state: row.state_code ?? null,
+      charter: row.charter_type ?? null,
       fees: fees.get(id) ?? {},
     };
   };

@@ -78,6 +78,7 @@ export function MarketPositionCard({
   selectedCode,
   onSelect,
   metroPeerCount,
+  metroHasCreditUnions = false,
 }: {
   position: MarketPosition;
   institutionId: number;
@@ -85,11 +86,13 @@ export function MarketPositionCard({
   selectedCode: number | null;
   onSelect: (code: number) => void;
   /**
-   * How many banks the peer explorer's home metro set holds (same charter, publishing fees), so the
+   * How many institutions the peer explorer's home metro set holds (publishing fees), so the
    * link names the count it lands on. Null when the page does not offer that set: no link then.
    * Undefined when not known: the link names no count.
    */
   metroPeerCount?: number | null;
+  /** Whether that set holds a credit union, so the link names credit unions only then. */
+  metroHasCreditUnions?: boolean;
 }) {
   const metro = position.metros.find((m) => m.code === selectedCode) ?? position.metros[0];
   const home = position.metros.find((m) => m.isHome) ?? null;
@@ -115,7 +118,7 @@ export function MarketPositionCard({
           ))}
         </div>
       )}
-      <MetroSummary metro={metro} institutionId={institutionId} institutionName={institutionName} home={home} metroPeerCount={metroPeerCount} />
+      <MetroSummary metro={metro} institutionId={institutionId} institutionName={institutionName} home={home} metroPeerCount={metroPeerCount} metroHasCreditUnions={metroHasCreditUnions} />
       {/* minmax(0,1fr) on a phone too: an auto column grows to the longest bank name and runs past the card. */}
       <div className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <MetroMapPanel metro={metro} institutionName={institutionName} />
@@ -133,12 +136,14 @@ function MetroSummary({
   institutionName,
   home,
   metroPeerCount,
+  metroHasCreditUnions,
 }: {
   metro: MetroPosition;
   institutionId: number;
   institutionName: string;
   home: MetroPosition | null;
   metroPeerCount?: number | null;
+  metroHasCreditUnions: boolean;
 }) {
   const own = metro.subject;
   const fee = useAddressFee();
@@ -168,7 +173,7 @@ function MetroSummary({
             className="inline-flex min-h-11 items-center text-[14px] font-medium text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
           >
             <span>
-              <WithArrow text={metroPeersLinkText(home.name, metroPeerCount)} />
+              <WithArrow text={metroPeersLinkText(home.name, metroPeerCount, metroHasCreditUnions)} />
             </span>
           </Link>
           {!metro.isHome && <p className="text-[12px] text-ink-muted">The fee comparison uses its home metro, {home.name}.</p>}
@@ -179,13 +184,15 @@ function MetroSummary({
 }
 
 /**
- * "Compare fees with the 14 Tallahassee, FL banks in its home-metro peer set": the count the
- * explorer shows for that set ("14 peers selected"), from the same members (explorerMemberIds).
- * It differs from the deposit rank's "of 18" (every FDIC-insured institution with offices there).
+ * "Compare fees with the 23 Tallahassee, FL banks and credit unions in its home-metro peer set":
+ * the count the explorer shows for that set ("23 peers selected"), from the same members
+ * (explorerMemberIds). The home metro set can hold credit unions (James, 2026-10-20); the link
+ * names them only when it does. It differs from the deposit rank's "of 18" (FDIC-insured institutions only).
  */
-export function metroPeersLinkText(homeName: string, count: number | undefined): string {
-  if (count === undefined) return `Compare fees with ${homeName} banks in its home-metro peer set`;
-  return `Compare fees with the ${count.toLocaleString("en-US")} ${homeName} ${count === 1 ? "bank" : "banks"} in its home-metro peer set`;
+export function metroPeersLinkText(homeName: string, count: number | undefined, withCreditUnions: boolean): string {
+  const [one, many] = withCreditUnions ? ["bank or credit union", "banks and credit unions"] : ["bank", "banks"];
+  if (count === undefined) return `Compare fees with ${homeName} ${many} in its home-metro peer set`;
+  return `Compare fees with the ${count.toLocaleString("en-US")} ${homeName} ${count === 1 ? one : many} in its home-metro peer set`;
 }
 
 /** The text with its last word and the arrow kept together, so a phone never wraps a lone arrow. */

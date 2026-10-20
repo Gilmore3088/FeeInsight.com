@@ -36,6 +36,12 @@ import {
   signedPercent,
   shownLine,
   PEER_EXPLORER_MAX_SHOWN,
+  BANKS_ONLY_METRO_KEY,
+  homeMetroHasCreditUnions,
+  HOME_METRO_NOTE,
+  isHomeMetroKey,
+  peerSetChipKey,
+  isPeerSetVariant,
   type ExplorerInstitution,
   type PeerExplorerSet,
 } from "./peer-explorer";
@@ -80,6 +86,61 @@ describe("peer explorer coverage", () => {
       "$2.1B to $3.1B in assets",
       "Headquartered in Florida",
     ]);
+  });
+});
+
+describe("home metro with credit unions", () => {
+  const mixed: PeerExplorerSet = {
+    ...set,
+    peers: [...set.peers.slice(0, 3).map((peer) => ({ ...peer, charter: "bank" })), { ...inst(6, 1.2e9, {}), name: "Tally Federal CU", charter: "credit_union" }],
+    market: { name: "Tallahassee, FL", cities: [] },
+  };
+
+  it("should_say_whether_the_home_metro_holds_credit_unions_from_its_two_counts", () => {
+    expect(homeMetroHasCreditUnions([{ key: "metro", count: 17 }, { key: BANKS_ONLY_METRO_KEY, count: 9 }])).toBe(true);
+    expect(homeMetroHasCreditUnions([{ key: "metro", count: 9 }, { key: BANKS_ONLY_METRO_KEY, count: 9 }])).toBe(false);
+    // No banks-only view offered (no bank there publishes fees): the metro set is all credit unions.
+    expect(homeMetroHasCreditUnions([{ key: "metro", count: 4 }])).toBe(true);
+    expect(homeMetroHasCreditUnions([{ key: "nearest", count: 25 }])).toBe(false);
+  });
+
+  it("should_name_banks_and_credit_unions_when_the_metro_set_holds_both", () => {
+    expect(whyThesePeers(mixed, "metro")[0]).toBe("Banks and credit unions");
+    expect(whyThesePeers({ ...mixed, peers: mixed.peers.slice(0, 3) }, BANKS_ONLY_METRO_KEY)[0]).toBe("Banks only");
+  });
+
+  it("should_say_what_the_metro_set_is_for_with_both_charters", () => {
+    expect(purposeLine("metro", mixed)).toBe(
+      "Banks and credit unions with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $1.2B to $5.8B in assets, so compare prices here, not size.",
+    );
+    expect(purposeLine(BANKS_ONLY_METRO_KEY, { ...mixed, peers: mixed.peers.slice(0, 3) })).toBe(
+      "Banks with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $2.1B to $5.8B in assets, so compare prices here, not size.",
+    );
+    expect(HOME_METRO_NOTE).toBe(
+      "Banks are counted by their branches in the metro (FDIC Summary of Deposits). Credit unions report no deposits by branch, so a credit union is counted when it has a branch in one of the metro's cities (NCUA branch file).",
+    );
+  });
+
+  it("should_treat_the_banks_only_view_as_a_variant_of_the_home_metro_chip", () => {
+    expect(isHomeMetroKey("metro")).toBe(true);
+    expect(isHomeMetroKey(BANKS_ONLY_METRO_KEY)).toBe(true);
+    expect(isHomeMetroKey("nearest")).toBe(false);
+    expect(isPeerSetVariant(BANKS_ONLY_METRO_KEY)).toBe(true);
+    expect(isPeerSetVariant("metro")).toBe(false);
+    expect(peerSetChipKey(BANKS_ONLY_METRO_KEY)).toBe("metro");
+    expect(peerSetChipKey("state")).toBe("state");
+    expect(PEER_SET_PURPOSE_GROUP[BANKS_ONLY_METRO_KEY]).toBe("Market competitors");
+  });
+
+  it("should_keep_the_whole_sets_charters_when_a_mixed_set_is_capped", () => {
+    const many: PeerExplorerSet = {
+      ...set,
+      peers: Array.from({ length: 60 }, (_, i) => ({ ...inst(i + 10, (i + 1) * 1e8, {}), charter: i === 0 ? "credit_union" : "bank" })),
+    };
+    const capped = capPeerExplorerSet(many, 50);
+    expect(capped.peers.some((peer) => peer.charter === "credit_union")).toBe(false);
+    expect(capped.whole?.charters).toEqual(["bank", "credit_union"]);
+    expect(whyThesePeers(capped, "metro")[0]).toBe("Banks and credit unions");
   });
 });
 
