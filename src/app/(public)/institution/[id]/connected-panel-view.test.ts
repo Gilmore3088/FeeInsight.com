@@ -73,7 +73,7 @@ const build = (overrides: Partial<Parameters<typeof buildConnectedPanel>[0]> = {
   });
 
 describe("buildConnectedPanel fed from the quarterly ledger", () => {
-  it("draws the ledger's standalone quarters and names the FFIEC call report when they come from it", () => {
+  it("draws the ledger's standalone quarters and names both filings when the quarters mix FFIEC and FDIC", () => {
     const panel = build({
       series: [
         { reportDate: "2025-12-31", value: 4.0e6, source: "fdic" },
@@ -83,7 +83,7 @@ describe("buildConnectedPanel fed from the quarterly ledger", () => {
     });
     expect(panel?.reported.quarters.map((q) => q.value)).toEqual([4.0e6, 4.2e6, 4.4e6]);
     expect(panel?.reported.latest.label).toBe("Q2 2026");
-    expect(panel?.reported.source).toBe("FFIEC call report");
+    expect(panel?.reported.source).toBe("FFIEC and FDIC call reports");
     expect(panel?.observation).toMatch(/^Service-charge income rose 10% from Q4 2025 to Q2 2026/);
   });
 
@@ -142,6 +142,15 @@ describe("buildConnectedPanel", () => {
     expect(panel?.reported).toMatchObject({ incomeLabel: "Fee income", source: "NCUA 5300 call report", entity: "Credit union" });
     expect(panel?.reported.quarters.map((q) => q.value)).toEqual([240_000, 260_000]);
     expect(panel?.caution).toBe("Two quarters are too few to call a trend.");
+  });
+
+  it("names the filing each bar came from, both when the quarters mix FFIEC and FDIC", () => {
+    const series = (sources: string[]) =>
+      sources.map((source, i) => ({ reportDate: ["2025-12-31", "2026-03-31", "2026-06-30"][i], value: 5e6, source }));
+    expect(build({ series: series(["fdic", "fdic", "fdic"]) })?.reported.source).toBe("FDIC call report");
+    expect(build({ series: series(["ffiec", "ffiec", "ffiec"]) })?.reported.source).toBe("FFIEC call report");
+    expect(build({ series: series(["fdic", "ffiec", "ffiec"]) })?.reported.source).toBe("FFIEC and FDIC call reports");
+    expect(build()?.reported.source).toBe("FDIC call report");
   });
 
   it("hands Hamilton the institution, cohort, quarter, place and fees", () => {

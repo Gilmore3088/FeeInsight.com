@@ -31,7 +31,7 @@ export interface PanelReported {
   changePct: number | null;
   /** Fee income as a share of revenue in the latest quarter, as a percent value. */
   sharePct: number | null;
-  /** "FDIC call report" or "NCUA 5300 call report". */
+  /** "FDIC call report", "FFIEC call report", "FFIEC and FDIC call reports" or "NCUA 5300 call report". */
   source: string;
   /** "Bank" or "Credit union": the filing entity, never the holding company. */
   entity: string;
@@ -114,6 +114,14 @@ function panelFee(row: CompareRow, stateCode: string | null): PanelFee | null {
     difference: dir === "same" ? null : signedMoney(row.amount - ref.median.median),
     direction: dir,
   };
+}
+
+/** The bank filing the bars came from; a series that mixes FFIEC and FDIC quarters names both. */
+function bankFilingSource(series: ReadonlyArray<{ reportDate: string; source?: string }>): string {
+  const ffiec = series.some((q) => q.source === "ffiec");
+  const fdic = series.some((q) => q.source !== "ffiec");
+  if (ffiec && fdic) return "FFIEC and FDIC call reports";
+  return ffiec ? "FFIEC call report" : "FDIC call report";
 }
 
 export function buildConnectedPanel(input: {
@@ -212,11 +220,7 @@ export function buildConnectedPanel(input: {
       latest,
       changePct,
       sharePct: ownShare,
-      source: ncua
-        ? "NCUA 5300 call report"
-        : input.series?.some((q) => q.source === "ffiec")
-          ? "FFIEC call report"
-          : "FDIC call report",
+      source: ncua ? "NCUA 5300 call report" : bankFilingSource(series),
       entity: ncua ? "Credit union" : "Bank",
     },
     share,

@@ -29,15 +29,23 @@ describe("getFeeShareCohort report_date match", () => {
     calls.length = 0;
   });
 
-  it("casts both sides to date, so a text column never meets a date parameter (text = date)", async () => {
+  it("compares report_date as text so the (institution_id, report_date) index stays usable", async () => {
     const cohort = await getFeeShareCohort("commercial", "community_small", new Date("2026-06-30T00:00:00Z"), "fdic");
     expect(calls).toHaveLength(1);
-    expect(calls[0].text).toMatch(/f\.report_date::date = \$::date/);
-    expect(calls[0].text).not.toMatch(/f\.report_date = \$/);
+    expect(calls[0].text).toMatch(/f\.report_date = \$::text/);
+    expect(calls[0].text).not.toMatch(/report_date::date/);
     expect(calls[0].values).toContain("2026-06-30");
     expect(calls[0].values.some((value) => value instanceof Date)).toBe(false);
     expect(cohort?.report_date).toBe("2026-06-30");
     expect(cohort?.members[0].id).toBe(7);
+  });
+
+  it("binds the same YYYY-MM-DD text the column stores, whatever form the quarter arrives in", async () => {
+    for (const input of ["2026-06-30", "20260630", "2026-06-30T00:00:00.000Z", new Date("2026-06-30T00:00:00Z")]) {
+      await getFeeShareCohort("commercial", null, input, "ncua");
+    }
+    expect(calls).toHaveLength(4);
+    for (const call of calls) expect(call.values).toContain("2026-06-30");
   });
 
   it("skips the read for an unknown source or an unreadable quarter", async () => {

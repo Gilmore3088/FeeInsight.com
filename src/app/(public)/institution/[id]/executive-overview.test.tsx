@@ -22,8 +22,7 @@ const ledger = buildLedger([], [
   line("2026-06-30", "total_assets", "RCON2170", 4_400_000, "point_in_time"),
 ]);
 
-const cohort = buildCohortDistribution(
-  {
+const cohortInput = {
     report_date: "2026-06-30",
     source: "fdic",
     charter_type: "bank",
@@ -35,9 +34,8 @@ const cohort = buildCohortDistribution(
         id: i + 2, name: `Peer ${i + 2}`, city: null, state: "GA", total_assets: 2_000_000, service_charge_income: 500, total_revenue: 40_000, fee_income_ratio: (i + 1) / 1000,
       })),
     ],
-  },
-  1,
-);
+};
+const cohort = buildCohortDistribution(cohortInput, 1);
 
 describe("overview and financial performance", () => {
   beforeAll(() => {
@@ -110,6 +108,22 @@ describe("overview and financial performance", () => {
     expect(within(rows[1]).getByText(/Standalone quarter/)).toBeTruthy();
     expect(within(rows[1]).getByText("Quarter ended Jun 30, 2026")).toBeTruthy();
     expect(within(rows[4]).getByText("Oct 17, 2026")).toBeTruthy();
+  });
+
+  it("says year to date on a credit union's share card, as the drawer does", () => {
+    const cuCohort = buildCohortDistribution({ ...cohortInput, source: "ncua", charter_type: "credit_union" }, 1);
+    renderOverview({ cohort: cuCohort, terms: feeIncomeTerms("ncua"), cohortName: "credit unions with $1B to $10B in assets" });
+    const card = screen.getAllByRole("listitem")[3];
+    expect(within(card).getByText("NCUA 5300 call report · year to date through Jun 30, 2026")).toBeTruthy();
+    const drawer = screen.getByText("How these figures are measured").closest("details") as HTMLDetailsElement;
+    expect(within(drawer).getByText("Year to date")).toBeTruthy();
+  });
+
+  it("keeps a bank's share card on the quarter it covers", () => {
+    renderOverview();
+    const card = screen.getAllByRole("listitem")[3];
+    expect(within(card).getByText("FDIC call report data · Jun 30, 2026")).toBeTruthy();
+    expect(within(card).queryByText(/year to date/)).toBeNull();
   });
 
   it("says why the share card has no value", () => {

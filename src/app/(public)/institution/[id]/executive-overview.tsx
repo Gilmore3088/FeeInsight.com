@@ -226,8 +226,9 @@ export function ExecutiveOverview({
       : cohortRead
         ? `Fewer than ${MIN_COHORT_PEERS} ${peerNoun} its size reported a share`
         : "Peer figures could not be read",
+    // A credit union's share is year to date (5300 income lines), so the card says so, as the drawer does.
     source: cohort
-      ? `${SOURCE_SHORT[cohort.source]} · ${quarterEndLabel(cohort.reportDate)}`
+      ? `${SOURCE_SHORT[cohort.source]} · ${cohort.source === "ncua" ? "year to date through " : ""}${quarterEndLabel(cohort.reportDate)}`
       : null,
   });
   rows.push({

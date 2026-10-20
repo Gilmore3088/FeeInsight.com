@@ -115,9 +115,9 @@ export async function getFeeShareCohort(
         ON f.institution_id = s.id
        AND f.source IN ('fdic', 'ncua')
        AND f.source = ${source}
-       -- report_date is text in the table; both sides are cast to date so the match holds
-       -- whichever type the parameter binds as (text = date has no operator).
-       AND f.report_date::date = ${quarter}::date
+       -- report_date is text ('YYYY-MM-DD') in the table and quarterKey gives the same form, so
+       -- the match stays text = text and can use the (institution_id, report_date) index.
+       AND f.report_date = ${quarter}::text
      WHERE s.charter_type = ${charterType}
        AND s.asset_size_tier IS NOT DISTINCT FROM ${assetSizeTier}
      ORDER BY s.id
