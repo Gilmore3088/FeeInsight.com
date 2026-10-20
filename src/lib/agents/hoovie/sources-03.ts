@@ -354,4 +354,21 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     linkKeys: [],
     tables: ["institution_payment_features"],
   },
+  {
+    // magellan/registry/call-report-summaries.ts: reads institution_financial_records (the fdic and ncua
+    // rows the financials loaders wrote) and stores each filing's standalone quarter; fetches nothing.
+    source: "call-report-summaries",
+    loader: "call-report-summaries",
+    publisher: "FDIC and NCUA call reports, as already loaded (each filing's own quarter, split once per load)",
+    licence: {
+      status: "public-domain",
+      note: "A recomputation of the FDIC and NCUA call-report figures already held; no new publisher data.",
+    },
+    connection: "derived",
+    cadence: "quarterly",
+    checkEveryHours: 24,
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["call_report_quarterly_income", "call_report_summary_groups"],
+  },
 ];
