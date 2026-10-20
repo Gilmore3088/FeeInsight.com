@@ -45,6 +45,17 @@ describe("SegmentTable", () => {
     expect(html).toContain(">140<");
   });
 
+  it("titles a 'the N largest' segment as 'the n of the N largest', never 'the n the N largest' (#2028)", () => {
+    const largest = { ...data, segment: { label: "the 25 largest credit unions with $1 billion to $10 billion in assets" } };
+    expect(renderToStaticMarkup(<SegmentTable data={largest} own={32} ownLabel="Example CU" />)).toContain(
+      "The 18 of the 25 largest credit unions with $1 billion to $10 billion in assets that publish this fee, largest first",
+    );
+    const all = { ...largest, segment: { label: "the 18 largest banks" } };
+    expect(renderToStaticMarkup(<SegmentTable data={all} own={32} ownLabel="Example Bank" />)).toContain(
+      "The 18 largest banks that publish this fee, largest first",
+    );
+  });
+
   it("draws nothing when the slice could not be built", () => {
     expect(renderToStaticMarkup(<SegmentTable data={{ ...data, problem: "No institution fits.", members: [] }} own={32} ownLabel="You" />)).toBe("");
   });

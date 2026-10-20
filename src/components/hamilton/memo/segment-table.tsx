@@ -8,6 +8,7 @@ import { ANSWER_TYPE, More, fmtMoney } from "./memo";
 import { ExhibitFrame } from "./exhibit-view";
 import { feeScheduleUrls, ownFeeList, statedFeeLabel, type SeveralFees } from "@/lib/own-fee";
 import { formatPeerAssets } from "@/lib/hamilton/peer-list";
+import { theCountedGroup } from "@/lib/segment-words";
 
 export interface SegmentRow {
   institutionId: number;
@@ -97,6 +98,12 @@ function Rows({ rows, start, own, max }: { rows: SegmentRow[]; start: number; ow
   );
 }
 
+/** "The 18 $10B+ banks", "The 5 of the 25 largest banks", "The 25 largest banks" (#2028). */
+function groupTitle(n: number, label: string): string {
+  const phrase = theCountedGroup(n, label, n === 1 ? "one" : undefined);
+  return `${phrase[0].toUpperCase()}${phrase.slice(1)}`;
+}
+
 function Head() {
   // The shared heading cell, without its text-left so each column keeps its own alignment.
   const th = ANSWER_TYPE.th.replace(" text-left", "");
@@ -142,7 +149,7 @@ export function SegmentTable({
   const rest = data.members.slice(SHOWN);
   // The bars only draw from sm up, so their key shows only there; the caption is about the data.
   const caption = "Assets from the institution registry.";
-  const title = titleOverride ?? `The ${data.members.length === 1 ? "one" : data.members.length.toLocaleString("en-US")} ${data.segment.label} that publish this fee, largest first`;
+  const title = titleOverride ?? `${groupTitle(data.members.length, data.segment.label)} that publish this fee, largest first`;
   return (
     // The shared exhibit treatment: label, headline, table, then the source line with its "Sep 2026" date.
     <ExhibitFrame title={title} number={number} sources={[{ label: data.source.label, asOf: data.source.asOf ?? null }]} note={caption}>

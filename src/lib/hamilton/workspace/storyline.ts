@@ -21,6 +21,7 @@ import { feeItem, plainName, proseFeeName } from "./names";
 import { ownRate, ownRateSource, rateRelation, ratesOf } from "./rates";
 import { countedPeerAmounts, MIN_PEERS_FOR_POSITION, placeAmong, pricePosition, spanOf } from "./scenario";
 import { segmentExhibit, shortSegmentLabel } from "./segment";
+import { countedGroup, theCountedGroup } from "@/lib/segment-words";
 import { isFederalRelease, isWireFact } from "./wire";
 import type { ArchetypeKey, KeyFigure, PeerListRow, StoryExhibit, StoryOption, Storyline, StorylineKind } from "./storyline-types";
 import type { Exhibit, Fact, FeeResearch, HamiltonAnswer, PeerValue, SegmentMember, SourceRef } from "./types";
@@ -211,7 +212,7 @@ function segmentPiece(research: FeeResearch, name: string): Piece | null {
   };
   return {
     key: "segment",
-    actionTitle: `${count(n)} of ${count(seg.institutionsInSegment)} ${shortSegmentLabel(seg.segment)} publish ${article(name)} ${name} fee${zero}${median}.`,
+    actionTitle: `${count(n)} of ${countedGroup(seg.institutionsInSegment, shortSegmentLabel(seg.segment))} publish ${article(name)} ${name} fee${zero}${median}.`,
     exhibit,
     takeaway:
       seg.withDailyCap > 0
@@ -323,7 +324,7 @@ function archetypePiece(research: FeeResearch, name: string): Piece | null {
   const ownGroup = ownKey ? archetypes.find((a) => a.key === ownKey)! : null;
   return {
     key: "archetype",
-    actionTitle: `Of ${count(n)} ${group.label}: ${listParts(
+    actionTitle: `Of ${countedGroup(n, group.label)}: ${listParts(
       [
         [by.zero_od, ARCHETYPE_COUNT_TEXT.zero_od],
         [by.low_capped, ARCHETYPE_COUNT_TEXT.low_capped],
@@ -920,7 +921,7 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
     const n = group.members.length;
     if (group.members.some(m => m.several)) {
       out.push({
-        text: `In group statistics, ${count(cheaper.length)} of ${count(n)} ${group.label} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
+        text: `In group statistics, ${count(cheaper.length)} of ${countedGroup(n, group.label)} have values below ${subjectPossessive(research, false)} ${money(current)}; the named rows show their stated prices.`,
         source: group.source,
         sampleSize: n,
       });
@@ -932,18 +933,18 @@ function marketLens(research: FeeResearch, name: string): Fact[] {
       out.push({
         text: highest
           ? namedWithin(
-              `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
-              `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
+              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest is ${plainName(highest.name)} (${money(highest.amount)}).`,
+              `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}; the highest charges ${money(highest.amount)}.`,
             )
           : dearer.length > 0
-            ? `None of the ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
-            : `All ${count(n)} ${group.label} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
+            ? `None of ${theCountedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}.`
+            : `All ${countedGroup(n, group.label)} charge the same ${money(current)} ${subjectName(research)} ${research.subjectName ? "does" : "do"}.`,
         source: group.source,
         sampleSize: n,
       });
     } else {
       const lowest = cheaper[0].several ? undefined : cheaper[0];
-      const fewer = `${count(cheaper.length)} of ${count(n)} ${group.label} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
+      const fewer = `${count(cheaper.length)} of ${countedGroup(n, group.label)} charge less than ${subjectPossessive(research, false)} ${money(current)}`;
       out.push({
         text: lowest
           ? namedWithin(
