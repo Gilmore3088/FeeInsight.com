@@ -135,7 +135,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(new Set(results.map(body => body.runId)).size).toBe(1);
     expect(results.filter(body => !body.reused)).toHaveLength(1);
     expect((await db`SELECT count(*)::int AS n FROM agent_runs`)[0].n).toBe(1);
-    expect(await steps(results[0].runId)).toHaveLength(13);
+    expect(await steps(results[0].runId)).toHaveLength(14);
     expect(state.effects).toEqual([]);
   });
 
@@ -171,7 +171,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect((await startAgentRun(input)).run.id).not.toBe(first.run.id);
   });
 
-  it("advances all13 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
+  it("advances all 14 real ledger steps over ticks, snapshots after measurements, and holds/resumes the paused tail", async () => {
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = state.marketing = false;
     const firstTick = await (await tick(request("agents/tick"))).json();
@@ -181,14 +181,14 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
     const secondTick = await (await tick(request("agents/tick"))).json();
     expect(secondTick.selected).toBe(0);
-    expect((await steps(body.runId)).slice(-3).map(s => s.status)).toEqual(["queued", "queued", "queued"]);
+    expect((await steps(body.runId)).slice(-4).map(s => s.status)).toEqual(["queued", "queued", "queued", "queued"]);
     expect(state.schedule).not.toHaveBeenCalled();
     expect(state.provider).not.toHaveBeenCalled();
     state.pipeline = true;
     const resumed = await (await tick(request("agents/tick"))).json();
-    expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 3 }]);
-    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 13, progress_total: 13 });
-    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(13);
+    expect(resumed.results).toMatchObject([{ runId: body.runId, terminal: true, executedSteps: 4 }]);
+    expect(await row(body.runId)).toMatchObject({ status: "completed", progress_current: 14, progress_total: 14 });
+    expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='step.finished'`)[0].n).toBe(14);
     expect((await db`SELECT count(*)::int AS n FROM agent_run_events WHERE agent_run_id=${body.runId} AND event_type='run.completed'`)[0].n).toBe(1);
   });
 
@@ -199,7 +199,7 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 10 }]);
     expect((await db`SELECT count(*)::int AS n FROM fixture_snapshots`)[0].n).toBe(1);
     const tail = await (await tick(request("agents/tick"))).json();
-    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 13 : 10 });
+    expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 14 : 10 });
     expect(tail.selected).toBe(pipeline ? 1 : 0);
     expect(state.provider).not.toHaveBeenCalled();
   });

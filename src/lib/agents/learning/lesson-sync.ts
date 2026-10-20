@@ -47,10 +47,12 @@ export function lessonEvidenceRefs(lesson: AgentLesson): Record<string, unknown>
   };
 }
 
+// Unqualified on purpose: readiness must resolve the tables the same way the queries below do,
+// so a connection whose search_path lacks them (an isolated test schema) skips cleanly.
 export async function agentLessonsReady(db: SqlTag): Promise<boolean> {
   const [row] = await db`
-    SELECT to_regclass('public.agent_lessons') IS NOT NULL
-       AND to_regclass('public.agent_registry') IS NOT NULL AS ready
+    SELECT to_regclass('agent_lessons') IS NOT NULL
+       AND to_regclass('agent_registry') IS NOT NULL AS ready
   `;
   return row?.ready === true;
 }
