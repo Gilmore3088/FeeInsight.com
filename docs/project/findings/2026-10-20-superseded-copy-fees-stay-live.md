@@ -12,7 +12,11 @@ other prices") was tried and dropped: 0 fees in the dry run, and review showed i
 price the page still states (a dropped decimal point, a bare figure, a waiver threshold).
 **Fix:** this PR judges every v1 pair again under v2 (8 retirements, 0 restores). The bulk is open on
 #2477: unrecognized pairs, and newer copies that never published.
-**Lesson:** measure a takedown rule on prod before building it out: the dry run showed the rule
-reached none of the fees it was meant for.
+**Reverted (2026-10-20, before any retirement ran):** a hand check of the dry run's own fees found
+Jeanne D'Arc FCU's "current copy" is its `/fees-disclosures/` page, a 2,906-character notice of fee
+changes linking the full PDF schedule; it passed the same-schedule bar, and 64221 and 93814 (still
+charged in the PDF) would have come down. v1 is restored.
+**Lesson:** measure a takedown rule on prod before building it out, and hand-check the fees the dry
+run lists before merging: a count alone did not show that a notice page passed the same-schedule bar.
 **Guard:** `src/lib/agents/hamilton/newer-copy-retire.db.test.ts` ("judges a pair decided under v1
 again under v2", "keeps an already-decided v2 pair closed").
