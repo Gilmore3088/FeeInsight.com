@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**One front door for decisions and lessons.** James, 2026-10-20: "we need one central doc". One
+front door, `docs/project/LESSONS.md`, indexes every decision and lesson: one line per entry here,
+one per finding in `findings/`, and a pointer to each agent's `role-lessons.ts`. DECISIONS.md stays
+the full record of decisions. `scripts/ci-guards.sh lessons-index-kill` keeps the index complete:
+it fails a PR when a finding or a decision entry has no line in LESSONS.md, or when LESSONS.md links
+a finding that does not exist.
+
 **Legacy event-log partitions are dropped, not trimmed.** James, 2026-10-19; migration approved 2026-10-20. Atlas drops expired
 legacy `agent_events` partitions through a migration function instead of deleting rows (#2453,
 migration 072). Dry run 04:19 UTC: partitions `_2026_04` to `_2026_07`, about 386 MB.
