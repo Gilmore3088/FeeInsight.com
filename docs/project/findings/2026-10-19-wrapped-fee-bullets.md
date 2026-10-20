@@ -74,3 +74,5 @@ report-only category-context behavior. Existing default pipeline category rules 
 **Lesson.** Read a bounded logical source unit before fragment normalization, preserve its complete
 conditions, and prove storage plus verification/publication. Equal prices can hide a borrowed
 neighbor witness; unequal prices, reversed order and real SQL are necessary controls.
+
+**Agent lesson:** knox/pr-2162-wrapped-bullet-unit

@@ -3,3 +3,5 @@
 **Cause:** two things. First, `cachedPublicRead` keys entries by name and an audience tag but not by the statistics rules. After #1816 (merged Oct 18, 02:38 UTC) took safe deposit service charges out of the medians, the cached public snapshot kept its pre-#1816 counts, because refreshes are stale-while-revalidate and nothing invalidated the entry. Second, the explorer counted each sibling charter on a shared schedule separately, while the medians count them once (rule 7). That explains the 0 to 11 gaps.
 **Fix:** every public read cache key now includes `STATS_METHOD_VERSION`, and the explorer reads schedule keys and counts sibling charters once (#1879). A seeded invariant test checks that the chart, KPIs, list, charter split and state map all count the median's population.
 **Lesson:** a rule that changes what the statistics count must bump `STATS_METHOD_VERSION`. Anything cached from those statistics has to carry that version, so the cache can't serve numbers made under the old rule.
+
+**Guard:** `src/lib/data-store/public-read-cache.test.ts:89` (every `cachedPublicRead` key carries `stats-v${STATS_METHOD_VERSION}`)

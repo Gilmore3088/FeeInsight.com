@@ -5,6 +5,7 @@ import { STATE_TO_FIPS } from "@/lib/geo/state-fips";
 import { buildIndexEntries } from "./fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, STATS_ROW_FILTER, activeInstitutionFilter } from "./fee-stats";
 import { financialSourceFilter } from "./financial-sources";
+import { callReportQuartersReady } from "./call-report-quarters";
 import { feeComplaintFilterSql } from "./complaints";
 import { buildIndicatorSeries, type IndicatorSeries } from "./economic-context";
 import { fedIndicatorServedSql } from "./struck-sources";
@@ -290,16 +291,13 @@ async function loadInstitutions(scope: HubScope): Promise<HubInstitutionGroup[]>
 }
 
 /**
- * Quarterly fee income for the district's institutions over the last eight quarters, by state
- * and charter: banks' service charges on deposit accounts (FDIC) and credit unions' fee income
- * (NCUA account 131, a wider measure). NCUA year-to-date income is split into quarters the same
- * way as getDistrictIncomeTrend; only positive quarterly income counts. Filings before January of
- * three years ago are skipped: reading every filing since the 1990s took over 20 seconds on prod.
+ * loadRevenue's SQL from before call_report_quarterly_income existed: the year-to-date split
+ * recomputed from the filings on every read. Kept, text unchanged, as the fallback while the
+ * summary table is missing or empty (call-report-quarters.ts) and as the test oracle.
+ * $1 the scope value, $2 the first report date read.
  */
-async function loadRevenue(scope: HubScope, now: Date): Promise<HubRevenueRow[]> {
-  const from = `${now.getUTCFullYear() - 3}-01-01`;
-  const rows = (await sql.unsafe(
-    `WITH filed AS (
+export function hubRevenueLegacySql(scope: string): string {
+  return `WITH filed AS (
        SELECT inf.institution_id,
               inf.source,
               inf.report_date::date AS rd,
@@ -309,7 +307,7 @@ async function loadRevenue(scope: HubScope, now: Date): Promise<HubRevenueRow[]>
          FROM institution_financial_records inf
          JOIN institution_sources ct ON ct.id = inf.institution_id
         WHERE ${financialSourceFilter("inf")}
-          AND ${scopeSql(scope)}
+          AND ${scope}
           AND inf.report_date >= $2
        WINDOW w AS (PARTITION BY inf.institution_id, inf.source, EXTRACT(YEAR FROM inf.report_date::date)
                     ORDER BY inf.report_date::date)
@@ -335,7 +333,47 @@ async function loadRevenue(scope: HubScope, now: Date): Promise<HubRevenueRow[]>
       WHERE q.income > 0
         AND DATE_TRUNC('quarter', q.rd) IN (SELECT q FROM recent)
       GROUP BY 1, 2, 3
-      ORDER BY 1`,
+      ORDER BY 1`;
+}
+
+/** loadRevenue over call_report_quarterly_income: the same rows, with quarters already split. */
+export function hubRevenueSummarySql(scope: string): string {
+  return `WITH quarterly AS (
+       SELECT inf.institution_id, inf.quarter_start, inf.quarter_income AS income
+         FROM call_report_quarterly_income inf
+         JOIN institution_sources ct ON ct.id = inf.institution_id
+        WHERE ${financialSourceFilter("inf")}
+          AND ${scope}
+          AND inf.report_date >= $2
+     ),
+     recent AS (
+       SELECT DISTINCT quarter_start AS q FROM quarterly ORDER BY 1 DESC LIMIT 8
+     )
+     SELECT TO_CHAR(q.quarter_start, 'YYYY-"Q"Q') AS quarter,
+            ct.state_code, ct.charter_type,
+            SUM(q.income) AS total,
+            COUNT(DISTINCT q.institution_id) AS institutions
+       FROM quarterly q
+       JOIN institution_sources ct ON ct.id = q.institution_id
+      WHERE q.income > 0
+        AND q.quarter_start IN (SELECT q FROM recent)
+      GROUP BY 1, 2, 3
+      ORDER BY 1`;
+}
+
+/**
+ * Quarterly fee income for the district's institutions over the last eight quarters, by state
+ * and charter: banks' service charges on deposit accounts (FDIC) and credit unions' fee income
+ * (NCUA account 131, a wider measure). NCUA year-to-date income is split into quarters the same
+ * way as getDistrictIncomeTrend; only positive quarterly income counts. Filings before January of
+ * three years ago are skipped. Read from call_report_quarterly_income, where the split is done
+ * once per load; the per-request SQL only while that table is missing or empty.
+ */
+async function loadRevenue(scope: HubScope, now: Date): Promise<HubRevenueRow[]> {
+  const from = `${now.getUTCFullYear() - 3}-01-01`;
+  const summaryReady = await callReportQuartersReady(sql as never);
+  const rows = (await sql.unsafe(
+    summaryReady ? hubRevenueSummarySql(scopeSql(scope)) : hubRevenueLegacySql(scopeSql(scope)),
     [scope.value, from],
   )) as unknown as Record<string, unknown>[];
   return rows

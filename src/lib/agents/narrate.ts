@@ -236,6 +236,7 @@ function narrateFinished(
     case "registry-enforcement":
     case "registry-state-enforcement":
     case "registry-wire-research":
+    case "registry-call-report-summaries":
       return narrateRegistryStep(stepKey, detail);
     case "score-answer-key": {
       const relabel = narrateAnswerKeyRelabel((detail.answer_key_relabel ?? null) as Detail | null);
@@ -568,6 +569,11 @@ function narrateRegistryStep(stepKey: string, detail: Detail): string | null {
         n(detail, "deactivated_institutions") > 0 && `${n(detail, "deactivated_institutions")} credit unions marked inactive`,
       ])}.`;
     }
+    case "registry-call-report-summaries": {
+      const groups = [...((detail.groups_changed as string[] | undefined) ?? []), ...((detail.groups_removed as string[] | undefined) ?? [])];
+      if (groups.length === 0) return `Checked ${count(n(detail, "filings"), "call-report filing")}; the quarterly income summary is current.`;
+      return `${detail.dry_run === true ? "Would rebuild" : "Rebuilt"} the quarterly income summary for ${groups.join(", ")} (${count(n(detail, "rows_written"), "filing")}).`;
+    }
     case "registry-fdic-sod":
       if (detail.empty) return `Checked for ${partition} branch deposit data; not published yet.`;
       return `Mapped ${count(n(detail, "branches"), "bank branch", "bank branches")} for ${partition}.`;
@@ -790,6 +796,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "registry-enforcement": "hoovie",
   "registry-state-enforcement": "hoovie",
   "registry-wire-research": "hoovie",
+  "registry-call-report-summaries": "hoovie",
   read: "rosetta",
   "read-paid": "rosetta",
   extract: "knox",

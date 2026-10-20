@@ -1095,7 +1095,7 @@ describe("re-reads of a listed line (#1905 triage, Oct 19)", () => {
 
   it("only reports re-reads while the switch is off, and takes them down with their verified row when on", async () => {
     const off = fakeDb(RE_READS);
-    const reported = await applyHandTakedowns(off.db as never, { runId: 7, stepId: 70, batchId: "b", dryRun: false, list: HAND_TAKEDOWNS });
+    const reported = await applyHandTakedowns(off.db as never, { runId: 7, stepId: 70, batchId: "b", dryRun: false, list: HAND_TAKEDOWNS, returnsLive: false });
     expect(reported).toMatchObject({ returnsLive: false, takenDown: [] });
     expect(reported.returns).toHaveLength(6);
     expect(off.writes).toHaveLength(0);

@@ -65,6 +65,13 @@ import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNew
 import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
 import { WIRE_RESEARCH_PARTITION, WIRE_RESEARCH_SOURCE, WIRE_RESEARCH_STEP_KEY, runRegistryWireResearch } from "./wire-research";
 import { BANK_ZELLE_PARTITION, BANK_ZELLE_SOURCE, runRegistryBankZelle } from "./bank-zelle";
+import {
+  CALL_REPORT_SUMMARIES_PARTITION,
+  CALL_REPORT_SUMMARIES_SOURCE,
+  CALL_REPORT_SUMMARY_TRIGGER_SOURCES,
+  markCallReportSummariesDue,
+  runRegistryCallReportSummaries,
+} from "./call-report-summaries";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
@@ -1343,6 +1350,30 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   },
+  {
+    source: CALL_REPORT_SUMMARIES_SOURCE,
+    stepKey: "registry-call-report-summaries",
+    title: "Precompute call-report quarterly income for the readers",
+    fixedPartition: CALL_REPORT_SUMMARIES_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryCallReportSummaries({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const changed = r.groupsChanged.length + r.groupsRemoved.length;
+      return {
+        summary: changed === 0
+          ? `Hoovie checked ${n(r.filings)} call-report filings in ${r.groupsChecked} regulator-years; the quarterly summary is current${dry(r.dryRun)}.`
+          : `Hoovie ${r.dryRun ? "would rebuild" : "rebuilt"} the call-report quarterly summary for ${[...r.groupsChanged, ...r.groupsRemoved].join(", ")}: ${n(r.rowsWritten)} filings written, ${n(r.rowsRemoved)} replaced, ${n(r.summaryRows)} in the summary${dry(r.dryRun)}.`,
+        detail: {
+          groups_checked: r.groupsChecked,
+          groups_changed: r.groupsChanged,
+          groups_removed: r.groupsRemoved,
+          filings: r.filings,
+          rows_removed: r.rowsRemoved,
+          rows_written: r.rowsWritten,
+          summary_rows: r.summaryRows,
+        },
+      };
+    },
+  },
 ];
 
 export const REGISTRY_STEP_KEYS = REGISTRY_SOURCES.map((entry) => entry.stepKey);
@@ -1389,6 +1420,10 @@ export async function runRegistryStep(input: RegistryStepInput): Promise<Registr
       }
     }
     throw error;
+  }
+  // A load that changed the call-report filings makes the quarterly summary due at once.
+  if (!input.dryRun && !output.skipped && CALL_REPORT_SUMMARY_TRIGGER_SOURCES.has(definition.source)) {
+    await markCallReportSummariesDue(input.db ?? sql);
   }
   return {
     status: output.skipped ? "skipped" : "completed",

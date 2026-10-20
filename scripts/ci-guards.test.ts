@@ -310,3 +310,72 @@ describe("queue-owner-kill", () => {
     expect(output).toContain("label_queue");
   });
 });
+
+/** migration-lock-kill (2026-10-15-migration-lock-timeout): a migration that locks a busy table sets lock_timeout. */
+describe("migration-lock-kill", () => {
+  function lockRepo(files: Record<string, string>) {
+    repo = mkdtempSync(join(tmpdir(), "lock-guard-"));
+    for (const [name, sql] of Object.entries(files)) write(`supabase/migrations/${name}`, sql);
+    const out = spawnSync("bash", [GUARD, "migration-lock-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes a busy-table ALTER that sets lock_timeout, a quiet table, and applied history", () => {
+    const { status, output } = lockRepo({
+      "20270110000048_old.sql": "ALTER TABLE public.raw_fee_observations ADD COLUMN note text;\n",
+      "20270110000072_note.sql": "SET lock_timeout = '10s';\nALTER TABLE public.raw_fee_observations\n  ADD COLUMN extraction_note text;\n",
+      "20270110000073_quiet.sql": "ALTER TABLE public.state_expert_notes ADD COLUMN body text;\n-- ALTER TABLE raw_fee_observations in a comment\n",
+    });
+    expect(status, output).toBe(0);
+  });
+
+  it("fails a new ALTER, index, catalog view or trigger on a busy table without lock_timeout", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_alter.sql": "alter table\n  raw_fee_observations add column extraction_note text;\n",
+      "20270110000073_index.sql": "CREATE UNIQUE INDEX dedup_idx\n  ON public.verified_fee_observations (fee_raw_id);\n",
+      "20270110000074_view.sql": "CREATE OR REPLACE VIEW public.published_fee_catalog AS SELECT 1;\n",
+      "20270110000075_trigger.sql": "CREATE TRIGGER t AFTER INSERT ON public.agent_run_steps FOR EACH ROW EXECUTE FUNCTION f();\n",
+      "20270110000076_ok.sql": "SET LOCAL lock_timeout = '5s';\nALTER TABLE institution_sources ADD COLUMN x int;\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_alter", "073_index", "074_view", "075_trigger"]) expect(output).toContain(`20270110000${name}.sql`);
+    expect(output).not.toContain("076_ok");
+  });
+
+  it("fails a policy, ALTER VIEW, TRUNCATE or DROP INDEX on a busy table, quoted names included", () => {
+    const { status, output } = lockRepo({
+      "20270110000048_old.sql": "CREATE INDEX raw_fee_obs_cat_idx ON public.raw_fee_observations (category);\n",
+      "20270110000072_policy.sql": "CREATE POLICY p ON \"public\".\"agent_runs\" FOR SELECT USING (true);\n",
+      "20270110000073_alter_policy.sql": "ALTER POLICY p ON ONLY public.source_documents USING (false);\n",
+      "20270110000074_alter_view.sql": "ALTER VIEW IF EXISTS published_fee_catalog OWNER TO postgres;\n",
+      "20270110000075_truncate.sql": "TRUNCATE TABLE public.state_notes, \"agent_run_events\";\n",
+      "20270110000076_drop_index.sql": "DROP INDEX IF EXISTS \"public\".raw_fee_obs_cat_idx;\n",
+      "20270110000077_drop_quiet_index.sql": "DROP INDEX IF EXISTS public.state_notes_idx;\n",
+    });
+    expect(status, output).toBe(1);
+    for (const name of ["072_policy", "073_alter_policy", "074_alter_view", "075_truncate", "076_drop_index"]) {
+      expect(output).toContain(`20270110000${name}.sql`);
+    }
+    expect(output).not.toContain("077_drop_quiet_index");
+  });
+
+  it("ignores busy tables named only inside a block comment", () => {
+    const { status, output } = lockRepo({
+      "20270110000072_comment.sql": "/* ALTER TABLE raw_fee_observations\n   ADD COLUMN x int; */\nALTER TABLE public.state_notes ADD COLUMN y int;\n",
+    });
+    expect(status, output).toBe(0);
+  });
+
+  it("fails when lock_timeout is set only after the first locking statement", () => {
+    const late = lockRepo({
+      "20270110000072_late.sql": "ALTER TABLE raw_fee_observations ADD COLUMN x int;\nSET lock_timeout = '10s';\nALTER TABLE agent_runs ADD COLUMN y int;\n",
+    });
+    expect(late.status, late.output).toBe(1);
+    expect(late.output).toContain("20270110000072_late.sql");
+    rmSync(repo, { recursive: true, force: true });
+    const early = lockRepo({
+      "20270110000072_early.sql": "SET lock_timeout = '10s';\nTRUNCATE agent_run_events;\nALTER VIEW published_fee_catalog OWNER TO postgres;\n",
+    });
+    expect(early.status, early.output).toBe(0);
+  });
+});

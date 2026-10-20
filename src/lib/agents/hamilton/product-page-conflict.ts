@@ -57,13 +57,12 @@ export const PER_ACCOUNT_CATEGORIES = [
 ] as const;
 
 /**
- * Off: the check logs each conflict as a first look and takes nothing down. It goes on by PR
- * once an automatic sample of its takedowns checks clean against the bank's own documents
- * (James's sampled-clean rule, 2026-10-20). The production sample of 2026-10-13 (118 conflicts at 72 institutions
- * before the item categories were excluded) held real discounts ("Discounted return item fee"
- * $24.99 beside $30) next to misfiled lines.
+ * On since 2026-10-20 under James's sampled-clean rule: the automatic re-sample of the dry run
+ * after the same-item, same-site and freshness rules (#2440, #2447) found 2 takedowns at 2 banks,
+ * 1 right, 0 wrong and 1 doubtful leaning right, against the bank's own stored documents. Off, the
+ * check logs each conflict as a first look and takes nothing down.
  */
-export const PRODUCT_PAGE_CONFLICT_LIVE = false;
+export const PRODUCT_PAGE_CONFLICT_LIVE = true;
 
 /** Which live fees a read covers: all (`"all"`), one institution (`$1` its id), or a list of fees (`$1` a bigint[] of `fee_published_id`). */
 export type ConflictScope = "all" | "institution" | "fees";

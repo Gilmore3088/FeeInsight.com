@@ -73,8 +73,8 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
     expect(conflict.reason).toBe("product_page_conflict: #10 at $25.00 vs schedule $30.00");
   });
 
-  it("starts off: logs first looks and takes nothing down", async () => {
-    expect(PRODUCT_PAGE_CONFLICT_LIVE).toBe(false);
+  it("is on, and with live off logs first looks and takes nothing down", async () => {
+    expect(PRODUCT_PAGE_CONFLICT_LIVE).toBe(true);
     const calls: string[] = [];
     const db = Object.assign(
       vi.fn(async (parts: TemplateStringsArray) => {
@@ -87,7 +87,7 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
         ]),
       },
     );
-    const result = await retireProductPageConflicts(db as never, { runId: 1, batchId: "b", dryRun: false });
+    const result = await retireProductPageConflicts(db as never, { runId: 1, batchId: "b", dryRun: false, live: false });
     expect(result).toMatchObject({ live: false, conflicts: 1, rolledBack: [] });
     expect(calls.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
     expect(PRODUCT_PAGE_CONFLICT_CHECK).toBe("hamilton.product_page_conflict");

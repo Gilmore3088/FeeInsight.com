@@ -18,3 +18,5 @@ a deliberate variant of the saved link, such as `?print=1`, the address with `:4
 the saved page links to. Read-only on Oct 18: 1,181 active banks have a saved link that differs
 from the remembered one, and 840 of those differ by more than scheme, `www` or a trailing slash.
 `fee_schedule_url` has no change timestamp, so which side is newer can't be told from the data.
+
+**Agent lesson:** magellan/pr-1883-requested-link-fetched

@@ -2666,7 +2666,8 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
     }
     case "atlas-storage-retention": {
-      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
+      // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
+      const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
       // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).

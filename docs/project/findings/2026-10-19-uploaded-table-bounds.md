@@ -39,3 +39,5 @@ Synthetic regression fixtures cover the 206-byte sparse-reference case; declared
 Copy review follows the repository copywriting/copy-editing guidance: failure text identifies the enforced limit where available and gives one concrete next step (export a smaller range, or export CSV/save a fresh unencrypted XLSX). The no-rows-saved statement is backed by the tested parse-before-write ordering. Numbers in the messages come from the enforced policy above. No success or accuracy claim is inferred from resource-limit tests.
 
 Protocol references: [PKWARE ZIP specification](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) for directory/local records, flags, CRC and descriptors; [Node zlib documentation](https://nodejs.org/api/zlib.html) for bounded synchronous output. Runtime packages, schema, providers, authentication, password formats, URL fetching and production data are unchanged.
+
+**Guard:** `src/lib/hamilton/uploads/parse-bounds.test.ts:88` (a sparse column such as `ZZZZ1` is refused before padding; the cases after it cover the cell, text, shared-string, XML and ZIP budgets)

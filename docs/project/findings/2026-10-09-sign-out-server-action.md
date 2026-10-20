@@ -22,3 +22,5 @@ button on /account, and admin has its own. Both called a Server Action:
 
 **Rule:** don't put auth state changes behind Server Actions called from long-lived pages; post
 a form to a route.
+
+**Guard:** `src/app/api/auth/logout/route.test.ts:30` (the logout route ends the session and answers 303, not 307, so the sign-out form reloads the page signed out)

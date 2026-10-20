@@ -570,9 +570,9 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
   it.each([
     [stopPay, "stop_payment"],
     [held(295678, "5.00", "Early closure fee (90 days)", "Early closure fee (90 days) | $5.00"), "early_closure"],
-    // Returned statements stay held (James's call since v26): the held-name rules no longer file them (v89).
-    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), null],
-    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), null],
+    // Returned statements are returned mail (James's decision card, Oct 20, "File them"; v90).
+    [held(163946, "3.00", "Returned Statement Fee", "Returned Statement Fee | $3 | per statement"), "returned_mail"],
+    [held(219557, "25.00", "Returned statements after 3, tracer fee", "Returned statements after 3, tracer fee | $25.00"), "returned_mail"],
     [held(678207, "5.00", "Printed / Mailed Monthly Statement Fee", "Printed / Mailed Monthly Statement Fee | $5.00"), "paper_statement"],
     [held(472697, "95.00", "7″x10″ Rental", "7″x10″ Rental | $95.00 annual charge (Eldersburg Location Only)"), "safe_deposit_box"],
     // A HELOC's early closure fee (Great Southern Bank) and a mortgage's 36-month one stay held.
@@ -603,11 +603,11 @@ describe("held-name rules for unclassified held lines (#1102)", () => {
     expect(heldNameRelease(row)).toBeNull();
   });
 
-  it("ships switched on (v89, sampled clean Oct 20): today's rules file these names, returned statements stay held", () => {
+  it("ships switched on (v89, sampled clean Oct 20): today's rules file these names, returned statements as returned mail (v90)", () => {
     expect(KNOX_HELD_NAME_RULES_LIVE).toBe(true);
     expect(classifyFeeText("Stop Pay Fee")).toBe("stop_payment");
     expect(recategorizeHeld(stopPay)?.canonicalHint).toBe("stop_payment");
-    expect(classifyFeeText("Returned Statement Fee")).toBeNull();
+    expect(classifyFeeText("Returned Statement Fee")).toBe("returned_mail");
     // Off, today's rules read these names as before.
     expect(withHeldNameRules(false, () => classifyFeeText("Stop Pay Fee"))).toBeNull();
   });
@@ -647,7 +647,8 @@ describe("held lines filed by their name: a person's label or the store's settle
     range_p5: "1.00", range_p95: "60.00",
     outlier_flags: ["knox_review:unclassified", HELD_SET_ASIDE_FLAG],
   });
-  const returnedStatement = held(200601, "10.00", "Returned Statement Fee", "Returned Statement Fee** | $10.00", "account_research");
+  // Live returned statements settle as returned mail (83 at 82 banks, Oct 20).
+  const returnedStatement = held(200601, "10.00", "Returned Statement Fee", "Returned Statement Fee** | $10.00", "returned_mail");
   const membership = held(109152, "5.00", "Membership Fee", "Membership Fee | $5.00", "account_research", "label");
   const cashAdvance = held(186564, "3.00", "Credit Card Cash Advance Fee", "$3.00 | Credit Card Cash Advance Fee | 2%", "cash_advance");
 
@@ -672,7 +673,9 @@ describe("held lines filed by their name: a person's label or the store's settle
     // The $10 is the row before's monthly fee; the paper statement fee is $2.50.
     [held(421833, "10.00", "Paper Statement Fee (per Statement)", "• $10.00/month if none of the above criteria are met. | Paper Statement Fee (per Statement) | $2.50", "paper_statement"), "price_not_under_name"],
     // Outside the category's live spread (p5 to p95, weighted by row).
-    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "account_research"), "outside_category_range"],
+    [held(200602, "500.00", "Returned Statement Fee", "Returned Statement Fee | $500.00", "returned_mail"), "outside_category_range"],
+    // A store that settled the name elsewhere loses to today's rule, which reads returned mail (v90).
+    [held(200603, "10.00", "Returned Statement Fee", "Returned Statement Fee | $10.00", "account_research"), "name_reads_other_category"],
     // Second review of #1385: the price is the next fee's, or the line contradicts the store's category.
     [held(506621, "1.00", "Overdraft Transfer Fee", "Overdraft Transfer Fee (Applicable to overdraft transfers generated automatically | Inquiry Fee12. . . . . . . . $1.00 per transaction inquiry", "od_protection_transfer"), "price_not_under_name"],
     [held(114480, "2.00", "Statement Fee", "Statement Fee | $2.00/Copy", "paper_statement"), "line_contradicts_category"],
@@ -711,7 +714,7 @@ describe("held lines filed by their name: a person's label or the store's settle
     expect(nameFileCheckedFlag(now)).toBe("knox_name_file_checked:k2:2026-W42");
     const result = await fileHeldByName(db as never, { stateCode: "tx", runId: 7, now });
     expect(result).toMatchObject({
-      checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 2 }, institutions: 1, dryRun: false,
+      checked: 3, filed: 2, kept: { not_a_plain_price: 1 }, bySource: { label: 1, store: 1 }, byCategory: { account_research: 1, returned_mail: 1 }, institutions: 1, dryRun: false,
     });
     const select = calls[0];
     // Settled names come from a hash join of live fees on the held rows' own names, and labels from
@@ -728,7 +731,7 @@ describe("held lines filed by their name: a person's label or the store's settle
     expect(select.values).toEqual(expect.arrayContaining(["knox_name_file_checked:k2:2026-W42", 5, "name_label", "TX"]));
     const moves = calls.filter((call) => call.text.includes("RETURNING fr.fee_raw_id")).map((call) => JSON.stringify(call.values));
     expect(moves[0]).toContain("knox_name_filed:store");
-    expect(moves[0]).toContain("canonical_hint:account_research");
+    expect(moves[0]).toContain("canonical_hint:returned_mail");
     expect(moves[1]).toContain("knox_name_filed:label");
     // The line that stayed gets this week's mark, replacing an older week's; with every candidate
     // read, the lane's other held lines get it too, so the week's later steps read only new lines.

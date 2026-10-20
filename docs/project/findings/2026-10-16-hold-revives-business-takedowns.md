@@ -48,3 +48,5 @@ which fees had come back could only be found by matching verified-row flags agai
 
 **Lesson:** a hold that takes fees down for a publish policy is not a sign the fee is gone. Every rule
 that reads "no live fee here" as a reason to act has to decide whether a held fee counts.
+
+**Agent lesson:** gutenberg/pr-1676-held-fee-still-present
