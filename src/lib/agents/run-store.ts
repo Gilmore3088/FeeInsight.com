@@ -1,6 +1,8 @@
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { mapEvent, mapRun, mapStep } from "./run-row-mappers";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
+import { lessonSyncDetail, summarizeLessonSync, syncAgentLessons } from "./learning/lesson-sync";
 import { getExecutionBackend } from "@/lib/execution-backend";
 import { LIVE_AUDIT_STEPS, LIVE_AUDIT_SOURCE, positiveId } from "./deming/live-source-audit";
 import { createLiveAuditDraw } from "@/lib/data-store/live-source-audit";
@@ -54,12 +56,13 @@ import {
 import { runGuideDraft } from "@/lib/agents/guides/draft";
 import { runKnoxExtract } from "@/lib/agents/knox/extract";
 import { consumeRereadRequests, rereadFeedbackDetail } from "@/lib/agents/knox/reread-feedback";
-import { fileHeldByName, previewHeldNameRules, recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows, refileSupersededRows, RANGE_BAND_LIMIT, setAsideRangeBands } from "@/lib/agents/knox/held-recheck";
+import { fileHeldByName, previewHeldNameRules, recheckHeldRates, recheckHeldRows, recheckPromotedRows, recheckSupersededRows, recheckUntracedRows, refileSupersededRows, rescorePromotedRates, RANGE_BAND_LIMIT, setAsideRangeBands } from "@/lib/agents/knox/held-recheck";
 import { refreshFeeIndexCache } from "@/lib/data-store/fee-index";
 import { runMagellanDiscovery } from "@/lib/agents/magellan/discovery";
 import { runMagellanFetch } from "@/lib/agents/magellan/fetch";
 import { runAddressVariantFetch, type RunAddressVariantFetchResult } from "@/lib/agents/magellan/address-variant-fetch";
 import { runSavedLinkFetch, type RunSavedLinkFetchResult } from "@/lib/agents/magellan/saved-link-fetch";
+import { runLiveSourceRefetch, type RunLiveSourceRefetchResult } from "@/lib/agents/magellan/live-source-refetch";
 import { reviewLinkBatches } from "@/lib/agents/magellan/batch-review";
 import { recordLinkOutcomes } from "@/lib/agents/magellan/outcomes";
 import { recordAuditMisses } from "@/lib/agents/deming/audit-misses";
@@ -91,6 +94,7 @@ import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, run
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
+import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runProSeatCheck, summarizeProSeatCheck } from "@/lib/hamilton/pro-seat-check";
@@ -100,6 +104,7 @@ import { runLeadWatch, summarizeLeadWatch } from "@/lib/leads/lead-alerts";
 import { runIndexNowPing, summarizeIndexNow } from "@/lib/seo/indexnow";
 import { runAnswerKeyScore, summarizeAnswerKeyScore } from "@/lib/agents/answer-key-score";
 import { runScoreboardSnapshot, summarizeScoreboard } from "@/lib/agents/scoreboard";
+import { persistCorrectiveArtifact, recordCorrectiveWarnings } from "@/lib/agents/deming/corrective-source-store";
 import { runDemingRegression, summarizeDemingRegression, DEMING_REGRESSION_VERSION } from "@/lib/agents/deming/regression";
 import { freshAuditDetail, runFreshAudit, summarizeFreshAudit } from "@/lib/agents/deming/fresh-audit";
 import { benchmarkHealthDetail, runBenchmarkHealth, summarizeBenchmarkHealth } from "@/lib/agents/deming/benchmark-health";
@@ -113,6 +118,8 @@ import { cityRepairDetail, runCityRepair, summarizeCityRepair } from "@/lib/agen
 import { handLinkRepairDetail, runHandLinkRepair, summarizeHandLinkRepair } from "@/lib/agents/atlas/hand-link-repair";
 import { runStorageRetention, storageRetentionDetail, summarizeStorageRetention } from "@/lib/agents/atlas/storage-retention";
 import { coldTierDetail, runColdTier, summarizeColdTier } from "@/lib/agents/hoovie/storage-tiers";
+import { runVaultRetention, summarizeVaultRetention, vaultRetentionDetail } from "@/lib/agents/atlas/vault-retention";
+import { r2Client } from "@/lib/agents/document-vault";
 import { answerKeyRelabelDetail, runAnswerKeyRelabels, summarizeAnswerKeyRelabels } from "@/lib/agents/atlas/answer-key-relabels";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { MARKET_SPREAD_WORKFLOW, runMarketSpread, summarizeMarketSpread } from "@/lib/agents/content/market-spread";
@@ -575,6 +582,22 @@ async function executeAgenticStep(
           console.error("Saved link fetch failed:", error);
         }
       }
+      // Pages live fees come from that nothing else fetches any more (their bank's address moved,
+      // or one failure long ago stopped it), oldest first (#1200). Free; never fails the step.
+      let liveSources: RunLiveSourceRefetchResult | null = null;
+      if (run.runKind !== "dry_run") {
+        try {
+          liveSources = await runLiveSourceRefetch({
+            db: sql,
+            fetchImpl: feeSourceFetch,
+            runId: run.id,
+            stepId: step.id,
+            institutionId: numericRunParam(params, ["institution_id"]) ?? null,
+          });
+        } catch (error) {
+          console.error("Live source refetch failed:", error);
+        }
+      }
       return {
         status: "completed",
         summary: `Magellan fetched ${fetched.succeeded.toLocaleString()} new source documents from ${fetched.processed.toLocaleString()} selected institutions (${fetched.unchanged.toLocaleString()} unchanged, ${fetched.failed.toLocaleString()} failed, ${fetched.skipped.toLocaleString()} skipped).`,
@@ -594,10 +617,23 @@ async function executeAgenticStep(
                 tried: savedLinks.tried,
                 stored: savedLinks.stored,
                 matched: savedLinks.matched,
+                refused: savedLinks.refused,
                 failed: savedLinks.failed,
                 switch_live: savedLinks.live,
                 results: savedLinks.results.slice(0, 10),
                 would_fetch: savedLinks.wouldFetch,
+              }
+            : null,
+          live_sources: liveSources
+            ? {
+                selected: liveSources.selected,
+                tried: liveSources.tried,
+                stored: liveSources.stored,
+                matched: liveSources.matched,
+                failed: liveSources.failed,
+                switch_live: liveSources.live,
+                results: liveSources.results.slice(0, 10),
+                would_fetch: liveSources.wouldFetch,
               }
             : null,
           selected_institutions: fetched.selected,
@@ -730,6 +766,7 @@ async function executeAgenticStep(
           reader_escalations: read.readerEscalations,
           reader_escalations_used: read.readerEscalationsUsed,
           formats_backfilled: read.formatsBackfilled,
+          document_kinds_backfilled: read.documentKindsBackfilled,
           outcomes: read.outcomes,
           learning_log: read.learning,
           read_chars: read.chars,
@@ -817,6 +854,11 @@ async function executeAgenticStep(
         institutionId: numericRunParam(params, ["institution_id"]),
         stateCode,
       });
+      // Rates promoted before #1055 still carry the held 0.5 placeholder; each scores its own line.
+      const rateRescore = await rescorePromotedRates(tx, {
+        dryRun: run.runKind === "dry_run",
+        institutionId: numericRunParam(params, ["institution_id"]),
+      });
       // Held range lines with no category that are deposit or loan rate bands, set aside as not fees
       // (#1102). Switch off: counted only, nothing written.
       const rangeBands = await setAsideRangeBands(tx, {
@@ -848,7 +890,7 @@ async function executeAgenticStep(
         .join("");
       return {
         status: "completed",
-        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Filed ${nameFile.filed.toLocaleString()} held lines by their name (${nameFile.bySource.label.toLocaleString()} labelled, ${nameFile.bySource.store.toLocaleString()} settled across banks) and ${nameFile.dryRun ? "would send them" : "sent them"} to Darwin, of ${nameFile.checked.toLocaleString()} a name decision covers. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : supersededRefile.mode === "skipped" ? "switch off: not sampled in a state lane" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates. Held range lines with no category (${rangeBands.live ? "" : "switch off, "}${rangeBands.dryRun ? "nothing written" : "live"}): ${rangeBands.candidates.toLocaleString()} in this lane read as deposit or loan rate bands; ${rangeBands.bands.toLocaleString()} of the ${rangeBands.checked.toLocaleString()} read this step (at most ${RANGE_BAND_LIMIT.toLocaleString()} a step) are bands at ${rangeBands.institutions.toLocaleString()} banks${rangeBands.dryRun ? " and would be set aside as not fees" : `, ${rangeBands.setAside.toLocaleString()} set aside as not fees`}.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${rereadNote}${batchNote}`,
+        summary: `Knox extracted ${extraction.insertedFees.toLocaleString()} raw fee observations and ${extraction.freeFees.toLocaleString()} free fees from ${extraction.processedDocuments.toLocaleString()} Rosetta text artifacts (${extraction.extractedFees.toLocaleString()} candidates, ${extraction.skippedFees.toLocaleString()} skipped). Re-read ${heldRecheck.checked.toLocaleString()} held lines with today's rules: ${heldRecheck.promoted.toLocaleString()} categorized and sent to Darwin, ${heldRecheck.setAside.toLocaleString()} set aside (kept, logged), ${promotionRecheck.withdrawn.toLocaleString()} earlier promotions put back on hold. Filed ${nameFile.filed.toLocaleString()} held lines by their name (${nameFile.bySource.label.toLocaleString()} labelled, ${nameFile.bySource.store.toLocaleString()} settled across banks) and ${nameFile.dryRun ? "would send them" : "sent them"} to Darwin, of ${nameFile.checked.toLocaleString()} a name decision covers. Re-traced ${untracedRecheck.checked.toLocaleString()} untraced held lines: ${untracedRecheck.promoted.toLocaleString()} sent to Darwin. Re-read ${supersededRecheck.checked.toLocaleString()} lines a re-read retired: ${supersededRecheck.promoted.toLocaleString()} ${supersededRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededRecheck.liveTwin.toLocaleString()} kept back for a live twin. Re-read ${supersededFreeRecheck.checked.toLocaleString()} free lines a re-read retired: ${supersededFreeRecheck.promoted.toLocaleString()} ${supersededFreeRecheck.live ? "sent to Darwin" : "would go to Darwin (dry read)"}, ${supersededFreeRecheck.liveTwin.toLocaleString()} kept back for a live twin, ${supersededFreeRecheck.notRead.toLocaleString()} not read the same way today. Re-file of retired lines under today's category (${supersededRefile.mode === "live" ? "live" : supersededRefile.mode === "dry_run" ? "dry run, nothing written" : supersededRefile.mode === "skipped" ? "switch off: not sampled in a state lane" : "switch off: a read-only sample, nothing written"}): ${supersededRefile.candidates.toLocaleString()} candidates at ${supersededRefile.candidateInstitutions.toLocaleString()} banks (${supersededRefile.candidatesDarwinDecided.toLocaleString()} already judged by Darwin, left retired); of ${supersededRefile.checked.toLocaleString()} read, ${supersededRefile.refiled.toLocaleString()} ${supersededRefile.dryRun ? "would go" : "sent"} to Darwin under today's category, ${supersededRefile.liveTwin.toLocaleString()} kept back for a live twin, ${supersededRefile.notRead.toLocaleString()} not read today; ${supersededRefile.staleHintRows.toLocaleString()} taken-over rows with a stale category flag${supersededRefile.dryRun ? "" : ` (${supersededRefile.staleHintRepaired.toLocaleString()} repaired)`}. Re-read ${rateRecheck.checked.toLocaleString()} held percentage fees: ${rateRecheck.promoted.toLocaleString()} sent to Darwin as rates.${rateRescore.checked > 0 ? ` Re-scored ${rateRescore.rescored.toLocaleString()} promoted rates still at the held 0.5 placeholder${rateRescore.dryRun ? " (dry run, nothing written)" : ` (${rateRescore.verifiedRescored.toLocaleString()} verified copies)`}.` : ""} Held range lines with no category (${rangeBands.live ? "" : "switch off, "}${rangeBands.dryRun ? "nothing written" : "live"}): ${rangeBands.candidates.toLocaleString()} in this lane read as deposit or loan rate bands; ${rangeBands.bands.toLocaleString()} of the ${rangeBands.checked.toLocaleString()} read this step (at most ${RANGE_BAND_LIMIT.toLocaleString()} a step) are bands at ${rangeBands.institutions.toLocaleString()} banks${rangeBands.dryRun ? " and would be set aside as not fees" : `, ${rangeBands.setAside.toLocaleString()} set aside as not fees`}.${heldNamePreview.live ? "" : ` Held-name rules (switch off, read only): ${heldNamePreview.passChecks.toLocaleString()} held lines would go to Darwin and pass its category and source checks, at ${heldNamePreview.institutions.toLocaleString()} banks (${heldNamePreview.wouldRelease.toLocaleString()} read under them, of ${heldNamePreview.candidates.toLocaleString()} candidates).`}${rereadNote}${batchNote}`,
         detail: {
           held_recheck: heldRecheck,
           held_name_file: nameFile,
@@ -858,6 +900,7 @@ async function executeAgenticStep(
           superseded_refile: supersededRefile,
           promotion_recheck: promotionRecheck,
           held_rate_recheck: rateRecheck,
+          promoted_rate_rescore: rateRescore,
           range_band_set_aside: rangeBands,
           held_name_preview: heldNamePreview,
           reread_feedback: rereadFeedbackDetail(rereadFeedback),
@@ -1857,6 +1900,7 @@ async function executeAgenticStep(
           },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
+          refresh_copy_moved_page: refreshCopy.movedPage ?? 0,
           refresh_copy_skipped: refreshCopy.skipped,
           refresh_copy_samples: refreshCopy.samples.slice(0, 10),
           current_copy: {
@@ -2527,6 +2571,10 @@ async function executeAgenticStep(
     }
     case "deming-regression": {
       const result = await runDemingRegression({ runId: run.id, dryRun: run.runKind === "dry_run", db: tx });
+      const fixture = result.corrective && run.runKind !== "dry_run"
+        ? await persistCorrectiveArtifact(tx, run.id, step.id, result.corrective.artifact)
+        : { state: "not_stored", ciImport: "not_implemented" };
+      if (result.corrective?.warnings.length) await recordCorrectiveWarnings(tx, run.id, step.id, result.corrective.warnings);
       return {
         status: "completed",
         summary: summarizeDemingRegression(result),
@@ -2545,6 +2593,12 @@ async function executeAgenticStep(
           retired: result.retired,
           active_total: result.activeTotal,
           candidate_total: result.candidateTotal,
+          totals_scope: "historical_all_datasets",
+          corrective_source: result.corrective ? { protocol: 2, promoted: result.corrective.promoted, evaluated: result.corrective.evaluated,
+            caught: result.corrective.caught, activated: result.corrective.activated, regressions: result.corrective.regressions,
+            unavailable: result.corrective.unavailable, admission_limit_reached: result.corrective.admissionLimitReached,
+            replay_limit_reached: result.corrective.replayLimitReached, deferred: result.corrective.deferred, fixture,
+            warnings: result.corrective.warnings } : null,
         },
       };
     }
@@ -2567,6 +2621,16 @@ async function executeAgenticStep(
         status: "completed",
         summary: summarizeChangeOutcomes(result),
         detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged, hit_rate: result.hitRate },
+      };
+    }
+    case "deming-monthly-review": {
+      // #1107: on the 1st of the month (UTC) only. Read-only: each measure is one SELECT in its own
+      // savepoint; a failed read is stored as unknown. The ledger row is its only write.
+      const result = await runMonthlyReview({ db: tx });
+      return {
+        status: "completed",
+        summary: summarizeMonthlyReview(result),
+        detail: { version: MONTHLY_REVIEW_VERSION, ran: result.ran, reason: result.reason, review: result.review, alarms: result.review?.alarms ?? [] },
       };
     }
     case "deming-sunday-maintenance": {
@@ -2596,7 +2660,8 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeDataQuality(result), detail: dataQualityDetail(result) };
     }
     case "deming-source-health": {
-      // Read-only (#1866): one SELECT over registry_ingest_partitions and one over Atlas's newest table sizes.
+      // Read-only (#1866): two SELECTs over registry_ingest_partitions (fetch health; period
+      // completeness, #2228) and one over Atlas's newest table sizes.
       const report = await readSourceHealth({ db: tx });
       return { status: "completed", summary: summarizeSourceHealth(report), detail: sourceHealthDetail(report) };
     }
@@ -2627,14 +2692,23 @@ async function executeAgenticStep(
         detail: { ...cityRepairDetail(result), hand_links: links ? handLinkRepairDetail(links) : { error: linksError } },
       };
     }
+    case "atlas-lesson-sync": {
+      // Copies the repo's role lessons into agent_lessons; writes only that table, never a fee row.
+      const result = await syncAgentLessons({ db: tx, dryRun: run.runKind === "dry_run" });
+      return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
+    }
     case "atlas-storage-retention": {
-      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
+      // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
+      const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
+      // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
+      const vault = await runVaultRetention({ db: tx, dryRun: run.runKind === "dry_run", client: r2Client(), commitDb: sql });
       return {
         status: "completed",
-        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)}`,
-        detail: { ...storageRetentionDetail(result), cold_tier: coldTierDetail(cold) },
+        summary: `${summarizeStorageRetention(result)} ${summarizeColdTier(cold)} ${summarizeVaultRetention(vault)}`,
+        // The vault's warnings join `alerts`, which the morning brief emails.
+        detail: { ...storageRetentionDetail(result), alerts: [...result.alerts, ...vault.alerts], cold_tier: coldTierDetail(cold), vault: vaultRetentionDetail(vault) },
       };
     }
     case "schedule-check": {
@@ -2680,6 +2754,7 @@ async function executeAgenticStep(
           snapshot_date: result.snapshotDate,
           ...result.numbers,
           agent_health: result.agentHealth ?? null,
+          queues: result.queues ?? null,
         },
       };
     }
@@ -3079,6 +3154,19 @@ async function prepareNextAgenticStep(runId: number, { pauseExemptOnly = false, 
 
     return { kind: "ready", prepared: { run, step } };
   });
+}
+
+/**
+ * Records which role lessons shaped a step (`lessons_applied`: ids from the agent's
+ * `role-lessons.ts`), so the run log shows them. A step whose agent has none is unchanged.
+ */
+export function withLessonsApplied(
+  step: Pick<AgentRunStepSnapshot, "agent" | "stepKey">,
+  outcome: AgenticStepExecution,
+): AgenticStepExecution {
+  const applied = lessonIds(lessonsForStep(step.agent, step.stepKey));
+  if (applied.length === 0) return outcome;
+  return { ...outcome, detail: { ...(outcome.detail ?? {}), lessons_applied: applied } };
 }
 
 async function finishAgenticStep(
@@ -3566,6 +3654,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "magellan-live-audit-capture":150_000,
   "deming-live-source-draw":30_000,
   "deming-live-source-archive":30_000,
+  // #1107, the 1st of the month only (other days it returns at once): MONTHLY_REVIEW_BUDGET_MS
+  // (110 s) bounds the reads and measures, since a measure starts only while it fits at its 30 s
+  // statement timeout; 10 s more for the ledger.
+  "deming-monthly-review": 120_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
@@ -4027,7 +4119,7 @@ export async function executeAgentRun(
           isRegistryStepKey(step.stepKey)
             ? await executeAgenticStep(sql, run, step)
             : await withTransaction((tx) => executeAgenticStep(tx, run, step));
-        lastResult = await finishAgenticStep(runId, step, outcome);
+        lastResult = await finishAgenticStep(runId, step, withLessonsApplied(step, outcome));
         executedSteps += 1;
         if (lastResult.terminal) return { ...lastResult, executedSteps };
       } catch (error) {
@@ -4180,6 +4272,11 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- The daily scoreboard holds its 150 s score step for a tick with that much left,
+              -- and fresh lanes left at most 128 s, so run 9476 sat queued all of Oct 19 with
+              -- the storage watch behind it. Once lanes have had 15 minutes it goes first.
+              (COALESCE(r.params_json->>'source' = 'atlas.scoreboard', false)
+                AND r.started_at < NOW() - INTERVAL '15 minutes') DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'

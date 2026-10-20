@@ -65,6 +65,7 @@ import {
   type ColdCallRow,
 } from "./cold-reads";
 import { ncuaCallMeasure } from "./ncua-call-measures";
+import { buildCallCohortHistory, readCallCohortHistory, type CallCohortHistory } from "./call-cohort-history";
 
 /**
  * One safe query over the data catalog, for Hamilton's tools and the site. The caller names a
@@ -202,6 +203,7 @@ export interface CallReportPeerComparison {
   nearest_requires_approved_published_fee: boolean;
   selection_limitations: string[];
   income_basis_warning: string | null;
+  cohort_history: CallCohortHistory;
 }
 
 export const CALL_REPORT_YTD_COMPARISON_WARNING = "These are year-to-date filed values. YTD equals standalone-quarter income only in Q1. For later quarters, a standalone-quarter peer median requires each same institution's current YTD minus its prior-quarter YTD, then a median over the matched, comparable cohort. Never subtract independently rolled-up quarter medians.";
@@ -209,6 +211,7 @@ export const CALL_REPORT_YTD_COMPARISON_WARNING = "These are year-to-date filed 
 function callPeerComparison(
   label: string, resolved: ResolvedPeerSet | null, memberIds: number[] | null,
   subjectId: number | null, hasYtd: boolean,
+  history: CallCohortHistory = buildCallCohortHistory({ periods: [], requestedIds: memberIds, subjectId, identity_read_status: "complete", lifecycle_read_status: "not_compared" }),
 ): CallReportPeerComparison {
   const definition = resolved?.definition ?? null;
   const nearest = definition?.nearest ?? null;
@@ -236,6 +239,7 @@ function callPeerComparison(
       ...(nearest !== null ? ["Nearest peers exclude the subject and require at least one approved published fee; this is not all NCUA filers or all institutions nearest in assets."] : []),
     ],
     income_basis_warning: hasYtd ? CALL_REPORT_YTD_COMPARISON_WARNING : null,
+    cohort_history: history,
   };
 }
 
@@ -752,7 +756,8 @@ async function queryCall(input: QueryDataInput, itemKey: string): Promise<QueryD
   const { rows, note: coldNote } = await withColdQuarters(hotRows, { itemKey, rowSources, from, to, limit, institutionIds: memberIds }, (coldRows) => coldCallRollup(coldRows, subjectId));
   const units = [...new Set(rows.map((r) => r.unit))];
   const memberCount = memberIds?.length ?? null;
-  const comparison = callPeerComparison(label, cohort, memberIds, subjectId, rows.some((row) => row.period_basis === "ytd") || measure?.periodBasis === "ytd");
+  const history = await readCallCohortHistory({ periods: rows, requestedIds: memberIds, subjectId });
+  const comparison = callPeerComparison(label, cohort, memberIds, subjectId, rows.some((row) => row.period_basis === "ytd") || measure?.periodBasis === "ytd", history);
   return {
     ok: true,
     measure: input.measure,
@@ -986,5 +991,6 @@ async function withColdQuarters<T extends { period: string; source?: string; sou
   if (comparableRows.length < cold.rows.length) notes.push("Archived rows with unknown or mismatched canonical institution identity are excluded.");
   if (files.length > read.length) notes.push(`Older quarters are archived; at most ${MAX_COLD_FILES_PER_QUERY} archived quarter files are read per question, so ask with a narrower period to read the rest.`);
   if (cold.failed.length > 0) notes.push(`Archived quarters that could not be read are left out: ${cold.failed.join(", ")}.`);
+  if (cold.incomplete?.length) notes.push(`Archived rows with no reported value are left out, not counted as zero: ${cold.incomplete.join(", ")}.`);
   return { rows, note: notes.length > 0 ? notes.join(" ") : null };
 }

@@ -15,7 +15,6 @@ import { trackAnthropicRequest, assertCompletedAnthropicTextResponse, observedPr
 import { HAMILTON_VOICE } from "./voice";
 import {
   evaluateCitationDensity,
-  type CitationGateOptions,
   type CitationGateResult,
 } from "./citation-gate";
 import { checkNarrativeFigures } from "./figure-check";
@@ -274,39 +273,6 @@ export async function generateGlobalThesis(input: ThesisInput): Promise<ThesisOu
       outputTokens: response.usage.output_tokens,
     },
   };
-}
-
-// ─── Citation-Gated Section Generation (roadmap #2) ───────────────────────────
-
-export type GatedSectionOutput =
-  | { status: "ok"; section: SectionOutput; gate: Extract<CitationGateResult, { status: "pass" }> }
-  | { status: "refused"; gate: Extract<CitationGateResult, { status: "refused" }> };
-
-/**
- * Generate a Hamilton section and gate it on citation density.
- *
- * Use this wherever a report narrative is destined for a user-visible surface
- * (PDF, published article, Pro deliverable). The gate refuses reports that
- * make quantified claims without citing pipeline-verified sources — matching
- * the CLAUDE.md accuracy constraint ("All data in reports must trace to
- * pipeline-verified fees").
- *
- * The underlying generation call is not retried — refusal bubbles up so the
- * caller can either widen the data scope or surface the structured empty
- * state to the user.
- */
-export async function generateGatedSection(
-  input: SectionInput,
-  gateOptions?: CitationGateOptions,
-): Promise<GatedSectionOutput> {
-  const section = await generateSection(input);
-  const gate = evaluateCitationDensity(section.narrative, gateOptions);
-
-  if (gate.status === "refused") {
-    return { status: "refused", gate };
-  }
-
-  return { status: "ok", section, gate };
 }
 
 // ─── Figure-Verified Section Generation ───────────────────────────────────────

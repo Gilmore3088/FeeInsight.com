@@ -236,7 +236,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const financial_income_groups = await Promise.all(FINANCIAL_SOURCES.map(async (source) => {
     const trend = await getRevenueTrend(12, source).catch(() => ({ quarters: [], latest: null }));
     manifestEntries.push({ sql: `getRevenueTrend(12, '${source}')`, row_count: trend.quarters.length, executed_at: assembled_at });
-    return buildFinancialIncomeGroup(source, trend.quarters);
+    return buildFinancialIncomeGroup(source, trend.quarters, 8, "United States", "cohort_history" in trend ? trend.cohort_history : undefined);
   }));
 
   // Query 5: economic indicators from BLS, BEA and the Fed Board (graceful degradation)

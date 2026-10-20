@@ -154,3 +154,5 @@ Consequences: fresh aggregate coverage counts and current operator-control value
 ## Continuation rules
 
 Use the existing hourly task, not a duplicate. Execute a concrete next unfinished item each run when permitted, keep current receipts in this ledger/PR, and report only material milestones, a genuinely new actionable blocker or verified completion. No repeated permission requests, no fabricated test results, no green-draft-PR completion claim. The current tool safety block does not prevent independent repository work.
+
+**Agent lesson:** knox/pr-986-scope-each-audience

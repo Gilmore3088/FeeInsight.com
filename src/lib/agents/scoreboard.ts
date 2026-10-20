@@ -8,6 +8,8 @@ import { readAgentHealth, summarizeAgentHealth, type AgentHealthReport } from "@
 import { getMarketReadiness, summarizeReportReady, type ReportReadyCount } from "@/lib/data-store/market-readiness";
 import { readHistoricalLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agents/goal-scorecard";
+import { readQueueBoard, summarizeQueueBoard, type QueueBoard } from "@/lib/agents/queue-board";
+import { PIPELINE_QUEUES } from "@/lib/agents/queue-registry";
 
 /**
  * Atlas's daily scoreboard: six numbers that say whether the pipeline is getting
@@ -31,6 +33,9 @@ import { goalHeadline, readGoalScorecard, type GoalScorecard } from "@/lib/agent
  *   report-ready         institutions passing the report rule (state peers, or Fed
  *                        district peers where the state has too few). Stored in
  *                        `detail.report_ready`; /admin/leads shows it week over week.
+ *   piles                every queue in queue-registry.ts with its owner, size, oldest item and
+ *                        alarms (#1108). Stored in `detail.queues`; growth is judged against
+ *                        the stored days before it.
  */
 
 type SqlTag = typeof sql;
@@ -248,6 +253,8 @@ export interface ScoreboardSnapshotResult {
   agentHealth?: AgentHealthReport | null;
   /** The goal scorecard (#1040), stored in `detail.goal`. */
   goal?: GoalScorecard | null;
+  /** Every registered pile with its owner and alarms (#1108), stored in `detail.queues`. */
+  queues?: QueueBoard | null;
 }
 
 /** Reads the six numbers and stores today's snapshot (one row per UTC day; reruns replace it). */
@@ -277,14 +284,21 @@ export async function runScoreboardSnapshot({
         return null;
       })
     : null;
-  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth, goal };
-  await writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal});
-  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal };
+  // Growth is judged against stored days, so the board needs the scoreboard table too.
+  const queues = schemaReady
+    ? await readQueueBoard(db, PIPELINE_QUEUES, now).catch((error) => {
+        console.error("readQueueBoard failed:", error);
+        return null;
+      })
+    : null;
+  if (!schemaReady || dryRun) return { schemaReady, snapshotDate, numbers, stored: false, agentHealth, goal, queues };
+  await writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal,queues});
+  return { schemaReady, snapshotDate, numbers, stored: true, agentHealth, goal, queues };
 }
 
 /** Validate retained finals under a row lock; archive-field presence alone is never trust. */
-export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal}:{db:SqlTag;snapshotDate:string;runId:number|null;
-  numbers:ScoreboardNumbers;agentHealth:AgentHealthReport|null;goal:GoalScorecard|null}):Promise<void>{
+export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,agentHealth,goal,queues=null}:{db:SqlTag;snapshotDate:string;runId:number|null;
+  numbers:ScoreboardNumbers;agentHealth:AgentHealthReport|null;goal:GoalScorecard|null;queues?:QueueBoard|null}):Promise<void>{
   const write=async(scope:SqlTag)=>{
     // Serializes absent-row inserts too. Archive writers only update existing rows.
     await scope`SELECT pg_advisory_xact_lock(hashtextextended(${`atlas.scoreboard.snapshot:${snapshotDate}`},0))`;
@@ -308,6 +322,7 @@ export async function writeScoreboardSnapshot({db,snapshotDate,runId,numbers,age
           : {}),
         ...(agentHealth ? { agent_health: agentHealth } : {}),
         ...(goal ? { goal } : {}),
+        ...(queues ? { queues } : {}),
       };
     if(retained?.archive)detail.goal={...(goal??{}),liveSourceAudit:retained} as GoalScorecard;
   await scope`
@@ -382,5 +397,6 @@ export function summarizeScoreboard(result: ScoreboardSnapshotResult): string {
       : `Atlas read the scoreboard (not stored: the scoreboard migration is not applied yet)`;
   const health = result.agentHealth ? ` ${summarizeAgentHealth(result.agentHealth)}` : "";
   const goal = result.goal ? ` Goal: ${goalHeadline(result.goal)}.` : "";
-  return `${prefix}: ${parts.join(", ")}.${goal}${health}`;
+  const piles = result.queues ? ` ${summarizeQueueBoard(result.queues)}` : "";
+  return `${prefix}: ${parts.join(", ")}.${goal}${piles}${health}`;
 }

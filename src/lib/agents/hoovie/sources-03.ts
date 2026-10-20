@@ -143,6 +143,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // The source key keeps its FRED-era name so the step and its history stay joined.
     source: "fred",
     loader: "fed",
+    checkEveryHours: 24, // FRED_REFRESH_HOURS
     publisher: "US Bureau of Labor Statistics, US Bureau of Economic Analysis and the Federal Reserve Board (H.15)",
     licence: {
       status: "public-domain",
@@ -159,6 +160,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/fed.ts (runRegistryFomcMinutes), regulatory/fed.ts (federalreserve.gov FOMC calendar)
     source: "fomc-minutes",
     loader: "fed",
+    checkEveryHours: 24, // FOMC_REFRESH_HOURS
     publisher: "Board of Governors of the Federal Reserve System (FOMC)",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -171,6 +173,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/fed-publications.ts, regulatory/fed-banks.ts (fedinprint.org/rss, Reserve Banks' own feeds)
     source: "fed-publications",
     loader: "fed-publications",
+    checkEveryHours: 24, // FED_PUBLICATIONS_REFRESH_HOURS
     publisher: "The 12 regional Federal Reserve Banks (via Fed in Print)",
     licence: {
       status: "terms-unconfirmed",
@@ -186,6 +189,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // magellan/registry/reg-news.ts, data-store/news.ts FEEDS (Fed, FDIC via govdelivery, OCC, CFPB press RSS)
     source: "reg-news",
     loader: "reg-news",
+    checkEveryHours: 24, // REG_NEWS_REFRESH_HOURS
     publisher: "Federal Reserve Board, FDIC, OCC and CFPB",
     licence: { status: "public-domain" },
     connection: "web-pages",
@@ -199,6 +203,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // writes only when FEDERAL_REGISTER_TRACKER_LIVE=true)
     source: "federal-register",
     loader: "federal-register",
+    checkEveryHours: 24, // FEDERAL_REGISTER_REFRESH_HOURS
     publisher: "Office of the Federal Register (Federal Register)",
     licence: { status: "public-domain" },
     connection: "rest-api",
@@ -212,6 +217,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // writes only when FEDERAL_BILLS_TRACKER_LIVE=true)
     source: "federal-bills",
     loader: "federal-bills",
+    checkEveryHours: 24, // FEDERAL_BILLS_REFRESH_HOURS
     publisher: "Library of Congress (Congress.gov)",
     licence: { status: "public-domain" },
     connection: "keyed-api",
@@ -243,6 +249,7 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     // (feeds or news pages; writes only when STATE_NEWS_TRACKER_LIVE=true, source "state:XX")
     source: "state-reg-news",
     loader: "state-reg-news",
+    checkEveryHours: 24, // REFRESH_HOURS
     publisher: "State banking and credit union regulators (New York, North Carolina and Florida struck)",
     licence: {
       status: "terms-unconfirmed",
@@ -346,5 +353,22 @@ export const HOOVIE_SOURCES_03: HoovieSourceContract[] = [
     grain: ["institution"],
     linkKeys: [],
     tables: ["institution_payment_features"],
+  },
+  {
+    // magellan/registry/call-report-summaries.ts: reads institution_financial_records (the fdic and ncua
+    // rows the financials loaders wrote) and stores each filing's standalone quarter; fetches nothing.
+    source: "call-report-summaries",
+    loader: "call-report-summaries",
+    publisher: "FDIC and NCUA call reports, as already loaded (each filing's own quarter, split once per load)",
+    licence: {
+      status: "public-domain",
+      note: "A recomputation of the FDIC and NCUA call-report figures already held; no new publisher data.",
+    },
+    connection: "derived",
+    cadence: "quarterly",
+    checkEveryHours: 24,
+    grain: ["institution"],
+    linkKeys: [],
+    tables: ["call_report_quarterly_income", "call_report_summary_groups"],
   },
 ];

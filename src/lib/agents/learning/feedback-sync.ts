@@ -5,6 +5,7 @@ import { feeCheckedBy, MACHINE_ANSWER_KEYERS, type AnswerKeyInstitution } from "
 import {
   feedbackSchemaReady,
   knoxStrategyFromFlags,
+  lastPerDedupeKey,
   recordFeedback,
   takedownCheck,
   takedownKind,
@@ -28,6 +29,11 @@ export interface FeedbackSyncResult {
   categoryRejects: number;
   answerKeyFees: number;
   written: number;
+  /**
+   * A dry run only: the rows a live sync would upsert (one per dedupe key, as `recordFeedback`
+   * writes them), so a dry run counts what it would write (publish-sweeps comparison, #1026).
+   */
+  wouldWrite?: number;
   /** Older takedown rows named after one fee ("hamilton.refreshed by #69017") given their fixed names. */
   relabeled: number;
   referenceExcludedBanks?: number;
@@ -361,7 +367,11 @@ export async function syncPipelineFeedback(
   }
 
   result.relabeled = await relabelPerFeeTakedowns(db, { limit, dryRun: options.dryRun === true });
-  if (options.dryRun || rows.length === 0) return result;
+  if (options.dryRun) {
+    result.wouldWrite = lastPerDedupeKey(rows).length;
+    return result;
+  }
+  if (rows.length === 0) return result;
   try {
     result.written = await inSavepoint(db, (scope) => recordFeedback(scope, rows));
   } catch (error) {

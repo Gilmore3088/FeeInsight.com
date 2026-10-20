@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 import { SESSION_COOKIE, verifyAndExtractSessionId } from "@/lib/session-cookie";
 import { sanitizeInternalRedirect } from "@/lib/safe-redirect";
 import { cityMetroPath, isSignedInVariantPath, signedInVariantPath } from "@/lib/viewer-variant";
@@ -47,7 +48,7 @@ function isRouteBranch(pathname: string, branch: string) {
 const LEGACY_PATH_REDIRECTS: Record<string, string> = {
   "/consumer": "/for-consumers",
   "/districts": "/research#districts",
-  "/waitlist": "/for-institutions#report",
+  "/waitlist": REPORT_REQUEST_HREF,
   // Typed and drafted often; the site's own links go to /subscribe.
   "/pricing": "/subscribe",
 };

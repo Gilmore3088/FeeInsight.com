@@ -9,6 +9,7 @@ import {
   STORAGE_ALERT_MB,
   storageAlerts,
   storageRetentionDetail,
+  summarizePartitions,
   summarizeStorageRetention,
 } from "./storage-retention";
 
@@ -188,6 +189,40 @@ describe("public-data table budgets", () => {
     expect(result.budgetTables).toBeNull();
     expect(result.heldSources).toEqual([]);
     expect(storageRetentionDetail(result)).toMatchObject({ budget_tables: null });
+  });
+});
+
+describe("legacy event-log partitions in the trim", () => {
+  const plan = (dropped: boolean) => ({
+    cutoff: "2026-08-20T08:00:00.000Z",
+    boundary: ["agent_events_2026_08"],
+    partitions: [
+      { name: "agent_events_2026_06", rows: 300_000, totalMb: 174, dropped },
+      { name: "agent_events_2026_07", rows: 320_000, totalMb: 189, dropped },
+    ],
+  });
+  it("names the whole months past the cutoff while off or in a dry run", () => {
+    expect(summarizePartitions(plan(false), false)).toBe(" (whole months past the cutoff: agent_events_2026_06, agent_events_2026_07, 363 MB)");
+  });
+  it("names what it dropped and what it could not", () => {
+    expect(summarizePartitions(plan(true), true)).toBe(" (dropped agent_events_2026_06, agent_events_2026_07, 363 MB)");
+    const partly = plan(true);
+    partly.partitions[1] = { ...partly.partitions[1], dropped: false };
+    expect(summarizePartitions(partly, true)).toBe(" (dropped agent_events_2026_06, 174 MB; could not drop agent_events_2026_07)");
+    expect(summarizePartitions({ ...plan(false), partitions: [] }, true)).toBe("");
+  });
+  it("lists the partitions before touching the log, and a dry run drops none", async () => {
+    const { db, calls } = mockDb({ legacy: 10 });
+    const result = await runStorageRetention({ db, dryRun: true, commitDb: db, now: new Date("2026-10-19T08:00:00Z") });
+    const listed = calls.findIndex((c) => c.includes("FROM pg_inherits"));
+    const log = calls.findIndex((c) => c.includes("FROM agent_events"));
+    expect(listed).toBeGreaterThanOrEqual(0);
+    expect(listed).toBeLessThan(log);
+    expect(calls.some((c) => /DETACH|DROP TABLE/.test(c))).toBe(false);
+    expect(result.trims[0]).toMatchObject({ policy: "legacy_event_log", live: false, eligible: 10, deleted: 0 });
+    expect(storageRetentionDetail(result).trims).toEqual(expect.arrayContaining([
+      expect.objectContaining({ policy: "legacy_event_log", partitions: { cutoff: "2026-08-20T08:00:00.000Z", boundary: [], expired: [] } }),
+    ]));
   });
 });
 

@@ -68,7 +68,7 @@ describe("national trends", () => {
     expect(dallas.fees.overdraft).toEqual({ median: 31, institutions: 6 });
     expect(dallas.income).toBeNull();
     expect(dallas.financialIncome?.[0]).toMatchObject({ source: "fdic", charter_type: "bank", quarters: [
-      expect.objectContaining({ quarter: income[0].quarter, total_thousands: 900_000, yoy_change_pct: 12.5, reported_count: 600 }), expect.anything(),
+      expect.objectContaining({ quarter: income[0].quarter, total_thousands: 900_000, yoy_change_pct: null, reported_count: 600 }), expect.anything(),
     ] });
     const boston = trends.districts.find((d) => d.district === 1)!;
     expect(boston.fees.overdraft).toEqual({ median: null, institutions: 2 });
@@ -110,7 +110,7 @@ describe("national trends", () => {
     expect(trends.financialIncomeGroups).toHaveLength(2);
     for (const g of trends.financialIncomeGroups ?? []) {
       expect(g.quarters).toHaveLength(16);
-      expect(g.quarters[0]).toMatchObject({ quarter: income[0].quarter, yoy_change_pct: 4 });
+      expect(g.quarters[0]).toMatchObject({ quarter: income[0].quarter, yoy_change_pct: null });
     }
   });
 

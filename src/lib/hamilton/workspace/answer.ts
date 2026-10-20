@@ -8,7 +8,7 @@
  */
 
 import { PERCENTILE_METHOD } from "@/lib/percentile";
-import { nationalIncomeFamily } from "./national-income";
+import { HISTORICAL_INCOME_CAVEAT, nationalIncomeFamily } from "./national-income";
 import { revenueLineName } from "./revenue";
 import { MAX_STORY_LINE_WORDS, words } from "./four-roles";
 import { subjectPossessive } from "./subject";
@@ -315,6 +315,7 @@ function trendExhibit(research: FeeResearch): Exhibit | null {
       unit: "dollars",
       series,
       sources: [fin.sourceRef, ...(fin.peerMedian ? [fin.peerMedian.sourceRef] : [])],
+      ...(fin.peerMedian ? { cohortHistory: fin.peerMedian.cohortHistory, note: HISTORICAL_INCOME_CAVEAT } : {}),
     };
   }
   const family = nationalIncomeFamily(research.nationalIncomeSeries);
@@ -326,6 +327,8 @@ function trendExhibit(research: FeeResearch): Exhibit | null {
       unit: "dollars",
       series: [{ label: `All ${family.kind} on file`, points: [...national].reverse().map((q) => ({ date: q.quarter, value: q.total })) }],
       sources: [national[0].sourceRef],
+      cohortHistory: research.nationalIncomeCohortHistory,
+      note: HISTORICAL_INCOME_CAVEAT,
     };
   }
   return null;

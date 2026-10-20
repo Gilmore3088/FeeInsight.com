@@ -37,3 +37,5 @@ no first byte after 60 s to the error screen in about 20 s.
 function limit, or a pool stall turns into minutes of skeleton and cut-off responses. What filled
 the pool (a crawl of hundreds of institution pages while back-fill and admin queries ran) is not
 fixed here: caching the institution pages (#1811) is what takes that load off the database.
+
+**Guard:** `src/app/(public)/institution/[id]/page-deadline.test.tsx:131` (against a database that never answers, the layout's existence check gives up at its deadline; line 139 does the same for the institution read, so the error boundary answers)

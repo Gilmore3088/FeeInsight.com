@@ -136,8 +136,3 @@ export function resolveTokensToText(
     return COUNT_STATS.has(stat) ? value.toLocaleString() : formatAmount(value);
   });
 }
-
-/** Every token in a block, for validation. */
-export function blockTokens(text: string): ParsedToken[] {
-  return parseTokens(text);
-}

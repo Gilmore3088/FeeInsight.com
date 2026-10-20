@@ -10,3 +10,5 @@ Validation: the boundary test asserts exported function identity and prohibits t
 old imports. Existing report-template tests remain authoritative for output behavior.
 This addresses the report-template cycle only; other reported cycles need separate
 review and are not claimed resolved by this extraction.
+
+**Guard:** `src/lib/report-templates/import-boundary.test.ts:17` (template implementations import the primitives leaf, never the public export barrel)

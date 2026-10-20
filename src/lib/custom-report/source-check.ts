@@ -40,6 +40,15 @@ export type SourceCheckResult = {
   producerScopeUnknown?: true;
 } | { ok: false; reason: SourceCheckFailure };
 
+export type SourceCheckOptions = {
+  /**
+   * Let a row read under its section heading take the category word from that heading (#1835).
+   * Only the fee position report passes it: the pipeline (Darwin, Hamilton, Knox) keeps the
+   * stricter nearby-lines rule until the change ships with Darwin's live re-check and dry-run count.
+   */
+  sectionHeadingCategory?: boolean;
+};
+
 const LONG_LINE = 300;
 /** Only a short line is read price-first; a flattened paragraph can open with any price. */
 const PRICE_FIRST_MAX_LENGTH = 120;
@@ -1122,7 +1131,9 @@ export function checkFeeAgainstSource(
   amount: number,
   categoryPattern: string,
   canonicalFeeKey?: string | null,
+  options: SourceCheckOptions = {},
 ): SourceCheckResult {
+  const sectionHeadingCategory = options.sectionHeadingCategory === true;
   if (!rawText || !rawText.trim()) return { ok: false, reason: "no_source_text" };
   // #1334: prices whose decimal point the PDF text dropped read as Knox reads them ("$29. 95" is $29.95).
   const text = droppedPointText(rawText);
@@ -1181,7 +1192,7 @@ export function checkFeeAgainstSource(
   const perItem = canonicalFeeKey != null && PER_ITEM_CATEGORIES.has(canonicalFeeKey);
   let first: SourceCheckResult | null = null;
   for (const lines of pages) {
-    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem);
+    const asPrice = checkAgainstLines(lines, feeName, amount, categoryPattern, false, perItem, sectionHeadingCategory);
     if (asPrice.ok) {
       if (conflictsWithAudienceStatement(feeName, amount, asPrice.sourceLine)) {
         return { ok: false, reason: "amount_not_the_fee" };
@@ -1190,7 +1201,7 @@ export function checkFeeAgainstSource(
     }
     first ??= asPrice;
     if (!asCap) continue;
-    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true);
+    const cap = checkAgainstLines(lines, feeName, amount, categoryPattern, true, false, sectionHeadingCategory);
     if (cap.ok) return cap;
   }
   if (first && !first.ok && first.reason === "tiered_fee" && statements.length > 0 &&
@@ -1218,6 +1229,7 @@ function checkAgainstLines(
   categoryPattern: string,
   dailyCap: boolean,
   perItem = false,
+  sectionHeadingCategory = false,
 ): SourceCheckResult {
   const page = sourcePageRows(lines);
   // A cap's row names the fee it caps ("Overdraft/Non-Sufficient Funds"), rarely the cap.
@@ -1301,7 +1313,16 @@ function checkAgainstLines(
       continue;
     }
     const context = lines.slice(Math.max(0, i - CATEGORY_LOOKBACK_LINES), i + 1).join(" ");
-    if (!category.test(context)) {
+    // A row whose name was read under its section heading may take the category word from that
+    // heading, however many priced rows down the section it sits ("Wire Transfers" / "Outgoing
+    // Domestic Fee" / "$35" / ... / "Incoming Domestic Fee" / "$25", #1835). Only the nearest
+    // heading counts, and only when it carries one of the fee's own name words: a heading further
+    // up belongs to an earlier section ("ATM Service Charge" above "Faxes – | Outgoing | $4.00").
+    // Report path only (SourceCheckOptions.sectionHeadingCategory); the pipeline's verdict is unchanged.
+    const section = headings[headings.length - 1];
+    const sectionNamesCategory =
+      sectionHeadingCategory && underHeading && !namesFee(line, stems) && section !== undefined && namesFee(section, stems, 1) && category.test(section);
+    if (!category.test(context) && !sectionNamesCategory) {
       best = "category_not_in_text";
       continue;
     }

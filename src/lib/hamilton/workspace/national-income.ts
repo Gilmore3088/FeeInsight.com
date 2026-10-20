@@ -2,6 +2,8 @@ import { financialMeasureDefinition } from "@/lib/data-store/financial-peer-cont
 import type { FinancialSource } from "@/lib/data-store/financial-sources";
 import type { MarketIncome } from "./types";
 
+export const HISTORICAL_INCOME_CAVEAT = "Peer and national figures are dated filing cross-sections using current registry charter and size links. Reporter membership and business perimeter may change; this is not constant-cohort or merger-adjusted growth.";
+
 /** Older mixed or unlineaged workspace payloads cannot establish a national income family. */
 export function nationalIncomeFamily(rows: readonly MarketIncome[], expectedSource?: FinancialSource) {
   const sources = [...new Set(rows.map((row) => row.financialSource))];

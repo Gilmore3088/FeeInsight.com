@@ -105,8 +105,6 @@ export const RD_TYPE = {
 
 /** Below this width the narrow chart drawing replaces the wide one. */
 export const RD_PHONE_MAX = 640;
-/** The viewBox widths charts are drawn at. */
-export const RD_CHART_WIDTH = { wide: 960, narrow: 400 } as const;
 
 /** The same palette under the names the React-PDF briefing uses (src/components/hamilton/reports). */
 export const RD_PDF = {
@@ -128,18 +126,4 @@ export const RD_PDF_CHART = {
   band: mix(T.brick, T["surface-0"], 0.16),
   bar: RD.context,
   rule: RD.rule2,
-} as const;
-
-/**
- * React-PDF has only its built-in fonts unless one is registered. The brand is sans throughout,
- * so headings use Helvetica too (Geist is not registered with React-PDF yet). The `serif*` keys
- * are kept so the briefing's imports compile.
- */
-export const RD_PDF_FONTS = {
-  serif: "Helvetica-Bold",
-  serifBold: "Helvetica-Bold",
-  serifItalic: "Helvetica-Oblique",
-  sans: "Helvetica",
-  sansBold: "Helvetica-Bold",
-  sansItalic: "Helvetica-Oblique",
 } as const;

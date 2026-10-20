@@ -58,7 +58,6 @@ const {
   getTopCitiesByState,
 } = await import("./geographic");
 const { getPublicStats, getStats } = await import("./core");
-const { getPeerPreviewStats, getTopCategoriesForPeerSet } = await import("./peers");
 const { getNationalRateStats } = await import("./rate-fees");
 const { getStateHub } = await import("./district-hub");
 const { loadSnapshotRows } = await import("@/lib/agents/growth/market-snapshot");
@@ -68,7 +67,6 @@ const { getStateMarketFees } = await import("./state-markets");
 const { getInstitutionStateDirectorySummaries } = await import("./search");
 const { getCountyFeeMap, getStateVisualsData } = await import("./state-visuals");
 const { getDistrictMetrics } = await import("./dashboard");
-const { getFeesForCategory, getFilteredTierCounts, getSegmentOutliers } = await import("./market");
 const { getPeerFinancialMedians, getPeerPercentiles } = await import("./financial");
 const { getCharterFeeRevenueSummary, getFeeRevenueData, getTierFeeRevenueSummary } = await import("./fee-revenue");
 const { getRevenueConcentration } = await import("./derived-analytics");
@@ -107,8 +105,6 @@ describe("remaining public readers take the active-institution rule (#2149)", ()
   it.each([
     ["getStats (/methodology schedule links, /research/data-sources)", () => getStats()],
     ["getPublicStats (Pro data, market and district pages)", () => getPublicStats()],
-    ["getPeerPreviewStats", () => getPeerPreviewStats({ charter_type: "bank" })],
-    ["getTopCategoriesForPeerSet", () => getTopCategoriesForPeerSet({ charter_type: "bank" })],
     ["getSegmentFeeRows (national trends report)", () => getSegmentFeeRows(["overdraft"])],
     ["getSegmentFeeValues (Hamilton segments)", () =>
       getSegmentFeeValues({ minAssets: null, maxAssets: null, charterType: null, stateCode: "TX", largest: null }, "overdraft", "nsf")],
@@ -159,7 +155,7 @@ function marketRows(query: string): unknown[] {
 /**
  * The readers #2149 missed (#2190): the state page's market comparison, the city pages, the
  * directory's per-state counts, the state report and price-check county map, the district
- * metrics, the market segment reads, the institution profile's financial peer group, the
+ * metrics, the institution profile's financial peer group, the
  * fee-revenue summaries and the revenue concentration read.
  */
 describe("readers #2149 missed take the active-institution rule (#2190)", () => {
@@ -171,9 +167,6 @@ describe("readers #2149 missed take the active-institution rule (#2190)", () => 
     ["getStateVisualsData (state report charts)", () => getStateVisualsData("TX")],
     ["getCountyFeeMap (/tools/price-check county map)", () => getCountyFeeMap("TX", "overdraft")],
     ["getDistrictMetrics (Hamilton districts)", () => getDistrictMetrics()],
-    ["getFilteredTierCounts", () => getFilteredTierCounts({})],
-    ["getFeesForCategory", () => getFeesForCategory("overdraft", {})],
-    ["getSegmentOutliers", () => getSegmentOutliers({})],
     ["getPeerFinancialMedians (institution profile)", () => getPeerFinancialMedians(1)],
     ["getPeerPercentiles (institution profile)", () => getPeerPercentiles(1)],
     ["getFeeRevenueData", () => getFeeRevenueData()],
@@ -284,7 +277,6 @@ const WITHOUT_RULE: Record<string, string> = {
   "benchmark-export.ts": "not yet reviewed",
   "competitor-coverage.ts": "not yet reviewed",
   "custom-report-market.ts": "not yet reviewed",
-  "designation-lists-aggregates.ts": "not yet reviewed",
   "hamilton-peer-fees.ts": "not yet reviewed",
   "hamilton-peer-list.ts": "not yet reviewed",
   "local-market.ts": "not yet reviewed",

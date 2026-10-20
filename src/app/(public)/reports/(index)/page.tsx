@@ -30,7 +30,7 @@ import { SERIF, sampleExhibit } from "./report-view";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Competitive Fee Reports",
+  title: `${REPORT_OFFER.name} for Banks and Credit Unions`,
   description: `See where your fees stand against your local competitors. The ${REPORT_OFFER.name}, from $${REPORT_OFFER.fromPriceUsd}, with a source for every figure.`,
 };
 

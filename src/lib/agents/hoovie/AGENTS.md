@@ -208,3 +208,16 @@ The source-health brief includes the newest nonblocked empty partition’s actua
 when a source has loaded nothing. It bounds and redacts that evidence; holds and newer failures
 keep precedence. Missing legacy reasons remain unknown. A recorded parser/weight/URL problem
 must be repaired at its source, never replaced with guessed data to make the status fresh.
+
+## Call-report quarterly income (James, 2026-10-20)
+
+The raw FDIC and NCUA filings stay in `institution_financial_records`. Each filing's standalone
+quarter (NCUA 5300 income is year-to-date) is computed once per load, not on every page read:
+`registry-call-report-summaries` (`magellan/registry/call-report-summaries.ts`, contract
+`connection: "derived"`) writes `call_report_quarterly_income`, rebuilding only the
+regulator-years whose filings changed (count and row hash in `call_report_summary_groups`) in the
+step's one transaction. A successful `fdic-financials`, `ncua-financials` or `fdic-universe` run
+makes it due at once; it is a priority source, so it runs before the backfill continues.
+Readers: `data-store/call-reports.ts` and the district/state hub. While the table is missing or
+empty they fall back to the per-request SQL (`call-reports-legacy.ts`) and log a warning.
+`call-report-quarters.db.test.ts` proves both paths return the same numbers.

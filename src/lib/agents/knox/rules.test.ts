@@ -559,8 +559,8 @@ describe("Knox extract.rules", () => {
     expect(foldedCategory(name)).toBe(key);
   });
 
+  // v90 (James, Oct 20, "File them"): returned statements are returned mail now (see below).
   it.each([
-    "Returned Statement Fee",
     "Membership Fee",
     "Telephone Transfer Fee",
     "Uncollected Funds Fee",
@@ -1573,8 +1573,9 @@ describe("v75: recurring held name families from the 62-bank answer key (Knox re
     expect(hint("Credit Card Replacement | $20")).toEqual([]);
   });
 
-  it("leaves returned statements held (James's call since v26)", () => {
-    expect(hint("Returned Statement fee | $10/each")).toEqual([]); // inst 7526, f2295
+  it("files returned statements as returned mail (James's decision card, Oct 20, \"File them\"; v90)", () => {
+    expect(hint("Returned Statement fee | $10/each")).toEqual([["returned_mail", 10]]); // inst 7526, f2295
+    expect(classifyFeeText("Returned Statement Fee")).toBe("returned_mail");
   });
 });
 

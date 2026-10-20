@@ -2,7 +2,7 @@ import { ProductFrame } from "@/components/marketing/product-frame";
 import type { MarketReport } from "@/lib/custom-report/report-data";
 import { REPORT_OFFER } from "@/lib/constants";
 import { AtAGlance } from "@/app/market-report/[token]/at-a-glance";
-import { placeLabel } from "@/app/market-report/report-body";
+import { placeLabel } from "@/app/market-report/place-label";
 import { SAMPLE_REPORT_HREF } from "@/app/landing-shared";
 
 const DISPLAY = { fontFamily: "var(--fi-font-sans)" };

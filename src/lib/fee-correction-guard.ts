@@ -32,6 +32,16 @@ export function resetCorrectionsReadyCache(): void {
   readyCheckedAt = 0;
 }
 
+/**
+ * SQL that keeps a published row (by its alias) out of an agent check's candidates while it has a
+ * current admin correction (#978): an agent never rewrites what an admin corrected. Takedowns are
+ * stopped by the `keep_admin_corrected_fee_live` trigger as well; value edits rely on this.
+ */
+export function notAdminCorrectedSql(alias: string): string {
+  if (!/^[a-z_][a-z0-9_]*$/.test(alias)) throw new Error(`bad table alias: ${alias}`);
+  return `NOT EXISTS (SELECT 1 FROM published_fee_corrections corrected WHERE corrected.fee_published_id = ${alias}.fee_published_id AND corrected.status = 'current')`;
+}
+
 export type CorrectionBlock =
   | { kind: "protected"; correctionId: number; feeChainId: number }
   | { kind: "conflict"; correctionId: number; feeChainId: number; conflictId: number | null };

@@ -21,3 +21,5 @@ were already off); turning them on is James's call.
 **Lesson:** a check that keys on "same address" misses every schedule that moves. When a source
 link changes, the fetch must ask for the new link, and every live fee must trace to a document that
 is still one of the bank's sources.
+
+**Agent lesson:** magellan/pr-2074-fetch-saved-link-once, gutenberg/pr-2074-retired-documents

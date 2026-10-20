@@ -36,17 +36,22 @@ institutions remains the only human launch workflow.
   (`golden`, `adversarial`, `regression`, `holdout`, `fresh_audit`). Today only `regression` is
   written. A case's `input` is frozen at insert and never rewritten; cases are never deleted.
 - `severity.ts`: the critical / major / minor / info scale. An unknown check is `major`.
-- `checkers.ts`: offline replayers. Only checks with a pure rule (`hamilton.limit_guard`,
-  `hamilton.source_check`) replay; other cases stay `candidate` instead of passing a test that
-  never ran.
+- `checkers.ts`: pure offline checkers. Runtime generic replay admits `hamilton.limit_guard`;
+  a legacy `source_check` body remains historical and unavailable. The prospective source-bound
+  corrective protocol below has its own paired replay; other error families are not counted as
+  evaluated merely because a checker name exists.
 - `regression.ts`: the `deming-regression` step in Atlas's daily scoreboard run
-  (`/api/admin/crew/scoreboard`). It turns every `takedown_confirmed` fee that is still down into a
-  case, replays every replayable case, retires a case whose fee was restored, and reports any
-  active case the rules no longer catch as a regression.
+  (`/api/admin/crew/scoreboard`). It enrolls supported limit takedowns and eligible prospective
+  human corrective contexts, retains unbound source takedowns as availability-only diagnostics,
+  retires a limit case whose fee was restored, and reports an active evaluated rule failure as a
+  regression. Historical source cases are preserved without supplying replay denominators.
+  Each corrective read runs under a 2 s statement cap; admission and replay listings check stored
+  bodies 50 corrections per statement, in listing order. A failed or timed-out phase leaves its rows
+  unknown and writes one `step.warning` run event per phase (`corrective.warnings` in the detail).
 - `__fixtures__/regression-cases.json` + `regression-gate.test.ts`: the CI gate. Every case must
   still be caught with its expected reason. Refresh it from `eval_cases where status = 'active'`
-  and `input->>'kind' = 'limit_guard'`; source-check cases carry whole documents, so prod's daily
-  replay gates those.
+  and `input->>'kind' = 'limit_guard'`. New corrective replay writes bounded run-generated ledger
+  artifacts; the production-artifact-to-repository/CI import handoff remains unimplemented.
 - `__fixtures__/hard-documents.json` + `hard-documents.test.ts`: the hard-document gate (#1067),
   run in CI as `npm run test:quality-gates` with the taxonomy, fold and guard suites. Real source
   lines, each cited by `source_document_id` and `text_hash`: two fees at one price on one page stay
@@ -213,6 +218,27 @@ institutions remains the only human launch workflow.
 - Read-only, deterministic, no model calls, pause-exempt: one SELECT over
   `registry_ingest_partitions` and one over Atlas's newest table sizes.
 
+## Monthly agent review (#1107)
+
+- `monthly-review.ts` (`MONTHLY_REVIEW_VERSION` v1): the `deming-monthly-review` step in Atlas's
+  daily scoreboard run, before `deming-sunday-maintenance`. It runs on the 1st of the month (UTC)
+  only, the same gate as the Sunday email. Each of the four agents reviewed on 2026-10-12
+  (Magellan, Rosetta, Knox, Hamilton the publisher; `docs/plans/*-review-2026-10-12.md`) has a
+  list of named read-only SQL measures, each with a direction (higher or lower is better) and a
+  move limit. A baseline is the review's own figure, or null where the review states none.
+- Each measure runs in its own savepoint with a 30-second statement timeout; a failed or timed-out
+  read is stored as unknown (null with its error), never 0. A measure starts only while it can
+  finish inside the step's 110-second budget at that timeout; the rest are unknown for the month.
+- The answer-key measures read the newest score through `getLatestAnswerKeyScoreRun`: a run on
+  another reference cohort is unknown, never a score. Each reading carries its basis (scorer
+  version and cohort), and a month or baseline on a different basis is shown but never compared
+  or alarmed against. The 2026-10-12 answer-key figures were scored at v1, so they never alarm.
+- A measure that moves the wrong way past its limit since last month (or, with no last month, since
+  the 2026-10-12 figure) is an ALARM in the step summary, on /admin/agents/health and in the next
+  Sunday email. The app has no GitHub access: an alarm is added to that agent's tracker by hand.
+- The step detail (`review`) is the history: last month is read back from the newest earlier
+  ledger row. Read-only, deterministic, no model calls, pause-exempt.
+
 ## Boundaries
 
 - Deming never writes fee rows, flags or takedowns. It reads `pipeline_feedback` and the fee tiers.
@@ -227,9 +253,49 @@ fails a PR that changes one of these constants without updating its line here (#
 | Constant | Strategy | Version | File |
 |---|---|---|---|
 | `ACCURACY_REPORTING_VERSION` | — | v1 | `deming/accuracy-measure.ts` |
-| `FRESH_AUDIT_VERSION` | — | v5 | `deming/fresh-audit.ts` |
+| `FRESH_AUDIT_VERSION` | — | v7 | `deming/fresh-audit.ts` |
 | `DEMING_REGRESSION_VERSION` | — | v1 | `deming/regression.ts` |
 | `BENCHMARK_HEALTH_VERSION` | — | v1 | `deming/benchmark-health.ts` |
 | `PLAYBOOK_CHECK_VERSION` | — | v1 | `deming/playbook-contradictions.ts` |
 | `DATA_QUALITY_VERSION` | — | v1 | `deming/data-quality.ts` |
 | `KNOX_MISSES_VERSION` | — | v1 | `deming/knox-misses.ts` |
+| `MONTHLY_REVIEW_VERSION` | — | v1 | `deming/monthly-review.ts` |
+
+### Prospective corrective source contexts (#2064, protocol 2)
+
+A new authorized admin price/name correction may seal one complete named, checked normalization
+in its initial uncommitted `published_fee_corrections.source_check.deming_source_v2`. The observer
+uses a real savepoint: a learning snapshot failure leaves the already-authorized fee action intact.
+No committed correction or historical case is retrofitted. The receipt records the actual canonical
+fields and run/step/event/human-feedback origin, not a caller's actor/validation flag. The original
+extraction binding stays unknown; a later validated edition is a corrective/publication context,
+never a proved original Knox miss. The source hash in the generic original-input column stays NULL.
+
+The consumed corrective loader admits metadata before LIMIT 300, including live original origins
+at first enrollment. Exactly one full document, <=200000 codepoints/800000 UTF8 bytes, <=8192-byte
+metadata and <=1MiB encoded case are supported. Invalid metadata does not occupy the batch. Only
+an ordered whole-case prefix within each 8MiB payload/write/replay budget is loaded, without clipping
+or substituting smaller later cases. SQL statements retain 2s/100ms statement/lock limits; these
+bounds are not an O(1), absolute CPU or minimum-drain-latency guarantee. Read failure is unknown.
+
+Enrolled replay pins the actual canonical immutable receipt and semantic fields. Routine old-event
+trimming, step removal and the correction run FK becoming NULL do not erase that authority; missing
+or altered canonical evidence remains unavailable. Legacy generic source cases are unchanged history,
+excluded before the trusted replay ceiling. Unbound temporal source takedowns consume no new key.
+Golden/limit producers keep their own policy. The paired checker must refuse the old value AND accept
+the corrected positive; both accepted or corrected refused are not catches. This measures expected
+rule behavior against the human corrective context, not independent accuracy or complete applicability.
+Unknown original/product context is not silently declared general or original-extraction evidence.
+
+Actual replay inputs/outcomes can produce bounded `deming.fixture.v2` ledger chunks (<=2MiB including
+event envelope, <=8MiB total). Optional chunk failure rolls back the artifact, not the correction;
+a later run can regenerate it. Saved counts distinguish unavailable, deferred and historical totals.
+**Production-artifact-to-CI import is not implemented.** All-error coverage/routing, other label-authority
+policies, generic multi-document/original-input snapshots and historical case repair remain separate
+open #2064 obligations. No new queue, source/provider request, switch, replay or human task is added.
+
+The selected corrective edition also freezes `agent_source_texts.source_hash` and requires its
+nonempty equality to the named document's `content_hash`, checked again in the final seal and
+initial enrollment. This is an internal stored edition association, not independent PDF-byte
+verification or original-extraction binding. Missing, null, mismatched or changed association
+leaves optional learning unavailable while preserving the authorized correction.

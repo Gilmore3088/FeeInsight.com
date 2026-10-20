@@ -101,6 +101,7 @@ vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+  HAMILTON_PUBLISH_MIN_INSTITUTION_FEES: 3,
 }));
 
 vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
@@ -174,7 +175,9 @@ import {
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
+  withLessonsApplied,
 } from "./run-store";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 
 const runRow = {
   id: 101,
@@ -878,6 +881,40 @@ describe("agentic run store", () => {
     return { detail, message: String(finished[0].at(-2)) };
   }
 
+  it("saves corrective-source counts and an explicit artifact failure through the real finished-step INSERT", async () => {
+    const regression = await import("./deming/regression");
+    const source = await import("./deming/corrective-source-store");
+    const { fixtureArtifact } = await import("./deming/corrective-source");
+    const observed = { warnings: [{ phase: "replay_read" as const, count: 1, timedOut: true, error: "canceling statement due to statement timeout" }], promoted: 1, admissionLimitReached: false, replayLimitReached: false, evaluated: 1, caught: 1, activated: 1, regressions: 0,
+      regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
+    const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
+      promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
+      activeTotal: 9, candidateTotal: 301, corrective: observed });
+    const persist = vi.spyOn(source, "persistCorrectiveArtifact").mockResolvedValue({ state: "unavailable", scope: "evaluated_this_run", complete: false,
+      bytes: 0, cases: 0, chunks: 0, digest: observed.artifact.digest, ciImport: "not_implemented" });
+    try {
+      getExecutionBackendMock.mockReturnValue("agentic_v1");
+      const steps = [{ ...queuedStepRows[0], step_key: "deming-regression", agent_name: "atlas", title: "Deming replay" }];
+      const run = { ...runRow, progress_total: 1 };
+      installSqlMocks({ finalRun: run, finalSteps: steps }); installTxMocks(steps, run);
+      expect(await executeAgentRun(101)).toMatchObject({ status: "completed", executedSteps: 1 });
+      expect(replay).toHaveBeenCalledTimes(1); expect(persist).toHaveBeenCalledWith(txMock,101,steps[0].id,observed.artifact);
+      const saved = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.finished'")); expect(saved).toHaveLength(1);
+      const detail = JSON.parse(String(saved[0].at(-1)));
+      expect(detail).toMatchObject({ replayed: 1, caught: 1, totals_scope: "historical_all_datasets", corrective_source: {
+        protocol: 2, evaluated: 1, caught: 1, unavailable: { count: null }, fixture: { state: "unavailable", ciImport: "not_implemented" } } });
+      expect(detail.corrective_source).not.toHaveProperty("artifact");
+      expect(detail.corrective_source.warnings).toEqual(observed.warnings);
+      const warned = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.warning'"));
+      expect(warned, "a swallowed replay timeout leaves a visible step warning").toHaveLength(1);
+      expect(JSON.parse(String(warned[0].at(-1)))).toMatchObject({ check: "admin.fee_correction.source_context.replay_read" });
+      expect(String(warned[0].at(-2))).toContain("statement timeout");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("Could not finish: replay read (statement timeout)");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("unavailable unknown");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("CI fixture import remains unimplemented");
+    } finally { replay.mockRestore(); persist.mockRestore(); }
+  });
+
   const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
 
   it("saves bounded unresolved-admission receipts without source context and excludes deferred zeros from settled counts", async () => {
@@ -1193,18 +1230,29 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
-  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
-    sqlMock.mockResolvedValue([]);
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("keeps report-review ordering $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockResolvedValue([]);
 
-    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+      await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
 
-    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
-    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
-    const retry = order.indexOf("= 'failed') DESC");
-    const review = order.indexOf("::text[])) DESC");
-    expect(review).toBeGreaterThan(retry);
-    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
-    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+      const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+      const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+      const retry = order.indexOf("= 'failed') DESC");
+      const review = order.indexOf("::text[])) DESC");
+      expect(review).toBeGreaterThan(retry);
+      expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("AND upper(btrim(r.state_code)) = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
@@ -1824,6 +1872,20 @@ describe("recordProRequest", () => {
     await expect(
       recordProRequest({ operation: "thesis", title: "t", status: "failed", summary: "s", userId: null }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("lessons_applied on a finished step", () => {
+  it("records the ids of the role lessons that shaped the step, keeping its own detail", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract-paid" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const expected = lessonIds(lessonsForStep("knox", "extract-paid"));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
+  });
+
+  it("leaves a step whose agent keeps no lessons unchanged", () => {
+    const outcome = { status: "completed" as const, summary: "s", detail: { a: 1 } };
+    expect(withLessonsApplied({ agent: "growth", stepKey: "growth-score" }, outcome)).toBe(outcome);
   });
 });
 

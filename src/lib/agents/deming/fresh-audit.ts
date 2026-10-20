@@ -3,7 +3,7 @@ import { CATEGORY_GUARD_VERSION, checkFeeCategory } from "@/lib/fee-category-gua
 import { SOURCE_CHECK_STRATEGY, traceLiveFee, type InstitutionText, type LiveFeeRow } from "@/lib/agents/hamilton/source-check";
 import { severityFor, type Severity } from "@/lib/agents/deming/severity";
 import { ARTICLE_PAGE_CHECK, isArticlePage } from "@/lib/agents/hamilton/article-page";
-import { PRODUCT_PAGE_CONFLICT_CHECK, productPageConflictSql } from "@/lib/agents/hamilton/product-page-conflict";
+import { PRODUCT_PAGE_CONFLICT_CHECK, isSameItemConflict, productPageConflictSql, type ConflictRow } from "@/lib/agents/hamilton/product-page-conflict";
 import {
   OTHER_BANK_DOCUMENT_CHECK,
   UNCONFIRMED_HOST_CHECK,
@@ -39,8 +39,12 @@ type SqlTag = typeof sql;
  * purpose, is not a bad name (`nameQuality`).
  * v5 (#1196): a name that opens on a cut cents figure ("00 Monthly fee") or a table row number
  * ("14 | Insufficient funds") is a cut name, through Darwin's `nameHasCutShape`.
+ * v6 (#2440): a product-page fee is a miss only when its schedule prices the same item
+ * differently (`isSameItemConflict`), the rule Hamilton's own conflict check uses.
+ * v7: that rule counts only schedule lines on the page's own host, priced above $0 and fetched
+ * no earlier than the page, and pairs names only when they are the same item word for word.
  */
-export const FRESH_AUDIT_VERSION = 5;
+export const FRESH_AUDIT_VERSION = 7;
 export const FRESH_AUDIT_SAMPLE = ACCURACY_DAILY_SAMPLE;
 /** Below this many scorable fees the audit reports counts, not a percentage. */
 export const FRESH_AUDIT_MIN_SCORABLE = ACCURACY_MIN_SCORABLE;
@@ -314,7 +318,7 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
               AND later.created_at >= open.created_at
          )
     `,
-    db.unsafe<{ fee_published_id: number | string }[]>(productPageConflictSql("fees"), [feeIds]),
+    db.unsafe<ConflictRow[]>(productPageConflictSql("fees"), [feeIds]),
   ]);
   const ids = (rows: HostRow[]) => new Set(rows.filter((row) => !ownBank(row)).map((row) => Number(row.fee_published_id)));
   const sampled = new Set(feeIds);
@@ -322,7 +326,7 @@ async function readEvidence(db: SqlTag, feeIds: number[]): Promise<FreshAuditEvi
     otherBank: ids(other),
     unconfirmedHost: ids(unconfirmed),
     pending: new Set(pending.map((row) => Number(row.fee_published_id))),
-    productPageConflict: new Set(conflicts.map((row) => Number(row.fee_published_id)).filter((id) => sampled.has(id))),
+    productPageConflict: new Set(conflicts.filter(isSameItemConflict).map((row) => Number(row.fee_published_id)).filter((id) => sampled.has(id))),
   };
 }
 

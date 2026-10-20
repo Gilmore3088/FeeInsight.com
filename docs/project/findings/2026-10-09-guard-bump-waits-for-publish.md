@@ -12,3 +12,5 @@ fill over every live fee on the first tick after the deploy. Both are free steps
 waits while the pipeline is paused. This PR.
 **Lesson:** a check that changes with a version needs its own trigger. Riding another step means
 it runs only when that step does.
+
+**Agent lesson:** gutenberg/pr-801-live-twin-of-holds

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { researchSplitTarget } from "@/lib/fee-fold";
 
@@ -57,15 +58,49 @@ function currentRawLock(text: string, values: unknown[], rows: Array<Record<stri
 }
 
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
+  // These rule fixtures now expose the actual selected attempt/raw tuple and the
+  // immutable factual document/artifact used by their synthetic model call.
+  const sourceRows = SOURCE_TEXTS.map(source => {
+    const document = {
+      id: source.source_document_id, institution_id: 10, document_url: "https://bank.example/fees.pdf",
+      status: "success", superseded_by_id: null, duplicate_of_id: null,
+      content_hash: createHash("sha256").update(`fixture bytes ${source.source_document_id}`).digest("hex")
+    };
+    const artifact = {
+      ...source, id: 100 + source.source_document_id, institution_id: 10,
+      source_url: document.document_url, source_hash: document.content_hash, status: "completed",
+      text_hash: createHash("sha256").update(source.normalized_text).digest("hex")
+    };
+    return { document, artifact };
+  });
+  const state = (raw: Record<string, unknown>) => JSON.stringify([raw, { id: 1_000 + Number(raw.fee_raw_id) }]);
   const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
-    const locked = currentRawLock(templateText(strings), values, rows);
-    if (locked !== null) return Promise.resolve(locked);
+    const query = templateText(strings);
+    if (query.includes("paid_source_snapshot")) return Promise.resolve(sourceRows.map(({ document, artifact }) => ({
+      ...artifact, artifact_id: artifact.id, document_state: JSON.stringify(document), artifact_state: JSON.stringify(artifact),
+    })));
+    if (query.includes("paid_input_state")) {
+      const selected = rows.find(row => Number(row.fee_raw_id) === Number(values[3]));
+      const source = sourceRows.find(source => source.document.id === Number(values[1]));
+      return Promise.resolve(selected && source ? [{ state: state(selected), document_state: JSON.stringify(source.document), artifact_state: JSON.stringify(source.artifact) }] : []);
+    }
+    const locked = currentRawLock(query, values, rows);
+    if (locked !== null) return Promise.resolve(locked.map(row => ({ ...row, binding_state: JSON.stringify(row) })));
+    if (query.includes("FROM source_documents") && query.includes("FOR SHARE NOWAIT")) return Promise.resolve(sourceRows.filter(source => (values[0] as number[]).includes(source.document.id)).map(source => source.document));
+    if (query.includes("SELECT id, source_document_id, institution_id, text_hash, source_hash, status")) return Promise.resolve(sourceRows.filter(source => (values[0] as number[]).includes(source.document.id)).map(({ artifact }) => ({ id: artifact.id, source_document_id: artifact.source_document_id, institution_id: artifact.institution_id, text_hash: artifact.text_hash, source_hash: artifact.source_hash, status: artifact.status })));
+    if (query.includes("SELECT * FROM agent_source_texts") && query.includes("FOR SHARE NOWAIT")) return Promise.resolve(sourceRows.filter(source => (values[0] as number[]).includes(source.artifact.id)).map(source => source.artifact));
     if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     if (templateText(strings).includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
     if (templateText(strings).includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
     return Promise.resolve([]);
   }) as DbMock;
-  db.unsafe = vi.fn(() => Promise.resolve(rows));
+  db.unsafe = vi.fn((query: string, params: unknown[] = []) => Promise.resolve(rows
+    .filter(row => !query.includes(" AND rel.id = $") || Number(row.fee_raw_id) === Number(params.at(-2)) &&
+      1_000 + Number(row.fee_raw_id) === Number(params.at(-1)))
+    .map(row => ({
+    ...row,
+    selected_attempt_id: 1_000 + Number(row.fee_raw_id), selected_policy_state: state(row),
+    }))));
   return db;
 }
 

@@ -1,11 +1,12 @@
 import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
-import { ProviderBudgetBlockedError, estimateAnthropicCostMicrousd, observedProviderUsage, incompleteProviderResponse } from "@/lib/ai-provider-usage";
+import { ProviderBudgetBlockedError, ProviderCircuitOpenError, estimateAnthropicCostMicrousd, observedProviderUsage, incompleteProviderResponse } from "@/lib/ai-provider-usage";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { feedbackSchemaReady } from "@/lib/agents/learning/feedback";
 import { detectFormat } from "@/lib/agents/learning/format";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
@@ -14,6 +15,7 @@ import {
   PAID_PASS_ITEMS_PER_RUN,
   PAID_PASS_MODELS,
   paidModelCall,
+  providerRefusalSql,
   paidResponseText,
   type PaidMessageCreator,
   type PaidPassResult,
@@ -21,12 +23,14 @@ import {
 } from "@/lib/agents/paid-pass";
 import {
   AUXILIARY_READ_STRATEGIES,
+  DOCUMENT_ACCESS_STRATEGY,
   hashText,
   loadDocumentBytes,
   normalizeWhitespace,
   PAGE_CHECK_STRATEGY,
   recordReadResult,
   ROSETTA_READ_VERSION,
+  ROSETTA_DOCUMENT_ACCESS_VERSION,
   rungTextNotWorse,
   sendBackToMagellan,
   type ReadResult,
@@ -199,6 +203,7 @@ async function selectPaidReadCandidates(
               AND paid.input_fingerprint = doc.content_hash
               AND paid.strategy = ${paidParam}
               AND paid.outcome <> ALL(${retryableParam}::text[])
+              AND NOT ${providerRefusalSql("paid")}
          )
        ORDER BY (adt.status = 'needs_ocr') DESC, adt.updated_at DESC, adt.id DESC
        LIMIT ${limitParam}
@@ -208,7 +213,8 @@ async function selectPaidReadCandidates(
 }
 
 function isBudgetStop(error: unknown): boolean {
-  return error instanceof ProviderBudgetBlockedError || error instanceof EmergencyStopActiveError;
+  // A provider billing refusal (#1056) is the account's state, not the scan's: stop, record nothing.
+  return error instanceof ProviderBudgetBlockedError || error instanceof EmergencyStopActiveError || error instanceof ProviderCircuitOpenError;
 }
 
 function callFailureOutcome(error: unknown): AttemptOutcome {
@@ -241,6 +247,8 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
   const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const pageCounter = options.pageCounter ?? countPdfPages;
   const model = PAID_PASS_MODELS.read();
+  // Rosetta's role lessons ride every paid read as instructions (learning/lesson-reader.ts).
+  const roleLessons = lessonsForModel("rosetta", "read-paid");
 
   for (const row of rows) {
     const startedAt = Date.now();
@@ -289,14 +297,38 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
     };
 
     const loaded = await loadDocumentBytes(
-      { sourceUrl, vaultKey: row.document_r2_key, storedContentType: row.stored_content_type },
+      { sourceUrl, vaultKey: row.document_r2_key, storedContentType: row.stored_content_type, selectedHash: row.content_hash },
       fetchImpl,
       vault,
     );
+    const identityFailure = !loaded.ok && loaded.byteIdentity ? loaded
+      : loaded.ok && loaded.byteIdentity.status === "unbound" ? {
+        outcome: "evidence_mismatch" as const,
+        error: "The document has no captured byte hash; capture the source before a paid read.",
+        byteIdentity: loaded.byteIdentity,
+      } : null;
+    if (identityFailure) {
+      // No provider response occurred. An access failure must not settle the paid attempt selector.
+      result.processed += 1;
+      result.failed += 1;
+      result.results.push({ source_document_id: sourceDocumentId, institution_id: institutionId,
+        outcome: identityFailure.outcome, error: identityFailure.error, cost_microusd: 0, response_received: false,
+        primary_byte_identity: identityFailure.byteIdentity });
+      await recordAttempt(db, {
+        institutionId, sourceDocumentId, stage: "read", strategy: DOCUMENT_ACCESS_STRATEGY,
+        version: ROSETTA_DOCUMENT_ACCESS_VERSION, fingerprint: row.content_hash, outcome: identityFailure.outcome,
+        yieldCount: 0, costMicrousd: 0, durationMs: Date.now() - startedAt,
+        runId: options.runId, stepId: options.stepId ?? null, foldIntoPlaybook: false,
+        detail: { url: sourceUrl, paid_preflight: true, response_received: false,
+          primary_byte_identity: identityFailure.byteIdentity, error: identityFailure.error },
+      });
+      continue;
+    }
     if (!loaded.ok) {
       await fail(loaded.outcome, loaded.error);
       continue;
     }
+    responseDetail = { primary_byte_identity: loaded.byteIdentity };
     if (detectFormat(loaded.bytes, loaded.contentType, loaded.finalUrl) !== "pdf") {
       await fail("unsupported_format", "Stored document is no longer a PDF");
       continue;
@@ -321,7 +353,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
         operation: "paid_read",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, source_document_id: sourceDocumentId, source_hash: row.content_hash, step_id: options.stepId ?? null, pages },
+        metadata: { institution_id: institutionId, source_document_id: sourceDocumentId, source_hash: row.content_hash, step_id: options.stepId ?? null, pages, lessons_applied: roleLessons.lessonIds },
         responsePolicy: (message) => {
           responseReceived = true;
           const usage = observedProviderUsage(message?.usage);
@@ -332,6 +364,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
           const reason = typeof message?.stop_reason === "string" ? message.stop_reason.slice(0, 80) : null;
           const partial = reason === "max_tokens" || reason === "model_context_window_exceeded";
           responseDetail = {
+            ...responseDetail,
             response_policy_version: ROSETTA_PAID_READ_VERSION,
             native_stop_reason: reason,
             provider_finish_reason: reason,
@@ -349,6 +382,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
         params: {
           model,
           max_tokens: PAID_READ_MAX_TOKENS,
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [
             {
               role: "user",
@@ -416,6 +450,7 @@ export async function runRosettaPaidRead(options: RosettaPaidReadOptions): Promi
       format: replacesText ? "pdf_text" : "pdf_scanned",
       routerReason: replacesText ? "fees from the free readers' texts did not hold up" : null,
       fromVault: loaded.fromVault,
+      primaryByteIdentity: loaded.byteIdentity,
       pageCheck,
       tableRows: rows.length,
       rows,

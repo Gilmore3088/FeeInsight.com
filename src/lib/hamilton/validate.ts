@@ -4,7 +4,7 @@
  * Zero tolerance for invented statistics.
  */
 
-import type { SectionInput, SectionOutput, ValidationResult, ValidatedSection } from "./types";
+import type { ValidationResult } from "./types";
 
 /**
  * Regex patterns for extracting numeric tokens from narrative text.
@@ -145,22 +145,5 @@ export function validateNumerics(
     inventedNumbers,
     checkedCount: tokens.length,
     sourceValues,
-  };
-}
-
-/**
- * Compose generation output with validation result.
- * Attaches validation to the section output without re-generating.
- */
-export function validateSection(
-  output: SectionOutput,
-  input: SectionInput
-): ValidatedSection {
-  const validation = validateNumerics(output.narrative, input.data);
-
-  return {
-    ...output,
-    validation,
-    input,
   };
 }

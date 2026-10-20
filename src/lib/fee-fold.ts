@@ -477,7 +477,6 @@ export interface SplitCategory {
   sqlPattern: string;
 }
 
-
 /** The account research split's switched rules, tried after its IRA, fax and copy rules. */
 const RESEARCH_SPLIT_RULES: ReadonlyArray<{ to: string; name: RegExp }> = [
   { to: "excess_withdrawal", name: EXCESS_WITHDRAWAL },
@@ -622,8 +621,6 @@ export function researchSplitCategory(
   const to = splitLiveCategory(key, feeName, RESEARCH_SPLIT_PREVIEW)?.to;
   return to && RESEARCH_SPLIT_KEYS.has(to) ? to : null;
 }
-
-export const SPLIT_CATEGORY_KEYS: ReadonlySet<string> = new Set(Object.keys(SPLIT_CATEGORIES));
 
 /** Where a live-category fee moves under `SPLIT_CATEGORIES`, or null when it stays. Pure. */
 export function splitLiveCategory(

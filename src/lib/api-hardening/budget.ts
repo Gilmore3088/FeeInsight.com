@@ -292,36 +292,6 @@ async function assertRunCaps(
   }
 }
 
-export async function recordBudgetBlockedAttempt(
-  context: ProviderBudgetContext,
-  error: ProviderBudgetBlockedError,
-): Promise<void> {
-  if (!context.routeId) return;
-  try {
-    const policy = getApiRoutePolicy(context.routeId);
-    await recordApiRouteAuditEvent({
-      policy,
-      statusCode: 423,
-      outcome: "blocked",
-      userId: context.userId ?? null,
-      subjectKey: context.subjectKey ?? null,
-      budgetPolicyId: error.policyId ?? null,
-      provider: context.provider,
-      model: context.model,
-      agentName: context.agent,
-      operation: context.operation,
-      reasonCode: error.reasonCode,
-      metadata: {
-        policy_key: error.policyKey ?? null,
-        message: error.message,
-        ...(context.metadata ?? {}),
-      },
-    });
-  } catch (auditError) {
-    console.error("Provider budget block audit failed", auditError);
-  }
-}
-
 export async function assertProviderBudgetAllowed(
   context: ProviderBudgetContext,
 ): Promise<ProviderBudgetDecision> {

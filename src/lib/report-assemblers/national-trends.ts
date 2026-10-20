@@ -259,7 +259,7 @@ export async function assembleNationalTrends(): Promise<NationalTrends> {
         getRevenueTrend(TREND_QUARTERS + 4, source),
         getDistrictIncomeTrend(TREND_QUARTERS + 4, source),
       ]);
-      return { source, national: buildFinancialIncomeGroup(source, revenue.quarters, TREND_QUARTERS), rows: districtRows };
+      return { source, national: buildFinancialIncomeGroup(source, revenue.quarters, TREND_QUARTERS, "United States", revenue.cohort_history), rows: districtRows };
     })),
   ]);
   return buildNationalTrends({ feeRows, financialIncomeGroups: groups.map((g) => g.national), districtIncomeGroups: groups });

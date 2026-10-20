@@ -89,3 +89,5 @@ harness) are stored outside the checkout under `/tmp/feeinsight-audit-2026-10-18
 `retirement-final-impact-summary.json`, `retirement-finalized-pending-cohort.json` and
 `retirement-final-pending-verdicts.json`. The final snapshot was gathered only with
 SELECT; the replay called pure functions and performed no production writes.
+
+**Agent lesson:** gutenberg/pr-2130-same-identity-witness

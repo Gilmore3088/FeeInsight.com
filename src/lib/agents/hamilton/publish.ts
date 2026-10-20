@@ -325,6 +325,9 @@ export function coverageTier(confidence: number): "strong" | "provisional" {
   return confidence >= 0.9 ? "strong" : "provisional";
 }
 
+/** The refusal reason for a row below the publish confidence floor (re-selected once it clears it). */
+export const BELOW_CONFIDENCE_REASON = "Below publish confidence threshold";
+
 export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, productPageOn: boolean = productPageTakedownEnabled()): string | null {
   const flags = parseFlags(row.outlier_flags);
   if (!flags.includes("agentic_darwin_verified")) return "Not verified by the agentic Darwin path";
@@ -381,7 +384,7 @@ export function publishSkipReason(row: VerifiedFeeRow, minConfidence: number, pr
   const limit = isPercentFee(row) ? null : limitGuardVerdict(row);
   if (limit) return `Transaction limit, not a price: ${limit.detail}`;
   if (normalizedConfidence(row.extraction_confidence) < minConfidence) {
-    return "Below publish confidence threshold";
+    return BELOW_CONFIDENCE_REASON;
   }
   return null;
 }
@@ -439,10 +442,12 @@ export async function rejectVerifiedFee(db: SqlTag, feeVerifiedId: number, flag:
  * has since passed under a newer guard, whose guard rejection does not count. Without the
  * second, the nine rows re-queued on 2026-10-09 01:38 UTC were never selected again.
  */
-function undecidedAtThisVersionSql(params: Array<number | string | number[]>): string {
+function undecidedAtThisVersionSql(params: Array<number | string | number[]>, minConfidence: number): string {
   const strategyParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.strategy)}`;
   const versionParam = `$${params.push(HAMILTON_PUBLISH_STRATEGY.version)}`;
   const refiledParam = `$${params.push(DARWIN_SCHEDULE_REFILED_FLAG)}`;
+  const confidenceParam = `$${params.push(minConfidence)}`;
+  const confidenceReasonParam = `$${params.push(BELOW_CONFIDENCE_REASON)}`;
   return `AND NOT EXISTS (
          SELECT 1
            FROM pipeline_attempts pa
@@ -496,10 +501,19 @@ function undecidedAtThisVersionSql(params: Array<number | string | number[]>): s
             AND NOT (pa.outcome = 'unchanged' AND ${OLDER_DOCUMENT_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${QUALIFIER_RESELECT_SQL})
             AND NOT (pa.outcome = 'unchanged' AND ${ARTICLE_PAGE_RESELECT_SQL})
+            -- A row refused only for low confidence is decided once more when its confidence
+            -- now clears the floor: Knox re-scored 1,017 promoted held rates refused at its
+            -- 0.5 placeholder (#1055). A row still below the floor stays decided.
+            AND NOT (
+              pa.outcome = 'rejected'
+              AND pa.detail->>'reason' = ${confidenceReasonParam}
+              AND COALESCE(fv.extraction_confidence, 0) >= ${confidenceParam}
+            )
        )`;
 }
 
-async function selectVerifiedFees(
+/** The verified rows Hamilton picks next, whole documents oldest first (`publish-selection.db.test.ts`). */
+export async function selectVerifiedFees(
   db: SqlTag,
   limit: number,
   learning: boolean,
@@ -559,10 +573,33 @@ async function selectVerifiedFees(
       ),`;
     filters.push(`AND fv.institution_id IN (SELECT deep.institution_id FROM deep)`);
   }
-  if (learning) filters.push(undecidedAtThisVersionSql(params));
+  if (learning) filters.push(undecidedAtThisVersionSql(params, minConfidence));
+  // Narrow first, project after (findings/2026-10-19-publish-eligibility-projection.md): the
+  // eligible CTE keeps only what selection and the whole-document batch need, and the costly
+  // per-row reads (the two pipeline_attempts look-ups, the verified-row snapshot) run only for
+  // the picked rows. One statement, one snapshot, so the picked rows read exactly as before.
   return db.unsafe<VerifiedFeeRow[]>(
     `
-      WITH ${deepCte} eligible AS (
+      WITH picked_rows AS (
+      WITH ${deepCte} eligible AS MATERIALIZED (
+      SELECT fv.fee_verified_id,
+             COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
+             fv.created_at AS batch_created_at
+        FROM verified_fee_observations fv
+        JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
+        JOIN institution_sources inst ON inst.id = fv.institution_id
+       WHERE fv.review_status IN ('verified', 'approved')
+         AND fv.outlier_flags ? 'agentic_darwin_verified'
+         ${filters.join("\n         ")}
+         AND NOT EXISTS (
+           SELECT 1
+             FROM published_fee_records fp
+            WHERE fp.lineage_ref = fv.fee_verified_id
+              AND fp.rolled_back_at IS NULL
+         )
+      )
+      ${WHOLE_DOCUMENT_BATCH}
+      )
       SELECT fv.fee_verified_id,
              to_jsonb(fv)::text AS selected_verified_state,
              fv.fee_raw_id,
@@ -587,8 +624,7 @@ async function selectVerifiedFees(
              fr.source_document_id,
              fr.product_name,
              sd.crawled_at AS document_crawled_at,
-             -- Read through jsonb so this works before the companion-pages migration.
-             to_jsonb(sd)->>'companion_source_id' AS document_stream,
+             sd.companion_source_id::text AS document_stream,
              sd.document_url,
              inst.institution_name,
              EXISTS (
@@ -610,24 +646,14 @@ async function selectVerifiedFees(
                        OR ${QUALIFIER_RESELECT_SQL.replaceAll("pa.detail", "sl_pa.detail")})
              ) AS same_line_reselect,
              COALESCE(COALESCE(fr.extraction_note, fr.conditions) LIKE '${FREE_READ_PREFIX}%', false) AS free_read,
-             COALESCE(fr.source_document_id::text, 'row:' || fv.fee_verified_id::text) AS batch_document_key,
-             fv.created_at AS batch_created_at
-        FROM verified_fee_observations fv
+             picked_rows.batch_document_key,
+             picked_rows.batch_created_at
+        FROM picked_rows
+        JOIN verified_fee_observations fv ON fv.fee_verified_id = picked_rows.fee_verified_id
         JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
         LEFT JOIN source_documents sd ON sd.id = fr.source_document_id
         JOIN institution_sources inst ON inst.id = fv.institution_id
-       WHERE fv.review_status IN ('verified', 'approved')
-         AND fv.outlier_flags ? 'agentic_darwin_verified'
-         ${filters.join("\n         ")}
-         AND NOT EXISTS (
-           SELECT 1
-             FROM published_fee_records fp
-            WHERE fp.lineage_ref = fv.fee_verified_id
-              AND fp.rolled_back_at IS NULL
-         )
-      )
-      ${WHOLE_DOCUMENT_BATCH}
-       ORDER BY eligible.batch_created_at ASC, eligible.fee_verified_id ASC
+       ORDER BY picked_rows.batch_created_at ASC, picked_rows.fee_verified_id ASC
     `,
     params,
   );
@@ -657,7 +683,7 @@ async function institutionFeeDepth(
   const depth = new Map<number, Set<string>>();
   if (institutionIds.length === 0) return new Map();
   const params: Array<number | string | number[]> = [institutionIds];
-  const undecided = learning ? undecidedAtThisVersionSql(params) : "";
+  const undecided = learning ? undecidedAtThisVersionSql(params, minConfidence) : "";
   const rows = await db.unsafe<InstitutionDepthRow[]>(
     `
       -- institution_fee_depth

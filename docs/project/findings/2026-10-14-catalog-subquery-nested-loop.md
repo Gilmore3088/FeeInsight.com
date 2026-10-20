@@ -14,3 +14,5 @@ before and after, read in one snapshot. A failed priority refresh now leaves a
 **Lesson:** a plain subquery over `published_fee_catalog` joined to a filtered institution list
 can go quadratic on a bad row estimate. Materialize the catalog side when you join it to
 institutions, and check the plan with `EXPLAIN (ANALYZE)` on prod before an hourly query ships.
+
+**Guard:** `src/lib/agents/goal-scorecard.test.ts:458` (`coverageGroupsSql` reads `published_fee_catalog` once, as `WITH live AS MATERIALIZED`, left-joined to institutions, with and without the week-ago columns)

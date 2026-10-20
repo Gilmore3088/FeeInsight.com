@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { FeeScheduleTable, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
+import { FeeScheduleTable, scheduleAmount, splitFeesByAudience, type DisplayFee } from "./fee-schedule-table";
 import { feeHashCategory, tabForHash } from "./fee-audience-tabs";
 
 function fee(overrides: Partial<DisplayFee>): DisplayFee {
@@ -233,5 +233,14 @@ describe("Personal / Business tabs", () => {
     expect(tabForHash("#plans", "personal", lists, ["personal", "business"])).toBeNull();
     expect(tabForHash("#fee-%E0%A4%A", "personal", lists, ["personal", "business"])).toBeNull();
     expect(feeHashCategory("#fee-overdraft")).toBe("overdraft");
+  });
+});
+
+describe("scheduleAmount (#1953)", () => {
+  it("says No charge for a $0 fee and keeps every other amount", () => {
+    expect(scheduleAmount(0)).toBe("No charge");
+    expect(scheduleAmount(35)).toBe("$35");
+    expect(scheduleAmount(7.95)).toBe("$7.95");
+    expect(scheduleAmount(null)).toBeNull();
   });
 });

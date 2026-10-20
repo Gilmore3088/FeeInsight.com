@@ -28,14 +28,14 @@ export function aboutSame(a: number, b: number): boolean {
 
 /** The city page's wording for an empty cell, so the two pages explain a gap the same way. */
 export const NO_SCHEDULE = "No fee schedule found yet";
-export const EXTRACTION_PENDING = "Schedule found; extraction pending.";
+export const EXTRACTION_PENDING = "Fee schedule found; amounts not yet added.";
 export const NOT_IDENTIFIED = "Fee not identified in the reviewed schedule.";
-export const ACCOUNT_NOT_IDENTIFIED = "Account not identified";
+export const ACCOUNT_NOT_IDENTIFIED = "Account not yet known";
 
 /** The cell's short form of each note; the section states the full note once. */
 export function missingShort(note: string | null): string {
   if (note === NO_SCHEDULE) return "No schedule yet";
-  if (note === EXTRACTION_PENDING) return "Extraction pending";
+  if (note === EXTRACTION_PENDING) return "Amounts not yet added";
   if (note === NOT_IDENTIFIED) return "Not identified";
   return note ?? "";
 }

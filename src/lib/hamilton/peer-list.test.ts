@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPeerAssets, isPeerListContinuationQuestion, isPeerListQuestion, makePeerListContinuation, parsePeerListQuestion, peerListFeeFollowUp, peerListPageOffsets, peerListRefinementState, planPeerList, readPeerListOffset, validatePeerListContinuation, type PeerListSubject } from "./peer-list";
+import { formatAssetBound, formatPeerAssets, isPeerListContinuationQuestion, isPeerListQuestion, makePeerListContinuation, parsePeerListQuestion, peerListFeeFollowUp, peerListPageOffsets, peerListRefinementState, planPeerList, readPeerListOffset, validatePeerListContinuation, type PeerListSubject } from "./peer-list";
 import type { ActivePeerSet } from "./active-peer-set";
 
 export const subject: PeerListSubject = { institutionId: 101, name: "Synthetic Home CU", charterType: "credit_union", city: "Orlando", stateCode: "FL", totalAssetsUsd: 10_000_000_000, reportDate: "2026-06-30", source: "ncua", sourceUrl: null, recordId: 1 };
@@ -73,6 +73,20 @@ describe("explicit, similar-size and saved selection", () => {
   it("never substitutes a state when it is missing", () => { expect(plan("List peers in the same state", null, { ...subject, stateCode: null }).criteria).toBeNull(); });
   it("uses actual assets rather than deposits or a registry tier", () => { expect(plan("List similar credit unions").criteria?.referenceAssetsUsd).toBe(10_000_000_000); });
   it("distinguishes missing assets from a genuine zero", () => { expect(formatPeerAssets(null)).toBe("Not available"); expect(formatPeerAssets(0)).toBe("$0"); });
+  it("prints assets the same compact way as every other Hamilton answer (#980)", () => {
+    expect(formatPeerAssets(2_410_000_000)).toBe("$2.4B");
+    expect(formatPeerAssets(18_000_000_000)).toBe("$18B");
+    expect(formatPeerAssets(950_000_000)).toBe("$950M");
+    expect(formatPeerAssets(1_200_000_000_000)).toBe("$1.2T");
+    expect(formatPeerAssets(250_000)).toBe("$250,000");
+  });
+  it("shows a selection bound exactly as applied, never rounded across a row's value (#980)", () => {
+    expect(formatAssetBound(1_250_000_000)).toBe("$1.25B");
+    expect(formatAssetBound(4_449_000_000)).toBe("$4.449B");
+    expect(formatAssetBound(18_000_000_000)).toBe("$18B");
+    expect(formatAssetBound(1_206_938_000)).toBe("$1,206,938,000");
+    expect(formatAssetBound(500_000)).toBe("$500,000");
+  });
 });
 
 describe("James's live wordings (#1537, #1539)", () => {
@@ -83,7 +97,7 @@ describe("James's live wordings (#1537, #1539)", () => {
       expect(result.problem).toBeNull();
       expect(result.criteria?.minAssets?.value).toBe(18_600_000_000);
       expect(result.criteria?.maxAssets?.value).toBe(74_400_000_000);
-      expect(result.criteria?.descriptions[0]).toBe("Asset-size peers: between half and twice Schoolsfirst Federal Credit Union's $37,200,000,000 in assets (2026-06-30).");
+      expect(result.criteria?.descriptions[0]).toBe("Asset-size peers: between half and twice Schoolsfirst Federal Credit Union's $37.2B in assets (2026-06-30).");
     }
     expect(planPeerList(intent("List ten similarly sized credit unions in Delaware to SchoolsFirst."), schoolsFirst, null).criteria?.states).toEqual(["DE"]);
   });

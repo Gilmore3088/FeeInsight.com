@@ -10,3 +10,5 @@ verdict still matched.
 **Fix:** PR 767 moved `CURRENT_COPY_STRATEGY` to version 2, so every superseded copy is judged again.
 **Lesson:** when a fix changes how a fingerprinted check judges its input, bump that strategy's
 version in the same PR, or the fix only reaches input the check has never seen.
+
+**Agent lesson:** gutenberg/pr-767-rejudge-on-change
