@@ -107,6 +107,19 @@ describe("did the change move its number (#1106)", () => {
     expect(result.judged).toEqual([{ pr: 10, metric: pending.metric, verdict: "unreadable", before: 0.9, after: null, scorerChanged: true }]);
   });
 
+  it("does not credit a new duplicate identity as fewer duplicates (#1781 across the 2026-10-20 change)", async () => {
+    const metric = "detail.goal.dataQuality.lines.0.count";
+    const pending = (pr: number) => ({ pr_number: pr, metric, first_seen_date: "2026-10-17", before_snapshot_date: "2026-10-17", before_value: "6011", verdict: "pending" });
+    const changed = { snapshot_date: "2026-10-24", detail: { goal: { dataQuality: { duplicatesIdentity: "fee_line", lines: [{ count: 900 }] } } } };
+    const oldReading = { detail: { goal: { dataQuality: { lines: [{ count: 6011 }] } } } };
+    const across = fakeDb([pending(1781)], changed, oldReading);
+    const result = await runChangeOutcomes({ db: across.db, runId: 9, now: new Date("2026-10-25T13:00:00Z"), entries: [{ pr: 1781, metric, direction: "down", min_change: 300 }] });
+    expect(result.judged).toEqual([{ pr: 1781, metric, verdict: "unreadable", before: 6011, after: null, scorerChanged: true }]);
+    const sameSeries = fakeDb([pending(1782)], changed, { detail: { goal: { dataQuality: { duplicatesIdentity: "fee_line" } } } });
+    const kept = await runChangeOutcomes({ db: sameSeries.db, runId: 9, now: new Date("2026-10-25T13:00:00Z"), entries: [{ pr: 1782, metric, direction: "down", min_change: 300 }] });
+    expect(kept.judged[0]).toMatchObject({ pr: 1782, verdict: "moved_as_expected", after: 900 });
+  });
+
   it("does nothing before the migration", async () => {
     const db = vi.fn(async () => [{ ready: false }]);
     expect(await runChangeOutcomes({ db: db as never, runId: 1, entries: [] })).toMatchObject({ ready: false });

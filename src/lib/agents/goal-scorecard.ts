@@ -327,6 +327,8 @@ export interface DataQuality {
   lines: DataQualityLine[];
   /** Categories out of line with their normal share of live institutions. */
   drifts: Array<{ catalog: "dollar" | "rate"; category: string; normalShare: number; share: number; direction: string }>;
+  /** Which rows the duplicate check counted (`DUPLICATES_IDENTITY`); "shared_amount" before 2026-10-20. */
+  duplicatesIdentity: string;
 }
 
 const DATA_QUALITY_CHECKS = ["duplicates", "stale", "noCategory", "noSource"] as const;
@@ -366,7 +368,8 @@ export function dataQualityFrom(at: string, detail: Record<string, unknown>): Om
     }
   }
   if (lines.length === 0) return null;
-  return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts };
+  const duplicatesIdentity = typeof detail.duplicates_identity === "string" ? detail.duplicates_identity : "shared_amount";
+  return { at, failing: strings(detail.failing), warning: strings(detail.warning), lines, drifts, duplicatesIdentity };
 }
 
 export interface GoalScorecard {

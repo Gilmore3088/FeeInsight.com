@@ -77,6 +77,22 @@ export function sameAuditSeries(before: Record<string, unknown> | null | undefin
   return typeof a === "string" && a.length > 0 && a === series(after);
 }
 
+/**
+ * Data-quality numbers compare only between snapshots whose checks counted the same rows: a new
+ * duplicate identity is not a change in the pipeline (2026-10-20). Missing means the old reading.
+ */
+export function sameDataQualitySeries(before: Record<string, unknown> | null | undefined, after: Record<string, unknown> | null | undefined): boolean {
+  const identity = (row: Record<string, unknown> | null | undefined) => {
+    try {
+      const detail = typeof row?.detail === "string" ? JSON.parse(row.detail) : row?.detail;
+      const value = (detail as { goal?: { dataQuality?: { duplicatesIdentity?: unknown } } } | null | undefined)?.goal?.dataQuality?.duplicatesIdentity;
+      return typeof value === "string" ? value : "shared_amount";
+    } catch { return null; }
+  };
+  const a = identity(before);
+  return before != null && after != null && a != null && a === identity(after);
+}
+
 /** Pure: the metric's value in one snapshot row, or null when it is not there. */
 export function metricValue(row: Record<string, unknown> | null | undefined, metric: string): number | null {
   if (!row) return null;
@@ -277,7 +293,8 @@ export async function runChangeOutcomes(options: {
     // A new scorer version is not a change in the pipeline: never compare across one (#1354).
     let scorerChanged = false;
     const auditMetric = entry.metric.startsWith("detail.goal.accuracy.");
-    if (SCORER_METRICS.has(entry.metric) || auditMetric) {
+    const dataQualityMetric = entry.metric.startsWith("detail.goal.dataQuality.");
+    if (SCORER_METRICS.has(entry.metric) || auditMetric || dataQualityMetric) {
       const beforeDay = isoDay(row.before_snapshot_date);
       const [beforeRow] = beforeDay
         ? await db<Array<Record<string, unknown>>>`
@@ -287,7 +304,8 @@ export async function runChangeOutcomes(options: {
              WHERE s.snapshot_date = ${beforeDay}::date
           `
         : [];
-      scorerChanged = !(auditMetric ? sameAuditSeries(beforeRow, after) : sameScorer(beforeRow, after));
+      scorerChanged = !(auditMetric ? sameAuditSeries(beforeRow, after)
+        : dataQualityMetric ? sameDataQualitySeries(beforeRow, after) : sameScorer(beforeRow, after));
       if (scorerChanged) afterValue = null;
     }
     const verdict = changeVerdict(entry, before, afterValue);
