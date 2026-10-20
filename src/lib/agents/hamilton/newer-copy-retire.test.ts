@@ -106,6 +106,13 @@ describe("Hamilton newer-copy check", () => {
     expect(newerCopyVerdict({ fee_name: "Coin Counting", amount: null }, newerText, olderText)).toBe("no_amount");
   });
 
+  it("reads a name that glued a heading to its row against the page's two lines (#2477, 57754)", () => {
+    const older = "Early Closing of AccountClub Account: $20.00Savings Account - Under 90 Days: $20.00";
+    const current = "Individual Retirement Account External Transfer: $25.00\n\nEarly Closing of Account\nClub Account: $20.00\nSavings Account - Under 90 Days: $20.00";
+    expect(newerCopyVerdict({ fee_name: "Early Closing of AccountClub Account", amount: 20 }, current, older)).toBe("still_stated");
+    expect(newerCopyVerdict({ fee_name: "Early Closing of AccountClub Account", amount: 35 }, current, older)).not.toBe("still_stated");
+  });
+
   it("never drops a fee the reader cannot find in the older copy either", () => {
     expect(newerCopyVerdict({ fee_name: "Notary Service", amount: 10 }, newerText, olderText)).toBe("unproven");
   });

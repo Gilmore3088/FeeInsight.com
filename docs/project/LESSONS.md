@@ -203,7 +203,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-250 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+251 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (32)
 
@@ -277,8 +277,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (44)
+### Verification and publication (45)
 
+- 2026-10-20 — A stored name carries the older copy's text layout; compare it against a newer layout only after undoing what that layout glued (#2477). — [finding](findings/2026-10-20-heading-row-glued-name-false-flag.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.test.ts`
 - 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`

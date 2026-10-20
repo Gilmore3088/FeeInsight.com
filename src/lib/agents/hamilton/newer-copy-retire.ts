@@ -69,8 +69,19 @@ export interface NewerCopyFeeRow extends Partial<Omit<PublishedIdentity, "fee_pu
 
 export type NewerCopyVerdict = "still_stated" | "still_named" | "dropped" | "unproven" | "no_amount";
 
+/**
+ * A stored name can glue a heading to its row ("Early Closing of AccountClub Account", read from a
+ * PDF that ran "Early Closing of Account" into "Club Account: $20.00") while a newer copy prints
+ * them on two lines. When the source check rejects the glued name, the split name is tried once: it
+ * can only turn a fee the page still states into `still_stated`, never retire or flag one (#2477).
+ */
 function states(text: string, fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">): ReturnType<typeof checkFeeAgainstSource> {
-  return checkFeeAgainstSource(text, fee.fee_name, Number(fee.amount), ".");
+  const result = checkFeeAgainstSource(text, fee.fee_name, Number(fee.amount), ".");
+  if (result.ok) return result;
+  const split = fee.fee_name.replace(/([a-z])([A-Z])/g, "$1 $2");
+  if (split === fee.fee_name) return result;
+  const retried = checkFeeAgainstSource(text, split, Number(fee.amount), ".");
+  return retried.ok ? retried : result;
 }
 
 const PRICE = /\$\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?|\b\d{1,3}(?:,\d{3})*\.\d{2}\b/g;
