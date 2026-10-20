@@ -1,5 +1,5 @@
 /**
- * Hamilton Pro Tables — query helpers for migration-backed Hamilton Pro tables.
+ * Hamilton tables: query helpers for migration-backed Hamilton tables.
  *
  * Tables:
  *   hamilton_saved_analyses  — Analyze screen: saved AI analysis responses per institution

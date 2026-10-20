@@ -3,7 +3,7 @@ import { institutionDisplayName } from "@/lib/institution-display-name";
 import { PRO_INSTITUTION_MIN_FEES } from "./data-room";
 
 /**
- * Hamilton Pro accounts: every user with the premium role or a subscription status
+ * Pro accounts: every user with the premium role or a subscription status
  * other than none. "Stripe customer" only says a Stripe record exists; payments
  * themselves live in Stripe and are not read here.
  */
@@ -203,7 +203,7 @@ export async function getWatchInstitutions(
   );
 }
 
-/** Institutions each user ran Hamilton Pro requests on (agent_runs, run_kind pro_request). */
+/** Institutions each user ran Hamilton requests on (agent_runs, run_kind pro_request). */
 export async function getProRequestInstitutions(userIds: number[], days = 30): Promise<Map<number, number[]>> {
   const result = new Map<number, number[]>();
   if (userIds.length === 0) return result;

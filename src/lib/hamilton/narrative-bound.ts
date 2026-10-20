@@ -76,6 +76,12 @@ export interface NarrativeBinding {
   interpretation: string[];
   omitted: Array<{ text: string; reason: OmitReason }>;
   limitations: string[];
+  /**
+   * For a written answer: the basis of a reading sentence whose figure is an index statistic
+   * (written-answer-binding.ts). The sentence stays Hamilton's reading; this says where its
+   * figure comes from.
+   */
+  readingBasis?: Array<{ text: string; basis: string }>;
 }
 
 export interface BindNarrativeInput {

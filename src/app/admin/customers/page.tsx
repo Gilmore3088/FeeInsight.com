@@ -250,9 +250,9 @@ function PlanWatch({ list: { rows, unread } }: { list: PlanWatchList }) {
 function ProAccounts({ accounts }: { accounts: ProAccount[] }) {
   const billed = accounts.filter((account) => account.hasStripeCustomer).length;
   return (
-    <section aria-label="Hamilton Pro accounts">
+    <section aria-label="Pro accounts">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="admin-section-title">Hamilton Pro accounts</p>
+        <p className="admin-section-title">Pro accounts</p>
         <p className="text-xs text-gray-500">
           {accounts.length} with Pro access · {billed} linked to a Stripe customer · {accounts.length - billed} granted without Stripe
         </p>

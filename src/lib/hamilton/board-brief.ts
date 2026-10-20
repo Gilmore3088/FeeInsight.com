@@ -152,10 +152,15 @@ export function boardBriefFromAnalysis(analysis: AnalyzeResponse & { factEvidenc
   // The answer as the screen shows it (#981 H06-T08): left-out sentences stay out and Hamilton's
   // reading is printed apart, under its label, never inline with the findings.
   const shown = exportedAnswer(analysis);
+  // A reading sentence whose figure is an index statistic keeps its basis line, as on screen.
+  const reading = shown.reading.map((sentence) => {
+    const basis = shown.readingBasis[sentence.trim()];
+    return basis ? `${sentence} ${basis}` : sentence;
+  });
   return {
     title,
     ...(analysis.identityContext ? { identityContext: analysis.identityContext } : {}),
-    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(shown.reading.length ? { reading: shown.reading } : {}) },
+    boardBrief: { sourceAnalysisId: analysisId, teamNote: edits.teamNote.slice(0,5000), includeEvidence: edits.includeEvidence, ...(analysis.factEvidence ? { factEvidence: analysis.factEvidence } : {}), ...(reading.length ? { reading } : {}) },
     // A board brief reports findings; it never lists actions for the institution. Ask's follow-up
     // suggestions become questions the committee may want answered.
     answer: { headline: shown.hamiltonView, decisions: [] },
