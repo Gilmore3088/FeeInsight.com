@@ -107,6 +107,17 @@ export type GuideBlock =
       items: { label: string; amount: number; sign?: "plus" | "minus" }[];
       totalLabel: string;
       note: string;
+      /**
+       * Render a live example in its place when one is available: two institutions' own
+       * published fees, named and sourced. The authored items stay as the fallback.
+       */
+      live?: "atm_two_fee";
+    }
+  | {
+      /** The few things a reader can do next, each with its own links, and minor tips after them. */
+      type: "actions";
+      actions: GuideAction[];
+      tips?: { title: string; items: string[] };
     }
   | {
       /** The live distribution of one category, placed where the guide discusses prices. */
@@ -133,10 +144,50 @@ export type GuideBlock =
       source: GuideSource;
     }
   | {
+      /**
+       * A short animation the reader plays, beside the explanation it supports. Its amounts are
+       * illustrative and labeled so; the scene lives in `src/components/public/fee-animation`.
+       */
+      type: "animation";
+      scene: GuideAnimationScene;
+      /** The two links on its end frame: a section of this guide, or a site path such as /check. */
+      actions: { label: string; href: string }[];
+    }
+  | {
+      /**
+       * Institutions whose own out-of-network ATM lines name a surcharge-free network, shown
+       * verbatim with the amount and source. Naming a network is not membership, so the
+       * caption says the list is a floor and never claims an institution belongs.
+       */
+      type: "network_mentions";
+      title: string;
+      caption: string;
+    }
+  | {
       /** Regulatory changes in practical terms, each with its current status. */
       type: "updates";
       items: RegulatoryUpdate[];
     };
+
+/** The animation scenes a guide can place. */
+export type GuideAnimationScene =
+  | "atm_two_fee"
+  | "overdraft"
+  | "nsf"
+  | "wire_transfer"
+  | "monthly_maintenance"
+  | "foreign_transaction"
+  | "check_stop_payment"
+  | "digital_speed"
+  | "dormant_account"
+  | "safe_deposit";
+
+export type GuideAction = {
+  title: string;
+  text: string;
+  /** External locators open in a new tab; an anchor or site path stays in the page. */
+  links: { label: string; href: string }[];
+};
 
 export type GuideOutcome = {
   /** Drives the outcome's mark, not its wording. */
@@ -183,6 +234,8 @@ export type PolicyFeature = {
    * measure the same thing (daily limits cover different fees).
    */
   countOnly?: boolean;
+  /** Where the guide explains a feature the Index does not track, in place of "Not verified". */
+  link?: { label: string; href: string };
 }
 
 export type RegulatoryStatus = "proposed" | "effective" | "blocked" | "withdrawn" | "repealed";

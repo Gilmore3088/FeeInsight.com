@@ -64,7 +64,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // under "Fee through | Fee as of") is what the fee was, not the fee now (Jeanne D'Arc, Oct 8).
 // Version 17: a fee name's words are matched where a word begins, and a short word ("Star") only
 // as that word or its plural, so "Star Checking" no longer traces to "getting started" (#1646).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 17 } as const;
+// Version 18: an opening deposit printed under an account heading ("Now Checking" / "$1,000.00
+// opening deposit required") is not the heading's price, so a name composed from that heading
+// traces, and a fee whose only price was an opening deposit no longer does (#1810).
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 18 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee
@@ -189,8 +192,9 @@ export function traceLiveFee(fee: LiveFeeRow, texts: InstitutionText[]): SourceV
 export const READER_LOSS_REASONS: ReadonlySet<string> = new Set(["name_not_in_text", "amount_not_the_fee"]);
 
 /**
- * Off until UAT passes a 10-row check of the fees this would put back. While off, a fee
- * already taken down whose line a re-read lost stays down; one still live stays live.
+ * Off until an automatic sample of the fees this would put back comes back clean against the
+ * bank's own document. While off, a fee already taken down whose line a re-read lost stays
+ * down; one still live stays live.
  */
 export const READER_LOSS_RESTORES_ON = false;
 
@@ -223,6 +227,80 @@ export function readerLostLine(fee: LiveFeeRow, texts: InstitutionText[], reason
   return excerpt
     .split(/\s+\/\s+/)
     .some((line) => checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok);
+}
+
+/** A price on its own: "$30", "$ 8.00" or a bare "6.25". */
+const PRICE = /\$\s*\d|\b\d+\.\d{2}\b/;
+/** A name that says the fee is free cannot also carry a price ("Notary Fee Free for members" $5). */
+const FREE_WORDS = /\b(?:free|no charge|waived)\b/i;
+
+/**
+ * Pure: is the line Knox stored strong enough to put a fee back live on its own? The current
+ * text no longer pairs the name with the price, so the stored line is the only evidence left,
+ * and it must read name first. Lane speed's sample of 159 restores (Oct 20) found 6 of 20
+ * wrong, and in four the line opened on a price ("$30 Replacement Credit Card Rush | $25
+ * Replace Key", "$10 Non-Member Check Cashing Fee" where the bank charges $5): a table read
+ * price-first binds each price to the wrong row. A fifth was "Notary Fee Free for members" at
+ * the $5 non-member price. Keeping a live fee live (`readerLostLine`) does not use this.
+ */
+export function restorableExcerpt(fee: Pick<LiveFeeRow, "fee_name" | "amount" | "conditions" | "canonical_fee_key">): boolean {
+  if (FREE_WORDS.test(fee.fee_name)) return false;
+  const excerpt = excerptOf(fee.conditions);
+  if (!excerpt) return false;
+  const name = fee.fee_name.trim().toLowerCase();
+  const firstWord = name.match(/[a-z]{3,}/)?.[0];
+  if (!firstWord) return false;
+  return excerpt.split(/\s+\/\s+/).some((line) => {
+    if (!checkFeeAgainstSource(line, fee.fee_name, Number(fee.amount), ".", fee.canonical_fee_key).ok) return false;
+    // Where the whole name is printed, or else where its first word is as a word: a heading
+    // that repeats the first word ("Wire Transfers $30 Wire Transfer Domestic $15 Wire Transfer
+    // International") must not count as the name, and "card" inside "Discard" is not "Card".
+    const lower = line.toLowerCase();
+    const whole = lower.lastIndexOf(name);
+    const at = whole >= 0 ? whole : lower.search(new RegExp(`\\b${firstWord}\\b`));
+    // "$25.00 for Incoming – Foreign Wires / $50.00 for Outgoing" puts each price before "for":
+    // a line that reaches the name through "for" carries the next row's price (pub 90951).
+    return at >= 0 && !PRICE.test(line.slice(0, at)) && !/\bfor\s*$/i.test(line.slice(0, at));
+  });
+}
+
+/**
+ * The amount as the document would print it: "$25", "$25.00", "$ 25.00"; cents when it has them.
+ * Never "$25,000" or "$25.50". "$1,000.00" is not found for a $1,000 fee, which refuses the restore.
+ */
+function printedPrice(amount: number): RegExp {
+  const [whole, cents] = amount.toFixed(2).split(".");
+  const tail = cents === "00" ? "(?:\\.00)?" : `\\.${cents}`;
+  return new RegExp(`\\$\\s*${whole}${tail}(?![\\d.,]*\\d)`);
+}
+
+const FIRST_PRICE = /\$\s*\d[\d,]*(?:\.\d+)?/;
+
+/**
+ * Pure: does the fee's own document still print what the restore claims, on one row? The re-read
+ * must still find the whole name (only `amount_not_the_fee`, never `name_not_in_text`), ending at
+ * a word boundary, and the first price after it on the same line must be the fee's price. Lane
+ * speed's re-samples of restores (Oct 20) found the name and price printed apart: 21757 passed on
+ * another row's "$ 8.00", 59622 on the wire row's $30 above "Stop Payments | $35.00", and the cut
+ * sentence "See Safe Deposit Fee Schedul" on the next row's $25. Only the name's first place on a line
+ * counts, and it must open its cell. A schedule read column by column,
+ * names in one run and prices in another, cannot prove its fees this way and stays down.
+ */
+export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], reason: string): boolean {
+  if (reason !== "amount_not_the_fee") return false;
+  const ownId = fee.source_document_id == null ? null : Number(fee.source_document_id);
+  const own = texts.find((text) => Number(text.source_document_id) === ownId);
+  const name = fee.fee_name.trim().split(/\s+/).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
+  if (own == null || name.length === 0) return false;
+  // The name opens its cell: at the line start or after a separator, never after another word
+  // ("Money Orders Inactive Par Value Share Account" is two columns glued, pub 93666).
+  const named = new RegExp(`(?<![a-z0-9][^\\S\\n]*)${name}(?![a-z0-9])`, "i");
+  const price = new RegExp(`^${printedPrice(Number(fee.amount)).source}`);
+  return (own.normalized_text ?? "").split("\n").some((line) => {
+    const match = line.match(named);
+    const next = match == null ? null : line.slice((match.index ?? 0) + match[0].length).match(FIRST_PRICE);
+    return next != null && price.test(next[0]);
+  });
 }
 
 const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
@@ -435,7 +513,7 @@ export async function takeDownUntraceableFees(
     const institutionTexts = textsByInstitution.get(institutionId) ?? [];
     const verdict = traceLiveFee(fee, institutionTexts);
     const readerLost = verdict.kind === "untraceable" && readerLostLine(fee, institutionTexts, verdict.reason);
-    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name)))) {
+    if (readerLost && !(fee.taken_down && !(READER_LOSS_RESTORES_ON && restorableName(fee.fee_name) && restorableExcerpt(fee) && restoreStillPrinted(fee, institutionTexts, verdict.reason)))) {
       // The re-read lost the line, not the bank: keep it live (or put it back once restores are on).
       result.readerLost += 1;
       counts.checked += 1;

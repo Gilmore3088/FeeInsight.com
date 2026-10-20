@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { branchCitySpellings, hqPlacesInBranchCounties } from "./city-spellings";
 import { institutionValue, statsRowFilter } from "./fee-stats";
 import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
 import { checkFeeAgainstSource, type SourceCheckFailure } from "@/lib/custom-report/source-check";
@@ -199,6 +200,9 @@ async function loadMarketCounties(subject: {
   city: string | null;
 }): Promise<MarketCountyRow[]> {
   const fdicCert = subject.charter_type === "credit_union" ? null : subject.cert_number;
+  // The headquarters city's branch spellings, folded (#2092): "SAINT PETERSBURG" on the record
+  // still finds the branches filed under "ST. PETERSBURG".
+  const hqSpellings = subject.city && subject.state_code ? await branchCitySpellings(subject.city, subject.state_code) : [];
   return sql<MarketCountyRow[]>`
     WITH latest AS (SELECT MAX(year) AS y FROM institution_branch_deposits),
     own_all AS (
@@ -222,7 +226,7 @@ async function loadMarketCounties(subject: {
       SELECT b.county_fips::text AS county_fips, b.year, MIN(b.city) AS city, MIN(b.state) AS state
       FROM institution_branch_deposits b, latest
       WHERE NOT EXISTS (SELECT 1 FROM own)
-        AND b.year = latest.y AND b.state = ${subject.state_code} AND UPPER(b.city) = UPPER(${subject.city ?? ""})
+        AND b.year = latest.y AND b.state = ${subject.state_code} AND UPPER(b.city) = ANY(${hqSpellings}::text[])
         AND b.county_fips IS NOT NULL
       GROUP BY b.county_fips, b.year
       ORDER BY COUNT(*) DESC, SUM(COALESCE(b.deposits, 0)) DESC, b.county_fips::text
@@ -263,6 +267,8 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
   if (counties.length === 0) return null;
   const countyFips = counties.map((row) => String(row.county_fips));
   const sodYear = Number(counties[0].year);
+  // Institutions headquartered in a market city, whatever spelling their record uses (#2092).
+  const hqPlaces = await hqPlacesInBranchCounties(sodYear, countyFips);
   const rows = await sql<
     { institution_id: number; institution_name: string; city: string | null; state_code: string | null; charter_type: string | null; market_deposits: string | null }[]
   >`
@@ -276,7 +282,7 @@ export async function getLocalMarketMembers(institutionId: number): Promise<Loca
       WHERE institution_id IS NOT NULL GROUP BY institution_id
       UNION
       SELECT s.id, NULL FROM institution_sources s
-      WHERE EXISTS (SELECT 1 FROM branches p WHERE p.state = s.state_code AND p.city = UPPER(s.city))
+      WHERE (s.state_code || '|' || UPPER(s.city)) = ANY(${hqPlaces}::text[])
         AND NOT EXISTS (SELECT 1 FROM branches b2 WHERE b2.institution_id = s.id)
     ),
     members AS (
@@ -329,6 +335,8 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
 
   const countyFips = counties.map((row) => String(row.county_fips));
   const sodYear = Number(counties[0].year);
+  // Institutions headquartered in a market city, whatever spelling their record uses (#2092).
+  const hqPlaces = await hqPlacesInBranchCounties(sodYear, countyFips);
 
   const rows = await sql<
     {
@@ -363,7 +371,7 @@ export async function getCustomReportMarketData(institutionId: number): Promise<
       WHERE institution_id IS NOT NULL GROUP BY institution_id
       UNION
       SELECT s.id, NULL FROM institution_sources s
-      WHERE EXISTS (SELECT 1 FROM branches p WHERE p.state = s.state_code AND p.city = UPPER(s.city))
+      WHERE (s.state_code || '|' || UPPER(s.city)) = ANY(${hqPlaces}::text[])
         AND NOT EXISTS (SELECT 1 FROM branches b2 WHERE b2.institution_id = s.id)
     ),
     members AS (

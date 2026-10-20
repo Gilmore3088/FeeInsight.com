@@ -103,6 +103,7 @@ describe("Knox lessons query", () => {
       texts.push(text);
       return Promise.resolve(text.includes("to_regclass") ? [{ ready: true }] : []);
     });
+    Object.assign(db, { unsafe: vi.fn(() => []) });
     await loadKnoxLessons(db as never);
     const query = texts.find((text) => text.includes("pipeline_feedback f"));
     expect(query).toBeDefined();
@@ -122,6 +123,7 @@ describe("Knox lessons query", () => {
       texts.push(text);
       return Promise.resolve(text.includes("to_regclass") ? [{ ready: true }] : []);
     });
+    Object.assign(db, { unsafe: vi.fn(() => []) });
     await loadKnoxLessons(db as never);
     const query = (texts.find((text) => text.includes("pipeline_feedback f")) ?? "").replace(/\s+/g, " ");
     expect(query).toContain("r.kind = 'restored_after_takedown'");

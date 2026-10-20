@@ -59,8 +59,16 @@ vi.mock("./tool-local-competitors", () => ({
   getLocalCompetitors: { description: "getLocalCompetitors", inputSchema: {}, execute: vi.fn() },
 }));
 
+vi.mock("./tool-query-data", () => ({
+  listData: { description: "listData", inputSchema: {}, execute: vi.fn() },
+  queryData: { description: "queryData", inputSchema: {}, execute: vi.fn() },
+  warmDataCatalog: vi.fn(),
+  DATA_CATALOG_INSTRUCTION: "PUBLIC DATA: call listData, then queryData.",
+}));
+
 // Import after mocks
 import { buildMonitorModeSuffix, buildSavedPeerSetPrompt, getHamilton, savedPeerSetUsed } from "./agents";
+import { getPublicStats } from "@/lib/data-store";
 
 describe("getHamilton", () => {
   beforeEach(() => {
@@ -121,6 +129,54 @@ describe("getHamilton", () => {
     expect(toolNames).not.toContain("queryJobStatus");
     expect(config.systemPrompt).toContain("getLocalCompetitors(institution_id)");
     expect(config.systemPrompt).toContain("queryFeeRevenueCorrelation(view='peers'");
+  });
+
+  it("quarter-comparison prompts use the dated financial ranking and preserve raw YTD limits", async () => {
+    for (const role of ["pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(config.systemPrompt).toContain("first call getInstitution(id)");
+      expect(config.systemPrompt).toContain("Raw NCUA queryData income is YTD even when period selects Q2");
+      expect(config.systemPrompt).toContain("matched per-institution differences before aggregation");
+      expect(config.systemPrompt).toContain("never the only true group");
+      expect(config.systemPrompt).toContain("Do not print internal account/item codes");
+      expect(config.systemPrompt).toContain("validated calculation ledger supplies that cohort-specific ratio");
+      expect(config.systemPrompt).toContain("not a strong, reliable, robust or representative benchmark");
+    }
+  });
+
+  it("separates filed-income peer eligibility from price/income correlation coverage (#2332)", async () => {
+    for (const role of ["pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(config.systemPrompt).toContain("compares filed financial income for the reader's saved peer set without requiring published fee schedules");
+      expect(config.systemPrompt).toContain("fewer than five comparable peers cannot be repaired by substituting a different group");
+      expect(config.systemPrompt).toContain("correlation views require at least three eligible published fee categories");
+      expect(config.systemPrompt).not.toContain("if it refuses for fee coverage");
+    }
+  });
+
+  it("limits sample-maturity labels to verified fee prices, separately from financial filing coverage", async () => {
+    const config = await getHamilton("pro");
+    expect(config.systemPrompt).toContain("Verified fee-price benchmarks state sample maturity");
+    expect(config.systemPrompt).toContain("count or completeness alone does not establish benchmark quality");
+  });
+
+  it("all Hamilton audiences preserve the financial measure boundary while allowing same-fee price comparisons", async () => {
+    for (const role of ["consumer", "pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(config.systemPrompt).toContain("bank deposit-account service charges (FDIC) and broad credit-union fee income (NCUA) are different measures");
+      expect(config.systemPrompt).toContain("Never pool them into a financial median, ranking, revenue share or trend");
+      expect(config.systemPrompt).toContain("Published prices for the same fee category may still be compared across charters");
+    }
+  });
+
+  it("pro and admin answers can read the data catalog; the consumer answer cannot", async () => {
+    for (const role of ["pro", "admin"] as const) {
+      const config = await getHamilton(role);
+      expect(Object.keys(config.tools)).toEqual(expect.arrayContaining(["listData", "queryData"]));
+      expect(config.systemPrompt).toContain("PUBLIC DATA: call listData, then queryData.");
+    }
+    const consumer = await getHamilton("consumer");
+    expect(Object.keys(consumer.tools)).not.toContain("queryData");
   });
 
   it("pro: a question the data cannot answer is said so first, never swapped for another question (#1077)", async () => {
@@ -233,6 +289,40 @@ describe("getHamilton", () => {
     } finally {
       delete process.env.HAMILTON_MODEL;
     }
+  });
+});
+
+describe("Hamilton global coverage availability (#2373)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.mocked(getPublicStats).mockReset();
+  });
+
+  it("treats a failed optional count as unknown, retains capabilities, and retries instead of caching a zero", async () => {
+    vi.mocked(getPublicStats).mockRejectedValueOnce(new Error("statement timeout")).mockResolvedValue({ total_observations: 125000, total_institutions: 4200, total_states: 51, total_categories: 49 });
+    const fresh = await import("./agents");
+    const unavailable = await fresh.getHamilton("pro");
+    expect(getPublicStats).toHaveBeenCalledWith({ strict: true });
+    expect(unavailable.systemPrompt).toContain("Global published-fee coverage counts are unavailable; do not infer zero");
+    expect(unavailable.systemPrompt).not.toContain("0+ fee observations");
+    expect(unavailable.systemPrompt).toContain("FDIC Call Reports (revenue trends)");
+    expect(unavailable.tools.getInstitution).toBeDefined();
+    const recovered = await fresh.getHamilton("pro");
+    expect(recovered.systemPrompt).toContain("125,000+ fee observations");
+    expect(recovered.systemPrompt).not.toContain("Global published-fee coverage counts are unavailable");
+    await fresh.getHamilton("pro");
+    expect(getPublicStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("caches a successful measured zero and does not label it unavailable", async () => {
+    vi.mocked(getPublicStats).mockResolvedValue({ total_observations: 0, total_institutions: 0, total_states: 0, total_categories: 0 });
+    const fresh = await import("./agents");
+    for (const role of ["pro", "admin"] as const) {
+      const config = await fresh.getHamilton(role);
+      expect(config.systemPrompt).toContain("0+ fee observations across 0 categories from 0+ institutions");
+      expect(config.systemPrompt).not.toContain("Global published-fee coverage counts are unavailable");
+    }
+    expect(getPublicStats).toHaveBeenCalledTimes(1);
   });
 });
 

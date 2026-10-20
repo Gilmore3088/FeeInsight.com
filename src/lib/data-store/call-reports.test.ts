@@ -11,8 +11,12 @@ vi.mock("./connection", () => {
   };
 });
 
-import { getRevenueTrend, getTopRevenueInstitutions, getDistrictFeeRevenue, getRevenueByTier, getInstitutionRevenueTrend, getInstitutionPeerRanking } from "./call-reports";
-import type { RevenueSnapshot, RevenueTrend, TopRevenueInstitution, DistrictFeeRevenue, TierRevenue, InstitutionRevenueQuarter, PeerRanking } from "./call-reports";
+// These unit tests pin the per-request SQL (the fallback); call-report-quarters.db.test.ts proves
+// the summary-table SQL returns the same rows.
+vi.mock("./call-report-quarters", () => ({ callReportQuartersReady: async () => false }));
+
+import { getRevenueTrend, getTopRevenueInstitutions, getDistrictFeeRevenue, getRevenueByTier, getInstitutionRevenueTrend, getInstitutionPeerRanking, getPeerServiceChargeMedians, getDistrictIncomeTrend, getServiceChargeIntensityTrend, getServiceChargeIntensity } from "./call-reports";
+import type { RevenueSnapshot, RevenueTrend, TopRevenueInstitution, DistrictFeeRevenue, TierRevenue } from "./call-reports";
 import { getSql } from "./connection";
 import { unfilteredFinancialReads } from "./financial-sources.test-helper";
 
@@ -165,7 +169,7 @@ describe("getRevenueTrend", () => {
     expect(result.latest?.quarter).toBe("2024-4Q");
   });
 
-  it("computes YoY change when 5+ quarters present", async () => {
+  it("holds cross-sectional growth even when five quarters are present", async () => {
     const buildRow = (q: string, total: string) => ({
       quarter: q,
       quarter_date: "2024-01-01",
@@ -187,8 +191,8 @@ describe("getRevenueTrend", () => {
 
     const result = await getRevenueTrend(5);
     const yoy = result.quarters[0].yoy_change_pct;
-    expect(yoy).not.toBeNull();
-    expect(yoy).toBeCloseTo(10, 1); // (11000 - 10000) / 10000 * 100 = 10%
+    expect(yoy).toBeNull();
+    expect(result.cohort_history?.growth_status).toBe("not_established");
   });
 
   it("passes quarterCount to query as LIMIT parameter", async () => {
@@ -532,7 +536,7 @@ describe("getInstitutionPeerRanking", () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
         {
-          institution_name: "Community Bank",
+          institution_name: "Community Bank", charter_type: "bank", source: "fdic",
           total_assets: "500000", // $500M in thousands → community tier
           service_charge_income: "800000",
           fee_income_ratio: "14.5",
@@ -541,10 +545,9 @@ describe("getInstitutionPeerRanking", () => {
       ])
       .mockResolvedValueOnce([
         {
-          peer_count: "180",
+          peer_count: "180", eligible_count: "180", ratio_reported_count: "180",
           median_sc: "600000",
           median_fee_ratio: "12.0",
-          ratio_count: 178,
         },
       ])
       .mockResolvedValueOnce([
@@ -562,51 +565,6 @@ describe("getInstitutionPeerRanking", () => {
     expect(result!.peer_median_sc).toBe(600_000);
     expect(result!.fee_income_ratio).toBe(14.5);
     expect(result!.peer_median_fee_ratio).toBe(12.0);
-    expect(result!.peer_ratio_count).toBe(178);
-  });
-
-  it("gives no ratio median when too few peers filed a ratio, however many filed income", async () => {
-    const unsafe = vi.fn()
-      .mockResolvedValueOnce([
-        { institution_name: "Community Bank", total_assets: "500000", service_charge_income: "800000", fee_income_ratio: "0.05", report_date: "2024-09-30", source: "fdic" },
-      ])
-      .mockResolvedValueOnce([{ peer_count: "180", median_sc: "600000", median_fee_ratio: "0.02", ratio_count: 2 }])
-      .mockResolvedValueOnce([{ better_count: "39" }]);
-    getMock().unsafe = unsafe;
-    const result = await getInstitutionPeerRanking(42);
-    expect(result!.peer_median_sc).toBe(600_000);
-    expect(result!.peer_median_fee_ratio).toBeNull();
-    expect(result!.peer_ratio_count).toBe(2);
-    expect(String(unsafe.mock.calls[1][0])).toContain("COUNT(inf.fee_income_ratio)::int AS ratio_count");
-  });
-
-  it("keeps the peers to the institution's own filing when asked", async () => {
-    const unsafe = vi.fn()
-      .mockResolvedValueOnce([
-        { institution_name: "Capital City Bank", total_assets: "4447362", service_charge_income: "5000", fee_income_ratio: null, report_date: "2026-06-30", source: "fdic" },
-      ])
-      .mockResolvedValueOnce([{ peer_count: "872", median_sc: "1200", median_fee_ratio: "0.03", ratio_count: 870 }])
-      .mockResolvedValueOnce([{ better_count: "20" }])
-      .mockResolvedValueOnce([{ median_fee_ratio: "0.022", ratio_count: 869 }]);
-    getMock().unsafe = unsafe;
-
-    const result = await getInstitutionPeerRanking(323, { sameCharter: true });
-    expect(result!.source).toBe("fdic");
-    expect(unsafe.mock.calls[1][0]).toContain("AND inf.source = $4");
-    expect(unsafe.mock.calls[1][1]).toEqual(["2026-06-30", 1_000_000, 10_000_000, "fdic"]);
-    expect(unsafe.mock.calls[2][0]).toContain("AND inf.source = $5");
-    expect(unsafe.mock.calls[2][1]).toEqual(["2026-06-30", 1_000_000, 10_000_000, 5000, "fdic"]);
-    // The share median is the institution page's financial cohort: same charter and stored asset
-    // tier, same quarter and filing, a share above 0%, the institution itself left out.
-    const share = String(unsafe.mock.calls[3][0]);
-    expect(share).toContain("s.charter_type = subject.charter_type");
-    expect(share).toContain("s.asset_size_tier IS NOT DISTINCT FROM subject.asset_size_tier");
-    expect(share).toContain("s.id <> subject.id");
-    expect(share).toContain("f.fee_income_ratio > 0");
-    expect(unsafe.mock.calls[3][1]).toEqual([323, "2026-06-30", "fdic"]);
-    expect(result!.peer_ratio_count).toBe(869);
-    expect(result!.peer_median_fee_ratio).toBe(0.022);
-    expect(result!.peer_count).toBe(872);
   });
 
   it("uses same asset tier as the target institution (not hardcoded)", async () => {
@@ -614,7 +572,7 @@ describe("getInstitutionPeerRanking", () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
         {
-          institution_name: "Tiny Credit Union",
+          institution_name: "Tiny Credit Union", charter_type: "credit_union", source: "ncua",
           total_assets: "50000", // $50M in thousands → micro
           service_charge_income: "50000",
           fee_income_ratio: null,
@@ -622,7 +580,7 @@ describe("getInstitutionPeerRanking", () => {
         },
       ])
       .mockResolvedValueOnce([
-        { peer_count: "50", median_sc: "40000", median_fee_ratio: null },
+        { peer_count: "50", eligible_count: "50", ratio_reported_count: "50", median_sc: "40000", median_fee_ratio: null },
       ])
       .mockResolvedValueOnce([
         { better_count: "10" },
@@ -641,7 +599,7 @@ describe("getInstitutionPeerRanking", () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
         {
-          institution_name: "Mid Bank",
+          institution_name: "Mid Bank", charter_type: "bank", source: "fdic",
           total_assets: "2000000", // $2B in thousands → midsize
           service_charge_income: "5000000",
           fee_income_ratio: "15.0",
@@ -649,7 +607,7 @@ describe("getInstitutionPeerRanking", () => {
         },
       ])
       .mockResolvedValueOnce([
-        { peer_count: "100", median_sc: "4000000", median_fee_ratio: "13.0" },
+        { peer_count: "100", eligible_count: "100", ratio_reported_count: "100", median_sc: "4000000", median_fee_ratio: "13.0" },
       ])
       .mockResolvedValueOnce([
         { better_count: "20" },
@@ -664,7 +622,7 @@ describe("getInstitutionPeerRanking", () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
         {
-          institution_name: "Bank A",
+          institution_name: "Bank A", charter_type: "bank", source: "fdic",
           total_assets: "200000",
           service_charge_income: "300000",
           fee_income_ratio: null,
@@ -672,7 +630,7 @@ describe("getInstitutionPeerRanking", () => {
         },
       ])
       .mockResolvedValueOnce([
-        { peer_count: "75", median_sc: "250000", median_fee_ratio: null },
+        { peer_count: "75", eligible_count: "75", ratio_reported_count: "75", median_sc: "250000", median_fee_ratio: null },
       ])
       .mockResolvedValueOnce([
         { better_count: "5" },
@@ -687,9 +645,9 @@ describe("getInstitutionPeerRanking", () => {
   it("withholds peer medians when fewer than five peers report", async () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
-        { institution_name: "Bank A", total_assets: "200000", service_charge_income: "300000", fee_income_ratio: "10", report_date: "2024-09-30" },
+        { institution_name: "Bank A", charter_type: "bank", source: "fdic", total_assets: "200000", service_charge_income: "300000", fee_income_ratio: "10", report_date: "2024-09-30" },
       ])
-      .mockResolvedValueOnce([{ peer_count: "3", median_sc: "250000", median_fee_ratio: "9" }])
+      .mockResolvedValueOnce([{ peer_count: "3", eligible_count: "3", ratio_reported_count: "3", median_sc: "250000", median_fee_ratio: "9" }])
       .mockResolvedValueOnce([{ better_count: "1" }]);
     getMock().unsafe = unsafe;
 
@@ -702,23 +660,23 @@ describe("getInstitutionPeerRanking", () => {
   it("classifies a $86.9M bank (86,908 thousand) as micro, not by raw row value", async () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
-        { institution_name: "Small Bank", total_assets: "86908", service_charge_income: "80", fee_income_ratio: "0.068", report_date: "2026-06-30" },
+        { institution_name: "Small Bank", charter_type: "bank", source: "fdic", total_assets: "86908", service_charge_income: "80", fee_income_ratio: "0.068", report_date: "2026-06-30" },
       ])
-      .mockResolvedValueOnce([{ peer_count: "600", median_sc: "40", median_fee_ratio: "0.04" }])
+      .mockResolvedValueOnce([{ peer_count: "600", eligible_count: "600", ratio_reported_count: "600", median_sc: "40", median_fee_ratio: "0.04" }])
       .mockResolvedValueOnce([{ better_count: "100" }]);
     getMock().unsafe = unsafe;
 
     const result = await getInstitutionPeerRanking(3827);
     expect(result!.tier).toBe("micro");
-    expect(unsafe.mock.calls[1][1]).toEqual(["2026-06-30", 0, 100_000]);
+    expect(unsafe.mock.calls[1][1]).toEqual(["2026-06-30", 0, 100_000, "bank", "fdic"]);
   });
 
   it("reads only fdic and ncua rows, never the ffiec duplicates", async () => {
     const unsafe = vi.fn()
       .mockResolvedValueOnce([
-        { institution_name: "Bank A", total_assets: "200000", service_charge_income: "300", fee_income_ratio: "0.1", report_date: "2024-09-30" },
+        { institution_name: "Bank A", charter_type: "bank", source: "fdic", total_assets: "200000", service_charge_income: "300", fee_income_ratio: "0.1", report_date: "2024-09-30" },
       ])
-      .mockResolvedValueOnce([{ peer_count: "75", median_sc: "250", median_fee_ratio: "0.08" }])
+      .mockResolvedValueOnce([{ peer_count: "75", eligible_count: "75", ratio_reported_count: "75", median_sc: "250", median_fee_ratio: "0.08" }])
       .mockResolvedValueOnce([{ better_count: "5" }]);
     getMock().unsafe = unsafe;
 
@@ -861,7 +819,7 @@ describe("dollar passthrough (DB stores whole dollars)", () => {
     expect(result[0].avg_sc_income).toBe(400000);
   });
 
-  it("getRevenueTrend YoY calculation works correctly with whole-dollar values", async () => {
+  it("keeps whole-dollar amounts but withholds unsupported population growth", async () => {
     const buildRow = (q: string, total: string) => ({
       quarter: q,
       quarter_date: "2024-01-01",
@@ -881,7 +839,7 @@ describe("dollar passthrough (DB stores whole dollars)", () => {
     getMock().unsafe = vi.fn().mockResolvedValue(dbRows);
 
     const result = await getRevenueTrend(5);
-    expect(result.quarters[0].yoy_change_pct).toBeCloseTo(10, 1);
+    expect(result.quarters[0].yoy_change_pct).toBeNull();
     expect(result.quarters[0].total_service_charges).toBe(11000000);
     expect(result.quarters[4].total_service_charges).toBe(10000000);
   });
@@ -919,5 +877,110 @@ describe("single-quarter reads use each credit union's quarter, not its year to 
   ])("%s reads only fdic and ncua rows, including the latest-quarter lookup", async (_name, read) => {
     await read();
     expect(unfilteredFinancialReads(getMock())).toEqual([]);
+  });
+});
+
+
+describe("comparable call report cohorts", () => {
+  beforeEach(() => {
+    resetMock(getMock());
+    getMock().unsafe.mockResolvedValue([]);
+  });
+
+  it.each([
+    { charter_type: "unknown", source: "ncua" },
+    { charter_type: "credit_union", source: "fdic" },
+    { charter_type: "bank", source: "ncua" },
+    { charter_type: "bank", source: "ffiec" },
+  ])("fails closed for an unknown or mismatched subject %j", async (identity) => {
+    getMock().unsafe.mockResolvedValueOnce([{
+      institution_name: "Subject", total_assets: "50000000", service_charge_income: "1000",
+      fee_income_ratio: "0.04", report_date: "2026-06-30", ...identity,
+    }]);
+    expect(await getInstitutionPeerRanking(1)).toBeNull();
+    expect(getMock().unsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([null, "0", "-1"])("does not rank a latest filing without positive computable quarter income: %s", async (income) => {
+    getMock().unsafe.mockResolvedValueOnce([{
+      institution_name: "Credit Union", charter_type: "credit_union", source: "ncua", total_assets: "10000000",
+      service_charge_income: income, fee_income_ratio: "0.04", report_date: "2026-06-30",
+    }]);
+    expect(await getInstitutionPeerRanking(1)).toBeNull();
+    expect(getMock().unsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps quarter-income and YTD-ratio samples separate and exposes the cohort", async () => {
+    getMock().unsafe
+      .mockResolvedValueOnce([{ institution_name: "Navy Federal", charter_type: "credit_union", source: "ncua", total_assets: "190000000", service_charge_income: "153079", fee_income_ratio: "0.038", report_date: "2026-06-30" }])
+      .mockResolvedValueOnce([{ eligible_count: "8", peer_count: "6", ratio_reported_count: "3", median_sc: "9000", median_fee_ratio: "0.03" }])
+      .mockResolvedValueOnce([{ better_count: "1" }]);
+    const result = await getInstitutionPeerRanking(4956);
+    expect(result).toMatchObject({ sc_rank: 2, peer_count: 6, peer_median_sc: 9000, peer_median_fee_ratio: null,
+      comparison: {
+        source: "ncua", charter_type: "credit_union", report_date: "2026-06-30", measure: "broad_credit_union_fee_income",
+        period_basis: "standalone_quarter", ratio_period_basis: "year_to_date", unit: "thousands of dollars",
+        subject_included: true, eligible_count: 8, reported_count: 6, ratio_reported_count: 3,
+        size_criterion: { kind: "reported_assets", minimum_usd_inclusive: 10000000000, maximum_usd_exclusive: 250000000000 },
+      } });
+    for (const call of getMock().unsafe.mock.calls.slice(1)) {
+      expect(call[0]).toContain("ct.charter_type = $4 AND inf.source = $5");
+      expect(call[1].slice(0, 5)).toEqual(["2026-06-30", 10000000, 250000000, "credit_union", "ncua"]);
+    }
+  });
+
+  it.each(["fdic", "ncua"] as const)("source-scopes aggregate readers and each latest-date lookup to %s", async (source) => {
+    const reads = [
+      () => getRevenueTrend(8, source),
+      () => getTopRevenueInstitutions(10, source),
+      () => getRevenueByTier(undefined, source),
+      () => getDistrictFeeRevenue(1, undefined, source),
+      () => getDistrictIncomeTrend(8, source),
+      () => getInstitutionRevenueTrend(1, 8, source),
+    ];
+    for (const read of reads) {
+      getMock().unsafe.mockClear();
+      await read();
+      const queries = getMock().unsafe.mock.calls.map((call) => String(call[0]));
+      expect(queries.length).toBeGreaterThan(0);
+      for (const query of queries) {
+        expect(query).toContain(`inf.source = '${source}'`);
+        expect(query).toContain("ct.charter_type = 'bank' AND inf.source = 'fdic'");
+        expect(query).toContain("ct.charter_type = 'credit_union' AND inf.source = 'ncua'");
+      }
+    }
+  });
+
+  it("does not infer a source for unknown peer charter identity", async () => {
+    expect(await getPeerServiceChargeMedians("unknown", "regional")).toEqual({ quarters: [] });
+    expect(getMock().unsafe).not.toHaveBeenCalled();
+  });
+
+  it("source-partitions size-tier peer medians and intensity reads", async () => {
+    await getPeerServiceChargeMedians("credit_union", "regional");
+    expect(getMock().unsafe.mock.calls[0][0]).toContain("inf.source = 'ncua'");
+    for (const read of [getServiceChargeIntensity, getServiceChargeIntensityTrend]) {
+      getMock().unsafe.mockClear();
+      await read(1);
+      expect(getMock().unsafe.mock.calls[0][0]).toContain("ct.charter_type = 'credit_union' AND inf.source = 'ncua'");
+    }
+  });
+
+  it("retains thin periods and their counts but suppresses their medians", async () => {
+    getMock().unsafe.mockResolvedValueOnce([
+      { quarter_end: "2026-06-30", median_thousands: "10", institutions: 4 },
+      { quarter_end: "2026-03-31", median_thousands: "9", institutions: 5 },
+    ]);
+    const history = await getPeerServiceChargeMedians("credit_union", "regional");
+    expect(history.quarters).toEqual([
+      { quarter_end: "2026-06-30", median_thousands: null, institutions: 4 },
+      { quarter_end: "2026-03-31", median_thousands: 9, institutions: 5 },
+    ]);
+    expect(history.cohort_history).toMatchObject({ growth_status: "not_established", periods: [expect.objectContaining({ reporter_ids_complete: false }), expect.objectContaining({ reporter_ids_complete: false })] });
+  });
+
+  it("withholds intensity-trend medians when fewer than five peers report", async () => {
+    getMock().unsafe.mockResolvedValueOnce([{ quarter_end: "2026-06-30", own: "4", peer_median: "3", peers: 4 }]);
+    expect(await getServiceChargeIntensityTrend(1)).toEqual([{ quarterEnd: "2026-06-30", own: 4, peerMedian: null, peers: 4 }]);
   });
 });

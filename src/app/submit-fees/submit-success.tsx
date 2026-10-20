@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { REPORT_REQUEST_HREF } from "@/lib/report-request-href";
 
-const REPORT_HREF = "/for-institutions#report";
+const REPORT_HREF = REPORT_REQUEST_HREF;
 
 export function SubmitSuccessCard({
   claimFlow,

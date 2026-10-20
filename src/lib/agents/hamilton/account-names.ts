@@ -28,8 +28,12 @@ type SqlTag = typeof sql;
  * own schedule, and no other generic fee of that schedule carries the same account. Over 1,137
  * v1 runs, 5,883 of 7,332 generic names found no heading; on Oct 17, 518 of 1,763 live generic
  * names had such an account, 229 of them among the 859 that shared their bank's name.
+ *
+ * v3 (#1810): v2 named 130 fees; 1,510 of 1,902 generic names it read found no heading. Headings
+ * followed by their opening deposit ("Now Checking" / "$1,000.00 opening deposit required") now
+ * trace, and "Interest Checking", "Club 2 Checking" and "Money Market Checking" read as accounts.
  */
-export const ACCOUNT_NAME_STRATEGY = { strategy: "hamilton.account_names", version: 2 } as const;
+export const ACCOUNT_NAME_STRATEGY = { strategy: "hamilton.account_names", version: 3 } as const;
 export const ACCOUNT_NAME_KIND = "name_account_added";
 export const ACCOUNT_NAME_INSTITUTION_LIMIT = 40;
 

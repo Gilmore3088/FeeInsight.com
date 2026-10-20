@@ -11,31 +11,35 @@
  * the group by any dimension of the shared peer-set definition (peer-sets.ts).
  */
 import { getInstitutionById } from "./core";
-import { getInstitutionFeeValues, getPeerFeeValues, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
+import { getInstitutionOwnFees, getPeerFeeValues, type PeerFeeValue, type PeerFilterSet } from "./fee-index";
 import { MIN_INSTITUTIONS_FOR_MEDIAN, summarizeFees, type MaturityTier } from "./fee-stats";
 import { getRateFeesByInstitution } from "./rate-fees";
 import { describePeerSet, getPeerSubject, resolvePeerRequest, type PeerSetDefinition, type PeerSetRequest } from "./peer-sets";
 import type { PeerMarket } from "./peer-markets";
 import { getDisplayName, getFeeFamily } from "@/lib/fee-taxonomy";
 import { institutionDisplayName } from "@/lib/institution-display-name";
+import type { InstitutionOwnFee, OwnFeeLine } from "@/lib/own-fee";
+import { midRankPercentile as sharedMidRank, SAME_PRICE_TOLERANCE } from "@/lib/percentile";
 
 export { MAX_CHOSEN_PEERS } from "@/lib/peer-set-dimensions";
-
-/** Two amounts within half a cent are the same price. */
-const SAME_PRICE_TOLERANCE = 0.005;
 
 export interface PeerCategoryComparison {
   category: string;
   display_name: string;
   family: string | null;
-  /** The institution's own value for the category under the statistics contract, in dollars. */
-  amount: number;
+  /** The price the institution's schedule states, in dollars; null when it states several different fees. */
+  amount: number | null;
+  /** The lowest and highest of its fees in the category (equal when it states one). */
+  amount_low: number;
+  amount_high: number;
+  /** Each of its fees in the category, lowest first. */
+  fees: OwnFeeLine[];
   /** Peers with a published dollar amount for this category. */
   peer_count: number;
   peer_median: number | null;
   peer_p25: number | null;
   peer_p75: number | null;
-  /** How many peers' amounts are below, equal to and above the institution's. */
+  /** How many peers' amounts are below, equal to and above the institution's; null when it has no single price. */
   peers_lower: number | null;
   peers_same: number | null;
   peers_higher: number | null;
@@ -88,38 +92,47 @@ export interface PeerComparison {
   rate_fees: PeerComparisonRateFee[];
 }
 
-/** Mid-rank percentile: share of values below, plus half of those equal, as 0 to 100. */
+/** The counts behind a price's place, and its percentile by the one shared method (#2048, #2101). */
 export function midRankPercentile(amount: number, values: readonly number[]): { lower: number; same: number; higher: number; percentile: number | null } {
   let lower = 0;
   let same = 0;
   let higher = 0;
   for (const value of values) {
-    if (Math.abs(value - amount) < SAME_PRICE_TOLERANCE) same++;
+    if (Math.abs(value - amount) <= SAME_PRICE_TOLERANCE) same++;
     else if (value < amount) lower++;
     else higher++;
   }
-  const n = values.length;
-  return { lower, same, higher, percentile: n === 0 ? null : Math.round((100 * (lower + same / 2)) / n) };
+  return { lower, same, higher, percentile: sharedMidRank(amount, values) };
 }
 
-/** One category's comparison from the institution's value and each peer's value. */
-export function comparePeerCategory(category: string, amount: number, peers: readonly Pick<PeerFeeValue, "institution_id" | "amount">[]): PeerCategoryComparison {
+/**
+ * One category's comparison from the institution's own fees and each peer's value. Only a
+ * single stated price is ranked: a median of several different fees is no price to rank.
+ */
+export function comparePeerCategory(
+  category: string,
+  own: Pick<InstitutionOwnFee, "price" | "low" | "high" | "fees">,
+  peers: readonly Pick<PeerFeeValue, "institution_id" | "amount">[],
+): PeerCategoryComparison {
   const stats = summarizeFees(peers.map((p) => ({ institution_id: p.institution_id, amount: p.amount, fee_category: category })));
   const enough = stats.maturity_tier !== "insufficient";
-  const rank = midRankPercentile(amount, peers.map((p) => p.amount));
+  const rank = own.price === null ? null : midRankPercentile(own.price, peers.map((p) => p.amount));
   return {
     category,
     display_name: getDisplayName(category),
     family: getFeeFamily(category),
-    amount,
+    amount: own.price,
+    amount_low: own.low,
+    amount_high: own.high,
+    fees: own.fees,
     peer_count: stats.institution_count,
     peer_median: enough ? stats.median_amount : null,
     peer_p25: enough ? stats.p25_amount : null,
     peer_p75: enough ? stats.p75_amount : null,
-    peers_lower: enough ? rank.lower : null,
-    peers_same: enough ? rank.same : null,
-    peers_higher: enough ? rank.higher : null,
-    percentile: enough ? rank.percentile : null,
+    peers_lower: enough && rank ? rank.lower : null,
+    peers_same: enough && rank ? rank.same : null,
+    peers_higher: enough && rank ? rank.higher : null,
+    percentile: enough && rank ? rank.percentile : null,
     maturity_tier: stats.maturity_tier,
   };
 }
@@ -132,11 +145,6 @@ export function defaultPeerFilters(inst: { charter_type?: string | null; asset_s
   const district = Number(inst.fed_district);
   if (Number.isInteger(district) && district >= 1 && district <= 12) filters.fed_districts = [district];
   return filters;
-}
-
-/** "Banks with $300M to $1B in assets in Fed district 11 (Dallas)", or "3 chosen institutions". */
-export function describePeerGroup(filters: PeerFilterSet): string {
-  return describePeerSet(filters);
 }
 
 function byFamilyThenName(a: { family: string | null; display_name: string | null }, b: { family: string | null; display_name: string | null }): number {
@@ -169,7 +177,7 @@ export async function getPeerComparison(
     definition = filters;
     label = describePeerSet(filters);
   }
-  const own = await getInstitutionFeeValues(institutionId);
+  const own = await getInstitutionOwnFees(institutionId);
   const categories = [...own.keys()];
   const [peerSets, rateFees] = await Promise.all([
     // An empty peer group matches nobody: never read it as "no filter", which is everyone.
@@ -184,7 +192,7 @@ export async function getPeerComparison(
   for (const values of peerValues.values()) for (const v of values) publishing.add(v.institution_id);
 
   const rows = categories
-    .map((category) => comparePeerCategory(category, own.get(category) as number, peerValues.get(category) ?? []))
+    .map((category) => comparePeerCategory(category, own.get(category)!, peerValues.get(category) ?? []))
     .sort(byFamilyThenName);
 
   return {

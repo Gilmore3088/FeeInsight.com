@@ -25,7 +25,7 @@ async function read<T>(what: string, load: () => Promise<T>): Promise<T | null> 
  * item when the pile keeps one, and where to act. A pile whose read fails says so.
  */
 export default async function YourWorkPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [labels, answerKeyRows, trust, drafts, verify] = await Promise.all([
     read("fee-name labels", async () => (await loadLabelQueue(sql)).length),
     read("answer key", async () => ((await answerKeySchemaReady()) ? banksToCheck(await listAnswerKeyInstitutions()).length : 0)),

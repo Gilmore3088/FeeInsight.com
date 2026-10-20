@@ -4,28 +4,35 @@
  * published_fee_catalog, fee_change_records or institution_financial_records.
  */
 
+import type { CallCohortHistory } from "@/lib/data-catalog/call-cohort-history";
 import { countedAmounts } from "@/lib/data-store/fee-stats";
 import { sql } from "@/lib/data-store/connection";
 import { getInstitutionById } from "@/lib/data-store/core";
 import { loadConfirmedFeeChanges } from "@/lib/report-assemblers/monthly-pulse";
 import {
-  getFeeValuesForInstitutions,
   getInstitutionFeeRows,
-  getInstitutionFeeValues,
+  getInstitutionOwnFees,
+  getOwnFeesForInstitutions,
   getPeerFeeValues,
+  getPeerGroupMembers,
   getSegmentFeeValues,
+  catalogStamp,
   type PeerFeeValue,
 } from "@/lib/data-store/fee-index";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 import { getPeerServiceChargeMedians, getRevenueTrend } from "@/lib/data-store/call-reports";
 import { getLocalMarketMembers, type LocalMarketMembers } from "@/lib/data-store/custom-report-market";
 import { getStateEconomicContext } from "@/lib/data-store/economic-context";
-import { STATE_NEWS_SOURCE_PATTERNS } from "@/lib/data-store/news";
+import { STATE_NEWS_SOURCE_PATTERNS, TOPIC_SQL } from "@/lib/data-store/news";
+import { STRUCK_ENFORCEMENT_AGENCIES, STRUCK_REG_ARTICLE_SOURCES } from "@/lib/data-store/struck-sources";
 import { getNationalRateStats, getRateFeesByInstitution } from "@/lib/data-store/rate-fees";
 import { getInstitutionRegulators } from "@/lib/data-store/regulators";
 import { getComplaintBenchmark, getInstitutionComplaintYears } from "@/lib/data-store/complaints";
 import { getAccountLineups, summarizeLineup, type LineupAccount } from "@/lib/data-store/account-lineup";
 import { LINEUP_CATEGORY } from "@/lib/agents/knox/lineup";
 import { getDisplayName } from "@/lib/fee-taxonomy";
+import { severalFeesOf, type InstitutionOwnFee, type SeveralFees } from "@/lib/own-fee";
 import { percentFeeAllowed } from "@/lib/percent-fees";
 import { DISTRICT_NAMES } from "@/lib/fed-districts";
 import { STATE_NAMES } from "@/lib/us-states";
@@ -33,6 +40,9 @@ import {
   ASSET_TIER_RANGES,
   buildInstitutionPeerFilterCandidates,
   describePeerFilters,
+  coversOwnFees,
+  defaultCandidateEntries,
+  PEER_GROUP_ANCHOR,
   peerSetCandidate,
   type ActivePeerSet,
   type HamiltonPeerFilters,
@@ -87,6 +97,7 @@ import {
   type MarketLayerScope,
   type AskSegment,
   type OwnFeeRow,
+  type PeerGroupCoverage,
   type PeerValue,
   type RateResearch,
   type SegmentResearch,
@@ -102,12 +113,18 @@ export const REGULATION_NEWS_WINDOW_DAYS = 365;
 
 interface CategoryPeers {
   label: string;
+  /** The bank's own saved peer group was used, not one Hamilton picked. */
+  saved?: boolean;
+  /** The filters of the peer group chosen, for its dataset stamp. */
+  filters?: HamiltonPeerFilters;
   values: PeerFeeValue[];
 }
 
 interface LayerSet {
   scope: MarketLayerScope;
   label: string;
+  /** The filters the layer's values were read with, for its dataset stamp. */
+  filters?: HamiltonPeerFilters;
   values: Map<string, PeerFeeValue[]>;
 }
 
@@ -122,9 +139,17 @@ interface WorkspaceBase {
   totalAssets?: number | null;
   /** National, Fed district, state, and charter and size, each loaded whole. */
   layers: LayerSet[];
+  /** When the layers' read returned, for their dataset stamps (#1924); no stamps without it. */
+  readAt?: Date;
   /** The narrowest default peer group, named on the Briefing. */
   peerLabel: string;
+  /**
+   * The price the bank's schedule states per fee. A fee it states several different amounts
+   * for is left out: their median is no price of its own (#1913). ownCategories lists both.
+   */
   ownValues: Map<string, number>;
+  /** Every fee category the bank publishes, priced or not. */
+  ownCategories: Set<string>;
   /** Per fee, the narrowest peer group with enough institutions publishing it. */
   peers: Map<string, CategoryPeers>;
 }
@@ -133,37 +158,50 @@ function peerLabel(filters: HamiltonPeerFilters): string {
   return Object.keys(filters).length === 0 ? "Verified national index" : describePeerFilters(filters);
 }
 
+export { PEER_GROUP_ANCHOR } from "../peer-index";
+
+/** `covers[i]`: candidate i passes the shared group rule (coversOwnFees); index-aligned with the candidates. */
+type GroupOptions = { activeFirst?: boolean; covers?: readonly boolean[] };
+
 /**
- * Peers per fee: the first of the institution's default peer groups (state, charter, size
- * and district, then progressively wider, then national) where at least
- * MIN_PEERS_FOR_POSITION other institutions publish that fee. With `activeFirst`, the first
- * candidate is the bank's own peer group from Settings. A fee the first group is too thin for
- * widens to the next group, and the label says how many the first group had.
+ * Which candidate group is the institution's peer group, the same for every fee and every
+ * question (#2046): the saved group from Settings when there is one, otherwise the narrowest
+ * default group (state, charter, size and district, then progressively wider, then national)
+ * where at least MIN_PEERS_FOR_POSITION other institutions publish 80% of the bank's own fees
+ * (#2098), the same rule Simulate and reports use.
+ */
+export function peerGroupIndex(valuesBySet: Map<string, PeerFeeValue[]>[], candidateCount: number, options: GroupOptions = {}): number {
+  if (options.activeFirst) return 0;
+  for (let index = 0; index < candidateCount - 1; index++) {
+    // `covers` is the shared rule (#2098, coversOwnFees); without it, the overdraft test.
+    const fits = options.covers ? options.covers[index] : peerAmounts(valuesBySet[index]?.get(PEER_GROUP_ANCHOR) ?? []).length >= MIN_PEERS_FOR_POSITION;
+    if (fits) return index;
+  }
+  return candidateCount - 1;
+}
+
+/**
+ * Peers per fee, all from the one peer group (#2046). A fee too few in the group publish is not
+ * widened to another group, which made the peer count drift from question to question; its label
+ * says how many publish it, and the answer says too few to compare.
  */
 export function choosePeers(
   candidates: HamiltonPeerFilters[],
   valuesBySet: Map<string, PeerFeeValue[]>[],
   categories: string[],
-  options: { activeFirst?: boolean } = {},
+  options: GroupOptions = {},
 ): Map<string, CategoryPeers> {
+  const index = peerGroupIndex(valuesBySet, candidates.length, options);
+  const filters = candidates[index] ?? {};
   const chosen = new Map<string, CategoryPeers>();
   for (const category of categories) {
-    for (const [index, filters] of candidates.entries()) {
-      const values = valuesBySet[index]?.get(category) ?? [];
-      // Counted as the band counts them: sister charters of one shared schedule once (rule 7).
-      if (peerAmounts(values).length >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1) {
-        const ownCount = peerAmounts(valuesBySet[0]?.get(category) ?? []).length;
-        // A wider group than the default always says why (#1544): "OH · bank peers; only 3 of
-        // bank · over $250B peers publish this fee".
-        const label = index === 0
-          ? peerLabel(filters)
-          : options.activeFirst
-            ? `${peerLabel(filters)}; your group ${peerLabel(candidates[0])} has ${ownCount} publishing this fee`
-            : `${peerLabel(filters)}; ${ownCount === 0 ? "none" : `only ${ownCount}`} of ${peerLabel(candidates[0])} publish this fee`;
-        chosen.set(category, { label, values });
-        break;
-      }
-    }
+    const values = valuesBySet[index]?.get(category) ?? [];
+    // Counted as the band counts them: sister charters of one shared schedule once (rule 7).
+    const publishing = peerAmounts(values).length;
+    const label = publishing >= MIN_PEERS_FOR_POSITION || index === candidates.length - 1
+      ? peerLabel(filters)
+      : `${peerLabel(filters)}; ${publishing === 0 ? "none" : `only ${publishing}`} of them publish this fee`;
+    chosen.set(category, { label, filters, values, saved: Boolean(options.activeFirst) && index === 0 });
   }
   return chosen;
 }
@@ -211,6 +249,23 @@ export interface EnginePeerOptions {
   peerSet?: Pick<ActivePeerSet, "filters" | "label"> | null;
 }
 
+/**
+ * Which candidates pass the shared group rule (coversOwnFees, #2098), from per-fee counts of each
+ * default candidate. The bank's full list of published fees is read when only some were asked for.
+ * Undefined when a read fails, so the overdraft test still picks a group.
+ */
+async function groupCoverage(institutionId: number, candidates: HamiltonPeerFilters[], ownCategories?: ReadonlySet<string>): Promise<boolean[] | undefined> {
+  try {
+    const [indexes, own] = await Promise.all([
+      defaultCandidateEntries(candidates.slice(0, -1)),
+      ownCategories ? Promise.resolve(ownCategories) : getInstitutionOwnFees(institutionId).then((fees) => new Set(fees.keys())),
+    ]);
+    return candidates.map((_, i) => i < indexes.length && coversOwnFees(indexes[i] ?? [], own));
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadBase(
   institutionId: number,
   categories?: string[],
@@ -218,8 +273,13 @@ async function loadBase(
 ): Promise<WorkspaceBase | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
-  const ownValues = await getInstitutionFeeValues(institutionId, categories);
-  const wanted = categories ?? [...ownValues.keys()];
+  const ownFees = await getInstitutionOwnFees(institutionId, categories);
+  const ownValues = new Map<string, number>();
+  for (const [category, fee] of ownFees) if (fee.price !== null) ownValues.set(category, fee.price);
+  const ownCategories = new Set(ownFees.keys());
+  const wanted = categories ?? [...ownCategories];
+  // The anchor fee is always read: it picks the one peer group every answer uses (#2046).
+  const read = wanted.includes(PEER_GROUP_ANCHOR) ? wanted : [...wanted, PEER_GROUP_ANCHOR];
   const activeFirst = Boolean(options.peerSet);
   const candidates: HamiltonPeerFilters[] = [
     ...(options.peerSet ? [peerSetCandidate(options.peerSet)] : []),
@@ -229,7 +289,13 @@ async function loadBase(
   const layerSets = marketLayerSets(institution);
   // One read for the peer candidates and the layers; national is already the last candidate.
   const extra = layerSets.filter((l) => l.scope !== "national");
-  const valuesBySet = await getPeerFeeValues([...candidates, ...extra.map((l) => l.filters)], wanted, institutionId);
+  const [valuesBySet, covers] = await Promise.all([
+    getPeerFeeValues([...candidates, ...extra.map((l) => l.filters)], read, institutionId),
+    activeFirst ? Promise.resolve(undefined) : groupCoverage(institutionId, candidates, categories ? undefined : ownCategories),
+  ]);
+  const groupOptions = { activeFirst, covers };
+  const groupIndex = peerGroupIndex(valuesBySet.slice(0, candidates.length), candidates.length, groupOptions);
+  const readAt = new Date();
   const national = valuesBySet[candidates.length - 1] ?? new Map();
   return {
     institutionId,
@@ -240,12 +306,14 @@ async function loadBase(
     assetTier: institution.asset_size_tier,
     totalAssets: institution.asset_size === null || institution.asset_size === undefined ? null : Number(institution.asset_size),
     layers: [
-      { scope: "national", label: "National", values: national },
-      ...extra.map((l, i) => ({ scope: l.scope, label: l.label, values: valuesBySet[candidates.length + i] ?? new Map() })),
+      { scope: "national", label: "National", filters: {}, values: national },
+      ...extra.map((l, i) => ({ scope: l.scope, label: l.label, filters: l.filters, values: valuesBySet[candidates.length + i] ?? new Map() })),
     ],
-    peerLabel: peerLabel(candidates[0]),
+    readAt,
+    peerLabel: peerLabel(candidates[groupIndex]),
     ownValues,
-    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, { activeFirst }),
+    ownCategories,
+    peers: choosePeers(candidates, valuesBySet.slice(0, candidates.length), wanted, groupOptions),
   };
 }
 
@@ -258,6 +326,8 @@ export function toPeerValue(v: PeerFeeValue): PeerValue {
     sourceDocumentIds: v.source_document_ids,
     documentUrls: v.document_urls,
     publishedAt: v.published_at,
+    ...(v.total_assets !== undefined ? { totalAssets: v.total_assets } : {}),
+    ...(v.several ? { several: v.several } : {}),
     ...(v.fee_published_ids?.length ? { feePublishedIds: v.fee_published_ids } : {}),
     ...(v.counted_as !== undefined ? { countedAs: v.counted_as } : {}),
   };
@@ -303,6 +373,50 @@ function feeLayers(base: WorkspaceBase, feeCategory: string): MarketLayer[] {
   });
 }
 
+/**
+ * Each market layer's dataset stamp for one fee (#1924): a live read of the published catalog
+ * under the statistics contract, the layer's filters, and the bank itself left out, as
+ * getPeerFeeValues reads it. The local market has no filter set, so no stamp.
+ */
+export function feeLayerStamps(base: WorkspaceBase, feeCategory: string): Partial<Record<MarketLayerScope, DatasetStamp>> {
+  const out: Partial<Record<MarketLayerScope, DatasetStamp>> = {};
+  if (!base.readAt) return out;
+  for (const layer of base.layers) {
+    if (!layer.filters) continue;
+    out[layer.scope] = catalogStamp({
+      mode: "live",
+      readAt: base.readAt,
+      runId: null,
+      newestRecordAt: newest((layer.values.get(feeCategory) ?? []).map((v) => v.published_at)),
+      scope: layer.filters,
+      extraFilters: [excludeOwnFilter(base.institutionId)],
+    });
+  }
+  return out;
+}
+
+function excludeOwnFilter(institutionId: number) {
+  return { key: `exclude:institution:${institutionId}`, label: "The institution being compared left out" };
+}
+
+/**
+ * The dataset stamp of the peer group a fee's band was read from (#1924): the same one read as the
+ * layers, under the chosen group's filters with the bank left out. Null without the read time or
+ * the group's filters.
+ */
+export function feePeerStamp(base: Pick<WorkspaceBase, "institutionId" | "readAt" | "peers">, feeCategory: string): DatasetStamp | null {
+  const chosen = base.peers.get(feeCategory);
+  if (!base.readAt || !chosen?.filters) return null;
+  return catalogStamp({
+    mode: "live",
+    readAt: base.readAt,
+    runId: null,
+    newestRecordAt: newest(chosen.values.map((v) => v.published_at)),
+    scope: chosen.filters,
+    extraFilters: [excludeOwnFilter(base.institutionId)],
+  });
+}
+
 const FEE_SOURCE: SourceRef = {
   label: "Fees on each institution's own published schedule (verified, live)",
   table: "published_fee_catalog",
@@ -342,12 +456,68 @@ function numOrNull(v: unknown): number | null {
   return v === null || v === undefined ? null : Number(v);
 }
 
-async function loadServiceChargeRows(institutionId: number): Promise<ServiceChargeRow[]> {
+export interface OwnScheduleRow {
+  fee_on_file: boolean;
+  collected: boolean;
+  schedule: { url: string | null; read: string | null } | null;
+}
+
+/** loadOwnSchedule's answer from its one row: undefined whenever either claim could be false (#2035). */
+export function ownScheduleFrom(row: OwnScheduleRow): FeeResearch["ownSchedule"] {
+  if (row.fee_on_file) return undefined;
+  if (!row.schedule) return row.collected ? undefined : null;
+  return { documentUrl: row.schedule.url ?? null, readAt: row.schedule.read ? String(row.schedule.read).slice(0, 10) : null };
+}
+
+/**
+ * The schedule most of the bank's live fees were read from, and when it was last read (#2035).
+ * Undefined, so the answer keeps its neutral wording, whenever "lists no such fee" or "no
+ * schedule on file" could be false: a row for the fee exists in any state (stated as a rate, held
+ * for review, filtered out of the peer figures, not yet published), a row is still in the
+ * verification queue (it has no category yet), a collected schedule has no live fees yet,
+ * or the read fails.
+ * Null only when no schedule was ever collected.
+ */
+async function loadOwnSchedule(institutionId: number, feeCategory: string): Promise<FeeResearch["ownSchedule"]> {
+  try {
+    const [row] = await sql`
+      SELECT
+        EXISTS (SELECT 1 FROM published_fee_catalog p WHERE p.institution_id = ${institutionId} AND p.fee_category = ${feeCategory})
+          OR EXISTS (SELECT 1 FROM published_fee_rate_catalog r WHERE r.institution_id = ${institutionId} AND r.fee_category = ${feeCategory})
+          OR EXISTS (SELECT 1 FROM verified_fee_observations v WHERE v.institution_id = ${institutionId} AND v.fee_category = ${feeCategory} AND v.review_status <> 'rejected')
+          OR EXISTS (SELECT 1 FROM pipeline_attempts pa
+                      WHERE pa.institution_id = ${institutionId} AND pa.stage = 'verify'
+                        AND pa.detail->>'decision' = 'needs_review' AND pa.detail->>'canonical_fee_key' = ${feeCategory})
+          OR EXISTS (SELECT 1 FROM raw_fee_observations fr
+                      WHERE fr.institution_id = ${institutionId} AND fr.source = 'knox'
+                        AND fr.outlier_flags ? 'needs_darwin_verification'
+                        AND NOT EXISTS (SELECT 1 FROM verified_fee_observations v WHERE v.fee_raw_id = fr.fee_raw_id)
+                        AND NOT EXISTS (SELECT 1 FROM pipeline_attempts pa
+                                         WHERE pa.input_fingerprint = 'raw:' || fr.fee_raw_id AND pa.stage = 'verify'))
+          AS fee_on_file,
+        EXISTS (SELECT 1 FROM source_documents d WHERE d.institution_id = ${institutionId} AND d.status = 'success') AS collected,
+        (SELECT json_build_object('url', sd.document_url, 'read', GREATEST(sd.last_checked_at, sd.crawled_at))
+           FROM published_fee_catalog ef
+           JOIN source_documents sd ON sd.id = ef.source_document_id AND sd.institution_id = ef.institution_id
+          WHERE ef.institution_id = ${institutionId}
+            AND ef.review_status = 'approved'
+          GROUP BY sd.id, sd.document_url, sd.last_checked_at, sd.crawled_at
+          ORDER BY COUNT(*) DESC, GREATEST(sd.last_checked_at, sd.crawled_at) DESC
+          LIMIT 1) AS schedule`;
+    return row ? ownScheduleFrom(row as OwnScheduleRow) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadServiceChargeRows(institutionId: number, charterType: unknown): Promise<ServiceChargeRow[]> {
+  const source = financialSourceForCharter(charterType);
+  if (!source) return [];
   const rows = await sql`
     SELECT report_date, source, service_charge_income, overdraft_revenue, nsf_revenue
       FROM institution_financial_records
      WHERE institution_id = ${institutionId}
-       AND source IN ('fdic', 'ncua')
+       AND source IN ('fdic', 'ncua') AND source = ${source}
      ORDER BY report_date DESC
      LIMIT 24`;
   return rows.map((r) => ({
@@ -413,7 +583,7 @@ export async function loadStudyPlacements(institutionId: number): Promise<StudyP
 async function loadRegArticles(days: number, now = new Date()): Promise<RegArticleRow[]> {
   try {
     const rows = await sql`
-      SELECT source, title, link, topic, published_at
+      SELECT source, title, link, ${sql.unsafe(TOPIC_SQL)} AS topic, published_at
         FROM reg_articles
        WHERE published_at >= ${sinceDate(days, now)}
          AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
@@ -491,6 +661,8 @@ export async function loadWire(
             FROM institution_enforcement_actions
            WHERE start_date >= ${actionSince.toISOString().slice(0, 10)}::date
              AND (agency = ${federal} OR upper(party_state) = ${state})
+             -- Struck states' orders (DECISIONS.md "No non-commercial data") are never read.
+             AND agency <> ALL(${[...STRUCK_ENFORCEMENT_AGENCIES]}::text[])
              AND subject ~* ${CONSUMER_LAW_PG}
              -- Rows the reader would drop for having no link must not use up the LIMIT (#1359).
              AND (document_url IS NOT NULL OR agency = 'OCC')
@@ -502,6 +674,7 @@ export async function loadWire(
           SELECT source, title, link, published_at
             FROM reg_articles
            WHERE source = ${`state:${state}`}
+             AND source <> ALL(${[...STRUCK_REG_ARTICLE_SOURCES]}::text[])
              AND published_at >= ${sinceDate(WIRE_POST_DAYS, now)}
            ORDER BY published_at DESC
            LIMIT 200`.catch(empty("state posts"))
@@ -555,41 +728,47 @@ export async function loadWire(
   };
 }
 
-/** Industry deposit service charge income, newest quarter first, in dollars (eight quarters). */
-export async function loadNationalIncomeSeries(): Promise<MarketIncome[]> {
-  // Twelve quarters so each of the newest eight has its year-earlier quarter for the change.
-  const trend = await getRevenueTrend(12);
+/** Canonical regulator income, newest quarter first, in dollars (eight quarters). */
+export async function loadNationalIncomeSeries(charterType: unknown): Promise<{ quarters: MarketIncome[]; cohortHistory?: CallCohortHistory }> {
+  const source = financialSourceForCharter(charterType);
+  if (!source) return { quarters: [] };
+  // Keep dated cross-sections; no comparable economic-growth baseline is established.
+  const trend = await getRevenueTrend(12, source);
   const thousands = 1000;
-  return trend.quarters.slice(0, 8).map((q) => ({
+  return { cohortHistory: trend.cohort_history, quarters: trend.quarters.slice(0, 8).map((q) => ({
     quarter: q.quarter,
+    financialSource: source,
+    measureDefinition: { ...financialMeasureDefinition(source), unit: "USD" },
     total: q.total_service_charges * thousands,
     banks: q.bank_service_charges * thousands,
     creditUnions: q.cu_service_charges * thousands,
     institutions: q.total_institutions,
-    yoyPct: q.yoy_change_pct === null ? null : Math.round(q.yoy_change_pct * 10) / 10,
+    yoyPct: null,
     sourceRef: {
-      label: "FDIC call reports and NCUA 5300 reports, service charges on deposit accounts, all filers on file",
+      label: `${financialMeasureDefinition(source).publisher}: ${financialMeasureDefinition(source).definition}; standalone quarters, canonical ${source === "ncua" ? "credit-union" : "bank"} filers on file; dated cross-sections using current registry links, not constant-cohort or merger-adjusted growth`,
       table: "institution_financial_records",
       asOf: q.quarter,
     },
-  }));
+  })) };
 }
 
 /** The bank's own income with the median of its charter and asset size beside it, quarter by quarter. */
-async function withPeerMedian(base: WorkspaceBase, financials: InstitutionFinancials | null): Promise<InstitutionFinancials | null> {
+export async function withPeerMedian(base: Pick<WorkspaceBase, "assetTier" | "charterType" | "institutionId" | "layers">, financials: InstitutionFinancials | null): Promise<InstitutionFinancials | null> {
   if (!financials || !base.assetTier) return financials;
   const label = base.layers.find((l) => l.scope === "charter_size")?.label;
-  const medians = await getPeerServiceChargeMedians(base.charterType, base.assetTier, 8).catch(() => []);
-  if (!label || medians.length === 0) return financials;
+  const history = await getPeerServiceChargeMedians(base.charterType, base.assetTier, 8, base.institutionId).catch(() => ({ quarters: [] }));
+  const medians = history.quarters.filter((m) => m.median_thousands !== null);
+  if (!label || history.quarters.length === 0) return financials;
   return {
     ...financials,
     peerMedian: {
       label,
-      quarters: medians.map((m) => ({ quarterEnd: m.quarter_end, amount: m.median_thousands * 1000, institutions: m.institutions })),
+      cohortHistory: "cohort_history" in history ? history.cohort_history : undefined,
+      quarters: medians.map((m) => ({ quarterEnd: m.quarter_end, amount: m.median_thousands! * 1000, institutions: m.institutions })),
       sourceRef: {
-        label: `${financials.source === "ncua" ? "NCUA 5300" : "FDIC call report"} filers, ${label}, median quarterly service charges`,
+        label: `${financials.source === "ncua" ? "NCUA 5300" : "FDIC call report"} filers, ${label}, ${financials.source === "ncua" ? "median quarterly broad credit-union fee income" : "median quarterly bank deposit service charges"}; dated cross-sections of current-registry size peers, not constant-cohort or merger-adjusted growth`,
         table: "institution_financial_records",
-        asOf: medians[0].quarter_end,
+        asOf: medians[0]?.quarter_end ?? history.quarters[0].quarter_end,
       },
     },
   };
@@ -610,25 +789,35 @@ export function briefingLocalMarket(
   if (!market) return null;
   const national = base.layers.find((l) => l.scope === "national")?.values;
   if (!national) return null;
-  const valueOf = new Map<number, Record<string, number>>();
+  // One value per competitor and fee, as peers are read; a fee it states several different
+  // amounts for also carries their range and names (#1931), shown in place of that median.
+  const valueOf = new Map<number, { values: Record<string, number>; several: Record<string, SeveralFees> }>();
+  // Columns follow the bank's own priced row (LocalCompetitors keys off it), so a fee it
+  // states several amounts for is left out here rather than shown as an empty column.
   for (const category of base.ownValues.keys()) {
     for (const v of national.get(category) ?? []) {
-      const values = valueOf.get(v.institution_id) ?? {};
-      values[category] = v.amount;
-      valueOf.set(v.institution_id, values);
+      const id = Number(v.institution_id);
+      const entry = valueOf.get(id) ?? { values: {}, several: {} };
+      entry.values[category] = v.amount;
+      if (v.several) entry.several[category] = v.several;
+      valueOf.set(id, entry);
     }
   }
   const others = market.members.filter((m) => !m.is_subject);
   const rows = others
-    .filter((m) => valueOf.has(m.institution_id))
+    .filter((m) => valueOf.has(Number(m.institution_id)))
     .slice(0, limit)
-    .map((m) => ({
-      institutionId: m.institution_id,
-      name: m.institution_name,
-      own: false,
-      marketDeposits: m.market_deposits,
-      values: valueOf.get(m.institution_id) as Record<string, number>,
-    }));
+    .map((m) => {
+      const entry = valueOf.get(Number(m.institution_id))!;
+      return {
+        institutionId: m.institution_id,
+        name: m.institution_name,
+        own: false,
+        marketDeposits: m.market_deposits,
+        values: entry.values,
+        ...(Object.keys(entry.several).length > 0 ? { several: entry.several } : {}),
+      };
+    });
   if (rows.length === 0) return null;
   return {
     info: {
@@ -684,14 +873,15 @@ export async function getWorkspaceBriefing(
 ): Promise<Briefing | null> {
   const base = await loadBase(institutionId, undefined, options);
   if (!base) return null;
-  const [changes, financialRows, articles, nationalIncomeSeries, studyRows, market] = await Promise.all([
+  const [changes, financialRows, articles, nationalIncomeHistory, studyRows, market] = await Promise.all([
     loadStateChanges(base.stateCode),
-    loadServiceChargeRows(institutionId),
+    loadServiceChargeRows(institutionId, base.charterType),
     loadRegArticles(RULE_CHANGE_WINDOW_DAYS, now),
-    loadNationalIncomeSeries(),
+    loadNationalIncomeSeries(base.charterType),
     loadStudyPlacements(institutionId),
     getLocalMarketMembers(institutionId).catch(() => null),
   ]);
+  const nationalIncomeSeries = nationalIncomeHistory.quarters;
   const nationalIncome = nationalIncomeSeries[0] ?? null;
   const positions = [...base.ownValues].map(([feeCategory, current]) => {
     const peers = base.peers.get(feeCategory);
@@ -705,7 +895,7 @@ export async function getWorkspaceBriefing(
   const trend = serviceChargeTrend(financialRows);
   const financials = await withPeerMedian(base, institutionFinancials(financialRows));
   const shift = revenueShiftObservation(trend, base.institutionName);
-  const bankCategories = new Set(base.ownValues.keys());
+  const bankCategories = base.ownCategories;
   const rules = ruleChangeObservations(articles, bankCategories);
   const studies = studyObservations(studyRows, base.institutionName);
   const observations = withStudyPlace(
@@ -726,10 +916,11 @@ export async function getWorkspaceBriefing(
     observations,
     institutionFinancials: financials,
     localMarket: briefingLocalMarket(base, market),
-    overdraftIncome: base.ownValues.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,
+    overdraftIncome: base.ownCategories.has("overdraft") ? feeRevenueLine(financialRows, "overdraft", base.charterType) : null,
     nationalIncome,
     nationalIncomeSeries,
-    feesReviewed: base.ownValues.size,
+    nationalIncomeCohortHistory: nationalIncomeHistory.cohortHistory,
+    feesReviewed: base.ownCategories.size,
     positions: feePositionRows(positions),
     peerLabel: base.peerLabel,
     generatedAt: now.toISOString(),
@@ -797,7 +988,7 @@ async function loadSegment(base: WorkspaceBase, feeCategory: string, segment: As
     const members = values.map((v) => {
       const limit = limits.get(v.institution_id);
       return {
-        ...toPeerValue(v),
+        ...toPeerValueWithRecords(v),
         totalAssets: v.total_assets,
         charterType: v.charter_type,
         dailyCap: caps.get(v.institution_id) ?? null,
@@ -831,13 +1022,19 @@ async function loadStructure(
   if (group.members.length === 0) return null;
   try {
     const ids = [base.institutionId, ...group.members.map((m) => m.institutionId)];
-    const values = await getFeeValuesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
-    const row = (institutionId: number, name: string, own: boolean) => ({
-      institutionId,
-      name,
-      own,
-      values: Object.fromEntries(values.get(institutionId) ?? new Map<string, number>()),
-    });
+    const fees = await getOwnFeesForInstitutions(ids, STRUCTURE_COLUMNS.map((c) => c.category));
+    // One value per institution and fee, as before; several different fees in one also carry
+    // their range and names (#1931), shown in place of that median.
+    const row = (institutionId: number, name: string, own: boolean) => {
+      const values: Record<string, number> = {};
+      const several: Record<string, SeveralFees> = {};
+      for (const [category, fee] of fees.get(Number(institutionId)) ?? new Map<string, InstitutionOwnFee>()) {
+        values[category] = fee.value;
+        const span = severalFeesOf(fee);
+        if (span) several[category] = span;
+      }
+      return { institutionId, name, own, values, ...(Object.keys(several).length > 0 ? { several } : {}) };
+    };
     return {
       groupLabel: group.label,
       columns: STRUCTURE_COLUMNS,
@@ -915,23 +1112,61 @@ async function loadRates(institutionId: number, feeCategory: string, asOf: strin
   }
 }
 
+/**
+ * The group's institutions with no value for the fee; null when the read fails, so the list still
+ * shows, and null for the national fallback, which is every institution rather than a group.
+ */
+async function loadPeerGroupCoverage(filters: HamiltonPeerFilters, institutionId: number, feeCategory: string, peers: PeerValue[]): Promise<PeerGroupCoverage | null> {
+  const scoped = Boolean(filters.institutionIds?.length || filters.charter_type || filters.state_code || filters.states?.length || filters.asset_tiers?.length || filters.fed_districts?.length);
+  if (!scoped) return null;
+  try {
+    const group = await getPeerGroupMembers(filters, institutionId, feeCategory);
+    const listed = new Set(peers.map((p) => p.institutionId));
+    return {
+      total: group.total,
+      missing: group.members
+        .filter((m) => !listed.has(m.institution_id))
+        .map((m) => ({ institutionId: m.institution_id, institutionName: m.institution_name, stateCode: m.state_code, totalAssets: m.total_assets, hasSchedule: m.has_schedule, uncounted: m.has_uncounted_fee })),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** How many institutions a scoped peer group holds; undefined for the national index or when the read fails. */
+async function loadPeerGroupSize(filters: HamiltonPeerFilters, institutionId: number, feeCategory: string): Promise<number | undefined> {
+  const scoped = Boolean(filters.institutionIds?.length || filters.charter_type || filters.state_code || filters.states?.length || filters.asset_tiers?.length || filters.fed_districts?.length);
+  if (!scoped) return undefined;
+  try {
+    return (await getPeerGroupMembers(filters, institutionId, feeCategory, 1)).total;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function getFeeResearch(
   institutionId: number,
   feeCategory: string,
   now = new Date(),
-  options: { segment?: AskSegment | null } & EnginePeerOptions = {},
+  options: { segment?: AskSegment | null; listPeers?: boolean } & EnginePeerOptions = {},
 ): Promise<FeeResearch | null> {
   const base = await loadBase(institutionId, [feeCategory], options);
   if (!base) return null;
   // The Wire's enforcement read needs the bank's federal regulator, so it waits on this one read.
   const regulatorRead = getInstitutionRegulators(institutionId).catch(() => null);
-  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeSeries, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
+  // Read beside the rest; used only when the bank has no row for the fee (#2035).
+  const ownScheduleRead = loadOwnSchedule(institutionId, feeCategory);
+  // Every answer says how many institutions the one peer group holds (#2046); a list question
+  // reads the whole group below, so only the others count it here, beside the rest.
+  const groupFilters = base.peers.get(feeCategory)?.filters;
+  const peerGroupSizeRead = !options.listPeers && groupFilters ? loadPeerGroupSize(groupFilters, institutionId, feeCategory) : Promise.resolve(undefined);
+  const [changes, financialRows, articles, market, ownFeeRows, nationalIncomeHistory, economy, segment, rates, regulators, complaints, complaintBenchmark, wireRows] = await Promise.all([
     loadStateChanges(base.stateCode, feeCategory),
-    loadServiceChargeRows(institutionId),
+    loadServiceChargeRows(institutionId, base.charterType),
     loadRegArticles(REGULATION_NEWS_WINDOW_DAYS, now),
     getLocalMarketMembers(institutionId).catch(() => null),
     getInstitutionFeeRows(institutionId, feeCategory),
-    loadNationalIncomeSeries(),
+    loadNationalIncomeSeries(base.charterType),
     loadEconomy(base.stateCode, base.fedDistrict),
     options.segment ? loadSegment(base, feeCategory, options.segment) : Promise.resolve(null),
     loadRates(institutionId, feeCategory, now.toISOString().slice(0, 10)),
@@ -940,7 +1175,10 @@ export async function getFeeResearch(
     getComplaintBenchmark(institutionId).catch(() => null),
     regulatorRead.then((r) => loadWire(base.stateCode, r?.primaryRegulator ?? null, now)),
   ]);
+  const nationalIncomeSeries = nationalIncomeHistory.quarters;
   const ownRows: OwnFeeRow[] = ownFeeRows;
+  // A fee with no row of its own is told apart: not listed on the schedule, or no schedule (#2035).
+  const ownSchedule = ownRows.length === 0 ? await ownScheduleRead : undefined;
   const wireScope = { feeCategory, stateCode: base.stateCode, primaryRegulator: regulators?.primaryRegulator ?? null, today: now };
   const wire = wireFacts(wireRows, wireScope);
   const statePosts = statePostFacts(wireRows.posts, wireScope);
@@ -950,7 +1188,14 @@ export async function getFeeResearch(
   const layers = [...feeLayers(base, feeCategory), ...(local.layer ? [local.layer] : [])];
   const chosen = base.peers.get(feeCategory);
   const peers: PeerValue[] = (chosen?.values ?? []).map(toPeerValueWithRecords);
+  // A list question names the whole group, so the peers with no value for the fee are read too.
+  const peerGroup = options.listPeers && chosen?.filters ? await loadPeerGroupCoverage(chosen.filters, institutionId, feeCategory, peers) : undefined;
+  const peerGroupSize = peerGroup ? peerGroup.total : await peerGroupSizeRead;
   const sorted = countedAmounts(peers);
+  const band = sorted.length > 0
+    ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
+    : null;
+  const peerStamp = feePeerStamp(base, feeCategory);
   const current = base.ownValues.get(feeCategory) ?? null;
   const structureGroup =
     segment && !segment.problem
@@ -981,11 +1226,14 @@ export async function getFeeResearch(
     current,
     peerLabel: chosen?.label ?? base.peerLabel,
     peers,
-    band: sorted.length > 0
-      ? { p25: quantile(sorted, 0.25), median: quantile(sorted, 0.5), p75: quantile(sorted, 0.75), n: sorted.length }
-      : null,
+    peerGroupSaved: chosen?.saved ?? false,
+    ...(peerGroupSize !== undefined ? { peerGroupSize } : {}),
+    ...(peerGroup !== undefined ? { peerGroup } : {}),
+    band,
     bands: priceBands(sorted, current),
     layers,
+    layerStamps: feeLayerStamps(base, feeCategory),
+    ...(peerStamp ? { peerStamp } : {}),
     localCompetitors: local.competitors,
     localMarket: local.info,
     recentChanges,
@@ -993,7 +1241,9 @@ export async function getFeeResearch(
     // (IS0049) income, or the bank overdraft-and-NSF line (RIAD H032, banks over $1B).
     revenueLine,
     ownRows,
+    ...(ownSchedule !== undefined ? { ownSchedule } : {}),
     nationalIncomeSeries,
+    nationalIncomeCohortHistory: nationalIncomeHistory.cohortHistory,
     institutionFinancials: financials,
     regulation: [
       ...regulatoryFacts({
@@ -1021,7 +1271,7 @@ export async function getFeeResearch(
     provenance: {
       engineVersion: WORKSPACE_ENGINE_VERSION,
       generatedAt: now.toISOString(),
-      peerGroup: { label: chosen?.label ?? base.peerLabel, n: peers.length },
+      peerGroup: { label: chosen?.label ?? base.peerLabel, n: sorted.length },
       dataAsOf: {
         fees: newest([...peers.map((p) => p.publishedAt), ...layers.map((l) => l.asOf)]),
         financials: revenueLine?.quarterEnd ?? financials?.quarterEnd ?? null,
@@ -1045,9 +1295,11 @@ export async function getFeeResearch(
         ...(wire.some((f) => f.source.table === "institution_enforcement_actions") ? [{ label: "OCC, Federal Reserve and state enforcement action lists", table: "institution_enforcement_actions" }] : []),
       ],
       assumptions: [
-        peers.length < MIN_PEERS_FOR_POSITION
-          ? `Only ${peers.length} institutions publish this fee even nationally, too few for percentiles.`
-          : `Peers are the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish this fee.`,
+        sorted.length < MIN_PEERS_FOR_POSITION
+          ? `Only ${sorted.length} institutions in the peer group publish this fee, too few for percentiles.`
+          : chosen?.saved
+            ? "Peers are the saved peer group, the same group for every fee."
+            : `Peers are one group for every fee: the narrowest default group where at least ${MIN_PEERS_FOR_POSITION} other institutions publish an overdraft fee.`,
         "One value per institution: the median of its published amounts, or the highest tier for overdraft.",
         ...(rates
           ? ["Where a fee is stated as a rate, rates are compared only with other rates, one per institution, never with dollar amounts."]

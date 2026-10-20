@@ -1,39 +1,43 @@
+import { getInstitutionById } from "@/lib/data-store/core";
+import { financialMeasureDefinition, financialSourceForCharter, validFinancialPeerComparison, type FinancialPeerComparison } from "@/lib/data-store/financial-peer-contract";
+import type { FinancialSource } from "@/lib/data-store/financial-sources";
 import { getInstitutionPeerRanking, getInstitutionRevenueTrend } from "@/lib/data-store/call-reports";
 import { cachedPublicRead } from "@/lib/data-store/public-read-cache";
 import { FDIC_TIER_LABELS } from "@/lib/fed-districts";
 
 /**
- * Revenue context for an institution report (value funnel B2): the deposit service-charge
- * income the institution itself reported (FDIC Call Report or NCUA 5300), and where that
- * income sits among institutions of its asset size. Reported figures only. Fee schedules
+ * Revenue context for an institution report: the bank deposit service charges or broad
+ * credit-union fee income the institution itself reported, and where that same measure
+ * sits among institutions of its charter and asset size. Reported figures only. Fee schedules
  * do not say how often a fee is charged, so the report never turns a fee gap into dollars.
  * Null when the institution has no reported service-charge income (many credit unions),
  * and the report then leaves the section out.
  */
 export interface RevenueContext {
+  source: FinancialSource;
+  measureLabel: "Broad credit-union fee income" | "Deposit service charges";
+  definition: ReturnType<typeof financialMeasureDefinition>;
   /** Newest quarter first, up to four, each in thousands of dollars. */
   quarters: { quarter: string; thousands: number }[];
   /** Sum of the last four quarters, only when all four are reported. */
   trailingThousands: number | null;
   peer: {
     tierLabel: string;
+    charterLabel: "credit unions" | "banks";
     medianThousands: number;
     rank: number;
     count: number;
-    /** Who the peers are: the institution's own filing, never banks and credit unions pooled. */
-    population?: "banks" | "credit unions";
+    comparison: FinancialPeerComparison;
     /**
-     * Service charges as a share of the quarter's revenue (FDIC: net interest income plus
-     * noninterest income; NCUA: year-to-date fee income over interest plus noninterest income; the
-     * filing's fee_income_ratio), the institution's own and the peers' median, as fractions. A measure that scales with size, beside the raw-dollar rank. Null when not filed.
+     * The measure as a share of total revenue (comparison.ratio_definition), the institution's own
+     * and the median, as fractions, read from the same comparison as the rank: same charter,
+     * filing, quarter and asset band, the institution included. Null when not filed or when fewer
+     * than comparison.minimum_median_count peers filed one.
      */
-    feeShare?: number | null;
-    peerMedianFeeShare?: number | null;
-    /**
-     * The population of peerMedianFeeShare: the institution page's financial cohort (same charter
-     * and asset-size tier, same quarter and filing, a share above 0%, the institution left out).
-     */
-    peerShareCount?: number | null;
+    feeShare: number | null;
+    peerMedianFeeShare: number | null;
+    /** Peers in that comparison with a share filed: comparison.ratio_reported_count. */
+    peerShareCount: number;
   } | null;
 }
 
@@ -44,33 +48,36 @@ export function buildRevenueContext(
     sc_rank: number;
     peer_count: number;
     peer_median_sc: number | null;
-    source?: string;
     fee_income_ratio?: number | null;
     peer_median_fee_ratio?: number | null;
-    peer_ratio_count?: number | null;
+    comparison?: FinancialPeerComparison;
   } | null,
+  expectedSource?: FinancialSource | null,
 ): RevenueContext | null {
+  const comparison = validFinancialPeerComparison(ranking?.comparison) ? ranking.comparison : null;
+  const source = expectedSource === undefined ? comparison?.source : expectedSource;
+  if (source !== "fdic" && source !== "ncua") return null;
   const quarters = trend.slice(0, 4).map((q) => ({ quarter: q.quarter, thousands: q.service_charge_income }));
   if (quarters.length === 0 || !(quarters[0].thousands > 0)) return null;
   const trailingThousands = quarters.length === 4 ? quarters.reduce((sum, q) => sum + q.thousands, 0) : null;
   const peer =
-    ranking && ranking.peer_median_sc !== null && ranking.peer_count > 0
+    ranking && comparison && comparison.source === source && comparison.subject_included && ranking.peer_median_sc !== null
+      && ranking.peer_count === comparison.reported_count && ranking.peer_count >= comparison.minimum_median_count
+      && quarterLabel(quarters[0].quarter) === quarterLabel(`${comparison.report_date.slice(0, 4)}-Q${Math.ceil(Number(comparison.report_date.slice(5, 7)) / 3)}`)
       ? {
           tierLabel: tierRange(ranking.tier),
+          charterLabel: source === "ncua" ? "credit unions" as const : "banks" as const,
+          comparison,
           medianThousands: ranking.peer_median_sc,
           rank: ranking.sc_rank,
           count: ranking.peer_count,
-          ...(ranking.source ? { population: ranking.source === "ncua" ? ("credit unions" as const) : ("banks" as const) } : {}),
-          ...(ranking.fee_income_ratio !== undefined || ranking.peer_median_fee_ratio !== undefined
-            ? {
-                feeShare: share(ranking.fee_income_ratio),
-                peerMedianFeeShare: share(ranking.peer_median_fee_ratio),
-                peerShareCount: ranking.peer_ratio_count ?? null,
-              }
-            : {}),
+          feeShare: share(ranking.fee_income_ratio),
+          peerMedianFeeShare:
+            comparison.ratio_reported_count >= comparison.minimum_median_count ? share(ranking.peer_median_fee_ratio) : null,
+          peerShareCount: comparison.ratio_reported_count,
         }
       : null;
-  return { quarters, trailingThousands, peer };
+  return { source, measureLabel: source === "ncua" ? "Broad credit-union fee income" : "Deposit service charges", definition: financialMeasureDefinition(source), quarters, trailingThousands, peer };
 }
 
 /** A filed fraction (0.087 = 8.7%) kept only when it reads as a share: positive and under 1. */
@@ -90,14 +97,16 @@ function tierRange(tier: string): string {
 }
 
 async function getRevenueContext(institutionId: number): Promise<RevenueContext | null> {
-  const [trend, ranking] = await Promise.all([
+  const [trend, ranking, institution] = await Promise.all([
     getInstitutionRevenueTrend(institutionId, 4).catch(() => []),
-    getInstitutionPeerRanking(institutionId, { sameCharter: true }).catch(() => null),
+    getInstitutionPeerRanking(institutionId).catch(() => null),
+    getInstitutionById(institutionId).catch(() => null),
   ]);
-  return buildRevenueContext(trend, ranking);
+  const source = financialSourceForCharter(institution?.charter_type);
+  return source ? buildRevenueContext(trend, ranking, source) : null;
 }
 
-export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v5", getRevenueContext);
+export const getRevenueContextCached = cachedPublicRead("report-revenue-context-v6", getRevenueContext);
 
 /** "2026-Q2" -> "Q2 2026". */
 export function quarterLabel(quarter: string): string {

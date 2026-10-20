@@ -8,3 +8,5 @@ same wall seen from another side, but it was left out. 19 active banks sat there
 **Fix:** two `network_error` failures in a row count the same as two timeouts.
 **Lesson:** when a list of blocked outcomes sends work to a fallback, check the outcomes it leaves
 out against the banks stuck on them before calling the list complete.
+
+**Agent lesson:** magellan/pr-831-walled-off-outcomes

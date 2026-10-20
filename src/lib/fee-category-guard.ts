@@ -18,7 +18,7 @@
  * The one exception is a dollar amount in a category that is usually a rate (below).
  */
 
-import { COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
+import { ATM_ABROAD, COLLECTION_ITEM, foldRetiredCategory, FOREIGN_DEPOSIT_RETURN, FOREIGN_ITEM_RETURN, INCOMING_WIRE, INTERNATIONAL_ATM, IRA_CLOSING, ITEM_COPY, RESEARCH_SPLIT_LIVE, SKIP_A_PAY, SUSTAINED_OVERDRAFT } from "@/lib/fee-fold";
 
 export type CategoryGuardCode = "name_contradicts" | "name_unsupported" | "rate_as_amount" | "schedule_contradicts" | "amount_implausible";
 
@@ -52,6 +52,14 @@ interface CategoryRule {
    * in `exclude`, and the note counts items and names no dollar amount (v29).
    */
   capInNotes?: { cap: RegExp; item: RegExp };
+  /**
+   * v74: the `exclude` words count only when a re-file rule moves the fee to a category that
+   * accepts it, so the rule re-files and never takes a fee down on its own (account research:
+   * "Club Accounts - Excess Withdrawal Fee" has no other home and stays).
+   */
+  onlyIfRefiles?: boolean;
+  /** v74: like `exclude`, but matched with case (an all-capitals abbreviation, `NAMED_OWN_ATM`). */
+  excludeExact?: RegExp;
 }
 
 const RETURNED_ITEM = String.raw`(?:nsf\s+)?return(?:ed)?\s+(?:check|item)s?(?:\s+(?:fee|charge)s?)?`;
@@ -114,6 +122,60 @@ const OUTSIDER_CARD_WORDS = String.raw`\bnon[- ](?!(?:proprietary|network|owned)
  * A bare "ATM Surcharge" names no payer and is not matched.
  */
 const OUTSIDER_ATM = String.raw`\bnon[- ]?(?:customers?|clients?|account ?holders?|accountholders?|depositors?)\b|\bforeign\s+customers?\b|\bforeign\s+(?:bank\s+|debit\s*\/?\s*(?:atm\s+)?|atm\s*\/\s*debit\s+|atm\s+)?card(?:s|holders?)?\b|\bnon[- ][^|()]{0,30}?\bcard ?holders?\b|\bnon[- ]?(?:credit union|cu|bank)\s+(?:debit\s+|atm\s+)?cards?\b|\bcards?\s+(?:from|issued by)\s+(?:an?\s+)?(?:other|another|financial institutions? other)\b|\bissued by (?:other )?(?:financial institutions?|banks?|institutions?) other than\b|\bother (?:financial )?institution(?:'?s)? (?:debit\s+|atm\s+)?cards?\b|\bdebit cards? from (?:an?\s+)?(?:other|another)\b|\bout[- ]of[- ]network\s+(?:atm\s+)?card(?:s|holders?)\b|\b(?:using|use of)\s+our\s+(?:own\s+)?(?:\w+\s+)?atm|${OUTSIDER_CARD_WORDS}`;
+/**
+ * v74 (James's 20 live defects, Oct 19): a withdrawal at an ATM the name gives as one named
+ * institution's own ("ATM Withdrawal Fee at JSFCU ATM" $2.50, Jersey Shore FCU 152758: its line is
+ * the surcharge non-members pay there) is not a member's fee at another network's ATM. Only an
+ * all-capitals abbreviation reads as the institution ("at JSFCU ATM", "at NCB ATM"); it is matched
+ * case by case (`excludeExact`), so a word ("at Partner ATMs", "at Visa ATMs") and a network
+ * acronym ("at NYCE ATMs", "at CU ATMs") never count, nor does a name written all in capitals
+ * ("WITHDRAWAL AT FOREIGN ATM"), where every word looks like an abbreviation (#2024 review).
+ */
+const NAMED_OWN_ATM = /\b[Aa][Tt]\s+(?!(?:ATMS?|ANY|AN|ALL|THE|OUR|OTHER|ANOTHER|FOREIGN|NON\w*|NETWORK|CO|COOP|CU|CUS|CUSO|CU24|FCU|US|USA|PLUS|STAR|NYCE|MAC|SUM|ACCEL|AFFN|TYME|SHAZAM|PULSE|CIRRUS|MAESTRO|INTERLINK|PRESTO|ALLPOINT|MONEYPASS|VISA|MC|ATH|POS)\b)[A-Z][A-Z0-9&]{1,7}\s+(?:ATM|Atm|atm)[sS]?\b/;
+/**
+ * v74: a savings club's withdrawal ("Holiday Account Early Withdrawal" $10, 154134, 152985) is not
+ * closing the account. None of the 50 types holds it, and 315 live fees read so (prod, read-only,
+ * Oct 19), so the rule waited on James. v75 (#2023): James chose "Take down" (Oct 19, 01:42 UTC)
+ * after a read-only check of 25 of the 313 still live against their stored text found every one a
+ * per-withdrawal club charge ("Christmas Club early withdrawal | $20 per w/d"), none a closing fee.
+ * James's two listed rows are hand takedowns (hand-takedowns.ts). Set false to stop refusing them.
+ */
+export const CLUB_WITHDRAWAL_LIVE = true;
+// A name that also prices a certificate ("Christmas Club & CD Early Withdrawal Fee") keeps early closure's own fee.
+export const CLUB_WITHDRAWAL = /^(?![\s\S]*\b(?:clos(?:e|ed|es|ing|ure)|cds?|certificates?)\b)(?:[\s\S]*\b(?:holiday|christmas|xmas|vacation|club|seasonal)\b[\s\S]*\bwithdraw|[\s\S]*\bwithdraw[\s\S]*\b(?:holiday|christmas|xmas|vacation)\b)/i;
+/** v74: withdrawals over a count ("Excessive IRA Withdrawals" $15, 154163) are not the IRA's closing fee. */
+const IRA_EXCESS_WITHDRAWALS = /\bexcess(?:ive)?\s+ira\s+withdrawals?\b|\bira\s+withdrawals?\s+(?:over|in\s+excess|beyond)\b/i;
+/** v74: shipping or ordering foreign currency ("Foreign Currency – Expedited Shipping" $15, 154166) is not a rushed card. */
+const CURRENCY_SERVICE = /\bcurrenc(?:y|ies)\b|\bforeign\s+cash\b/i;
+/**
+ * v77: a card that draws only on credit ("Credit Card Replacement" $25, "Replace a Visa Credit Card",
+ * "HELOC Access Card Replacement") is a lending product, not the deposit account's card. A line that
+ * also names a debit, ATM or check card ("Debit/Credit Card Replacement") is the deposit card's fee;
+ * a credit union's own card ("Credit Union Membership Card") is not a credit card. "Credit" must sit
+ * just before "card" (or in "Card Rush (Credit)"), so a refund ("$5 credit to your account if
+ * fraud") on a deposit card line is not read as a credit card.
+ */
+const CREDIT_CARD_ONLY =
+  /^(?![\s\S]*(?:debit|\batm\b|\bcheck\s?cards?\b|\bhsa\b|\btravel\s+cards?\b|\bprepaid\b|\bgift\b))(?:[\s\S]*\bcredit(?:\b|(?=cards?\b))(?![-\s]*unions?\b)(?:(?!\b(?:to|back|if|refund)\b)[^.;()$]){0,20}?cards?\b|[\s\S]*\bcards?\b[^.;$]{0,30}\(\s*credit\s*\)|[\s\S]*\btarjetas?\s+de\s+cr[eé]dito\b|(?=[\s\S]*\bcards?\b)[\s\S]*(?:\bheloc\b|\bhome\s+equity\b|\bline\s+of\s+credit\b))/i;
+/** v74: investigating or tracing a payment ("Online Bill Payment Investigation" $30, 154324) is research, not bill pay. */
+const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
+/**
+ * v74: withdrawals over the monthly count ("service charge for each withdrawal over 6 per calendar
+ * month" $2, First Dakota 152878) and returned mail ("Return Mail Fee", A.B.D. FCU 152834) are their
+ * own types, not account research, unless the name also says research or reconciling.
+ */
+const NOT_RESEARCH_WITHDRAWAL = /\bwithdrawals?\s+(?:over|in\s+excess|beyond|after)\b|\bexcess(?:ive)?\s+(?:savings\s+|share\s+)?withdrawals?\b/i;
+const NOT_RESEARCH_MAIL = /\breturn(?:ed|s)?\s+mail\b/i;
+const RESEARCH_WORD = /\b(?:research|reconcil|investigat)/i;
+/**
+ * v78: guaranteeing a signature ("Medallion Signature Guarantee" $75, "Medallion Stamp" $10) verifies
+ * no account. The answer keys leave it unmapped: none of the 50 types holds it.
+ */
+const SIGNATURE_GUARANTEE = /\bmedallion\b|\bsignature\s+guarant/i;
+/** v74: a loan payment ("Foreign Returned Item | Varies | ACH Loan Payment on Website" $2, 153002) is not a deposited item coming back. */
+// A loan payment line that names no deposit ("Returned Deposit/Loan Payment" prices both and stays).
+const LOAN_PAYMENT = /^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b/i;
+
 /**
  * v69: a monthly ATM add-on or plan ("Power Checking +ATM Freedom" $2.99 a month, 114331; "Add ATM
  * Unlimited" $10 a month, 93629; "Unlimited ATM Usage" $3.25 a month) is a subscription that refunds
@@ -191,6 +253,74 @@ export function cardProductMisfile(canonicalFeeKey: string | null | undefined, f
   if (canonicalFeeKey === "atm_non_network") return name.match(CARD_PRODUCT_FEE)?.[0] ?? null;
   if (canonicalFeeKey === "dormant_account") return name.match(CARD_INACTIVITY)?.[0] ?? null;
   return null;
+}
+
+/**
+ * #1837: a direction borrowed from the wrong heading. A two-column schedule flattened row by row puts
+ * one column's section heading over the other column's rows, so a bare direction row ("Incoming",
+ * "Outgoing (domestic)", "Foreign Incoming") is read under a heading it never sat under: "Check
+ * Printing: Incoming" $15 and "SAFE DEPOSIT BOXES15: Outgoing (domestic)" $25 are wires, "Stop
+ * Payment: Incoming" a transfer. A name whose part after its last colon is only a direction (with
+ * customer, unit and joining words), under a heading that names no direction, is that heading's fee
+ * only in a category priced by direction (`DIRECTION_KEYS`, any `wire_` key) or, for a stop payment or a
+ * research fee, a row naming a wire or transfer; in any other it is a misread
+ * (48 live fees on Oct 17, nearly all a wire price from the next column), so a live fee failing the
+ * rule goes to the second look and comes down.
+ *
+ * Held by `BORROWED_DIRECTION_LIVE`: off, the rule reads nothing (Knox, Darwin and publish). On since
+ * James's yes (Oct 17) with guard v73: the catch-up sweep flags the live fees that fail it for the
+ * second look and takes them down.
+ */
+export const BORROWED_DIRECTION_LIVE = true;
+/** Categories a direction prices: wires, collections, ACH, faxes, transfers, foreign card use, delivery. */
+export const DIRECTION_KEYS: ReadonlySet<string> = new Set([
+  "wire_domestic_outgoing",
+  "wire_domestic_incoming",
+  "wire_intl_outgoing",
+  "wire_intl_incoming",
+  "collection_item",
+  "ach_origination",
+  "ach_return",
+  "document_reproduction",
+  "ira_termination",
+  "card_foreign_txn",
+  "atm_international",
+  "rush_card",
+  "courier_delivery",
+  "cash_advance",
+  "od_protection_transfer",
+  "deposited_item_return",
+  // A foreign ATM is the non-network ATM; a replacement card or returned mail is priced by where it ships.
+  "atm_non_network",
+  "card_replacement",
+  "returned_mail",
+]);
+/** Categories where a wire or transfer row is a fee of its own (a wire's stop payment or trace). */
+const WIRE_ROW_KEYS: ReadonlySet<string> = new Set(["stop_payment", "account_research"]);
+const WIRE_ROW_WORD = /^(?:wires?|transfers?)$/;
+const DIRECTION_WORD = /\b(?:incoming|outgoing|domestic|international|foreign|intl)\b/i;
+/** The words a direction row is made of besides the direction itself. */
+const DIRECTION_ROW_WORDS = new Set(
+  "incoming outgoing domestic international foreign intl and or in out wire wires transfer transfers item items fee fees per each customer customers non nonmember member members business personal consumer only".split(" "),
+);
+export const BORROWED_DIRECTION_REASON = "borrowed direction";
+
+/** #1837: the direction row a fee's name borrowed a heading for, outside a direction category, or null. Pure. */
+export function borrowedDirection(
+  canonicalFeeKey: string | null | undefined,
+  feeName: string | null | undefined,
+  live: boolean = BORROWED_DIRECTION_LIVE,
+): string | null {
+  if (!live || !canonicalFeeKey || DIRECTION_KEYS.has(canonicalFeeKey) || canonicalFeeKey.startsWith("wire_")) return null;
+  const name = plainQuotes(feeName ?? "").trim();
+  const at = name.lastIndexOf(":");
+  if (at <= 0) return null;
+  const heading = name.slice(0, at);
+  const row = name.slice(at + 1).trim();
+  if (!row || DIRECTION_WORD.test(heading) || !DIRECTION_WORD.test(row)) return null;
+  const words = row.toLowerCase().split(/[^a-z]+/).filter((word) => word.length > 1);
+  if (WIRE_ROW_KEYS.has(canonicalFeeKey) && words.some((word) => WIRE_ROW_WORD.test(word))) return null;
+  return words.length > 0 && words.length <= 5 && words.every((word) => DIRECTION_ROW_WORDS.has(word)) ? row : null;
 }
 
 export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
@@ -298,6 +428,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // ATM heading passes; one by phone or with a person does not.
   atm_non_network: {
     include: /(atm|allpoint|network machine|machines?\b|shazam|cajero|balance inquir)/i,
+    excludeExact: NAMED_OWN_ATM,
     excludeUnless: {
       pattern: /deposit/i,
       unless:
@@ -312,7 +443,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // enrollment and reactivation; an adjustment, or a rebate the bank pays back, is not a fee.
     // v69: what a non-customer pays at the institution's own ATMs (`OUTSIDER_ATM`) is out too.
     // A monthly ATM add-on or plan (`ATM_PLAN`) is not a per-use fee either.
-    // v72 (#1788): an ATM used outside the U.S. (`INTERNATIONAL_ATM`) is International ATM & Card.
+    // v72 (#1788): an ATM used outside the U.S. (`INTERNATIONAL_ATM`) is International ATM.
+    // v74: a withdrawal at one named institution's own ATM (`NAMED_OWN_ATM`) is out too.
     exclude: new RegExp(String.raw`${OUTSIDER_ATM}|${ATM_PLAN}|${NOT_ATM_USE}|${CARD_SERVICE_ELSEWHERE}|${INTERNATIONAL_ATM.source}|` +
       /(replace|statement|card fee|annual|\bpin\b|denied|declin|re-?order|initial order|instant issue|enrollment|reactivat|\badjustments?\b|rebates?|^(?!.*(withdraw|w\/d|transaction|surcharg|\bnon\b|non-|foreign|other|network|usage|\bused?\b|inquir|transfer|\bat\b|\bpos\b|purchase))\s*atm\s*cards?\b|between accounts|(savings|share) withdrawal|\breg[- ]?d\b|\blobby\b|^\s*(?:atm|visa|debit|check|mastercard)\s*(?:card)?\s*(?:or|\/|&|and)\s*(?:visa\s*|mastercard\s*)?(?:debit|check|atm)?\s*cards?\s*\*?\s*$|tele?phone|\bphone\b|representative|(?<!automated )\bteller\b|call center|non[- ]?members?|\bnon[- ]?(?!owned\b)[\w.]+ (debit |atm )?cards?|non[- ]proprietary card|foreign cards? used|(?<!free )\bat our atm|(?<!of )\bour network|\bin[- ]network|(?<!\bnon[- ]?)\b(?!(non|other|foreign)\b)\w+[- ]owned atm)/.source, "i"),
   },
@@ -346,7 +478,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // v43: guarded so Hamilton reads them for names cut from another fee's note (noteTailOfAnotherFee).
   // v47: a bill payment's stop or cancel is the stop payment fee, and a membership fee is not
   // bill pay ("Bill Pay Stop/Cancel Payment" $25, "Lifetime Membership Fee" $5; Darwin eval).
-  bill_pay: { include: /\S/, exclude: /(\breload fee\b|\bstop\b|cancel(l?ed)? payment|membership closure|lifetime membership)/i },
+  // v74: investigating or tracing a payment is account research (`PAYMENT_INVESTIGATION`).
+  bill_pay: { include: /\S/, exclude: new RegExp(String.raw`${PAYMENT_INVESTIGATION.source}|` + /(\breload fee\b|\bstop\b|cancel(l?ed)? payment|membership closure|lifetime membership)/.source, "i") },
   // v47: researching, copying, replacing, mailing or reporting lost a money order is not the price
   // of buying one ("Money Order Research Fee" $10; Darwin eval).
   money_order: {
@@ -390,7 +523,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v35: express, priority or two-day delivery of a replacement card is the rush card fee
     // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
     exclude: new RegExp(
-      `(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b[^|]{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
+      `${CREDIT_CARD_ONLY.source}|(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b[^|]{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
       "i",
     ),
   },
@@ -425,7 +558,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v68: a returned foreign, Canadian or international check or item ("Foreign Check Return Fee",
     // "Returned Canadian Check"; `FOREIGN_ITEM_RETURN`) is a deposited item coming back too.
     include: new RegExp(String.raw`${FOREIGN_ITEM_RETURN.source}|` + /(\b(bonds?|coupons?)\b[^|]{0,30}\breturn|\breturn(ed|s)?\b[^|]{0,30}\b(bonds?|coupons?)\b|deposit(ed)? (item|check|draft)|deposit(ed)? return(ed)? (item|check)s?|return(ed)? deposit|deposit return|(cheques?|art[ií]culos?|partidas?) depositad[oa]s? devuelt|dep[oó]sitos? (en|de) cheques? devuelt|devoluci[oó]n de dep[oó]sito|charge[- ]?backs?\b|return(ed)? (item|check)s?\b.{0,20}\bwritten to you|^\s*return(ed)?\s+(check|item)s?(\s+(fee|charge)s?)?\s*:?\s*$)/.source, "i"),
-    exclude: /(night|safe|box|unresolved|membership|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
+    // v74: a loan payment (`LOAN_PAYMENT`) is other lending.
+    exclude: /(^(?![\s\S]*\bdeposit)[\s\S]*\bloan\s+payments?\b|night|safe|box|unresolved|membership|mobile deposit fee|remote|collection|correction|loan (item|payment)s? charge[- ]?back|charge[- ]?backs? on (a )?loan|unable|(\bcards?\b|visa)[^|]{0,25}charge[- ]?back|charge[- ]?back[^|]{0,25}(\bcards?\b|dispute)|dispute|research)/i,
   },
   // A bank selling zipper or locking deposit bags is pricing a supply, not charging a
   // fee for the night deposit service ("Zipper Bags $3.00" is not a night deposit fee).
@@ -436,13 +570,28 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
   // Balance Fee", "... : WIRE TRANSFERS") are other fees. "Debit/ATM Foreign Transaction"
   // names the card. A rate's name is often a sentence ("you will be charged a foreign
   // transaction fee of"), so sentences are checked only on dollar amounts (below).
-  // Since v45 it is International ATM & Card: an ATM used outside the U.S. ("Non–Wells Fargo
-  // ATMs outside the U.S.") is this fee too. v72 (#1788): "outside of the U.S." and "All Other
-  // Countries" name it too.
+  // From v45 to v75 it was International ATM & Card and held ATMs used abroad too. v76 (James,
+  // Oct 19, #2037: "Split"): an ATM used abroad with no card purchase in the name (`ATM_ABROAD`) is
+  // International ATM again; one price for ATM and debit card use abroad stays here.
   card_foreign_txn: {
     include: /(foreign|international|currency|exchange|cross[- ]border|\bisa\b|outside (of )?(the )?(u\.?s|united states)|\bcountr(y|ies)\b|abroad|overseas)/i,
+    exclude: new RegExp(
+      String.raw`${ATM_ABROAD.source}|` +
+        /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/.source,
+      "i",
+    ),
+  },
+  // v76 (James, Oct 19, #2037): an ATM used outside the U.S. (`INTERNATIONAL_ATM`: an ATM or cash
+  // disbursement and a place abroad). One price for domestic and international ATMs, or a line
+  // inside the U.S., is not matched and re-files to the non-network ATM fee; an ATM and debit card
+  // or purchase line re-files to the card's foreign transaction fee. A reimbursement cap ("up to
+  // $10.00 per transaction, ... ATMs outside U.S. excluded") and a bank's own partner network
+  // ("Allpoint ATM Transactions" $0 at SoFi) are no fee here (the Oct 9 review the retired fold
+  // rule recorded).
+  atm_international: {
+    include: INTERNATIONAL_ATM,
     exclude:
-      /((?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?|\bwires?\b|low balance|cash exchange|currency (cash|order|ordered|exchange|purchase)|foreign currency (cash|order|exchange|purchase|delivery)|currency or checks?|check collection|\bmany\b|domestic)/i,
+      /(\b(?:debit|pos|point of sale|purchases?|check ?cards?|credit cards?|cash advances?|wires?)\b|outside (?:the )?u\.?s\.?a?\.? excluded|^\s*allpoint\b)/i,
   },
   // Knox v26 folded collection items and foreign checks into check cashing (James, Oct 7
   // 2026); on Oct 8 he gave collection items their own type ("Own type"), so a check sent
@@ -508,7 +657,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // imposed", Y-12 FCU 59002) has no dollar price; the figure beside it is a forfeited reward.
     // v69: an IRA's own closing charge ("Individual Retirement Account Closing Fee" $50, 90972;
     // `IRA_CLOSING`) is the IRA termination fee.
-    exclude: new RegExp(String.raw`${IRA_CLOSING.source}|` + /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/.source, "i"),
+    // v74: a savings club's withdrawal (`CLUB_WITHDRAWAL`) is not closing the account.
+    exclude: new RegExp(String.raw`${IRA_CLOSING.source}|${CLUB_WITHDRAWAL_LIVE ? `${CLUB_WITHDRAWAL.source}|` : ""}` + /(:\s*(domestic |international |foreign |incoming |outgoing )?wire\b|\brush request|express shipping|\breinstat|\bpenalty of [a-z0-9 ]{0,24}\bdays?'?\s+(of\s+)?(dividends|interest)\b|\b(dividends|interest) will be (imposed|forfeited)\b|\bforfeit(ure|ed)? of\b)/.source, "i"),
   },
   night_deposit: {
     // v60: a lost or replaced night deposit bag or its key ("Replacement Key for Bag", "Bag
@@ -559,6 +709,30 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(reconcil|(?<!\b(?:address(?:es)?|locator|locate)\s+(?:[\w/-]+\s+)?)\bresearch|excess|\bwires?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breturn(?:ed)?\s+(?:checks?|items?|deposits?|ach|payments?|loans?|drafts?)\b|\bnsf\b|\bdeposit\w*|\bdrafts?\b|\b(?:items?|checks?|drafts?)\s+returned\b|change of address|address change|\breturn(?:ing)?\s+to\s+paper|\bre-?enroll|\b(?:branch|atm)\s+locat)/i,
   },
+  // v78 (#2449, Oct 20): account verification names a verification, a confirmation or certification,
+  // a VOD, a bank or credit reference, proof of funds, an audit or a letter about the account. A
+  // name with none of those (a checking account, a positive pay service, a bare wire) does not count,
+  // a signature guarantee, a letter of credit, a payoff or a collection letter is a different fee,
+  // and research or reconciling is account research unless the name also verifies ("Account
+  // reconciliation/research/verification of deposit fee" stays).
+  account_verification: {
+    include: /(verif|confirm|certif|cer\W?fic|\bvods?\b|\bcartas?\b|\bletters?\b|\breferences?\b|proof of (?:funds|deposits?)|\baudit)/i,
+    exclude: new RegExp(`${SIGNATURE_GUARANTEE.source}|\\bletters?\\s+of\\s+credit\\b|\\bpay-?offs?\\b|\\bcollection\\b`, "i"),
+    excludeUnless: { pattern: RESEARCH_WORD, unless: /verif|confirm/i },
+  },
+  // v74 (James's 20 live defects, Oct 19): research is checked by name too. Withdrawals over a
+  // count and returned mail are their own types (re-filed below); the name still counts as research
+  // when it says research, reconciling or investigating.
+  account_research: {
+    include: /\S/,
+    exclude: new RegExp(String.raw`^(?![\s\S]*${RESEARCH_WORD.source})[\s\S]*(?:${NOT_RESEARCH_WITHDRAWAL.source}|${NOT_RESEARCH_MAIL.source})`, "i"),
+    onlyIfRefiles: true,
+  },
+  // v74: shipping foreign currency is a delivery charge, not a rushed card (`CURRENCY_SERVICE`).
+  // v77: a credit card's rushed replacement is a lending fee (`CREDIT_CARD_ONLY`).
+  rush_card: { include: /\S/, exclude: new RegExp(`${CURRENCY_SERVICE.source}|${CREDIT_CARD_ONLY.source}`, "i") },
+  // v74: an IRA's withdrawals over a count are an IRA charge, not its closing fee (`IRA_EXCESS_WITHDRAWALS`).
+  ira_termination: { include: /\S/, exclude: IRA_EXCESS_WITHDRAWALS },
 };
 
 /** Categories with only a price ceiling (`PRICE_CEILINGS`), checked by the live sweep too. */
@@ -662,7 +836,27 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // (`SUSTAINED_OVERDRAFT` by name, `sustainedOverdraftOnLine` by its own line) is the continuous
 // overdraft fee (4 live; 3 move, 98702 has a live twin), and a wire the member receives filed as an
 // outgoing wire (`INCOMING_WIRE`) is the matching incoming wire fee (7 live, all move).
-export const CATEGORY_GUARD_VERSION = 72;
+// v73 (Oct 17, #1837, James's yes): `borrowedDirection` switched on. A bare direction row read under
+// the other column's heading ("Check Printing: Incoming" $15, a wire price) fails outside the
+// categories a direction prices; 48 live fees (read-only dry run, Oct 17) go to the second look.
+// v74 (Oct 19, James's 20 live defects): category rules for research, rushed cards and IRA
+// termination, and new refusals for bill pay, non-network ATM, deposited item return and early
+// closure; see each rule's v74 note. Counts in the PR (#1026 ledger).
+// v75 (Oct 19, #2023, James's "Take down"): `CLUB_WITHDRAWAL_LIVE` on, so a club or holiday account's
+// withdrawal fails early closure; the live ones go to the second look and come down.
+// v76 (Oct 19, #2037, James's "Split"): International ATM is its own type again. An ATM used abroad
+// filed as International ATM & Card (`ATM_ABROAD`) or as the non-network ATM fee re-files to
+// `atm_international`, which gets its own rule; the card's type is Foreign Transaction again. Counts
+// in the PR (#1026 ledger).
+// v77 (Oct 19, W43 live check): a card that draws only on credit (`CREDIT_CARD_ONLY`) fails the
+// replacement and rushed card rules; a credit card is a lending product. Counts in the PR.
+// v78 (Oct 20, #2449): account verification is guarded by name. Research re-files to
+// account research and a domestic wire to the outgoing wire fee (on Darwin's path; the live sweep
+// re-files only `RESTORE_REFILES`); a signature guarantee (unmapped in the answer keys), a checking
+// or spending account or a positive pay name fails and goes to the second look, and once the
+// category is guarded the borrowed-direction rule also fails a verification glued to a wire's
+// direction row ("Account Verification NC: Domestic"). Counts in the PR.
+export const CATEGORY_GUARD_VERSION = 78;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed
@@ -671,7 +865,7 @@ export const CATEGORY_GUARD_VERSION = 72;
  * as dollars or a neighbouring figure. A rate itself is stored as a rate with no dollar
  * amount, so this never touches it.
  */
-const RATE_CATEGORIES: ReadonlySet<string> = new Set(["card_foreign_txn"]);
+const RATE_CATEGORIES: ReadonlySet<string> = new Set(["card_foreign_txn", "atm_international"]);
 // "Currency conversion fees will be assessed when ..." quotes a rate stated elsewhere.
 const RATE_IN_NAME = /(\d\s*%|percent|\brates?\b|\b(will|may) be (assessed|charged)\b)/i;
 const RATE_IN_CONDITIONS = /(\d\s*%|percent)/i;
@@ -745,8 +939,14 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   // v70: an ATM-named bill payer service is bill pay, and a card charge on closing the account early
   // is an early closure (`CARD_SERVICE_ELSEWHERE`).
   { from: "atm_non_network", to: "bill_pay", when: /\bbill payer\b/i },
-  // v72 (#1788): an ATM used outside the U.S. is International ATM & Card.
-  { from: "atm_non_network", to: "card_foreign_txn", when: INTERNATIONAL_ATM },
+  // v72 (#1788): an ATM used outside the U.S. is International ATM (International ATM & Card until v76).
+  { from: "atm_non_network", to: "atm_international", when: INTERNATIONAL_ATM },
+  // v76 (#2037): and so is one filed as the card's foreign transaction fee. An international ATM
+  // line that also prices debit card use or purchases is the card's fee, and one priced for domestic
+  // and international ATMs together, or inside the U.S., is the non-network ATM fee.
+  { from: "card_foreign_txn", to: "atm_international", when: ATM_ABROAD },
+  { from: "atm_international", to: "card_foreign_txn", when: /\b(?:debit|pos|point of sale|purchases?|check ?cards?)\b/i },
+  { from: "atm_international", to: "atm_non_network", when: /\bdomestic\b|\bnon[- ]?international\b|\binternationally\b|\b(?:inside|within)\s+(?:the\s+)?(?:u\.?s\.?a?(?![a-z])|united states)/i },
   { from: "atm_non_network", to: "early_closure", when: new RegExp(EARLY_CLOSE, "i") },
   // v70: skipping a loan payment is other lending, not a late payment or a loan origination.
   { from: "late_payment", to: "other_lending_fee", when: SKIP_A_PAY },
@@ -765,7 +965,27 @@ const REFILE_RULES: ReadonlyArray<{ from: string; to: string; when: RegExp; unle
   { from: "minimum_balance", to: "dormant_account", when: new RegExp(INACTIVE, "i") },
   { from: "monthly_maintenance", to: "overdraft", when: /\boverdraft (privilege|courtesy)/i },
   { from: "card_foreign_txn", to: "atm_non_network", when: /(?<!\/\s?)\batm'?s?\b[^|\/]{0,12}\bforeign transactions?/i },
+  // v74 (James's 20 live defects, Oct 19): a payment investigation is research, withdrawals over a
+  // count or returned mail filed as research go to their own types, an IRA's excess withdrawals to
+  // IRA administration, foreign currency shipping to courier and delivery, and a loan payment filed
+  // as a returned deposited item to other lending.
+  { from: "bill_pay", to: "account_research", when: PAYMENT_INVESTIGATION },
+  { from: "account_research", to: "excess_withdrawal", when: NOT_RESEARCH_WITHDRAWAL },
+  { from: "account_research", to: "returned_mail", when: NOT_RESEARCH_MAIL },
+  { from: "ira_termination", to: "ira_administration", when: IRA_EXCESS_WITHDRAWALS },
+  { from: "rush_card", to: "courier_delivery", when: CURRENCY_SERVICE },
+  { from: "deposited_item_return", to: "other_lending_fee", when: LOAN_PAYMENT },
+  // v78: research filed as account verification is account research, and a wire is the wire fee its name states.
+  { from: "account_verification", to: "account_research", when: RESEARCH_WORD },
+  { from: "account_verification", to: "wire_domestic_outgoing", when: /\bwires?\b/i, unless: /incoming|receiv|international|foreign|\bintl\b/i },
 ];
+
+/** v74: a re-file rule from `canonicalFeeKey` matches the name and its target's guard accepts it (`onlyIfRefiles`). */
+function refileTargetAccepts(canonicalFeeKey: string, name: string): boolean {
+  return REFILE_RULES.some(
+    (rule) => rule.from === canonicalFeeKey && rule.when.test(name) && !rule.unless?.test(name) && checkFeeCategory(rule.to, name).ok,
+  );
+}
 
 /** Categories fees filed under `canonicalFeeKey` are re-filed to when their name says so. */
 export function neighbourCategories(canonicalFeeKey: string): string[] {
@@ -891,12 +1111,23 @@ export function checkFeeCategory(
   canonicalFeeKey: string | null | undefined,
   feeName: string | null | undefined,
   context?: CategoryGuardContext,
-  /** `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`). */
-  options?: { cardProducts?: boolean },
+  /**
+   * `cardProducts: false` reads the fee without the v70 card-product rule (`cardProductMisfile`);
+   * `borrowedDirection` overrides `BORROWED_DIRECTION_LIVE` (the dry-run count and tests).
+   */
+  options?: { cardProducts?: boolean; borrowedDirection?: boolean },
 ): CategoryGuardVerdict {
   const rule = canonicalFeeKey ? CATEGORY_GUARD_RULES[canonicalFeeKey] : undefined;
   if (!canonicalFeeKey) return { ok: true };
   const name = plainQuotes(feeName ?? "").trim();
+  const direction = borrowedDirection(canonicalFeeKey, name, options?.borrowedDirection ?? BORROWED_DIRECTION_LIVE);
+  if (direction) {
+    return {
+      ok: false,
+      code: "name_contradicts",
+      reason: `${BORROWED_DIRECTION_REASON}: "${name}" is a direction row ("${direction}") read under a heading it did not sit under; ${canonicalFeeKey} is not priced by direction`,
+    };
+  }
   if (!rule) {
     const ceilingReason = aboveCeiling(canonicalFeeKey, name, context);
     return ceilingReason ? { ok: false, code: "amount_implausible", reason: ceilingReason } : { ok: true };
@@ -916,7 +1147,8 @@ export function checkFeeCategory(
   // v35: a daily-cap note may name the other fee it shares the cap with: "Overdraft Fee - each
   // debit or check presentment paid (Consumer Accts: 5 max total OD or Returned Item fees daily)".
   const softExcluded = soft && !soft.unless.test(softName) ? (capOnly ? softName : name).match(soft.pattern) : null;
-  const excluded = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded;
+  const matched = (capOnly ? null : name.match(rule.exclude)) ?? softExcluded ?? (rule.excludeExact && /[a-z]/.test(name) ? name.match(rule.excludeExact) : null);
+  const excluded = matched && rule.onlyIfRefiles && !refileTargetAccepts(canonicalFeeKey, name) ? null : matched;
   if (excluded) {
     return {
       ok: false,

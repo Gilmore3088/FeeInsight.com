@@ -1,5 +1,5 @@
 /**
- * WatchlistPanel — the side column of All changes:
+ * WatchlistPanel — the side column of Alerts and watches:
  *   1. The institution in context, with a button to watch it
  *   2. Institutions you watch, with add (search) and remove
  *   3. Updates waiting: reports, models and watch-list checks queued from a change

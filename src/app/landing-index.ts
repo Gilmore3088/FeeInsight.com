@@ -2,8 +2,17 @@ import type { IndexRow } from "@/lib/data-store";
 import { FEE_LINE_LABELS } from "@/lib/custom-report/rules";
 import { getDisplayName } from "@/lib/fee-taxonomy";
 import { STATE_NAMES } from "@/lib/us-states";
+import { HIGHEST_TIER_CATEGORIES } from "@/lib/data-store/fee-stats";
 import { countedAs, histogram, institutionsFor, statsFor } from "./(public)/fees/(index)/index-view";
-import { CHARTERS, US, type Charter, type IndexCardData, type IndexCardFee, type IndexPick } from "./landing-index-view";
+import {
+  CHARTERS,
+  US,
+  type Charter,
+  type IndexCardData,
+  type IndexCardFee,
+  type IndexCardInstitution,
+  type IndexPick,
+} from "./landing-index-view";
 
 /**
  * The hero's Bank Fee Index card, worked out on the server with the explorer's own functions
@@ -49,15 +58,39 @@ function cell(rows: IndexRow[], fee: string, charter: Charter): IndexPick {
   };
 }
 
-/** Builds the card from each free fee's published rows (a fee whose read failed is left out). */
-export function buildIndexCard(rowsByFee: Map<string, IndexRow[]>): IndexCardData {
+/**
+ * The institutions the card reads ahead (the demo bank), from the same rows as the cells: for
+ * each fee, the one value per institution the chart counts (`institutionsFor`). An institution
+ * with no published row for any card fee is left out, so the card shows no marker for it.
+ */
+export function readAhead(rowsByFee: Map<string, IndexRow[]>, ids: readonly number[]): IndexCardInstitution[] {
+  const out: IndexCardInstitution[] = [];
+  for (const id of ids) {
+    let found: IndexCardInstitution | null = null;
+    for (const [fee, rows] of rowsByFee) {
+      if (!rows.some((r) => r.institution_id === id)) continue;
+      const own = institutionsFor(rows.filter((r) => r.institution_id === id), fee, null, "all")[0];
+      if (!own) continue;
+      found ??= { id, name: own.name, state: own.state, fees: {} };
+      found.fees[fee] = cents(own.value);
+    }
+    if (found) out.push(found);
+  }
+  return out;
+}
+
+/**
+ * Builds the card from each free fee's published rows (a fee whose read failed is left out),
+ * with the institutions in `readAheadIds` ready to mark on the chart.
+ */
+export function buildIndexCard(rowsByFee: Map<string, IndexRow[]>, readAheadIds: readonly number[] = []): IndexCardData {
   const fees: IndexCardFee[] = [];
   const cells: IndexCardData["cells"] = {};
   const stateCodes = new Set<string>();
   for (const [fee, rows] of rowsByFee) {
     if (rows.length === 0) continue;
     const words = countedAs(fee);
-    fees.push({ key: fee, label: plainFeeName(fee), headline: words.headline, plural: words.labels });
+    fees.push({ key: fee, label: plainFeeName(fee), headline: words.headline, plural: words.labels, highest: HIGHEST_TIER_CATEGORIES.has(fee) });
     const byState = new Map<string, IndexRow[]>();
     for (const row of rows) {
       if (!row.state_code || !STATE_NAMES[row.state_code]) continue;
@@ -76,6 +109,7 @@ export function buildIndexCard(rowsByFee: Map<string, IndexRow[]>): IndexCardDat
     .filter((code) => !["PR", "VI", "GU", "AS", "MP"].includes(code))
     .map((code) => ({ code, name: STATE_NAMES[code] }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { fees, states, cells };
+  const institutions = readAhead(rowsByFee, readAheadIds);
+  return { fees, states, cells, ...(institutions.length ? { institutions } : {}) };
 }
 

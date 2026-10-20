@@ -1,3 +1,4 @@
+import { fixtureEligibility } from "@/lib/data-store/__fixtures__/answer-key-reference";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
@@ -5,6 +6,7 @@ vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 import { changeHitRate, changeVerdict, hitRateLine, metricValue, readChangeOutcomeReview, runChangeOutcomes, sameScorer, SHOULD_MOVE, summarizeChangeOutcomes } from "./change-outcomes";
 
 describe("did the change move its number (#1106)", () => {
+  const reference = fixtureEligibility().cohort;
   const snapshot = { snapshot_date: "2026-10-13", coverage_rate: "0.41", detail: { goal: { accuracy: { accuracy: 0.87 } } } };
 
   it("reads a scoreboard column or a path into its detail, and nothing else", () => {
@@ -32,7 +34,9 @@ describe("did the change move its number (#1106)", () => {
   });
 
   it("compares answer-key numbers only within one scorer version (#1354)", () => {
-    expect(sameScorer({ accuracy_scorer_version: 3 }, { accuracy_scorer_version: "3" })).toBe(true);
+    expect(sameScorer({ accuracy_scorer_version: 3, accuracy_reference: reference }, { accuracy_scorer_version: "3", accuracy_reference: reference })).toBe(true);
+    expect(sameScorer({ accuracy_scorer_version: 3 }, { accuracy_scorer_version: 3 })).toBe(false);
+    expect(sameScorer({ accuracy_scorer_version: 3, accuracy_reference: reference }, { accuracy_scorer_version: 3, accuracy_reference: { ...reference, cohortFingerprint: "a".repeat(64) } })).toBe(false);
     expect(sameScorer({ accuracy_scorer_version: 1 }, { accuracy_scorer_version: 3 })).toBe(false);
     expect(sameScorer({ accuracy_scorer_version: null }, { accuracy_scorer_version: null })).toBe(false);
     expect(sameScorer(undefined, { accuracy_scorer_version: 3 })).toBe(false);
@@ -84,14 +88,23 @@ describe("did the change move its number (#1106)", () => {
       pr_number: pr, metric: "accuracy_recall", first_seen_date: "2026-10-05", before_snapshot_date: "2026-10-05",
       before_value: "0.575", verdict: "pending",
     });
-    const after = { snapshot_date: "2026-10-12", accuracy_recall: "0.53", accuracy_scorer_version: 3, detail: {} };
+    const after = { snapshot_date: "2026-10-12", accuracy_recall: "0.53", accuracy_scorer_version: 3, accuracy_reference: reference, detail: {} };
     const rescored = fakeDb([pending(4)], after, { accuracy_scorer_version: 1 });
     const result = await runChangeOutcomes({ db: rescored.db, runId: 9, now: new Date("2026-10-13T13:00:00Z"), entries: [entries[0]] });
     expect(result.judged).toEqual([{ pr: 4, metric: "accuracy_recall", verdict: "unreadable", before: 0.575, after: null, scorerChanged: true }]);
-    expect(summarizeChangeOutcomes(result)).toContain("1 because the answer-key scorer changed in between");
-    const same = fakeDb([pending(5)], after, { accuracy_scorer_version: 3 });
+    expect(summarizeChangeOutcomes(result)).toContain("1 because the scoring series changed or was unknown");
+    const same = fakeDb([pending(5)], after, { accuracy_scorer_version: 3, accuracy_reference: reference });
     const kept = await runChangeOutcomes({ db: same.db, runId: 9, now: new Date("2026-10-13T13:00:00Z"), entries: [entries[1]] });
     expect(kept.judged).toEqual([{ pr: 5, metric: "accuracy_recall", verdict: "wrong_way", before: 0.575, after: 0.53 }]);
+  });
+
+  it("does not credit a checker change as an accuracy improvement (#2071)", async () => {
+    const pending = { pr_number: 10, metric: "detail.goal.accuracy.accuracy", first_seen_date: "2026-10-05", before_snapshot_date: "2026-10-05", before_value: "0.90", verdict: "pending" };
+    const after = { snapshot_date: "2026-10-12", detail: { goal: { accuracy: { accuracy: 1, series: "1.5.76.18.23" } } } };
+    const before = { detail: { goal: { accuracy: { series: "1.5.75.18.23" } } } };
+    const { db } = fakeDb([pending], after, before);
+    const result = await runChangeOutcomes({ db, runId: 9, now: new Date("2026-10-13T13:00:00Z"), entries: [{ pr: 10, metric: pending.metric, direction: "up" }] });
+    expect(result.judged).toEqual([{ pr: 10, metric: pending.metric, verdict: "unreadable", before: 0.9, after: null, scorerChanged: true }]);
   });
 
   it("does nothing before the migration", async () => {

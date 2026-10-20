@@ -596,6 +596,7 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 108912, from: "dormant_account", amount: 12, to: "dormant_account", name: "Dormant Account (after first 12 months)",
     oldName: "31 Days of Interest: Dormant Account (after first 12 months)",
     why: "inst 7697, doc 24596: \"or Less | 31 Days of Interest | Dormant Account (after first 12 months) | $12.00/year\"" },
+  // Guard v74 (#2018) refuses this name (a withdrawal at DFCU's own ATM), so the rename no longer applies; the row has been down since Oct 16.
   { feePublishedId: 131129, from: "atm_non_network", amount: 2, to: "atm_non_network", name: "ATM Transactions at DFCU ATM (Local ATM)",
     oldName: "15 free ATM transactions per month and 15 free balance inquiries per month; then",
     why: "inst 5100, doc 28876: \"ATM Transactions at DFCU ATM (Local ATM) | 15 free ATM transactions per month ... then $2.00/transaction\"; category kept as filed, its question is on #1196" },
@@ -744,7 +745,37 @@ export const HAND_REFILES: readonly HandRefile[] = [
   { feePublishedId: 152977, from: "account_research", amount: 1, to: "document_reproduction", name: "Fax (Domestic & International)",
     why: "#1829, inst 480 (Open Bank), doc 36784: \"Fax (Domestic & International)\" then \"$1\"" },
   { feePublishedId: 152288, from: "account_research", amount: 2, to: "document_reproduction", name: "Faxes (Domestic only)",
-    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },
+    why: "#1829, inst 1229 (PromiseOne Bank), doc 36945: \"Faxes (Domestic only) | $2.00\"" },  // #1828 (read-only, Oct 17): a two-column loan fee table read across its columns. The left column's
+  // CUDL late fee is 5% (live in the rate catalog as 83791); the $4.95 is the right column's
+  // Personal Credit Line returned payment. No returned payment fee is live at the bank (152591, the
+  // same $4.95 under "Reconveyance", came down in #1834), so the row is re-filed, not taken down.
+  // Returned loan payments are other lending (Knox v72, #1534).
+  { feePublishedId: 83794, from: "late_payment", amount: 4.95, to: "other_lending_fee", name: "Returned payment",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Credit Union Direct Lending (CUDL) late payment…… 5% | Returned payment…… | $4.95\" under \"Loan fees | Personal Credit Line fees\"" },  // #1828 (read-only, Oct 17): the same schedule's card column joined to the safe deposit box
+  // column's heading and first rent. The page prints "Expedited card delivery" with "Domestic ... $30"
+  // and "International (Int'l) ... $45" under it, so rush_card $30 is right and only the name is
+  // renamed in place (the $45 international price is not live). Runs once, only while the live name
+  // is still the joined one.
+  { feePublishedId: 83792, from: "rush_card", amount: 30, to: "rush_card", name: "Expedited card delivery (domestic)",
+    oldName: "Safe deposit box fees Expedited card delivery 2 X 5 annual rent (Downtown Branch only)",
+    why: "#1828, inst 7859 (Oregon Community FCU), doc 13272: \"Expedited card delivery | 2 X 5 annual rent (Downtown Branch only)…… $30\" then \"Domestic…… $30 | 3 X 5 annual rent…… $35\" and \"International (Int'l)…… $45\"" },
+  // #2018 (James's 20-defect register, Oct 19; read-only re-check that day): listed fees whose
+  // price is right and whose name or category is not, each traced to its stored text.
+  { feePublishedId: 154438, from: "account_research", amount: 3, to: "excess_withdrawal", name: "Savings withdrawal in excess of six per quarter",
+    oldName: "Service charge fee",
+    why: "#2018, inst 4105 (Bank of Bearden), doc 36666: \"A service charge fee of $3.00 will be charged for each withdrawal in excess of six during a quarter.\"" },
+  { feePublishedId: 154181, from: "paper_statement", amount: 3, to: "paper_statement", name: "Paper statements",
+    oldName: "Optional: Yes Paper Statements available",
+    why: "#2018, inst 2954 (Lyon County State Bank), doc 37121: \"eStatements² | Optional | Yes Paper Statements available for $3 per month\"" },
+  { feePublishedId: 154214, from: "paper_statement", amount: 3, to: "paper_statement", name: "Maintenance Fee: Paper Statements",
+    oldName: "with eStatements¹ Paper Statements available for an additional",
+    why: "#2018, inst 2954 (Lyon County State Bank), doc 37116: \"Maintenance Fee | $10 per month with eStatements¹ Paper Statements available for an additional $3 per month\"" },
+  { feePublishedId: 123514, from: "wire_domestic_outgoing", amount: 15, to: "wire_domestic_outgoing", name: "Wire Out",
+    oldName: "Wire Out/Wire In",
+    why: "#2018, inst 6911 (New Heights), doc 25640: \"Wire Out/Wire In | $15.00 Per Transaction Outgoing/$5 Per Transaction Incoming\"; the $5 incoming price is not live yet (follow-up)" },
+  { feePublishedId: 153002, from: "deposited_item_return", amount: 2, to: "other_lending_fee", name: "ACH Loan Payment on Website",
+    oldName: "Foreign Returned Item | Varies | ACH Loan Payment on Website",
+    why: "#2018, inst 7515 (Partner Colorado CU), doc 2336: \"Foreign Returned Item | Varies | ACH Loan Payment on Website | $2 per transaction\" under LOAN PRODUCT FEES (the guard moves it too; this also fixes the name)" },
 ];
 
 interface HandRow {

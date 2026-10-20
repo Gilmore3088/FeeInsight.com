@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { feeEvidence, headingAbove, printsAmount, storedLineOf, EVIDENCE_MAX_CHARS } from "./fee-evidence";
+import { feeEvidence, fromOwnName, headingAbove, printsAmount, storedLineOf, EVIDENCE_MAX_CHARS } from "./fee-evidence";
 
 // 1NB Bank's stored schedule (agent_source_texts 13604, doc 18090), its checking accounts as stored,
 // read Oct 16. The two live monthly maintenance fees are catalog ids 60939 and 60940.
@@ -497,5 +497,116 @@ describe("review fixes (PR #1679)", () => {
       "$10.00 monthly service charge. Free Perks checking tools include YOUR$ digital banking and BillPay, unlimited Visa® debit card usage, and eStatements. Cell phone protection – receive up to $600 per claim ($1,200 per year) if your cell phone is broken or stolen. ID theft aid includes payment card fraud resolution, $10,000 in personal identity theft benefit and identity restoration. Your personal information and your credit report are monitored for suspicious activity, and a free quarterly credit report and quarterly updated credit score are provided (activation required for these services to begin). Buyer’s protection and extended warranty protects newly purchased items for up to $2,500 per item if theft or accidental breakage occurs during the first 180 days of purchase, when purchased using your TVFCU Perks Platinum checking account. Shop local, save local with TVFCU Perks savings. Roadside assistance available 24/7 and free to use, up to $80 in covered service charges. Includes $25,000 accidental death coverage and a Health Savings Card. This account pays monthly dividends. Dividends are calculated by the daily balance method, which applies a daily periodic rate to the balance in the account each day. There is no minimum required to open.",
     ].join("\n");
     expect(feeEvidence({ fee_name: "Monthly service charge", amount: "10.00", fee_category: "monthly_maintenance" }, text)?.heading).toBe("TVFCU Perks Platinum Checking");
+  });
+});
+
+describe("a line opening with another fee's words (#1902)", () => {
+  const note = (line: string) => `Knox deterministic extraction. excerpt="${line}"`;
+  it("starts 1st Source Bank's dormant fee at its own name, not the levy fee's description (catalog 31779)", () => {
+    const evidence = feeEvidence(
+      { fee_name: "Dormant Account Fee", amount: 5, fee_category: "dormant_account", extraction_note: note("Fee applied to process a tax liability Dormant Account Fee $5 per month") },
+      null,
+    );
+    expect(evidence?.line).toBe("… Dormant Account Fee $5 per month");
+  });
+
+  it("keeps an account named before the fee, and a line whose opening prints this price", () => {
+    expect(fromOwnName("Basic Checking Monthly Service Fee $10", "Monthly Service Fee", 10)).toBe("Basic Checking Monthly Service Fee $10");
+    expect(fromOwnName("Stop Payment $5 each; see Stop Payment Fee $5 note", "Stop Payment Fee", 5)).toBe("Stop Payment $5 each; see Stop Payment Fee $5 note");
+    expect(fromOwnName("Levy Fee $100 Dormant Account Fee applies after one year", "Dormant Account Fee", 5)).toBe("Levy Fee $100 Dormant Account Fee applies after one year");
+  });
+
+  it("keeps a line whose price sits just before the name (catalog 30013)", () => {
+    const line = "Christmas Club Savings $10.00 opening deposit, $2.00 paper statement charge, $5.00 early withdraw penalty per early withdraw";
+    expect(fromOwnName(line, "Paper statement charge", 5)).toBe(line);
+  });
+
+  it("keeps the account or direction that opens the fee's own clause (#1902 review)", () => {
+    expect(fromOwnName("Overdraft Fee $35 per item. Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
+    expect(fromOwnName("Levy Fee $100 per order Basic Checking Monthly Service Fee $10 per month", "Monthly Service Fee", 10)).toBe("… Basic Checking Monthly Service Fee $10 per month");
+    // A lower-case word in the fee's own qualifier keeps the line whole rather than guess.
+    expect(fromOwnName("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("Outgoing international wire fee $45. Outgoing domestic Wire Transfer Fee $25");
+    expect(fromOwnName("Outgoing International Wire Fee $45. Outgoing Domestic Wire Transfer Fee $25", "Wire Transfer Fee", 25)).toBe("… Outgoing Domestic Wire Transfer Fee $25");
+    expect(fromOwnName("Levy fee $100. Dormant Account Fee $5 per month", "Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
+    expect(fromOwnName("Stop Payment | $30 | Dormant Account Fee | $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee | $5 per month");
+  });
+
+  it("keeps a line whose earlier sentences are the account's own, not another fee (#1902 re-review)", () => {
+    for (const line of [
+      "Basic Checking. Minimum opening deposit $25. Monthly Service Fee $10 per month",
+      "Basic Checking; no overdraft fees. Monthly Service Fee $10",
+      "Incoming domestic wire, no charge. Outgoing domestic Wire Transfer Fee $25",
+      "Service charges for Premier Checking accounts Monthly Service Fee $15",
+      "Wire fees for business accounts include Outgoing domestic Wire Transfer Fee $25",
+    ]) {
+      const name = line.includes("Wire") ? "Wire Transfer Fee" : "Monthly Service Fee";
+      const amount = Number(/\$(\d+)(?!.*\$\d)/.exec(line)?.[1]);
+      expect(fromOwnName(line, name, amount)).toBe(line);
+    }
+  });
+
+  it("keeps this fee's own waiver, an earlier account sentence and a unit's trailing words (#1902 round 3)", () => {
+    for (const [line, name, amount] of [
+      ["Fee waived if you maintain a $500 balance Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["No fee with $500 daily balance; Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Basic Checking. Fees for this account are listed below Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Excessive withdrawal fee $5 per item over 6 per month Monthly Service Fee $10", "Monthly Service Fee", 10],
+      // A heading, account or customer group before another fee scopes this one too (round 4).
+      ["Basic Checking. Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Premier Checking: Paper Statement Fee $3; Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Business accounts only. Returned Item Fee $25; Overdraft Fee $35", "Overdraft Fee", 35],
+      ["Students under 18: Returned Item Fee $25; Overdraft Fee $35", "Overdraft Fee", 35],
+      ["Basic Checking Overdraft Fee $35 per item Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Wire Transfers: Incoming Fee $15; Outgoing Wire Transfer Fee $25", "Wire Transfer Fee", 25],
+      // A lower-case scope or an effective date says which accounts or when (round 5).
+      ["Fees charged to business accounts Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees for accounts opened before 2020 Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees effective January 1, 2027 Monthly Service Fee $12", "Monthly Service Fee", 12],
+      ["Fees changing on 1/1/2027 are shown below Monthly Service Fee $12", "Monthly Service Fee", 12],
+      ["Effective 1/1/2027 Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Seniors 62 and over Overdraft Fee $25 per item Monthly Service Fee $10", "Monthly Service Fee", 10],
+      // Only a fee's description, or fees priced name first, is cut (round 6).
+      ["Fees applicable to Texas residents Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees for military families stationed overseas Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fees listed here are for paper statement users Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Fee schedule for youth savers Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Simply Basic, Overdraft Fee $35 each, Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["Simply Basic - Overdraft Fee $35 each Monthly Service Fee $10", "Monthly Service Fee", 10],
+      ["In Ohio Overdraft Fee $35 per item. Monthly Service Fee $10", "Monthly Service Fee", 10],
+    ] as const) {
+      expect(fromOwnName(line, name, amount)).toBe(line);
+    }
+  });
+
+  it("keeps the account named at the end of another fee's description", () => {
+    expect(fromOwnName("Fee applied to process a tax liability Student Checking Monthly Maintenance Fee $12", "Monthly Maintenance Fee", 12)).toBe("… Student Checking Monthly Maintenance Fee $12");
+    // A description that mentions accounts may scope the fee: kept whole.
+    expect(fromOwnName("Fees vary by account and are listed here Student Checking Monthly Maintenance Fee $12", "Monthly Maintenance Fee", 12)).toBe("Fees vary by account and are listed here Student Checking Monthly Maintenance Fee $12");
+  });
+
+  it("drops a stop left after another fee's price", () => {
+    expect(fromOwnName("Levy fee $100.Dormant Account Fee $5", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5");
+  });
+
+  it("cuts a packed row at the stop after another fee's price", () => {
+    expect(fromOwnName("Levy Fee $100. Dormant Account Fee $5.00 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5.00 per month");
+  });
+
+  it("keeps a fee's own label, a short name, a first-word name and a repeat that prints this price first", () => {
+    expect(fromOwnName("Account Fees: The monthly service charge $5", "monthly service charge", 5)).toBe("Account Fees: The monthly service charge $5");
+    expect(fromOwnName("Levy Fee $100. NSF Fee $5", "NSF Fee", 5)).toBe("Levy Fee $100. NSF Fee $5");
+    expect(fromOwnName("Dormant Account Fee $5 per month. Levy Fee $100", "Dormant Account Fee", 5)).toBe("Dormant Account Fee $5 per month. Levy Fee $100");
+    expect(fromOwnName("Levy Fee $100 Dormant Account Fee $5 per month", "Dormant Account Fee", 5)).toBe("Levy Fee $100 Dormant Account Fee $5 per month");
+  });
+
+  it("cuts a long line and still centres its price", () => {
+    const line = `${"Fee applied to process a tax liability ".repeat(10)}Dormant Account Fee $5 per month ${"y".repeat(300)}`;
+    const evidence = feeEvidence({ fee_name: "Dormant Account Fee", amount: 5, fee_category: "dormant_account", extraction_note: `excerpt="${line}"` }, null);
+    expect(evidence?.line.startsWith("… Dormant Account Fee $5 per month")).toBe(true);
+    expect(evidence!.line.length).toBeLessThanOrEqual(EVIDENCE_MAX_CHARS + 4);
+  });
+
+  it("cuts after another fee's price", () => {
+    expect(fromOwnName("Levy Processing Fee $100 per levy order Dormant Account Fee $5 per month", "Dormant Account Fee", 5)).toBe("… Dormant Account Fee $5 per month");
   });
 });

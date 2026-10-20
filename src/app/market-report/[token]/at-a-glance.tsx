@@ -66,12 +66,15 @@ export function AtAGlance({
   narrow = false,
   highlight,
   limit,
+  headingAs: Heading = "h2",
 }: {
   lines: ReportLine[];
   narrow?: boolean;
   highlight?: string;
   /** Rows shown (the highlighted one always among them); the rest are counted under the list. */
   limit?: number;
+  /** The heading's level: h2 in the report; h3 where it sits under a page's own h2 (the homepage excerpt). */
+  headingAs?: "h2" | "h3";
 }) {
   const wide = (classes: string) => (narrow ? "" : classes);
   const counts = positionCounts(lines);
@@ -92,7 +95,7 @@ export function AtAGlance({
   return (
     <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 sm:p-8" aria-labelledby="glance-heading">
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">At a glance</p>
-      <h2 id="glance-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
+      <Heading id="glance-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
         Of your {total} comparable fees,{" "}
         {summary.map((part, i) => (
           <span key={part.text}>
@@ -100,7 +103,7 @@ export function AtAGlance({
             {i === 0 ? ", " : i === 1 ? " and " : "."}
           </span>
         ))}
-      </h2>
+      </Heading>
 
       <div className="mt-6" role="table" aria-label="Each comparable fee ranked against local competitors">
         <div

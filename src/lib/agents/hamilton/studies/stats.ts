@@ -3,6 +3,8 @@
  * stores can be recomputed from its inputs in a test.
  */
 
+import { midRankPercentile as sharedMidRank, SAME_PRICE_TOLERANCE } from "@/lib/percentile";
+
 export function quantile(values: number[], p: number): number | null {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
   if (sorted.length === 0) return null;
@@ -21,16 +23,16 @@ export function mean(values: number[]): number | null {
   return finite.length ? finite.reduce((s, v) => s + v, 0) / finite.length : null;
 }
 
-/** Mid-rank percentile (0-100): share of peers below the value plus half of those equal. */
+/**
+ * The shared mid-rank percentile (#2048), to one decimal place. Study drivers are ratios, so only
+ * equal values tie; `pricePercentile` keeps the half-cent tie for dollar amounts.
+ */
 export function midRankPercentile(value: number, peers: number[]): number | null {
-  if (!Number.isFinite(value) || peers.length === 0) return null;
-  let below = 0;
-  let equal = 0;
-  for (const p of peers) {
-    if (p < value) below++;
-    else if (p === value) equal++;
-  }
-  return Math.round(((below + equal / 2) / peers.length) * 1000) / 10;
+  return sharedMidRank(value, peers, { decimals: 1, tolerance: 0 });
+}
+
+export function pricePercentile(value: number, peers: number[]): number | null {
+  return sharedMidRank(value, peers, { decimals: 1, tolerance: SAME_PRICE_TOLERANCE });
 }
 
 export function quartileOf(percentile: number | null): number | null {

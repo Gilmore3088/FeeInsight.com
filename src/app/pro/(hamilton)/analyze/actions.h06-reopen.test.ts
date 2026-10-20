@@ -27,7 +27,7 @@ const legacyHigh = {
 describe("H06-AC4 reopening a saved answer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.user.mockResolvedValue({ id: 11 });
+    mocks.user.mockResolvedValue({ id: 11, role: "premium", subscription_status: "active" });
   });
 
   it("should_show_legacy_high_confidence_as_medium_with_its_limitation", async () => {

@@ -15,7 +15,8 @@ export async function GET() {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": 'attachment; filename="sample-fee-position-report.csv"',
-      "Cache-Control": "public, max-age=3600",
+      // s-maxage lets the edge serve the file, so a repeated download builds no report.
+      "Cache-Control": "public, max-age=3600, s-maxage=3600",
     },
   });
 }

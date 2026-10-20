@@ -5,6 +5,7 @@ import { NextRequest } from "next/server";
 import { extractText } from "unpdf";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SectionInput } from "@/lib/hamilton/types";
+import type { SectionTracking } from "@/lib/hamilton/generate";
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -92,8 +93,9 @@ vi.mock("@/lib/hamilton/generate", async () => {
   // Real figure check over the mocked section text, as generateVerifiedSection does.
   const { checkNarrativeFigures } = await vi.importActual<typeof import("./figure-check")>("./figure-check");
   return {
-    generateVerifiedSection: async (input: SectionInput) => {
+    generateVerifiedSection: async (input: SectionInput, tracking: SectionTracking = {}) => {
       const section = await mocks.generateSection(input);
+      tracking.onProviderResponse?.(section.usage, section.model);
       const check = checkNarrativeFigures(section.narrative, input.data);
       return check.unmatched.length > 0
         ? { status: "needs_review", section, unmatched: check.unmatched, citation: {} }
@@ -122,6 +124,7 @@ function selectedInstitution(overrides: Record<string, unknown> = {}) {
   return {
     id: 2945,
     institution_name: "Hamilton Federal Credit Union",
+    charter_type: "credit_union",
     fee_publication_status: "provisional",
     insight_readiness: "directional_analysis",
     confidence_summary: "Official source accepted; rows are pending approval.",
@@ -193,7 +196,9 @@ describe("Hamilton Reports generateReport", () => {
     mocks.getInstitutionById.mockResolvedValue(selectedInstitution());
     mocks.getFeesByInstitution.mockResolvedValue([]);
     mocks.getFinancialsByInstitution.mockResolvedValue([
+      { source: "fdic", report_date: "2026-09-30", total_assets: 9_999_999, total_deposits: 9_999_999, service_charge_income: 9_999_999, total_revenue: 9_999_999, fee_income_ratio: 0.99, roa: 1 },
       {
+        source: "ncua",
         report_date: "2026-06-30",
         total_assets: 1_500_000_000,
         total_deposits: 1_200_000_000,
@@ -571,6 +576,7 @@ describe("Hamilton Reports generateReport", () => {
         source_url: "https://example.com/fees",
       },
     ]);
+    mocks.getInstitutionById.mockResolvedValue(selectedInstitution({ charter_type: "bank" }));
     mocks.getFinancialsByInstitution.mockResolvedValue(
       ["2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"].map((report_date) => ({
         report_date,

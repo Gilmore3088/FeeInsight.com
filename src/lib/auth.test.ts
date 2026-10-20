@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { redirect } from "next/navigation";
 
 const mocks = vi.hoisted(() => {
   const cookieJar = new Map<string, string>();
@@ -84,6 +85,24 @@ describe("session lifetime", () => {
     expect(mocks.queries.some((q) => q.includes("INSERT INTO sessions"))).toBe(true);
   });
 
+  it("login returns users.id as a number when the bigint arrives as text (#1970)", async () => {
+    mocks.setRows([{ id: "26", username: "a@b.com", password_hash: "x", role: "viewer" }]);
+    const { login } = await import("./auth");
+    const user = await login("a@b.com", "password1");
+    expect(user?.id).toBe(26);
+    expect(user).not.toHaveProperty("password_hash");
+  });
+
+  it("getCurrentUser returns users.id as a number when the bigint arrives as text (#1970)", async () => {
+    const { getCurrentUser, issueSession, SESSION_COOKIE } = await import("./auth");
+    const { signed } = await issueSession(26);
+    mocks.cookieJar.set(SESSION_COOKIE, signed);
+    mocks.setRows([{ id: "26", role: "admin", session_expires_at: new Date(Date.now() + 25 * DAY) }]);
+    const user = await getCurrentUser();
+    expect(user?.id).toBe(26);
+    expect(Number.isSafeInteger(user?.id)).toBe(true);
+  });
+
   it("slides the session row when it is close to expiry, and not otherwise", async () => {
     const { getCurrentUser, issueSession, SESSION_COOKIE } = await import("./auth");
     const { signed } = await issueSession(4);
@@ -144,5 +163,38 @@ describe("createUserWithSession", () => {
     const result = await createUserWithSession({ email: "a@b.com", password: "password1", displayName: "A" });
     expect(result).toMatchObject({ ok: false, code: "duplicate" });
     expect(mocks.setCalls).toHaveLength(0);
+  });
+});
+
+describe("operator authorization", () => {
+  beforeEach(() => {
+    mocks.cookieJar.clear();
+    mocks.queries.length = 0;
+    mocks.setRows([]);
+    vi.mocked(redirect).mockImplementation((destination) => {
+      throw new Error(`redirect:${destination}`);
+    });
+  });
+
+  it.each(["viewer", "premium"])("sends a %s to their account instead of an admin redirect loop", async (role) => {
+    const { requireAuth, issueSession, SESSION_COOKIE } = await import("./auth");
+    const { signed } = await issueSession(7);
+    mocks.cookieJar.set(SESSION_COOKIE, signed);
+    mocks.setRows([{ id: 7, role, session_expires_at: new Date(Date.now() + 25 * DAY) }]);
+    await expect(requireAuth("operate")).rejects.toThrow("redirect:/account");
+  });
+
+  it("sends a signed-out caller to login", async () => {
+    const { requireAuth } = await import("./auth");
+    await expect(requireAuth("operate")).rejects.toThrow("redirect:/login");
+    expect(mocks.queries).toHaveLength(0);
+  });
+
+  it.each(["admin", "analyst"])("preserves operator access for a valid %s", async (role) => {
+    const { requireAuth, issueSession, SESSION_COOKIE } = await import("./auth");
+    const { signed } = await issueSession(7);
+    mocks.cookieJar.set(SESSION_COOKIE, signed);
+    mocks.setRows([{ id: 7, role, session_expires_at: new Date(Date.now() + 25 * DAY) }]);
+    await expect(requireAuth("operate")).resolves.toMatchObject({ id: 7, role });
   });
 });

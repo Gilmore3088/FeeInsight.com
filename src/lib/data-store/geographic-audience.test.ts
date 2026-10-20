@@ -35,8 +35,9 @@ describe("city fee comparison audience boundaries", () => {
   it("uses one consumer-applicable value per headline fee and preserves zero", async () => {
     await getCityInstitutions("Nashville", "TN");
 
-    expect(state.queries).toHaveLength(1);
-    const query = state.queries[0];
+    // The city's stored spellings (#2092), then the list.
+    expect(state.queries).toHaveLength(2);
+    const query = state.queries[1];
     expectConsumerBoundary(query);
     expect(query).toContain("MAX(ef.amount)");
     expect(query).toContain("PERCENTILE_CONT(0.5)");
@@ -45,7 +46,18 @@ describe("city fee comparison audience boundaries", () => {
   it("filters city averages to sourced consumer/both observations", async () => {
     await getCityFeeAverages("Nashville", "TN");
 
-    expect(state.queries).toHaveLength(1);
-    expectConsumerBoundary(state.queries[0]);
+    expect(state.queries).toHaveLength(2);
+    expectConsumerBoundary(state.queries[1]);
+  });
+});
+
+describe("getCityAutocomplete bounds (2026-10-18 scrape)", () => {
+  it("matches a typed % literally and caps the rows at 25", async () => {
+    const { getCityAutocomplete } = await import("./geographic");
+    await getCityAutocomplete("%%", 100_000);
+    const query = state.queries.at(-1) ?? "";
+    expect(query).toContain("ILIKE ANY(\\%\\%%::text[])");
+    // Room to fold spellings (#2092); the answer itself is cut to 25 after the fold.
+    expect(query).toMatch(/LIMIT 200\s*$/);
   });
 });

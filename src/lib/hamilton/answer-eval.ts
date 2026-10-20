@@ -372,6 +372,8 @@ export async function evaluateProQuestions(institutionId: number, questions: Pro
 
 export interface ProReplaySummary {
   questions: number;
+  /** Questions drawn for the replay; more than `questions` when the time budget ran out first. */
+  planned?: number;
   passed: number;
   /** Questions Hamilton still answers with a question of its own. */
   askedBack: number;
@@ -488,11 +490,26 @@ export async function runAnswerEval({
   const proQuestions = await pickProQuestions(db).catch(() => []);
   const byInstitution = new Map<number, ProQuestion[]>();
   for (const q of proQuestions) byInstitution.set(q.institutionId, [...(byInstitution.get(q.institutionId) ?? []), q]);
+  // A batch starts only when the slowest batch so far still fits the budget: the route stops at
+  // 300 seconds, and a step it stops is left running until the reaper re-queues it (runs 8960, 9168).
+  let slowest = 0;
+  let timedOut = false;
+  const fits = () => Date.now() - started + slowest <= budgetMs;
+  const timed = async <T>(work: () => Promise<T>): Promise<T> => {
+    const t = Date.now();
+    const out = await work();
+    slowest = Math.max(slowest, Date.now() - t);
+    return out;
+  };
   const proResults: ProQuestionResult[] = [];
   const asked = [...byInstitution.entries()];
   for (let i = 0; i < asked.length; i += CONCURRENCY) {
+    if (!fits()) {
+      timedOut = true;
+      break;
+    }
     const batch = asked.slice(i, i + CONCURRENCY);
-    for (const rows of await Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs, live)))) proResults.push(...rows);
+    for (const rows of await timed(() => Promise.all(batch.map(([id, qs]) => evaluateProQuestions(id, qs, live))))) proResults.push(...rows);
   }
 
   const day = now.toISOString().slice(0, 10);
@@ -500,17 +517,16 @@ export async function runAnswerEval({
   const institutions = unaskedFirst(await pickEvalInstitutions(db, perGroup, day), askedToday);
   const results: EvalResult[] = [];
   let done = 0;
-  let timedOut = false;
   // A few institutions at a time: each spends most of its time waiting on reads.
   for (let i = 0; i < institutions.length; i += CONCURRENCY) {
-    if (Date.now() - started > budgetMs) {
+    if (!fits()) {
       timedOut = true;
       break;
     }
     const batch = institutions.slice(i, i + CONCURRENCY);
-    for (const rows of await Promise.all(batch.map((institution) => evaluateInstitution(institution, live)))) results.push(...rows);
+    for (const rows of await timed(() => Promise.all(batch.map((institution) => evaluateInstitution(institution, live))))) results.push(...rows);
     done += batch.length;
   }
   const summary = { ...summarizeEval(results, done, timedOut, institutions.length), institutionIds: institutions.slice(0, done).map((i) => i.id) };
-  return proResults.length > 0 ? { ...summary, pro: summarizeProReplay(proResults) } : summary;
+  return proResults.length > 0 ? { ...summary, pro: { ...summarizeProReplay(proResults), planned: proQuestions.length } } : summary;
 }

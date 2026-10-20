@@ -49,3 +49,5 @@ could not tell them apart. The check now also reads the document's current text 
 
 **Lesson:** a dedupe key needs the fee's identity, not just its value. Price and category alone collapse
 distinct lines.
+
+**Agent lesson:** gutenberg/pr-887-same-line-identity

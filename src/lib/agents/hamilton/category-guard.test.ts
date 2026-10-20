@@ -62,6 +62,8 @@ describe("Hamilton category guard repair", () => {
     });
     // Row 3 names its category; its implausible amount is the outlier rollback's job.
     expect(result.failures.map((failure) => failure.feePublishedId)).toEqual([2, 4]);
+    // Both failed an earlier look too, so a live run would take both down.
+    expect(result.confirmedFeeIds).toEqual([2, 4]);
     const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(statements).not.toContain("UPDATE");
     expect(statements).not.toContain("INSERT");
@@ -86,6 +88,8 @@ describe("Hamilton category guard repair", () => {
     const result = await runHamiltonCategoryGuard({ runId: 12, db: db as unknown as GuardDb });
 
     expect(result).toMatchObject({ failingFees: 0, rolledBackFees: 0, flaggedFees: 2 });
+    // First looks are not takedowns (publish-sweeps window check).
+    expect(result.confirmedFeeIds).toEqual([]);
     const statements = db.mock.calls.map((call) => templateText(call[0])).join("\n");
     expect(statements).toContain("INSERT INTO pipeline_feedback");
     expect(statements).not.toContain("SET rolled_back_at = NOW()");
@@ -330,6 +334,7 @@ describe("Hamilton category guard repair", () => {
     const result = await runHamiltonCategoryGuard({ runId: 11, limit: 1, db: db as unknown as GuardDb });
 
     expect(result).toMatchObject({ failingFees: 2, rolledBackFees: 1 });
+    expect(result.confirmedFeeIds).toHaveLength(1);
   });
 
   it("flags a small returned check filed as NSF beside the schedule's own NSF fee", async () => {

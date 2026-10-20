@@ -17,6 +17,7 @@ import { CONTACT_EMAIL, SITE_NAME, SITE_URL, REPORT_OFFER } from "@/lib/constant
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
 import { getRevenueContextCached } from "@/lib/custom-report/revenue-context";
 import { loadMarketCheckingLineup } from "@/lib/custom-report/checking-lineup-data";
+import { getReportPeerContextCached, peerLinesFor } from "@/lib/custom-report/peer-context";
 import { getMarketBranchFootprintCached } from "@/lib/data-store/public-cached-reads";
 import { MarketReportBody } from "@/app/market-report/report-body";
 import { PrintButton } from "@/app/market-report/[token]/print-button";
@@ -203,6 +204,7 @@ export default async function SampleReportPage() {
   const revenue = await getRevenueContextCached(report.data.subject.institution_id).catch(() => null);
   // The same checking-account lineup a buyer's report shows, from live published fees.
   const lineup = await loadMarketCheckingLineup(report.data.subject.institution_id).catch(() => null);
+  const peers = await getReportPeerContextCached(report.data.subject.institution_id, peerLinesFor(report.analysis.lines)).catch(() => null);
 
   return (
     <div className="mx-auto max-w-page px-4 pb-24 pt-14 sm:px-6">
@@ -220,6 +222,7 @@ export default async function SampleReportPage() {
           report={report}
           revenue={revenue}
           lineup={lineup}
+          peers={peers}
           branches={branches}
           eyebrow={`Sample ${REPORT_OFFER.name}`}
           close={false}

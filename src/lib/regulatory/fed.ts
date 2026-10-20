@@ -1,15 +1,12 @@
-import { STATE_TO_DISTRICT } from "@/lib/fed-districts";
-import { STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
 import { registryFetch, type RegistryFetchOptions } from "./http";
 
 /**
- * Federal Reserve published data: Beige Book release pages and FRED series.
- * Pure: fetch + parse, no DB.
+ * Federal Reserve published data (Beige Book release pages, FOMC minutes) and the BLS CPI
+ * helpers. Pure: fetch + parse, no DB. The economic indicator catalogue (each series from its
+ * original publisher; FRED is no longer read, 2026-10-18) is in ./federal-indicators.
  */
 
 export const FED_BASE = "https://www.federalreserve.gov";
-export const BEIGE_BOOK_INDEX_URL = `${FED_BASE}/monetarypolicy/beige-book-default.htm`;
-export const BEIGE_BOOK_ARCHIVE_URL = `${FED_BASE}/monetarypolicy/beige-book-archive.htm`;
 
 /** District slug in the release URL -> Federal Reserve district number. */
 export const BEIGE_BOOK_DISTRICTS: Array<{ slug: string; district: number }> = [
@@ -109,31 +106,9 @@ export async function fetchText(url: string, options: RegistryFetchOptions = {})
   }
 }
 
-// ---------------------------------------------------------------------------
-// FRED (keyless graph CSV endpoint)
-// ---------------------------------------------------------------------------
-
-export function fredCsvUrl(seriesId: string): string {
-  return `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${encodeURIComponent(seriesId)}`;
-}
-
-export interface FredObservation {
+export interface IndicatorObservation {
   observation_date: string;
   value: number;
-}
-
-/** Parses `DATE,SERIES` (or `observation_date,SERIES`) CSV; "." marks a missing value. */
-export function parseFredCsv(csv: string): FredObservation[] {
-  const lines = csv.trim().split(/\r?\n/).slice(1);
-  const out: FredObservation[] = [];
-  for (const line of lines) {
-    const [date, raw] = line.split(",");
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date.trim())) continue;
-    const value = Number(raw);
-    if (raw === undefined || raw.trim() === "." || !Number.isFinite(value)) continue;
-    out.push({ observation_date: date.trim(), value });
-  }
-  return out;
 }
 
 /**
@@ -158,67 +133,10 @@ export const BLS_SERIES_TITLES: Record<string, string> = {
   CUUR0400SEMC: "CPI: Medical Professional Services, West",
 };
 
-/** BLS CPI series ids (CUUR... not seasonally adjusted, CUSR... adjusted); FRED does not serve the detailed ones. */
+/** BLS CPI series ids (CUUR... not seasonally adjusted, CUSR... adjusted). */
 export function isBlsSeries(seriesId: string): boolean {
   return /^CU[US]R[0-9A-Z]+$/.test(seriesId);
 }
-
-/** Series in fed_economic_indicators that come from FRED (other loaders prefix theirs). */
-export function isFredNativeSeries(seriesId: string): boolean {
-  return !/^(NYFED|OFR|BLS|CU)_/.test(seriesId) && !isBlsSeries(seriesId) && /^[A-Z0-9]+$/.test(seriesId);
-}
-
-export interface RequiredFredSeries {
-  series_id: string;
-  series_title: string;
-  units: string;
-  frequency: string;
-  fed_district: number | null;
-}
-
-/** Unemployment rate ({ST}UR) and nonfarm payroll jobs ({ST}NA) for the 50 states and DC. */
-function stateLaborSeries(): RequiredFredSeries[] {
-  return Object.entries(STATE_NAMES)
-    .filter(([code]) => US_STATES_ONLY.has(code) || code === "DC")
-    .flatMap(([code, name]) => {
-      const place = code === "DC" ? "the District of Columbia" : name;
-      const fed_district = STATE_TO_DISTRICT[code] ?? null;
-      return [
-        { series_id: `${code}UR`, series_title: `Unemployment Rate in ${place}`, units: "Percent", frequency: "Monthly", fed_district },
-        { series_id: `${code}NA`, series_title: `All Employees: Total Nonfarm in ${place}`, units: "Thousands of Persons", frequency: "Monthly", fed_district },
-      ];
-    });
-}
-
-/**
- * Series reports need even before anything else stores them; registry-fred seeds and
- * refreshes them. GDPCTPI is BEA's chained GDP price index, used to turn nominal fee
- * income into real dollars; the state labor series feed the state report pages.
- */
-export const REQUIRED_FRED_SERIES: RequiredFredSeries[] = [
-  {
-    series_id: "GDPCTPI",
-    series_title: "Gross Domestic Product: Chain-type Price Index",
-    units: "Index 2017=100",
-    frequency: "Quarterly",
-    fed_district: null,
-  },
-  ...stateLaborSeries(),
-  {
-    series_id: CPI_BANK_SERVICES_SERIES,
-    series_title: BLS_SERIES_TITLES[CPI_BANK_SERVICES_SERIES],
-    units: "Index",
-    frequency: "Monthly",
-    fed_district: null,
-  },
-  {
-    series_id: CPI_FINANCIAL_SERVICES_SERIES,
-    series_title: BLS_SERIES_TITLES[CPI_FINANCIAL_SERVICES_SERIES],
-    units: "Index",
-    frequency: "Monthly",
-    fed_district: null,
-  },
-];
 
 // ---------------------------------------------------------------------------
 // BLS public data API (keyless v1; v2 with BLS_API_KEY raises the daily limit)
@@ -264,22 +182,6 @@ interface BlsResponse {
 export function parseBlsCatalogTitle(body: unknown): string | null {
   const title = (body as BlsResponse)?.Results?.series?.[0]?.catalog?.series_title;
   return typeof title === "string" && title.trim() ? title.trim() : null;
-}
-
-/** Monthly observations (period M01-M12) from a BLS timeseries response; annual averages (M13) are skipped. */
-export function parseBlsSeries(body: unknown): FredObservation[] {
-  const response = body as BlsResponse;
-  if (response?.status !== "REQUEST_SUCCEEDED") return [];
-  const out: FredObservation[] = [];
-  for (const series of response.Results?.series ?? []) {
-    for (const point of series.data ?? []) {
-      const month = /^M(0[1-9]|1[0-2])$/.exec(point.period ?? "");
-      const value = Number(point.value);
-      if (!month || !/^\d{4}$/.test(point.year ?? "") || !Number.isFinite(value)) continue;
-      out.push({ observation_date: `${point.year}-${month[1]}-01`, value });
-    }
-  }
-  return out.sort((a, b) => a.observation_date.localeCompare(b.observation_date));
 }
 
 export const FOMC_CALENDAR_URL = `${FED_BASE}/monetarypolicy/fomccalendars.htm`;

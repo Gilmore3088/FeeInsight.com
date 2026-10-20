@@ -116,3 +116,23 @@ describe("buildMarketStudy", () => {
     expect(none.html).toContain("Orrstown Bank has no published fees on file yet to compare");
   });
 });
+
+it("keeps market-study statistics while tooltips name the actual source prices (#1993)", () => {
+  const amount = 2.75;
+  const several = { low: 2.5, high: 3, fees: [{ fee_name: "ATM A", amount: 2.5 }, { fee_name: "ATM B", amount: 3 }] };
+  const sample = assembleMarketStudy({ ...rows, fees: [
+    ...rows.fees,
+    { institution_id: 270, fee_category: "atm_non_network", amount: 4 },
+    { institution_id: 8, fee_category: "atm_non_network", amount, lines: several.fees },
+    { institution_id: 9, fee_category: "atm_non_network", amount: 5 },
+  ] })!;
+  const fee = sample.fees.find(f => f.category === "atm_non_network")!;
+  expect(fee.competitors.find(c => c.institution_id===8)?.amount).toBe(amount);
+  expect(fee.competitors.find(c => c.institution_id===8)?.several).toMatchObject({ low: 2.5, high: 3 });
+  const html = buildMarketStudy(sample).html;
+  expect(html).toContain("ATM A");
+  expect(html).toContain("ATM B");
+  expect(html).not.toContain("PNC Bank: $2.75");
+  expect(html).not.toContain("PNC: $2.75");
+  expect(html).toContain("Dots count one value per institution");
+});

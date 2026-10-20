@@ -1,13 +1,12 @@
 export const dynamic = "force-dynamic";
 
-import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import {
   getGoldStandardCandidate,
   getExtractedFeesForInstitution,
 } from "@/lib/admin-queries";
 import { Breadcrumbs } from "@/components/breadcrumbs";
-import { formatAmount, formatAssets } from "@/lib/format";
+import { formatAssets } from "@/lib/format";
 import { VerifyForm } from "./verify-form";
 
 export default async function VerifyDetailPage({
@@ -15,7 +14,7 @@ export default async function VerifyDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   const { id } = await params;
   const institutionId = parseInt(id, 10);
@@ -37,7 +36,7 @@ export default async function VerifyDetailPage({
     <div className="admin-content space-y-6">
       <Breadcrumbs
         items={[
-          { label: "Verify", href: "/admin/verify" },
+          { label: "Knox", href: "/admin/knox?queue=gold" },
           { label: institution.institution_name },
         ]}
       />

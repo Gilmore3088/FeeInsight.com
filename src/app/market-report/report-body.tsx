@@ -30,6 +30,8 @@ import { FeeComparison } from "./fee-comparison";
 import { PrintOpen } from "./print-open";
 import { PositionSplit } from "./position-split";
 import { ArrowUp, ChartPie, Scale } from "lucide-react";
+import { PeerSection } from "./peer-section";
+import type { ReportPeerContext } from "@/lib/custom-report/peer-context";
 
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 
@@ -99,6 +101,8 @@ export interface MarketReportBodyProps {
   branches?: MarketBranchFootprint | null;
   /** The checking account lineup against local competitors; the section is left out when null. */
   lineup?: CheckingLineupView | null;
+  /** Fees and reported figures against institutions of the same size; the section is left out when null. */
+  peers?: ReportPeerContext | null;
   /** "h2" when the page already has its own h1 (the public sample); a page has one h1. */
   titleAs?: "h1" | "h2";
   /** The closing Hamilton band; the public sample has its own close (the report request) instead. */
@@ -142,63 +146,72 @@ function Tile({ value, label }: { value: string; label: string }) {
   );
 }
 
-function RevenueSection({ name, charterType, revenue }: { name: string; charterType: string | null; revenue: RevenueContext }) {
+/**
+ * The share of revenue is shown once per report. When the revenue section shows it from the #2353
+ * comparison, the peer table leaves out its own fee-share row (a different cohort), so the report
+ * never prints two medians for one measure.
+ */
+export function peersBesideRevenue(peers: ReportPeerContext, revenue: RevenueContext | null | undefined): ReportPeerContext {
+  if (revenue?.peer?.feeShare == null || revenue.peer.peerMedianFeeShare == null || !peers.financial) return peers;
+  const rows = peers.financial.rows.filter((row) => row.key !== "fee_income_ratio");
+  return { ...peers, financial: rows.length ? { ...peers.financial, rows } : null };
+}
+
+/**
+ * The institution's reported fee income and where it sits in one comparison (#2353): the same
+ * charter, filing, quarter and asset band, the institution included. The dollar rank, the dollar
+ * median and the share-of-revenue median all come from that one set.
+ */
+export function RevenueSection({ name, revenue }: { name: string; revenue: RevenueContext }) {
   const latest = revenue.quarters[0];
-  const filing = charterType === "credit_union" ? "NCUA 5300 Call Report" : "FDIC Call Report";
+  const quarter = quarterLabel(latest.quarter);
+  const creditUnion = revenue.source === "ncua";
+  const filing = creditUnion ? "NCUA 5300 Call Report" : "FDIC Call Report";
   const peer = revenue.peer;
-  // A credit union files fee income with NCUA, a wider measure than a bank's deposit service charges.
-  const creditUnion = charterType === "credit_union";
-  const reported = creditUnion ? "fee income to NCUA" : "deposit service charges";
-  const population = peer
-    ? `${peer.count.toLocaleString("en-US")} ${peer.population ?? "banks and credit unions"} with ${bandText(peer.tierLabel)} in assets that reported ${reported} for ${quarterLabel(latest.quarter)}`
+  const measure = revenue.measureLabel.toLowerCase();
+  const comparedWith = peer
+    ? `${peer.charterLabel} with ${bandText(peer.tierLabel)} in assets, ${name} included`
     : null;
-  // The two peer counts answer different questions; one line says which institutions each counts.
-  const shareCohort =
-    peer && peer.feeShare != null && peer.peerMedianFeeShare != null && peer.peerShareCount != null
-      ? `The share median counts the ${peer.peerShareCount.toLocaleString("en-US")} other ${peer.population ?? "institutions"} its size with a share above 0%; the rank in dollars counts all ${peer.count.toLocaleString("en-US")} that reported ${reported}, ${name} included.`
-      : null;
   const finding = peer
-    ? `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, where 1 is the highest.`
-    : `${name} reported ${incomeLabel(latest.thousands)} in ${reported} for ${quarterLabel(latest.quarter)}.`;
+    ? `${name} reported ${incomeLabel(latest.thousands)} in ${measure} for ${quarter}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${comparedWith}, where 1 is the highest.`
+    : `${name} reported ${incomeLabel(latest.thousands)} in ${measure} for ${quarter}.`;
+  const showShare = peer && peer.feeShare != null && peer.peerMedianFeeShare != null;
+  const shareBase = creditUnion ? `revenue, year to date through ${quarter}` : `revenue, ${quarter}`;
   return (
     <HubSection
       id="revenue"
-      title={creditUnion ? "Fee income" : "Deposit service charges"}
+      title={revenue.measureLabel}
       line={finding}
-      source={`${name}'s ${filing}, ${quarterLabel(latest.quarter)}${peer ? `; the peer median and rank come from the same quarter's filings` : ""}.`}
+      source={`${name}'s ${filing}, ${quarter}${peer ? "; the rank and both medians come from the same quarter's filings" : ""}.`}
     >
       <figure className="min-w-0 max-w-5xl">
-        <figcaption className={FIGURE_CAPTION}>{creditUnion ? `Fee income ${name} reported to NCUA` : `Deposit service charges reported by ${name}`}{peer ? `, against ${peer.population ?? "institutions"} its size` : ""}</figcaption>
+        <figcaption className={FIGURE_CAPTION}>{revenue.measureLabel} reported by {name}{peer ? `, against ${peer.charterLabel} its size` : ""}</figcaption>
         <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
-          <Tile label={`${name}, ${quarterLabel(latest.quarter)}`} value={incomeLabel(latest.thousands)} />
+          <Tile label={`${name}, ${quarter}`} value={incomeLabel(latest.thousands)} />
           {revenue.trailingThousands !== null && <Tile label={`${name}, last four quarters`} value={incomeLabel(revenue.trailingThousands)} />}
-          {peer && <Tile label={`Median of ${peer.count.toLocaleString("en-US")} ${peer.population ?? "institutions"} its size, ${quarterLabel(latest.quarter)}`} value={incomeLabel(peer.medianThousands)} />}
+          {peer && <Tile label={`Median of ${peer.count.toLocaleString("en-US")} ${comparedWith}, ${quarter}`} value={incomeLabel(peer.medianThousands)} />}
         </dl>
-        {peer && peer.feeShare != null && peer.peerMedianFeeShare != null && (
+        {showShare && (
           <>
-            <p className={`${FIGURE_CAPTION} mt-8`}>
-              {creditUnion
-                ? `Fee income as a share of total income (interest plus noninterest income), year to date through ${quarterLabel(latest.quarter)}`
-                : `Service charges as a share of revenue (net interest plus noninterest income), ${quarterLabel(latest.quarter)}`}
-            </p>
+            <p className={`${FIGURE_CAPTION} mt-8`}>{revenue.measureLabel} as a share of {shareBase}</p>
             <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
-              <Tile
-                label={creditUnion ? `${name}'s fee income as a share of total income, year to date through ${quarterLabel(latest.quarter)}` : `${name}'s service charges as a share of revenue`}
-                value={shareLabel(peer.feeShare)}
-              />
+              <Tile label={`${name}'s share`} value={shareLabel(peer.feeShare!)} />
               {/* Keeps the share median under the dollar median, in the third column. */}
               {revenue.trailingThousands !== null && <div className="hidden sm:block" aria-hidden="true" />}
               <Tile
-                label={`Median of ${(peer.peerShareCount ?? peer.count).toLocaleString("en-US")} other ${peer.population ?? "institutions"} its size with a share above 0%${creditUnion ? `, year to date through ${quarterLabel(latest.quarter)}` : ""}`}
-                value={shareLabel(peer.peerMedianFeeShare)}
+                label={`Median of the ${peer.peerShareCount.toLocaleString("en-US")} of those ${peer.charterLabel} that filed a share, ${name} included`}
+                value={shareLabel(peer.peerMedianFeeShare!)}
               />
             </dl>
           </>
         )}
-        {population && (
+        {peer && (
           <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
-            Compared with {population}. That asset band is broad, so the rank in dollars partly reflects size. {peer?.population === "banks" ? "Credit unions are left out: their NCUA fee income is a wider measure than bank service charges." : peer?.population === "credit unions" ? "Banks are left out: their service charges are a narrower measure than NCUA fee income." : ""}
-            {shareCohort && ` ${shareCohort}`}
+            Compared with the {peer.count.toLocaleString("en-US")} {comparedWith}, that filed this measure for {quarter}. That asset
+            band is broad, so the rank in dollars partly reflects size.{" "}
+            {creditUnion
+              ? "Banks are left out: their deposit service charges are a narrower measure than NCUA fee income. Broad fee income includes member-service and membership fees; it is not deposit-only or overdraft-only income."
+              : "Credit unions are left out: their NCUA fee income is a wider measure than bank deposit service charges."}
           </p>
         )}
       </figure>
@@ -206,7 +219,7 @@ function RevenueSection({ name, charterType, revenue }: { name: string; charterT
   );
 }
 
-export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, titleAs: Title = "h1", close = true }: MarketReportBodyProps) {
+export function MarketReportBody({ report, eyebrow, preparedOn, actions, contactHref, correctionNote, revenue, branches, lineup, peers, titleAs: Title = "h1", close = true }: MarketReportBodyProps) {
   const { data, analysis, savedAt, sinceBought } = report;
   const market = data.market!;
   const droppedCount = Object.values(data.dropped ?? {}).reduce((sum, n) => sum + (n ?? 0), 0);
@@ -394,7 +407,9 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
 
           {lineup && <CheckingLineupSection name={name} lineup={lineup} live={Boolean(savedAt)} />}
 
-          {revenue && <RevenueSection name={name} charterType={data.subject.charter_type} revenue={revenue} />}
+          {revenue && <RevenueSection name={name} revenue={revenue} />}
+
+          {peers && <PeerSection name={name} peers={peersBesideRevenue(peers, revenue)} />}
 
           <section id="method" aria-labelledby="method-heading" className="space-y-3">
             <h2 id="method-heading" className="text-[20px] font-semibold tracking-[-0.02em] text-ink">
@@ -460,7 +475,7 @@ export function MarketReportBody({ report, eyebrow, preparedOn, actions, contact
             <p className="max-w-[860px] border-t border-border pt-3 text-[12.5px] leading-[1.65] text-ink-muted sm:mx-0 sm:text-left">{correctionNote}</p>
           </section>
           {close && (
-            <HamiltonClose competitors={competitorsWithData} institutionId={data.subject.institution_id} institutionName={name} />
+            <HamiltonClose competitors={competitorsWithData} institutionId={data.subject.institution_id} />
           )}
         </>
       )}

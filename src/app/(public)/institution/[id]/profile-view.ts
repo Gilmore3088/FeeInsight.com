@@ -28,14 +28,14 @@ export function aboutSame(a: number, b: number): boolean {
 
 /** The city page's wording for an empty cell, so the two pages explain a gap the same way. */
 export const NO_SCHEDULE = "No fee schedule found yet";
-export const EXTRACTION_PENDING = "Schedule found; extraction pending.";
+export const EXTRACTION_PENDING = "Fee schedule found; amounts not yet added.";
 export const NOT_IDENTIFIED = "Fee not identified in the reviewed schedule.";
-export const ACCOUNT_NOT_IDENTIFIED = "Account not identified";
+export const ACCOUNT_NOT_IDENTIFIED = "Account not yet known";
 
 /** The cell's short form of each note; the section states the full note once. */
 export function missingShort(note: string | null): string {
   if (note === NO_SCHEDULE) return "No schedule yet";
-  if (note === EXTRACTION_PENDING) return "Extraction pending";
+  if (note === EXTRACTION_PENDING) return "Amounts not yet added";
   if (note === NOT_IDENTIFIED) return "Not identified";
   return note ?? "";
 }
@@ -90,6 +90,8 @@ export interface CompareRow {
   excludedCard: number;
   /** Safe deposit drilling, key and late fees filed under the box's rent that the compared value leaves out. */
   excludedSafeDeposit?: number;
+  /** Fees charged on a different basis than the category's (a quarterly dormant fee), left out of the compared value. */
+  excludedBasis?: number;
   /** "waived with an average daily balance of $1,500 or more" when its one price states a waiver balance. */
   waiver: string | null;
   state: Median | null;
@@ -154,6 +156,7 @@ export function compareRows(
     excludedCdIra: v.excludedCdIra ?? 0,
     excludedCard: v.excludedCard ?? 0,
     excludedSafeDeposit: v.excludedSafeDeposit ?? 0,
+    excludedBasis: v.excludedBasis ?? 0,
     waiver: v.waiver ?? null,
     ...medians(v.category),
     missing: null,
@@ -194,13 +197,16 @@ export function referenceShort(row: CompareRow, stateShort: string): string | nu
   return ref.level === "state" ? `vs ${stateShort}` : "vs U.S.";
 }
 
-/** "Leaves out 2 CD/IRA fees filed under this fee", "... 1 card inactivity fee ...", "... 1 box drilling or key fee ...", or null. */
+/** "Leaves out 2 CD/IRA fees filed under this fee", "... 1 card inactivity fee ...", "... 1 box drilling or key fee ...", "... 1 fee charged on a different basis ...", or null. */
 export function excludedNote(row: CompareRow): string | null {
   const parts = [
     row.excludedCdIra > 0 ? `${row.excludedCdIra} CD/IRA ${row.excludedCdIra === 1 ? "fee" : "fees"}` : null,
     (row.excludedCard ?? 0) > 0 ? `${row.excludedCard} card inactivity ${row.excludedCard === 1 ? "fee" : "fees"}` : null,
     (row.excludedSafeDeposit ?? 0) > 0
       ? `${row.excludedSafeDeposit} box drilling or key ${row.excludedSafeDeposit === 1 ? "fee" : "fees"}`
+      : null,
+    (row.excludedBasis ?? 0) > 0
+      ? `${row.excludedBasis} ${row.excludedBasis === 1 ? "fee" : "fees"} charged on a different basis`
       : null,
   ].filter((part): part is string => part !== null);
   if (parts.length === 0) return null;

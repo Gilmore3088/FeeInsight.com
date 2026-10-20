@@ -216,9 +216,45 @@ export const HAND_REJECTED_TWINS: readonly HandRejectedTwin[] = [
     feeVerifiedId: 102462, ofFeePublishedId: 92248, sourceDocumentId: 12989, canonicalFeeKey: "overdraft", amount: 5,
     feeName: "E-statements Free Enhanced Overdraft Privilege Fee (per month)", pattern: "optional_overdraft_plan_twin", issue: 1360,
     why: "#1360: St. Louis Community's optional $5/month Enhanced Privilege plan, not the overdraft fee ($18 per item, 27613)",
+  },  // #1832 (read-only, Oct 17): unpublished copies of two misreads #1834 took down by hand
+  // (hand-takedowns.ts), each held back only as "Identical fee already published" behind its live
+  // twin. With the twin down, a publish strategy bump would select them again.
+  {
+    feeVerifiedId: 188270, ofFeePublishedId: 152366, sourceDocumentId: 32251, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 32251) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188271, ofFeePublishedId: 152366, sourceDocumentId: 23805, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Mortgage satisfaction fee (varies)", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 23805) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188272, ofFeePublishedId: 152366, sourceDocumentId: 23805, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 23805) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188273, ofFeePublishedId: 152366, sourceDocumentId: 20905, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Mortgage satisfaction fee (varies)", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 20905) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188274, ofFeePublishedId: 152366, sourceDocumentId: 20905, canonicalFeeKey: "other_lending_fee", amount: 1000,
+    feeName: "Varies – Mortgage satisfaction", pattern: "next_line_price_twin", issue: 1827,
+    why: "#1827: Citadel FCU (doc 20905) prints \"Mortgage satisfaction fee (varies)\" then \"$1,000.00 Mortgage modification\"; the $1,000 is the modification fee",
+  },
+  {
+    feeVerifiedId: 188724, ofFeePublishedId: 152591, sourceDocumentId: 13272, canonicalFeeKey: "other_lending_fee", amount: 4.95,
+    feeName: "Reconveyance .. Actual Cost: Returned payment", pattern: "heading_join_twin", issue: 1828,
+    why: "#1828: Oregon Community FCU (doc 13272) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
+  },
+  {
+    feeVerifiedId: 188725, ofFeePublishedId: 152591, sourceDocumentId: 21634, canonicalFeeKey: "other_lending_fee", amount: 4.95,
+    feeName: "Reconveyance .. Actual Cost: Returned payment", pattern: "heading_join_twin", issue: 1828,
+    why: "#1828: Oregon Community FCU (doc 21634) prints \"Reconveyance…… Actual Cost\" then \"Returned payment…… $4.95\"; two lines joined",
   },
 ];
-export const HAND_REJECTED_TWIN_FLAG = "hand_rejected:cut_cents_twin";
 const twinPattern = (twin: HandRejectedTwin) => twin.pattern ?? "cut_cents_twin";
 /** The flag a rejected twin carries. */
 export const twinFlag = (twin: HandRejectedTwin) => `hand_rejected:${twinPattern(twin)}`;

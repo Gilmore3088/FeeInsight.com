@@ -319,6 +319,13 @@ describe("Hamilton's paid answer eval (#1079)", () => {
     ])).toEqual([5000000]);
   });
 
+  it("accepts public-data dollar figures from queryData as stated, never a rate, and leaves its fee measures to the live catalog", () => {
+    expect(toolMoneyFigures([
+      { toolName: "queryData", input: { measure: "area:census-saipe:saipe_median_household_income", scope: { kind: "state", id: "FL" } }, output: { ok: true, rows: [{ geo_code: "12", period: "2023", value: 74580, unit: "usd" }, { geo_code: "12", period: "2023", value: 4.1, unit: "percent" }] } },
+      { toolName: "queryData", input: { measure: "fee:overdraft", scope: { kind: "national" } }, output: { ok: true, rows: [{ median_amount: 30, institution_count: 900 }] } },
+    ])).toEqual([74580]);
+  });
+
   describe("the report answer page", () => {
     const prepared: PreparedReportAnswer = {
       institutionId: 1001,
@@ -385,4 +392,16 @@ describe("Hamilton's paid answer eval (#1079)", () => {
       expect(write.calls).toBe(0);
     });
   });
+});
+
+it("uses the same scaled dollar contract in the eval while excluding nonmonetary and catalog values (#1858)",()=>{
+  expect(toolMoneyFigures([
+    {toolName:"queryData",input:{measure:"area:income"},output:{rows:[
+      {value:1234,unit:"thousands_dollars"},{value:2,unit:"millions_dollars"},{value:3,unit:"dollars (billions)"},
+      {value:1234,unit:"thousands of dollars"},{value:1,unit:"billions_dollars"},
+      {value:4.1,unit:"percent"},{value:500,unit:"persons"}]}},
+    {toolName:"queryData",input:{measure:"fee:overdraft"},output:{rows:[{value:35,unit:"usd"}]}},
+    {toolName:"getInstitution",output:{financials:{units:"dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+      latest:{service_charge_income:311051,fee_income_ratio:0.068}}}},
+  ])).toEqual([1234000,2000000,3000000000,1234000,1000000000,311051000]);
 });

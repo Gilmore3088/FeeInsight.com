@@ -52,3 +52,5 @@ A name rule that archives live fees ships with a dry read of the live names it w
 test fixture alone: the first run of v4 flagged 389 fees from a rule tested on three names. The
 second look must be able to clear a flag the current rule no longer supports; a rule revision
 that leaves its predecessor's flags pending still archives them.
+
+**Agent lesson:** gutenberg/pr-814-dry-read-live-rule

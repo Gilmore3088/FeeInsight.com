@@ -5,7 +5,7 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
  * Shared run path for the risk-and-cost area sources (US Courts bankruptcy filings, USDA farm
- * income and cash rents, BLS OEWS bank-occupation wages, FINRA NFCS state shares). Each source
+ * income and cash rents, BLS OEWS bank-occupation wages). Each source
  * module fetches and parses; this records one partition: the cleaning pass (`checkAreaStats`),
  * the upsert into `area_statistics`, and the partition row with what was missing. A fetch with
  * no rows records the partition empty with its reason and never fails the run.

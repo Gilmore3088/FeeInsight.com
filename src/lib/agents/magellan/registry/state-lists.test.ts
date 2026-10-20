@@ -52,9 +52,9 @@ const fetchMap = (routes: Record<string, () => Response>) =>
   }) as unknown as typeof fetch;
 
 describe("state-lists partitions", () => {
-  it("lists Florida, the configured datasets and one Urban partition", () => {
+  it("lists no depository state, the configured datasets and one Urban partition", () => {
     const now = new Date("2026-10-17T00:00:00Z");
-    expect(stateDepositoriesPartitions(now)).toEqual(["FL"]);
+    expect(stateDepositoriesPartitions(now)).toEqual([]);
     expect(stateNonbankLendersPartitions(now, {})).toEqual([]);
     expect(stateNonbankLendersPartitions(now, { STATE_LENDER_DATASETS: '[{"state":"NY","domain":"data.ny.gov","dataset":"abcd-1234"}]' })).toEqual(["NY-abcd-1234"]);
     expect(urbanDebtPartitions(now)).toEqual(["current"]);
@@ -63,34 +63,10 @@ describe("state-lists partitions", () => {
 });
 
 describe("state-public-depositories", () => {
-  it("reads the linked spreadsheet, matches names in the home-office state and keeps unmatched rows", async () => {
-    const { db, statements } = createDb();
-    const csv = "Depository Name,City,State\nFirst Bank of Testing*,Austin,TX\nSunshine Bank,Miami,FL\nUnknown Bank 10/15/2026,Ocala,FL\n";
-    const fetchImpl = fetchMap({
-      "qualified-public-depositories": () => new Response(`<a href="/docs/QPD_List_2026-09-30.csv">QPD list</a>`),
-      "QPD_List_2026-09-30.csv": () => new Response(csv),
-    });
-    const r = await runRegistryStateDepositories({ partitionKey: "FL", db, fetchOptions: { fetchImpl, backoffMs: 0 }, now: new Date("2026-10-17T00:00:00Z") });
-    expect(r).toMatchObject({ records: 3, matched: 2, unmatched: 1, writtenRows: 3, empty: false });
-    const p = partition(statements)!;
-    expect(p.status).toBe("succeeded");
-    expect(p.detail).toMatchObject({ list_date: "2026-09-30", list_date_basis: "file_name", status_counts: { limited: 1, listed: 1, withdrawing: 1 } });
-    expect(p.detail.missing_fields).toEqual(["cert", "charter", "status"]);
-    expect(p.detail.unmatched_examples).toEqual([{ name: "Unknown Bank", state: "FL", reason: "name_state_not_found" }]);
-  });
-
-  it("records the partition empty when the page links only a PDF", async () => {
-    const { db, statements } = createDb();
-    const fetchImpl = fetchMap({ "qualified-public-depositories": () => new Response(`<a href="/notice/qualified-depositories.pdf">PDF</a>`) });
-    const r = await runRegistryStateDepositories({ partitionKey: "FL", db, fetchOptions: { fetchImpl, backoffMs: 0 } });
-    expect(r.empty).toBe(true);
-    expect(r.emptyReason).toMatch(/PDF/);
-    expect(partition(statements)!.status).toBe("empty");
-    expect(statements.some((s) => s.text.includes("INSERT INTO state_public_depositories"))).toBe(false);
-  });
-
   it("rejects a state with no wired list", async () => {
     await expect(runRegistryStateDepositories({ partitionKey: "TX", db: createDb().db })).rejects.toThrow(/Invalid state depository list/);
+    // Florida's list was struck (DECISIONS.md "No non-commercial data").
+    await expect(runRegistryStateDepositories({ partitionKey: "FL", db: createDb().db })).rejects.toThrow(/Invalid state depository list/);
   });
 });
 
@@ -141,6 +117,23 @@ describe("state-nonbank-lenders", () => {
     expect(p.detail.missing_fields).toEqual(["city", "licenseDate"]);
   });
 
+  it("sends SOCRATA_APP_TOKEN as X-App-Token only when it is set", async () => {
+    const tokens = async (extra: Record<string, string>) => {
+      const seen: (string | undefined)[] = [];
+      const routes = fetchMap({ "/api/views/": () => Response.json(meta), "/resource/": () => Response.json(rows) });
+      const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+        seen.push((init?.headers as Record<string, string> | undefined)?.["X-App-Token"]);
+        return routes(url);
+      }) as unknown as typeof fetch;
+      await runRegistryStateNonbankLenders({ partitionKey: "NY-abcd-1234", db: createDb().db, env: { ...env, ...extra }, fetchOptions: { fetchImpl, backoffMs: 0 }, counties });
+      return seen;
+    };
+    const withToken = await tokens({ SOCRATA_APP_TOKEN: " tok-123 " });
+    expect(withToken.length).toBeGreaterThanOrEqual(2);
+    expect(withToken.every((t) => t === "tok-123")).toBe(true);
+    expect((await tokens({})).every((t) => t === undefined)).toBe(true);
+  });
+
   it("counts active and status-less rows, never inactive ones", () => {
     const base = { state: "NY", dataset: "d", recordKey: "k", licenseeName: "x", dba: null, licenseType: "Check Casher", licenseCategory: "check_casher" as const, licenseNumber: null, address: null, city: null, zip: null, county: null, countyFips: "36047", countyBasis: null, status: null, licenseDate: null, raw: {} };
     expect(countLenders([{ ...base, active: true }, { ...base, active: null }, { ...base, active: false }])).toEqual([
@@ -159,22 +152,24 @@ describe("urban-debt-in-america", () => {
     "dia_state_2023.csv": () => new Response(state),
   };
 
-  it("holds the rows and records the license text until the license is confirmed", async () => {
+  it("writes the rows with their attribution and records the licence text it found (ODC-By 1.0, released 2026-10-18)", async () => {
     const { db, statements } = createDb();
-    const r = await runRegistryUrbanDebt({ partitionKey: "current", db, env: {}, fetchOptions: { fetchImpl: fetchMap(routes), backoffMs: 0 } });
-    expect(r).toMatchObject({ held: true, records: 2, writtenRows: 0 });
-    expect(statements.some((s) => s.text.includes("INSERT INTO area_statistics"))).toBe(false);
+    const r = await runRegistryStateLists({ source: "urban-debt-in-america", partitionKey: "current", db, env: {}, fetchOptions: { fetchImpl: fetchMap(routes), backoffMs: 0 } });
+    expect(r).toMatchObject({ records: 2, writtenRows: 2 });
+    const insert = statements.find((s) => s.text.includes("INSERT INTO area_statistics"));
+    expect(insert).toBeTruthy();
+    expect(JSON.stringify(insert!.values)).toContain("Braga et al., Debt in America, Urban Institute");
     const p = partition(statements)!;
-    expect(p.status).toBe("empty");
+    expect(p.status).toBe("succeeded");
+    expect(p.detail.parser_version).toBe(2);
+    expect(p.detail.license).toMatchObject({ name: "ODC-By 1.0", attribution: "Braga et al., Debt in America, Urban Institute" });
     expect(p.detail.license.text_found[0]).toMatch(/Open Data Commons Attribution License/);
-    expect(p.detail.held_rows).toBe(2);
   });
 
-  it("writes once the license is confirmed", async () => {
+  it("writes nothing on a dry run", async () => {
     const { db, statements } = createDb();
-    const r = await runRegistryStateLists({ source: "urban-debt-in-america", partitionKey: "current", db, env: { URBAN_DEBT_LICENSE_CONFIRMED: "true" }, fetchOptions: { fetchImpl: fetchMap(routes), backoffMs: 0 } });
-    expect(r).toMatchObject({ held: false, writtenRows: 2 });
-    expect(statements.some((s) => s.text.includes("INSERT INTO area_statistics"))).toBe(true);
-    expect(partition(statements)!.status).toBe("succeeded");
+    const r = await runRegistryUrbanDebt({ partitionKey: "current", db, env: {}, dryRun: true, fetchOptions: { fetchImpl: fetchMap(routes), backoffMs: 0 } });
+    expect(r).toMatchObject({ records: 2, writtenRows: 0 });
+    expect(statements.some((s) => s.text.includes("INSERT INTO area_statistics"))).toBe(false);
   });
 });

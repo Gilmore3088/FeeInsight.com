@@ -5,7 +5,8 @@ import {
   getFeeCategorySummaries,
   getFeeCategoryDetail,
 } from "@/lib/data-store";
-import { getNationalIndex, getPeerIndex } from "@/lib/data-store";
+import { getNationalIndexStamped, getPeerIndexStamped } from "@/lib/data-store/fee-index";
+import { datasetCitation } from "@/lib/dataset-note";
 import {
   getInstitutionById,
   getFeesByInstitution,
@@ -20,6 +21,7 @@ import { getInstitutionFeeScheduleEvidence } from "@/lib/data-store/institution"
 import { getDisplayName, getFeeFamily, getFeeTier } from "@/lib/fee-taxonomy";
 import { getFeePublicationStatusLabel } from "@/lib/institution-quality";
 import { countedInstitutionCount } from "@/lib/data-store/fee-stats";
+import { financialMeasureDefinition, financialSourceForCharter } from "@/lib/data-store/financial-peer-contract";
 
 /**
  * Public tools — wrap the same logic as /api/v1/ routes but call DB directly
@@ -98,8 +100,8 @@ export const searchIndex = tool({
   execute: async ({ state, charter, district }) => {
     const hasFilters = state || charter || district;
 
-    const entries = hasFilters
-      ? await getPeerIndex({
+    const { entries, stamp } = hasFilters
+      ? await getPeerIndexStamped({
           state_code: state?.toUpperCase(),
           charter_type: charter,
           fed_districts: district
@@ -109,11 +111,13 @@ export const searchIndex = tool({
                 .filter((d) => d >= 1 && d <= 12)
             : undefined,
         })
-      : await getNationalIndex();
+      : await getNationalIndexStamped();
 
     return {
       scope: hasFilters ? "filtered" : "national",
       filters: { state: state ?? null, charter: charter ?? null, district: district ?? null },
+      // #1924: which read these figures came from, so an answer can cite the stamp.
+      dataset: datasetCitation(stamp),
       total: entries.length,
       data: entries.map((e) => ({
         category: e.fee_category,
@@ -186,7 +190,7 @@ export const searchInstitutions = tool({
 
 export const getInstitution = tool({
   description:
-    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, revenue trend, peer ranking, and quality signals. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
+    "Returns a single institution's full profile: identity, public fee publication status, verified fees, provisional fees, financials, source-consistent revenue trend, same-regulator and same-charter financial peer ranking with its dated definition and sample counts, and quality signals. When: institution-specific queries, 'what does Bank X charge?', profiling a named institution, URL-seeded institution analysis. Combine with: searchIndex(charter:bank, district:N) to benchmark verified rows against peer group, queryNationalData(complaints) if the institution is in a region with elevated complaint rates.",
   inputSchema: z.object({
     id: z.number().describe("Institution ID"),
   }),
@@ -194,11 +198,12 @@ export const getInstitution = tool({
     const inst = await getInstitutionById(id);
     if (!inst) return { error: "Institution not found", id };
 
+    const financialSource = financialSourceForCharter(inst.charter_type);
     const [feesRaw, financials, revenueTrend, peerRanking, evidence] = await Promise.all([
       getFeesByInstitution(id),
       getFinancialsByInstitution(id).catch(() => []),
-      getInstitutionRevenueTrend(id).catch(() => []),
-      getInstitutionPeerRanking(id).catch(() => null),
+      financialSource ? getInstitutionRevenueTrend(id, undefined, financialSource).catch(() => []) : [],
+      financialSource ? getInstitutionPeerRanking(id).catch(() => null) : null,
       getInstitutionFeeScheduleEvidence(id).catch(() => null),
     ]);
     const fees = feesRaw.filter((f) => f.review_status !== "rejected");
@@ -250,7 +255,8 @@ export const getInstitution = tool({
           ]
         : [];
     const provisionalFees = [...catalogProvisionalFees, ...pipelineProvisionalFees];
-    const sameScaleFinancials = financials.filter((record) => record.source !== "ffiec");
+    const sameScaleFinancials = financials.filter((record) => financialSource && record.source === financialSource)
+      .map((record) => ({ ...record, field_units: { fee_income_ratio: "fraction" } }));
     const status = inst.fee_publication_status ?? "unavailable";
 
     return {
@@ -286,11 +292,28 @@ export const getInstitution = tool({
       // getFinancialsByInstitution reads fdic and ncua rows only (see data-store/financial-sources.ts).
       financials: {
         units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        definition: financialSource ? { ...financialMeasureDefinition(financialSource), period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter" } : null,
         latest: sameScaleFinancials[0] ?? null,
         records: sameScaleFinancials.slice(0, 8),
       },
-      revenue_trend: revenueTrend,
-      peer_ranking: peerRanking,
+      // Numeric evidence inherits units and source from its containing row, not a sibling definition.
+      revenue_trend: revenueTrend.map((quarter) => ({
+        ...quarter,
+        source: financialSource,
+        units: "thousands of dollars",
+        field_units: { fee_income_ratio: "fraction", yoy_change_pct: "percent" },
+      })),
+      revenue_trend_definition: financialSource ? {
+        ...financialMeasureDefinition(financialSource),
+        ratio_definition: financialSource === "ncua" ? "Year-to-date broad fee income divided by year-to-date total revenue" : "Quarterly deposit-account service charges divided by quarterly total revenue",
+        ratio_period_basis: financialSource === "ncua" ? "year_to_date" : "standalone_quarter",
+      } : null,
+      peer_ranking: peerRanking?.comparison?.source === financialSource && peerRanking.comparison.charter_type === inst.charter_type ? {
+        ...peerRanking,
+        source: financialSource,
+        units: "thousands of dollars",
+        field_units: { fee_income_ratio: "fraction", peer_median_fee_ratio: "fraction" },
+      } : null,
       quality: {
         label: inst.quality_label ?? null,
         status: inst.quality_status ?? null,

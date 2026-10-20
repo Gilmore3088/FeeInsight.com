@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Logo } from "@/brand/components";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { getCurrentUser, type User } from "@/lib/auth";
@@ -28,11 +27,6 @@ async function AdminLayoutInner({
 }: {
   children: React.ReactNode;
 }) {
-  const requestHeaders = await headers();
-  if (requestHeaders.get("x-bfi-admin-login-route") === "1") {
-    return <>{children}</>;
-  }
-
   let user: User | null = null;
   try {
     user = await getCurrentUser();

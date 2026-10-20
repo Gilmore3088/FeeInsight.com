@@ -14,14 +14,12 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/hamilton/institution-membership", () => ({
   getUserInstitutionMemberships: mocks.memberships,
 }));
+vi.mock("@/app/account/confirm-email-button", () => ({ ConfirmEmailButton: () => null }));
 vi.mock("@/lib/hamilton/workspace-invite-link", () => ({
   WORKSPACE_INVITE_PATH: "/workspace-invite",
   acceptSignedWorkspaceInvite: mocks.acceptSigned,
   signedInviteMessage: () => "message",
 }));
-vi.mock("@/components/customer-footer", () => ({ CustomerFooter: () => null }));
-vi.mock("@/components/consumer-nav", () => ({ ConsumerNav: () => null }));
-vi.mock("@/components/public/search-modal", () => ({ SearchModal: () => null }));
 
 import WorkspaceInvitePage from "./page";
 

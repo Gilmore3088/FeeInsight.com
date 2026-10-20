@@ -36,11 +36,3 @@ export function toDateStr(val: string | Date | null | undefined): string {
   if (isNaN(d.getTime())) return "-";
   return d.toISOString().slice(0, 10);
 }
-
-/** Check if JSONB value is empty */
-export function isEmptyJsonb(val: unknown): boolean {
-  if (!val) return true;
-  if (Array.isArray(val)) return val.length === 0;
-  if (typeof val === "string") return val === "[]" || val === "null" || val === "";
-  return false;
-}

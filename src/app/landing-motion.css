@@ -30,7 +30,8 @@
    the copy column's own width, so the longer line always stops short of the card. */
 .fi-home-hero-copy { container-type: inline-size; }
 .fi-home-h1 {
-  font-size: clamp(1.25rem, 10.2cqi, 4.5rem);
+  /* Sized so the longer line, "doesn’t need to take weeks.", fits the copy column on one line. */
+  font-size: clamp(1.25rem, 8.6cqi, 4rem);
   line-height: 1.06;
   letter-spacing: -0.03em;
 }
@@ -68,24 +69,6 @@
   visibility: visible;
 }
 
-/* Research: tiles dim and light, the connector lines draw in, and a dot runs along each line. */
-.fi-home-source { transition: opacity 0.55s, background-color 0.55s, border-color 0.55s, color 0.55s; }
-.fi-home-flow path {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  transition: stroke-dashoffset 0.65s ease;
-}
-.fi-home-flow [data-on="true"] path { stroke-dashoffset: 0; }
-.fi-home-dot {
-  offset-rotate: 0deg;
-  animation: fi-home-travel 2.1s linear infinite;
-}
-.fi-home-flow[data-playing="false"] .fi-home-dot { animation-play-state: paused; }
-@keyframes fi-home-travel {
-  from { offset-distance: 0%; }
-  to { offset-distance: 100%; }
-}
-.fi-home-output { transition: opacity 0.5s ease, transform 0.5s ease; }
 .fi-home-question { transition: opacity 0.3s ease, transform 0.3s ease; }
 
 /* A stacked bar draws in from the left once (the market report's position split). */
@@ -95,16 +78,26 @@
   to { clip-path: inset(0 0 0 0); }
 }
 
+/* One question: as each card lights, a dot runs down its line (the research stage's dots, Oct 17). */
+.fi-oq-dot {
+  offset-rotate: 0deg;
+  offset-distance: 0%;
+  opacity: 0;
+  animation: fi-oq-travel 0.9s ease-in-out forwards;
+}
+@keyframes fi-oq-travel {
+  0% { offset-distance: 0%; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fi-grow-x { animation: none; }
-  .fi-home-fade,
-  .fi-home-dot { animation: none; }
-  .fi-home-dot { display: none; }
+  .fi-home-fade { animation: none; }
+  .fi-oq-dot { display: none; animation: none; }
   .fi-home-slide,
   .fi-home-slide[data-active="true"],
-  .fi-home-source,
-  .fi-home-flow path,
-  .fi-home-output,
   .fi-home-question { transition: none; }
   .fi-home-slide { transform: none; }
 }

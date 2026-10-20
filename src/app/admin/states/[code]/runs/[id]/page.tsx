@@ -110,7 +110,7 @@ export default async function AgentRunDetailPage({
 }: {
   params: Promise<{ code: string; id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { code, id } = await params;
   const stateCode = code.toUpperCase();
   const runId = Number(id);

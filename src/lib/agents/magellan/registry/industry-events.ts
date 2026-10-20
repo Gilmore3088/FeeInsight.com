@@ -9,12 +9,12 @@ import {
   eventDate,
   exactNameKey,
   fetchCdfiAwards,
-  fetchCourtListenerYear,
   fetchFdicFailures,
   fetchFedH2Actions,
   fetchFhlbMembers,
   fetchNcuaLiquidations,
   fetchNcuaMergers,
+  fetchNcuaProposedMergers,
   fetchOccBulletins,
   fetchRuleComments,
   fetchSbaResources,
@@ -52,17 +52,21 @@ import { cikBatch, SEC_FILING_BATCHES } from "./sec";
  *   fed-h2, occ-bulletin           early warning: merger, branch and charter applications
  *   fdic-failures                  BankFind /failures             -> institution_structure_events
  *   ncua-mergers, ncua-liquidations NCUA published lists          -> institution_structure_events
+ *   ncua-proposed-mergers          NCUA member-vote list          -> institution_structure_events
+ *                                  (merging CU as institution, continuing CU's charter in acquirer_cert)
  *   fhlb-members                   FHFA quarterly membership XLSX -> fhlb_members
  *   cdfi-awards                    CDFI Fund award list           -> cdfi_awards
  *   sba:<file>                     SBA 7(a)/504 FOIA CSV          -> sba_lender_lending (per lender)
  *   sec:batch-N                    XBRL fee lines + merger 8-Ks   -> sec_fee_income_facts, sec_event_filings
  *   comments:<topic>               regulations.gov (key needed)   -> rule_comments
- *   lawsuits:<year>                CourtListener RECAP search     -> fee_lawsuits
+ *
+ * The CourtListener fee-lawsuit partitions (lawsuits:<year>) were removed on 2026-10-17: its
+ * terms allow only personal, educational or research use (DECISIONS.md "No non-commercial data").
+ * Rows already in fee_lawsuits are never read.
  */
 
 export const INDUSTRY_EVENTS_SOURCE = "industry-events";
-export const INDUSTRY_EVENTS_PARSER_VERSION = 2;
-export const INDUSTRY_EVENTS_LAWSUIT_FIRST_YEAR = 2010;
+export const INDUSTRY_EVENTS_PARSER_VERSION = 3;
 const WRITE_CHUNK = 1_000;
 const SEC_PAUSE_MS = 250;
 const SEC_CONCURRENCY = 2;
@@ -73,11 +77,13 @@ const MAX_10K_SCANS = 30;
 const HOURS = { day: 24, week: 24 * 7, month: 24 * 30, quarter: 24 * 90 };
 
 export function industryEventsPartitions(now: Date): string[] {
+  void now;
   const out = [
     "fed-h2",
     "occ-bulletin",
     "fdic-failures",
     "ncua-mergers",
+    "ncua-proposed-mergers",
     "ncua-liquidations",
     "fhlb-members",
     "cdfi-awards",
@@ -87,7 +93,6 @@ export function industryEventsPartitions(now: Date): string[] {
   // Always listed: without DATA_GOV_API_KEY each run records the partition as skipped with that
   // reason (never a failure) and looks again a day later.
   out.push(...Object.keys(RULE_COMMENT_TOPICS).map((t) => `comments:${t}`));
-  for (let year = now.getUTCFullYear(); year >= INDUSTRY_EVENTS_LAWSUIT_FIRST_YEAR; year -= 1) out.push(`lawsuits:${year}`);
   return out;
 }
 
@@ -253,6 +258,64 @@ function prepareListEvents(fetched: FetchedEvents, index: InstitutionIndex, sour
     refreshHours,
     extra: { ...fetched.extra, total: fetched.total, duplicate_records: fetched.events.length - unique.length },
     write: writeStructureEvents(source, rows),
+  };
+}
+
+/**
+ * NCUA's proposed-merger list names both credit unions but gives no charter or state, so each
+ * name is matched exactly against credit union records only (a name two credit unions share stays
+ * unmatched). The merging credit union is the row's institution; the continuing one's charter goes
+ * in acquirer_cert, as the other NCUA lists do, so its own profile can find the deal.
+ */
+export function prepareProposedMergers(fetched: FetchedEvents, creditUnions: InstitutionIndexRow[]): Prepared {
+  const ncua = creditUnions.filter((r) => r.source === "ncua");
+  const index = buildInstitutionIndex(ncua);
+  const charterById = new Map(ncua.map((r) => [Number(r.id), idValue(r.cert_number)]));
+  const unique = [...new Map(fetched.events.map((e) => [e.eventKey, e])).values()];
+  const cleaning: CleaningInput[] = [];
+  let acquirersMatched = 0;
+  let acquirersAmbiguous = 0;
+  const rows: StructurePayload[] = unique.map((e) => {
+    const merging = matchInstitution(index, { name: e.institutionName, nameWithoutState: true });
+    const continuing = matchInstitution(index, { name: e.acquirerName, nameWithoutState: true });
+    const acquirerCert = continuing.institutionId !== null ? charterById.get(continuing.institutionId) ?? null : null;
+    if (acquirerCert) acquirersMatched += 1;
+    if (continuing.ambiguous) acquirersAmbiguous += 1;
+    cleaning.push({
+      key: e.eventKey,
+      institutionId: merging.institutionId,
+      ambiguous: merging.ambiguous,
+      fields: { name: e.institutionName, acquirer_name: e.acquirerName, effective_date: e.effectiveDate },
+      dates: { effective_date: e.effectiveDate },
+    });
+    return {
+      event_key: e.eventKey,
+      cert: merging.institutionId !== null ? charterById.get(merging.institutionId) ?? null : null,
+      institution_id: merging.institutionId,
+      institution_name: e.institutionName,
+      change_code: e.changeCode,
+      change_description: e.changeDescription,
+      effective_date: e.effectiveDate,
+      acquirer_cert: acquirerCert,
+      acquirer_name: e.acquirerName,
+      office_city: null,
+      office_state: null,
+      raw_json: e.raw,
+      source_url: fetched.sourceUrl,
+    };
+  });
+  return {
+    sourceUrl: fetched.sourceUrl,
+    rows: rows.length,
+    matched: rows.filter((r) => r.institution_id !== null).length,
+    missingFields: fetched.missingFields,
+    unexpectedFields: fetched.unexpectedFields,
+    truncated: fetched.truncated,
+    cleaning,
+    reason: rows.length === 0 ? fetched.reason ?? "no records" : null,
+    refreshHours: HOURS.week,
+    extra: { ...fetched.extra, total: fetched.total, duplicate_records: fetched.events.length - unique.length, acquirers_matched: acquirersMatched, acquirers_ambiguous: acquirersAmbiguous },
+    write: writeStructureEvents("ncua-proposed-mergers", rows),
   };
 }
 
@@ -522,75 +585,8 @@ async function prepareSba(key: SbaFileKey, index: InstitutionIndex, options: Reg
 }
 
 // ---------------------------------------------------------------------------
-// Lawsuits and rule comments
+// Rule comments
 // ---------------------------------------------------------------------------
-
-async function prepareLawsuits(year: number, index: InstitutionIndex, options: RegistryFetchOptions | undefined, env: NodeJS.ProcessEnv, now: Date): Promise<Prepared> {
-  const token = env.COURTLISTENER_API_TOKEN?.trim() || null;
-  const fetched = await fetchCourtListenerYear(year, options, token);
-  const refreshHours = year === now.getUTCFullYear() ? HOURS.week : HOURS.quarter;
-  if (fetched.authRequired) {
-    return { sourceUrl: fetched.sourceUrl, rows: 0, matched: 0, missingFields: [], unexpectedFields: [], truncated: false, cleaning: [], reason: fetched.authRequired, skipped: true, refreshHours: HOURS.week, extra: {}, write: async () => 0 };
-  }
-  const cleaning: CleaningInput[] = [];
-  const rows = fetched.cases.map((c) => {
-    const match = matchInstitution(index, { name: c.defendantName, nameWithoutState: true });
-    cleaning.push({
-      key: c.docketId,
-      institutionId: match.institutionId,
-      ambiguous: match.ambiguous,
-      fields: { case_name: c.caseName, court: c.court, filed_date: c.filedDate, defendant: c.defendantName },
-      dates: { filed_date: c.filedDate },
-    });
-    return {
-      docket_id: c.docketId,
-      case_name: c.caseName,
-      court: c.court,
-      court_id: c.courtId,
-      docket_number: c.docketNumber,
-      filed_date: c.filedDate,
-      docket_url: c.docketUrl,
-      suit_nature: c.suitNature,
-      cause: c.cause,
-      defendant_name: c.defendantName,
-      institution_id: match.institutionId,
-      match_method: match.method,
-      raw_json: c.raw,
-    };
-  });
-  return {
-    sourceUrl: fetched.sourceUrl,
-    rows: rows.length,
-    matched: rows.filter((r) => r.institution_id !== null).length,
-    missingFields: fetched.missingFields,
-    unexpectedFields: fetched.unexpectedFields,
-    truncated: fetched.truncated,
-    cleaning,
-    reason: rows.length === 0 ? "CourtListener found no matching dockets filed this year" : null,
-    refreshHours,
-    extra: { reported_count: fetched.count, with_token: Boolean(token) },
-    write: (db, runId) =>
-      writeChunks(rows, (payload) => db`
-        INSERT INTO fee_lawsuits (
-          source, docket_id, case_name, court, court_id, docket_number, filed_date, docket_url, suit_nature, cause,
-          defendant_name, institution_id, match_method, partition_key, raw_json, agent_run_id, fetched_at)
-        SELECT 'courtlistener', r.docket_id, r.case_name, r.court, r.court_id, r.docket_number, r.filed_date, r.docket_url,
-               r.suit_nature, r.cause, r.defendant_name, r.institution_id, r.match_method, ${`lawsuits:${year}`},
-               COALESCE(r.raw_json, '{}'::jsonb), ${runId}, NOW()
-          FROM jsonb_to_recordset(${payload}::jsonb) AS r(
-            docket_id text, case_name text, court text, court_id text, docket_number text, filed_date date,
-            docket_url text, suit_nature text, cause text, defendant_name text, institution_id bigint,
-            match_method text, raw_json jsonb)
-        ON CONFLICT (source, docket_id) DO UPDATE SET
-          case_name = EXCLUDED.case_name, court = EXCLUDED.court, court_id = EXCLUDED.court_id,
-          docket_number = EXCLUDED.docket_number, filed_date = EXCLUDED.filed_date, docket_url = EXCLUDED.docket_url,
-          suit_nature = EXCLUDED.suit_nature, cause = EXCLUDED.cause, defendant_name = EXCLUDED.defendant_name,
-          institution_id = EXCLUDED.institution_id, match_method = EXCLUDED.match_method,
-          raw_json = EXCLUDED.raw_json, agent_run_id = EXCLUDED.agent_run_id, fetched_at = NOW()
-        RETURNING 1
-      `),
-  };
-}
 
 async function prepareComments(topic: RuleCommentTopic, index: InstitutionIndex, options: RegistryFetchOptions | undefined, env: NodeJS.ProcessEnv): Promise<Prepared> {
   const key = env.DATA_GOV_API_KEY?.trim();
@@ -820,6 +816,12 @@ async function prepare(options: RegistryIndustryEventsOptions, db: RegistryDb, n
     if (!m || Number(m[1]) >= SEC_FILING_BATCHES) throw new Error(`Invalid industry-events SEC partition: ${key}`);
     return prepareSec(Number(m[1]), db, fo, options.pauseMs ?? SEC_PAUSE_MS);
   }
+  if (family === "ncua-proposed-mergers") {
+    const creditUnions = await db<InstitutionIndexRow[]>`
+      SELECT id, source, cert_number, rssd_id, institution_name, state_code FROM institution_sources WHERE source = 'ncua'
+    `;
+    return prepareProposedMergers(await fetchNcuaProposedMergers(fo), [...creditUnions]);
+  }
   const index = await loadIndex(db);
   switch (family) {
     case "fdic-failures":
@@ -842,11 +844,6 @@ async function prepare(options: RegistryIndustryEventsOptions, db: RegistryDb, n
     case "comments":
       if (!arg || !(arg in RULE_COMMENT_TOPICS)) throw new Error(`Invalid industry-events comments partition: ${key}`);
       return prepareComments(arg as RuleCommentTopic, index, fo, env);
-    case "lawsuits": {
-      const year = Number(arg);
-      if (!Number.isInteger(year) || year < 1990 || year > now.getUTCFullYear()) throw new Error(`Invalid industry-events lawsuit year: ${key}`);
-      return prepareLawsuits(year, index, fo, env, now);
-    }
     default:
       throw new Error(`Unknown industry-events partition: ${key}`);
   }

@@ -7,7 +7,7 @@ import { Breadcrumbs } from "@/components/breadcrumbs";
 import { DistrictsTable } from "./districts-table";
 
 export default async function DistrictsPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   let districts: Awaited<ReturnType<typeof getDistrictOverview>> = [];
 

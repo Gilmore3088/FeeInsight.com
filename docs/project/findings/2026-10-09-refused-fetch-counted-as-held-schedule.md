@@ -8,3 +8,5 @@ Found on 2026-10-09 after PR 850 merged. Run 3319 added 16 of the 20 hand-found 
   So none of the four had a link or a live fee.
 - **Fix.** A stored copy now counts as held only when Rosetta read it: an `agent_source_texts` row with `status = 'completed'`. The bank's current link and its companion rows still count as before.
 - **Lesson.** Before treating a document row as "we have this page", check that it has text. A refused fetch writes a document row too.
+
+**Agent lesson:** magellan/pr-850-held-means-readable

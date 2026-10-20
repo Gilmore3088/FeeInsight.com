@@ -53,3 +53,5 @@ team also read poorly. Today's text measures can't predict them.
 
 **Lesson:** test a skip against live fees before adding it. A read that looks wasteful, such as
 reading the same text a second time, can still find fees the first read missed.
+
+**Agent lesson:** knox/pr-1776-no-fee-page-skip

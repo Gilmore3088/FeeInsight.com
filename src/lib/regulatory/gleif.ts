@@ -5,7 +5,8 @@ import { CsvStreamParser } from "./industry-events";
 
 /**
  * GLEIF legal entity identifiers (https://www.gleif.org), free to use under GLEIF's terms of
- * use (not confirmed as CC0; the loader records the terms URL with every run). Pure transport
+ * use: "The data available through the Access Service are provided under the CC0 licence"
+ * (read 2026-10-17; the loader records the terms URL with every run). Pure transport
  * and parsing: no DB access.
  *
  * - Level 1 (who is who): read from GLEIF's API (`/lei-records?filter[lei]=...`, 200 per call),
@@ -23,14 +24,23 @@ import { CsvStreamParser } from "./industry-events";
 export const GLEIF_API_BASE = "https://api.gleif.org/api/v1";
 export const GLEIF_GOLDEN_COPY_LATEST_URL = "https://goldencopy.gleif.org/api/v2/golden-copies/publishes/latest";
 export const GLEIF_TERMS_URL = "https://www.gleif.org/en/meta/lei-data-terms-of-use";
-export const GLEIF_LICENSE_NOTE = "GLEIF data, free of charge under GLEIF's terms of use; not confirmed as CC0";
+export const GLEIF_LICENSE_NOTE = "GLEIF data, CC0 1.0 under GLEIF's terms of use (read 2026-10-17); do not imply GLEIF endorsement";
 
 export const GLEIF_LEVEL2_PARTITION = "level2";
 export const GLEIF_LEVEL1_SHARDS = 8;
 
-/** Level 2 first, so the level-1 shards also pick up the parents and siblings it names. */
+/**
+ * LEI matching for tracked institutions (#1868), keys before the name search. Only the
+ * partition keys live here; the matching is gleif-lei-match.ts.
+ */
+export const GLEIF_LEI_MATCH_PARTITIONS = ["lei-match-rssd", "lei-match-fdic", "lei-match-ncua", "lei-match-name"] as const;
+
+/**
+ * LEI matching first, so level 2 has LEIs to look up; then level 2, so the level-1 shards also
+ * pick up the parents and siblings it names.
+ */
 export function gleifPartitions(): string[] {
-  return [GLEIF_LEVEL2_PARTITION, ...Array.from({ length: GLEIF_LEVEL1_SHARDS }, (_, i) => `level1-${i}`)];
+  return [...GLEIF_LEI_MATCH_PARTITIONS, GLEIF_LEVEL2_PARTITION, ...Array.from({ length: GLEIF_LEVEL1_SHARDS }, (_, i) => `level1-${i}`)];
 }
 
 export function level1ShardOf(partitionKey: string): number | null {

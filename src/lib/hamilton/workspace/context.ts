@@ -152,7 +152,7 @@ export function ruleChangeObservations(articles: RegArticleRow[], bankCategories
           source: { label: `${a.source} release`, table: "reg_articles", url: a.link, asOf },
         }],
         actions: feeCategory ? ["research_fee" as const, "ask" as const] : ["ask" as const],
-        salience: a.topic === "rulemaking_compliance" ? 0.8 : 0.6,
+        salience: a.topic === "rulemaking_compliance" || a.topic === "enforcement" ? 0.8 : 0.6,
       };
     });
 }

@@ -5,10 +5,6 @@ import { latestPublishableQuarter, previousQuarter, quarterEndDate, type Quarter
 import {
   CDFI_LINK,
   CDFI_PAGE_URL,
-  BANK_ON_LINK,
-  BANK_ON_PAGE_URL,
-  readBankOnList,
-  readBankOnPage,
   DESIGNATION_LIST_KEYS,
   DESIGNATION_LISTS,
   FDIC_FLAG_FIELDS,
@@ -43,13 +39,14 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  *
  * Partitions: fdic-institution-flags (MDI, specialty group, mutual vs stock, Subchapter S),
  * ncua-foicu-flags (low-income designation, field-of-membership type, year opened), ncua-mdi,
- * cdfi-fund, bank-on (Bank On certified accounts). Matching: FDIC cert or NCUA charter when the list carries one, else exact
+ * cdfi-fund. Matching: FDIC cert or NCUA charter when the list carries one, else exact
  * normalized name plus state; every unmatched row is kept (institution_id NULL) and listed in
- * the partition detail.
+ * the partition detail. The Bank On list was struck on 2026-10-17 (DECISIONS.md "No
+ * non-commercial data"); its rows already loaded are never read.
  */
 
 export const DESIGNATION_LISTS_SOURCE = "designation-lists";
-export const DESIGNATION_LISTS_PARSER_VERSION = 1;
+export const DESIGNATION_LISTS_PARSER_VERSION = 2;
 const FDIC_PAGE_LIMIT = 10_000;
 const FDIC_MAX_PAGES = 5;
 const REFRESH_HOURS: Record<DesignationList, number> = {
@@ -57,7 +54,6 @@ const REFRESH_HOURS: Record<DesignationList, number> = {
   [DESIGNATION_LISTS.ncuaFoicu]: 24 * 7,
   [DESIGNATION_LISTS.ncuaMdi]: 24 * 30,
   [DESIGNATION_LISTS.cdfi]: 24 * 30,
-  [DESIGNATION_LISTS.bankOn]: 24 * 30,
 };
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 2_000;
@@ -291,9 +287,7 @@ export async function runRegistryDesignationLists(options: RegistryDesignationLi
         ? await fetchFoicu(fetchOptions, now)
         : list === DESIGNATION_LISTS.ncuaMdi
           ? await fetchLinkedList(fetchOptions, today, NCUA_MDI_PAGE_URL, NCUA_MDI_LINK, readNcuaMdiList, "NCUA MDI list")
-          : list === DESIGNATION_LISTS.cdfi
-            ? await fetchLinkedList(fetchOptions, today, CDFI_PAGE_URL, CDFI_LINK, readCdfiList, "CDFI Fund certified list")
-            : await fetchLinkedList(fetchOptions, today, BANK_ON_PAGE_URL, BANK_ON_LINK, readBankOnList, "Bank On certified accounts", readBankOnPage);
+          : await fetchLinkedList(fetchOptions, today, CDFI_PAGE_URL, CDFI_LINK, readCdfiList, "CDFI Fund certified list");
 
   const institutions = (await db`
     SELECT id, source, cert_number, ncua_charter_id, institution_name, state_code

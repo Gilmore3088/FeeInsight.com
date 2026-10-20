@@ -2,6 +2,7 @@ import { scopedFeeStatements, type FeeApplicability } from "@/lib/fee-audience";
 import { CELL_SEPARATOR } from "@/lib/agents/rosetta/html-dom";
 import { composableTail, passesDarwinChecks, titleTail } from "@/lib/agents/knox/layout";
 import type { AccountLineup } from "@/lib/agents/knox/lineup";
+import type { AncillaryProduct } from "@/lib/agents/knox/ancillary-product";
 import { CANONICAL_KEY_MAP } from "@/lib/fee-taxonomy";
 import { ATM_ADJUSTMENT, CHECKBOOK_RECONCILIATION, CROSS_BORDER_BUNDLE, FAX_SERVICE, PER_PAGE_COPY, researchSplitTarget } from "@/lib/fee-fold";
 import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDroppedDecimalPoints } from "@/lib/custom-report/source-check";
@@ -9,6 +10,10 @@ import { joinWrappedLeaderNames, parenBalance, stripPriceFootnoteMarks, withDrop
 // Shared with the source check since #1334; Knox's tests and callers keep importing it from here.
 export { withDroppedDecimalPoints };
 import { newestColumnText } from "@/lib/fee-change-columns";
+import { feeBullets, withoutFeeBullets } from "@/lib/custom-report/fee-bullets";
+import { isStackedFeeLabel } from "@/lib/custom-report/stacked-fee-prices";
+import { domesticWireClausePrices } from "@/lib/custom-report/wire-clause-prices";
+import type { OwnFeeUnit } from "@/lib/custom-report/own-fee-unit";
 
 /**
  * Knox's deterministic extraction rules (`extract.rules`), pass 1. Pure: text in,
@@ -53,12 +58,34 @@ export interface ExtractedFeeCandidate extends Partial<FeeApplicability> {
   strategy?: string;
   /** Monthly maintenance only: the account's name, thresholds and waiver (`lineup.ts`). */
   lineup?: AccountLineup | null;
+  /** Explicit primary-document ownership, independent of monthly balance/waiver fields. */
+  ancillaryProduct?: AncillaryProduct;
+  /** v82: the second fee a shared priced line carries (`twin:nsf`), part of the raw dedupe key. */
+  lineShare?: string;
+  /** Complete bounded own-bullet evidence; retain its conditions beyond the legacy excerpt cap. */
+  ownedBullet?: true;
+  /** Complete single-column price paragraph with a bounded, explicit exception policy. */
+  ownedPolicy?: true;
+  /** Bounded literal own-unit evidence; metadata never supplies price/category admission. */
+  ownUnit?: OwnFeeUnit;
+  /** Complete exact own additive charge clause; source metadata, never admission authority. */
+  ownCondition?: string;
+  /** Literal product/age eligibility not yet represented safely by benchmark selection. */
+  eligibilityReview?: true;
+  /** Bounded, explicitly referenced context; never read as the price's charging unit. */
+  linkedConditions?: string;
 }
 
 /** `untraced`: a read whose name and price don't trace to one row of the text (Knox's self-check). */
-export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies";
+export type HeldShape = "zero" | "range" | "percentage" | "unclassified" | "untraced" | "varies" | "eligibility" | "periodic_program";
 
 export interface HeldFeeCandidate extends Partial<FeeApplicability> {
+  /** Eligibility holds retain their complete own-price policy and independent event key. */
+  ownedPolicy?: true;
+  ownUnit?: OwnFeeUnit;
+  ownCondition?: string;
+  linkedConditions?: string;
+  lineShare?: string;
   shape: HeldShape;
   feeName: string;
   /** 0 for a free fee, the low end of a range, null for a percentage. */
@@ -96,7 +123,8 @@ export type DroppedLineReason =
   | "no_name"
   | "no_fee_word_not_table_row"
   | "not_fee_schedule"
-  | "unclassified_cap";
+  | "unclassified_cap"
+  | "wrapped_bullet_unresolved";
 
 function countDrop(result: ExtractionRulesResult, reason: DroppedLineReason, count = 1): void {
   result.dropped ??= {};
@@ -127,11 +155,13 @@ interface FeePattern {
  * v26: the held groups James folded into existing categories (decision card, Oct 7 2026:
  * "Fold into existing"; anything beyond the ~50 tracked categories is not worth its own).
  * Each maps to the category the taxonomy already gives the fee (returned mail and
- * excess-activity fees -> account research; fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
+ * excess-activity fees -> account research, until returned mail got its own type on Oct 15 (#1398); fax -> document reproduction since Oct 9; collection items and foreign checks -> collection
  * items since Oct 8, check cashing before; loan cancellation, credit reports and UCC filings -> loan origination, as the keys
- * file them; loan refinancing and document fees -> other lending). Returned statements stay
- * held: the keys file them as paper statements, a featured fee they would skew. The hand-checked answer keys file these
- * lines as "unmapped", so the gate re-files them with `foldedCategory` (answer-key-gate.ts).
+ * file them; loan refinancing and document fees -> other lending). Returned statements stayed
+ * held until v90 (the keys file them as paper statements, a featured fee they would skew); since
+ * James's "File them" (Oct 20) the held-name rules file them as returned mail. The hand-checked answer keys file these
+ * lines as "unmapped", so the gate re-files them with `foldedCategory` and, for returned statements,
+ * `RETURNED_STATEMENT` (answer-key-gate.ts).
  * Kept last in FEE_PATTERNS but for v75's recall families, so they only claim lines no other
  * rule recognizes. Membership,
  * phone transfers, credit card and uncollected-funds fees have no right home and stay held.
@@ -191,7 +221,7 @@ const SHORT_WINDOW = String.raw`(?:\b(?:less than|within|before|prior to)|\bw\/i
  * the 50 types: a family the key files under a retired key (mortgage payoff, reconveyance, lien
  * release, IRA distribution) takes that key's fold home (`RETIRED_CATEGORIES` in
  * fee-fold.ts), never the retired key. Kept after every other name rule (see FEE_PATTERNS).
- * Returned statements stay held (James's call since v26), and so does a bare "Wire Transfer Fee":
+ * Returned statements file through the held-name rules (v90). A bare "Wire Transfer Fee" stays held:
  * about 1 in 5 such lines say incoming or international after the price, which a name rule cannot see.
  * A family the Texas or seven-state gate keys leave unfiled (printouts, instant-issue cards, travel
  * and reloadable cards, loan coupon books, remote deposit capture) stays held too, so the gates add
@@ -273,6 +303,8 @@ export const V78_RECALL_PATTERNS: FeePattern[] = [
   { key: "wire_domestic_incoming", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\binbound wires?\b/i },
   { key: "wire_domestic_outgoing", pattern: /^(?![\s\S]*\b(?:international|foreign|intl)\b)[\s\S]*\boutbound wires?\b/i },
   { key: "atm_non_network", pattern: /\bnon[-\s]?[\w-]+(?:\s+owned)?(?:\s*\/\s*affiliated)?\s+(?:ATMs|machines?)\b/i },
+  // v80: a bank's name of two or three capitalised words before "ATMs" ("non-Beacon Bank ATMs").
+  { key: "atm_non_network", pattern: /\b[Nn]on[-\s]?[\w-]+(?:\s+[A-Z][\w&-]*){1,2}\s+(?:ATMs|ATMS)\b/ },
   { key: "deposited_item_return", pattern: /\bdeposited items? returns\b/i },
   { key: "check_image", pattern: /\bimage cop(?:y|ies)\b/i },
   { key: "estatement_fee", pattern: /^\W*electronic statements?\W*$/i },
@@ -571,7 +603,7 @@ export const FEE_PATTERNS: FeePattern[] = [
   // read at all (Knox recall diagnosis, 17 Oct 2026). Each files under one of the 50 types (a
   // retired key's fold home, never the retired key). Last, after the fold too, so they only claim
   // lines no rule above names: a club's excess withdrawals and a faxed payoff request stay where
-  // the fold files them. Returned statements stay held (James's call since v26).
+  // the fold files them. Returned statements are the held-name rules' (v90).
   ...RECALL_FAMILY_PATTERNS,
   ...V78_RECALL_PATTERNS,
 ];
@@ -583,12 +615,20 @@ export const FEE_PATTERNS: FeePattern[] = [
  * after every rule above, so they only claim names no rule recognizes. A bare "Wire Transfer
  * Fee" is left out: about 1 in 5 such lines say incoming or international after the price.
  *
- * Off until James switches it on (`KNOX_HELD_NAME_RULES_LIVE`, with a rules version bump in the
- * same change): on, new reads file these names, the held re-check sends the held lines to
+ * On since Oct 20 (v89) under James's sampled-clean rule (his decision card, 01:54 UTC, "all eight
+ * with rules"), with the returned-statement rule dropped to keep his v26 call; v90 restores it
+ * (his decision card, Oct 20 03:51 UTC, "File them"). The global dry run released 478 held lines,
+ * 440 passing Darwin's checks (231 returned statements, early closure 121, stop payment 62, box
+ * sizes 12, paper statements 10, IRA close-outs 4), and a random 20 of the 478 were all printed on
+ * the bank's document. On (it takes a
+ * rules version bump to switch, either way), new reads file these names, the held re-check sends the held lines to
  * Darwin (`knox_promoted_from_held`, plus `knox_held_name_rule`), and Hamilton's rules re-check
  * reads them the same way. Off, only the extract step's read-only preview applies them.
  */
-export const KNOX_HELD_NAME_RULES_LIVE = false;
+export const KNOX_HELD_NAME_RULES_LIVE = true;
+
+/** v90: a statement mailed back undelivered ("Returned Statement Fee", "Undeliverable Statement Charge"). */
+export const RETURNED_STATEMENT = /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i;
 
 export const HELD_NAME_PATTERNS: FeePattern[] = [
   { key: "stop_payment", pattern: /\bstop[- ]?pay\b(?![- ]?ments?)|\bstop p(?:y)?mts?\b/i },
@@ -606,10 +646,9 @@ export const HELD_NAME_PATTERNS: FeePattern[] = [
       "i",
     ),
   },
-  // A statement mailed back undelivered is returned mail: its own type while `RESEARCH_SPLIT_LIVE`
-  // is on (v77), account research while it is off (`SPLIT_CATEGORIES.paper_statement` in
-  // fee-fold.ts). Returned mail on its own stays unclassified (v14).
-  { key: researchSplitTarget("returned_mail"), pattern: /\b(?:return(?:ed)?|undeliverable|undelivered)\s+(?:mail(?:ed)?\s+)?statements?\b/i },
+  // v90 (James's decision card, Oct 20 03:51 UTC, "File them"): a statement mailed back undelivered
+  // is returned mail, the type made for "returned or undeliverable mail or statements" (#1398).
+  { key: researchSplitTarget("returned_mail"), pattern: RETURNED_STATEMENT },
   { key: "paper_statement", pattern: /\b(?:paper|mailed|printed)\s+(?:member|account|monthly|quarterly|periodic)\s+statements?\b/i },
   { key: "ira_termination", pattern: /\bIRA\b.{0,30}\bclose[- ]?outs?\b/i },
   { key: "ira_distribution", pattern: /\bIRA\b.{0,30}\b(?:withdrawals?|distributions?)\b/i },
@@ -720,7 +759,7 @@ const NO_CHARGE_FOR = /^(?:there (?:is|are) )?no (?:charge|fees?|cost)s? (?:for|
  * `knox_review:varies`, no `needs_darwin_verification`), as AGENTS.md holds every price no rule can
  * read as one exact amount. The name is the row's label, or the words before the varying price.
  */
-const VARIES_PRICE =
+export const VARIES_PRICE =
   /\b(?:(?:prices?|pricing|fees?|charges?|costs?)\s+)?(?:may\s+|will\s+)?var(?:y|ies)\b|\b(?:fee|charge|price|cost)s?\s+(?:is\s+|are\s+)?(?:depends?|dependent|depending|based)\s+(?:up)?on\b|\b(?:call|ask|inquire)\s+for\s+(?:current\s+)?(?:pricing|quotes?|prices?)\b|\bprinter[’']?s\s+current\s+price\b/i;
 
 /**
@@ -858,8 +897,24 @@ export function joinWrappedProse(lines: string[]): string[] {
 const HEADING_REACH_LINES = 4;
 const FEE_FAMILY_HEADING = /\bwire(?:s|\s+transfers?)?\b/i;
 const MAX_HEADING_WORDS = 4;
+/** v80: footnote numbers printed onto the end of a heading's last word ("Cashier’s Check1,4", "Money Orders1,4"). */
+const GLUED_HEADING_FOOTNOTES = /([A-Za-z’')])\d{1,2}(?:\s*,\s*\d{1,2})*(\s*:?)\s*$/;
+/**
+ * v80: a one-word line under a wire heading names the wires below it ("Wire Transfers" /
+ * "Domestic" / "Incoming ... $15.00"; Beacon Bank & Trust, doc 37581): the rows read under
+ * "Domestic Wire Transfers", then "International Wire Transfers".
+ */
+const WIRE_SUBHEADING = /^(Domestic|International|Foreign)$/i;
+const WIRE_SUBHEADING_WORD = /^(?:Domestic|International|Foreign)\s+/i;
 
-export function headingName(line: string): string | null | undefined {
+export function headingName(rawLine: string): string | null | undefined {
+  const unmarked = rawLine.replace(GLUED_HEADING_FOOTNOTES, "$1$2");
+  // Only a line that heads a fee once its marks are off reads differently ("Checking Plus1" stays a figure line).
+  if (unmarked !== rawLine) return plainHeadingName(unmarked) || undefined;
+  return plainHeadingName(rawLine);
+}
+
+function plainHeadingName(line: string): string | null | undefined {
   if (line.includes("$") || PERCENT_PATTERN.test(line) || /\d/.test(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""))) return undefined;
   const name = normalizeSegment(line.replace(/[¹²³⁴⁵⁶⁷⁸⁹⁰]/g, ""));
   const words = name.split(" ").filter(Boolean);
@@ -906,8 +961,14 @@ function candidateSegments(text: string): HeadedSegment[] {
   for (const [index, rawLine] of lines.entries()) {
     const line = rawLine.replace(/\s+/g, " ").replace(SPLIT_DOLLAR_CELL, "$").trim();
     const asHeading = headingName(line);
-    if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
-    if (asHeading !== undefined) section += 1;
+    const wireSub: string | undefined =
+      asHeading === null && heading && index - heading.at <= HEADING_REACH_LINES && FEE_FAMILY_HEADING.test(heading.name) ? line.match(WIRE_SUBHEADING)?.[1] : undefined;
+    if (wireSub && heading) heading = { name: `${wireSub} ${heading.name.replace(WIRE_SUBHEADING_WORD, "")}`, at: index };
+    else if (asHeading !== undefined) heading = asHeading ? { name: asHeading, at: index } : null;
+    // #2241: a longer explicit service label is not a section heading, but it still owns
+    // the price immediately below it and ends the previous heading's reach.
+    else if (isStackedFeeLabel(line, lines[index + 1])) heading = null;
+    if (asHeading !== undefined || isStackedFeeLabel(line, lines[index + 1])) section += 1;
     const isPriced = line.includes("$") || PERCENT_PATTERN.test(line) || hasZeroCell(line);
     if (!isPriced && !hasUnpricedFeeRow(line)) continue;
     const inReach = heading && index - heading.at <= HEADING_REACH_LINES ? heading : null;
@@ -938,9 +999,13 @@ function candidateSegments(text: string): HeadedSegment[] {
  */
 const MAX_HEADED_LINE_WORDS = 10;
 const MAX_HEADED_LABEL_WORDS = 4;
+const WIRE_ROW_LABEL = /^(?:(?:USD|U\.?S\.?\s+Dollars?|Foreign\s+Currency|FX)\s+)?(?:Incoming|Outgoing|Inbound|Outbound)$/i;
+
+/** v80: footnote numbers printed onto a row's label before its dot leader ("Incoming1,2 ....$15.00"). */
+const GLUED_LABEL_FOOTNOTES = /(?!(?<=\d\s?)[xX×])([A-Za-z’')])\d{1,2}(?:,\d{1,2})*(?=\s*(?:\.{2,}|…))/;
 
 export function readUnderHeading(segment: string, heading: string): ExtractedFeeCandidate[] {
-  const line = normalizeSegment(segment);
+  const line = normalizeSegment(segment).replace(GLUED_LABEL_FOOTNOTES, "$1");
   const amounts = amountsIn(line);
   if (amounts.length !== 1 || line.split(" ").length > MAX_HEADED_LINE_WORDS || PERCENT_PATTERN.test(line)) return [];
   const label = normalizeSegment(line.slice(0, amounts[0].start).replace(/(?:\.{2,}|…)[.…]*/g, " "));
@@ -951,7 +1016,9 @@ export function readUnderHeading(segment: string, heading: string): ExtractedFee
   // A label with its own colon, or a title of three or more capitalized words ("Picture Check
   // Card:", "RBD Scanner Replacement"), is another fee's row, not a row of this heading.
   if (/:\s*$/.test(line.slice(0, amounts[0].start).replace(/[\s|]+$/, ""))) return [];
-  if ((label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
+  // v80: a wire's currency and direction is a row of its wire heading ("Foreign Currency Outgoing").
+  const wireRow = FEE_FAMILY_HEADING.test(heading) && WIRE_ROW_LABEL.test(label);
+  if (!wireRow && (label.replace(/\([^)]*\)/g, " ").match(/\b[A-Z][\w'’&/-]*/g) ?? []).length > 2) return [];
   if (after.includes(CELL_SEPARATOR) && /[a-z]{3,}/i.test(after.slice(after.indexOf(CELL_SEPARATOR)))) return [];
   // Under one fee's own heading ("Monthly service fee:") the line only qualifies its price ("$12
   // or waived", "$15 per item"); a capitalized label there is another fee's row in a second column.
@@ -2411,6 +2478,11 @@ export function withoutBusinessOnlyFees(text: string): string {
 const PRICE_UNIT_AFTER = /^\s*(?:\/\s*(?:statement|stmt|hr|hour|item|month|mo|sheet|check|year|yr|day|page|copy|request)\b|per\s+(?:month|item|year|statement|check|hour|sheet|day|page|copy|request)\b|each\b|ea\b\.?)/i;
 
 
+/** Only labels the existing taxonomy recognizes leave the legacy fragment readers. */
+export function recognizedFeeBullets(text: string) {
+  return feeBullets(text).filter((row) => classifyFeeText(row.title) != null);
+}
+
 export function extractCandidatesFromText(input: string): ExtractionRulesResult {
   const raw = withDroppedDecimalPoints(input);
   // v48: a fee-change notice's row is read at its newest column ("Money Orders | $2.00 | $5.00").
@@ -2423,9 +2495,34 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
     candidates: scoped.map((fee) => ({ ...fee, frequency: null, confidence: 0.98, waivable: false })),
     held: [],
   };
-  const joinedLines = [...columnContinuations(text), ...wrappedNamePrices(text), ...centeredNamePrices(text)];
+  const wires = domesticWireClausePrices(text);
+  const wireLines = new Set(wires.map(row => row.sourceLine));
+  const otherPrices = text.split("\n").filter(line => !wireLines.has(line.trim())).join("\n");
+  for (const row of wires) {
+    if (!passesDarwinChecks(row.canonicalKey, row.feeName, row.amount)) continue;
+    result.candidates.push({ feeName: row.feeName, amount: row.amount, canonicalHint: row.canonicalKey,
+      excerpt: row.ownText, ownedPolicy: true, frequency: detectFrequency(row.ownText), confidence: .94, waivable: false });
+  }
+  const owned = recognizedFeeBullets(otherPrices);
+  const legacyText = withoutFeeBullets(otherPrices, owned);
+  for (const row of owned) {
+    if (row.problem || row.price == null || row.priceText == null) {
+      countDrop(result, "wrapped_bullet_unresolved");
+      continue;
+    }
+    // Existing price/category guards read a bounded primary label and its own price.
+    // Full conditions remain in the excerpt and the shared own-row source witness.
+    const read = extractFromSegment(`${row.title} | ${row.priceText}`);
+    for (const candidate of read.candidates) {
+      if (!passesDarwinChecks(candidate.canonicalHint, row.title, candidate.amount)) continue;
+      result.candidates.push({ ...candidate, feeName: row.title, excerpt: row.compactText, ownedBullet: true,
+        ...(row.linkedConditions ? { linkedConditions: row.linkedConditions } : {}),
+        frequency: detectFrequency(row.text), waivable: WAIVER_LANGUAGE.test(row.text) });
+    }
+  }
+  const joinedLines = [...columnContinuations(legacyText), ...wrappedNamePrices(legacyText), ...centeredNamePrices(legacyText)];
   const continued = joinedLines.flatMap((line) => extractFromSegment(line).candidates);
-  for (const candidate of [...itemAmountTierFees(text), ...continued]) {
+  for (const candidate of [...itemAmountTierFees(legacyText), ...continued]) {
     if (!passesDarwinChecks(candidate.canonicalHint, candidate.feeName, candidate.amount)) continue;
     const key = `fee:${candidate.canonicalHint}:${candidate.feeName.toLowerCase()}:${candidate.amount}`;
     if (seen.has(key)) continue;
@@ -2454,7 +2551,7 @@ export function extractCandidatesFromText(input: string): ExtractionRulesResult 
   // kind only while no heading line (a "Loan Fees" title) has come between them.
   let previousKind: string | null = null;
   let previousSection = -1;
-  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(text)) {
+  for (const { segment, heading, headingAt, headingOpensRows, section } of candidateSegments(legacyText)) {
     if (section !== previousSection) previousKind = null;
     previousSection = section;
     let found = extractFromSegment(segment);

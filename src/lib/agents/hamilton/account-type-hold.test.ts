@@ -151,4 +151,22 @@ describe("account type hold (#1100 gap 1)", () => {
     // the third read also names it in its LATERAL text lookup.
     for (const text of reads) expect(text.split(/\bFROM\b/)[0]).toMatch(/\bfr\.source_document_id\b/);
   });
+
+  it("scopes all three reads to one bank when given an institution, and to none otherwise (publish-sweeps review)", async () => {
+    const reads: Array<{ text: string; values: unknown[] }> = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?");
+      if (/^\s*SELECT/.test(text)) reads.push({ text, values });
+      return Promise.resolve([]);
+    }) as unknown as Parameters<typeof applyAccountTypeHold>[0];
+    await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: true, institutionId: 77 });
+    expect(reads).toHaveLength(3);
+    for (const read of reads) {
+      expect(read.text).toMatch(/\?::bigint IS NULL OR f[pv]\.institution_id = \?::bigint/);
+      expect(read.values.filter((value) => value === 77)).toHaveLength(2);
+    }
+    reads.length = 0;
+    await applyAccountTypeHold(db, { runId: 1, batchId: "agentic-run-1", dryRun: true });
+    for (const read of reads) expect(read.values.filter((value) => value === null)).toHaveLength(2);
+  });
 });

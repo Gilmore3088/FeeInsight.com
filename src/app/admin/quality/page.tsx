@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
@@ -160,6 +161,7 @@ export default async function DataTrustWorkbench({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAuth("operate");
   const params = await searchParams;
   const stateParam = typeof params.state === "string" ? params.state : "all";
   const state = DATA_TRUST_QUEUE_STATES.includes(stateParam as DataTrustQueueState)

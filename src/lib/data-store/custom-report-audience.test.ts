@@ -17,7 +17,9 @@ describe("competitive report consumer boundary", () => {
   it("applies audience/source eligibility before source validation without weakening cap or price guards", async () => {
     state.replies.push(
       [{ id: 47, institution_name: "Test Subject", city: "Nashville", state_code: "TN", charter_type: "bank", cert_number: "123", asset_size: null }],
+      [{ city: "NASHVILLE" }],
       [{ county_fips: "47037", city: "Nashville", state: "TN", year: 2026, basis: "branch_counties" }],
+      [{ kind: "branch", state: "TN", city: "NASHVILLE" }],
       [{ institution_id: 50, institution_name: "Test Peer", city: "Nashville", state_code: "TN", charter_type: "bank", market_deposits: "100", line: null, amount: null, fee_name: null, source_url: null, source_document_id: null, updated_at: null, takedown_pending: null }],
     );
     const result = await getCustomReportMarketData(47);
@@ -30,7 +32,8 @@ describe("competitive report consumer boundary", () => {
     expect(query).toContain("pf.kind = 'takedown_pending'");
     expect(result?.lines).toEqual([]);
     expect(result?.competitors[0].market_deposits).toBe(100000);
-    expect(state.queries).toHaveLength(3); // No alternate institution document is fetched to invent missing fees.
+    // The subject, its city spellings, its counties, the market cities, the fees.
+    expect(state.queries).toHaveLength(5); // No alternate institution document is fetched to invent missing fees.
   });
 });
 
@@ -50,7 +53,9 @@ describe("the subject's records the source check could not match", () => {
   it("keeps the subject's eligible record that failed the check, and never a competitor's", async () => {
     state.replies.push(
       [{ id: 323, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank", cert_number: "9622", asset_size: null }],
+      [{ city: "TALLAHASSEE" }],
       [{ county_fips: "12073", city: "Tallahassee", state: "FL", year: 2026, basis: "branch_counties" }],
+      [{ kind: "branch", state: "FL", city: "TALLAHASSEE" }],
       [
         fee(323, 140263, "Carefree Checking Monthly service charge", "7.95", "$7.95 monthly service charge"),
         fee(323, 140267, "Monthly service charge (Everyday Checking)", "8.95", "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month"),
@@ -82,7 +87,9 @@ describe("the subject's records the source check could not match", () => {
     ].join("\n\n");
     state.replies.push(
       [{ id: 323, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank", cert_number: "9622", asset_size: null }],
+      [{ city: "TALLAHASSEE" }],
       [{ county_fips: "12073", city: "Tallahassee", state: "FL", year: 2026, basis: "branch_counties" }],
+      [{ kind: "branch", state: "FL", city: "TALLAHASSEE" }],
       [
         fee(323, 140263, "Carefree Checking Monthly service charge", "7.95", "$7.95 monthly service charge"),
         fee(323, 140267, "Monthly service charge (Everyday Checking)", "8.95", "No monthly service charge with either 20 debit card transactions* OR a minimum daily balance of $1,500; otherwise, $8.95 per month"),
@@ -132,7 +139,9 @@ describe("Capital City's ATM and incoming wire fees on its other-services page (
   it("brings the $3 out-of-network ATM fee and the $25 incoming domestic wire into the report", async () => {
     state.replies.push(
       [{ id: 323, institution_name: "Capital City Bank", city: "Tallahassee", state_code: "FL", charter_type: "bank", cert_number: "9622", asset_size: null }],
+      [{ city: "TALLAHASSEE" }],
       [{ county_fips: "12073", city: "Tallahassee", state: "FL", year: 2026, basis: "branch_counties" }],
+      [{ kind: "branch", state: "FL", city: "TALLAHASSEE" }],
       [
         row("atm_non_network", 97777, "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM", "3.00", "37072",
           "ATM Network Usage Fee, for each inquiry, transfer or withdrawal at non-Capital City Bank ATM | $3"),

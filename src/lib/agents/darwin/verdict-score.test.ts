@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import manifest from "./answer-key-reference-manifest.json";
 import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
@@ -5,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ANSWER_KEY_TEXTS,
+  FROZEN_REFERENCE_STATE, FROZEN_REFERENCE_MANIFEST_ID, runDarwinVerdictScore,
   HOLDOUT_SET,
   loadReviewMisses,
   missRows,
@@ -117,7 +120,7 @@ describe("Darwin verdict score", () => {
     const rows = missRows(chunk, 77);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ weight: 0, evidence: { answer_key_set: HOLDOUT_SET, lesson: false } });
-    expect(rows[1]).toMatchObject({ weight: 1, evidence: { answer_key_set: "tuning", lesson: true } });
+    expect(rows[1]).toMatchObject({ weight: 0, evidence: { answer_key_set: "tuning", lesson: false, frozen_reference_state: "unbound" } });
 
     const texts: string[] = [];
     const db = vi.fn((strings: TemplateStringsArray) => {
@@ -128,7 +131,16 @@ describe("Darwin verdict score", () => {
     });
     await loadReviewMisses(db as unknown as Parameters<typeof loadReviewMisses>[0], "verify.adjudicate", ["wire_domestic_incoming"]);
     const select = texts.find((text) => text.includes("FROM pipeline_feedback"));
-    expect(select).toContain("COALESCE(pf.evidence->>'answer_key_set', 'tuning') <> ?");
+    expect(select).toBeUndefined(); // All existing compact fixtures lack original document mapping.
+    expect(db).not.toHaveBeenCalled();
+  });
+
+  it("reports unbound fixture references without deriving provenance from current database rows", async () => {
+    const db = vi.fn(() => { throw new Error("No database lookup may bless an old tid"); });
+    const result = await runDarwinVerdictScore(db as never, { runId: 1 });
+    expect(result).toMatchObject({ chunks: [], lessons: 0, reference: { total: 81, bound: 0, unbound: 81, state: "no_measurement_unbound_fixtures" } });
+    expect(FROZEN_REFERENCE_STATE.manifestId).toBe(FROZEN_REFERENCE_MANIFEST_ID);
+    expect(db).not.toHaveBeenCalled();
   });
 
   it("reads a release review's pass as a fee in its held category and skips a plain fail", () => {
@@ -136,6 +148,19 @@ describe("Darwin verdict score", () => {
     expect(verdictFromRow(row({ passes: true }))?.claim).toEqual({ feeName: "Notary", amount: 5, isFee: true, category: "notary_fee" });
     expect(verdictFromRow(row({ passes: false, amount_is_price: false }))?.claim.isFee).toBe(false);
     expect(verdictFromRow(row({ passes: false, is_fee: true, amount_is_price: true }))).toBeNull();
+  });
+
+  it("records exact original fixture evidence without inventing absent document mappings", () => {
+    const hash=(text:string|Buffer)=>createHash("sha256").update(text).digest("hex");
+    for(const artifact of manifest.artifacts) {
+      const bytes=readFileSync(path.join(__dirname,artifact.path));expect(hash(bytes)).toBe(artifact.sha256);
+      const keys=(JSON.parse(gunzipSync(bytes).toString("utf8")) as {keys:Array<{tid:number;text:string}>}).keys;
+      for(const key of keys) {
+        const entry=manifest.references.find(entry=>entry.textId===key.tid)!;
+        expect(entry.fixtureTextSha256).toBe(hash(key.text));expect(entry.originalDocument).toBeNull();
+        expect(entry.compactFeesSha256).toBe(hash(JSON.stringify(ANSWER_KEY_TEXTS.find(row=>row.tid===key.tid)!.fees)));
+      }
+    }
   });
 
   it("keeps the compact answer keys in step with the hand-keyed fixtures", () => {

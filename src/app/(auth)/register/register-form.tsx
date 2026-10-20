@@ -9,6 +9,16 @@ import { trackEvent } from "@/lib/analytics";
 import type { RegisterVariant } from "./register-destination";
 import { HoneypotField } from "@/components/public/honeypot-field";
 import { useHydrated } from "@/lib/use-hydrated";
+import {
+  UTILITY_FIELDSET_TITLE,
+  UTILITY_FORM,
+  UTILITY_HINT,
+  UTILITY_INPUT,
+  UTILITY_LABEL,
+  UTILITY_SELECT,
+  UTILITY_SUBMIT,
+  utilityNotice,
+} from "@/components/utility/form-style";
 
 const INSTITUTION_TYPES = [
   { value: "", label: "Select..." },
@@ -91,15 +101,15 @@ export function RegisterForm({
     }
   }
 
-  const inputClass = "w-full rounded-md border border-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brick focus:border-transparent";
-  const labelClass = "block text-sm font-medium text-ink mb-1";
-  const selectClass = `${inputClass} appearance-none`;
+  const inputClass = UTILITY_INPUT;
+  const labelClass = UTILITY_LABEL;
+  const selectClass = UTILITY_SELECT;
 
   return (
-    <form method="post" onSubmit={handleSubmit} className="relative bg-surface-0 rounded-lg border border-border shadow-sm p-6 space-y-4">
+    <form method="post" onSubmit={handleSubmit} className={`relative ${UTILITY_FORM}`}>
       <HoneypotField />
       {error && (
-        <div className="text-sm text-brick bg-brick-tint/40 border border-brick/30 rounded-md px-3 py-2">
+        <div role="alert" className={utilityNotice("error")}>
           {error}
           {loginHref && (
             <>
@@ -127,23 +137,23 @@ export function RegisterForm({
       <div>
         <label htmlFor="password" className={labelClass}>Password</label>
         <input id="password" name="password" type="password" required minLength={8} autoComplete="new-password" className={inputClass} />
-        <p className="mt-1 text-xs text-ink-muted">Minimum 8 characters</p>
+        <p className={UTILITY_HINT}>At least 8 characters.</p>
       </div>
 
       {/* Professional context: only asked of people signing up for professional work. */}
       {!isConsumer && !checkout && (
-      <div className="border-t border-border pt-4 mt-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-muted mb-3">
-          About your organization
+      <div className="border-t border-border pt-5">
+        <p className={`${UTILITY_FIELDSET_TITLE} mb-3`}>
+          About your organization <span className="font-normal text-ink-muted">(optional)</span>
         </p>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           <div>
             <label htmlFor="institution_name" className={labelClass}>Institution / Company</label>
             <input id="institution_name" name="institution_name" type="text" className={inputClass} placeholder="First National Bank" />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="institution_type" className={labelClass}>Type</label>
               <select id="institution_type" name="institution_type" onChange={handleTypeChange} className={selectClass}>
@@ -163,7 +173,7 @@ export function RegisterForm({
           </div>
 
           {showBankFields && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <label htmlFor="asset_tier" className={labelClass}>Asset size</label>
                 <select id="asset_tier" name="asset_tier" className={selectClass}>
@@ -190,7 +200,7 @@ export function RegisterForm({
       <button
         type="submit"
         disabled={pending || !hydrated}
-        className="w-full rounded-md bg-brick px-4 py-2.5 text-sm font-medium text-white hover:bg-brick-ink disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className={UTILITY_SUBMIT}
       >
         {pending ? "Creating account..." : isConsumer ? "Create free account" : checkout ? "Continue to checkout" : "Create account"}
       </button>

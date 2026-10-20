@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/data-store/call-reports", () => ({ getInstitutionPeerRanking: vi.fn(), getInstitutionRevenueTrend: vi.fn() }));
+vi.mock("@/lib/data-store/core", () => ({ getInstitutionById: vi.fn() }));
+vi.mock("@/lib/data-store/public-read-cache", () => ({ cachedPublicRead: (_key: string, fn: unknown) => fn }));
+
 import type { ReportLine } from "@/lib/custom-report/analysis";
 import type { CheckingLineupView } from "@/lib/custom-report/checking-lineup";
-import type { RevenueContext } from "@/lib/custom-report/revenue-context";
+import { buildRevenueContext } from "@/lib/custom-report/revenue-context";
+import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import { bandText, comparedAt, countiesText, headlineFinding, leftOutNote, marketFinding, medianMethod, positionWord, priceText, reviewPriorities, widestGapFinding } from "./report-view";
 
 function line(key: string, label: string, own: number | null, peers: [number, number, number, number] | null, position: ReportLine["position"]): ReportLine {
@@ -74,18 +80,17 @@ describe("priorities for review", () => {
     line("wire_intl_outgoing", "Outgoing international wire", 75, [16, 43.125, 47.5, 50], "above_market"),
     line("monthly_maintenance", "Monthly maintenance (checking)", 7.95, [18, 8, 10, 11.5], "below_market"),
   ];
-  const revenue: RevenueContext = {
-    quarters: [{ quarter: "2026-Q2", thousands: 5656 }],
-    trailingThousands: null,
-    peer: { tierLabel: "$1B-$10B", medianThousands: 449, rank: 13, count: 872, population: "banks", feeShare: 0.087089, peerMedianFeeShare: 0.021662, peerShareCount: 869 },
-  };
+  const revenue = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 5656 }], {
+    tier: "midsize", sc_rank: 13, peer_count: 872, peer_median_sc: 449, fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662,
+    comparison: financialPeerComparison({ source: "fdic", reportDate: "2026-06-30", tier: "midsize", minimumAssetsUsd: 1e9, maximumAssetsUsd: 1e10, subjectIncluded: true, eligibleCount: 880, reportedCount: 872, ratioReportedCount: 870, minimumMedianCount: 5 }),
+  })!;
 
   it("names where to look from the report's own figures, never a price to change, each linked to its section", () => {
     const items = reviewPriorities(wires, { revenue, lineup: { peersWithLineup: 20 } as CheckingLineupView });
     expect(items).toEqual([
       { text: "Wires: investigate the two fees above the local middle 50% (outgoing domestic and outgoing international).", href: "#position" },
       { text: "Checking: compare equivalent account types and waiver conditions. Lineups are on file for 20 local competitors.", href: "#lineup" },
-      { text: "Deposit service charges: 8.7% of revenue against a 2.2% median for 869 banks with $1B to $10B in assets.", href: "#revenue" },
+      { text: "Deposit service charges: 8.7% of revenue, against a 2.2% median for 870 banks with $1B to $10B in assets, this one included.", href: "#revenue" },
     ]);
     expect(items.map((i) => i.text).join(" ")).not.toMatch(/\b(raise|lower|cut|increase|reduce|should)\b/i);
   });
@@ -95,13 +100,16 @@ describe("priorities for review", () => {
     const noShare = { ...revenue, peer: { ...revenue.peer!, feeShare: null } };
     expect(reviewPriorities([lines[0]], { revenue: noShare })).toEqual([
       { text: "Overdraft: investigate the fee above the local middle 50%.", href: "#position" },
-      { text: "Deposit service charges: rank 13 of 872 banks with $1B to $10B in assets in dollars.", href: "#revenue" },
+      { text: "Deposit service charges: rank 13 in dollars of 872 banks with $1B to $10B in assets, this one included.", href: "#revenue" },
     ]);
   });
 
-  it("says a credit union's share is of total income", () => {
-    const cu = { ...revenue, peer: { ...revenue.peer!, population: "credit unions" as const, peerShareCount: 300 } };
-    expect(reviewPriorities([], { revenue: cu })[0].text).toBe("Fee income: 8.7% of total income against a 2.2% median for 300 credit unions with $1B to $10B in assets.");
+  it("says a credit union's share is broad fee income, year to date", () => {
+    const cu = buildRevenueContext([{ quarter: "2026-Q2", service_charge_income: 5656 }], {
+      tier: "midsize", sc_rank: 13, peer_count: 310, peer_median_sc: 449, fee_income_ratio: 0.087089, peer_median_fee_ratio: 0.021662,
+      comparison: financialPeerComparison({ source: "ncua", reportDate: "2026-06-30", tier: "midsize", minimumAssetsUsd: 1e9, maximumAssetsUsd: 1e10, subjectIncluded: true, eligibleCount: 320, reportedCount: 310, ratioReportedCount: 300, minimumMedianCount: 5 }),
+    })!;
+    expect(reviewPriorities([], { revenue: cu })[0].text).toBe("Broad credit-union fee income: 8.7% of revenue, year to date, against a 2.2% median for 300 credit unions with $1B to $10B in assets, this one included.");
   });
 
   it("says beside each local median how it is built", () => {

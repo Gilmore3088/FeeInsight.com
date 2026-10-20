@@ -11,9 +11,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getSql } from "@/lib/data-store/connection";
 import type { ReportType } from "@/lib/report-engine/types";
 import { EmailGate } from "./email-gate";
+import { loadPublicReport } from "./load-report";
 import { RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { TrackLink } from "@/components/track-link";
 import { PAGE_CRUMBS, PAGE_H1, PAGE_HEADER } from "@/components/public/page-header";
@@ -46,44 +46,6 @@ function formatDate(iso: string): string {
   });
 }
 
-// Row returned by the JOIN query
-interface ReportRow {
-  id: string;
-  job_id: string;
-  report_type: string;
-  slug: string;
-  title: string;
-  published_at: string;
-  is_public: boolean;
-  artifact_key: string | null;
-  // data_manifest is JSONB — not passed to client
-}
-
-async function fetchReport(slug: string): Promise<ReportRow | null> {
-  try {
-    const sql = getSql();
-    const rows = await sql<ReportRow[]>`
-      SELECT
-        pr.id,
-        pr.job_id,
-        pr.report_type,
-        pr.slug,
-        pr.title,
-        pr.published_at,
-        pr.is_public,
-        rj.artifact_key
-      FROM published_reports pr
-      JOIN report_jobs rj ON pr.job_id = rj.id
-      WHERE pr.slug = ${slug}
-        AND pr.is_public = true
-      LIMIT 1
-    `;
-    return rows[0] ?? null;
-  } catch {
-    return null;
-  }
-}
-
 // generateMetadata — called server-side for every request
 export async function generateMetadata({
   params,
@@ -91,11 +53,10 @@ export async function generateMetadata({
   params: Promise<{ slug: string }>;
 }): Promise<Metadata> {
   const { slug } = await params;
-  const report = await fetchReport(slug);
+  const report = await loadPublicReport(slug);
 
-  if (!report) {
-    return { title: "Report Not Found" };
-  }
+  // A missing slug is a 404 (the layout says so too), never a 200 titled "not found".
+  if (!report) notFound();
 
   const typeLabel = humanType(report.report_type);
   const description = `${typeLabel} published ${formatDate(report.published_at)} by ${RESEARCH_IMPRINT}.`;
@@ -127,11 +88,10 @@ export default async function ReportPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const report = await fetchReport(slug);
+  const report = await loadPublicReport(slug);
 
-  if (!report) {
-    notFound();
-  }
+  // The layout already answered 404 for a missing slug; this keeps the type narrow.
+  if (!report) notFound();
 
   // artifact_key is used only to derive this boolean — never passed to client (T-16-06)
   const artifactExists = !!report.artifact_key;

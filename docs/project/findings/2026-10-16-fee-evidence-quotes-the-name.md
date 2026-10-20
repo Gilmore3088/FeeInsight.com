@@ -20,3 +20,5 @@ either of the following:") is never a $0 price. The page lane swaps it in for th
 **Lesson:** A quote shown as evidence must print the number it supports; test that, not that a
 quote exists. A per-institution median is not a price a bank prints and must never sit beside one
 row's evidence.
+
+**Guard:** `src/lib/fee-evidence.test.ts:147` (1NB Bank's evidence line prints the fee's own price, account and condition instead of the bare fee name; line 250 gives no evidence when no line prints the price, as for the $7.97 median)

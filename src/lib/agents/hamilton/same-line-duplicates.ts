@@ -112,7 +112,7 @@ export async function retireSameLineDuplicates(
               fv.document_r2_key, fv.extraction_confidence, fp.canonical_fee_key, fv.variant_type,
               fv.outlier_flags, fv.verified_by_agent_event_id, fv.fee_name, fv.amount, fv.frequency,
               fv.amount_kind, fv.rate_percent, fv.rate_min_amount, fv.rate_max_amount, fv.rate_basis,
-              NULL::text AS raw_agent_event_id, fr.source_document_id
+              NULL::text AS raw_agent_event_id, fr.source_document_id, fr.product_name
          FROM pipeline_attempts pa
          JOIN published_fee_records fp ON fp.fee_published_id = NULLIF(pa.detail->>'fee_published_id', '')::bigint
          JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref

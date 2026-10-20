@@ -212,18 +212,18 @@ export function reviewPriorities(
     items.push({ text: lineupPeers > 0 ? `${base} Lineups are on file for ${count(lineupPeers)}.` : base, href: lineupPeers > 0 ? "#lineup" : "#position" });
   }
 
-  const peer = context.revenue?.peer;
-  if (peer) {
-    const who = (n: number) => `${n.toLocaleString("en-US")} ${peer.population ?? "institutions"} with ${bandText(peer.tierLabel)} in assets`;
-    // A credit union's NCUA share is of total income (interest plus noninterest), year to date.
-    const creditUnion = peer.population === "credit unions";
-    const base = creditUnion ? "total income" : "revenue";
-    // A bank's line is deposit service charges; "fee income" reads as the wider noninterest line.
-    const measure = creditUnion ? "Fee income" : "Deposit service charges";
+  const revenue = context.revenue;
+  const peer = revenue?.peer;
+  if (revenue && peer) {
+    // One comparison (#2353): same charter, filing, quarter and asset band, the institution included.
+    const who = (n: number) => `${n.toLocaleString("en-US")} ${peer.charterLabel} with ${bandText(peer.tierLabel)} in assets, this one included`;
+    // An NCUA share is year to date; an FDIC share is the quarter's.
+    const base = revenue.source === "ncua" ? "revenue, year to date" : "revenue";
+    const measure = revenue.measureLabel;
     const text =
       peer.feeShare != null && peer.peerMedianFeeShare != null
-        ? `${measure}: ${shareLabel(peer.feeShare)} of ${base} against a ${shareLabel(peer.peerMedianFeeShare)} median for ${who(peer.peerShareCount ?? peer.count)}.`
-        : `${measure}: rank ${peer.rank.toLocaleString("en-US")} of ${who(peer.count)} in dollars.`;
+        ? `${measure}: ${shareLabel(peer.feeShare)} of ${base}, against a ${shareLabel(peer.peerMedianFeeShare)} median for ${who(peer.peerShareCount)}.`
+        : `${measure}: rank ${peer.rank.toLocaleString("en-US")} in dollars of ${who(peer.count)}.`;
     items.push({ text, href: "#revenue" });
   }
   return items;

@@ -5,12 +5,19 @@ import { checkValues, flaggedOnly, type KeyValueReport } from "./data-checks";
 import { FDIC_API_BASE } from "./fdic";
 import { eventKeyOf, historyDate } from "./fdic-history";
 import { htmlToText } from "./fed";
-import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
+import {
+  blockedHost,
+  registryFetch,
+  registryFetchJson,
+  RegistryHttpError,
+  RegistryUnreachableError,
+  type RegistryFetchOptions,
+  type RegistryPageTried,
+} from "./http";
 
 /**
  * Industry events from public lists: bank and credit union failures, credit union mergers and
- * liquidations, merger 8-Ks and fee passages in 10-Ks, overdraft and NSF fee lawsuits, public
- * comments on fee rules, SBA 7(a)/504 lending by lender, CDFI Fund awards and FHLBank
+ * liquidations, merger 8-Ks and fee passages in 10-Ks, public comments on fee rules, SBA 7(a)/504 lending by lender, CDFI Fund awards and FHLBank
  * membership. Pure: fetches, parses and checks; never writes to the database.
  *
  * Every column name and URL below was written from memory of the publishers' documentation
@@ -169,7 +176,7 @@ export interface MatchKeys {
   rssd?: string | null;
   name?: string | null;
   state?: string | null;
-  /** Allow a nationwide exact-name match when no state is known (lawsuit defendants, commenters). */
+  /** Allow a nationwide exact-name match when no state is known (commenters). */
   nameWithoutState?: boolean;
 }
 
@@ -475,7 +482,7 @@ const READABLE: readonly FileKind[] = ["csv", "xlsx", "zip"];
 export interface PublishedList<F extends string> {
   /** The page or file the rows came from. */
   sourceUrl: string | null;
-  pagesTried: Array<{ url: string; status: "ok" | "not_found" | "error"; error?: string }>;
+  pagesTried: RegistryPageTried[];
   /** Every matching data link seen, so a person can check the choice. */
   candidates: DataLink[];
   fileUrl: string | null;
@@ -488,6 +495,11 @@ export interface PublishedList<F extends string> {
 /**
  * A published list behind a landing page: the first readable data file the page links to
  * (matching `accept`), else the best-matching HTML table on the page itself.
+ *
+ * When no landing page answers at all (each one 404 or an error), it throws
+ * `RegistryUnreachableError` naming every page, so the partition is recorded failed with that
+ * reason instead of as an empty check (#2306). A page that refused the request (401/403) is
+ * thrown as itself, so it is recorded as the publisher's named block (#1806).
  */
 export async function fetchPublishedList<F extends string>(
   pages: readonly string[],
@@ -495,9 +507,12 @@ export async function fetchPublishedList<F extends string>(
   spec: HeaderSpec<F>,
   required: readonly F[],
   options: RegistryFetchOptions = {},
+  /** Most data files downloaded per page (a page listing one file per quarter, newest first, needs 1). */
+  maxFiles: number = Infinity,
 ): Promise<PublishedList<F>> {
   const result: PublishedList<F> = { sourceUrl: null, pagesTried: [], candidates: [], fileUrl: null, innerFile: null, table: null, reason: null };
   const reasons: string[] = [];
+  const errors: unknown[] = [];
   for (const page of pages) {
     let html: string;
     try {
@@ -512,11 +527,12 @@ export async function fetchPublishedList<F extends string>(
     } catch (error) {
       const notFound = error instanceof RegistryHttpError && error.status === 404;
       result.pagesTried.push({ url: page, status: notFound ? "not_found" : "error", error: notFound ? undefined : String(error) });
+      errors.push(error);
       continue;
     }
     const links = html ? findDataLinks(html, page, accept) : result.candidates.filter((c) => c.url === page);
     if (html) result.candidates.push(...links);
-    for (const link of links.filter((l) => READABLE.includes(l.kind))) {
+    for (const link of links.filter((l) => READABLE.includes(l.kind)).slice(0, maxFiles)) {
       const bytes = new Uint8Array(await (await registryFetch(link.url, { timeoutMs: 180_000, ...options })).arrayBuffer());
       const read = readTableFile(bytes, link.kind);
       if (!read.table) {
@@ -541,7 +557,16 @@ export async function fetchPublishedList<F extends string>(
     if (unread.length > 0) reasons.push(`${page}: only ${[...new Set(unread.map((l) => l.kind.toUpperCase()))].join("/")} files linked, which are not read`);
     else reasons.push(`${page}: no matching data file or table`);
   }
-  result.reason = reasons.join("; ") || "no landing page could be fetched";
+  if (!result.pagesTried.some((page) => page.status === "ok")) {
+    const refused = errors.find((error) => blockedHost(error));
+    if (refused) throw refused;
+    const statuses = errors.map((error) => (error instanceof RegistryHttpError ? error.status : null));
+    // Every page 404: the addresses are wrong (retried daily). Otherwise the first other error's
+    // status, or none for a transport error (retried within hours).
+    const status = statuses.length === 0 ? null : statuses.every((s) => s === 404) ? 404 : statuses.find((s) => s !== 404) ?? null;
+    throw new RegistryUnreachableError(result.pagesTried, status);
+  }
+  result.reason = reasons.join("; ") || "no matching data file or table";
   return result;
 }
 
@@ -640,11 +665,37 @@ export async function fetchFdicFailures(options: RegistryFetchOptions = {}): Pro
   };
 }
 
-/** NCUA pages that list mergers / P&As and liquidations (URLs unconfirmed: the run reports each page tried). */
-export const NCUA_MERGER_PAGES = [
-  "https://ncua.gov/analysis/credit-union-corporate-call-report-data/merger-activity-insurance-report",
-  "https://ncua.gov/support-services/credit-union-resources-expansion/resources/merger-activity",
-] as const;
+/**
+ * NCUA's quarterly Merger Activity and Insurance Report: the landing page links one ZIP per
+ * quarter (insurance-report-activity-<month>-<year>.zip), newest first; only the newest is read,
+ * so an unreadable layout costs one download, not one per quarter. The two addresses used
+ * before 2026-10-19 return 404 (registry run 8051, 2026-10-17). The run reports each page tried.
+ */
+export const NCUA_MERGER_PAGES = ["https://ncua.gov/analysis/chartering-mergers/merger-activity-insurance-report"] as const;
+/** Only the quarterly report files, so another merger link (a form, a guide) can't take the one slot. */
+const NCUA_MERGER_LINKS = /insurance-report-activity/i;
+
+/**
+ * NCUA's list of proposed credit union mergers put to a member vote, one HTML table (2024 to
+ * date): Merging Credit Union | Continuing Credit Union | Date of Member Vote | Comment URL
+ * (a regulations.gov docket id). Checked 2026-10-19. It names the credit unions but carries no
+ * charter number or state.
+ */
+export const NCUA_PROPOSED_MERGER_PAGES = ["https://ncua.gov/support-services/credit-union-merger-acquisition/comments-proposed-credit-union-mergers"] as const;
+export const NCUA_PROPOSED_MERGER_SPEC = {
+  name: [/^merging/i],
+  acquirerName: [/^continuing/i],
+  date: [/member vote/i, /date/i],
+  docket: [/comment|docket/i],
+} satisfies HeaderSpec<string>;
+type ProposedMergerField = keyof typeof NCUA_PROPOSED_MERGER_SPEC;
+export const NCUA_PROPOSED_MERGER_CODE = "proposed_merger";
+
+/** The regulations.gov docket page for an NCUA docket id ("NCUA-2026-1256"); null for anything else. */
+export function ncuaDocketUrl(value: string | null | undefined): string | null {
+  const id = value?.trim().match(/^NCUA-\d{4}-\d+$/i)?.[0];
+  return id ? `https://www.regulations.gov/docket/${id.toUpperCase()}` : null;
+}
 export const NCUA_LIQUIDATION_PAGES = ["https://ncua.gov/support-services/conservatorships-liquidations"] as const;
 
 export const NCUA_MERGER_SPEC = {
@@ -690,7 +741,7 @@ function listToEvents<F extends string>(
 }
 
 export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_MERGER_PAGES): Promise<FetchedEvents> {
-  const list = await fetchPublishedList<MergerField>(pages, /merg|p\s*&\s*a|purchase/i, NCUA_MERGER_SPEC, ["name", "date"], options);
+  const list = await fetchPublishedList<MergerField>(pages, NCUA_MERGER_LINKS, NCUA_MERGER_SPEC, ["name", "date"], options, 1);
   return listToEvents(list, (f, raw) => ({
     eventKey: `ncua-merger:${hashKey([idValue(f.charter), eventDate(f.date), exactNameKey(f.name), exactNameKey(f.acquirerName), f.type])}`,
     cert: idValue(f.charter),
@@ -704,6 +755,35 @@ export async function fetchNcuaMergers(options: RegistryFetchOptions = {}, pages
     state: f.state,
     raw,
   }));
+}
+
+/**
+ * Proposed mergers from NCUA's member-vote list. The merging credit union is the row's
+ * institution and the continuing one its acquirer; effective_date is the member vote date. The
+ * key is the docket id when present, else the two names, so a rescheduled vote updates the same
+ * row either way (a docketless second proposal between the same two credit unions replaces the
+ * first).
+ */
+export async function fetchNcuaProposedMergers(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_PROPOSED_MERGER_PAGES): Promise<FetchedEvents> {
+  // No data file is accepted: the list is the page's own table.
+  const list = await fetchPublishedList<ProposedMergerField>(pages, /(?!)/, NCUA_PROPOSED_MERGER_SPEC, ["name", "acquirerName", "date"], options);
+  return listToEvents(list, (f, raw) => {
+    const docket = f.docket?.trim().toUpperCase() || null;
+    const docketUrl = ncuaDocketUrl(docket);
+    return {
+      eventKey: `ncua-proposed-merger:${docketUrl ? docket : hashKey([exactNameKey(f.name), exactNameKey(f.acquirerName)])}`,
+      cert: null,
+      institutionName: f.name,
+      changeCode: NCUA_PROPOSED_MERGER_CODE,
+      changeDescription: "Proposed merger put to a member vote",
+      effectiveDate: eventDate(f.date),
+      acquirerCert: null,
+      acquirerName: f.acquirerName,
+      city: null,
+      state: null,
+      raw: { ...raw, docket_id: docket, docket_url: docketUrl },
+    };
+  });
 }
 
 export async function fetchNcuaLiquidations(options: RegistryFetchOptions = {}, pages: readonly string[] = NCUA_LIQUIDATION_PAGES): Promise<FetchedEvents> {
@@ -809,133 +889,8 @@ export async function fetchSecDocumentText(url: string, options: RegistryFetchOp
   return /\.(htm|html|xml)$/i.test(new URL(url).pathname) || /^\s*</.test(body) ? htmlToText(body) : body;
 }
 
-// ---------------------------------------------------------------------------
-// (d) Fee lawsuits from CourtListener (RECAP dockets)
-// ---------------------------------------------------------------------------
-
-export const COURTLISTENER_SEARCH_URL = "https://www.courtlistener.com/api/rest/v4/search/";
-export const COURTLISTENER_QUERY =
-  '("overdraft fee" OR "overdraft fees" OR "NSF fee" OR "NSF fees" OR "insufficient funds fee" OR "insufficient funds fees" OR representment OR "re-presentment" OR "re-presented") AND (bank OR "credit union")';
-export const COURTLISTENER_FIELDS = ["caseName", "court", "court_id", "dateFiled", "docketNumber", "docket_absolute_url", "docket_id"] as const;
-const COURTLISTENER_MAX_PAGES = 25;
-
-export interface FeeLawsuit {
-  docketId: string;
-  caseName: string | null;
-  court: string | null;
-  courtId: string | null;
-  docketNumber: string | null;
-  filedDate: string | null;
-  docketUrl: string | null;
-  suitNature: string | null;
-  cause: string | null;
-  defendantName: string | null;
-  raw: Raw;
-}
-
-export interface FetchedLawsuits {
-  sourceUrl: string;
-  count: number | null;
-  cases: FeeLawsuit[];
-  truncated: boolean;
-  missingFields: string[];
-  unexpectedFields: string[];
-  /** Set when CourtListener refused anonymous access; the partition is skipped with this reason. */
-  authRequired: string | null;
-}
-
-/**
- * The defendant side of a case name ("Doe v. First Bank, N.A." -> "First Bank, N.A.";
- * "In re Acme Bank Overdraft Litigation" -> "Acme Bank"). Null when the name has no "v.".
- */
-export function defendantOf(caseName: string | null): string | null {
-  if (!caseName) return null;
-  const inRe = /^in re:?\s+(.+?)\s+(overdraft|nsf|non-?sufficient|insufficient|fee|checking|debit|deposit)\b.*$/i.exec(caseName);
-  if (inRe) return inRe[1].replace(/[,\s]+$/, "").trim();
-  const parts = caseName.split(/\s+v(?:s)?\.?\s+/i);
-  if (parts.length < 2) return null;
-  const right = parts.slice(1).join(" v. ")
-    .replace(/,?\s+et\.? al\.?$/i, "")
-    .replace(/,?\s+and (others|another)$/i, "")
-    .trim();
-  return right || null;
-}
-
-interface CourtListenerResponse {
-  count?: number;
-  next?: string | null;
-  results?: Raw[];
-}
-
-export async function fetchCourtListenerYear(year: number, options: RegistryFetchOptions = {}, token: string | null = null): Promise<FetchedLawsuits> {
-  const search = new URLSearchParams({
-    q: COURTLISTENER_QUERY,
-    type: "r",
-    filed_after: `${year}-01-01`,
-    filed_before: `${year}-12-31`,
-    order_by: "dateFiled desc",
-  });
-  const first = `${COURTLISTENER_SEARCH_URL}?${search.toString()}`;
-  const fetchOptions: RegistryFetchOptions = token ? { ...options, headers: { ...options.headers, Authorization: `Token ${token}` } } : options;
-  const records: Raw[] = [];
-  let count: number | null = null;
-  let next: string | null = first;
-  let pages = 0;
-  try {
-    while (next && pages < COURTLISTENER_MAX_PAGES) {
-      const body: CourtListenerResponse = await registryFetchJson<CourtListenerResponse>(next, fetchOptions);
-      if (count === null && typeof body.count === "number") count = body.count;
-      records.push(...(body.results ?? []));
-      next = body.next ?? null;
-      pages += 1;
-    }
-  } catch (error) {
-    if (error instanceof RegistryHttpError && (error.status === 401 || error.status === 403)) {
-      return {
-        sourceUrl: first,
-        count: null,
-        cases: [],
-        truncated: false,
-        missingFields: [],
-        unexpectedFields: [],
-        authRequired: `CourtListener answered HTTP ${error.status}: search needs an API token${token ? " (the one set was refused)" : "; set COURTLISTENER_API_TOKEN (free account) to load fee lawsuits"}`,
-      };
-    }
-    throw error;
-  }
-  const byDocket = new Map<string, FeeLawsuit>();
-  for (const raw of records) {
-    const docketId = idValue(raw.docket_id);
-    if (!docketId || byDocket.has(docketId)) continue;
-    const { recap_documents: _documents, ...kept } = raw;
-    void _documents;
-    const caseName = cellText(raw.caseName);
-    const path = cellText(raw.docket_absolute_url);
-    byDocket.set(docketId, {
-      docketId,
-      caseName,
-      court: cellText(raw.court),
-      courtId: cellText(raw.court_id),
-      docketNumber: cellText(raw.docketNumber),
-      filedDate: eventDate(raw.dateFiled),
-      docketUrl: path ? new URL(path, "https://www.courtlistener.com").toString() : null,
-      suitNature: cellText(raw.suitNature),
-      cause: cellText(raw.cause),
-      defendantName: defendantOf(caseName),
-      raw: kept,
-    });
-  }
-  const seen = new Set(records.flatMap((r) => Object.keys(r)));
-  return {
-    sourceUrl: first,
-    count,
-    cases: [...byDocket.values()],
-    truncated: next !== null,
-    missingFields: records.length === 0 ? [] : COURTLISTENER_FIELDS.filter((f) => !seen.has(f)),
-    unexpectedFields: [],
-    authRequired: null,
-  };
-}
+// (d) Fee lawsuits from CourtListener were removed on 2026-10-17: its terms allow only personal,
+// educational or research use (DECISIONS.md "No non-commercial data").
 
 // ---------------------------------------------------------------------------
 // (e) Public comments on fee rules (regulations.gov v4; needs a free api.data.gov key)

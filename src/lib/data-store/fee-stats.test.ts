@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  activeInstitutionFilter,
   maturityTier,
   summarizeFees,
   summarizeFeesBy,
@@ -8,6 +9,7 @@ import {
   STATS_ROW_FILTER,
   businessSourceSql,
   statsRowFilter,
+  safeDepositServiceSql,
   sharedScheduleRepresentatives,
   countedAmounts,
   countedInstitutionCount,
@@ -19,8 +21,12 @@ import {
   COUNT_SHARED_SCHEDULE_ONCE,
   STATS_SCHEDULE_KEYS,
   STATS_METHOD_VERSION,
+  STATS_POPULATION_FILTERS,
+  statsPopulationFilters,
+  statsCounting,
 } from "./fee-stats";
 import { BUSINESS_PATH_SQL, CONSUMER_PATH_SQL, isBusinessOnlyLink } from "@/lib/agents/magellan/link-coverage";
+import { SAFE_DEPOSIT_SERVICE_SQL, basisMismatchSql } from "@/lib/fee-comparability";
 
 function rowsFor(amounts: (number | string | null)[], charter = "bank") {
   return amounts.map((amount, index) => ({ institution_id: index + 1, amount, charter_type: charter }));
@@ -187,6 +193,23 @@ it("shares the same audience boundary across SQL aliases without filtering out z
   expect(() => statsRowFilter("c; SELECT 1")).toThrow("Invalid statistics table alias");
 });
 
+it("leaves safe deposit service charges out of every median, on any alias (#1816, rule 8)", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain(`AND NOT ${safeDepositServiceSql("c")}`);
+  expect(safeDepositServiceSql("c")).toContain("c.fee_category = 'safe_deposit_box'");
+  expect(safeDepositServiceSql("c")).toContain(`COALESCE(c.fee_name, '') ~* '${SAFE_DEPOSIT_SERVICE_SQL}'`);
+  expect(STATS_ROW_FILTER).toContain("ef.fee_category = 'safe_deposit_box'");
+});
+
+it("leaves fees charged on a different basis than their category's out of every median, on any alias (#1901, rule 9)", () => {
+  const predicate = statsRowFilter("c");
+  expect(predicate).toContain(`AND NOT ${basisMismatchSql("c")}`);
+  expect(basisMismatchSql("c")).toBe(
+    "COALESCE((c.fee_category IN ('dormant_account', 'minimum_balance', 'monthly_maintenance') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('quarterly', 'annual', 'daily', 'hourly', 'one_time'))" +
+      " OR (c.fee_category IN ('safe_deposit_box', 'ira_administration') AND lower(btrim(c.frequency, E' \\t\\r\\n')) IN ('monthly', 'quarterly', 'daily', 'hourly', 'one_time')), false)",
+  );
+});
+
 describe("count once: sibling charters sharing one schedule (#1441, rule 7)", () => {
   // IBC's five charters (one holding company) read the same schedule and charge $30;
   // four unrelated banks charge $10, $12, $14 and $16.
@@ -329,7 +352,7 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(COUNT_SHARED_SCHEDULE_ONCE).toBe(true);
     expect(summarizeFees(rows).institution_count).toBe(5);
     expect(STATS_SCHEDULE_KEYS).toBe(`${scheduleKeysSql("ef", true)} AS schedule_keys, ${scheduleGroupSql("ef", true)} AS schedule_group`);
-    expect(STATS_METHOD_VERSION).toBe(8);
+    expect(STATS_METHOD_VERSION).toBe(17);
   });
 
   it("switched off, selects no keys and counts each charter", () => {
@@ -348,5 +371,87 @@ describe("count once: sibling charters sharing one schedule (#1441, rule 7)", ()
     expect(scheduleGroupSql("ef", true)).toContain("hc.holding_company_rssd");
     expect(() => scheduleKeysSql("ef; drop", true)).toThrow();
     expect(() => scheduleGroupSql("ef; drop", true)).toThrow();
+  });
+});
+
+/** Split a SQL boolean expression on its top-level ANDs, ignoring ANDs inside parentheses or quotes. */
+function topLevelPredicates(expr: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let start = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const ch = expr[i];
+    if (ch === "'") quoted = !quoted; // '' inside a literal toggles twice and stays quoted
+    if (quoted) continue;
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (depth === 0 && /^\sAND\s/i.test(expr.slice(i, i + 5))) {
+      parts.push(expr.slice(start, i).trim());
+      start = i + 5;
+      i += 4;
+    }
+  }
+  parts.push(expr.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
+describe("statistics population descriptions (#1924)", () => {
+  const predicates = topLevelPredicates(statsRowFilter("ef"));
+
+  it("splits the filter into its predicates", () => {
+    expect(predicates.length).toBeGreaterThanOrEqual(5);
+    expect(predicates[0]).toBe("ef.source_document_id IS NOT NULL");
+  });
+
+  it("describes every predicate in the SQL exactly once, and nothing the SQL lacks", () => {
+    for (const predicate of predicates) {
+      const describedBy = STATS_POPULATION_FILTERS.filter((f) => predicate.includes(f.sqlMarker)).map((f) => f.key);
+      expect({ predicate, describedBy: describedBy.length }).toEqual({ predicate, describedBy: 1 });
+    }
+    for (const filter of STATS_POPULATION_FILTERS) {
+      expect(predicates.filter((p) => p.includes(filter.sqlMarker)), filter.key).toHaveLength(1);
+    }
+    expect(STATS_POPULATION_FILTERS).toHaveLength(predicates.length);
+  });
+
+  it("catches a predicate added without words", () => {
+    const drifted = topLevelPredicates(`${statsRowFilter("ef")} AND ef.amount > 0`);
+    const undescribed = drifted.filter((p) => !STATS_POPULATION_FILTERS.some((f) => p.includes(f.sqlMarker)));
+    expect(undescribed).toEqual(["ef.amount > 0"]);
+  });
+
+  it("returns labels as stamp data with stable keys and no em dashes", () => {
+    const filters = statsPopulationFilters();
+    expect(filters.map((f) => f.key)).toEqual([
+      "sourced",
+      "consumer_audience",
+      "no_business_schedule",
+      "safe_deposit_rent_only",
+      "one_charging_basis",
+      "literal_charging_units",
+    ]);
+    for (const f of filters) {
+      expect(Object.keys(f).sort()).toEqual(["key", "label"]);
+      expect(f.label).not.toMatch(/\u2014/);
+    }
+  });
+
+  it("names the counting rule from the count-once switch", () => {
+    expect(statsCounting()).toBe(COUNT_SHARED_SCHEDULE_ONCE ? "counted_once" : "per_charter");
+    expect(statsCounting(true)).toBe("counted_once");
+    expect(statsCounting(false)).toBe("per_charter");
+  });
+});
+
+describe("activeInstitutionFilter", () => {
+  it("keeps every institution the regulator has not marked inactive, a null status included", () => {
+    expect(activeInstitutionFilter("ct")).toBe("ct.regulatory_status IS DISTINCT FROM 'inactive'");
+    expect(activeInstitutionFilter()).toBe(activeInstitutionFilter("ct"));
+  });
+
+  it("rejects an alias that is not a plain identifier, as statsRowFilter does", () => {
+    expect(() => activeInstitutionFilter("ct; DROP TABLE x")).toThrow("Invalid institution table alias");
+    expect(() => activeInstitutionFilter("")).toThrow();
   });
 });

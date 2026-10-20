@@ -15,3 +15,5 @@ completed text of it), or it is rejected with `rules_recheck_unreproduced`; the 
 and name holds still apply. Twins of takedowns for other reasons stay skipped. This PR.
 **Lesson:** a "skipped as duplicate" decision depends on the row it matched. When that row goes,
 the decision has to be made again.
+
+**Agent lesson:** gutenberg/pr-767-rejudge-on-change

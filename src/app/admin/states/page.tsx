@@ -7,7 +7,7 @@ import { getStateOverview } from "@/lib/admin-queries";
 import { StateLanesTable } from "./state-lanes-table";
 
 export default async function StatesPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
 
   let states: Awaited<ReturnType<typeof getStateOverview>> = [];
   try {

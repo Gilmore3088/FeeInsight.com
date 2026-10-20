@@ -138,3 +138,5 @@ name. The sampled pairs (extra row / partner) and verdicts:
 
 **Lesson:** A duplicate check keyed on `source_document_id` misses the commonest repeat: the same page
 captured twice. Key repeats on the page, meaning the document and its supersession chain.
+
+**Agent lesson:** gutenberg/pr-1454-page-copy-repeats

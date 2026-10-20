@@ -23,7 +23,7 @@ export default async function DistrictDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const { id } = await params;
   const districtId = parseInt(id, 10);
 
@@ -156,12 +156,12 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
                 </div>
               )}
 
-              {/* Economic Indicators (FRED) */}
+              {/* Economic Indicators (BLS, BEA, Fed Board) */}
               {indicatorsBySeries.size > 0 && (
                 <div className="rounded-lg border bg-white dark:bg-white/[0.02]">
                   <div className="px-5 py-3 border-b bg-gray-50/80 dark:bg-white/[0.03]">
                     <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">
-                      Economic Indicators (FRED)
+                      Economic Indicators (BLS, BEA, Fed Board)
                     </h2>
                   </div>
                   <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -491,10 +491,10 @@ async function DistrictDetailContent({ districtId }: { districtId: number }) {
       {/* Quick link to peer segmentation */}
       <div className="text-sm mt-6">
         <Link
-          href={`/admin/peers?district=${districtId}`}
+          href={`/admin/fees/catalog?district=${districtId}`}
           className="text-gray-500 hover:text-blue-600 transition-colors"
         >
-          View peer segmentation for District {districtId}
+          Compare District {districtId} fees with the national median
         </Link>
       </div>
     </>
