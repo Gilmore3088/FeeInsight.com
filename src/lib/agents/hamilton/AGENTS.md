@@ -641,7 +641,6 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     dry run, re-counted at switch-on: 1 (Selco's 143753, $10 a month, beside its $25 per-item
     Courtesy Pay).
 19. Newer-copy check (`newer-copy-retire.ts`): a fee line gone from a newer copy of its page,
-    or named there only at other prices once that copy's fee of the category is live (#2477),
     `newer_copy_drops_fee:#<newer document id>` (`NEWER_COPY_RETIRE_LIVE` is true; false makes
     it a shadow run).
 20. Identical copy (`moveRowsToIdenticalCopy`, `refresh-copy.ts`): when the current copy's
@@ -731,12 +730,10 @@ column keeps its fees. Nothing is retired unless the newer copy still states at 
 (and at least 2) of the older copy's fees, so a navigation page or redesign retires
 nothing. Retired rows get `rolled_back_reason = 'newer_copy_drops_fee:#<newer document
 id>'` and the run's batch id, and their verified row is rejected; a later copy that states
-the fee again restores it. A fee still named only at other prices (`repricedByNewerCopy`: a
-line naming it prints a price, none prints its amount, and the amount appears nowhere in the
-newer copy) is retired the same way once a live fee of its category, audience overlapping, was
-read from the newer copy, so the category stays on the page (#2477). Otherwise a fee still named
-stays live. Each pair is checked once per version (attempt log, stage `publish`, strategy
-`hamilton.newer_copy_check`, fingerprint `v2:<older>:<newer>`); v2 judges every v1 pair again. The shared learning store skips these takedowns, since the bank
+the fee again restores it. Fees still named at a new price stay live: the price change
+belongs to the publish step once Knox reads the newer copy. Each pair is checked once
+(attempt log, stage `publish`, strategy `hamilton.newer_copy_check`, fingerprint
+`v2:<older>:<newer>`; v2 judged every v1 pair again, #2477). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
@@ -786,8 +783,8 @@ flag/count and says the restoration proposals remain pending. Neither a pair dec
 restored lineage/source-check receipt survives rollback; the normal next check can retry the
 still-pending pair. This adds no retry subsystem or historical replay.
 
-v2 (#2477, James 2026-10-20) reopens every v1 pair, with its dry-run impact count in the PR and
-DECISIONS.md. The earlier fixes below kept v1 fingerprints; they applied to pending pairs and future copies,
+v2 (#2477, James 2026-10-20) reopened every v1 pair under these guards; prod dry run: 772 pairs,
+8 fees retired at 2 institutions, 0 restores. Before v2 these fixes kept v1 fingerprints; they applied to pending pairs and future copies,
 without reopening settled decisions; unlike the earlier text guards, tightening the witness
 can retire more. Bayes records the explicit no-replay policy in
 `VERSIONS_WITHOUT_REPLAY.NEWER_COPY_STRATEGY`. The historical amount-only exposure is not a
@@ -1330,7 +1327,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
-| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v2 (re-priced fees retire; every v1 pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
+| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v2 (every v1 pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |

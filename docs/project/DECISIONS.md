@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**Newer-copy check v2 reopens every settled pair.** James, 2026-10-20: "complete all steps and
+clean up data". Hamilton's newer-copy check judges every pair it decided under v1 again under the
+current guards (#2477). Prod dry run before merge, read-only: 772 pairs, 8 live fees retired at 2
+institutions, 0 restores; a proposed re-price rule was dropped after it retired 0 in the same dry
+run and review found false takedowns. Retired fees keep the existing restore path.
+
 **One front door for decisions and lessons.** James, 2026-10-20: "we need one central doc". One
 front door, `docs/project/LESSONS.md`, indexes every decision and lesson: one line per entry here,
 one per finding in `findings/`, and a pointer to each agent's `role-lessons.ts`. DECISIONS.md stays

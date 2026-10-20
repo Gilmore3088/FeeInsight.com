@@ -14,11 +14,9 @@ type SqlTag = typeof sql;
 /** Older documents checked against their newest copy per publish step; later steps pick up the rest. */
 export const NEWER_COPY_DOCUMENT_LIMIT = 25;
 export const NEWER_COPY_RETIRE_REASON = "newer_copy_drops_fee";
-// Keep v1 pair fingerprints closed (#2117/#2118/#2121): identity/hold fixes apply only to
-// pending pairs and future copies. Historical decisions are not automatically replayed;
-// Bayes documents this deliberate no-replay contract in VERSIONS_WITHOUT_REPLAY.
-// v2 (#2477 cleanup, James 2026-10-20): every pair is judged again so a fee the newer copy
-// re-prices comes down (`repricedByNewerCopy`); v1 decisions are not kept closed.
+// v2 (#2477, James 2026-10-20): every v1 pair is judged again under the current identity, restore
+// and hold guards (#2117/#2118/#2121). Prod dry run 2026-10-20: 772 pairs, 8 fees retired at 2
+// institutions, 0 restores. Recorded in DECISIONS.md and Bayes VERSIONS_WITHOUT_REPLAY.
 export const NEWER_COPY_STRATEGY = { strategy: "hamilton.newer_copy_check", version: 2 } as const;
 /**
  * The newest copy must still state at least this share of the older copy's fees before
@@ -67,11 +65,6 @@ export interface NewerCopyFeeRow extends Partial<Omit<PublishedIdentity, "fee_pu
    * alone is never identity; a row without this witness follows the source verdict.
    */
   newer_row_match?: boolean | null;
-  /**
-   * True when a live fee of the same institution, category and overlapping audience was read
-   * from the newer copy itself: the category stays on the page if this row comes down.
-   */
-  newer_live_same_key?: boolean | null;
 }
 
 export type NewerCopyVerdict = "still_stated" | "still_named" | "dropped" | "unproven" | "no_amount";
@@ -151,8 +144,6 @@ export interface NewerCopyDocumentResult {
   stillStated: number;
   stillNamed: number;
   dropped: number;
-  /** Still named, but only at other prices while the newer copy's fee of the category is live. */
-  repriced: number;
   /** Fees the reader finds in neither copy; never retired. */
   unproven: number;
   /** False when the newer copy states too few of the older copy's fees to be the same schedule. */
@@ -160,25 +151,6 @@ export interface NewerCopyDocumentResult {
   retire: NewerCopyFeeRow[];
   restore: NewerCopyFeeRow[];
   blockedRestore: NewerCopyFeeRow[];
-}
-
-/** Every dollar figure the text prints, as numbers. */
-function pricesIn(text: string): number[] {
-  return [...text.matchAll(PRICE)].map((match) => Number(match[0].replace(/[$,\s]/g, "")));
-}
-
-/**
- * Pure: the newer copy names this fee only at other prices. A line carrying the fee's name
- * prints a price, no such line prints the fee's amount, and the amount appears nowhere in
- * the newer copy. A line that names the fee with no price (a lost price column) is not this.
- */
-export function repricedByNewerCopy(fee: Pick<NewerCopyFeeRow, "fee_name" | "amount">, newerText: string): boolean {
-  const amount = Number(fee.amount);
-  if (!(amount > 0) || pricesIn(newerText).includes(amount)) return false;
-  const name = needle(fee.fee_name);
-  if (name.length < 3) return false;
-  const named = newerText.split(/\r?\n/).filter((line) => needle(line).includes(name));
-  return named.some((line) => pricesIn(line).length > 0);
 }
 
 /** Pure: verdicts for one older document's fees against its newest copy. */
@@ -191,7 +163,6 @@ export function judgeNewerCopy(fees: NewerCopyFeeRow[], newerText: string, older
     stillStated: 0,
     stillNamed: 0,
     dropped: 0,
-    repriced: 0,
     unproven: 0,
     recognized: false,
     retire: [],
@@ -208,10 +179,6 @@ export function judgeNewerCopy(fees: NewerCopyFeeRow[], newerText: string, older
       stated.push(fee);
     } else if (verdict === "still_named") {
       result.stillNamed += 1;
-      if (fee.newer_live_same_key && repricedByNewerCopy(fee, newerText)) {
-        result.repriced += 1;
-        dropped.push(fee);
-      }
     } else if (verdict === "dropped" && fee.newer_row_match) {
       result.stillNamed += 1;
     } else if (verdict === "dropped") {
@@ -239,8 +206,6 @@ export interface NewerCopyRetireResult {
   unrecognized: number;
   stillStated: number;
   stillNamed: number;
-  /** Of the retired, fees the newer copy re-prices (`repricedByNewerCopy`). */
-  repriced: number;
   retired: NewerCopyFeeRow[];
   /** Eligible source-stated proposals after excluding known exact twins. No write implied. */
   proposedRestores: number;
@@ -257,7 +222,7 @@ export interface NewerCopyRetireResult {
   restored: number;
 }
 
-const EMPTY: NewerCopyRetireResult = { live: NEWER_COPY_RETIRE_LIVE, documentsChecked: 0, unrecognized: 0, stillStated: 0, stillNamed: 0, repriced: 0, retired: [],
+const EMPTY: NewerCopyRetireResult = { live: NEWER_COPY_RETIRE_LIVE, documentsChecked: 0, unrecognized: 0, stillStated: 0, stillNamed: 0, retired: [],
   proposedRestores: 0, blockedRestores: 0, restoreBlockReasons: {}, notUpdatedRestores: 0,
   writeFailed: false, failedRestores: 0, restored: 0 };
 const RETIRED = `${NEWER_COPY_RETIRE_REASON}:%`;
@@ -269,7 +234,7 @@ export function newerCopyReceiptNote(result: Pick<NewerCopyRetireResult,
   const retired = result.live ? result.retired.length : 0;
   const restored = result.live ? (dryRun ? result.proposedRestores : result.restored) : 0;
   return retired > 0 || restored > 0
-    ? ` ${dryRun ? "Would retire" : "Retired"} ${retired.toLocaleString()} live fee(s) whose line is gone from, or re-priced in, a newer copy of the page${restored > 0 ? ` and ${dryRun ? "would restore" : "restored"} ${restored.toLocaleString()} a later copy states again` : ""}.`
+    ? ` ${dryRun ? "Would retire" : "Retired"} ${retired.toLocaleString()} live fee(s) whose line is gone from a newer copy of the page${restored > 0 ? ` and ${dryRun ? "would restore" : "restored"} ${restored.toLocaleString()} a later copy states again` : ""}.`
     : "";
 }
 
@@ -445,20 +410,7 @@ export async function retireFeesDroppedFromNewerCopy(
                   AND newer_rows.amount_kind = COALESCE(fp.amount_kind, 'flat')
                   AND newer_rows.rate_basis = COALESCE(fp.rate_basis, '')
                   AND newer_rows.product_name = ${scope.unsafe(productKeySql("fr.product_name"))}
-             ) AS newer_row_match,
-             EXISTS (
-               SELECT 1 FROM published_fee_records np
-                 JOIN verified_fee_observations nv ON nv.fee_verified_id = np.lineage_ref
-                 JOIN raw_fee_observations nfr ON nfr.fee_raw_id = nv.fee_raw_id
-                WHERE nfr.source_document_id = pair.newer_id
-                  AND np.institution_id = fp.institution_id
-                  AND np.canonical_fee_key = fp.canonical_fee_key
-                  AND np.rolled_back_at IS NULL
-                  AND np.quarantined_at IS NULL
-                  AND (COALESCE(np.fee_audience, 'unknown') = COALESCE(fp.fee_audience, 'unknown')
-                    OR COALESCE(np.fee_audience, 'unknown') IN ('unknown', 'both')
-                    OR COALESCE(fp.fee_audience, 'unknown') IN ('unknown', 'both'))
-             ) AS newer_live_same_key
+             ) AS newer_row_match
         FROM unnest(${olderIds}::bigint[], ${newerIds}::bigint[]) AS pair(older_id, newer_id)
         JOIN raw_fee_observations fr ON fr.source_document_id = pair.older_id
         JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
@@ -496,7 +448,6 @@ export async function retireFeesDroppedFromNewerCopy(
     unrecognized: documents.filter((doc) => !doc.recognized).length,
     stillStated: documents.reduce((total, doc) => total + doc.stillStated, 0),
     stillNamed: documents.reduce((total, doc) => total + doc.stillNamed, 0),
-    repriced: documents.reduce((total, doc) => total + (doc.recognized ? doc.repriced : 0), 0),
     retired: documents.flatMap((doc) => doc.retire),
     proposedRestores: documents.reduce((total, doc) => total + doc.restore.length, 0),
     blockedRestores: documents.reduce((total, doc) => total + doc.blockedRestore.length, 0),
