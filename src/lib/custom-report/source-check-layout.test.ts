@@ -1041,6 +1041,10 @@ describe("a fee never traces to its neighbour's price (#1827)", () => {
     const fig = ["CHECKING ACCOUNTS", "Copy of a Paid Check | Free", "(first 2 per month)", "Copy of a Paid Check — | $3.00 each", "additional copies"].join("\n");
     expect(ownRowRefusal(fig, "Copy of a Paid Check", 3)).toBeNull();
     expect(checkFeeAgainstSource(fig, "Copy of a Paid Check", 3, ".", "check_image").ok).toBe(true);
+    // Eagle Bank's stored lines open with the PDF symbol-font bullet U+F0B7: still the fee's own row.
+    const bulleted = "Heritage Checking | blank\n\uF0B7 Monthly Service Charge* | $8.00\nLiberty Checking | blank\n\uF0B7 Monthly Service Charge | $16.00";
+    expect(ownRowRefusal(bulleted, "Monthly Service Charge", 8)).toBeNull();
+    expect(ownRowRefusal("\uF0B7 Stop Payment | $30.00\n\uF0B7 Wire Transfer | $25.00", "Stop Payment", 25)).not.toBeNull();
     // A marked own row still refuses a neighbour's price.
     expect(ownRowRefusal("Stop Payment* | $30.00\nWire Transfer | $25.00", "Stop Payment", 25)).not.toBeNull();
   });

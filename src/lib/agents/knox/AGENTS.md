@@ -294,6 +294,12 @@ Source check v19 refuses the Colby boxes and most of doc 2491's live reads, so t
 through Hamilton's source check. The levy (141206) stays live: on its full page the check reads
 "$5-$15" as a tiered fee, which traces.
 
+v91 (Oct 20, #1829, #1830) reads a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic
+only)") as document reproduction (`FAX_SERVICE`, fold v19). "Domestic" there is where the fax
+goes, not a domestic wire sent by fax, so "Domestic incoming (fax)" stays where it is. A stop
+payment that lists what it stops is already read by its head on main (doc 36961). Guard v79 takes
+down the cut bill pay reads still live.
+
 v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
 other mailed-back statements file as returned mail, the type made for returned or undeliverable
 mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing

@@ -151,6 +151,9 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
 // statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
 // v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
+// v91 (#1829): a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic only)") reads as
+// document reproduction (`FAX_SERVICE`, fold v19); "domestic" there is where the fax goes, not a
+// wire. The stale-read floor stays at v78; the fold moves the live ones.
 // v92 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
 // Deposit Box 3”x5”x22”/Year") is read one fee per line when it runs two lines or more and no bare
 // price closes it, a range row ("$5-$15 | Levy") never names the row under it, and a heading never

@@ -16,8 +16,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-181 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+182 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
+- 2026-10-20 — Newer-copy check v2 reopens every settled pair. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Legacy event-log partitions are dropped, not trimmed. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Call-report quarterly summaries are computed once per load. — [decision](DECISIONS.md#2026-10-20)
@@ -277,8 +278,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A consumer comparison needs the payer checked as well as the category. — [finding](findings/2026-10-09-business-wire-as-consumer-price.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 - 2026-10-09 — Returned bonds and coupons were filed as NSF. — [finding](findings/2026-10-09-bond-return-filed-nsf.md) — Agent lesson: darwin/pr-898-file-by-whose-item
 
-### Verification and publication (43)
+### Verification and publication (44)
 
+- 2026-10-20 — Measure a takedown rule on prod before building it out: the dry run showed the rule reached none of the fees it was meant for (#2477). — [finding](findings/2026-10-20-superseded-copy-fees-stay-live.md) — Guard: `src/lib/agents/hamilton/newer-copy-retire.db.test.ts`
 - 2026-10-20 — A fee found again on a newer document should cite the newer document. — [finding](findings/2026-10-20-live-fees-stay-on-moved-pages.md) — Agent lesson: hamilton/issue-1200-follow-moved-pages
 - 2026-10-20 — Held rates kept Knox's 0.5 placeholder confidence after promotion (#1055). — [finding](findings/2026-10-20-held-rates-kept-placeholder-confidence.md) — Guard: `src/lib/agents/knox/held-rate-confidence.db.test.ts`
 - 2026-10-20 — Agent checks could take down a fee an admin had corrected. — [finding](findings/2026-10-20-agent-checks-undo-admin-corrections.md) — Guard: `src/lib/fee-corrections.db.test.ts`

@@ -336,6 +336,16 @@ export const KNOX_LESSONS: AgentLesson[] = [
     since: "2026-10-20",
   },
   {
+    id: "issue-1829-fax-names-its-destination",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A line led by the fax itself (\"Fax (Domestic & International)\", \"Faxes (Domestic only)\") is a fax service, filed as document reproduction. \"Domestic\" or \"international\" there says where the fax goes. Only words for another service (a wire, a payoff, a request, email) make fax the channel for something else.",
+    why: "Open Bank's and PromiseOne Bank's fax services went live as account research, because the fax rule read \"domestic\" as a domestic wire sent by fax. On Oct 20, 5 more live fax services were filed the same way.",
+    evidence: { issues: [1829], prs: [2470], files: ["src/lib/fee-fold.ts", "src/lib/agents/knox/rules.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
+  {
     id: "issue-1827-each-row-keeps-its-own-price",
     agent: "knox",
     stage: "extract",

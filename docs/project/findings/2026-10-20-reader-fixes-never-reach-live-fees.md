@@ -27,9 +27,10 @@ cell-less list (doc 37839) went live on Oct 18, after #1838, with "3”x5”" at
   `layout.ts`).
 - Live effect (real code over the candidates, Oct 20): 16 live fees come down. The own-row rule takes 10:
   30886, 30894, 51571 and 74628 (doc 2491), 35082, 55923, 120509, 125131, 127247 and 132529. The size
-  rule takes 6: 71346 and 99157 to 99161. Each is a wrong read. A name cell with a footnote mark or a
-  trailing dash ("Monthly Service Charge* | $8.00", "Copy of a Paid Check — | $3.00") is the fee's own
-  row, so Eagle Bank's 56377 and FIG CU's 145890 keep their real prices.
+  rule takes 6: 71346 and 99157 to 99161. Each is a wrong read. A name cell with a trailing dash or a
+  footnote mark ("Copy of a Paid Check — | $3.00", "Monthly Service Charge* | $8.00"), or one that opens
+  with a bullet (U+F0B7 included), is the fee's own row. So FIG CU's 145890 keeps its real price; a
+  first version of the rule would have taken it down.
 - Wrong reads that stay live: the levy 141206 (its page's "$5-$15" reads as a tiered fee, which traces),
   51639 (kept by `readerLostLine`) and 51438 (its two-column line prints the fee's own size). These
   are on the Knox tracker (#1092).

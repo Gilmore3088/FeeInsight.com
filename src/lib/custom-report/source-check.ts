@@ -1139,7 +1139,8 @@ function rowName(value: string): string {
     // Bold marks and footnote marks ("Monthly Service Charge* | $8.00", "Fee† | $5") are not the name.
     .replace(/[*†‡¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, " ")
     .replace(/[‘’ʼ`]/g, "'")
-    .replace(/[|•·]/g, " ")
+    // Bullets, the PDF symbol-font bullet U+F0B7 among them, are not the name either.
+    .replace(/[|•·\uF0B7]/g, " ")
     // Nor a trailing dash before the price cell ("Copy of a Paid Check — | $3.00 each").
     .replace(/[\s:.\-–—]+$/g, "")
     .replace(/\s+/g, " ")
