@@ -11,6 +11,7 @@ import {
   coldCallRollup,
   coldFilesInRange,
   coldInstitutionSeries,
+  missingColdValue,
   percentileCont,
   prunedCallFiles,
   readColdCallRows,
@@ -133,6 +134,36 @@ describe("cold reads", () => {
     expect(read.failed).toEqual(["ffiec 2019-03-31"]);
   });
 
+  it("never reads a missing generic value as zero, keeps a reported zero, and names the file (#2315)", async () => {
+    const writer = new ColdFileWriter(CALL_ITEM_COLUMNS);
+    const base = { source: "ffiec", report_date: "2019-06-30", item_code: "RIAD4080", item_key: "service_charges_deposits_ytd", item_description: "x", schedule: "RI", unit: "thousands", period_basis: "ytd", source_url: null, agent_run_id: null, fetched_at: null };
+    writer.push([
+      { ...base, id: "1", institution_id: "11", value: "0" },
+      { ...base, id: "2", institution_id: "12", value: null },
+      { ...base, id: "3", institution_id: "13", value: "" },
+      { ...base, id: "4", institution_id: "14", value: "  " },
+      { ...base, id: "5", institution_id: "15", value: "n/a" },
+      { ...base, id: "6", institution_id: "16", value: "250" },
+    ]);
+    const file = writer.finish();
+    const store: ColdStore = { configured: true, bucket: "b", put: async () => undefined, get: async () => file.bytes };
+    const ref = { source: "ffiec", period: "2019-06-30", objectKey: "k", rowCount: 6, sha256: file.sha256 };
+    const read = await readColdCallRows([ref], { itemKey: "service_charges_deposits_ytd", institutionIds: null }, store);
+    expect(read.rows.map((r) => [r.institution_id, r.value])).toEqual([[11, 0], [16, 250]]);
+    expect(read.failed).toEqual([]);
+    expect(read.incomplete).toEqual(["ffiec 2019-06-30 (4 rows missing a value)"]);
+    // Checksum, source and period validation still come first: a bad checksum fails the file outright.
+    const bad = await readColdCallRows([{ ...ref, sha256: "0".repeat(64) }], { itemKey: "service_charges_deposits_ytd", institutionIds: null }, store);
+    expect(bad).toEqual({ rows: [], failed: ["ffiec 2019-06-30"], incomplete: [] });
+    // Rows outside the asked members are not counted against the file.
+    expect((await readColdCallRows([ref], { itemKey: "service_charges_deposits_ytd", institutionIds: [11] }, store)).incomplete).toEqual([]);
+  });
+
+  it("tells a missing value from a reported one", () => {
+    for (const value of [null, undefined, "", " ", "n/a", Number.NaN, Number.POSITIVE_INFINITY, {}]) expect(missingColdValue(value)).toBe(true);
+    for (const value of [0, "0", "-3.5", 12]) expect(missingColdValue(value)).toBe(false);
+  });
+
   it("keeps cold roll-ups separate by period basis and unit", () => {
     const rows = coldCallRollup([
       row({ value: 10, unit: "dollars", period_basis: "ytd" }),
@@ -162,7 +193,11 @@ describe("cold reads", () => {
     const file = writer.finish();
     const store: ColdStore = { configured: true, bucket: "b", put: async () => undefined, get: async () => file.bytes };
     const ref = { source: "ncua", period: "2019-06-30", objectKey: "k", rowCount: 7, sha256: file.sha256 };
-    expect(await readColdCallRows([ref], { itemKey: "acct_131", institutionIds: [12] }, store)).toEqual({ rows: [expect.objectContaining({ value: 12, source: "ncua", period_basis: "ytd", unit: "dollars" })], failed: [] });
+    expect(await readColdCallRows([ref], { itemKey: "acct_131", institutionIds: [12] }, store)).toEqual({
+      rows: [expect.objectContaining({ value: 12, source: "ncua", period_basis: "ytd", unit: "dollars" })],
+      failed: [],
+      incomplete: ["ncua 2019-06-30 (1 row missing a value)"],
+    });
     // A correctly indexed FFIEC file still cannot supply a curated NCUA measure.
     expect((await readColdCallRows([{ ...ref, source: "ffiec" }], { itemKey: "acct_131", institutionIds: [12] }, store)).rows).toEqual([]);
   });

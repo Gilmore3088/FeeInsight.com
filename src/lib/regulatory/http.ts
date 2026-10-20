@@ -30,6 +30,33 @@ export class RegistryHttpError extends Error {
   }
 }
 
+/** One landing page a list loader tried, and what it answered. */
+export interface RegistryPageTried {
+  url: string;
+  status: "ok" | "not_found" | "error";
+  error?: string;
+}
+
+/**
+ * Every landing page a loader tried failed (404 or an error), so nothing was checked at all
+ * (#2306). It is a failure, never an empty check: an empty result says the publisher had nothing
+ * new, which nobody can know when no page answered.
+ */
+export class RegistryUnreachableError extends RegistryHttpError {
+  constructor(readonly pagesTried: readonly RegistryPageTried[], status: number | null) {
+    const allMissing = pagesTried.every((page) => page.status === "not_found");
+    const listed = pagesTried
+      .map((page) => `${page.url} ${page.status === "not_found" ? "404" : page.error ?? "error"}`)
+      .join("; ");
+    super(
+      `No landing page could be fetched${allMissing ? "; every page returned 404" : ""}: ${listed || "no pages configured"}`,
+      pagesTried[0]?.url ?? "",
+      status,
+    );
+    this.name = "RegistryUnreachableError";
+  }
+}
+
 /**
  * A publisher host that refuses the request outright (HTTP 401 or 403), as opposed to a file it
  * has not posted (404). Loaders record that as a named missing source instead of failing the run.
