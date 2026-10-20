@@ -28,14 +28,37 @@ describe("public peer sets", () => {
     vi.mocked((sql as unknown as { unsafe: ReturnType<typeof vi.fn> }).unsafe).mockResolvedValue([{ id: 4 }]);
     vi.mocked(getHomeMarket).mockResolvedValue(null);
     const choices = await getInstitutionPeerChoices(323);
-    // Closest in assets is listed first, so it is the default set.
+    // Closest in assets is listed first, so it is the default set; it names the one peer found.
     expect(choices.map((c) => [c.key, c.label])).toEqual([
-      ["nearest", "The 25 banks closest in assets"],
+      ["nearest", "The 1 bank closest in assets"],
       ["state", "Banks in Florida"],
       ["district", "Banks in the Atlanta Fed district"],
       ["size", "Banks with $1B to $10B in assets"],
       ["regulator", "Banks regulated by the Federal Reserve"],
     ]);
+  });
+
+  it("should_name_the_nearest_set_by_the_members_the_explorer_lists", async () => {
+    // Four nearest; the explorer drops one it never names (Frost) and one without a member row.
+    const db = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe.mockImplementation((query: string, params?: unknown[]) => {
+      if (params === undefined) return query;
+      return Promise.resolve(query.includes("LIMIT") ? [{ id: 4 }, { id: 5 }, { id: 6 }, { id: 7 }] : []);
+    });
+    db.mockImplementation((strings: TemplateStringsArray) => {
+      if (strings.join("?").includes("s.institution_name")) {
+        return Promise.resolve([
+          { id: 4, institution_name: "Peer 4" },
+          { id: 5, institution_name: "Frost Bank" },
+          { id: 7, institution_name: "Peer 7" },
+        ]);
+      }
+      return Promise.resolve([subjectRow]);
+    });
+    vi.mocked(getHomeMarket).mockResolvedValue(null);
+    const nearest = (await getInstitutionPeerChoices(323)).find((choice) => choice.key === "nearest");
+    expect(nearest?.filters).toEqual({ institutionIds: [4, 7] });
+    expect(nearest?.label).toBe("The 2 banks closest in assets");
   });
 
   it("names the state groups in plain words", () => {
