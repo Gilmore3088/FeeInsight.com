@@ -438,7 +438,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // a credit guard and NBSP parity in the count SQL; still shadow.
   LIVE_FRAGMENT_STRATEGY: "Its cursor re-reads every live fee name each pass (2,000 a verify step); there is nothing to replay.",
   // v2 (#1456): a fee whose name is silent on the hour is read on its own stored line too; line-only
-  // fees are written only with HOURLY_LINE_LIVE on (off). Same cursor.
+  // fees are written only with HOURLY_LINE_LIVE on (on since 2026-10-20). Same cursor.
   HOURLY_CHECK_VERSION: "Its cursor re-reads every live fee name and stored line for an hourly price each pass (2,000 a verify step); there is nothing to replay.",
   // v1 (#1442): a new shadow pass. Its ledger cursor re-reads every live fee's source document address
   // each pass (2,000 a verify step), and nonDepositCountSql counts the whole live table read-only.

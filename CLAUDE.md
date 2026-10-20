@@ -45,7 +45,9 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   receipt comment naming the head SHA and both review verdicts, on top of the Oct 14 "Reviewed"
   rule, and a PR merges only with that record. The day's merges go to James as one digest with
   screenshots; he can ask for any of them to be reverted. Migrations, production-data changes and
-  the other actions Standing rules excludes still need James's yes.
+  the other actions Standing rules excludes still need James's yes, except a process-fix switch: one
+  with a dry-run count turns on by PR once an automatic sample of that dry run checks clean against
+  the bank's own document, and James hears in the digest (DECISIONS, 2026-10-20).
 - A PR that closes an issue whose root cause is in a pipeline agent adds a lesson to that agent's
   `src/lib/agents/<agent>/role-lessons.ts` in the same PR, so the agent gets better at its role,
   not only a check (James, 2026-10-20; DECISIONS). `scripts/ci-guards.sh lesson-kill` checks the files.

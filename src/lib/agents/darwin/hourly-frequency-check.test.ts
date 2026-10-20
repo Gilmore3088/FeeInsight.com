@@ -213,9 +213,9 @@ describe("v2: a fee priced by the hour only on its own line (#1456)", () => {
     { fee_published_id: "205", fee_verified_id: "9205", institution_id: "7", fee_name: "Research", amount: "40", canonical_fee_key: "account_research", frequency: null, source_line: "Research (per hour) | $25.00" },
   ];
 
-  it("is version 2, with the line switch off until James has seen the count", () => {
+  it("is version 2, with the line switch on after James's yes", () => {
     expect(HOURLY_CHECK_VERSION).toBe(2);
-    expect(HOURLY_LINE_LIVE).toBe(false);
+    expect(HOURLY_LINE_LIVE).toBe(true);
   });
 
   it("reads a silent name on its own line, with the same exemptions", () => {
@@ -236,7 +236,7 @@ describe("v2: a fee priced by the hour only on its own line (#1456)", () => {
 
   it("with the line switch off, writes only fees named by the hour", async () => {
     const db = dbFor([...ROWS, ...LINE_ROWS]);
-    await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false });
+    await recheckHourlyFrequencies(asDb(db), { runId: 7, stepId: 70, dryRun: false, lineLive: false });
     const update = db.mock.calls.find(([strings]) => (strings as TemplateStringsArray).join("?").includes("UPDATE published_fee_records"));
     expect(update?.[2]).toEqual([101, 102]);
     // No feedback row or set event names a line-only fee.
@@ -293,7 +293,7 @@ describe("own-price hourly attribution (#1456, production source witnesses)", ()
       W43_HOURLY_LINE_ROWS.map((row) => Number(row.fee_published_id)).sort((a, b) => a - b),
     );
     expect(found.matches.every((fee) => fee.action === "set" && fee.basis === "line")).toBe(true);
-    expect(HOURLY_LINE_LIVE).toBe(false);
+    expect(HOURLY_LINE_LIVE).toBe(true);
   });
 
   it("binds equal-price and previous-price units to their named fee", () => {
