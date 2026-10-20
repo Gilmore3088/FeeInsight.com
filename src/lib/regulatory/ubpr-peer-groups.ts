@@ -722,8 +722,13 @@ export interface UbprBulkDownload {
   productLabel: string | null;
   /** Every product label on the bulk page, for the partition detail. */
   productLabels: string[];
-  /** Why there is no zip: "product_not_listed" or "period_not_listed". */
-  missing: "product_not_listed" | "period_not_listed" | null;
+  /**
+   * Why there is no zip: "product_not_listed", "period_not_listed", or "format_not_served" when
+   * FFIEC answers the tab-delimited Download with its own form and no message (#2473).
+   */
+  missing: "product_not_listed" | "period_not_listed" | "format_not_served" | null;
+  /** The page FFIEC answered with instead of the file, as `formatFfiecPage` names it. */
+  answeredPage?: string;
 }
 
 /** Download one UBPR bulk product for one quarter, keeping only the columns `pick` asks for. */
@@ -770,7 +775,12 @@ export async function fetchUbprBulk(
   const disposition = download.headers.get("content-disposition") ?? "";
   if (!/octet-stream|zip/i.test(type) && !/attachment/i.test(disposition)) {
     // Name what FFIEC showed instead of the file (#1806), so the next run says what the form wants.
-    const answer = /html/i.test(type) ? formatFfiecPage(describeFfiecPage(await download.text())) : "no page read";
+    const answered = /html/i.test(type) ? describeFfiecPage(await download.text()) : null;
+    // The form back with nothing to say is the withdrawn tab-delimited format, not an error (#2473).
+    if (answered && answered.messages.length === 0 && productOption(formatHtml, product).value !== null) {
+      return { zip: null, fileName: null, productLabel: label, productLabels: labels, missing: "format_not_served", answeredPage: formatFfiecPage(answered) };
+    }
+    const answer = answered ? formatFfiecPage(answered) : "no page read";
     const formatOffered = /value="TSVRadioButton"/.test(formatHtml) ? "offered" : "not offered on the format page";
     throw new RegistryHttpError(
       `FFIEC returned ${type || "no content type"} instead of the UBPR bulk zip for "${label ?? "?"}" ${quarterEndDate(q)} ` +

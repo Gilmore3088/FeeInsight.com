@@ -31,8 +31,12 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 export const UBPR_PEER_GROUPS_SOURCE = "ubpr-peer-groups";
 /** v3 (#2204): follow the actual TSV radio postback handler, or submit a non-postback radio with Download. */
-export const UBPR_PEER_GROUPS_PARSER_VERSION = 3;
+export const UBPR_PEER_GROUPS_PARSER_VERSION = 4;
 const EMPTY_RETRY_HOURS = 24;
+/** A withdrawn format is re-checked weekly, not every tick (#2473). */
+const FORMAT_NOT_SERVED_RETRY_HOURS = 24 * 7;
+/** The issue tracking FFIEC's withdrawal of the tab-delimited single-period UBPR file. */
+const FORMAT_NOT_SERVED_ISSUE = 2473;
 const WRITE_CHUNK = 2_000;
 
 /** First quarter loaded: matches the FFIEC call-report lines; UBPR bulk history goes further back. */
@@ -201,6 +205,9 @@ export async function runRegistryUbprPeerGroups(options: RegistryUbprPeerGroupsO
       ? `No "UBPR Ratio -- Single Period" product on the FFIEC bulk page (products listed: ${ratioDownload.productLabels.join("; ") || "none"})`
       : ratioDownload.missing === "period_not_listed"
         ? "FFIEC does not list this UBPR quarter yet"
+        : ratioDownload.missing === "format_not_served"
+          ? `FFIEC answered the tab-delimited "${ratioDownload.productLabel ?? "UBPR ratio"}" download for ${reportDate} with its form page and no message; ` +
+            `it serves this product only as XBRL (#${FORMAT_NOT_SERVED_ISSUE})`
         : !peerLoaded && loadedRatios.length === 0
           ? `No peer group or ratio column passed its description check (files kept: ${banksRead?.files.join(", ") || "none"})`
           : null;
@@ -273,8 +280,16 @@ export async function runRegistryUbprPeerGroups(options: RegistryUbprPeerGroupsO
       rowCount: 0,
       sourceUrl: UBPR_BULK_URL,
       runId: options.runId ?? null,
-      nextAttemptAfterHours: ratioDownload.zip ? ffiecRefreshHours(quarter, now) : EMPTY_RETRY_HOURS,
-      detail: { ...detail, reason: emptyReason },
+      nextAttemptAfterHours: ratioDownload.zip
+        ? ffiecRefreshHours(quarter, now)
+        : ratioDownload.missing === "format_not_served" ? FORMAT_NOT_SERVED_RETRY_HOURS : EMPTY_RETRY_HOURS,
+      detail: {
+        ...detail,
+        reason: emptyReason,
+        ...(ratioDownload.missing === "format_not_served"
+          ? { missing_source: { host: "cdr.ffiec.gov", url: UBPR_BULK_URL, page: ratioDownload.answeredPage ?? null, issue: FORMAT_NOT_SERVED_ISSUE } }
+          : {}),
+      },
     });
     return base;
   }

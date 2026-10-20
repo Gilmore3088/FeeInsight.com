@@ -115,7 +115,7 @@ describe("Hoovie source contracts", () => {
 
   it("names the host, what it answered and the issue for every missing source", () => {
     const missing = HOOVIE_SOURCES.filter((c) => c.missingSource);
-    expect(missing.map((c) => c.source).sort()).toEqual(["fr-y9c", "nic-structure"]);
+    expect(missing.map((c) => c.source).sort()).toEqual(["fr-y9c", "nic-structure", "ubpr-peer-groups"]);
     for (const contract of missing) {
       expect(contract.missingSource?.host, contract.source).toMatch(/^[a-z0-9.-]+$/);
       expect(contract.missingSource?.observed.trim(), contract.source).not.toBe("");

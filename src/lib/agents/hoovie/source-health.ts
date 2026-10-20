@@ -161,7 +161,7 @@ export function sourceHealth(
   if (feed.blocked > 0 && after(feed.lastBlockedAt, lastSuccessAt)) {
     const host = feed.blockedHost ?? contract.missingSource?.host ?? "the publisher's host";
     const issue = contract.missingSource ? ` (#${contract.missingSource.issue})` : "";
-    return result("empty", `${host} refused production's request${issue}`);
+    return result("empty", `${host} ${contract.missingSource?.answer ?? "refused production's request"}${issue}`);
   }
   if (feed.partial) return result("failed", `${feed.partial} partition${feed.partial === 1 ? "" : "s"} partially loaded${feed.partialReason ? `: ${clip(feed.partialReason)}` : "; unavailable upstream requests recorded"}`);
   if (feed.succeeded === 0) {

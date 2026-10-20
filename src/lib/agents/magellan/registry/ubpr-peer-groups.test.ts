@@ -115,6 +115,24 @@ describe("registry ubpr-peer-groups", () => {
     expect(statements.some((s) => s.text.includes("INSERT"))).toBe(false);
   });
 
+  it("names the withdrawn format instead of failing when FFIEC echoes the form back silently (#2473)", async () => {
+    const { db, statements } = createDb();
+    const formPage = `<title>Download Bulk Data</title>${page(["UBPR Ratio -- Single Period"])}
+      <input type="radio" name="ctl00$MainContentHolder$FormatType" value="XBRLRadiobutton" />
+      <input type="submit" name="ctl00$MainContentHolder$TabStrip1$Download_0" value="Download" />`;
+    const fetchImpl = vi.fn(async () =>
+      new Response(formPage, { status: 200, headers: { "content-type": "text/html; charset=utf-8" } })) as unknown as typeof fetch;
+    const r = await runRegistryUbprPeerGroups({ partitionKey: "2026Q2", db, fetchOptions: { fetchImpl } });
+    expect(r.empty).toBe(true);
+    expect(r.emptyReason).toMatch(/tab-delimited "UBPR Ratio -- Single Period" .*2026-06-30.*form page.*XBRL.*#2473/);
+    const detail = partitionDetail(statements);
+    expect(detail.missing_source).toMatchObject({ host: "cdr.ffiec.gov", issue: 2473 });
+    expect(detail.missing_source.page).toMatch(/title "Download Bulk Data"; messages: none/);
+    const partition = statements.find((s) => s.text.includes("INSERT INTO registry_ingest_partitions"))!;
+    expect(partition.values).toContain("empty");
+    expect(statements.some((s) => s.text.includes("INSERT INTO ubpr_"))).toBe(false);
+  });
+
   it("records an empty partition when the ratio product is not listed", async () => {
     const { db, statements } = createDb();
     const fetchImpl = bulkFetch(["Call Reports -- Single Period"], []);

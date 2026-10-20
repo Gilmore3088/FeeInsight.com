@@ -94,6 +94,18 @@ describe("sourceHealth", () => {
     expect(health).toMatchObject({ status: "empty", reason: "www.ffiec.gov refused production's request (#1806)", lastSuccessAt: null });
   });
 
+  it("says how the host answers when it serves a page instead of refusing (#2473)", () => {
+    const missing = { host: "cdr.ffiec.gov", observed: "form page", fallback: null, issue: 2473,
+      answer: "serves the single-period UBPR file only as XBRL" };
+    const health = sourceHealth(
+      contract("ubpr-peer-groups", "quarterly", { missingSource: missing }),
+      feed("ubpr-peer-groups", { blocked: 1, blockedHost: "cdr.ffiec.gov", lastBlockedAt: "2026-10-18T00:00:00.000Z" }),
+      null,
+      NOW,
+    );
+    expect(health.reason).toBe("cdr.ffiec.gov serves the single-period UBPR file only as XBRL (#2473)");
+  });
+
   it("is empty when nothing has loaded, or every load came back empty", () => {
     expect(sourceHealth(contract("a"), undefined, null, NOW)).toMatchObject({ status: "empty", reason: "nothing loaded yet" });
     expect(sourceHealth(contract("a"), feed("a", { scheduled: 2 }), null, NOW)).toMatchObject({ status: "empty", reason: "nothing loaded yet; 2 partitions waiting" });
