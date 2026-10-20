@@ -200,19 +200,23 @@ describe("Hamilton hand-off", () => {
     expect(hamiltonPeerSetHref(323, [10], "Set", "overdraft", "not a date")).not.toContain("asof");
   });
 
-  it("copies a set of up to 49 peers, since a saved Hamilton group holds 50 (#1997)", () => {
-    const ids = Array.from({ length: 49 }, (_, i) => i + 1);
+  it("copies an uncapped set of up to 50 peers, since a saved Hamilton group holds 50 (#1997)", () => {
+    const ids = Array.from({ length: PEER_EXPLORER_MAX_SHOWN }, (_, i) => i + 1);
     expect(hamiltonPeerSetHref(323, ids, "Banks in Florida")).toBe(
       `/pro/settings?instId=323&peers=${ids.join("%2C")}&name=Banks+in+Florida#peer-sets`,
     );
+    expect(hamiltonPeerSetHref(323, ids, "Banks in Florida", undefined, null, false)).not.toContain("large=1");
   });
 
   it("flags a set it cannot copy instead of dropping the peers silently (#1997)", () => {
-    // A capped set reaches the page as its 50 closest peers, so 50 may stand for many more.
-    const many = Array.from({ length: PEER_EXPLORER_MAX_SHOWN }, (_, i) => i + 1);
-    expect(hamiltonPeerSetHref(323, many, "Banks in Florida", "overdraft")).toBe(
+    // A capped set reaches the page as its closest peers only, so the ids are not the whole set.
+    const shown = Array.from({ length: PEER_EXPLORER_MAX_SHOWN }, (_, i) => i + 1);
+    expect(hamiltonPeerSetHref(323, shown, "Banks in Florida", "overdraft", null, true)).toBe(
       "/pro/settings?instId=323&name=Banks+in+Florida&fee=overdraft&large=1#peer-sets",
     );
+    expect(hamiltonPeerSetHref(323, [10, 11], "Set", undefined, null, true)).toContain("large=1");
+    const over = Array.from({ length: PEER_EXPLORER_MAX_SHOWN + 1 }, (_, i) => i + 1);
+    expect(hamiltonPeerSetHref(323, over, "Set")).toContain("large=1");
     expect(hamiltonPeerSetHref(323, [], "Set")).toBe("/pro/settings?instId=323&name=Set#peer-sets");
   });
 

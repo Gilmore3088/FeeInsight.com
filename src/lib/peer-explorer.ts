@@ -465,23 +465,31 @@ export function isExplorerView(value: unknown): value is ExplorerView {
 }
 
 /**
- * Whether the page's peers are the whole set and fit a saved Hamilton group. The page receives a
- * capped set as exactly PEER_EXPLORER_MAX_SHOWN peers, so that many may stand for far more.
+ * Whether the page's peers are the whole set and fit a saved Hamilton group. A capped set
+ * (`PeerExplorerSet.whole` present) holds only its closest peers, so it never copies, whatever
+ * its count; an uncapped set copies up to the saved-group limit.
  */
-function copiesToHamilton(peerCount: number): boolean {
-  return peerCount <= MAX_SAVED_PEER_SET_INSTITUTIONS && peerCount < PEER_EXPLORER_MAX_SHOWN;
+function copiesToHamilton(peerCount: number, capped: boolean): boolean {
+  return !capped && peerCount <= MAX_SAVED_PEER_SET_INSTITUTIONS;
 }
 
 /**
  * The Hamilton peer-set page with this set filled in: the subject (instId), the peers by id when
  * the set fits a saved group, and the set's name. A set too large to copy is flagged (`large=1`)
  * so Hamilton can say so rather than open an empty form (#1997). Hamilton routes a visitor who is
- * not signed in itself.
+ * not signed in itself. `capped` is true when the page holds only part of the set (`whole` present).
  */
-export function hamiltonPeerSetHref(subjectId: number, peerIds: number[], name: string, fee?: ExplorerFeeKey, asOf?: string | null): string {
+export function hamiltonPeerSetHref(
+  subjectId: number,
+  peerIds: number[],
+  name: string,
+  fee?: ExplorerFeeKey,
+  asOf?: string | null,
+  capped = false,
+): string {
   const params = new URLSearchParams({ instId: String(subjectId) });
   const ids = [...new Set(peerIds)].filter((id) => Number.isSafeInteger(id) && id > 0);
-  const tooLarge = ids.length > 0 && !copiesToHamilton(ids.length);
+  const tooLarge = ids.length > 0 && !copiesToHamilton(ids.length, capped);
   if (ids.length > 0 && !tooLarge) params.set("peers", ids.join(","));
   if (name) params.set("name", name);
   if (fee) params.set("fee", fee);
