@@ -1,7 +1,7 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, type S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, type S3Client } from "@aws-sdk/client-s3";
 import { describe, expect, it, vi } from "vitest";
 
-import { createDocumentVault, documentKey, isVaultKey } from "./document-vault";
+import { createDocumentVault, deleteVaultObject, documentKey, isVaultKey } from "./document-vault";
 
 const HASH = "3b9e92a4b6c123245053249d4bf58f4e531c8ce2dba7b66819e6fa7c237ba168";
 
@@ -75,5 +75,16 @@ describe("vault cancellation at actual SDK send boundary",()=>{
     const last=send.mock.calls.at(-1)!;expect(last[0]).toBeInstanceOf(stage==="HEAD"?HeadObjectCommand:PutObjectCommand);
     expect(last[1]).toEqual({abortSignal:controller.signal});
     release({});await Promise.resolve();expect(send).toHaveBeenCalledTimes(stage==="HEAD"?1:2);
+  });
+});
+
+describe("deleteVaultObject", () => {
+  it("deletes one vault key and refuses anything else (cold files can share the bucket)", async () => {
+    const send = vi.fn().mockResolvedValue({});
+    await deleteVaultObject(client(send), `3b/${HASH}`, "docs");
+    expect(send.mock.calls[0][0]).toBeInstanceOf(DeleteObjectCommand);
+    expect((send.mock.calls[0][0] as DeleteObjectCommand).input).toEqual({ Bucket: "docs", Key: `3b/${HASH}` });
+    await expect(deleteVaultObject(client(send), "cold/institution_call_report_items/ffiec/2020Q1.jsonl.gz", "docs")).rejects.toThrow("Not a document vault key");
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

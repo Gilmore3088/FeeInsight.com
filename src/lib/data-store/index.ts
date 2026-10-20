@@ -4,7 +4,6 @@ export * from "./core";
 export * from "./financial";
 export * from "./fees";
 export * from "./dashboard";
-export * from "./peers";
 export * from "./saved-peers";
 export * from "./fed";
 export * from "./fee-index";

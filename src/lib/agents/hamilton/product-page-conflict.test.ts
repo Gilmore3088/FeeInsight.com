@@ -11,6 +11,8 @@ import {
   productPageConflictSql,
   retireProductPageConflicts,
   toConflict,
+  isSameItemConflict,
+  sameItem,
 } from "./product-page-conflict";
 import { TIER_NAME_SQL, TIER_PATH_SQL } from "@/lib/agents/darwin/tier-perk";
 
@@ -89,5 +91,73 @@ describe("product-page fees the schedule prices differently (James, 2026-10-13)"
     expect(result).toMatchObject({ live: false, conflicts: 1, rolledBack: [] });
     expect(calls.some((text) => text.includes("UPDATE published_fee_records"))).toBe(false);
     expect(PRODUCT_PAGE_CONFLICT_CHECK).toBe("hamilton.product_page_conflict");
+  });
+
+  describe("judges the same item, not only the same category (Lane speed sample, 2026-10-20: 12 of 20 wrong)", () => {
+    const row = (feeName: string, amount: number, lines: Array<[string, number]>) => ({
+      fee_published_id: 1, fee_verified_id: 1, institution_id: 1, source_document_id: 1, document_url: "https://bank.test/checking",
+      canonical_fee_key: "x", fee_name: feeName, amount, schedule_amounts: lines.map(([, a]) => a),
+      schedule_lines: lines.map(([name, a]) => ({ name, amount: a })),
+    });
+
+    it("leaves a fee live when the schedule prices a different item in its category", () => {
+      expect(isSameItemConflict(row("HSA Account Closing Fee", 25, [["Christmas Club Early Withdrawal Penalty", 10]]))).toBe(false);
+      expect(isSameItemConflict(row("Returned Item Fee", 30, [["Bill Pay NSF Fee", 25]]))).toBe(false);
+      expect(isSameItemConflict(row("Loan Application Fee", 50, [["Payoff Quote Fee", 20]]))).toBe(false);
+    });
+
+    it("takes down a fee the schedule prices differently under the same name", () => {
+      expect(isSameItemConflict(row("Stop Payment Fee", 25, [["Stop Payment", 30]]))).toBe(true);
+      expect(isSameItemConflict(row("Overdraft Fee", 25, [["Overdraft fees", 35], ["Bill Pay NSF Fee", 25]]))).toBe(true);
+    });
+
+    it("leaves a fee live when any schedule line for the same item has its price, or it is named as a discount", () => {
+      expect(isSameItemConflict(row("Stop Payment Fee", 30, [["Stop Payment", 35], ["Stop Payment Fee", 30]]))).toBe(false);
+      expect(isSameItemConflict(row("Discounted Return Item Fee", 24.99, [["Return Item Fee", 30]]))).toBe(false);
+    });
+
+    it("reads same-item names past case, plurals and a trailing fee, not across items", () => {
+      expect(sameItem("Stop Payments", "stop payment fee")).toBe(true);
+      expect(sameItem("Returned Item", "Bill Pay NSF")).toBe(false);
+      expect(sameItem("", "Stop Payment")).toBe(false);
+    });
+
+    it("pairs only the same item: one extra word is another item (re-sample, 2026-10-20)", () => {
+      expect(sameItem("Rush Card", "International Rush Card")).toBe(false);
+      expect(sameItem("Cashing Money Orders", "Money Orders")).toBe(false);
+      expect(sameItem("Early closing fee", "Early Closing Fees")).toBe(true);
+      expect(sameItem("Check copy", "Check Copies")).toBe(true);
+      expect(sameItem("Cashier's Checks", "Cashiers Check Fee")).toBe(true);
+    });
+
+    describe("counts only schedule lines that can speak against the page", () => {
+      const at = (feeName: string, amount: number, host: string, readAt: string, lines: Array<[string, number, string, string]>) => ({
+        ...row(feeName, amount, []),
+        product_host: host,
+        product_read_at: readAt,
+        schedule_amounts: lines.map(([, a]) => a),
+        schedule_lines: lines.map(([name, a, h, r]) => ({ name, amount: a, host: h, read_at: r })),
+      });
+
+      it("never another host's schedule (Popular: populardirect.com is another division's)", () => {
+        expect(isSameItemConflict(at("Overdraft fee", 34, "popularbank.com", "2026-10-09", [["Overdraft Fee", 10, "populardirect.com", "2026-10-09"]]))).toBe(false);
+        expect(isSameItemConflict(at("Overdraft fee", 34, "popularbank.com", "2026-10-09", [["Overdraft Fee", 10, "popularbank.com", "2026-10-09"]]))).toBe(true);
+      });
+
+      it("never a $0 benefits line", () => {
+        expect(isSameItemConflict(at("Domestic Wire", 20, "ffcu.test", "2026-10-09", [["Domestic Wire", 0, "ffcu.test", "2026-10-10"]]))).toBe(false);
+      });
+
+      it("never a copy older than the page (GTE: the newer page is itself the full schedule)", () => {
+        expect(isSameItemConflict(at("NSF Fee", 37, "gte.test", "2026-10-09", [["NSF Fee", 35, "gte.test", "2026-10-03"]]))).toBe(false);
+        expect(isSameItemConflict(at("NSF Fee", 37, "gte.test", "2026-10-09", [["NSF Fee", 35, "gte.test", "2026-10-12"]]))).toBe(true);
+      });
+    });
+
+    it("leaves a tier's own product page or fee out (two BankOn $0s in the sample)", () => {
+      const text = productPageConflictSql("all");
+      expect(text).toContain("bank[\\s_-]?on");
+      expect(text).toContain("COALESCE(p.fee_name, '') !~*");
+    });
   });
 });

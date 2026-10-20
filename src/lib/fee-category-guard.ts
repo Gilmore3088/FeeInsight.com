@@ -147,6 +147,16 @@ export const CLUB_WITHDRAWAL = /^(?![\s\S]*\b(?:clos(?:e|ed|es|ing|ure)|cds?|cer
 const IRA_EXCESS_WITHDRAWALS = /\bexcess(?:ive)?\s+ira\s+withdrawals?\b|\bira\s+withdrawals?\s+(?:over|in\s+excess|beyond)\b/i;
 /** v74: shipping or ordering foreign currency ("Foreign Currency – Expedited Shipping" $15, 154166) is not a rushed card. */
 const CURRENCY_SERVICE = /\bcurrenc(?:y|ies)\b|\bforeign\s+cash\b/i;
+/**
+ * v77: a card that draws only on credit ("Credit Card Replacement" $25, "Replace a Visa Credit Card",
+ * "HELOC Access Card Replacement") is a lending product, not the deposit account's card. A line that
+ * also names a debit, ATM or check card ("Debit/Credit Card Replacement") is the deposit card's fee;
+ * a credit union's own card ("Credit Union Membership Card") is not a credit card. "Credit" must sit
+ * just before "card" (or in "Card Rush (Credit)"), so a refund ("$5 credit to your account if
+ * fraud") on a deposit card line is not read as a credit card.
+ */
+const CREDIT_CARD_ONLY =
+  /^(?![\s\S]*(?:debit|\batm\b|\bcheck\s?cards?\b|\bhsa\b|\btravel\s+cards?\b|\bprepaid\b|\bgift\b))(?:[\s\S]*\bcredit(?:\b|(?=cards?\b))(?![-\s]*unions?\b)(?:(?!\b(?:to|back|if|refund)\b)[^.;()$]){0,20}?cards?\b|[\s\S]*\bcards?\b[^.;$]{0,30}\(\s*credit\s*\)|[\s\S]*\btarjetas?\s+de\s+cr[eé]dito\b|(?=[\s\S]*\bcards?\b)[\s\S]*(?:\bheloc\b|\bhome\s+equity\b|\bline\s+of\s+credit\b))/i;
 /** v74: investigating or tracing a payment ("Online Bill Payment Investigation" $30, 154324) is research, not bill pay. */
 const PAYMENT_INVESTIGATION = /\binvestigat|\bresearch\b|\btrac(?:e|er|ing)\b/i;
 /**
@@ -508,7 +518,7 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     // v35: express, priority or two-day delivery of a replacement card is the rush card fee
     // ("Replacement Card - Express Mail" $40, "Debit Card Replacement Priority Delivery" $40).
     exclude: new RegExp(
-      `(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b[^|]{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
+      `${CREDIT_CARD_ONLY.source}|(check(?!\\s?card)|statement|key|book|expedit|rush|overnight|gift|${EXPRESS_CARD}|^(?!.*\\b(cards?|tarjetas?)\\b[^|]{0,20}(replace|reemplaz))(?!.*(replace|reemplaz)[^|]{0,20}\\b(cards?|tarjetas?)\\b).*\\bpins?\\b|liabilit|closed account|chequera|llave|estado de cuenta|regalo|expr[eé]s\\b|urgente)`,
       "i",
     ),
   },
@@ -703,7 +713,8 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     onlyIfRefiles: true,
   },
   // v74: shipping foreign currency is a delivery charge, not a rushed card (`CURRENCY_SERVICE`).
-  rush_card: { include: /\S/, exclude: CURRENCY_SERVICE },
+  // v77: a credit card's rushed replacement is a lending fee (`CREDIT_CARD_ONLY`).
+  rush_card: { include: /\S/, exclude: new RegExp(`${CURRENCY_SERVICE.source}|${CREDIT_CARD_ONLY.source}`, "i") },
   // v74: an IRA's withdrawals over a count are an IRA charge, not its closing fee (`IRA_EXCESS_WITHDRAWALS`).
   ira_termination: { include: /\S/, exclude: IRA_EXCESS_WITHDRAWALS },
 };
@@ -821,7 +832,9 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // filed as International ATM & Card (`ATM_ABROAD`) or as the non-network ATM fee re-files to
 // `atm_international`, which gets its own rule; the card's type is Foreign Transaction again. Counts
 // in the PR (#1026 ledger).
-export const CATEGORY_GUARD_VERSION = 76;
+// v77 (Oct 19, W43 live check): a card that draws only on credit (`CREDIT_CARD_ONLY`) fails the
+// replacement and rushed card rules; a credit card is a lending product. Counts in the PR.
+export const CATEGORY_GUARD_VERSION = 77;
 
 /**
  * Categories whose fee is usually a rate ("1% of the transaction"). A dollar amount filed

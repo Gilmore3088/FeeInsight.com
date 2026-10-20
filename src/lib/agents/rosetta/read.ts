@@ -18,6 +18,7 @@ import {
 import { FEE_PAGE_CHECK_VERSION, scoreFeePage, urlNamesFeePage, type FeePageScore } from "@/lib/agents/learning/fee-page";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
 import { backfillPlaybookFormats } from "@/lib/agents/learning/format-backfill";
+import { backfillDocumentKinds } from "./document-kind-backfill";
 import {
   detectFormat,
   documentTypeForFormat,
@@ -267,6 +268,8 @@ export interface RunRosettaReadResult {
   batchReviewError: string | null;
   /** Institutions whose learned format was filled in from an earlier text. */
   formatsBackfilled: number;
+  /** Stored texts given a document kind this step (#1094 backfill). */
+  documentKindsBackfilled: number;
   /** Institutions whose fee URL was cleared so Magellan finds the real fee page. */
   sentBackToMagellan: number;
   chars: number;
@@ -2517,6 +2520,10 @@ export async function runRosettaRead(
   const formats = learning
     ? await backfillPlaybookFormats(db, { dryRun, institutionId: options.institutionId })
     : { updated: 0, byFormat: {} };
+  // #1094: texts read before Rosetta stored a kind (or under an older kind version) get one.
+  const kinds = textColumns
+    ? await backfillDocumentKinds(db, { dryRun, institutionId: options.institutionId })
+    : { classified: 0, byKind: {} };
 
   const readBy = (strategy: string) =>
     results.filter((result) => result.status === "completed" && result.followUps.some((f) => f.strategy === strategy && f.outcome === "ok")).length;
@@ -2553,6 +2560,7 @@ export async function runRosettaRead(
     batchReviews: batchReview.batches,
     batchReviewError,
     formatsBackfilled: formats.updated,
+    documentKindsBackfilled: kinds.classified,
     chars: results.reduce((total, result) => total + result.charCount, 0),
     limit,
     dryRun,

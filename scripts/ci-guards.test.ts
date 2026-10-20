@@ -146,3 +146,156 @@ describe("runtime-ddl-kill", () => {
     expect(status, output).toBe(0);
   });
 });
+
+/** lesson-kill (DECISIONS 2026-10-20): every agent's role lessons are complete, its own and unique. */
+describe("lesson-kill", () => {
+  const REGISTRY = "src/lib/agents/learning/lesson-registry.ts";
+  const entry = (id: string, agent: string, since = "2026-10-19") => [
+    "  {",
+    `    id: "${id}",`,
+    `    agent: "${agent}",`,
+    '    stage: "extract",',
+    '    lesson: "Read the per-item price.",',
+    '    why: "Totals were read as prices.",',
+    "    evidence: { issues: [1], prs: [], files: [] },",
+    '    appliesTo: "all",',
+    `    since: "${since}",`,
+    "  },",
+  ].join("\n");
+  const file = (...entries: string[]) => `export const LESSONS = [\n${entries.join("\n")}\n];\n`;
+
+  function lessonRepo(files: Record<string, string>, registry = 'import { K } from "@/lib/agents/knox/role-lessons";\nimport { D } from "@/lib/agents/darwin/role-lessons";\n') {
+    repo = mkdtempSync(join(tmpdir(), "lesson-guard-"));
+    write(REGISTRY, registry);
+    for (const [path, text] of Object.entries(files)) write(path, text);
+    const out = spawnSync("bash", [GUARD, "lesson-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes complete lessons with unique ids", () => {
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox"), entry("issue-2", "knox")),
+      "src/lib/agents/darwin/role-lessons.ts": file(entry("issue-3", "darwin")),
+    });
+    expect(status, output).toBe(0);
+    expect(output).toContain("3 role lessons in 2 agent files");
+  });
+
+  it("fails a reused id, another agent's lesson, a missing field and a bad date", () => {
+    const missingWhy = entry("issue-4", "knox").replace(/\n {4}why: .*,/, "");
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox"), entry("issue-2", "darwin"), missingWhy, entry("issue-5", "knox", "Oct 19")),
+      "src/lib/agents/darwin/role-lessons.ts": file(entry("issue-1", "darwin")),
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("lesson ids used more than once: issue-1");
+    expect(output).toContain('names another agent (agent: "darwin",)');
+    expect(output).toContain("4 lessons but 3 'why:' fields");
+    expect(output).toContain('since: "Oct 19"');
+  });
+
+  it("fails a Hamilton lesson that names an internal agent, since it reaches customer answers", () => {
+    const leaky = entry("issue-6", "hamilton").replace("Read the per-item price.", "Trust what Knox extracted.");
+    const { status, output } = lessonRepo({
+      "src/lib/agents/hamilton/role-lessons.ts": file(leaky, entry("issue-7", "hamilton")),
+    }, 'import { H } from "@/lib/agents/hamilton/role-lessons";\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("a Hamilton lesson names an internal agent");
+    expect(output).not.toContain("issue-7");
+  });
+
+  it("fails an agent file the registry does not import, and a folder that is not a pipeline agent", () => {
+    const { status, output } = lessonRepo({
+      "src/lib/agents/knox/role-lessons.ts": file(entry("issue-1", "knox")),
+      "src/lib/agents/growth/role-lessons.ts": file(entry("Issue_2", "growth")),
+    }, 'import { K } from "@/lib/agents/knox/role-lessons";\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("growth is not a pipeline agent");
+    expect(output).toContain("src/lib/agents/growth/role-lessons.ts: not imported");
+    expect(output).toContain("lesson id 'Issue_2'");
+  });
+});
+
+/** findings-file-kill (#1108): a new or changed finding names its guard or a real agent lesson. */
+describe("findings-file-kill guard or lesson", () => {
+  const FINDINGS = "docs/project/findings";
+  const LESSONS = 'export const K = [\n  {\n    id: "issue-2209",\n  },\n];\n';
+
+  function findingsRepo(change: Record<string, string>) {
+    repo = mkdtempSync(join(tmpdir(), "findings-guard-"));
+    git("init", "-q", "-b", "main");
+    write("docs/project/FINDINGS.md", "# Findings\n## 2026-10-01 old\n");
+    // The template's example line is not a finding's reference.
+    write(`${FINDINGS}/README.md`, "# Findings\n**Agent lesson:** knox/issue-2209 (when an agent caused it)\n");
+    write(`${FINDINGS}/2026-10-01-old-unguarded.md`, "# old\n**Lesson:** prose only.\n");
+    write("src/lib/agents/knox/role-lessons.ts", LESSONS);
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("checkout", "-q", "-b", "pr");
+    for (const [path, text] of Object.entries(change)) write(path, text);
+    git("add", "-A");
+    git("commit", "-qm", "pr");
+    const out = spawnSync("bash", [GUARD, "findings-file-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes a new finding with a Guard line or a real agent lesson, and only counts old ones", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-guarded.md`]: "# a\n**Guard:** `src/lib/x.test.ts`\n",
+      [`${FINDINGS}/2026-10-21-lesson.md`]: "# b\n**Agent lesson:** knox/issue-2209\n",
+    });
+    expect(status, output).toBe(0);
+    expect(output).toContain("1 older findings name neither");
+  });
+
+  it("fails a new finding and a changed old finding that name neither", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-bare.md`]: "# c\n**Lesson:** prose only.\n",
+      [`${FINDINGS}/2026-10-01-old-unguarded.md`]: "# old, edited\n**Lesson:** prose only.\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain(`${FINDINGS}/2026-10-21-bare.md`);
+    expect(output).toContain(`${FINDINGS}/2026-10-01-old-unguarded.md`);
+  });
+
+  it("fails an empty agent lesson line and a lesson id that only matches as a pattern", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-empty.md`]: "# e\n**Agent lesson:**\n",
+      [`${FINDINGS}/2026-10-21-dot.md`]: "# f\n**Agent lesson:** knox/issue.2209\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toMatch(/2026-10-21-empty\.md|2026-10-21-dot\.md: knox\/issue\.2209/);
+  });
+
+  it("fails an agent lesson that does not exist", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-wrong.md`]: "# d\n**Agent lesson:** darwin/issue-2209, knox/issue-9999\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("2026-10-21-wrong.md: darwin/issue-2209");
+    expect(output).toContain("2026-10-21-wrong.md: knox/issue-9999");
+  });
+});
+
+/** queue-owner-kill (#1108): a migration's *_queue table has an owner and an alarm in the registry. */
+describe("queue-owner-kill", () => {
+  function queueRepo(migration: string, registry: string) {
+    repo = mkdtempSync(join(tmpdir(), "queue-guard-"));
+    write("supabase/migrations/20270101000000_q.sql", migration);
+    write("src/lib/agents/queue-registry.ts", registry);
+    const out = spawnSync("bash", [GUARD, "queue-owner-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes a queue table the registry lists", () => {
+    const { status, output } = queueRepo("CREATE TABLE IF NOT EXISTS public.label_queue (id bigint);\n", '    tables: ["label_queue", "raw_fee_observations"],\n');
+    expect(status, output).toBe(0);
+  });
+
+  it("fails a queue table the registry does not list, even when its name appears elsewhere", () => {
+    const { status, output } = queueRepo("create table public.label_queue (id bigint);\n", '// label_queue is mentioned but not owned\n    tables: ["other"],\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("label_queue");
+  });
+});

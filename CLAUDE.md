@@ -46,6 +46,9 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   rule, and a PR merges only with that record. The day's merges go to James as one digest with
   screenshots; he can ask for any of them to be reverted. Migrations, production-data changes and
   the other actions Standing rules excludes still need James's yes.
+- A PR that closes an issue whose root cause is in a pipeline agent adds a lesson to that agent's
+  `src/lib/agents/<agent>/role-lessons.ts` in the same PR, so the agent gets better at its role,
+  not only a check (James, 2026-10-20; DECISIONS). `scripts/ci-guards.sh lesson-kill` checks the files.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
   its PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and

@@ -13,5 +13,3 @@ export const MODE_BEHAVIOR = {
   report:   { canRecommend: true,  canExport: true,  canSimulate: false },
   monitor:  { canRecommend: false, canExport: false, canSimulate: true  },
 } as const;
-
-export type ModeBehavior = (typeof MODE_BEHAVIOR)[HamiltonMode];

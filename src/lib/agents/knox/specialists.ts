@@ -147,7 +147,9 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 // known special units leave mixed-unit comparisons. Historical raw metadata stays settled.
 // v88 (#2021/#2284/#2286): explicit domestic post-price directions bind paired wire
 // prices; the same bounded own-price refusal applies to free, paid and live rechecks.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 88 } as const;
+// v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
+// statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 89 } as const;
 
 export interface SpecialistRun {
   strategy: string;

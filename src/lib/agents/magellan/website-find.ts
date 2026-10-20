@@ -4,6 +4,7 @@ import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
 import { htmlToScoringText } from "@/lib/agents/learning/fee-page";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { PAID_PASS_MODELS, paidModelCall, paidResponseJson, type PaidMessageCreator } from "@/lib/agents/paid-pass";
@@ -292,16 +293,18 @@ export async function runWebsiteFind(options: {
     }
 
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "website_find",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lessons_applied: roleLessons.lessonIds },
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
           tools: [webSearchTool(WEB_SEARCH_MAX_USES)],
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: websiteFindPrompt(row) }],
         },
       });
