@@ -11,3 +11,5 @@ quotes and case. The Congress step now records `live_flag` (on, unset or not_tru
 partition detail, so the next run shows which case it was without exposing the value.
 **Lesson:** a switch that silently reads as off needs to say why in the run it affects. When
 a flag doesn't take, check the run's detail before guessing.
+
+**Guard:** `src/lib/agents/magellan/registry/live-flag.test.ts` (`flagOn` reads spaces, quotes and case)

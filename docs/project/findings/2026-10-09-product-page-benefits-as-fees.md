@@ -19,3 +19,5 @@ benefits: Keep or Take down" on the Oct 9 punch list. While off, each publish st
 count it would flag. The dry-run list is /mnt/project-files/audits/product-page-benefits-dry-run-2026-10-09.csv.
 **Lesson:** a $0 line counts only when it comes from the bank's schedule. A marketing page's "free" is a
 product claim.
+
+**Agent lesson:** rosetta/issue-1053

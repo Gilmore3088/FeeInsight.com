@@ -10,3 +10,4 @@
 **Fix:** `src/lib/agents/hamilton/schedule-edition.ts` gives one rule that the change rule, the change log's like-for-like flag, the pairing pass and the movement check all share. Two schedules count as the same when they are on the same page (`feePageKey`). On different pages they count as the same only when both URLs name the same audience and the new text states a later effective date. The 11 non-changes stay held.
 
 **Lesson:** A same-page check written as exact URL equality misses exactly how banks publish changes: a new file at a new URL. Before tightening or loosening a change rule, run it against the held movements on prod.
+**Agent lesson:** gutenberg/pr-865-newer-edition-wins

@@ -15,3 +15,5 @@ list is gone, so the sending-only key stays least privilege.
 Sends before the migration are not in the log.
 **Lesson:** an outgoing side effect needs its own record in Postgres; don't rely on a provider's read API
 that needs broader credentials than sending.
+
+**Guard:** `src/lib/email/resend.test.ts` (each send is recorded in `email_send_log`)
