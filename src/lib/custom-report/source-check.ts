@@ -1116,7 +1116,130 @@ function droppedPointText(text: string): string {
   return lastDroppedPointText;
 }
 
+/** A box or item size in a name or row ("3 × 5", 5x10, 10" x 10"), normalised to "3x5". */
+const ROW_SIZE = /(\d+(?:\.\d+)?)\s*["”'″]?\s*[x×]\s*(\d+(?:\.\d+)?)/gi;
+/** A cell that is only a price: "$45", "**$1,000.00**", "$5-$15", "free", "varies". */
+const ROW_PRICE_CELL = /^\s*(?:\*\*)?\s*(?:\$\s?\d[\d,]*(?:\.\d{1,2})?(?:\s*[-–]\s*\$?\s?\d[\d,]*(?:\.\d{1,2})?)?|free|none|no charge|n\/c|waived|varies)\s*(?:\*\*)?\s*(?:each|per\s+\w+)?\s*$/i;
+/** A line that opens with its price and then names a fee: "$1,000.00 Mortgage modification". */
+const PRICE_THEN_NAME = /^\s*(?:\*\*)?\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?)\s*(?:\*\*)?\s*\|?\s*([A-Za-z].*)$/;
+
+function rowName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(ROW_SIZE, (_match, width: string, length: string) => `${width}x${length}`)
+    .replace(/\*\*/g, " ")
+    .replace(/[‘’ʼ`]/g, "'")
+    .replace(/[|•·]/g, " ")
+    .replace(/[\s:.]+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function rowSizes(value: string): string[] {
+  return [...value.matchAll(ROW_SIZE)].map((match) => `${Number(match[1])}x${Number(match[2])}`);
+}
+
+interface PricedRow {
+  /** The row's name cells, each normalised. */
+  names: string[];
+  /** The prices its price cells state (none for "varies" or a name-only line). */
+  prices: number[];
+  /** True when the row has a price cell at all, "varies" and "free" included. */
+  priced: boolean;
+}
+
+/** One line read as a table or list row: its name cells and the prices its price cells state. */
+function pricedRow(line: string): PricedRow {
+  const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
+  if (cells.length === 1) {
+    const lead = cells[0].match(PRICE_THEN_NAME);
+    // "$10.00 Outgoing International Wire ....": in a dot-leader page the price that opens a line
+    // is the line above's (its own price follows the leaders), so the line states no price here.
+    if (lead && /(?:\.\s?){3,}|…/.test(lead[2])) return { names: [rowName(lead[2].replace(/(?:\.\s?){3,}.*$|….*$/, ""))], prices: [], priced: false };
+    // "$5 monthly service fee": a price-first line with no cells may be a sentence about one account.
+    if (lead) return { names: [rowName(lead[2])], prices: moneyTokens(lead[1]).map((token) => token.value), priced: false };
+  }
+  const priceCells = cells.filter((cell) => ROW_PRICE_CELL.test(cell));
+  const names = cells.filter((cell) => !ROW_PRICE_CELL.test(cell)).map(rowName).filter(Boolean);
+  const prices = priceCells.flatMap((cell) => {
+    const money = moneyTokens(cell).map((token) => token.value);
+    return money.length > 0 ? money : /\b(?:free|none|no charge|n\/c|waived)\b/i.test(cell) ? [0] : [];
+  });
+  // "Mortgage satisfaction fee (varies)": a row whose name says its price varies states that price.
+  const varies = cells.some((cell) => !ROW_PRICE_CELL.test(cell) && /\(?\bvaries\b\)?\s*$/i.test(cell));
+  return { names, prices, priced: priceCells.length > 0 || varies };
+}
+
+/**
+ * #1827: a fee whose own row prints another price cannot take a neighbour's. When the source has
+ * a table row named exactly as the fee ("$3 | Overdraft Transfer (per item)", "| $45 | Rental of
+ * 3 × 5 Box Annual Fee |") and no line naming the fee prints its amount, the fee does not trace,
+ * however well its words match another row ("$30 | Overdraft NSF (per item)", "| $55 | Rental of
+ * 5 × 5 Box Annual Fee |", "$30 | Replacement Debit Card Rush"). A name line whose price "varies"
+ * ("Mortgage satisfaction fee (varies)") is such a row: it cannot take the "$1,000.00 Mortgage
+ * modification" under it. Sentences and price-first lines without cells decide nothing, so an
+ * account's "Monthly service fee of $6.99" beside another account's "$5 monthly service fee" still
+ * traces. Null when nothing decides it.
+ */
+export function ownRowRefusal(text: string, feeName: string, amount: number): string | null {
+  const own = rowName(feeName);
+  if (!own) return null;
+  const rounded = Math.round(amount * 100) / 100;
+  const printsAmount = (line: string) =>
+    moneyTokens(line).some((token) => Math.round(token.value * 100) / 100 === rounded) ||
+    (rounded === 0 && /\b(?:free|none|no charge|no fee|n\/c|waived)\b/i.test(line));
+  let pricedOwnRow: string | null = null;
+  for (const line of text.split("\n")) {
+    if (!rowName(line).includes(own)) continue;
+    const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
+    const row = pricedRow(line);
+    // Only a table row (two cells or more) or a name line whose price "varies" is a row here: a
+    // sentence or a price-first line ("$5 monthly service fee", "Monthly service fee of $6.99 with
+    // direct deposit") belongs to whatever account it describes, so it decides nothing.
+    const tableRow = cells.length >= 2 || row.priced;
+    const ownRow = tableRow && row.names.includes(own);
+    // Another fee's own row that only contains this name ("$30 | Replacement Debit Card Rush")
+    // does not speak for this fee; any other line that names the fee and prints its amount
+    // ("Monthly Maintenance $35.00 – waived for the first 3 statement cycles | $0") does.
+    const otherFeeRow = tableRow && !ownRow && row.names.length === 1 && moneyTokens(row.names[0]).length === 0;
+    if (!ownRow) {
+      if (!otherFeeRow && printsAmount(line)) return null;
+      continue;
+    }
+    if (printsAmount(line) || row.prices.some((price) => Math.round(price * 100) / 100 === rounded)) return null;
+    // A row of two names ("Returned Check | Verification of Deposit | $20") is two columns, and a
+    // name-only row may have its price on the next line: neither decides anything.
+    if (row.names.length !== 1 || !row.priced) return null;
+    pricedOwnRow ??= line.trim();
+  }
+  return pricedOwnRow;
+}
+
+/** #1827: a sized fee ("Rental of 3 × 5 Box") cannot trace to a row that prints another size. */
+export function sizeMismatch(feeName: string, sourceLine: string): boolean {
+  const wanted = rowSizes(feeName);
+  if (wanted.length === 0) return false;
+  const printed = rowSizes(sourceLine);
+  return printed.length > 0 && !printed.some((size) => wanted.includes(size));
+}
+
 export function checkFeeAgainstSource(
+  rawText: string | null | undefined,
+  feeName: string,
+  amount: number,
+  categoryPattern: string,
+  canonicalFeeKey?: string | null,
+): SourceCheckResult {
+  const result = checkFeeAgainstSourceText(rawText, feeName, amount, categoryPattern, canonicalFeeKey);
+  if (!result.ok || !rawText) return result;
+  // #1827: a match on a neighbouring row of another size, or while the fee's own row prints
+  // another price, is the fee taking its neighbour's price.
+  if (sizeMismatch(feeName, result.sourceLine)) return { ok: false, reason: "amount_not_the_fee" };
+  if (ownRowRefusal(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
+  return result;
+}
+
+function checkFeeAgainstSourceText(
   rawText: string | null | undefined,
   feeName: string,
   amount: number,

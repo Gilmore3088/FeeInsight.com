@@ -256,6 +256,15 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v91 (Oct 20, #1827) reads a price-first list with no cells ("$14.00 Safe Deposit Box 3”x5”x22”/Year")
+one fee per line, in the family and table passes (`inPriceFirstListRun`, table v8). The list must
+run two lines or more and must not end in a bare price, so a stacked page ("Overdraft Fee" /
+"$30.00 Stop Payment Fee" / ... / "$5.00") is still read as stacked. A range row ("$5-$15 | Levy")
+no longer names the row under it. A heading never takes the price of a price-first line that names
+its own fee. Before this, each Colby box took the next size's price (doc 37839, live 99157 and
+99158) and the levy took the garnishment's $20 (doc 2491). The stale-read floor stays at v78.
+Source check v19 refuses those live reads, so they come down through Hamilton's source check.
+
 v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
 other mailed-back statements file as returned mail, the type made for returned or undeliverable
 mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing
@@ -1709,7 +1718,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v90 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v91 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
-| `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
+| `KNOX_TABLE_STRATEGY` | `extract.table` | v8 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

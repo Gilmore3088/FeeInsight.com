@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkFeeAgainstSource, joinLabeledFeeCards, stripPriceFootnoteMarks } from "./source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCards, ownRowRefusal, sizeMismatch, stripPriceFootnoteMarks } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
   it("reads an opening deposit under an account heading as the account's, not the heading's price (#1810)", () => {
@@ -895,5 +895,82 @@ describe("checkFeeAgainstSource joined prices (Knox v76)", () => {
     // "otherwise" with no waiver before it is a band schedule's last band.
     const lastBand = "Monthly Service Charge | balance of $1,000 or more, otherwise $10.00";
     expect(checkFeeAgainstSource(lastBand, "Monthly Service Charge", 10, ".")).toEqual({ ok: false, reason: "tiered_fee" });
+  });
+});
+
+describe("a fee never traces to its neighbour's price (#1827)", () => {
+  // doc 2491 (inst 7982): the business schedule's price-first rows. Live 30894, 74628 and 141206
+  // took the row below's price.
+  const doc2491 = [
+    "Account Fees",
+    "$30 | Overdraft NSF (per item)",
+    "$30 | Overdraft Non-Return (per item)",
+    "$3 | Overdraft Transfer (per item)",
+    "varies | Check Printing",
+    "$5-$15 | Levy",
+    "$20 | Garnishment",
+    "Card Service Fees",
+    "$10 | Replacement Debit Card",
+    "$30 | Replacement Debit Card Rush",
+  ].join("\n");
+  // Valley Strong CU, doc 36716: box rents by size.
+  const valleyStrong = [
+    "| **$20** | Key Deposit |",
+    "| **$11** | Key Replacement |",
+    "| **$45** | Rental of 3 × 5 Box Annual Fee |",
+    "| **$55** | Rental of 5 × 5 Box Annual Fee |",
+    "| **$120** | Rental of 6 × 10 Box Annual Fee |",
+    "| **$175** | Rental of 10 × 10 Box Annual Fee |",
+  ].join("\n");
+  // Colby, doc 37839, and doc 26543 (inst 7383): price-first box lists.
+  const colby = ["$14.00 Safe Deposit Box 3”x5”x22”/Year", "$19.00 Safe Deposit Box 4”x5”x22”/Year", "$21.00 Safe Deposit Box 5”x5”x22”/Year"].join("\n");
+  const dartmouth = ["$30.00 | 3 x 5 x 24 (available only at Dartmouth)", "$40.00 | 5 x 5 x 24 (available only at Dartmouth)", "$50.00 | 3 x 10 x 24"].join("\n");
+  const refused = { ok: false, reason: "amount_not_the_fee" };
+
+  it("refuses a price while the fee's own row prints another", () => {
+    expect(checkFeeAgainstSource(doc2491, "Overdraft Transfer (per item)", 30, ".", "od_protection_transfer")).toEqual(refused);
+    expect(checkFeeAgainstSource(doc2491, "Replacement Debit Card", 30, ".", "card_replacement")).toEqual(refused);
+    expect(checkFeeAgainstSource(doc2491, "Levy", 20, ".", "levy_garnishment").ok).toBe(false);
+    expect(checkFeeAgainstSource(valleyStrong, "Key Deposit", 11, ".", "safe_deposit_box")).toEqual(refused);
+    // Treasurer's check at the stop payment row's $20 (doc 2127, live 55923).
+    const doc2127 = "Stop Payment (check, ACH, withdrawal check, loan check, Treasurer’s Check)* | $20.00 per item\nTreasurer’s Check | $5.00 per check";
+    expect(checkFeeAgainstSource(doc2127, "Treasurer’s Check", 20, ".", "cashiers_check")).toEqual(refused);
+    expect(checkFeeAgainstSource(doc2127, "Treasurer’s Check", 5, ".", "cashiers_check").ok).toBe(true);
+  });
+
+  it("still traces each fee's own price", () => {
+    expect(checkFeeAgainstSource(doc2491, "Overdraft Transfer (per item)", 3, ".", "od_protection_transfer").ok).toBe(true);
+    expect(checkFeeAgainstSource(doc2491, "Replacement Debit Card", 10, ".", "card_replacement").ok).toBe(true);
+    expect(checkFeeAgainstSource(doc2491, "Replacement Debit Card Rush", 30, ".", "card_replacement").ok).toBe(true);
+    expect(checkFeeAgainstSource(doc2491, "Garnishment", 20, ".", "levy_garnishment").ok).toBe(true);
+    expect(checkFeeAgainstSource(valleyStrong, "Rental of 3 × 5 Box Annual Fee", 45, ".", "safe_deposit_box").ok).toBe(true);
+    expect(checkFeeAgainstSource(valleyStrong, "Rental of 6 × 10 Box Annual Fee", 120, ".", "safe_deposit_box").ok).toBe(true);
+    expect(checkFeeAgainstSource(colby, "Safe Deposit Box 3”x5”x22”/Year", 14, ".", "safe_deposit_box").ok).toBe(true);
+    expect(checkFeeAgainstSource(dartmouth, "3 x 5 x 24 (available only at Dartmouth)", 30, ".", "safe_deposit_box").ok).toBe(true);
+  });
+
+  it("refuses a sized fee at another size's price", () => {
+    expect(checkFeeAgainstSource(valleyStrong, "Rental of 3 × 5 Box Annual Fee", 55, ".", "safe_deposit_box")).toEqual(refused);
+    expect(checkFeeAgainstSource(valleyStrong, "Rental of 6 × 10 Box Annual Fee", 175, ".", "safe_deposit_box")).toEqual(refused);
+    expect(checkFeeAgainstSource(colby, "Safe Deposit Box 3”x5”x22”/Year", 19, ".", "safe_deposit_box")).toEqual(refused);
+    expect(checkFeeAgainstSource(dartmouth, "3 x 5 x 24 (available only at Dartmouth)", 40, ".", "safe_deposit_box")).toEqual(refused);
+    expect(sizeMismatch("Rental of 3 × 5 Box", "| **$55** | Rental of 5 × 5 Box Annual Fee |")).toBe(true);
+    expect(sizeMismatch("Rental of 3 × 5 Box", "| **$45** | Rental of 3 x 5 Box Annual Fee |")).toBe(false);
+    expect(sizeMismatch("Key Deposit", "| **$55** | Rental of 5 × 5 Box Annual Fee |")).toBe(false);
+  });
+
+  it("gives a name that says its price varies none of the price-first line below (Citadel FCU)", () => {
+    const citadel = ["Mortgage recording fee (varies)", "Mortgage satisfaction fee (varies)", "$1,000.00 Mortgage modification"].join("\n\n");
+    expect(checkFeeAgainstSource(citadel, "Mortgage satisfaction fee (varies)", 1000, ".", "other_lending_fee")).toEqual(refused);
+    expect(checkFeeAgainstSource(citadel, "Mortgage modification", 1000, ".", "other_lending_fee").ok).toBe(true);
+  });
+
+  it("lets sentences and other accounts' price-first lines decide nothing", () => {
+    // One account's "$5 monthly service fee" beside another's sentence still traces both.
+    const text = "Basic Checking\n$5 monthly service fee\nPremier Checking\nMonthly service fee of $6.99 with direct deposit";
+    expect(ownRowRefusal(text, "Monthly service fee", 6.99)).toBeNull();
+    expect(ownRowRefusal(text, "Monthly service fee", 5)).toBeNull();
+    // A row of two names is two columns and decides nothing.
+    expect(ownRowRefusal("Returned Check | Verification of Deposit | $20", "Returned Check", 30)).toBeNull();
   });
 });

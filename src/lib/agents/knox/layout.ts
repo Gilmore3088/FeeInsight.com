@@ -139,6 +139,27 @@ export function nameAfterPrice(rest: string): string | null {
 export function priceFirstRow(line: string): boolean {
   if (!line.includes(" | ")) return false;
   const row = line.replace(/^[\s|*_`]+/, "");
+  // v91 (#1827): a range price cell ("$5-$15 | Levy") opens its row as one price does.
+  const range = row.match(LEADING_RANGE);
+  const lead = range ?? row.match(LEADING_VALUE);
+  if (!lead || /^(?:free|none|no charge|n\/c)$/i.test(lead[1]) || (row.match(/\$\s*\d/g) ?? []).length !== (range ? 2 : 1)) return false;
+  const rest = row.slice(lead[0].length);
+  return nameAfterPrice(rest.slice(rest.match(QUALIFIER)?.[0].length ?? 0)) != null;
+}
+
+/** "$5-$15", "$5 - $15": a price range that opens a row. */
+const LEADING_RANGE = /^\(?\s*(\$\s*\d[\d,]*(?:\.\d{1,2})?\s*[-–]\s*\$\s*\d[\d,]*(?:\.\d{1,2})?)(?![\w])\)?/;
+/** A bare price on its own line ("$7.00", "**$25.00 per item**"). */
+const BARE_PRICE_LINE = /^[\s*_`]*\$\s*\d[\d,]*(?:\.\d{1,2})?[\s*_`]*(?:(?:per|each|a|an)\s+[a-z]+)?[\s*_`]*$/i;
+
+/**
+ * v91 (#1827): a list line with no cells that opens with its one price and names its fee after it
+ * ("$14.00 Safe Deposit Box 3”x5”x22”/Year"). A dot-leader line ("$10.00 Outgoing Wire .....") is
+ * not one: in a dot-leader page the price that opens a line is the line above's.
+ */
+export function priceFirstListLine(line: string): boolean {
+  if (line.includes(" | ") || /(?:\.\s?){3,}|…/.test(line)) return false;
+  const row = line.replace(/^[\s*_`]+/, "");
   const lead = row.match(LEADING_VALUE);
   if (!lead || /^(?:free|none|no charge|n\/c)$/i.test(lead[1]) || (row.match(/\$\s*\d/g) ?? []).length !== 1) return false;
   const rest = row.slice(lead[0].length);
@@ -153,6 +174,22 @@ export function priceFirstRow(line: string): boolean {
  */
 export function inPriceFirstRun(lines: readonly string[], index: number): boolean {
   return priceFirstRow(lines[index] ?? "") && (priceFirstRow(lines[index - 1] ?? "") || priceFirstRow(lines[index + 1] ?? ""));
+}
+
+/**
+ * v91 (#1827): a cell-less price-first list ("$100.00 Safe Deposit Box Drilling/Per Box" / "$14.00 Safe
+ * Deposit Box 3”x5”x22”/Year" / ...) is read one fee per line, so no box takes the next size's price.
+ * It counts only as a run of two such lines or more that a bare price does not close: "Overdraft Fee"
+ * / "$30.00 Stop Payment" / "$25.00 Returned Item" / "$5.00" is a stacked page, each price under the
+ * name above it, and stays read that way.
+ */
+export function inPriceFirstListRun(lines: readonly string[], index: number): boolean {
+  if (!priceFirstListLine(lines[index] ?? "")) return false;
+  let start = index;
+  let end = index;
+  while (start > 0 && priceFirstListLine(lines[start - 1])) start -= 1;
+  while (end + 1 < lines.length && priceFirstListLine(lines[end + 1])) end += 1;
+  return end > start && !BARE_PRICE_LINE.test(lines[end + 1] ?? "");
 }
 
 /**
