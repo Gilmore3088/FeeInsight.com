@@ -59,7 +59,7 @@ export const ATLAS_LESSONS: AgentLesson[] = [
     id: "pr-1844-price-at-p99",
     agent: "atlas",
     stage: "scheduling",
-    lesson: "Start a step only when its expected time, set at about its measured 24-hour p99 rather than its p90, fits the time left before the tick's 270 s deadline. The one exception is the progress override: the tick's first run may start its first step anyway, unless that run is the daily scoreboard or the live-source audit, or must leave room for the first state lane's work. A step left queued for lack of time writes a step.deferred event with its expected time and the time the tick had left.",
+    lesson: "Start a step only when its expected time, set at about its measured 24-hour p99 rather than its p90, fits the time left before the tick's 270 s deadline. The one exception is the progress override: the tick's first run may start its first step anyway, unless that run is the daily scoreboard or the live-source audit. A direct run that must leave room for the first state lane's work does not take the override, and when it starts no step it passes the override to the next run. A step left queued for lack of time writes a step.deferred event with its expected time and the time the tick had left.",
     why: "The step prices dated from Oct 7 and Oct 15 and the steps had grown since: in the 24 hours to 20:45 UTC on Oct 17, 21 steps started inside a tick were killed at the 300 s limit and reaped, each stalling 15 minutes before its retry.",
     evidence: { issues: [], prs: [1844], files: ["docs/project/findings/2026-10-17-steps-overrun-tick-budget.md", "src/lib/agents/run-store.ts"] },
     appliesTo: "all",
