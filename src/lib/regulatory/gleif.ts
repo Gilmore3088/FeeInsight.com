@@ -1,6 +1,7 @@
 import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
 import { createGleifIdentityVeto } from "./gleif-identity-holds";
 import { createHash } from "node:crypto";
+import { normalizeLei } from "./lei";
 import { readZipLines } from "./economy";
 import { registryFetch, registryFetchJson, type RegistryFetchOptions } from "./http";
 import { CsvStreamParser } from "./industry-events";
@@ -51,12 +52,7 @@ export function level1ShardOf(partitionKey: string): number | null {
   return Number.isInteger(n) && n >= 0 && n < GLEIF_LEVEL1_SHARDS ? n : null;
 }
 
-const LEI_RE = /^[A-Z0-9]{18}[0-9]{2}$/;
-
-export function normalizeLei(value: unknown): string | null {
-  const raw = typeof value === "string" ? value.trim().toUpperCase() : "";
-  return LEI_RE.test(raw) ? raw : null;
-}
+export { normalizeLei };
 
 export function leiShard(lei: string): number {
   return createHash("sha1").update(lei).digest()[0] % GLEIF_LEVEL1_SHARDS;

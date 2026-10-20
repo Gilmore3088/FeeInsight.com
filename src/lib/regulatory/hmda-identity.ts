@@ -1,4 +1,4 @@
-import { normalizeLei } from "./gleif";
+import { normalizeLei } from "./lei";
 import { normalizeKey } from "./gleif-lei-match";
 import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
 

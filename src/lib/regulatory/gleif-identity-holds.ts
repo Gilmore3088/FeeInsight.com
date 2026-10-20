@@ -1,4 +1,4 @@
-import { normalizeLei } from "./gleif";
+import { normalizeLei } from "./lei";
 import type { FdicIdentityHold } from "@/lib/data-store/fdic-identity-holds";
 
 export const FDIC_IDENTITY_HOLD_REASON = "FDIC identity hold requires review";

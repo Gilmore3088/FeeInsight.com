@@ -1,6 +1,6 @@
 import { registryFetchJson, type RegistryFetchOptions } from "./http";
 import { validCoordinates } from "./coordinates";
-import { normalizeLei } from "./gleif";
+import { normalizeLei } from "./lei";
 import { fdicRepdte, quarterEndDate, type Quarter } from "./quarters";
 
 /**

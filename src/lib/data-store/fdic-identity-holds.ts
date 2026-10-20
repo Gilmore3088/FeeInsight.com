@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { sql } from "@/lib/data-store/connection";
 import { FDIC_IDENTITY_HOLD_WRITES_ENABLED } from "@/lib/agents/hoovie/hmda-repair-release";
-import { normalizeLei } from "@/lib/regulatory/gleif";
+import { normalizeLei } from "@/lib/regulatory/lei";
 
 type AppSql = typeof sql;
 
