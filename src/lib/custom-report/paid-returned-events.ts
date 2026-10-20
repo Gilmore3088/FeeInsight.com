@@ -29,7 +29,14 @@ const SEPARATE_EVENT = new RegExp(String.raw`^(?:${BASE}(?:\s+(?:paid|returned?|
  */
 // An overdraft protection transfer, sweep or line is another service, not an overdraft item charge.
 const SEPARATE_TOKEN = new RegExp(String.raw`\b(?:(?:overdrafts?|o\/?d)\b(?!\s+(?:protection|transfers?|sweeps?|lines?\b|limits?))`
-  + String.raw`|courtesy\s+pay\b|paid\s+items?\b|return(?:ed)?\s+(?:items?|checks?)\b)`, "i");
+  + String.raw`|courtesy\s+pay\b|paid\s+items?\b|return(?:ed)?\s+(?:items?|checks?)\b|items?\s+returned\b`
+  + String.raw`|nsf\b|non[-\s]?sufficient\s+funds?\b|insufficient\s+funds?\b|bounced?\s+checks?\b)`, "i");
+/**
+ * A returned deposited item, a daily or continuous overdraft charge, a transfer and an ACH
+ * origination charge are other services priced on their own basis; they do not contradict the
+ * item price the pair carries.
+ */
+const OTHER_SERVICE = /\b(?:deposit(?:ed|s)?|daily|continuous|sustained|extended|per\s+day|transfers?|sweeps?|origination)\b/i;
 const flat = (text: string) => text.replace(/\s+/g, " ").trim();
 const cleanLabel = (text: string) => flat(text.replace(/^\s*[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/\|\s*$/, ""));
 
@@ -125,7 +132,9 @@ function separateEvent(lines: string[], start: number, end: number, from: number
       if (!price) continue;
       const label = cleanLabel(row.slice(0, price.index));
       // Another compressed paid/returned row is a repeated owner, held by the unit count, not here.
-      if (SEPARATE_EVENT.test(label) || (!START.test(lines[i]) && SEPARATE_TOKEN.test(label))) return true;
+      if (SEPARATE_EVENT.test(label)
+        || (!lines.slice(i, last + 1).some(line => START.test(line))
+          && SEPARATE_TOKEN.test(label) && !OTHER_SERVICE.test(label))) return true;
       break;
     }
   }

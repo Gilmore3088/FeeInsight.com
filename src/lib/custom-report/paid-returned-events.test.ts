@@ -65,6 +65,19 @@ describe("complete source-owned paid/returned unit", () => {
       expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
     });
 
+  it.each(["NSF Item Fee", "NSF Check Fee", "Insufficient Funds Item Charge", "Paid NSF Item", "Bounced Check Fee",
+    "Item Returned Fee"])
+    ("refuses a separately priced %s for the same accounts", label => {
+      expect(paidReturnedUnits(source(row, "Stop Payment | $30.00", `${label} | $35.00`))).toEqual([]);
+      expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
+    });
+
+  it.each(["Returned Item (Deposited)", "Return Item Chargeback (deposited)", "Returned Check Deposited",
+    "Continuous Overdraft Fee (per day)", "Daily Overdraft Charge", "Overdraft from Savings Transfer"])
+    ("keeps the pair beside a different service priced as %s", label => {
+      expect(paidReturnedUnits(source(row, `${label} | $35.00`))).toHaveLength(1);
+    });
+
   it.each(["Fees are assessed each business day", "Personal and Business Checking Fees", "Business Day Account Fees"])
     ("does not treat %s as another audience's section", heading => {
       expect(paidReturnedUnits(source(row, heading, "Overdraft Fee | $35.00"))).toEqual([]);
