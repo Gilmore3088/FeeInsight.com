@@ -12,3 +12,5 @@ Found on 2026-10-09, during Magellan batch 1. The Mac session tried both links s
   - The paid web fetch refused the URL (`url_not_allowed`, run at 05:10 on 2026-10-09).
   - The file is a scanned image, so Rosetta's OCR read would be needed after any fetch.
   - A fix that keeps full verification would read the server certificate's AIA "CA Issuers" URL, download that intermediate, and retry with it added to the trusted chain. That needs a TLS-level fetch path beside the shared `fetch`. This entry records it; nothing is built yet.
+
+**Agent lesson:** magellan/pr-1293-plain-fetch-outcome

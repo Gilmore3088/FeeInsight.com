@@ -108,3 +108,5 @@ The earlier account-unlinked checkpoint above is historical. The available brows
 runtime is still restricted by #1005 after documented recovery failed repeatedly.
 The updated account fixture is ready, but AC1–AC4 and inherited #993 desktop/mobile
 and downloaded-export gates remain open until observed on the updated exact head.
+
+**Agent lesson:** hamilton/pr-985-subject-not-account

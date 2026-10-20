@@ -19,3 +19,5 @@ which line it is; this cloud has no Vercel access.
 
 Fix: the agents tick runs every 10 minutes instead of every 5, which halves its function
 time and the pipeline's throughput.
+
+**Guard:** `src/lib/vercel-config.test.ts:31` (the agents tick cron is `*/10 * * * *`, no more often)

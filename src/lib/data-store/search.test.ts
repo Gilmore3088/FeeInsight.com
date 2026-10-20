@@ -255,3 +255,22 @@ describe("searchInstitutions with a junk name", () => {
     expect(unsafeMock).not.toHaveBeenCalled();
   });
 });
+
+// 2026-10-09-catalog-view-recomputed-per-reference: each reference to published_fee_catalog
+// rebuilds the whole view, so a state directory page with two references recomputed the entire
+// catalog (49 states at once exhausted the pooler).
+describe("the state directory reads the catalog view once", () => {
+  beforeEach(() => {
+    unsafeMock.mockReset();
+  });
+
+  it("scopes published_fee_catalog into one materialized CTE that every count reads", async () => {
+    unsafeMock.mockResolvedValueOnce([{ cnt: 0 }]).mockResolvedValueOnce([]);
+    await searchInstitutions({ state_code: "TX" });
+    const rowsText = String(unsafeMock.mock.calls[1][0]);
+    expect(rowsText.match(/\bpublished_fee_catalog\b/g)).toHaveLength(1);
+    expect(rowsText).toMatch(/scope_catalog AS MATERIALIZED \([\s\S]*?FROM published_fee_catalog\s+WHERE institution_id IN \(SELECT id FROM scope\)/);
+    expect(rowsText).toMatch(/FROM scope_catalog\s+GROUP BY institution_id/);
+    expect(rowsText).toMatch(/FROM scope_catalog pfc/);
+  });
+});

@@ -35,3 +35,5 @@ not integration proof. Execute it with a disposable local database named
 feeinsight_billing_test* and BILLING_TEST_DATABASE_URL explicitly set.
 
 Stripe contract: https://docs.stripe.com/api/idempotent_requests
+
+**Guard:** `src/lib/billing/checkout.test.ts:33` (repeated and concurrent checkout requests reuse one persisted session; the cases after it cover the idempotency key, plan changes and the 24-hour window)

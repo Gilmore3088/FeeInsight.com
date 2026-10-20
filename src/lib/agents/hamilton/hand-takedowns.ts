@@ -850,9 +850,10 @@ export const HAND_TAKEDOWNS: readonly HandTakedown[] = [
  *
  * Dry run, prod read-only, Oct 19: 6 live rows match (154157, 154638, 154639, 154640, 153311,
  * 152525), all published after their entry came down. Off, the step reports them (`returns`) and
- * writes nothing; on, they come down with the listed takedowns.
+ * writes nothing; on, they come down with the listed takedowns. On after James's yes (decision
+ * card, 2026-10-20 01:53 UTC).
  */
-export const HAND_TAKEDOWN_RETURNS_LIVE = false;
+export const HAND_TAKEDOWN_RETURNS_LIVE = true;
 const RETURN_KINDS: ReadonlySet<HandTakedown["kind"]> = new Set(["wrong_amount", "not_a_fee", "wrong_category"]);
 
 /** Pure: a fee name compared without case, spaces or punctuation. */

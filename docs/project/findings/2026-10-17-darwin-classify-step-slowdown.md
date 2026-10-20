@@ -23,3 +23,5 @@ backlog, until it crossed the 120 s statement timeout. No index is needed.
 
 **Fix (this PR).** A state lane reads its state's institutions once, in a materialized CTE, and
 joins the held attempts to that. ID: 1.6 s; TX (741 institutions, the largest): 4.8 s.
+
+**Guard:** `src/lib/agents/darwin/release-held.test.ts:116` (a state lane's held-fee read takes the state's institutions once in a materialized CTE and joins the held attempts to it, never scanning institutions per held attempt; asserted at line 135)

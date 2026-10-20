@@ -16,3 +16,5 @@
 
 ## Lesson
 Missing evidence is not a zero. Any peer statistic built from a linked source (CFPB, call reports, identity links) must restrict its denominator to institutions whose link is verified, and say how many that is.
+
+**Agent lesson:** hamilton/pr-1526-verified-peers-only

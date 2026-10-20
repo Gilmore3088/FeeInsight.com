@@ -123,6 +123,26 @@ describe.skipIf(!connection)("capped state-lane continuation in isolated Postgre
     }
   });
 
+  it("gives the daily scoreboard the tick ahead of an idle lane once it has waited 15 minutes", async () => {
+    const scoreboard = await seed("fetch", "workflow", false);
+    await db`UPDATE agent_runs SET params_json='{"source":"atlas.scoreboard"}'::jsonb,
+      started_at=now()-interval '20 minutes' WHERE id=${scoreboard.run.id}`;
+    const lane = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '1 day' WHERE id=${lane.run.id}`;
+    const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+    expect(out.results.map(row => row.runId)).toEqual([scoreboard.run.id]);
+  });
+
+  it("leaves an idle lane ahead of a scoreboard queued under 15 minutes ago", async () => {
+    const scoreboard = await seed("fetch", "workflow", false);
+    await db`UPDATE agent_runs SET params_json='{"source":"atlas.scoreboard"}'::jsonb,
+      started_at=now()-interval '5 minutes' WHERE id=${scoreboard.run.id}`;
+    const lane = await seed("fetch", "workflow_lane", false);
+    await db`UPDATE agent_runs SET started_at=now()-interval '1 day' WHERE id=${lane.run.id}`;
+    const out = await executeQueuedAgentRuns({ runLimit: 1, maxStepsPerRun: 1, allowProviderSteps: false });
+    expect(out.results.map(row => row.runId)).toEqual([lane.run.id]);
+  });
+
   it("measures lane inactivity from its last completed step instead of its launch", async () => {
     const maintenance = await seed("fetch", "workflow", false);
     await db`UPDATE agent_runs SET params_json='{"source":"hamilton.publish_sweeps"}'::jsonb WHERE id=${maintenance.run.id}`;

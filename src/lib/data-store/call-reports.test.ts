@@ -11,6 +11,10 @@ vi.mock("./connection", () => {
   };
 });
 
+// These unit tests pin the per-request SQL (the fallback); call-report-quarters.db.test.ts proves
+// the summary-table SQL returns the same rows.
+vi.mock("./call-report-quarters", () => ({ callReportQuartersReady: async () => false }));
+
 import { getRevenueTrend, getTopRevenueInstitutions, getDistrictFeeRevenue, getRevenueByTier, getInstitutionRevenueTrend, getInstitutionPeerRanking, getPeerServiceChargeMedians, getDistrictIncomeTrend, getServiceChargeIntensityTrend, getServiceChargeIntensity } from "./call-reports";
 import type { RevenueSnapshot, RevenueTrend, TopRevenueInstitution, DistrictFeeRevenue, TierRevenue } from "./call-reports";
 import { getSql } from "./connection";

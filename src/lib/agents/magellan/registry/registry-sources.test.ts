@@ -1084,6 +1084,7 @@ describe("registry dispatch", () => {
       "state-enforcement",
       "wire-research",
       "bank-zelle",
+      "call-report-summaries",
     ]);
   });
 
