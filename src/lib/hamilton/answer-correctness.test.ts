@@ -109,6 +109,54 @@ describe("answer correctness", () => {
     expect(check(withLayer(sisters.map((m) => m.amount)))).toEqual(["Tennessee layer: p25, p75 do not recompute from the members' live values"]);
   });
 
+  describe("the transfer from savings in the structure line (#2029)", () => {
+    const q = "How does our overdraft fee compare?";
+    // Two peers price a transfer at $8.37 and $9.13, so the line says "typically $8.75".
+    const transfers: Record<number, number> = { 501: 8.37, 502: 9.13 };
+    const withStructure = (): FeeResearch => {
+      const base = research();
+      const others = [501, 502, 503, 504, 505, 506].map((id) => ({
+        institutionId: id,
+        name: `Peer ${id}`,
+        own: false,
+        values: { overdraft: 30, ...(id in transfers ? { od_protection_transfer: transfers[id] } : {}) },
+      }));
+      return {
+        ...base,
+        structure: {
+          groupLabel: "peers (Credit unions in Tennessee)",
+          columns: [{ category: "od_protection_transfer", label: "Transfer fee" }],
+          rows: [{ institutionId: base.institutionId, name: "Example", own: true, values: { overdraft: 32 } }, ...others],
+          source: { label: "Fees", table: "published_fee_catalog" },
+        },
+      };
+    };
+    const transferRows = (amounts: Record<number, number>) =>
+      Object.entries(amounts).map(([id, amount]) => ({ institution_id: Number(id), amount, fee_category: "od_protection_transfer" }));
+    const check = (live: LiveFeeValues) => {
+      const r = withStructure();
+      const response = buildAskResponse({ question: q, intent: parseAsk(q), research: r, memory: [] });
+      expect(catalogFacts(response).map((f) => f.text)).toContainEqual(expect.stringContaining("typically $8.75"));
+      return reconcileAnswer({ question: q, response, research: r, live }).failures;
+    };
+
+    it("ties the typical transfer to the members' live transfer values", () => {
+      expect(check({ ...liveFor(withStructure()), transferRows: transferRows(transfers) })).toEqual([]);
+    });
+
+    it("fails a transfer value that moved or left the catalog, and the typical figure built on it", () => {
+      const moved = check({ ...liveFor(withStructure()), transferRows: transferRows({ 501: 8.37, 502: 14 }) });
+      expect(moved).toContain("transfer from savings (structure group): 1 of 2 values differ from the catalog");
+      expect(moved).toContainEqual(expect.stringMatching(/^figures that tie to no live catalog value: \$8\.75 \(/));
+      const gone = check({ ...liveFor(withStructure()), transferRows: transferRows({ 501: 8.37 }) });
+      expect(gone).toContain("transfer from savings (structure group): 1 of 2 values have no live catalog row");
+    });
+
+    it("cannot tie the typical transfer when the transfer values were not read", () => {
+      expect(check(liveFor(withStructure()))).toContainEqual(expect.stringMatching(/^figures that tie to no live catalog value: \$8\.75 \(/));
+    });
+  });
+
   it("leaves an answer unchecked when the catalog could not be read", () => {
     const r = research();
     const response = buildAskResponse({ question: "How does our overdraft fee compare?", intent: parseAsk("How does our overdraft fee compare?"), research: r, memory: [] });

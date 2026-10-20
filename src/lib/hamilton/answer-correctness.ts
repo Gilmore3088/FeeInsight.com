@@ -19,16 +19,20 @@
  * of scope; and the whole-schedule overview's peer medians are accepted as printed, because the
  * overview does not carry its peer members (the bank's own value on each line is re-read live).
  * The overdraft pricing groups' rules ("$15.01 to $30") are fixed definitions and are skipped.
+ * The structure set's transfer from savings is a different fee from the one asked about, so its
+ * members' values and the "typically $X" line recompute from their own live rows (#2029).
  */
 
 import { getContractFeeRows, getFeeValuesForInstitutions } from "@/lib/data-store/fee-index";
 import { countedAmounts, summarizeFees, valuePerInstitution, type StatsInputRow } from "@/lib/data-store/fee-stats";
 import { extractFigures } from "./figure-check";
-import { ARCHETYPE_RULE_PATTERN } from "./workspace/storyline";
+import { ARCHETYPE_RULE_PATTERN, typicalTransfer } from "./workspace/storyline";
 import type { ScheduleOverview } from "./workspace/schedule";
 import type { AskResponse, Fact, FeeResearch, PeerValue } from "./workspace/types";
 
 const FEE_TABLE = "published_fee_catalog";
+/** The structure line's lower-cost path: "N of M in the group price a transfer from savings, typically $X". */
+const TRANSFER_CATEGORY = "od_protection_transfer";
 /** Recomputed statistics tie out within one cent (the skill's threshold). */
 const CENT = 0.0051;
 /** Untied figures listed per answer; the count beyond is summarized. */
@@ -42,6 +46,11 @@ export interface LiveFeeValues {
   rows: StatsInputRow[];
   /** The bank's own live value per fee, for the whole-schedule lines; absent when not read. */
   ownByCategory?: Map<string, number>;
+  /**
+   * Live transfer-from-savings rows (#2029), read when the answer carries a structure set: its
+   * members' transfer values and the typical transfer recompute from them. Absent when not read.
+   */
+  transferRows?: StatsInputRow[];
 }
 
 export interface CorrectnessResult {
@@ -285,6 +294,8 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
     }
   }
 
+  if (research?.structure && live.transferRows) reconcileTransfers(research.structure, live.transferRows, { failures, anchors, singles });
+
   if (schedule) {
     for (const row of schedule.positions) {
       const own = live.ownByCategory?.get(row.feeCategory);
@@ -298,6 +309,42 @@ function reconcileValues(input: ReconcileInput, facts: Fact[]): { failures: stri
   }
 
   return { failures, anchors, singles };
+}
+
+/**
+ * The structure set's transfer values (#2029): each one the answer states is that institution's
+ * live value, and the typical transfer recomputes from the group's live values with the storyline's
+ * own rule (the contract median of the priced ones).
+ */
+function reconcileTransfers(
+  set: NonNullable<FeeResearch["structure"]>,
+  rows: StatsInputRow[],
+  out: { failures: string[]; anchors: number[]; singles: number[] },
+): void {
+  const values = valuePerInstitution(rows);
+  const stated = set.rows.filter((r) => r.values[TRANSFER_CATEGORY] !== undefined);
+  const groupLive: number[] = [];
+  let missing = 0;
+  let differ = 0;
+  for (const row of stated) {
+    const value = values.get(row.institutionId);
+    if (value === undefined) {
+      missing++;
+      continue;
+    }
+    if (!near(row.values[TRANSFER_CATEGORY], value)) differ++;
+    if (row.own) {
+      out.anchors.push(value);
+    } else {
+      out.singles.push(value);
+      groupLive.push(value);
+    }
+  }
+  const label = "transfer from savings (structure group)";
+  if (missing > 0) out.failures.push(`${label}: ${missing} of ${stated.length} values have no live catalog row`);
+  if (differ > 0) out.failures.push(`${label}: ${differ} of ${stated.length} values differ from the catalog`);
+  const typical = typicalTransfer(groupLive);
+  if (typical !== null) out.anchors.push(typical);
 }
 
 export type LiveReader = (institutionId: number, research: FeeResearch | null, schedule?: ScheduleOverview | null) => Promise<LiveFeeValues | null>;
@@ -326,9 +373,13 @@ export function liveCatalogReader(): LiveReader {
   return async (institutionId, research, schedule) => {
     const rows = research ? await rowsFor(research.feeCategory) : [];
     if (rows === null) return null;
-    if (!schedule || schedule.positions.length === 0) return { rows };
+    // A structure set states a transfer from savings: read that fee too, or leave the answer unchecked.
+    const transferRows = research?.structure ? await rowsFor(TRANSFER_CATEGORY) : undefined;
+    if (transferRows === null) return null;
+    const base: LiveFeeValues = transferRows ? { rows, transferRows } : { rows };
+    if (!schedule || schedule.positions.length === 0) return base;
     const own = await getFeeValuesForInstitutions([institutionId], schedule.positions.map((p) => p.feeCategory)).catch(() => null);
     if (!own) return null;
-    return { rows, ownByCategory: own.get(institutionId) ?? new Map() };
+    return { ...base, ownByCategory: own.get(institutionId) ?? new Map() };
   };
 }
