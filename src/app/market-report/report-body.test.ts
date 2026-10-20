@@ -93,8 +93,10 @@ describe("RevenueSection one comparison", () => {
 
   it("reads the rank, the dollar median and the share median from one set, the bank included", () => {
     const html = renderToStaticMarkup(createElement(RevenueSection, { name: "Capital City Bank", revenue }));
-    expect(html).toContain("Median of 872 banks with $1B to $10B in assets, Capital City Bank included, Q2 2026");
-    expect(html).toContain("Median of the 870 of those banks that filed a share, Capital City Bank included");
+    expect(html).toContain("It ranks 13 of the 872 banks with $1B to $10B in assets that reported them, itself included");
+    expect(html).toContain("Median of those 872 banks, Q2 2026");
+    expect(html).toContain("The rank and both medians count one set: banks with $1B to $10B in assets that reported deposit service charges for Q2 2026, Capital City Bank included.");
+    expect(html).toContain("Median of the 870 of them that filed a share");
     expect(html).toContain("8.7%");
     expect(html).toContain("2.2%");
     expect(html).not.toMatch(/other banks|above 0%/);

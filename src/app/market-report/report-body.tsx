@@ -169,11 +169,9 @@ export function RevenueSection({ name, revenue }: { name: string; revenue: Reven
   const filing = creditUnion ? "NCUA 5300 Call Report" : "FDIC Call Report";
   const peer = revenue.peer;
   const measure = revenue.measureLabel.toLowerCase();
-  const comparedWith = peer
-    ? `${peer.charterLabel} with ${bandText(peer.tierLabel)} in assets, ${name} included`
-    : null;
+  const band = peer ? `${peer.charterLabel} with ${bandText(peer.tierLabel)} in assets` : "";
   const finding = peer
-    ? `${name} reported ${incomeLabel(latest.thousands)} in ${measure} for ${quarter}, ranking ${peer.rank.toLocaleString("en-US")} of ${peer.count.toLocaleString("en-US")} ${comparedWith}, where 1 is the highest.`
+    ? `${name} reported ${incomeLabel(latest.thousands)} in ${measure} for ${quarter}. It ranks ${peer.rank.toLocaleString("en-US")} of the ${peer.count.toLocaleString("en-US")} ${band} that reported ${creditUnion ? "it" : "them"}, itself included (1 is the highest).`
     : `${name} reported ${incomeLabel(latest.thousands)} in ${measure} for ${quarter}.`;
   const showShare = peer && peer.feeShare != null && peer.peerMedianFeeShare != null;
   const shareBase = creditUnion ? `revenue, year to date through ${quarter}` : `revenue, ${quarter}`;
@@ -189,7 +187,7 @@ export function RevenueSection({ name, revenue }: { name: string; revenue: Reven
         <dl className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
           <Tile label={`${name}, ${quarter}`} value={incomeLabel(latest.thousands)} />
           {revenue.trailingThousands !== null && <Tile label={`${name}, last four quarters`} value={incomeLabel(revenue.trailingThousands)} />}
-          {peer && <Tile label={`Median of ${peer.count.toLocaleString("en-US")} ${comparedWith}, ${quarter}`} value={incomeLabel(peer.medianThousands)} />}
+          {peer && <Tile label={`Median of those ${peer.count.toLocaleString("en-US")} ${peer.charterLabel}, ${quarter}`} value={incomeLabel(peer.medianThousands)} />}
         </dl>
         {showShare && (
           <>
@@ -199,7 +197,7 @@ export function RevenueSection({ name, revenue }: { name: string; revenue: Reven
               {/* Keeps the share median under the dollar median, in the third column. */}
               {revenue.trailingThousands !== null && <div className="hidden sm:block" aria-hidden="true" />}
               <Tile
-                label={`Median of the ${peer.peerShareCount.toLocaleString("en-US")} of those ${peer.charterLabel} that filed a share, ${name} included`}
+                label={`Median of the ${peer.peerShareCount.toLocaleString("en-US")} of them that filed a share`}
                 value={shareLabel(peer.peerMedianFeeShare!)}
               />
             </dl>
@@ -207,8 +205,8 @@ export function RevenueSection({ name, revenue }: { name: string; revenue: Reven
         )}
         {peer && (
           <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
-            Compared with the {peer.count.toLocaleString("en-US")} {comparedWith}, that filed this measure for {quarter}. That asset
-            band is broad, so the rank in dollars partly reflects size.{" "}
+            The rank and both medians count one set: {band} that reported {measure} for {quarter}, {name} included. That
+            asset band is broad, so the rank in dollars partly reflects size.{" "}
             {creditUnion
               ? "Banks are left out: their deposit service charges are a narrower measure than NCUA fee income. Broad fee income includes member-service and membership fees; it is not deposit-only or overdraft-only income."
               : "Credit unions are left out: their NCUA fee income is a wider measure than bank deposit service charges."}
