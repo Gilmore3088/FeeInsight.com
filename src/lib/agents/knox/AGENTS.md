@@ -283,6 +283,15 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v94 (Oct 20, #1916): a fee never takes the other column's price on a two-column page whose fees are
+printed name / price / note (`refusesOtherColumnPrice`, `src/lib/custom-report/column-pair-prices.ts`,
+in the shared check Knox's self-check runs). A name row with a price-led cell beside it and the
+fee's own bare price under it ("ATM Transactions | $10.00 monthly for average" over "Free | Money
+Market Checking*") and a row of two names over a row of two prices ("Account Reopen |
+Member-Requested ATM/Debit" over "$10 | $5") give each fee only its own column's price. Advia FCU
+(doc 32751) had 3 such reads live (142239, 142241, 142248); a read-only dry run on Oct 20 found 4
+live fees in all (plus 134960, doc 29092). Source check v20 is the live re-check.
+
 v93 (Oct 20, #1828): a dot-leader row priced in words (`LEADER_PRICE_WORDS`: "Reconveyance…………
 Actual Cost", "Check Orders…… Prices Vary", "Incoming Wire....... Free") closes its line. When it
 names a fee of its own it is never a heading for the row under it, and `tidyFeeName` starts a name
@@ -1752,7 +1761,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v24 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v93 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v94 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

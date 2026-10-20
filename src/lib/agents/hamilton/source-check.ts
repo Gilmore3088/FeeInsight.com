@@ -68,7 +68,11 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 18: an opening deposit printed under an account heading ("Now Checking" / "$1,000.00
 // opening deposit required") is not the heading's price, so a name composed from that heading
 // traces, and a fee whose only price was an opening deposit no longer does (#1810).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 18 } as const;
+// Version 20 (#1916): on a two-column page a fee's own price prints under its name, so the other
+// column's price beside the name ("ATM Transactions | $10.00 monthly for average" over "Free | Money
+// Market Checking*") or under the other of two names ("Account Reopen | Member-Requested ATM/Debit"
+// over "$10 | $5") is not the fee's (`refusesOtherColumnPrice`). Follows #2465's v19.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 20 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

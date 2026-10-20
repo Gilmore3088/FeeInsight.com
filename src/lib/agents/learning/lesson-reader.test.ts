@@ -76,8 +76,9 @@ describe("lessonsPromptBlock", () => {
     // The newest PROMPT_LESSON_LIMIT lessons go in, so pin none by id: an added lesson pushes the oldest out.
     expect(model.lessonIds.length).toBeGreaterThan(0);
     for (const id of model.lessonIds) expect(model.system).toContain(`[${id}]`);
-    expect(model.lessonIds).toContain("issue-2286");
-    expect(lessonsForModel("knox", "extract").lessonIds).not.toContain("issue-2286");
+    // The paid-read lesson applies to that step only (it may sit past the prompt limit).
+    expect(lessonsFor("knox", "extract-paid").map((lesson) => lesson.id)).toContain("issue-2286");
+    expect(lessonsFor("knox", "extract").map((lesson) => lesson.id)).not.toContain("issue-2286");
   });
 });
 
