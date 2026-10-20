@@ -428,12 +428,32 @@ describe("takeDownUntraceableFees", () => {
     expect(calls.some((query) => query.includes("'step.warning'"))).toBe(true);
   });
 
+  it("counts nothing as checked after a failed write, since its savepoint rolled back", async () => {
+    const spy = silence();
+    const { db } = failingDb("SET rolled_back_at = NOW()");
+    const result = await takeDownUntraceableFees(db, { runId: 5, stepId: 11, batchId: "b", dryRun: false, stateCode: "TX" });
+    spy.mockRestore();
+
+    expect(result.status).toBe("failed");
+    expect(result.institutionsChecked).toBe(0);
+    expect(result.liveFeesChecked).toBe(0);
+    expect(result.traced).toBe(0);
+    expect(result.relinked).toBe(0);
+    expect(result.flagged).toBe(0);
+    expect(result.awaitingSecondLook).toBe(0);
+    expect(result.cleared).toBe(0);
+    expect(result.readerLost).toBe(0);
+    expect(result.keptDown).toEqual([]);
+  });
+
   it("reports a completed check as succeeded", async () => {
     const { db } = createDb([fee(1, "Overdraft Protection Items - Negative from", "50.01")]);
     const live = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: false, stateCode: "TX" });
     const dry = await takeDownUntraceableFees(db, { runId: 5, batchId: "b", dryRun: true, stateCode: "TX" });
     expect(live.status).toBe("succeeded");
     expect(dry.status).toBe("succeeded");
+    expect(live.institutionsChecked).toBe(1);
+    expect(live.liveFeesChecked).toBe(1);
   });
 });
 
