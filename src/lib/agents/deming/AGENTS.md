@@ -181,8 +181,12 @@ institutions remains the only human launch workflow.
   `data-quality-audit` and `audit-data` skills every day; the skills point here instead of
   describing a manual run. The sampled source trace those skills ask for is the fresh audit above.
 - Over the live dollar fees (`published_fee_catalog`) and, apart, the live rate fees
-  (`published_fee_rate_catalog`), never pooled: duplicates (rows beyond the first for one
-  institution, category and amount or rate), stale fees (document last fetched or checked over
+  (`published_fee_rate_catalog`), never pooled: duplicates (rows beyond the first for one fee
+  line: institution, category, amount or rate, name with case and spacing ignored, audience,
+  variant, product and charging-frequency class, the identity Hamilton's duplicate collapse
+  closes; rows that only share institution, category and amount are counted apart as
+  `same_amount`, not graded, since two products or services at one price are not a duplicate,
+  2026-10-20), stale fees (document last fetched or checked over
   `STALE_AFTER_DAYS` 90 days ago, the scoreboard's freshness clock), fees with no category (a
   category outside the 50-type taxonomy counted beside it), fees with no source link (no stored
   document counted beside it), and each category's share of live institutions against its median

@@ -15,7 +15,11 @@ export { documentLinkKey, documentLinkKeySql } from "@/lib/document-link-key";
  * rate fees (`published_fee_rate_catalog`); a rate is never pooled with a dollar amount
  * (`percent-fees.ts`). Each number names its query (`DATA_QUALITY_QUERIES`).
  *
- *   duplicates     rows beyond the first for the same institution, category and amount (or rate)
+ *   duplicates     rows beyond the first for the same fee line: institution, category, amount (or
+ *                  rate), name (case and spacing ignored), audience, variant, product and charging
+ *                  frequency class, the identity Hamilton's duplicate collapse closes. Rows that only
+ *                  share an institution, category and amount are counted apart (`sameAmount`),
+ *                  not graded: two products or two services at one price are not a duplicate
  *   stale          live fees whose document was last fetched or checked over 90 days ago (the
  *                  scoreboard's freshness clock)
  *   no category    live fees with no category; a category outside the 50-type taxonomy is
@@ -78,6 +82,8 @@ export interface CatalogCounts {
   liveFees: number;
   institutions: number;
   duplicates: number;
+  /** Rows sharing institution, category and amount with another, whatever the fee (counted, not graded). */
+  sameAmount: number;
   stale: number;
   noCategory: number;
   /** A category not in the 50-type taxonomy (counted, not graded). */
@@ -126,6 +132,8 @@ export interface CatalogQuality {
   liveFees: number;
   institutions: number;
   checks: Record<GradedCheck, GradedResult>;
+  /** Rows sharing institution, category and amount with another, whatever the fee (counted, not graded). */
+  sameAmount: number;
   offTaxonomy: number;
   noDocument: number;
   linkMismatch: number;
@@ -225,6 +233,7 @@ export function catalogQuality(catalog: Catalog, counts: CatalogCounts, history:
       noCategory: gradeCheck("noCategory", counts.noCategory, counts.liveFees),
       noSource: gradeCheck("noSource", counts.noSource, counts.liveFees),
     },
+    sameAmount: counts.sameAmount,
     offTaxonomy: counts.offTaxonomy,
     noDocument: counts.noDocument,
     linkMismatch: counts.linkMismatch,
@@ -272,6 +281,16 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
                row_number() OVER (
                  PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn}
                  ORDER BY c.fee_published_id
+               ) AS same_amount_copy,
+               -- The collapse's identity (duplicate-collapse.ts): per item, per occurrence, per
+               -- transaction and one-time name the same charge.
+               row_number() OVER (
+                 PARTITION BY c.institution_id, NULLIF(btrim(c.fee_category), ''), c.${amountColumn},
+                   regexp_replace(lower(btrim(c.fee_name)), '\\s+', ' ', 'g'), COALESCE(c.fee_audience, 'unknown'),
+                   COALESCE(c.variant_type, ''), COALESCE(c.account_product_type, ''),
+                   CASE WHEN c.frequency IN ('per_item', 'per_occurrence', 'per_transaction', 'one_time') THEN 'each'
+                     ELSE COALESCE(c.frequency, '') END
+                 ORDER BY c.fee_published_id
                ) AS copy
           FROM ${catalog} c
           LEFT JOIN source_documents sd ON sd.id = c.source_document_id
@@ -283,6 +302,7 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
       ), flags AS (
         SELECT fee_published_id, institution_id, category, source_document_id,
                (copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS duplicate,
+               (same_amount_copy > 1 AND category IS NOT NULL AND value IS NOT NULL) AS same_amount,
                (evidence_at < NOW() - make_interval(days => $1::int)) AS stale,
                (category IS NULL) AS no_category,
                (category IS NOT NULL AND NOT (category = ANY($2::text[]))) AS off_taxonomy,
@@ -300,6 +320,7 @@ export function dataQualitySql(catalog: "published_fee_catalog" | "published_fee
       SELECT COUNT(*)::int AS live_fees,
              COUNT(DISTINCT institution_id)::int AS institutions,
              (COUNT(*) FILTER (WHERE duplicate))::int AS duplicates,
+             (COUNT(*) FILTER (WHERE same_amount))::int AS same_amount,
              (COUNT(*) FILTER (WHERE stale))::int AS stale,
              (COUNT(*) FILTER (WHERE no_category))::int AS no_category,
              (COUNT(*) FILTER (WHERE off_taxonomy))::int AS off_taxonomy,
@@ -331,6 +352,7 @@ function countsFrom(row: CountsRow | undefined): CatalogCounts {
     liveFees: num("live_fees"),
     institutions: num("institutions"),
     duplicates: num("duplicates"),
+    sameAmount: num("same_amount"),
     stale: num("stale"),
     noCategory: num("no_category"),
     offTaxonomy: num("off_taxonomy"),
@@ -417,7 +439,7 @@ const label = (key: string) => {
 export function summarizeDataQuality(result: DataQualityResult): string {
   const d = result.dollar;
   const parts = [
-    `${d.checks.duplicates.count.toLocaleString("en-US")} duplicates (${pct(d.checks.duplicates.rate)})`,
+    `${d.checks.duplicates.count.toLocaleString("en-US")} duplicates (${pct(d.checks.duplicates.rate)}; ${d.sameAmount.toLocaleString("en-US")} sharing category and amount)`,
     `${d.checks.stale.count.toLocaleString("en-US")} stale (${pct(d.checks.stale.rate)})`,
     `${d.checks.noCategory.count.toLocaleString("en-US")} with no category`,
     `${d.checks.noSource.count.toLocaleString("en-US")} with no source link`,
@@ -437,6 +459,7 @@ function catalogDetail(quality: CatalogQuality) {
     live_fees: quality.liveFees,
     institutions: quality.institutions,
     checks: quality.checks,
+    same_amount: quality.sameAmount,
     off_taxonomy: quality.offTaxonomy,
     no_document: quality.noDocument,
     link_mismatch: { count: quality.linkMismatch, url_variants: quality.linkUrlVariant, read_page: quality.linkReadPage, sample: quality.linkMismatchSample },
