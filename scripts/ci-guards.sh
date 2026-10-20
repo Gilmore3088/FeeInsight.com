@@ -29,7 +29,11 @@
 #                 Fail if SQL placeholders are computed as $${params.length - N}; capture each one when it is pushed.
 #   findings-file-kill
 #                 Fail if docs/project/FINDINGS.md gains an entry dated after 2026-10-09, a findings/ file is misnamed,
-#                 or a finding this PR adds has no **Guard:** line.
+#                 a finding this PR adds or changes has neither a **Guard:** nor an **Agent lesson:** line, or an
+#                 **Agent lesson:** line names a lesson id that does not exist.
+#   queue-owner-kill
+#                 Fail if a migration creates a *_queue table that src/lib/agents/queue-registry.ts does not list
+#                 (every queue has an owner agent, a size/age query and alarm limits).
 #   heading-wrap-kill
 #                 Fail if the site-wide or report-template rule that stops one-word heading lines is removed.
 #   plausible-kill
@@ -719,10 +723,32 @@ findings_file_kill() {
     [[ -n "$bad" ]] && echo "misnamed: $bad" >&2
     exit 1
   fi
-  # A lesson nothing enforces happens again (#1108): a finding this PR adds names its guard, the
-  # test, CI guard, scorecard alarm or checklist line that catches a repeat. Compares the PR with
-  # its base, like api-docs-kill; findings already on main are only counted.
-  local base_ref="" added unguarded old
+  # A lesson nothing enforces happens again (#1108). A finding this PR adds or changes names what
+  # stops a repeat: a **Guard:** line (the test, CI guard, scorecard alarm or checklist line) or,
+  # when an agent caused it, an **Agent lesson:** <agent>/<lesson-id> line naming a lesson in that
+  # agent's role-lessons.ts (James, 2026-10-20). Compares the PR with its base, like api-docs-kill;
+  # findings already on main are only counted (src/lib/findings-audit.ts lists them).
+  local guard_re='^\*\*Guard:\*\*[[:space:]]*[^[:space:]]'
+  local lesson_re='^\*\*Agent lesson:\*\*'
+  local base_ref="" changed unguarded="" unknown="" old f ref agent id
+  # Every lesson a finding names must exist, changed in this PR or not.
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    f="${line%%:*}"
+    for ref in $(printf '%s' "${line#*:}" | sed -E 's/^\*\*Agent lesson:\*\*//; s/[`,]/ /g'); do
+      agent="${ref%%/*}"
+      id="${ref#*/}"
+      if [[ "$ref" != */* || ! -f "src/lib/agents/${agent}/role-lessons.ts" ]] \
+        || ! grep -qE "^[[:space:]]+id: \"${id}\"," "src/lib/agents/${agent}/role-lessons.ts"; then
+        unknown+="${f}: ${ref}"$'\n'
+      fi
+    done
+  done < <(grep -HE "$lesson_re" docs/project/findings/*.md 2>/dev/null | grep -v '^docs/project/findings/README\.md:' || true)
+  if [[ -n "$unknown" ]]; then
+    echo "findings-file-kill: an '**Agent lesson:**' line must name <agent>/<lesson-id> from src/lib/agents/<agent>/role-lessons.ts:" >&2
+    printf '%s' "$unknown" >&2
+    exit 1
+  fi
   if [[ -n "${GITHUB_BASE_REF:-}" ]]; then
     git fetch --no-tags --quiet --depth=1 origin "$GITHUB_BASE_REF" 2>/dev/null && base_ref="FETCH_HEAD"
   elif git rev-parse --quiet --verify origin/main >/dev/null; then
@@ -731,21 +757,40 @@ findings_file_kill() {
   if [[ -z "$base_ref" ]]; then
     echo "findings-file-kill: no base branch to compare with; new-finding guard check skipped"
   else
-    added=$(git diff --name-only --diff-filter=A "$base_ref" -- 'docs/project/findings/*.md' 2>/dev/null \
+    changed=$(git diff --name-only --diff-filter=AMR "$base_ref" -- 'docs/project/findings/*.md' 2>/dev/null \
       | grep -v '/README\.md$' || true)
-    unguarded=""
-    for f in $added; do
-      [[ -f "$f" ]] && ! grep -qE '^\*\*Guard:\*\*[[:space:]]*[^[:space:]]' "$f" && unguarded+="$f"$'\n'
+    for f in $changed; do
+      [[ -f "$f" ]] || continue
+      grep -qE "$guard_re" "$f" || grep -qE "$lesson_re" "$f" || unguarded+="$f"$'\n'
     done
     if [[ -n "$unguarded" ]]; then
-      echo "findings-file-kill: each new finding needs a '**Guard:**' line naming the test, CI guard, scorecard alarm or checklist line that catches a repeat (see docs/project/findings/README.md):" >&2
+      echo "findings-file-kill: each new or changed finding needs a '**Guard:**' line (the test, CI guard, scorecard alarm or checklist line that catches a repeat) or an '**Agent lesson:** <agent>/<lesson-id>' line (see docs/project/findings/README.md):" >&2
       printf '%s' "$unguarded" >&2
       exit 1
     fi
   fi
   old=$(find docs/project/findings -maxdepth 1 -type f -name '*.md' ! -name README.md \
-    -exec grep -LE '^\*\*Guard:\*\*[[:space:]]*[^[:space:]]' {} + 2>/dev/null | wc -l | tr -d ' ' || true)
-  echo "findings-file-kill: OK (new findings are one file each in docs/project/findings/ and name their guard; ${old} older findings name none)"
+    -exec grep -LE "${guard_re}|${lesson_re}" {} + 2>/dev/null | wc -l | tr -d ' ' || true)
+  echo "findings-file-kill: OK (new and changed findings are one file each in docs/project/findings/ and name their guard or lesson; ${old} older findings name neither)"
+}
+
+queue_owner_kill() {
+  # Every queue has an owner and an alarm (#1108). A migration that creates a *_queue table must
+  # have that table listed in an entry's `tables` in src/lib/agents/queue-registry.ts, which gives
+  # it an owner agent, a read-only size/age query, an age limit and a growth window that the daily
+  # scoreboard alarms on. Reads only the files.
+  local registry="src/lib/agents/queue-registry.ts" missing="" table tables
+  tables=$(grep -hoiE 'create[[:space:]]+table[[:space:]]+(if[[:space:]]+not[[:space:]]+exists[[:space:]]+)?(public\.)?"?[a-z0-9_]+_queue"?' \
+    supabase/migrations/*.sql 2>/dev/null | sed -E 's/.*[[:space:].]"?([a-zA-Z0-9_]+)"?$/\1/' | tr '[:upper:]' '[:lower:]' | sort -u || true)
+  for table in $tables; do
+    grep -qE "tables: \[[^]]*\"${table}\"" "$registry" 2>/dev/null || missing+="${table}"$'\n'
+  done
+  if [[ -n "$missing" ]]; then
+    echo "queue-owner-kill: add each queue table to an entry in ${registry} (owner, size/age query, age limit, growth window):" >&2
+    printf '%s' "$missing" >&2
+    exit 1
+  fi
+  echo "queue-owner-kill: OK ($(printf '%s\n' "$tables" | grep -c . || true) queue tables, each with an owner and an alarm in ${registry})"
 }
 
 bayes_manifest_kill() {
@@ -961,6 +1006,7 @@ lesson_kill() {
 
 case "$SUBCOMMAND" in
   lesson-kill) lesson_kill ;;
+  queue-owner-kill) queue_owner_kill ;;
   sqlite-kill) sqlite_kill ;;
   modal-kill) modal_kill ;;
   legacy-kill) legacy_kill ;;
@@ -991,12 +1037,12 @@ case "$SUBCOMMAND" in
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill>" >&2
     exit 2
     ;;
 esac
