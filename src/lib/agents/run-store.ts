@@ -1899,6 +1899,7 @@ async function executeAgenticStep(
           },
           refresh_copy_checked: refreshCopy.checked,
           refresh_copy_refreshed: refreshCopy.refreshed,
+          refresh_copy_moved_page: refreshCopy.movedPage ?? 0,
           refresh_copy_skipped: refreshCopy.skipped,
           refresh_copy_samples: refreshCopy.samples.slice(0, 10),
           current_copy: {
