@@ -3,6 +3,28 @@
 Merged changes in plain language, newest day first (UTC). Written from `git log` on main.
 Started 2026-10-05; for anything earlier, see `git log`.
 
+## 2026-10-20 (from 2026-10-19 20:00 UTC)
+**Accuracy and data quality**
+- Switches on after a clean sample: Darwin's take-over proof and Knox's range-band set-aside (#2442), Knox's held-name rules (#2445), the hourly line check and hand-takedown returns (#2436), product-page conflict takedowns (#2456).
+- Knox scores promoted held rates from their line (#2432), files returned statements as returned mail (#2454), and reads stale pages before a large bank's repeat (#2423). Category guard v77 and v78: credit-card-only card fees and account verification (#2389, #2449).
+- Restores need a name-first line, the bank's current document and the name and price on one row (#2443, #2457, #2462); product-page conflicts judge the same item and only lines that can speak against the page (#2440, #2447).
+- Admin-corrected fees stay live against agent takedowns and frequency fill (#2433, #2435).
+- Magellan stops accepting product pages as schedules (#2438); accepted links join the bank's documents (#2427); saved-link fetch keeps only real fee pages (#2446); live fees' pages are re-fetched oldest first and moved off pages the bank moved away from (#2460, #2463).
+- Rosetta gives every stored text a document kind and verifies captured bytes (#2428, #2401); Darwin recheck decisions are atomic (#2372); corrective cases bind to retained evidence (#2414); international wires need own-source direction (#2386); exclusive audience from the fee's own price clause (#2374); publication waits for required evidence (#2352).
+- Agent lessons: fixed issues become lessons (#2431, #2437); every finding names its guard or lesson (#2439, #2444, #2448, #2455, #2458); a monthly agent health report (#2441).
+
+**Public site**
+- Reports pages, cached /about, /guides and /contact, site audit fixes, the research-brief template and the market report layout (#1935, #1936, #1960, #1732, #1736).
+- Public counts leave out inactive institutions (#2390); one address per city (#2396).
+
+**Hamilton**
+- Saved simulations keep their institution and fee (#2413); bank and credit-union comparisons are separate (#2353); income peers use filed financials without inactive institutions (#2391, #2398); historical peer cohorts (#2411); source-qualified research (#2422); #2426, #2384, #2385, #2399, #2402, #2452, #1762, #1771.
+
+**Project and tooling**
+- Migrations 069 to 074: legacy event-log RLS (#2377), two indexes (#2450, #2451), legacy partition drops (#2453), call-report summaries (#2459), FDIC identity holds and HMDA repair with release flags off (#2253).
+- Unreferenced code and runtime schema creation removed (#2403, #2434, #2387, #2394); vault measurement, deletion off (#2430); paid items stay open on a billing refusal and settle only after calls finish (#2464, #2400); CFPB and SEC identity review (#2425); NCUA merger lists (#2307); Hoovie fetch is not load (#2412); roadmap (#1597).
+- Also merged: #2308, #2357, #2383, #2395, #2421, #2376, #2378, #2429, #2461.
+
 ## 2026-10-14
 **Accuracy and data quality**
 - Knox no longer shows its internal extraction note in a fee's conditions on any customer page, API or report (#1278).
