@@ -18,8 +18,8 @@ type Fetcher = typeof fetch;
  * active banks' live fees (391) cited only documents last checked more than 90 days ago, five of
  * them the same five flagged on Oct 13: Partner Colorado's fee PDF (Feb 17) answered 403 once in
  * April and was never asked for again; Railway's fee PDF the same; Bank of Ontario's, Self-Reliance's
- * and Synergy's fee pages were left behind when their remembered address moved. 105 such pages
- * (95 banks, 1,231 live fees) had no successful copy in 90 days.
+ * and Synergy's fee pages were left behind when their remembered address moved. 101 such pages
+ * (101 banks, 1,219 live fees) had no successful copy in 30 days, 99 of them in 90.
  *
  * This pass fetches those pages, oldest first, as a side copy (`keepRemembered`): the copy is
  * stored under the page's own address, so it supersedes the page's old copy and the usual read,

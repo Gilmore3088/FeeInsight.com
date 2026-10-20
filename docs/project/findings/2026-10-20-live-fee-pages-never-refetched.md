@@ -21,7 +21,9 @@ fees already come from.
 **Still open (on #1200):** Hamilton skips a fee found again on a newer document as "Identical fee
 already published" and leaves the live fee citing the old document (`decidePriorFee`,
 `hamilton/publish.ts`), so Synergy's newer schedule never took over; and its retired-document check
-keys on `fee_schedule_url`, which can still name the old page.
+keys on `fee_schedule_url`, which can still name the old page. A page that now redirects stores
+its copy at the final address, so the cited old document is not superseded; the pass then waits 30
+days and tries again, and those live fees are judged only once Hamilton's half lands.
 **Lesson:** a freshness check has to start from what is live. Fetching "the bank's fee page" is not
 the same as re-checking the pages the bank's live fees came from.
 
