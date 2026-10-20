@@ -159,15 +159,21 @@ import { belongsToPaidReturnedUnit, paidReturnedUnits } from "@/lib/custom-repor
 // the row under it, in the rules or the family passes, and a name never runs on from it
 // ("Reconveyance .. Actual Cost: Returned payment" was read at the next row's $4.95, Oregon
 // Community FCU, doc 19849; Gunnison's "Wire Fee" $25 never borrows the free incoming wire's
-// direction). Follows #2465's v92 and #2470's v91. The stale-read floor stays at v78; name re-tidy
+// direction). Follows #2470's v91; #2465 is v94. The stale-read floor stays at v78; name re-tidy
 // v24 renames the live names it left.
-// v94 (#1916): a fee never takes the other column's price on a two-column page. Advia FCU's "ATM
-// Transactions" and "Garnishment/Tax Levy/Subpoena" took Money Market Checking's "$10.00 monthly for
+// v94 (#1827; numbered v92 until #2467 took v93): a cell-less price-first list ("$100.00 Safe
+// Deposit Box Drilling/Per Box" / "$14.00 Safe Deposit Box 3”x5”x22”/Year") is read one fee per line when it runs two lines or more and no bare
+// price closes it, a range row ("$5-$15 | Levy") never names the row under it, and a heading never
+// takes the price of a price-first line that names its own fee. Before, each box took the next
+// size's price (Colby, doc 37839) and the levy took the garnishment's $20 (doc 2491). The stale-read
+// floor stays at v78; the shared source check (v19) takes the wrong live reads down.
+// v95 (#1916; numbered v94 until #2465 took it): a fee never takes the other column's price on a
+// two-column page. Advia FCU's "ATM Transactions" and "Garnishment/Tax Levy/Subpoena" took Money Market Checking's "$10.00 monthly for
 // average" (the right column's price, flattened onto their name rows), and "Member-Requested ATM/
 // Debit" took Account Reopen's $10. The self-check (`checkFeeAgainstSource`, `refusesOtherColumnPrice`)
 // now refuses those reads, so they stay untraced holds. The stale-read floor stays at v78; source
 // check v20 takes the live ones down.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 94 } as const;
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 95 } as const;
 
 export interface SpecialistRun {
   strategy: string;

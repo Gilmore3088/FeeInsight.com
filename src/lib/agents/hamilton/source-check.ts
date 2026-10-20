@@ -68,6 +68,10 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // Version 18: an opening deposit printed under an account heading ("Now Checking" / "$1,000.00
 // opening deposit required") is not the heading's price, so a name composed from that heading
 // traces, and a fee whose only price was an opening deposit no longer does (#1810).
+// Version 19: a fee does not trace while its own row prints another price ("$3 | Overdraft Transfer
+// (per item)" for a $30 read), and a sized fee does not trace to a row of another size ("Rental of
+// 3 × 5 Box" at the 5 × 5 row's $55) (#1827). The bump re-checks every institution, so the live
+// fees that took a neighbour's price come down (16 on Oct 20; the PR lists them).
 // Version 20 (#1916): on a two-column page a fee's own price prints under its name, so the other
 // column's price beside the name ("ATM Transactions | $10.00 monthly for average" over "Free | Money
 // Market Checking*") or under the other of two names ("Account Reopen | Member-Requested ATM/Debit"
