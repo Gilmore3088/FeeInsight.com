@@ -389,7 +389,8 @@ describe.skipIf(!connection)("prospective corrective source context in actual Po
       await hold`SELECT id FROM eval_cases WHERE id=${row.id} FOR UPDATE`;
       pending=runCorrectiveSource({db:worker as unknown as Db,runId:null,dryRun:false});
       let observed=false;
-      for(let i=0;i<30;i++) {
+      // Admission and replay listings run window by window before the claim; poll by deadline, not count.
+      for(const deadline=performance.now()+10000;performance.now()<deadline;) {
         const [wait]=await raw`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE application_name='corrective-replay-lock-witness' AND wait_event_type='Lock' AND query LIKE '%FROM eval_cases%FOR UPDATE%') AS waiting`;
         if(wait.waiting) {observed=true;break;} await new Promise(resolve=>setTimeout(resolve,2));
       }
