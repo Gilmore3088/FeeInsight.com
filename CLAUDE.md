@@ -83,12 +83,15 @@ No branch deletion, force-push or direct main push under a general cleanup instr
 
 ## Project memory
 `docs/project/` is the project's durable memory; `docs/project/README.md` explains it.
-- Before starting work, read the latest file in `docs/project/checkpoints/`.
+- Before starting work, read the latest file in `docs/project/checkpoints/` and
+  `docs/project/LESSONS.md`, the one front door to every decision and lesson.
 - When you hit a structural or infrastructure problem, add it as its own file,
   `docs/project/findings/YYYY-MM-DD-short-slug.md`, in the same PR as the fix (or its own PR if
   there is no fix yet). `docs/project/FINDINGS.md` holds entries through 2026-10-09 and takes no
   new ones; `scripts/ci-guards.sh findings-file-kill` enforces it.
 - When James makes a decision that changes how work is done, add it to `docs/project/DECISIONS.md`.
+- Every new finding and decision also gets a one-line entry in `docs/project/LESSONS.md` in the
+  same PR; `scripts/ci-guards.sh lessons-index-kill` enforces it.
 - The checkpoint and `docs/project/CHANGELOG.md` come from merged PRs: written by the daily
   routine when it is on, otherwise by the session at the end of a working day.
 - This file holds rules that stay true. Status and next steps go in a checkpoint, never here.

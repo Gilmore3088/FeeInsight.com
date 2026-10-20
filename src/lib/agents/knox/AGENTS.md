@@ -2,6 +2,33 @@
 
 Knox owns conservative raw fee extraction.
 
+## Prospective compressed paid/returned events (#1918)
+
+`PAID_RETURNED_EVENT_VERSION` v1 recognizes a complete literal NSF paid/returned row at one
+own price, retaining the original row, physical span, heading and charging unit. The two
+faithful names (`NSF - Paid`, `NSF - Returned`) use ordinary unchanged category/source guards;
+names and `line_share` keys never supply evidence. Only exact generic consumer scopes admit.
+Named, qualified, mixed or unknown scopes stay eligibility-held with
+`knox_eligibility:paid_returned`. Repeated units stay held. Separate event prices, unsupported
+clauses/columns, or an unexamined section exceeding 512 lines cannot prove a pair. The whole
+proof input is capped at one million UTF-8 bytes; this is a conservative grammar, not full recall.
+An arbitrary following physical line is retained as unresolved context and keeps the price
+held, irrespective of its first words. Only EOF, a physical blank, or a separate label/price
+cell ends this bounded continuation; unknown over-budget context declines rather than clips.
+Explicit wrapped per-item/presentment/each text remains the price's own charging unit.
+
+Both candidate/held writers recompute from the exact current completed artifact and successful,
+unreplaced/nonduplicate document. Document→artifact→raw locks are nonwaiting. Every producer's
+legacy same-unit observations and every judged/verified/published/held history stay unchanged.
+Only an exact unchanged, unjudged prospective v1 counterpart may complete a new pair. Actual
+INSERT RETURNING decides counts; contention/missing/changed proof declines, and other write
+errors roll back. Shared learned-hold checks still use the actual prospective saved facts.
+
+This root-approved v1 proof-format exception leaves extract88/stale78/lineup73/twin82 and
+current verification/source/recheck/publication versions and selectors settled. Bayes declares
+no replay. No historical raw repair, Cascade recovery, source fetch, paid activation or general
+consumer applicability is inferred; Cascade's retained Pathfinder/business source remains held.
+
 ## Prospective international wire applicability (#2278)
 
 Numeric source support does not choose incoming/outgoing scope. After ordinary admission,
@@ -255,6 +282,12 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 677 of 736 (92.0%), 677 found (55.7%).
 
 ## Rules versions (`extract.rules`)
+
+v91 (Oct 20, #1829, #1830) reads a fax-led line ("Fax (Domestic & International)", "Faxes (Domestic
+only)") as document reproduction (`FAX_SERVICE`, fold v19). "Domestic" there is where the fax
+goes, not a domestic wire sent by fax, so "Domestic incoming (fax)" stays where it is. A stop
+payment that lists what it stops is already read by its head on main (doc 36961). Guard v79 takes
+down the cut bill pay reads still live.
 
 v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
 other mailed-back statements file as returned mail, the type made for returned or undeliverable
@@ -1709,7 +1742,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v90 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v91 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |

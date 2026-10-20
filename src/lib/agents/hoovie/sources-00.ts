@@ -112,6 +112,13 @@ export const HOOVIE_SOURCES_00: HoovieSourceContract[] = [
     grain: ["institution", "national"],
     linkKeys: ["rssd"],
     tables: ["ubpr_bank_peer_groups", "ubpr_peer_group_averages"],
+    missingSource: {
+      host: "cdr.ffiec.gov",
+      observed: "the tab-delimited \"UBPR Ratio -- Single Period\" Download answered with the form page and no message for every quarter tried; XBRL downloads; read 2026-10-20",
+      fallback: null,
+      issue: 2473,
+      answer: "serves the single-period UBPR file only as XBRL",
+    },
   },
   {
     // magellan/registry/fr-y9c.ts, regulatory/fr-y9c.ts (ffiec.gov/npw BHCF zips, federalreserve.gov MDRM)

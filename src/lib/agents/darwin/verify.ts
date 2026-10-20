@@ -10,6 +10,8 @@ import {
 } from "./verification-audience";
 import { tierPerkZero } from "./tier-perk";
 import { requireInternationalVerification } from "./international-verification";
+import { matchOriginalRawSource } from "./locked-raw-source";
+import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
 import { createHash } from "crypto";
 
 import { sql } from "@/lib/data-store/connection";
@@ -680,6 +682,7 @@ function decisionFor(code: DarwinReasonCode | null): DarwinDecision {
 }
 
 export interface RawFeeRow extends RateFields {
+  line_share?: string;
   product_name?: string | null;
   fee_audience?: FeeAudience;
   fee_raw_id: number | string;
@@ -1235,6 +1238,23 @@ export async function insertVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
   return inSavepoint(db, scope => insertCurrentVerifiedFee(scope, options));
 }
 
+/** Source-supported event names do not override a current applicability hold or source drift. */
+function requirePaidReturnedVerification(admission: VerificationAudienceAdmission, category: string | null): void {
+  const context = admission.sourceContext;
+  const raw = context.kind === "bound" ? context.currentRaw : admission.row;
+  const flags = parseFlags(raw.outlier_flags);
+  if (flags.includes(PAID_RETURNED_ELIGIBILITY_FLAG)) throw new VerificationAudienceDeferred("paid_returned_eligibility");
+  if (!flags.includes(PAID_RETURNED_EVENT_FLAG)) return;
+  if (context.kind !== "bound" || matchOriginalRawSource(context.currentRaw, context.source).kind !== "matched") {
+    throw new VerificationAudienceDeferred("paid_returned_source_unavailable");
+  }
+  const proof = paidReturnedCandidateProof(context.source.normalizedText, raw.fee_name,
+    Number(raw.amount), category ?? "", raw.line_share);
+  if (!proof || proof.unit.eligibility !== "admit" || raw.frequency !== proof.unit.frequency) {
+    throw new VerificationAudienceDeferred("paid_returned_source_changed");
+  }
+}
+
 async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOptions): Promise<number | null> {
   const admitted = options.audienceAdmission;
   const current = await prepareVerificationAudience(db, admitted?.row ?? options.row, options.sourceText);
@@ -1248,6 +1268,7 @@ async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
   if (admitted && options.row.frequency !== admitted.writeFrequency) throw new VerificationAudienceDeferred("admitted_frequency_changed");
   if (!admittedRawMatches(callerRaw, current.row)) throw new VerificationAudienceDeferred("admitted_raw_changed");
   requireInternationalVerification(current, options.canonicalFeeKey, resolvedRawCategory(current.row));
+  requirePaidReturnedVerification(current, options.canonicalFeeKey);
   const row = admitted ? { ...current.row, frequency: admitted.writeFrequency ?? current.row.frequency } : current.row;
   const feeRawId = Number(row.fee_raw_id);
   const institutionId = Number(row.institution_id);
@@ -1255,9 +1276,10 @@ async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
   const amount = percent ? null : normalizedAmount(row.amount);
   const eventId = stableUuid(`darwin:${options.runId}:${feeRawId}:${options.canonicalFeeKey}`);
   const flags = ["agentic_darwin_verified"];
+  if (parseFlags(current.row.outlier_flags).includes(PAID_RETURNED_EVENT_FLAG)) flags.push(PAID_RETURNED_EVENT_FLAG);
   if (amount === 0) flags.push(ZERO_FEE_VERIFIED_FLAG);
   if (options.secondSourceAgrees) flags.push(SECOND_SOURCE_FLAG);
-  if (options.extraFlags) flags.push(...options.extraFlags);
+  if (options.extraFlags) flags.push(...options.extraFlags.filter(flag => flag !== PAID_RETURNED_EVENT_FLAG && flag !== PAID_RETURNED_ELIGIBILITY_FLAG));
   const stated = row.frequency ?? null;
   const line = excerptOf(row.conditions);
   // #1456: Darwin keeps an hourly frequency Knox stated but does not read one itself; live fees
@@ -1279,6 +1301,7 @@ async function insertCurrentVerifiedFee(db: SqlTag, options: InsertVerifiedFeeOp
         AND NOT (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'knox_review:eligibility'
           AND (COALESCE(fr.outlier_flags, '[]'::jsonb) ? 'canonical_hint:monthly_maintenance'
             OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${CAP_FIRST_ELIGIBILITY_FLAG}
+            OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${PAID_RETURNED_ELIGIBILITY_FLAG}
             OR COALESCE(fr.outlier_flags, '[]'::jsonb) ? ${SYMBOLIC_LESSER_ELIGIBILITY_FLAG}))
       FOR UPDATE OF fr`;
     if (current.length === 0) return null;
@@ -1678,6 +1701,7 @@ export async function runDarwinVerify(
         if (row.source_document_id != null && sourceText != null) rowSourceTexts.set(Number(row.source_document_id), sourceText);
         const canonicalFeeKey = categoryOf(row);
         if (admission) requireInternationalVerification(admission, canonicalFeeKey, categoryOf(admission.row));
+        if (admission) requirePaidReturnedVerification(admission, canonicalFeeKey);
         let reasonCode = verificationReasonCode(row, canonicalFeeKey, learnedEnvelopes);
         const categoryHold = reasonCode ? null : pendingCategoryLesson(canonicalFeeKey, row.fee_name);
         if (categoryHold) reasonCode = "category_lesson_pending";

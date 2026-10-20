@@ -289,6 +289,84 @@ describe("findings-file-kill guard or lesson", () => {
   });
 });
 
+/** lessons-index-kill (DECISIONS 2026-10-20): LESSONS.md has a line per finding and per decision. */
+describe("lessons-index-kill", () => {
+  const DECISIONS = [
+    "# Decisions",
+    "",
+    "## 2026-10-20",
+    "",
+    "**One front door.** James, 2026-10-20.",
+    "",
+    "**Lessons for agents.** James, 2026-10-20: a",
+    "**bold** word mid-paragraph is not an entry.",
+    "",
+    "```",
+    "",
+    "**Inside a code block** is not an entry.",
+    "```",
+    "",
+    "## 2026-10-05",
+    "",
+    "**Older.** James.",
+    "",
+    "## 2026-10-05",
+    "",
+    "**Same date, second heading.** James.",
+    "",
+  ].join("\n");
+  const INDEX = [
+    "# Lessons and decisions",
+    "- 2026-10-20 — One front door. — [decision](DECISIONS.md#2026-10-20)",
+    "- 2026-10-20 — Lessons for agents. — [decision](DECISIONS.md#2026-10-20)",
+    "- 2026-10-05 — Older. — [decision](DECISIONS.md#2026-10-05)",
+    "- 2026-10-05 — Same date. — [decision](DECISIONS.md#2026-10-05-1)",
+    "- 2026-10-19 — A lesson. — [finding](findings/2026-10-19-a.md) — Guard: `x.test.ts`",
+    "",
+  ].join("\n");
+
+  function indexRepo(files: Record<string, string | null>) {
+    repo = mkdtempSync(join(tmpdir(), "lessons-index-"));
+    const all: Record<string, string | null> = {
+      "docs/project/DECISIONS.md": DECISIONS,
+      "docs/project/LESSONS.md": INDEX,
+      "docs/project/findings/README.md": "# Findings\n",
+      "docs/project/findings/2026-10-19-a.md": "# a\n**Guard:** `x.test.ts`\n",
+      ...files,
+    };
+    for (const [path, text] of Object.entries(all)) if (text !== null) write(path, text);
+    const out = spawnSync("bash", [GUARD, "lessons-index-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes when every finding and decision entry has a line", () => {
+    const { status, output } = indexRepo({});
+    expect(status, output).toBe(0);
+    expect(output).toContain("lessons-index-kill: OK");
+  });
+
+  it("fails a finding with no line and a line for a finding that does not exist", () => {
+    const { status, output } = indexRepo({
+      "docs/project/findings/2026-10-21-new.md": "# new\n**Guard:** `y.test.ts`\n",
+      "docs/project/findings/2026-10-19-a.md": null,
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("add a one-line entry");
+    expect(output).toContain("finding docs/project/findings/2026-10-21-new.md has no line");
+    expect(output).toContain("links findings/2026-10-19-a.md, which does not exist");
+  });
+
+  it("fails a new decision entry with no line and a link to a heading that does not exist", () => {
+    const { status, output } = indexRepo({
+      "docs/project/DECISIONS.md": DECISIONS.replace("## 2026-10-20\n", "## 2026-10-20\n\n**Brand new.** James.\n"),
+      "docs/project/LESSONS.md": `${INDEX}- 2026-10-01 — Gone. — [decision](DECISIONS.md#2026-10-01)\n`,
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("DECISIONS.md#2026-10-20 has 3 entries but docs/project/LESSONS.md has 2 lines");
+    expect(output).toContain("links DECISIONS.md#2026-10-01, which is not a DECISIONS.md heading");
+  });
+});
+
 /** queue-owner-kill (#1108): a migration's *_queue table has an owner and an alarm in the registry. */
 describe("queue-owner-kill", () => {
   function queueRepo(migration: string, registry: string) {

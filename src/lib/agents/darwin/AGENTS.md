@@ -1,5 +1,15 @@
 # Darwin Agent Guide
 
+## Prospective source-owned paid/returned events (#1918)
+
+The two faithful action names retain the literal compressed row as evidence and pass ordinary
+category/name/source/unit rules. The source-derived `knox_eligibility:paid_returned` hold is
+respected on current raw lineage, including stale caller categories. A v1 event also requires
+its locked original artifact/hash and the same positive own-row/scope proof at settlement;
+changed/unavailable proof defers without a terminal judgment. Only the actual raw provenance
+can carry `knox_owned_event:v1` into verification. No existing hold, legacy judgment, rules
+version, recheck selector or historical recovery is reopened.
+
 ## Paid collection before locked settlement (#2285; shared boundary #1915)
 
 Release-review and adjudication collect every allowed model response before acquiring
@@ -116,7 +126,8 @@ supply one another's duplicate, refresh or source-applicability witness. Holds a
 correction blockers keep their conservative broader overlap rules.
 
 Extract rules v83, stale-read floor v78, verify rules v3, Darwin batch key v4, publish rules v3,
-refresh-copy v2, current-copy v2 and newer-copy v1 stay settled. No source-check v2 bump,
+refresh-copy v2, current-copy v2 and newer-copy v1 stayed settled in this phase (newer-copy v2 later
+reopened every pair after its own dry run, #2477). No source-check v2 bump,
 fingerprint reopening, broad re-run, historical metadata backfill, recovery or numeric benchmark
 policy is authorized by this code phase. Bayes's `ANCILLARY_PRODUCT_VERSION` no-replay entry
 records the exception; old settled decisions need a separately designed and authorized path.
@@ -1537,7 +1548,13 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v35 (2026-10-08) accepts a per-item overdraft or NSF fee whose note states the daily cap: a dollar cap above the row's own price ("NSF Returned Item(s) Charge (NSF charge maximum of $100 per day)" $25, First State Bank of Rosemount), and a cap note that names the returned items sharing it ("Overdraft Fee ... (Consumer Accts: 5 max total OD or Returned Item fees daily)", BankIowa).
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
-- The guard is at v78 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v78 (Oct 20,
+- The guard is at v79 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v79 (Oct 20,
+  #1830): bill pay refuses a name whose own source line puts a stop payment just before it, in the
+  same cell or the cell before ("Stop Payment (includes ACH, Bill Pay) | $10.00" read as "ACH, Bill
+  Pay"). That is the stop payment fee. On Oct 20, 9 live bill pay fees matched; each has a live stop
+  payment twin at its bank and price, so they go to the second look and come down. A stop payment
+  that belongs to another price on the line ("Stop Payment | $30.00 | Bill Pay | $5.00") still passes.
+- v78 (Oct 20,
   #2449, category-guard gap): account verification is guarded by name. Research or reconciling without a
   verification re-files to account research and a domestic wire to the outgoing wire fee; a
   medallion stamp or signature guarantee (unmapped in the answer keys), a checking or spending

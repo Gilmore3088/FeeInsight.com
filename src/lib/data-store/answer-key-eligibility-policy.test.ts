@@ -102,6 +102,63 @@ describe("recordable reference-document decisions (#1862)", () => {
     expect(decide([document], snapshot, observed).status).toBe("unknown");
   });
 
+  it("keeps PDF bytes bound: changed bytes stay unknown even with every key line present", () => {
+    const document = page();
+    document.contentHash = hash("changed");
+    expect(decide([document], key(page())).facts.current).toEqual({ status: "unknown", reasons: ["reference_bytes_changed"] });
+  });
+
+  it("binds an HTML reference to its main text, not its bytes (#2466)", () => {
+    const html = (text = consumerText) => ({ ...page(text, "https://bank.example/fees"), contentType: "text/html; charset=utf-8",
+      contentHash: hash(`<html>${Date.now()}</html>`) });
+    const snapshot = { ...key(page(consumerText, "https://bank.example/fees")), documentType: "html", contentHash: hash("bytes from another fetch") };
+    expect(decide([html()], snapshot).facts.current).toEqual({ status: "pass", reasons: ["current_within_recorded_observation"] });
+    expect(decide([html()], { ...snapshot, contentHash: null }).status).toBe("eligible");
+    const edited = html(consumerText.replace("Overdraft fee $25", "Overdraft fee $35"));
+    expect(decide([edited], snapshot).facts.current).toEqual({ status: "unknown", reasons: ["reference_main_text_changed"] });
+    expect(decide([edited], snapshot).status).toBe("unknown");
+    // A PDF served under an HTML content type, or keyed as a PDF, stays byte-bound.
+    expect(decide([html()], { ...snapshot, documentType: "text_pdf" }).facts.current.reasons).toEqual(["reference_bytes_changed"]);
+  });
+
+  it("does not bind an HTML edition dated after the key was confirmed by key lines alone (#2466)", () => {
+    const later = consumerText.replace("July 15, 2024", "October 19, 2026");
+    const html = { ...page(later, "https://bank.example/fees"), contentType: "text/html", contentHash: hash("fresh bytes") };
+    const snapshot = { ...key(page(consumerText, "https://bank.example/fees")), documentType: "html", contentHash: hash("old bytes") };
+    expect(decide([html], snapshot).facts.current).toEqual({ status: "unknown", reasons: ["reference_main_text_changed"] });
+    // The same edition is still bound when its main text hash is the key's hash.
+    expect(decide([html], { ...snapshot, contentHash: hash(later) }).facts.current.status).toBe("pass");
+    // Without a confirmation date, key lines alone cannot bind an HTML edition.
+    const undated = { ...page(consumerText, "https://bank.example/fees"), contentType: "text/html", contentHash: hash("fresh bytes") };
+    expect(decide([undated], { ...snapshot, confirmedAt: null }).facts.current.reasons).toEqual(["reference_main_text_changed"]);
+  });
+
+  it("accepts a consumer schedule with no audience heading and no business evidence (#2466)", () => {
+    const plain = consumerText.replace("Consumer Fee Schedule", "Schedule of Fees");
+    const receipt = decide([page(plain)]);
+    expect(receipt.facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines_no_business_evidence"] });
+    expect(receipt.status).toBe("eligible");
+    expect(decide([page(`${plain}\nFunds are available within two business days`)]).facts.consumer.status).toBe("pass");
+    // A consumer merchant fee line whose price sits on the next line is not a business label.
+    expect(decide([page(`${plain}\nMerchant Dispute Fee`)]).facts.consumer.status).toBe("pass");
+  });
+
+  it.each([
+    ["a business section label", "Schedule of Fees\nOverdraft fee $25\nBusiness Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a bulleted business label", "Schedule of Fees\nOverdraft fee $25\n• Business Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a cash management label", "Schedule of Fees\nOverdraft fee $25\nCash Management Services\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a non-personal label", "Schedule of Fees\nOverdraft fee $25\n## Non-Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a business fees section", "Schedule of Fees\nOverdraft fee $25\nBusiness Checking Fees\nWire transfer fee $15", "fail", "business_document"],
+    ["a treasury fees section", "Schedule of Fees\nOverdraft fee $25\nTreasury Management Fees\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a spaced non personal label", "Schedule of Fees\nOverdraft fee $25\nNon Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a business-only schedule", "Business Fee Schedule\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
+    ["a business URL", "Schedule of Fees\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
+    ["a missing key line", "Schedule of Fees\nNSF fee $25\nWire transfer fee $15", "unknown", "key_line_not_in_reference"],
+  ])("keeps a schedule without a consumer heading out when it has %s", (condition, text, status, reason) => {
+    const document = page(text, condition === "a business URL" ? "https://bank.example/business-fees.pdf" : undefined);
+    expect(decide([document]).facts.consumer).toEqual({ status, reasons: [reason] });
+  });
+
   it("rejects a newer currently effective consumer schedule, but does not replace today with a future edition", () => {
     const old = page(consumerText.replace("2024", "2023"));
     const newer = page(consumerText, "https://bank.example/new-consumer-fees.pdf");
