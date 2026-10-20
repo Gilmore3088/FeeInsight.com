@@ -93,6 +93,7 @@ import { findingsDetail as releaseRepairFindingsDetail, releaseRepairDetail, run
 import { AUDIENCE_RELABEL_VERSION, dryRunFullTotals, runAudienceRelabel, type AudienceRelabelMode } from "@/lib/agents/darwin/audience-relabel";
 import { runDailyBrief } from "@/lib/agents/daily-brief";
 import { runSundayMaintenance, summarizeSundayMaintenance } from "@/lib/agents/deming/sunday-maintenance";
+import { MONTHLY_REVIEW_VERSION, runMonthlyReview, summarizeMonthlyReview } from "@/lib/agents/deming/monthly-review";
 import { runFeeAlertDispatch, summarizeFeeAlertDispatch } from "@/lib/agents/fee-alerts";
 import { runProDigest, summarizeProDigest } from "@/lib/agents/pro-digest";
 import { runProSeatCheck, summarizeProSeatCheck } from "@/lib/hamilton/pro-seat-check";
@@ -598,6 +599,7 @@ async function executeAgenticStep(
                 tried: savedLinks.tried,
                 stored: savedLinks.stored,
                 matched: savedLinks.matched,
+                refused: savedLinks.refused,
                 failed: savedLinks.failed,
                 switch_live: savedLinks.live,
                 results: savedLinks.results.slice(0, 10),
@@ -2580,6 +2582,16 @@ async function executeAgenticStep(
         detail: { ready: result.ready, entries: result.entries, started: result.started, pending: result.pending, judged: result.judged, hit_rate: result.hitRate },
       };
     }
+    case "deming-monthly-review": {
+      // #1107: on the 1st of the month (UTC) only. Read-only: each measure is one SELECT in its own
+      // savepoint; a failed read is stored as unknown. The ledger row is its only write.
+      const result = await runMonthlyReview({ db: tx });
+      return {
+        status: "completed",
+        summary: summarizeMonthlyReview(result),
+        detail: { version: MONTHLY_REVIEW_VERSION, ran: result.ran, reason: result.reason, review: result.review, alarms: result.review?.alarms ?? [] },
+      };
+    }
     case "deming-sunday-maintenance": {
       const result = await runSundayMaintenance({ db: tx, dryRun: run.runKind === "dry_run" });
       return {
@@ -2700,6 +2712,7 @@ async function executeAgenticStep(
           snapshot_date: result.snapshotDate,
           ...result.numbers,
           agent_health: result.agentHealth ?? null,
+          queues: result.queues ?? null,
         },
       };
     }
@@ -3599,6 +3612,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "magellan-live-audit-capture":150_000,
   "deming-live-source-draw":30_000,
   "deming-live-source-archive":30_000,
+  // #1107, the 1st of the month only (other days it returns at once): MONTHLY_REVIEW_BUDGET_MS
+  // (110 s) bounds the reads and measures, since a measure starts only while it fits at its 30 s
+  // statement timeout; 10 s more for the ledger.
+  "deming-monthly-review": 120_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,
@@ -4213,6 +4230,11 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- The daily scoreboard holds its 150 s score step for a tick with that much left,
+              -- and fresh lanes left at most 128 s, so run 9476 sat queued all of Oct 19 with
+              -- the storage watch behind it. Once lanes have had 15 minutes it goes first.
+              (COALESCE(r.params_json->>'source' = 'atlas.scoreboard', false)
+                AND r.started_at < NOW() - INTERVAL '15 minutes') DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'

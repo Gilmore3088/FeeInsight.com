@@ -14,12 +14,23 @@ const GUARD = resolve("scripts/ci-guards.sh");
 const VERSION_FILE = "src/lib/agents/darwin/selftest-version.ts";
 const MANIFESTS = "src/lib/agents/bayes/manifests.ts";
 
-const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+// Background gc/maintenance can still be writing into .git when afterEach removes the temp repo
+// (ENOTEMPTY in CI run 39326702861), so every git call here, the guard's included, turns it off.
+const env: NodeJS.ProcessEnv = {
+  ...process.env,
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_KEY_0: "gc.auto",
+  GIT_CONFIG_VALUE_0: "0",
+  GIT_CONFIG_KEY_1: "maintenance.auto",
+  GIT_CONFIG_VALUE_1: "false",
+};
 delete env.GITHUB_BASE_REF;
 
 let repo = "";
 afterEach(() => {
-  if (repo) rmSync(repo, { recursive: true, force: true });
+  if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   repo = "";
 });
 
@@ -213,5 +224,89 @@ describe("lesson-kill", () => {
     expect(output).toContain("growth is not a pipeline agent");
     expect(output).toContain("src/lib/agents/growth/role-lessons.ts: not imported");
     expect(output).toContain("lesson id 'Issue_2'");
+  });
+});
+
+/** findings-file-kill (#1108): a new or changed finding names its guard or a real agent lesson. */
+describe("findings-file-kill guard or lesson", () => {
+  const FINDINGS = "docs/project/findings";
+  const LESSONS = 'export const K = [\n  {\n    id: "issue-2209",\n  },\n];\n';
+
+  function findingsRepo(change: Record<string, string>) {
+    repo = mkdtempSync(join(tmpdir(), "findings-guard-"));
+    git("init", "-q", "-b", "main");
+    write("docs/project/FINDINGS.md", "# Findings\n## 2026-10-01 old\n");
+    // The template's example line is not a finding's reference.
+    write(`${FINDINGS}/README.md`, "# Findings\n**Agent lesson:** knox/issue-2209 (when an agent caused it)\n");
+    write(`${FINDINGS}/2026-10-01-old-unguarded.md`, "# old\n**Lesson:** prose only.\n");
+    write("src/lib/agents/knox/role-lessons.ts", LESSONS);
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    git("update-ref", "refs/remotes/origin/main", "HEAD");
+    git("checkout", "-q", "-b", "pr");
+    for (const [path, text] of Object.entries(change)) write(path, text);
+    git("add", "-A");
+    git("commit", "-qm", "pr");
+    const out = spawnSync("bash", [GUARD, "findings-file-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes a new finding with a Guard line or a real agent lesson, and only counts old ones", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-guarded.md`]: "# a\n**Guard:** `src/lib/x.test.ts`\n",
+      [`${FINDINGS}/2026-10-21-lesson.md`]: "# b\n**Agent lesson:** knox/issue-2209\n",
+    });
+    expect(status, output).toBe(0);
+    expect(output).toContain("1 older findings name neither");
+  });
+
+  it("fails a new finding and a changed old finding that name neither", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-bare.md`]: "# c\n**Lesson:** prose only.\n",
+      [`${FINDINGS}/2026-10-01-old-unguarded.md`]: "# old, edited\n**Lesson:** prose only.\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain(`${FINDINGS}/2026-10-21-bare.md`);
+    expect(output).toContain(`${FINDINGS}/2026-10-01-old-unguarded.md`);
+  });
+
+  it("fails an empty agent lesson line and a lesson id that only matches as a pattern", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-empty.md`]: "# e\n**Agent lesson:**\n",
+      [`${FINDINGS}/2026-10-21-dot.md`]: "# f\n**Agent lesson:** knox/issue.2209\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toMatch(/2026-10-21-empty\.md|2026-10-21-dot\.md: knox\/issue\.2209/);
+  });
+
+  it("fails an agent lesson that does not exist", () => {
+    const { status, output } = findingsRepo({
+      [`${FINDINGS}/2026-10-21-wrong.md`]: "# d\n**Agent lesson:** darwin/issue-2209, knox/issue-9999\n",
+    });
+    expect(status, output).toBe(1);
+    expect(output).toContain("2026-10-21-wrong.md: darwin/issue-2209");
+    expect(output).toContain("2026-10-21-wrong.md: knox/issue-9999");
+  });
+});
+
+/** queue-owner-kill (#1108): a migration's *_queue table has an owner and an alarm in the registry. */
+describe("queue-owner-kill", () => {
+  function queueRepo(migration: string, registry: string) {
+    repo = mkdtempSync(join(tmpdir(), "queue-guard-"));
+    write("supabase/migrations/20270101000000_q.sql", migration);
+    write("src/lib/agents/queue-registry.ts", registry);
+    const out = spawnSync("bash", [GUARD, "queue-owner-kill"], { cwd: repo, env, encoding: "utf8" });
+    return { status: out.status, output: `${out.stdout}${out.stderr}` };
+  }
+
+  it("passes a queue table the registry lists", () => {
+    const { status, output } = queueRepo("CREATE TABLE IF NOT EXISTS public.label_queue (id bigint);\n", '    tables: ["label_queue", "raw_fee_observations"],\n');
+    expect(status, output).toBe(0);
+  });
+
+  it("fails a queue table the registry does not list, even when its name appears elsewhere", () => {
+    const { status, output } = queueRepo("create table public.label_queue (id bigint);\n", '// label_queue is mentioned but not owned\n    tables: ["other"],\n');
+    expect(status, output).toBe(1);
+    expect(output).toContain("label_queue");
   });
 });

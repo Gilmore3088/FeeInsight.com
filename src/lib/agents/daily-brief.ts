@@ -92,6 +92,24 @@ export interface StorageWarning {
  */
 export const STORAGE_WARNING_MAX_AGE_HOURS = 36;
 
+/**
+ * No finished storage step inside the window is itself a warning: on Oct 19 the scoreboard run
+ * that carries the step sat queued all day, and the brief said nothing.
+ */
+export const STORAGE_MEASUREMENT_MISSING_ALERT =
+  `Atlas has not measured the database in over ${STORAGE_WARNING_MAX_AGE_HOURS} hours, so storage warnings and log trims are not running`;
+
+/** Pure: the newest storage step result inside the window, or the missing-measurement warning. */
+export function storageWarningFromLatest(
+  row: { alerts: unknown; created_at: string | Date } | null | undefined,
+  now: Date,
+): StorageWarning {
+  if (!row) return { alerts: [STORAGE_MEASUREMENT_MISSING_ALERT], at: now.toISOString() };
+  const raw = typeof row.alerts === "string" ? JSON.parse(row.alerts) : row.alerts;
+  const alerts = Array.isArray(raw) ? raw.filter((alert): alert is string => typeof alert === "string") : [];
+  return { alerts, at: new Date(row.created_at).toISOString() };
+}
+
 /** Pure: the brief's storage lines, one per warning; none when there is no warning. */
 export function storageWarningLines(storage: StorageWarning | null | undefined): string[] {
   if (!storage || storage.alerts.length === 0) return [];
@@ -278,8 +296,8 @@ async function previousBrief(now: Date): Promise<PreviousBrief | null> {
   return funnel ? { funnel, at: new Date(row.created_at as string | Date).toISOString() } : null;
 }
 
-/** Atlas's newest storage step result, when it ran within STORAGE_WARNING_MAX_AGE_HOURS. */
-async function latestStorageWarning(): Promise<StorageWarning | null> {
+/** Atlas's newest storage step result within STORAGE_WARNING_MAX_AGE_HOURS, else a warning that it is missing. */
+async function latestStorageWarning(now: Date): Promise<StorageWarning> {
   const [row] = await sql`
     SELECT e.detail->'alerts' AS alerts, e.created_at
       FROM agent_run_events e
@@ -291,10 +309,7 @@ async function latestStorageWarning(): Promise<StorageWarning | null> {
      ORDER BY e.created_at DESC, e.id DESC
      LIMIT 1
   `;
-  if (!row) return null;
-  const raw = typeof row.alerts === "string" ? JSON.parse(row.alerts) : row.alerts;
-  const alerts = Array.isArray(raw) ? raw.filter((alert): alert is string => typeof alert === "string") : [];
-  return { alerts, at: new Date(row.created_at as string | Date).toISOString() };
+  return storageWarningFromLatest(row ? { alerts: row.alerts, created_at: row.created_at as string | Date } : null, now);
 }
 
 /** Steps each agent finished in the last 24 hours, straight from the ledger (no feed cap). Registry steps under Magellan's name before #1865 are Hoovie's. */
@@ -349,7 +364,7 @@ export async function runDailyBrief({ dryRun = false }: { dryRun?: boolean } = {
       console.error("Morning brief quality ledger read failed", error);
       return null;
     }),
-    latestStorageWarning().catch((error) => {
+    latestStorageWarning(now).catch((error) => {
       console.error("Morning brief storage read failed", error);
       return null;
     }),

@@ -311,10 +311,11 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   they were rejected under, so this rule does not reach them.
 - A Knox take-over that changes a retired row's category writes `knox_takeover_from:<old>`
   (#1295, `knox/extract.ts`), since the take-over drops the old `canonical_hint:` flags and left
-  no proof. It counts as proof, like `knox_refiled_from:`, only with
-  `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE` on (off, gated on James). Off, each verify step counts and
-  samples the rows only it would add in `detail.category_change_rejudge.takeover_proof`. Measured
-  Oct 16 (read-only): no row carries the flag yet, so it would add 0 today; the pool a take-over
+  no proof. It counts as proof, like `knox_refiled_from:`, since `DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE`
+  went on Oct 20 under James's sampled-clean rule (#2442; the dry run added 3 rows, 129981, 143924
+  and 152419, each matching the bank's document). Each verify step still counts and samples the
+  rows only the flag adds in `detail.category_change_rejudge.takeover_proof`. Before
+  the switch (Oct 16, read-only) no row carried the flag yet; the pool a take-over
   can reach is 1,356 retired, unverified Knox rows (1,269 with a v3 decision).
 - `not_in_source` (2026-10-06) runs the same check Hamilton's live-fee source check runs, so a
   fee the bank's schedule does not state is stopped before it is verified instead of being

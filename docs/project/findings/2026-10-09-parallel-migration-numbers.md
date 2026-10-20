@@ -14,3 +14,5 @@ created.
 **Rule:** before merging a PR that adds a migration, merge `origin/main` into it and re-run
 `bash scripts/ci-guards.sh migration-version-kill`. A green PR built on an older main can still
 take a number that has since been used.
+
+**Guard:** `scripts/ci-guards.sh migration-version-kill`, and the CLAUDE.md rule that a PR adding a migration merges `main` and re-runs it before merging

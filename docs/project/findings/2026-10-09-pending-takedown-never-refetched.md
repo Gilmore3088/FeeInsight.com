@@ -13,3 +13,5 @@ backlog or full, first after new links (`selectCandidates` in `src/lib/agents/ma
 bank is fetched once per flag. 419 fetchable banks matched the new selection on prod (read-only, before merge).
 **Lesson:** a wait that exists so new evidence can arrive needs something that fetches that
 evidence within the wait.
+
+**Agent lesson:** magellan/pr-808-refetch-flagged-banks

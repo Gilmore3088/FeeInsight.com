@@ -7,9 +7,13 @@ import { formatAdminDateTime } from "@/lib/admin-time";
 import { crewMember } from "@/lib/agents/crew";
 import { NOTIFICATION_STEPS, getAgentHealth, type AgentHealth } from "@/lib/data-store/agent-health";
 import { ScreenHeader, Unreadable } from "../../room-hub";
+import { readLatestMonthlyReview } from "@/lib/agents/deming/monthly-review";
+import { MonthlyReviewSection } from "./monthly-review";
 
 // One grouped scan of a week of steps (about 35ms on prod); a minute old is fresh enough.
 const getCachedAgentHealth = unstable_cache(() => getAgentHealth(), ["admin", "agent-health"], { revalidate: 60 });
+// The monthly review (#1107) changes once a month; one indexed read of its newest ledger row.
+const getCachedMonthlyReview = unstable_cache(() => readLatestMonthlyReview(), ["admin", "agent-monthly-review"], { revalidate: 600 });
 
 const TONE: Record<AgentHealth["tone"], { label: string; dot: string }> = {
   good: { label: "Healthy", dot: "bg-emerald-500" },
@@ -57,6 +61,12 @@ export default async function AgentsHealthPage() {
     console.error("Agent health failed", error);
     return null;
   });
+  const monthlyRead = await getCachedMonthlyReview()
+    .then((review) => ({ review, failed: false }))
+    .catch((error) => {
+      console.error("Monthly agent review failed", error);
+      return { review: null, failed: true };
+    });
 
   return (
     <section className="flex flex-col gap-4 pb-10">
@@ -127,6 +137,7 @@ export default async function AgentsHealthPage() {
           );
         })}
       </div>
+      <MonthlyReviewSection review={monthlyRead.review} failed={monthlyRead.failed} />
     </section>
   );
 }

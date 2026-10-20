@@ -16,3 +16,5 @@ page words differ from Knox's composed name.
 
 **Lesson:** a display cut at publish must be checked against names Knox composes, not only names
 copied from the page.
+
+**Agent lesson:** gutenberg/pr-864-rename-keeps-verdict

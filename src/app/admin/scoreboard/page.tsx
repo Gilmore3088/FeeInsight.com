@@ -16,6 +16,7 @@ import { readAccuracyHistory, type AccuracyHistory } from "@/lib/agents/deming/a
 import { accuracyStatusLabel, formatAccuracyBound } from "@/lib/agents/deming/accuracy-measure";
 import { AccuracyHistoryPanel } from "./accuracy-history";
 import { LiveSourceAuditPanel } from "./live-source-audit-panel";
+import { QueueBoardPanel } from "./queue-board-panel";
 import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
 import type { LiveAuditComponent } from "@/lib/agents/deming/live-source-audit-records";
 
@@ -167,6 +168,8 @@ export default async function ScoreboardPage({
       ) : null}
 
       {ready ? <GoalSection rows={rows} current={liveSourceAudit} /> : null}
+
+      {ready ? <QueueBoardPanel board={latest?.queues ?? null} date={latest?.queues ? latest.snapshot_date : null} /> : null}
 
       {!ready ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
