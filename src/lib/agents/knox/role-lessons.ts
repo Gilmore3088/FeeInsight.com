@@ -95,4 +95,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract-paid"],
     since: "2026-10-19",
   },
+  {
+    id: "issue-1055",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When a held line is promoted, re-score it as if it had been read directly; a placeholder written for the held queue never travels with the fee.",
+    why: "Promoted held rates kept the held queue's 0.5 placeholder confidence, below Hamilton's 0.8 publish floor, so 1,037 verified rate fees at 656 institutions could never publish.",
+    evidence: { issues: [1055], prs: [2432], files: ["src/lib/agents/knox/held-recheck.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

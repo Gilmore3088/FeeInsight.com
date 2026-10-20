@@ -668,6 +668,44 @@ describe("Magellan agentic discovery", () => {
       expect(fetched(fetchImpl)).not.toContain("https://footer.example/schedule-of-fees.pdf");
       expect(result.results[0].url).not.toBe("https://footer.example/schedule-of-fees.pdf");
     });
+
+    // #1051: 523 of 526 thin banks the hub and crawl finders "found" in a week were a page
+    // accepted as its own schedule on its fee-line count; 478 were product pages Rosetta refused.
+    it("follows a product page's link to the schedule instead of accepting the product page itself (#1051)", async () => {
+      const db = vaultDb([]);
+      const productPage = "<h1>Personal Checking</h1><p>Monthly maintenance fee $10.00</p><p>Overdraft fee $32.00</p>" +
+        '<p>Stop payment fee $35.00</p><p>Paper statement fee $3.00</p><a href="/disclosures/fee-schedule">All fees</a>';
+      const fetchImpl = site({
+        "https://footer.example/": () => response('<a href="/personal/checking">Checking</a>'),
+        "https://footer.example/personal/checking": () => response(productPage),
+        "https://footer.example/disclosures/fee-schedule": () => response(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 704, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(result.results[0]).toMatchObject({ outcome: "discovered", url: "https://footer.example/disclosures/fee-schedule" });
+      expect(fetched(fetchImpl)).toContain("https://footer.example/personal/checking");
+    });
+
+    it("never accepts an address that redirects to a page already ruled out (#1051)", async () => {
+      const ruledOut = "https://footer.example/personal/fees-and-rates";
+      const db = vaultDb([ruledOut]);
+      const redirected = (body: string) => {
+        const landed = response(body);
+        Object.defineProperty(landed, "url", { value: ruledOut });
+        return landed;
+      };
+      const fetchImpl = site({
+        "https://footer.example/": () => response('<a href="/fee-schedule">Fee Schedule</a> <a href="/disclosures">Disclosures</a>'),
+        "https://footer.example/fee-schedule": () => redirected(FEE_TABLE),
+        "https://footer.example/disclosures": () => redirected(FEE_TABLE),
+      });
+
+      const result = await runMagellanDiscovery({ runId: 705, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(fetched(fetchImpl)).toContain("https://footer.example/fee-schedule");
+      expect(result.results[0]).toMatchObject({ outcome: "dead", url: null });
+    });
   });
 
   describe("pages already ruled out", () => {
