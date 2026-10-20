@@ -5,6 +5,13 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**One front door for decisions and lessons.** James, 2026-10-20: "we need one central doc". One
+front door, `docs/project/LESSONS.md`, indexes every decision and lesson: one line per entry here,
+one per finding in `findings/`, and a pointer to each agent's `role-lessons.ts`. DECISIONS.md stays
+the full record of decisions. `scripts/ci-guards.sh lessons-index-kill` keeps the index complete:
+it fails a PR when a finding or a decision entry has no line in LESSONS.md, or when LESSONS.md links
+a finding that does not exist.
+
 **Returned statements file as returned mail.** James, 2026-10-20 03:51 UTC, decision card "File
 returned statements under returned mail instead of keeping them held?": "File them". On Oct 7 (v26)
 he had kept them held because no category fit; the returned-mail type made on Oct 15 (#1398) covers

@@ -58,6 +58,9 @@
 #                 Fail if an agent's rules or reader version constant is not stated, at its current version, in that agent's AGENTS.md.
 #   lesson-kill   Fail if an agent's role lessons (src/lib/agents/<agent>/role-lessons.ts) miss a field, name another
 #                 agent, have a malformed id or date, reuse an id, or are not in the lesson registry.
+#   lessons-index-kill
+#                 Fail if docs/project/LESSONS.md misses a line for a findings/ file or a DECISIONS.md entry, or links a
+#                 finding or a DECISIONS.md date heading that does not exist.
 
 set -euo pipefail
 
@@ -1050,8 +1053,65 @@ lesson_kill() {
   echo "lesson-kill: OK (${lessons} role lessons in ${files} agent files, ids unique)"
 }
 
+lessons_index_kill() {
+  # One front door for what the project learned and decided (James, 2026-10-20; DECISIONS):
+  # docs/project/LESSONS.md has one line per findings/ file and one per DECISIONS.md entry. An
+  # entry is a paragraph that opens with **bold** under a "## date" heading; its line links
+  # DECISIONS.md#<that heading's anchor>, so each anchor needs as many lines as it has entries.
+  local index="docs/project/LESSONS.md" decisions="docs/project/DECISIONS.md"
+  local problems="" f name linked line prev="" anchor="" base n seen="" in_code=0 counts="" a want have
+  if [[ ! -f "$index" ]]; then
+    echo "lessons-index-kill: ${index} is missing; it indexes every finding and decision (see docs/project/README.md)" >&2
+    exit 1
+  fi
+  for f in docs/project/findings/*.md; do
+    [[ -f "$f" ]] || continue
+    name=$(basename "$f")
+    [[ "$name" == "README.md" ]] && continue
+    grep -qF "](findings/${name})" "$index" || problems+="finding ${f} has no line; add '- date — the lesson — [finding](findings/${name}) — its Guard or Agent lesson' to its theme"$'\n'
+  done
+  while IFS= read -r linked; do
+    [[ -z "$linked" ]] && continue
+    [[ -f "docs/project/${linked}" ]] || problems+="${index} links ${linked}, which does not exist"$'\n'
+  done < <(grep -oE '\]\(findings/[^)#]+\)' "$index" | sed -E 's/^\]\(//; s/\)$//' | sort -u || true)
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == '```'* ]]; then
+      in_code=$((1 - in_code))
+    elif [[ $in_code -eq 0 && "$line" == '## '* ]]; then
+      base=$(printf '%s' "${line#\#\# }" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9 -]//g; s/ /-/g')
+      n=$(printf '%s' "$seen" | grep -cxF "$base" || true)
+      seen+="${base}"$'\n'
+      anchor="$base"
+      [[ "$n" -gt 0 ]] && anchor="${base}-${n}"
+      counts+="${anchor}"$'\n'
+    elif [[ $in_code -eq 0 && -n "$anchor" && -z "${prev// /}" && "$line" == '**'* ]]; then
+      counts+="${anchor} entry"$'\n'
+    fi
+    prev="$line"
+  done < "$decisions"
+  while IFS= read -r a; do
+    [[ -z "$a" ]] && continue
+    want=$(printf '%s' "$counts" | grep -cxF "${a} entry" || true)
+    have=$(grep -cF "](DECISIONS.md#${a})" "$index" || true)
+    if [[ "$want" != "$have" ]]; then
+      problems+="DECISIONS.md#${a} has ${want} entries but ${index} has ${have} lines linking DECISIONS.md#${a}; add '- date — the decision in plain words — [decision](DECISIONS.md#${a})' for each new entry"$'\n'
+    fi
+  done < <(printf '%s' "$counts" | grep -v ' entry$' | sort -u)
+  while IFS= read -r a; do
+    [[ -z "$a" ]] && continue
+    printf '%s' "$counts" | grep -qxF "$a" || problems+="${index} links DECISIONS.md#${a}, which is not a DECISIONS.md heading"$'\n'
+  done < <(grep -oE '\]\(DECISIONS\.md#[^)]+\)' "$index" | sed -E 's/^\]\(DECISIONS\.md#//; s/\)$//' | sort -u || true)
+  if [[ -n "$problems" ]]; then
+    echo "lessons-index-kill: add a one-line entry to ${index} for each finding and decision (see its top section):" >&2
+    printf '%s' "$problems" >&2
+    exit 1
+  fi
+  echo "lessons-index-kill: OK (every finding and decision has a line in ${index})"
+}
+
 case "$SUBCOMMAND" in
   lesson-kill) lesson_kill ;;
+  lessons-index-kill) lessons_index_kill ;;
   queue-owner-kill) queue_owner_kill ;;
   migration-lock-kill) migration_lock_kill ;;
   sqlite-kill) sqlite_kill ;;
@@ -1084,12 +1144,12 @@ case "$SUBCOMMAND" in
   api-docs-kill) api_docs_kill ;;
   runtime-ddl-kill) runtime_ddl_kill ;;
   "")
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill>" >&2
     exit 2
     ;;
   *)
     echo "Unknown subcommand: $SUBCOMMAND" >&2
-    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill>" >&2
+    echo "Usage: $0 <sqlite-kill|modal-kill|legacy-kill|fee-read-model-kill|script-kill|config-kill|edge-function-kill|artifact-kill|provider-kill|prompt-kill|active-doc-kill|migration-history-kill|legacy-name-kill|source-read-model-kill|agent-source-contract-kill|fee-tier-contract-kill|catalog-contract-kill|legacy-data-contract-kill|brand-kill|sql-placeholder-kill|heading-wrap-kill|migration-version-kill|plausible-kill|financial-source-kill|findings-file-kill|guide-version-kill|bayes-manifest-kill|api-docs-kill|runtime-ddl-kill|lesson-kill|queue-owner-kill|migration-lock-kill|lessons-index-kill>" >&2
     exit 2
     ;;
 esac
