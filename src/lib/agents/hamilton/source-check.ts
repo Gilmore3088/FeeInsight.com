@@ -1,6 +1,7 @@
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
+import { recordStepWarning } from "@/lib/agents/hamilton/step-warning";
 import { recordAttempt } from "@/lib/agents/learning/attempts";
 import { PENDING_KIND, SECOND_LOOK_MIN_MINUTES, secondLook } from "@/lib/agents/hamilton/second-look";
 import { excerptOf } from "@/lib/agents/hamilton/frequency-fill";
@@ -340,7 +341,21 @@ export interface SourceCheckTakedown {
   reason: string;
 }
 
+/**
+ * How the check ended (#2235). `no_work` means no institution was due; `failed` means a read or
+ * the write failed, its savepoint rolled back, and a `step.warning` names the error. A failed
+ * check is never counted as a clean one: nothing it wrote is kept and no institution is recorded
+ * as checked, so the source-check coverage alert still sees those institutions.
+ */
+export type SourceCheckStatus = "succeeded" | "no_work" | "failed";
+export type SourceCheckPhase = "select" | "write";
+
 export interface SourceCheckResult {
+  status: SourceCheckStatus;
+  /** Set when `status` is `failed`: the phase that failed. */
+  failedPhase?: SourceCheckPhase;
+  /** Set when `status` is `failed`: the error message, also in the run's `step.warning`. */
+  error?: string;
   institutionsChecked: number;
   liveFeesChecked: number;
   traced: number;
@@ -361,6 +376,7 @@ export interface SourceCheckResult {
 }
 
 const EMPTY_RESULT: SourceCheckResult = {
+  status: "no_work",
   institutionsChecked: 0,
   liveFeesChecked: 0,
   traced: 0,
@@ -391,6 +407,7 @@ export async function takeDownUntraceableFees(
   db: SqlTag,
   options: {
     runId: number;
+    stepId?: number | null;
     batchId: string;
     dryRun: boolean;
     institutionId?: number;
@@ -461,7 +478,7 @@ export async function takeDownUntraceableFees(
                 live.institution_id
        LIMIT ${limit}
     `);
-    if (due.length === 0) return EMPTY_RESULT;
+    if (due.length === 0) return { ...EMPTY_RESULT, takedowns: [], keptDown: [] };
     fingerprints = new Map(due.map((row) => [Number(row.institution_id), sourceCheckFingerprint(row.max_fee_id)]));
     const ids = [...fingerprints.keys()];
     fees = await inSavepoint(db, (scope) => scope<LiveFeeRow[]>`
@@ -483,9 +500,23 @@ export async function takeDownUntraceableFees(
        ORDER BY source_document_id, id DESC
     `);
   } catch (error) {
-    // A failed sweep must never block publishing new verified rows.
+    // A failed sweep must never block publishing new verified rows, but it is never "no work".
     console.error("takeDownUntraceableFees select failed:", error);
-    return EMPTY_RESULT;
+    return {
+      ...EMPTY_RESULT,
+      takedowns: [],
+      keptDown: [],
+      status: "failed",
+      failedPhase: "select",
+      error: await recordStepWarning(db, {
+        runId: options.runId,
+        stepId: options.stepId,
+        check: SOURCE_CHECK_STRATEGY.strategy,
+        what: "Source check read",
+        outcome: "read failed, no fee checked",
+        error,
+      }),
+    };
   }
 
   const textsByInstitution = new Map<number, InstitutionText[]>();
@@ -493,7 +524,7 @@ export async function takeDownUntraceableFees(
     const id = Number(text.institution_id);
     textsByInstitution.set(id, [...(textsByInstitution.get(id) ?? []), text]);
   }
-  const result: SourceCheckResult = { ...EMPTY_RESULT, takedowns: [], keptDown: [] };
+  const result: SourceCheckResult = { ...EMPTY_RESULT, status: "succeeded", takedowns: [], keptDown: [] };
   const passing: number[] = [];
   const relinks: Array<{ feeRawId: number; sourceDocumentId: number }> = [];
   const linkedKeys = new Set<string>();
@@ -711,10 +742,47 @@ export async function takeDownUntraceableFees(
     });
   } catch (error) {
     console.error("takeDownUntraceableFees write failed:", error);
-    return { ...result, relinked: 0, takedowns: [], restored: 0 };
+    return {
+      ...result,
+      relinked: 0,
+      takedowns: [],
+      restored: 0,
+      status: "failed",
+      failedPhase: "write",
+      error: await recordStepWarning(db, {
+        runId: options.runId,
+        stepId: options.stepId,
+        check: SOURCE_CHECK_STRATEGY.strategy,
+        what: "Source check write",
+        outcome: "failed, nothing taken down, restored or relinked",
+        error,
+      }),
+    };
   }
   if (result.takedowns.length > 0 || result.restored > 0) invalidatePublicReadCache();
   return result;
+}
+
+/**
+ * The publish step's receipt sentence for the source check. A failed check says so and names its
+ * phase, so a receipt never reads as a clean check when the check did not finish (#2235).
+ */
+export function sourceCheckReceiptNote(result: SourceCheckResult | null | undefined, dryRun: boolean): string {
+  if (!result) return "";
+  if (result.status === "failed") {
+    const consequence =
+      result.failedPhase === "write"
+        ? "Its writes rolled back: nothing was taken down, restored or relinked."
+        : "No live fee was checked against its schedule this step.";
+    return ` Source check failed (${result.failedPhase ?? "unknown"}): ${result.error ?? "unknown error"}. ${consequence}`;
+  }
+  const takedowns = result.takedowns.length;
+  if (takedowns === 0 && result.relinked === 0 && result.restored === 0) return "";
+  const relinked = result.relinked ? `, relinked ${result.relinked.toLocaleString()} to a stored schedule` : "";
+  const restored = result.restored
+    ? `, ${dryRun ? "would restore" : "restored"} ${result.restored.toLocaleString()} earlier takedown(s) that now trace`
+    : "";
+  return ` Source check: ${dryRun ? "would take down" : "took down"} ${takedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${relinked}${restored}.`;
 }
 
 /** Imported fees linked to their document through an identical imported row, per publish step. */

@@ -705,6 +705,11 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     price closes as `superseded by #<id>`.
 31. Source check (`takeDownUntraceableFees`, `source-check.ts`): up to 120 institutions,
     `source_check_untraceable:<reason>`; restores earlier takedowns that now trace, except those on `SOURCE_CHECK_KEPT_DOWN` (each with its issue, logged as `kept_down`; 36542, #1369).
+    It ends `succeeded`, `no_work` (no institution due) or `failed` (#2235). A failed read or
+    write rolls back its savepoint, leaves a `step.warning` event, records no institution as
+    checked, and is kept in the step detail (`source_check_status`, `source_check_failed_phase`,
+    `source_check_error`) and the receipt ("Source check failed (select): ..."). The publish
+    carries on.
 32. Imported twins (`linkImportedFeesToTwins`, `source-check.ts`): an imported live fee with no
     document is pointed at its twin row that has one, up to 100 a step. No rollback. Then the
     source link fill (`fillSourceLinks`, #1342): a live fee with no link takes its own document's
