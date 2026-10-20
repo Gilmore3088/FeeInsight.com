@@ -36,4 +36,14 @@ export const MAGELLAN_LESSONS: AgentLesson[] = [
     appliesTo: ["discover-paid"],
     since: "2026-10-13",
   },
+  {
+    id: "saved-link-check",
+    agent: "magellan",
+    stage: "fetch",
+    lesson: "Check a saved fee link the same way as a link you found before storing its page: a saved link is a claim, not proof, and a rates page, help page or transfers page is not the fee schedule.",
+    why: "The saved-link fetch stored whatever the saved link answered with; a sample of 20 of its 225 banks found 3 links that were not fee schedules (an external-transfers page, an online-banking help page, a card rates page).",
+    evidence: { issues: [1881], prs: [2438], files: ["src/lib/agents/magellan/saved-link-fetch.ts", "src/lib/agents/magellan/find-validate.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
