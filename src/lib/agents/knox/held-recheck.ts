@@ -1918,6 +1918,8 @@ export async function recheckHeldRates(
                fee_name = ${rate.feeName},
                extraction_note = ${(row.conditions ?? "").replace(/^Knox held for review \(percentage\)/, `Knox rate rules v${HELD_RATE_RECHECK_VERSION} read a percentage fee held for review`).replace(/canonical_hint=[^;]*;/, `canonical_hint=${rate.canonicalHint};`)},
                conditions = NULL,
+               -- A held row carries Knox's 0.5 placeholder; a rate read directly scores its line (#1055).
+               extraction_confidence = ${confidenceFor(rate.excerpt)},
                amount_kind = 'percent',
                rate_percent = ${rate.ratePercent},
                rate_min_amount = ${rate.rateMinAmount},
