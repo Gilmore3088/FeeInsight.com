@@ -51,7 +51,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     agent: "darwin",
     stage: "classify",
     lesson: "File a fee by whose item and whose account it is, not by matching words: a returned bond or coupon is a deposited item coming back, a business or commercial wire is not a consumer wire, and a $0 line under the bank's own ATM heading is not a non-network ATM fee.",
-    why: "Word matching filed bond returns as NSF, about 40 business wire prices as consumer wires and 41 free own-ATM lines as non-network ATM fees.",
+    why: "Word matching filed bond returns as NSF and about 40 business wire prices as consumer wires, and 41 live free atm_non_network rows named no other bank or network, among them Regions' own-ATM balance inquiry, \"ATM Enrollment\" and \"Check Card/ATM First Card\".",
     evidence: { issues: [], prs: [792, 805, 898], files: ["docs/project/findings/2026-10-09-bond-return-filed-nsf.md", "docs/project/findings/2026-10-09-business-wire-as-consumer-price.md", "docs/project/findings/2026-10-09-own-atm-free-line-as-non-network.md", "src/lib/fee-category-guard.ts"] },
     appliesTo: "all",
     since: "2026-10-09",

@@ -23,4 +23,4 @@ different prices on different documents. Exactly one pair qualifies: 551's paper
 (100434 down, 79432 stays). Looser heading rules matched section titles ("Account Service
 Charges"), lists of products and two copies of one text, so the rule stays narrow.
 **Lesson:** "another page" is not "another product". The product heading decides.
-**Agent lesson:** gutenberg/pr-865-newer-edition-wins
+**Agent lesson:** gutenberg/pr-867-edition-conflict

@@ -31,4 +31,4 @@ documents): 5 rows would come down, each through the 12h second look. A hand che
 Magellan marking 23743 as superseded by 23731 would also work, but only for this pair. This rule catches
 every bank that keeps last year's PDF online.
 
-**Agent lesson:** magellan/pr-807-one-current-copy, gutenberg/pr-865-newer-edition-wins
+**Agent lesson:** gutenberg/pr-867-edition-conflict
