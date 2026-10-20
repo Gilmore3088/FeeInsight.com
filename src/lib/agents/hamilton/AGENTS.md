@@ -332,6 +332,7 @@ Regulatory work needs a defensible position, so nothing Hamilton produces is a b
 - Persist selected-institution source/source-label metadata on reports, scenarios, and watchlist rows.
 - Emit publication, refresh, and fee-movement Monitor signals with canonical institution IDs.
 - A fee-movement signal (which alerts watchers) carries only moves `confirmFeeChange` confirms against both pages' text: same page, same fee name, old text states the old price, new text states the new price and not the old. A re-read of the same edition or a new copy that pairs a fee with a neighbouring price is listed as `unconfirmed_movements` on the publication signal and alerts no one.
+- An admin correction is the newest truth about a fee. No check takes down a live fee with a current correction, however its old document reads; only a new correction or a reversal replaces it. Corrected rows keep their original Knox lineage, so a check that reads live Knox rows will see them; the `keep_admin_corrected_fee_live` trigger (migration 20270110000068, #978) skips such a takedown, and a new check should leave these rows out itself rather than lean on it.
 - Use `recordHamiltonMonitorSignal` for Monitor writes so source metadata preserves `evidence_policy`, `provider_call_queued`, and lineage. Provider-originated competitor/movement signals must state an explicit evidence policy and cannot silently queue provider automation.
 
 ## Publishing (publish.rules version 3)
