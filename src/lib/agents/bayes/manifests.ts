@@ -379,7 +379,7 @@ export const VERSIONS_WITHOUT_REPLAY: Readonly<Record<string, string>> = {
   // retire more on pending/future pairs, so this is not the earlier 'only retire less' exception.
   // v2 reopened settled v1 pairs after a prod dry-run impact count (#2477, DECISIONS 2026-10-20).
   // #1674 also treats an exact account-type-held twin as present in planning/final restore.
-  NEWER_COPY_STRATEGY: "v2 (#2477, James 2026-10-20) judges every v1 pair again through the publish step's own 25-document sweep under the current identity, restore and hold guards. Prod dry run 2026-10-20: 772 pairs, 8 fees retired at 2 institutions, 0 restores. No separate backfill or correction is queued.",
+  NEWER_COPY_STRATEGY: "v3 (#2477) also pairs a superseded copy with the current copy Magellan superseded it with under any spelling of the page, and judges every earlier pair again through the publish step's own 25-document sweep under the current guards. v2 (James 2026-10-20) reopened v1 pairs: 772 pairs, 8 fees. The v3 dry-run count is in its PR and DECISIONS.md.",
   // #2131 narrows exact identity on normal live sweeps and future undecided publishes. Existing
   // v3 decisions (including skipped audiences) remain settled; historical recovery is separate.
   // #1055: a v3 refusal for low confidence is decided once more when the row's confidence now

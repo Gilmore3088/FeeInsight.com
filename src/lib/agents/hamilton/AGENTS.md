@@ -733,7 +733,8 @@ id>'` and the run's batch id, and their verified row is rejected; a later copy t
 the fee again restores it. Fees still named at a new price stay live: the price change
 belongs to the publish step once Knox reads the newer copy. Each pair is checked once
 (attempt log, stage `publish`, strategy `hamilton.newer_copy_check`, fingerprint
-`v2:<older>:<newer>`; v2 judged every v1 pair again, #2477). The shared learning store skips these takedowns, since the bank
+`v3:<older>:<newer>`; v2 judged every v1 pair again and v3 pairs a copy with the current copy
+Magellan superseded it with, whatever spelling of the page, #2477). The shared learning store skips these takedowns, since the bank
 changed the page and Knox and Darwin read the older copy correctly.
 `NEWER_COPY_RETIRE_LIVE = false` turns the check into a shadow run that only logs.
 
@@ -1327,7 +1328,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `EVAL_VERDICT_VERSION` | — | v8 | `hamilton/eval-verdicts.ts` |
 | `FREQUENCY_FILL_VERSION` | — | v15 | `hamilton/frequency-fill.ts` |
 | `GUARD_REQUEUE_STRATEGY` | `publish.guard_requeue` | v1 | `hamilton/guard-requeue.ts` |
-| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v2 (every v1 pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
+| `NEWER_COPY_STRATEGY` | `hamilton.newer_copy_check` | v3 (also pairs a copy with the current copy Magellan superseded it with, any spelling of the page; every pair judged again, #2477) | `hamilton/newer-copy-retire.ts` |
 | `HAMILTON_PUBLISH_STRATEGY` | `publish.rules` | v3 | `hamilton/publish.ts` |
 | `REFRESH_COPY_STRATEGY` | `hamilton.refresh_copy` | v2 | `hamilton/refresh-copy.ts` |
 | `RULES_RECHECK_STRATEGY` | `hamilton.rules_recheck` | v4 | `hamilton/rules-recheck.ts` |
