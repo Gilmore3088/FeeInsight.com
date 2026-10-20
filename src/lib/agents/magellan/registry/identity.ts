@@ -334,8 +334,8 @@ export async function applyIdentityDecision(db: RegistryDb, input: IdentityDecis
   if (input.decision === "accept") {
     institutionId = input.institutionId ?? beforeInstitution;
     if (institutionId === null) throw new Error("Choose an institution before accepting this link.");
-    const [target] = await db<Array<{ id: number }>>`SELECT id FROM institution_sources WHERE id = ${institutionId}`;
-    if (!target) throw new Error(`Institution #${institutionId} was not found.`);
+    const [target] = await db<Array<{ id: number }>>`SELECT id FROM institution_sources WHERE id = ${institutionId} AND regulatory_status IS DISTINCT FROM 'inactive'`;
+    if (!target) throw new Error(`Institution #${institutionId} was not found or is inactive.`);
   }
   const note = input.note?.trim() || null;
   const review = JSON.stringify({

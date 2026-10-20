@@ -260,6 +260,8 @@ describe("identity link review decisions", () => {
     const gone = reviewDb(linkRow(), false);
     await expect(applyIdentityDecision(gone.db, { linkId: 41, decision: "accept", institutionId: 404, reviewer })).rejects.toThrow(/not found/);
     expect(gone.statements.some((s) => /\bSET\b|INSERT/.test(s.text))).toBe(false);
+    // Re-pointing to a closed or merged institution is refused at the query, not only in the picker.
+    expect(gone.statements.find((s) => s.text.includes("SELECT id FROM institution_sources"))?.text).toContain("regulatory_status IS DISTINCT FROM 'inactive'");
   });
 });
 
