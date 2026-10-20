@@ -335,14 +335,4 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
-  {
-    id: "issue-1100-name-a-free-account-row-as-its-fee",
-    agent: "knox",
-    stage: "extract",
-    lesson: "When an account's own row says it is free, the fee read from it is that account's monthly maintenance fee at $0: name it as a fee (\"<account> Maintenance Fee\"), not with the bare account name. A name that is only a product does not say which fee it is, so the release checks refuse it, and the bank's free account never appears.",
-    why: "Rows such as \"Free Checking (CK02) | Free\" were held at $0 as monthly maintenance under the bare name \"Free Checking (CK02)\". The category guard rejected every one as a name that does not support its category, so free checking accounts never reached the index and every free monthly fee on the answer key counted as missed, while the priced rows, already named \"... Monthly service charge\", published.",
-    evidence: { issues: [1100], prs: [], files: ["docs/project/findings/2026-10-20-free-account-rows-refused.md", "src/lib/agents/knox/rules.ts"] },
-    appliesTo: "all",
-    since: "2026-10-20",
-  },
 ];

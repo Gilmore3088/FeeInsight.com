@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { amountsIn, classifyFeeText, headingName, readUnderHeading, isConditionAmount, nameFrom, joinWrappedProse, foldedCategory, classifyPatternKey, extractCandidatesFromText, extractFromSegment, notAZeroPrice, stripFootnoteMarks } from "./rules";
 import { runFreeSpecialists } from "./specialists";
-import { checkFeeAgainstSource, joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
+import { joinWrappedLeaderNames } from "@/lib/custom-report/source-check";
 import { researchSplitTarget } from "@/lib/fee-fold";
 import { withBoxSizeCellsSplit, withDroppedDecimalPoints, withSidewaysBoxTable, withoutBusinessOnlyFees, withoutLeadingFootnoteMark } from "./rules";
-import { passesDarwinChecks, tidyFeeName } from "./layout";
+import { tidyFeeName } from "./layout";
 
 describe("v72 (#1099): a loan's own payment and return fees are other lending", () => {
   const hint = (line: string) => extractFromSegment(line).candidates.map((c) => [c.canonicalHint, c.amount]);
@@ -1726,19 +1726,10 @@ describe("v78: Knox recall round 3 and #1304's Knox half (Oct 17)", () => {
   });
 
   it("holds a checking account's own free row as its monthly fee at $0, not a priced one or a service column", () => {
-    // v91 (#1100): named as the account's monthly fee, so the category guard accepts it.
     expect(zero("Fee Schedule\nFree Checking (CK02) | Free\nStudent Checking (CK07) | FREE")).toEqual([
-      ["monthly_maintenance", "Free Checking (CK02) Maintenance Fee"],
-      ["monthly_maintenance", "Student Checking (CK07) Maintenance Fee"],
+      ["monthly_maintenance", "Free Checking (CK02)"],
+      ["monthly_maintenance", "Student Checking (CK07)"],
     ]);
-    for (const name of ["Free Checking (CK02) Maintenance Fee", "Vantage Free Checking Maintenance Fee"]) {
-      expect(passesDarwinChecks("monthly_maintenance", name, 0)).toBe(true);
-    }
-    expect(passesDarwinChecks("monthly_maintenance", "Free Checking (CK02)", 0)).toBe(false);
-    expect(zero("Fee Schedule\nVantage Free Checking | Free")).toEqual([["monthly_maintenance", "Vantage Free Checking Maintenance Fee"]]);
-    // It still traces to the bank's own row, so it goes to Darwin rather than review as untraced.
-    expect(checkFeeAgainstSource("Fee Schedule\nFree Checking (CK02) | Free", "Free Checking (CK02) Maintenance Fee", 0, ".", "monthly_maintenance"))
-      .toMatchObject({ ok: true, sourceLine: "Free Checking (CK02) | Free" });
     expect(zero("Fee Schedule\nOfficial Check Fee | $5.00\nPower Protected Checking Account | Free")).toEqual([]);
     // Under another fee's heading it is a column of that fee's table, and the rows below keep the heading.
     const pnc =

@@ -256,14 +256,6 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
-v91 (Oct 20, #1100) names a checking account's own free row as its monthly fee: "Free Checking
-(CK02) | Free" is held at $0 as "Free Checking (CK02) Maintenance Fee", as the priced account rows
-already are. Under the bare product name Darwin's category guard refused every one ("Fee name does
-not support its category"), so no free checking account ever reached the index, and the answer
-key's free monthly fees all counted as missed. The name is set after the heading filters, which
-still test the bare row, and it traces to the bank's own row in the shared source check. Business,
-savings and money market rows still fail the guard.
-
 v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
 other mailed-back statements file as returned mail, the type made for returned or undeliverable
 mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing
@@ -1717,7 +1709,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v91 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v90 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
