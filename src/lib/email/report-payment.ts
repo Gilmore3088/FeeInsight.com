@@ -11,9 +11,7 @@ import {
   getLeadNotificationFromAddress,
   renderLeadEmailHtml,
   renderLeadEmailText,
-  sendLeadNotificationPair,
   type LeadEmailContent,
-  type LeadNotificationOutcome,
 } from "./lead-notification";
 import { sendResendEmail, type EmailDeliveryResult } from "./resend";
 
@@ -118,8 +116,4 @@ export function reportPaidEmails(input: ReportPaidInput): { notification: LeadEm
       signed: true,
     },
   };
-}
-
-export async function sendReportPaidEmails(input: ReportPaidInput): Promise<LeadNotificationOutcome> {
-  return sendLeadNotificationPair({ requesterEmail: input.email, ...reportPaidEmails(input) });
 }

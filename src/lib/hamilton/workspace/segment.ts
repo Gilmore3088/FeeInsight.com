@@ -119,18 +119,6 @@ export function parseSegment(question: string): AskSegment | null {
   return { ...s, label: segmentLabel(s) };
 }
 
-/** Does an institution of this size, charter and state fit the segment (ignoring "largest")? */
-export function fitsSegment(
-  segment: AskSegment,
-  inst: { totalAssets: number | null; charterType: string | null; stateCode: string | null },
-): boolean {
-  if (segment.minAssets !== null && (inst.totalAssets === null || inst.totalAssets < segment.minAssets)) return false;
-  if (segment.maxAssets !== null && (inst.totalAssets === null || inst.totalAssets >= segment.maxAssets)) return false;
-  if (segment.charterType && inst.charterType !== segment.charterType) return false;
-  if (segment.stateCode && inst.stateCode !== segment.stateCode) return false;
-  return true;
-}
-
 function quantile(sorted: number[], q: number): number {
   const pos = (sorted.length - 1) * q;
   const lo = Math.floor(pos);

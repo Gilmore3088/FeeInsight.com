@@ -159,11 +159,6 @@ export async function createAbDraft(input: DraftInput, fetcher?: FetchLike): Pro
   return toAgentCampaign(body.data);
 }
 
-export async function getCampaign(id: string, fetcher?: FetchLike): Promise<AgentCampaign> {
-  const body = await call<{ data: RawCampaign }>(`campaigns/${encodeURIComponent(id)}`, {}, fetcher);
-  return toAgentCampaign(body.data);
-}
-
 export interface DraftContent {
   name: string;
   type: string;
@@ -320,11 +315,6 @@ export async function ensureGroupNamed(name: string, fetcher?: FetchLike, known?
   if (existing) return existing.id;
   const body = await call<{ data: { id: string } }>("groups", { method: "POST", body: JSON.stringify({ name }) }, fetcher);
   return String(body.data.id);
-}
-
-/** The state's group id, creating the group the first time a reader picks that state. */
-export async function ensureStateGroup(stateCode: string, fetcher?: FetchLike): Promise<string> {
-  return ensureGroupNamed(stateGroupName(stateCode), fetcher);
 }
 
 // ---------------------------------------------------------------- national audience
