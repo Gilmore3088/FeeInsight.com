@@ -14,3 +14,5 @@ takes a hand-found page Rosetta rejected as built by JavaScript, so Arvest's pag
 from Anthropic's network on the next paid step. This PR.
 **Lesson:** a blank HTML page from a bank that blocks our fetcher is a wall, not a script page.
 Check for the wall before storing.
+
+**Agent lesson:** magellan/pr-850-held-means-readable

@@ -19,7 +19,10 @@ const {
   runMagellanFetchMock,
   runPublicDiscoveryAuditMock,
   runRosettaReadMock,
+  runRosettaPaidReadMock,
   runRegistryStepMock,
+  executeHmdaIdentityRepairMock,
+  parseHmdaRepairParamsMock,
 } = vi.hoisted(() => {
   const tx = vi.fn() as TxMock;
   tx.unsafe = vi.fn();
@@ -40,7 +43,10 @@ const {
     runMagellanFetchMock: vi.fn(),
     runPublicDiscoveryAuditMock: vi.fn(),
     runRosettaReadMock: vi.fn(),
+    runRosettaPaidReadMock: vi.fn(),
     runRegistryStepMock: vi.fn(),
+    executeHmdaIdentityRepairMock: vi.fn(),
+    parseHmdaRepairParamsMock: vi.fn(),
   };
 });
 
@@ -92,12 +98,14 @@ vi.mock("@/lib/agents/fee-alerts", () => ({
   summarizeFeeAlertDispatch: vi.fn(() => "Atlas found 2 reader(s) with fee changes but did not email them."),
 }));
 
-vi.mock("@/lib/agents/darwin/verify", () => ({
+vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/agents/darwin/verify")>()),
   runDarwinVerify: runDarwinVerifyMock,
 }));
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+  HAMILTON_PUBLISH_MIN_INSTITUTION_FEES: 3,
 }));
 
 vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
@@ -129,6 +137,12 @@ vi.mock("@/lib/agents/magellan/registry", () => ({
   runRegistryStep: runRegistryStepMock,
 }));
 
+vi.mock("@/lib/agents/hoovie/hmda-identity-repair", () => ({
+  HMDA_IDENTITY_REPAIR_STEP_KEY: "hmda-identity-repair",
+  executeHmdaIdentityRepair: executeHmdaIdentityRepairMock,
+  parseHmdaRepairParams: parseHmdaRepairParamsMock,
+}));
+
 vi.mock("@/lib/agents/public-discovery", () => ({
   clusterPublicDiscoveryFindings: vi.fn(async () => ({
     clusters: 0,
@@ -150,6 +164,9 @@ vi.mock("@/lib/agents/public-discovery", () => ({
 vi.mock("@/lib/agents/rosetta/read", () => ({
   runRosettaRead: runRosettaReadMock,
 }));
+vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
+
+import { narrateStepFinished } from "./narrate";
 
 import {
   cancelAgentRun,
@@ -168,7 +185,9 @@ import {
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
+  withLessonsApplied,
 } from "./run-store";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 
 const runRow = {
   id: 101,
@@ -306,6 +325,12 @@ describe("agentic run store", () => {
     getPipelineControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getMarketingControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getExecutionBackendMock.mockReset().mockReturnValue("disabled");
+    runRegistryStepMock.mockReset();
+    executeHmdaIdentityRepairMock.mockReset().mockResolvedValue({
+      summary: "Reviewed the fixed HMDA cohort without identity writes.",
+      detail: { mode: "preview", writes: 0 },
+    });
+    parseHmdaRepairParamsMock.mockReset().mockImplementation((value: unknown) => value);
     runDarwinVerifyMock.mockReset().mockResolvedValue({
       selectedRawFees: 7,
       processedRawFees: 7,
@@ -387,6 +412,39 @@ describe("agentic run store", () => {
       dryRun: false,
       results: [],
     });
+  });
+
+  it.each([
+    { label: "mixed", processed: 2, succeeded: 1, failed: 1, costMicrousd: 220, unknownCostResponses: 1, budgetStopped: false },
+    { label: "all unknown", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },
+    { label: "known zero", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 0, budgetStopped: false },
+    { label: "rejected unknown", processed: 1, succeeded: 0, failed: 1, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },
+    { label: "pre-call denied", processed: 0, succeeded: 0, failed: 0, costMicrousd: 0, unknownCostResponses: 0, budgetStopped: true },
+  ])("saves the actual paid dispatch $label cost contract and independently narrates its saved detail", async (fixture) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const paidStep = [{ ...queuedStepRows[0], step_key: "read-paid", agent_name: "rosetta", title: "Read paid" }];
+    const run = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: paidStep }); installTxMocks(paidStep, run);
+    runRosettaPaidReadMock.mockReset().mockResolvedValue({ ...fixture, selected: 2, budgetReason: fixture.budgetStopped ? "Owned fixture cap" : null,
+      dryRun: false, results: [{ cost_microusd: fixture.unknownCostResponses ? null : 0 }] });
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    expect(runRosettaPaidReadMock).toHaveBeenCalledTimes(1);
+    const finish = txMock.mock.calls.find((call) => templateText(call[0]).includes("'step.finished'"))!;
+    const detail = JSON.parse(finish.at(-1) as string);
+    const summary = String(finish.at(-2));
+    expect(detail).toMatchObject({ processed: fixture.processed, failed: fixture.failed, cost_microusd: fixture.costMicrousd,
+      unknown_cost_responses: fixture.unknownCostResponses, known_cost_subtotal_microusd: fixture.costMicrousd });
+    const narrated = narrateStepFinished("read-paid", detail);
+    if (fixture.unknownCostResponses) {
+      expect(summary).toContain("known estimates; cost unavailable for 1 returned response");
+      expect(narrated).toContain("known estimates; cost unavailable for 1 returned response");
+      expect(detail.sample_results[0].cost_microusd).toBeNull();
+    } else if (fixture.budgetStopped) {
+      expect(summary).toContain("Paid pass skipped"); expect(narrated).toContain("did not run");
+    } else {
+      expect(summary).toContain("for $0.00"); expect(narrated).toContain("for $0.00");
+      expect(narrated).not.toContain("unavailable");
+    }
   });
 
   it("creates a visible blocked run shell without any legacy backend call when execution is disabled", async () => {
@@ -612,6 +670,77 @@ describe("agentic run store", () => {
     expect(withTransactionMock.mock.calls.length - transactionsBefore).toBe(2);
   });
 
+  it("advances the manual HMDA repair outside the wrapper transaction using only its reviewed run config", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const params = { source: "hoovie.hmda-identity-repair", mode: "preview", manifest_digest: "reviewed-digest" };
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair", agent_name: "hoovie",
+      input_payload: { mode: "apply", manifest_digest: "unreviewed-override" } }];
+    const run = { ...runRow, agent_name: "hoovie", run_kind: "dry_run", params_json: params, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+
+    expect(parseHmdaRepairParamsMock).toHaveBeenCalledWith(params);
+    expect(executeHmdaIdentityRepairMock).toHaveBeenCalledWith({ db: sqlMock, runId: 101, stepId: 201, params });
+    expect(runRegistryStepMock).not.toHaveBeenCalled();
+    // Claim + finish only: the repair verifies the public source, then owns its transaction.
+    expect(withTransactionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds the manual HMDA repair while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Review in progress" });
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, run_kind: "dry_run", progress_total: 1,
+      params_json: { source: "hoovie.hmda-identity-repair", mode: "preview", manifest_digest: "reviewed-digest" } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 0, status: "queued", terminal: false });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+    expect(withTransactionMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { trigger_source: "schedule", run_kind: "dry_run", mode: "preview" },
+    { trigger_source: "admin", run_kind: "workflow", mode: "preview" },
+    { trigger_source: "admin", run_kind: "dry_run", mode: "apply" },
+  ])("refuses HMDA repair runs outside explicit admin/mode configuration: %j", async ({ mode, ...invalid }) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, ...invalid, progress_total: 1,
+      params_json: { source: "hoovie.hmda-identity-repair", mode, manifest_digest: "reviewed-digest" } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed" });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+  });
+
+  it("records malformed HMDA repair parameters as failure without calling the executor", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    parseHmdaRepairParamsMock.mockImplementation(() => { throw new Error("Reviewed manifest digest does not match"); });
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, run_kind: "dry_run", progress_total: 1, params_json: {} };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed" });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+    expect(combinedTransactionSql()).toContain("step.failed");
+  });
+
+  it("keeps reviewed HMDA repair steps out of cron selection", async () => {
+    sqlMock.mockResolvedValue([]);
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("hmda-identity-repair");
+    const selection = sqlMock.mock.calls.find(([strings]) => templateText(strings).includes("SELECT r.id"));
+    expect(selection).toBeDefined();
+    expect(templateText(selection![0])).toContain("OR s.step_key = ANY(");
+    expect(selection!.slice(1)).toContainEqual(expect.arrayContaining(["hmda-identity-repair"]));
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+  });
+
   it("passes state lane scope into worker execution", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const fetchStepRows = [
@@ -808,6 +937,156 @@ describe("agentic run store", () => {
     );
   });
 
+  async function savedRecheckRun(
+    alias: "classify" | "verify", recheck: unknown,
+    options: { dryRun?: boolean; learning?: boolean; processed?: number; deferred?: number; deferrals?: Array<{ feeRawId: number; reason: string }> } = {},
+  ) {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: alias, agent_name: "darwin", title: "Verify fees" }];
+    const run = { ...runRow, agent_name: "darwin", run_kind: options.dryRun ? "dry_run" : "manual_repair", progress_total: 1, params_json: { verify_limit: 10 } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+    // No auxiliary held/source rows in this fixture; a count row is not a domain row.
+    txMock.unsafe.mockResolvedValue([]);
+    runDarwinVerifyMock.mockResolvedValue({
+      selectedRawFees: 7, processedRawFees: options.processed ?? 7, verifiedFees: 6, skippedFees: 1,
+      deferredRawFees: options.deferred ?? 0, deferrals: options.deferrals ?? [],
+      limit: 10, dryRun: options.dryRun === true, learning: options.learning ?? true, results: [], recheck,
+      outcomes: {}, reasonCounts: {}, zeroFeesVerified: 0, peerFallbackChecks: 0,
+      peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0,
+      feedbackWritten: 0, categoryChange: null, documentOwner: null,
+    });
+    const result = await executeAgentRun(101);
+    expect(runDarwinVerifyMock, "real runner reached verification").toHaveBeenCalledTimes(1);
+    expect(result, "runner completed before receipt assertions").toMatchObject({ status: "completed", executedSteps: 1 });
+    const finished = txMock.mock.calls.filter(call => templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    expect(finished, "real finishAgenticStep emitted exactly one saved JSON INSERT").toHaveLength(1);
+    expect(finished[0].at(-1)).toEqual(expect.any(String));
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ selected_raw_fees: 7, processed_raw_fees: options.processed ?? 7, verified_fee_observations: 6, skipped_raw_fees: 1 });
+    expect(combinedTransactionSql()).not.toContain("'step.failed'");
+    return { detail, message: String(finished[0].at(-2)) };
+  }
+
+  it("saves corrective-source counts and an explicit artifact failure through the real finished-step INSERT", async () => {
+    const regression = await import("./deming/regression");
+    const source = await import("./deming/corrective-source-store");
+    const { fixtureArtifact } = await import("./deming/corrective-source");
+    const observed = { warnings: [{ phase: "replay_read" as const, count: 1, timedOut: true, error: "canceling statement due to statement timeout" }], promoted: 1, admissionLimitReached: false, replayLimitReached: false, evaluated: 1, caught: 1, activated: 1, regressions: 0,
+      regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
+    const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
+      promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
+      activeTotal: 9, candidateTotal: 301, corrective: observed });
+    const persist = vi.spyOn(source, "persistCorrectiveArtifact").mockResolvedValue({ state: "unavailable", scope: "evaluated_this_run", complete: false,
+      bytes: 0, cases: 0, chunks: 0, digest: observed.artifact.digest, ciImport: "not_implemented" });
+    try {
+      getExecutionBackendMock.mockReturnValue("agentic_v1");
+      const steps = [{ ...queuedStepRows[0], step_key: "deming-regression", agent_name: "atlas", title: "Deming replay" }];
+      const run = { ...runRow, progress_total: 1 };
+      installSqlMocks({ finalRun: run, finalSteps: steps }); installTxMocks(steps, run);
+      expect(await executeAgentRun(101)).toMatchObject({ status: "completed", executedSteps: 1 });
+      expect(replay).toHaveBeenCalledTimes(1); expect(persist).toHaveBeenCalledWith(txMock,101,steps[0].id,observed.artifact);
+      const saved = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.finished'")); expect(saved).toHaveLength(1);
+      const detail = JSON.parse(String(saved[0].at(-1)));
+      expect(detail).toMatchObject({ replayed: 1, caught: 1, totals_scope: "historical_all_datasets", corrective_source: {
+        protocol: 2, evaluated: 1, caught: 1, unavailable: { count: null }, fixture: { state: "unavailable", ciImport: "not_implemented" } } });
+      expect(detail.corrective_source).not.toHaveProperty("artifact");
+      expect(detail.corrective_source.warnings).toEqual(observed.warnings);
+      const warned = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.warning'"));
+      expect(warned, "a swallowed replay timeout leaves a visible step warning").toHaveLength(1);
+      expect(JSON.parse(String(warned[0].at(-1)))).toMatchObject({ check: "admin.fee_correction.source_context.replay_read" });
+      expect(String(warned[0].at(-2))).toContain("statement timeout");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("Could not finish: replay read (statement timeout)");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("unavailable unknown");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("CI fixture import remains unimplemented");
+    } finally { replay.mockRestore(); persist.mockRestore(); }
+  });
+
+  const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
+
+  it("saves bounded unresolved-admission receipts without source context and excludes deferred zeros from settled counts", async () => {
+    const zero = await import("./darwin/conditional-zero-resolve");
+    const zeroSpy = vi.spyOn(zero, "runDarwinConditionalZeroResolve").mockResolvedValue({
+      selected: 4, verified: 1, dryRun: false, verdicts: { conditional_zero_free_on_schedule: 1 },
+      deferred: 2, deferrals: [{ feeRawId: 89, reason: "no_original_hash" }],
+    });
+    try {
+      const samples = Array.from({ length: 30 }, (_, index) => ({ feeRawId: index + 1,
+        reason: index === 0 ? "SECRET source stack" : "no_original_hash", sourceContext: "SECRET source body" }));
+      const { detail, message } = await savedRecheckRun("verify", recheckZero, { deferred: 30, deferrals: samples });
+      expect(detail.deferred_raw_fees).toBe(30);
+      expect(detail.verification_deferrals).toHaveLength(25);
+      expect(detail.verification_deferrals[0]).toEqual({ feeRawId: 1, reason: "admission_unresolved" });
+      expect(JSON.stringify(detail.verification_deferrals)).not.toContain("SECRET");
+      expect(detail.conditional_zero).toMatchObject({ selected: 4, settled: 2, deferred: 2,
+        deferrals: [{ feeRawId: 89, reason: "no_original_hash" }] });
+      expect(message).toContain("30 row(s) deferred without a verification decision");
+      expect(message).toContain("Settled 2 conditional-$0 hold(s)");
+      expect(message).toContain("2 conditional-$0 hold(s) deferred without a decision");
+    } finally {
+      zeroSpy.mockRestore();
+    }
+  });
+
+  it.each(["classify", "verify"] as const)("saves nonzero producer reports through %s → real finish INSERT", async alias => {
+    const { detail, message } = await savedRecheckRun(alias, {
+      ...recheckZero, checked: 2, passed: 1, restored: [9], flagged: 1, secondLookOtherCode: 1,
+      dueSecondLooks: { due: 3, wouldConfirm: { conditional_zero: 2 }, wouldClear: 1, samples: [] },
+    });
+    expect(detail.recheck).toMatchObject({ state: "reported", assessmentCompleteness: "unknown", checked: 2, passed: 1,
+      restored: { reportedCount: 1, samples: [{ feeVerifiedId: 9 }] }, secondLookOtherCode: 1,
+      dueSecondLooks: { due: 3, wouldConfirm: { conditional_zero: 2 }, wouldClear: 1 } });
+    expect(message).toContain("Recheck producer report: 2 checked");
+    expect(message).toContain("reported IDs do not verify affected rows");
+  });
+
+  it("saves visible partial errors and counters without raw text or invented complements", async () => {
+    const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 1, passed: 1,
+      olderLive: { read: 1, wouldFail: {}, samples: [], error: "SECRET source read stack" },
+      dueSecondLooks: { due: 2, wouldConfirm: {}, samples: [], error: "SECRET fee name" },
+    });
+    expect(detail.recheck.olderLive).toMatchObject({ read: 1, hasError: true, errorCode: "shadow_assessment_error" });
+    expect(detail.recheck.dueSecondLooks).toMatchObject({ due: 2, wouldClear: null, hasError: true, state: "invalid" });
+    expect(JSON.stringify(detail.recheck)).not.toContain("SECRET");
+    expect(message).toContain("assessment error reported");
+  });
+
+  it("saves reported zero distinctly with unknown completeness", async () => {
+    const { detail, message } = await savedRecheckRun("classify", recheckZero);
+    expect(detail.recheck).toMatchObject({ state: "reported", checked: 0, passed: 0, assessmentCompleteness: "unknown", olderLive: { state: "not_reported" } });
+    expect(message).toContain("0 checked");
+    expect(message).not.toContain("backlog");
+  });
+
+  it.each([
+    ["null", null, {}, "unavailable", "missing_report"],
+    ["missing", undefined, {}, "unavailable", "missing_report"],
+    ["dry run", null, { dryRun: true, learning: false }, "not_run", "dry_run"],
+    ["learning unavailable", null, { learning: false }, "not_run", "learning_unavailable"],
+    ["malformed", { checked: "7" }, {}, "invalid", "invalid_report"],
+  ])("keeps a completed verification step independent of its %s recheck disposition", async (_label, input, options, state, reasonCode) => {
+    const { detail } = await savedRecheckRun("verify", input, options);
+    expect(detail.recheck).toMatchObject({ state, reasonCode, checked: null, assessmentCompleteness: "unknown" });
+  });
+
+  it("keeps the recheck summary even when no new raw fees were processed", async () => {
+    const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 3 }, { processed: 0 });
+    expect(detail.processed_raw_fees).toBe(0);
+    expect(message).toContain("Recheck producer report: 3 checked");
+  });
+
+  it.each(["classify", "verify"] as const)("saves a v2 producer-event reference through %s with no new raw rows",async alias=>{
+    const {detail,message}=await savedRecheckRun(alias,{...recheckZero,secondLookOtherCode:1,checked:3,restored:[9],flagged:1,waiting:1,execution:{
+      protocol:"darwin.recheck.execution.v1",scope:"selected_batch",state:"partial",runId:runRow.id,stepId:queuedStepRows[0].id,eventId:700,
+      batchKey:"fixture-batch",selected:5,assessed:4,settled:3,unresolved:1,reasonCode:null,samples:[{feeVerifiedId:10,code:"identity_changed"}],
+      phases:{primary:"complete",due:"complete",source:"complete",olderShadow:"cadence_skip",dueShadow:"reported_unknown"},
+    }},{processed:0});
+    expect(detail.recheck).toMatchObject({protocol:"darwin.recheck.receipt.v2",state:"referenced",producerEventId:700,assessmentCompleteness:"partial",effects:{restored:1}});
+    expect(message).toContain("witness #700");expect(message).toContain("whole backlog unknown");
+    expect(message).toContain("1 flagged/pending, 1 waiting, 1 other-code pending");
+    expect(message).toContain("do not finalize a fee decision");
+  });
+
   it("runs Darwin verification through the agentic worker instead of measuring only", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const verifyStepRows = [
@@ -908,6 +1187,56 @@ describe("agentic run store", () => {
     );
   });
 
+  it.each([true, false])("saves the real publisher's evidence availability through finishAgenticStep (fault=%s)", async (fault) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: "publish", agent_name: "hamilton", title: "Publish verified fees" }];
+    const run = { ...runRow, agent_name: "hamilton", run_kind: "manual_repair", progress_total: 1,
+      params_json: { institution_id: 42, publish_limit: 10, publish_min_institution_fees: 1 } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+    const base = txMock.getMockImplementation() as (strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown[]>;
+    txMock.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) =>
+      templateText(strings).includes("INSERT INTO published_fee_records")
+        ? Promise.resolve([{ fee_published_id: 1201 }]) : base(strings, ...params));
+    txMock.unsafe.mockImplementation((query: string) => {
+      if (query.includes("same_line_reselect") && query.includes("document_crawled_at")) return Promise.resolve([{
+        fee_verified_id: 801, fee_raw_id: 701, institution_id: 42, source_url: "https://testbank.example/fees",
+        extraction_confidence: 0.92, canonical_fee_key: "overdraft", fee_audience: "consumer",
+        outlier_flags: ["agentic_darwin_verified"], verified_by_agent_event_id: "00000000-0000-4000-8000-000000000801",
+        fee_name: "Overdraft fee", amount: 35, frequency: "per_item", source_document_id: 77,
+      }]);
+      if (fault && query.includes("consumer_fee_id") && query.includes("fv.fee_verified_id = ANY")) {
+        return Promise.reject(new Error("SECRET SQL source stack"));
+      }
+      return Promise.resolve([]);
+    });
+    const actual = await vi.importActual<typeof import("./hamilton/publish")>("./hamilton/publish");
+    let publication: Awaited<ReturnType<typeof actual.runHamiltonPublish>> | undefined;
+    runHamiltonPublishMock.mockImplementationOnce(async (options: Parameters<typeof actual.runHamiltonPublish>[0]) => {
+      publication = await actual.runHamiltonPublish(options);
+      return publication;
+    });
+    const result = await executeAgentRun(101);
+    expect(result).toMatchObject({ status: "completed", executedSteps: 1 });
+    expect(runHamiltonPublishMock).toHaveBeenCalledTimes(1);
+    expect(publication?.selectedVerifiedFees, "real publisher selected the controlled fee").toBe(1);
+    expect(publication?.publishedFees).toBe(fault ? 0 : 1);
+    const finished = txMock.mock.calls.filter(call =>
+      templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    expect(finished, "real finishAgenticStep saved one JSON receipt").toHaveLength(1);
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ published_fees: fault ? 0 : 1, evidence_deferred_verified_fees: fault ? 1 : 0,
+      publication_evidence_check: { protocol: "publish.evidence.v1", readState: fault ? "unavailable" : "available", deferred: fault ? 1 : 0 } });
+    if (fault) {
+      expect(detail.publication_evidence_check.unavailableChecks).toEqual(["business_schedule"]);
+      expect(String(finished[0].at(-2))).toContain("left pending because required publication evidence was unavailable");
+      expect(combinedTransactionSql()).not.toContain("INSERT INTO published_fee_records");
+      expect(combinedTransactionSql()).not.toContain("INSERT INTO pipeline_attempts");
+    }
+    expect(JSON.stringify(detail)).not.toContain("SECRET");
+    expect(combinedTransactionSql()).not.toContain("'step.failed'");
+  });
+
   it("reuses an active idempotent run instead of creating a duplicate", async () => {
     sqlMock
       .mockResolvedValueOnce([{ ...runRow, status: "running" }])
@@ -988,18 +1317,29 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
-  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
-    sqlMock.mockResolvedValue([]);
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("keeps report-review ordering $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockResolvedValue([]);
 
-    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+      await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
 
-    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
-    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
-    const retry = order.indexOf("= 'failed') DESC");
-    const review = order.indexOf("::text[])) DESC");
-    expect(review).toBeGreaterThan(retry);
-    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
-    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+      const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+      const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+      const retry = order.indexOf("= 'failed') DESC");
+      const review = order.indexOf("::text[])) DESC");
+      expect(review).toBeGreaterThan(retry);
+      expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("AND upper(btrim(r.state_code)) = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
@@ -1194,7 +1534,7 @@ describe("agentic run store", () => {
     const runSteps = [...briefStep, { ...briefStep[0], id: 9002, step_key: "publish", sequence: 2 }, { ...briefStep[0], id: 9003, step_key: "publish", sequence: 3 }];
     installSqlMocks({ finalRun: readNowRun, finalSteps: runSteps });
     installTxMocks(runSteps, readNowRun);
-    // The run's queue: the brief runs as the tick's first step; then its publish (55 s at Read-now
+    // The run's queue: the brief runs as the tick's first step; then its publish (120 s at Read-now
     // prices) does not fit the 50 s left, nor would a third step.
     const queue = ["daily-brief", "publish", "publish"];
     let peeks = 0;
@@ -1213,7 +1553,7 @@ describe("agentic run store", () => {
     expect(result.executedSteps).toBe(1);
     const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
     expect(deferred).toHaveLength(1);
-    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 55_000 });
+    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 120_000 });
   });
 
   it("starts no step in a later run of the tick when that step cannot finish by the deadline", async () => {
@@ -1411,7 +1751,7 @@ describe("agentic run store", () => {
 
   it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
     const readNow = "atlas.priority_institution";
-    expect(expectedStepMs("publish", readNow)).toBe(55_000);
+    expect(expectedStepMs("publish", readNow)).toBe(120_000);
     expect(expectedStepMs("extract", readNow)).toBe(110_000);
     expect(expectedStepMs("classify", readNow)).toBe(60_000);
     // Unlisted steps and other runs keep the lane's prices.
@@ -1419,6 +1759,16 @@ describe("agentic run store", () => {
     expect(expectedStepMs("publish", "atlas.priority_state_research")).toBe(expectedStepMs("publish"));
     expect(expectedStepMs("publish", null)).toBe(225_000);
     expect(expectedMsToFirstWork(["classify", "publish"], readNow)).toBe(60_000);
+  });
+
+  it("keeps the hourly lane sync out of the tick and prices it at its measured in-tick p99 (2026-10-18)", () => {
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("lane-sync");
+    expect(expectedStepMs("lane-sync")).toBe(200_000);
+  });
+
+  it("prices the publish-sweeps step at the moved sweeps' measured p99 and keeps the publish price (PR B)", () => {
+    expect(expectedStepMs("publish-sweeps")).toBe(205_000);
+    expect(expectedStepMs("publish")).toBe(225_000);
   });
 
   it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
@@ -1449,11 +1799,13 @@ describe("agentic run store", () => {
       const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 270_000 });
       return { result: result.results[0], claimed: withTransactionMock.mock.calls.length > 0 };
     };
-    for (const step of ["classify", "publish"]) {
-      const { result, claimed } = await tick(step);
-      expect(result.heldForDeadline, step).toBeUndefined();
-      expect(claimed, step).toBe(true);
-    }
+    const classify = await tick("classify");
+    expect(classify.result.heldForDeadline).toBeUndefined();
+    expect(classify.claimed).toBe(true);
+    // Its publish, priced at its p99 (120 s, 2026-10-18), does not fit those 75 s: it waits for a
+    // tick with room, or for LANE_ROOM_MAX_IDLE_MS, rather than starting and being killed.
+    const publish = await tick("publish");
+    expect(publish.claimed).toBe(false);
     // Waited out (idle past LANE_ROOM_MAX_IDLE_MS), a Read-now run takes every step that fits;
     // a state re-search run still takes one (#1586).
     expect(waitedOutMaxSteps("atlas.priority_institution", 10)).toBe(10);
@@ -1542,6 +1894,31 @@ describe("agentic run store", () => {
     expect(combinedSql).toContain("SET status = 'failed'");
     expect(combinedSql).toContain("SET status = 'cancelled'");
   });
+
+  it("records the deploy on a reaper death, as a step failure does (#2014)", async () => {
+    const previous = process.env.VERCEL_GIT_COMMIT_SHA;
+    process.env.VERCEL_GIT_COMMIT_SHA = "deploy-2014";
+    try {
+      sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("AS prior_reaps")) {
+          return Promise.resolve([{ id: 9, agent_run_id: 242, step_key: "publish", prior_reaps: 2 }]);
+        }
+        return Promise.resolve([]);
+      });
+      txMock.mockResolvedValue([]);
+
+      await reapStaleAgentSteps({ maxAttempts: 3 });
+
+      const deadCall = txMock.mock.calls.find((call) => (call[0] as string[]).join("?").includes("'step.dead'"));
+      expect(deadCall).toBeDefined();
+      const detail = JSON.parse(String(deadCall!.at(-1)));
+      expect(detail).toMatchObject({ step_key: "publish", attempts: 3, reaper: true, deploy: "deploy-2014" });
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
+      else process.env.VERCEL_GIT_COMMIT_SHA = previous;
+    }
+  });
 });
 
 describe("recordProRequest", () => {
@@ -1582,6 +1959,20 @@ describe("recordProRequest", () => {
     await expect(
       recordProRequest({ operation: "thesis", title: "t", status: "failed", summary: "s", userId: null }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("lessons_applied on a finished step", () => {
+  it("records the ids of the role lessons that shaped the step, keeping its own detail", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract-paid" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const expected = lessonIds(lessonsForStep("knox", "extract-paid"));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
+  });
+
+  it("leaves a step whose agent keeps no lessons unchanged", () => {
+    const outcome = { status: "completed" as const, summary: "s", detail: { a: 1 } };
+    expect(withLessonsApplied({ agent: "growth", stepKey: "growth-score" }, outcome)).toBe(outcome);
   });
 });
 

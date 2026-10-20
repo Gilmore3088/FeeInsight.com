@@ -20,8 +20,9 @@ import {
 export const NEAREST_PEER_COUNT = 25;
 
 /**
- * The institution page's choices, in the order the picker lists them (?peers=...). The first one
- * that clears the median floor is the default: closest in assets, then the home metro.
+ * The institution page's choices, in the order the picker lists them (?peers=...), narrowest
+ * first. The default is the first that compares at least 80% of the institution's own fees, else
+ * the one that compares the most (pickPeerSet, the shared default-group rule, #2098).
  */
 export const INSTITUTION_PEER_SET_KEYS = ["nearest", "metro", "state", "district", "size", "regulator"] as const;
 export type InstitutionPeerSetKey = (typeof INSTITUTION_PEER_SET_KEYS)[number];

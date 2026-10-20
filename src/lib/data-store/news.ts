@@ -6,23 +6,8 @@ import { sql, withTransaction } from "./connection";
 // Schema
 // ---------------------------------------------------------------------------
 
-export async function ensureNewsTable(): Promise<void> {
-  await sql`
-    CREATE TABLE IF NOT EXISTS reg_articles (
-      guid TEXT PRIMARY KEY,
-      source TEXT NOT NULL,
-      title TEXT NOT NULL,
-      link TEXT NOT NULL,
-      topic TEXT NOT NULL DEFAULT 'general',
-      published_at TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW()
-    )
-  `;
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_reg_articles_published
-    ON reg_articles(published_at DESC)
-  `;
-}
+// reg_articles and idx_reg_articles_published come from
+// supabase/migrations/20260406_report_jobs.sql; request code never creates schema (#2234).
 
 // ---------------------------------------------------------------------------
 // Types
@@ -238,8 +223,6 @@ export async function storeArticles(
   articles: { guid: string; source: string; title: string; link: string; published_at: string | null }[]
 ): Promise<number> {
   if (articles.length === 0) return 0;
-
-  await ensureNewsTable();
 
   let inserted = 0;
   await withTransaction(async (tx) => {

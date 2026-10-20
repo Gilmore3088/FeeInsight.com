@@ -2,11 +2,10 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth";
 import { getHamilton } from "@/lib/research/agents";
-import { ensureResearchTables, getUsageStats } from "@/lib/research/history";
+import { getUsageStats } from "@/lib/research/history";
 
 export default async function ResearchHubPage() {
-  const user = await requireAuth("view");
-  await ensureResearchTables();
+  const user = await requireAuth("operate");
 
   const hamilton = await getHamilton("admin");
   const usage = await getUsageStats(user.id);

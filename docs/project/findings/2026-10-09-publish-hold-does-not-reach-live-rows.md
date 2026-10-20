@@ -17,3 +17,5 @@ through `priceInName`. The waiver-clause and cut-off names are retidy v6 shapes;
 goes to 100 institutions a step so Ambler's rename lands within three steps. No hand edits.
 **Lesson:** every publish-time hold needs a live-row reading in the eval check (or the retidy),
 or a deploy that lands after a publish step leaves that step's rows wrong for good.
+
+**Agent lesson:** gutenberg/pr-801-live-twin-of-holds

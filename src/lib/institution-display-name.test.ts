@@ -28,3 +28,11 @@ describe("institutionDisplayName", () => {
     expect(institutionDisplayName(null)).toBeNull();
   });
 });
+
+describe("acronyms loaded as words (#1953)", () => {
+  it("prints USA and a leading ECU in capitals", () => {
+    expect(institutionDisplayName("Campus Usa")).toBe("Campus USA");
+    expect(institutionDisplayName("Ecu Federal Credit Union")).toBe("ECU Federal Credit Union");
+    expect(institutionDisplayName("Pecu Bank")).toBe("Pecu Bank");
+  });
+});

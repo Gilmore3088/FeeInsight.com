@@ -1,3 +1,4 @@
+import { STATE_NAMES } from "@/lib/us-states";
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
 import { dailyFeeLimitFor, type DailyFeeLimit } from "@/lib/fee-daily-limit";
@@ -5,7 +6,7 @@ import { getFeeFamily, FEE_FAMILIES } from "@/lib/fee-taxonomy";
 import { frequencyFamily } from "@/lib/fee-frequency";
 import { COMPARABILITY_SCREEN } from "@/lib/fee-comparability";
 import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison } from "@/lib/market-eligibility";
-import { ownFeeFrom, type InstitutionOwnFee } from "@/lib/own-fee";
+import { ownFeeFrom, ownFeeFromRows, severalFeesOf, type InstitutionOwnFee, type SeveralFees } from "@/lib/own-fee";
 import {
   HIGHEST_TIER_CATEGORIES,
   MIN_INSTITUTIONS_FOR_MEDIAN,
@@ -13,9 +14,15 @@ import {
   STATS_ROW_FILTER,
   STATS_SCHEDULE_KEYS,
   countedRepresentatives,
+  statsCounting,
+  statsPopulationFilters,
   summarizeFeesBy,
   valuePerInstitution,
+  activeInstitutionFilter,
 } from "./fee-stats";
+import { makeStamp, toIsoTime, toRunId, type DatasetStamp, type PopulationFilter, type StampMode } from "@/lib/dataset-stamp";
+import { peerFilterParts } from "@/lib/peer-filter-words";
+import { segmentLabel, type SegmentFields } from "@/lib/segment-words";
 
 /** The canonical fee catalog — only these categories appear in indexes and reports */
 const CANONICAL_CATEGORIES = Object.values(FEE_FAMILIES).flat();
@@ -34,6 +41,12 @@ export interface IndexEntry {
   bank_count: number;
   cu_count: number;
   maturity_tier: "strong" | "provisional" | "insufficient";
+  /**
+   * Means two things today (#1924): on a live read, the newest catalog row's created_at for the
+   * category; from fee_index_cache, the time the cache was computed. Screens already show it
+   * either way, so it is left as is; the entry's DatasetStamp says which (`readAt` for the read
+   * or snapshot time, `newestRecordAt` for the newest record).
+   */
   last_updated: string | null;
   /**
    * Institutions behind the figures with at least one fee whose audience the schedule does not
@@ -48,6 +61,117 @@ export interface IndexEntry {
  */
 export async function getNationalIndex(approvedOnly = true): Promise<IndexEntry[]> {
   return buildIndexEntries(await loadNationalRows(sql, approvedOnly));
+}
+
+/** An index with the stamp naming the data it was computed from (#1924). */
+export interface StampedIndex {
+  entries: IndexEntry[];
+  stamp: DatasetStamp;
+}
+
+/** The clock for live reads' `readAt`; tests inject one. */
+export interface StampClock {
+  now?: () => Date;
+}
+
+/** Which slice of the market an index covers: a peer filter set, a segment named in a question, or the nation. */
+export type StampScope = PeerFilterSet | (SegmentFields & { label?: string }) | null | undefined;
+
+function isSegment(scope: StampScope): scope is SegmentFields {
+  return !!scope && "minAssets" in scope && "largest" in scope;
+}
+
+/** The scope's filters, in the words describePeerFilters and segmentLabel already use. */
+export function scopeFilters(scope: StampScope): PopulationFilter[] {
+  if (!scope) return [];
+  if (isSegment(scope)) {
+    const none = { minAssets: null, maxAssets: null, charterType: null, stateCode: null, largest: null } as const;
+    const out: PopulationFilter[] = [];
+    if (scope.charterType) {
+      out.push({ key: `segment:charter:${scope.charterType}`, label: `Segment: ${segmentLabel({ ...none, charterType: scope.charterType })}` });
+    }
+    if (scope.minAssets !== null || scope.maxAssets !== null) {
+      out.push({
+        key: `segment:assets:${scope.minAssets ?? ""}-${scope.maxAssets ?? ""}`,
+        label: `Segment: ${segmentLabel({ ...none, minAssets: scope.minAssets, maxAssets: scope.maxAssets })}`,
+      });
+    }
+    if (scope.stateCode) {
+      out.push({ key: `segment:state:${scope.stateCode}`, label: `Segment: ${segmentLabel({ ...none, stateCode: scope.stateCode })}` });
+    }
+    if (scope.largest !== null) {
+      out.push({ key: `segment:largest:${scope.largest}`, label: `Segment: ${segmentLabel({ ...scope })}` });
+    }
+    return out;
+  }
+  return peerFilterParts(scope).map((part) => ({ key: part.key, label: peerStampLabel(part) }));
+}
+
+/** A peer filter as a stamp line: "Institutions in Texas", "Credit unions only", "Assets $1B to $10B". */
+function peerStampLabel(part: { key: string; label: string }): string {
+  const kind = part.key.split(":")[1];
+  if (kind === "state" || kind === "states") {
+    return `Institutions in ${part.label.split("/").map((code) => STATE_NAMES[code] ?? code).join(", ")}`;
+  }
+  if (kind === "charter") return part.key.endsWith(":credit_union") ? "Credit unions only" : part.key.endsWith(":bank") ? "Banks only" : `Charter: ${part.label}`;
+  if (kind === "asset_tiers") return `Assets ${part.label}`;
+  return part.label;
+}
+
+/** The newest record time across entries (live reads' last_updated), or null. */
+function newestRecordOf(entries: Pick<IndexEntry, "last_updated">[]): string | null {
+  let newest: string | null = null;
+  for (const entry of entries) {
+    const at = toIsoTime(entry.last_updated);
+    if (at && (!newest || at > newest)) newest = at;
+  }
+  return newest;
+}
+
+/**
+ * The one stamp builder for dollar-fee statistics: a live read of published_fee_catalog, or the
+ * fee_index_cache snapshot computed from it. The population is the statistics contract's filters
+ * (fee-stats.ts statsPopulationFilters) plus the scope's; counting and method version are the
+ * ones in force.
+ */
+export function catalogStamp(params: {
+  mode: StampMode;
+  readAt: string | Date;
+  runId?: number | string | null;
+  newestRecordAt?: string | Date | null;
+  scope?: StampScope;
+  /** A snapshot computed under another method (cache rows carry their own). */
+  methodVersion?: number;
+  /** Conditions the caller applied on top of the scope (an institution left out of its own comparison). */
+  extraFilters?: PopulationFilter[];
+}): DatasetStamp {
+  return makeStamp({
+    dataset: params.mode === "cached" ? "fee_index_cache" : "published_fee_catalog",
+    ...(params.mode === "cached" ? { derivedFrom: "published_fee_catalog" as const } : {}),
+    mode: params.mode,
+    readAt: toIsoTime(params.readAt) ?? String(params.readAt),
+    runId: toRunId(params.runId),
+    newestRecordAt: toIsoTime(params.newestRecordAt),
+    methodVersion: params.methodVersion ?? STATS_METHOD_VERSION,
+    counting: statsCounting(),
+    filters: [...statsPopulationFilters(), ...scopeFilters(params.scope), ...(params.extraFilters ?? [])],
+  });
+}
+
+function liveStamp(entries: IndexEntry[], clock: StampClock | undefined, scope?: StampScope): DatasetStamp {
+  return catalogStamp({
+    mode: "live",
+    readAt: (clock?.now ?? (() => new Date()))(),
+    runId: null,
+    newestRecordAt: newestRecordOf(entries),
+    scope,
+  });
+}
+
+/** getNationalIndex with its stamp; `readAt` is when the query returned. */
+export async function getNationalIndexStamped(approvedOnly = true, clock?: StampClock): Promise<StampedIndex> {
+  const entries = await getNationalIndex(approvedOnly);
+  return { entries, stamp: liveStamp(entries, clock) };
 }
 
 type IndexRow = {
@@ -74,7 +198,8 @@ async function loadNationalRows(db: typeof sql, approvedOnly = true): Promise<In
      JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category = ANY(ARRAY[${CANONICAL_CATEGORIES.map((c) => `'${c}'`).join(",")}])
        AND ${statusFilter}
-       AND ${STATS_ROW_FILTER}`
+       AND ${STATS_ROW_FILTER}
+       AND ${activeInstitutionFilter("ct")}`
   ) as IndexRow[];
 }
 
@@ -103,7 +228,9 @@ export async function getCategoryChargeBases(): Promise<CategoryChargeBasis[]> {
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, ef.frequency, count(*)::int AS n
      FROM published_fee_catalog ef
+     JOIN institution_sources ct ON ef.institution_id = ct.id
      WHERE ef.fee_category IS NOT NULL AND ef.frequency IS NOT NULL AND ${STATS_ROW_FILTER}
+       AND ${activeInstitutionFilter("ct")}
      GROUP BY 1, 2`
   ) as { fee_category: string; frequency: string; n: number }[];
   const value = chargeBasesFromCounts(rows);
@@ -145,7 +272,7 @@ export interface ContractFeeRow {
 
 /** Approved, sourced published rows (the statistics contract's input), optionally filtered. */
 export async function getContractFeeRows(filters: { categories?: string[]; charter?: string } = {}): Promise<ContractFeeRow[]> {
-  const conditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'approved'", STATS_ROW_FILTER];
+  const conditions = ["ef.fee_category IS NOT NULL", "ef.review_status = 'approved'", STATS_ROW_FILTER, activeInstitutionFilter("ct")];
   const params: (string | string[])[] = [];
   if (filters.categories && filters.categories.length > 0) {
     params.push(filters.categories);
@@ -182,7 +309,8 @@ export async function getSegmentFeeRows(categories: string[]): Promise<SegmentFe
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [categories] as never[],
   ) as (ContractFeeRow & { fed_district: number | string | null })[];
   return rows.map((r) => ({ ...r, fed_district: r.fed_district === null ? null : Number(r.fed_district) }));
@@ -340,9 +468,11 @@ export async function getInstitutionOwnFees(
 export async function getSourcedInstitutionCount(): Promise<number> {
   const [row] = await sql.unsafe(
     `SELECT COUNT(DISTINCT ef.institution_id)::int AS count
-       FROM published_fee_catalog ef
+        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`
   ) as { count: number }[];
   return Number(row?.count ?? 0);
 }
@@ -351,7 +481,7 @@ export async function getPeerIndex(
   filters: PeerFilterSet,
   approvedOnly = true
 ): Promise<IndexEntry[]> {
-  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER];
+  const conditions = ["ef.fee_category IS NOT NULL", STATS_ROW_FILTER, activeInstitutionFilter("ct")];
   const params: (string | number | string[] | number[])[] = [];
   let paramIdx = 0;
 
@@ -415,6 +545,16 @@ export async function getPeerIndex(
   return buildIndexEntries(rows);
 }
 
+/** getPeerIndex with its stamp; `readAt` is when the query returned. */
+export async function getPeerIndexStamped(
+  filters: PeerFilterSet,
+  approvedOnly = true,
+  clock?: StampClock,
+): Promise<StampedIndex> {
+  const entries = await getPeerIndex(filters, approvedOnly);
+  return { entries, stamp: liveStamp(entries, clock, filters) };
+}
+
 export interface PeerFilterSet {
   charter_type?: string;
   asset_tiers?: string[];
@@ -467,6 +607,7 @@ export async function getPeerIndexes(
   const conditions = [
     "ef.fee_category IS NOT NULL",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     approvedOnly ? "ef.review_status = 'approved'" : "ef.review_status != 'rejected'",
   ];
   const params: (string[] | number[])[] = [];
@@ -492,6 +633,20 @@ export async function getPeerIndexes(
     params as never[],
   ) as PeerRow[];
   return filterSets.map((filters) => buildIndexEntries(rows.filter((row) => matchesPeerFilters(row, filters))));
+}
+
+/** getPeerIndexes with a stamp per set (one read, so one `readAt`), in the order of `filterSets`. */
+export async function getPeerIndexesStamped(
+  filterSets: PeerFilterSet[],
+  approvedOnly = true,
+  clock?: StampClock,
+): Promise<StampedIndex[]> {
+  const indexes = await getPeerIndexes(filterSets, approvedOnly);
+  const readAt = (clock?.now ?? (() => new Date()))();
+  return indexes.map((entries, index) => ({
+    entries,
+    stamp: catalogStamp({ mode: "live", readAt, runId: null, newestRecordAt: newestRecordOf(entries), scope: filterSets[index] }),
+  }));
 }
 
 export interface PeerGroupCount {
@@ -554,6 +709,7 @@ export async function getDistrictMedianByCategory(
     "ef.fee_category = $1",
     "ef.review_status = 'approved'",
     STATS_ROW_FILTER,
+    activeInstitutionFilter("ct"),
     "ct.fed_district IS NOT NULL",
   ];
   const params: (string | number)[] = [category];
@@ -610,6 +766,7 @@ export async function getDistrictFeeMedians(
       AND ef.amount IS NOT NULL
       AND ef.amount >= 0
       AND ${sql.unsafe(STATS_ROW_FILTER)}
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { fee_category: string; amount: number | null; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[];
 
   return [...summarizeFeesBy(rows, (row) => row.fee_category).entries()]
@@ -680,8 +837,10 @@ async function loadNationalUnstatedAudienceCounts(): Promise<Map<string, number>
   const rows = await sql.unsafe(
     `SELECT ef.fee_category, COUNT(DISTINCT ef.institution_id)::int AS n
        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.review_status = 'approved'
         AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}
         AND ef.fee_audience = 'unknown'
         AND ef.amount IS NOT NULL AND ef.amount >= 0
       GROUP BY 1`
@@ -699,9 +858,9 @@ const NATIONAL_INDEX_CACHE_TTL_MS = 60_000;
 const NATIONAL_INDEX_CACHE_MAX_AGE_MS = 36 * 60 * 60 * 1000;
 let nationalIndexCache: {
   expiresAt: number;
-  value: IndexEntry[];
+  value: StampedIndex;
 } | null = null;
-let nationalIndexCachePromise: Promise<IndexEntry[]> | null = null;
+let nationalIndexCachePromise: Promise<StampedIndex> | null = null;
 let unstatedCountsCache: { expiresAt: number; value: Map<string, number> } | null = null;
 
 /**
@@ -719,7 +878,19 @@ export async function getNationalUnstatedAudienceCountsCached(): Promise<Map<str
   return value;
 }
 
+/** The national index from fee_index_cache (or live when the cache is unusable), entries only. */
 export async function getNationalIndexCached(): Promise<IndexEntry[]> {
+  return (await getNationalIndexCachedStamped()).entries;
+}
+
+/**
+ * The national index from fee_index_cache with its stamp: the snapshot's computed_at, the run
+ * that wrote it (agent_run_id) and its method version. The time, run and method are the newest
+ * cache row's: one refresh replaces every row, so they normally agree, but the stamp names only
+ * that row's run (#2007). When the cache is empty, stale or from an older method, the live
+ * index and a live stamp. Memoised for a minute like before.
+ */
+export async function getNationalIndexCachedStamped(clock?: StampClock): Promise<StampedIndex> {
   const now = Date.now();
   if (nationalIndexCache && nationalIndexCache.expiresAt > now) {
     return nationalIndexCache.value;
@@ -728,7 +899,7 @@ export async function getNationalIndexCached(): Promise<IndexEntry[]> {
     return nationalIndexCachePromise;
   }
 
-  nationalIndexCachePromise = readNationalIndexCached()
+  nationalIndexCachePromise = readNationalIndexCached(clock)
     .then((value) => {
       nationalIndexCache = {
         value,
@@ -742,41 +913,51 @@ export async function getNationalIndexCached(): Promise<IndexEntry[]> {
   return nationalIndexCachePromise;
 }
 
-async function readNationalIndexCached(): Promise<IndexEntry[]> {
+type FeeIndexCacheRow = {
+  fee_category: string;
+  fee_family: string | null;
+  median_amount: number | null;
+  p25_amount: number | null;
+  p75_amount: number | null;
+  min_amount: number | null;
+  max_amount: number | null;
+  institution_count: number;
+  observation_count: number;
+  approved_count: number;
+  bank_count: number;
+  cu_count: number;
+  maturity_tier: string;
+  /** postgres.js gives a Date for timestamptz; a string in fixtures. */
+  computed_at: string | Date | null;
+  stats_method_version?: number | string | null;
+  /** bigint: a string from postgres.js. */
+  agent_run_id?: number | string | null;
+};
+
+async function readNationalIndexCached(clock?: StampClock): Promise<StampedIndex> {
   try {
     const rows = await sql`
-      SELECT * FROM fee_index_cache ORDER BY institution_count DESC` as {
-      fee_category: string;
-      fee_family: string | null;
-      median_amount: number | null;
-      p25_amount: number | null;
-      p75_amount: number | null;
-      min_amount: number | null;
-      max_amount: number | null;
-      institution_count: number;
-      observation_count: number;
-      approved_count: number;
-      bank_count: number;
-      cu_count: number;
-      maturity_tier: string;
-      computed_at: string;
-      stats_method_version?: number | null;
-    }[];
+      SELECT * FROM fee_index_cache ORDER BY institution_count DESC` as FeeIndexCacheRow[];
 
     // The cache is only trustworthy when a publish step rebuilt it recently. A stale
     // cache (e.g. left over from before the agentic pipeline) must never be served.
-    const newest = rows.reduce<number>((max, row) => {
+    let newest = 0;
+    let snapshot: FeeIndexCacheRow | null = null;
+    for (const row of rows) {
       const at = row.computed_at ? new Date(row.computed_at).getTime() : 0;
-      return Number.isFinite(at) && at > max ? at : max;
-    }, 0);
+      if (Number.isFinite(at) && at > newest) {
+        newest = at;
+        snapshot = row;
+      }
+    }
     const oldMethod = rows.some((row) => Number(row.stats_method_version ?? 0) !== STATS_METHOD_VERSION);
-    if (rows.length === 0 || oldMethod || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
-      return getNationalIndex();
+    if (!snapshot || oldMethod || Date.now() - newest > NATIONAL_INDEX_CACHE_MAX_AGE_MS) {
+      return getNationalIndexStamped(true, clock);
     }
 
     // No unstated-audience count here: callers that show it read
     // `getNationalUnstatedAudienceCountsCached` (#1595).
-    return rows.map((row) => ({
+    const entries: IndexEntry[] = rows.map((row) => ({
       fee_category: row.fee_category,
       fee_family: row.fee_family,
       median_amount: row.median_amount,
@@ -790,10 +971,20 @@ async function readNationalIndexCached(): Promise<IndexEntry[]> {
       bank_count: row.bank_count,
       cu_count: row.cu_count,
       maturity_tier: row.maturity_tier as IndexEntry["maturity_tier"],
-      last_updated: row.computed_at,
+      last_updated: row.computed_at as string,
     }));
+    const stamp = catalogStamp({
+      mode: "cached",
+      readAt: new Date(newest),
+      // The newest row's run only; older rows from another run are not named (#2007).
+      runId: snapshot.agent_run_id ?? null,
+      // The cache has no record-time column; unknown rather than guessed.
+      newestRecordAt: null,
+      methodVersion: Number(snapshot.stats_method_version),
+    });
+    return { entries, stamp };
   } catch {
-    return getNationalIndex();
+    return getNationalIndexStamped(true, clock);
   }
 }
 
@@ -948,7 +1139,8 @@ export async function getStateFeeIndexes(stateCode: string): Promise<StateFeeInd
       WHERE ct.state_code = $1
         AND ef.fee_category IS NOT NULL
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [stateCode],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
@@ -967,7 +1159,8 @@ export async function getDistrictFeeIndexes(district: number): Promise<StateFeeI
       WHERE ct.fed_district = $1
         AND ef.fee_category IS NOT NULL
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [district],
   ) as IndexRow[];
   return buildStateFeeIndexes(rows);
@@ -1040,6 +1233,7 @@ export async function getComparableMarketIndex(scope: MarketScope): Promise<Inde
         AND ef.review_status = 'approved'
         AND ef.amount IS NOT NULL AND ef.amount >= 0
         AND ef.source_document_id IS NOT NULL
+        AND ${activeInstitutionFilter("ct")}
         AND COALESCE(ef.fee_audience, 'unknown') IN (${sqlList(MARKET_AUDIENCES)})`,
     params,
   )) as ComparableMarketRow[];
@@ -1064,11 +1258,19 @@ export interface PeerFeeValue {
    */
   fee_records?: PeerFeeRecord[];
   /**
+   * Present when the peer's schedule states several different fees in the category (#1931):
+   * `amount` is then their median, a statistic and no price of its own, so a row naming the
+   * peer shows this range and the fees by name. Absent means `amount` is the stated price.
+   */
+  several?: SeveralFees;
+  /**
    * Statistics rule 7 (count once): the sister charter this value counts as, when this charter
    * shares its fee schedule with a lower-id charter of the same holding company among the rows
    * read. Absent when the institution counts as itself (always, while the rule is off).
    */
   counted_as?: number;
+  /** Total assets in thousands of dollars, for a peer list; absent where a reader does not load them. */
+  total_assets?: number | null;
 }
 
 /** One published_fee_catalog row behind a peer's value. */
@@ -1137,14 +1339,15 @@ export async function getPeerFeeValues(
   if (only && only.length === 0) return filterSets.map(() => new Map());
   const rows = await sql.unsafe(
     `SELECT ef.id, ef.fee_category, ef.amount, ef.institution_id, ct.institution_name,
-            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code,
+            ct.charter_type, ct.asset_size_tier, ct.fed_district, ct.state_code, ct.asset_size,
             ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
             ef.fee_name, ef.frequency, ef.fee_audience${options.withConditions ? ", ef.conditions" : ""}, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
        JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = ANY($1::text[])${only ? "\n        AND ef.institution_id = ANY($2::bigint[])" : ""}
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     (only ? [categories, only] : [categories]) as never[],
   ) as (PeerRow & {
     id: number | string;
@@ -1157,6 +1360,7 @@ export async function getPeerFeeValues(
     frequency: string | null;
     fee_audience: string | null;
     conditions?: string | null;
+    asset_size?: number | string | null;
   })[];
   const peerRows = rows.filter((row) => Number(row.institution_id) !== excludeInstitutionId);
   const meta = new Map(peerRows.map((row) => [Number(row.institution_id), row]));
@@ -1193,13 +1397,85 @@ export async function getPeerFeeValues(
           document_urls: urls,
           published_at: published,
           fee_records: peerFeeRecords(own, options.withConditions),
+          ...severalField(category, own, amount),
           ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
+          ...(row && row.asset_size !== undefined ? { total_assets: row.asset_size === null ? null : Number(row.asset_size) } : {}),
         });
       }
       result.set(category, values.sort((a, b) => a.amount - b.amount));
     }
     return result;
   });
+}
+
+/** An institution in a peer group, whether or not it publishes the fee asked about. */
+export interface PeerGroupMember {
+  institution_id: number;
+  institution_name: string;
+  state_code: string | null;
+  /** Thousands of dollars. */
+  total_assets: number | null;
+  /** Whether the index counts any fee from its schedule, so a missing fee can say which. */
+  has_schedule: boolean;
+  /** Whether the index holds an approved row for the fee that the peer figures do not count (business-only, unsourced). */
+  has_uncounted_fee: boolean;
+}
+
+/**
+ * Every institution a peer group's filters take in, largest first, so a peer list can name the
+ * peers that publish no value for the fee as well as those that do. An inactive institution is
+ * in only when the peer figures count its fee, as getPeerFeeValues does, so the two reads agree.
+ * `total` counts all of them; `members` stops at `limit`. The asking institution is left out.
+ */
+export async function getPeerGroupMembers(
+  filters: PeerFilterSet,
+  excludeInstitutionId: number,
+  feeCategory: string,
+  limit = 200,
+): Promise<{ total: number; members: PeerGroupMember[] }> {
+  const ids = peerInstitutionIds(filters);
+  const params = [
+    excludeInstitutionId,
+    ids,
+    ids ? null : filters.charter_type ?? null,
+    ids ? null : filters.state_code ?? null,
+    ids ? null : filters.states?.length ? filters.states : null,
+    ids ? null : filters.asset_tiers?.length ? filters.asset_tiers : null,
+    ids ? null : filters.fed_districts?.length ? filters.fed_districts : null,
+    limit,
+    feeCategory,
+  ];
+  const counted = `EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = $9 AND ef.review_status = 'approved' AND ${STATS_ROW_FILTER})`;
+  const rows = (await sql.unsafe(
+    `SELECT ct.id, ct.institution_name, ct.state_code, ct.asset_size,
+            EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.review_status = 'approved' AND ${STATS_ROW_FILTER}) AS has_schedule,
+            EXISTS (SELECT 1 FROM published_fee_catalog ef WHERE ef.institution_id = ct.id AND ef.fee_category = $9 AND ef.review_status = 'approved') AS has_uncounted_fee,
+            COUNT(*) OVER ()::int AS total
+       FROM institution_sources ct
+      WHERE (COALESCE(ct.regulatory_status, 'active') <> 'inactive' OR ${counted})
+        AND ct.id <> $1::int
+        AND ($2::int[] IS NULL OR ct.id = ANY($2::int[]))
+        AND ($3::text IS NULL OR ct.charter_type = $3)
+        AND ($4::text IS NULL OR ct.state_code = $4)
+        AND ($5::text[] IS NULL OR ct.state_code = ANY($5::text[]))
+        AND ($6::text[] IS NULL OR ct.asset_size_tier = ANY($6::text[]))
+        AND ($7::int[] IS NULL OR ct.fed_district = ANY($7::int[]))
+      ORDER BY ct.asset_size DESC NULLS LAST, ct.id
+      LIMIT $8::int`,
+    params as never[],
+  )) as { id: number | string; institution_name: string; state_code: string | null; asset_size: number | string | null; has_schedule: boolean; has_uncounted_fee: boolean; total: number }[];
+  return {
+    total: Number(rows[0]?.total ?? 0),
+    members: rows.map((r) => ({
+      institution_id: Number(r.id),
+      institution_name: r.institution_name,
+      state_code: r.state_code ?? null,
+      total_assets: r.asset_size === null || r.asset_size === undefined ? null : Number(r.asset_size),
+      has_schedule: Boolean(r.has_schedule),
+      // Read for members the peer figures left out, so any approved row for the fee is one they did not count.
+      has_uncounted_fee: Boolean(r.has_uncounted_fee),
+    })),
+  };
 }
 
 export interface SegmentFilter {
@@ -1237,7 +1513,7 @@ export async function getSegmentFeeValues(
   const segmentSql = `
     SELECT ct.id
       FROM institution_sources ct
-     WHERE COALESCE(ct.regulatory_status, 'active') <> 'inactive'
+     WHERE ${activeInstitutionFilter("ct")}
        AND ($1::bigint IS NULL OR ct.asset_size >= $1)
        AND ($2::bigint IS NULL OR ct.asset_size < $2)
        AND ($3::text IS NULL OR ct.charter_type = $3)
@@ -1254,7 +1530,8 @@ export async function getSegmentFeeValues(
   const categories = capCategory ? [feeCategory, capCategory] : [feeCategory];
   const rows = (await sql.unsafe(
     `WITH seg AS (${segmentSql})
-     SELECT ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
+     SELECT ef.id, ef.fee_name, ef.frequency, ef.fee_audience,
+            ef.fee_category, ef.amount, ef.institution_id, ct.institution_name, ct.charter_type,
             ct.state_code, ct.asset_size, ef.source_document_id, ef.document_url, ef.created_at, ef.fee_published_id,
             ${STATS_SCHEDULE_KEYS}
        FROM published_fee_catalog ef
@@ -1265,6 +1542,10 @@ export async function getSegmentFeeValues(
         AND ${STATS_ROW_FILTER}`,
     [...params, categories] as never[],
   )) as {
+    id: number | string;
+    fee_name: string | null;
+    frequency: string | null;
+    fee_audience: string | null;
     fee_category: string;
     amount: number | string | null;
     institution_id: number | string;
@@ -1297,6 +1578,8 @@ export async function getSegmentFeeValues(
       fee_published_ids: feeIdsOf(own),
       document_urls: [...new Set(own.map((r) => r.document_url).filter((v): v is string => !!v))],
       published_at: own.map((r) => iso(r.created_at)).filter((v): v is string => !!v).sort().pop() ?? null,
+      fee_records: peerFeeRecords(own),
+      ...severalField(feeCategory, own, amount),
       total_assets: first?.asset_size === null || first?.asset_size === undefined ? null : Number(first.asset_size),
       charter_type: first?.charter_type ?? null,
       ...(countedAs !== undefined && countedAs !== id ? { counted_as: countedAs } : {}),
@@ -1346,6 +1629,50 @@ export async function getDailyFeeLimits(
     }
   }
   return limits;
+}
+
+/** `{ several }` when these rows (one institution, one category) state several different fees; empty otherwise. */
+function severalField(
+  category: string,
+  rows: readonly { fee_name?: string | null; amount: unknown }[],
+  value: number,
+): { several?: SeveralFees } {
+  const several = severalFeesOf(ownFeeFromRows(category, rows, value, HIGHEST_TIER_CATEGORIES.has(category)));
+  return several ? { several } : {};
+}
+
+/**
+ * Each listed institution's own fees per category, kept apart (src/lib/own-fee.ts): the
+ * statistics value, the price its schedule states (null when it states several different
+ * fees) and each fee by name. For rows that name an institution; medians and percentiles
+ * read `getFeeValuesForInstitutions` (the same `value`).
+ */
+export async function getOwnFeesForInstitutions(
+  institutionIds: number[],
+  categories: string[],
+): Promise<Map<number, Map<string, InstitutionOwnFee>>> {
+  const out = new Map<number, Map<string, InstitutionOwnFee>>();
+  if (institutionIds.length === 0 || categories.length === 0) return out;
+  const rows = (await sql.unsafe(
+    `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount
+       FROM published_fee_catalog ef
+      WHERE ef.institution_id = ANY($1::int[])
+        AND ef.fee_category = ANY($2::text[])
+        AND ef.review_status = 'approved'
+        AND ${STATS_ROW_FILTER}`,
+    [institutionIds, categories] as never[],
+  )) as { institution_id: number | string; fee_category: string; fee_name: string | null; amount: number | string | null }[];
+  for (const category of categories) {
+    const list = rows.filter((r) => r.fee_category === category).map((r) => ({ ...r, institution_id: Number(r.institution_id) }));
+    for (const [id, value] of valuePerInstitution(list)) {
+      const fee = ownFeeFromRows(category, list.filter((r) => r.institution_id === id), value, HIGHEST_TIER_CATEGORIES.has(category));
+      if (!fee) continue;
+      const own = out.get(id) ?? new Map<string, InstitutionOwnFee>();
+      own.set(category, fee);
+      out.set(id, own);
+    }
+  }
+  return out;
 }
 
 /**

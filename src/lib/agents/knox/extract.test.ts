@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
-import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, runKnoxExtract, insertCandidate } from "./extract";
+import { extractionOutcome, KNOX_PRIORITY_REREAD_IDS, KNOX_REEXTRACT_MAX_FEES, KNOX_REREAD_ASSET_FLOOR, KNOX_STALE_READ_BELOW_VERSION, runKnoxExtract, insertCandidate } from "./extract";
 import { thinRereadKindSql } from "@/lib/agents/thin-document";
 import { KNOX_FAULT_REASONS } from "./calibration";
 import { KNOX_RULES_STRATEGY } from "./specialists";
@@ -30,20 +31,21 @@ function asExtractDb(db: DbMock): NonNullable<Parameters<typeof runKnoxExtract>[
   return db as unknown as NonNullable<Parameters<typeof runKnoxExtract>[0]["db"]>;
 }
 
+const normalizedText = [
+  "Monthly maintenance fee $5.00 per month",
+  "Overdraft fee $35.00 per item",
+  "Outgoing domestic wire transfer fee $25.00",
+  "No fee for e-statements",
+  "Schedule of fees effective January 1, 2026 $0",
+].join("\n");
 const textArtifact = {
   document_text_id: 701,
   source_document_id: 501,
   institution_id: 42,
   institution_name: "Test Bank",
   source_url: "https://testbank.example/fees",
-  text_hash: "text-hash",
-  normalized_text: [
-    "Monthly maintenance fee $5.00 per month",
-    "Overdraft fee $35.00 per item",
-    "Outgoing domestic wire transfer fee $25.00",
-    "No fee for e-statements",
-    "Schedule of fees effective January 1, 2026 $0",
-  ].join("\n"),
+  text_hash: createHash("sha256").update(normalizedText).digest("hex"),
+  normalized_text: normalizedText,
 };
 
 describe("Knox agentic extraction", () => {
@@ -125,8 +127,9 @@ describe("Knox agentic extraction", () => {
   });
 
   it("sends free fees to Darwin and holds ranges for review", async () => {
+    const text = ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n");
     const db = createDbMock([
-      { ...textArtifact, normalized_text: ["Overdraft fee | $35.00", "Paper statement | Free", "Check printing $15 - $40"].join("\n") },
+      { ...textArtifact, normalized_text: text, text_hash: createHash("sha256").update(text).digest("hex") },
     ]);
 
     const result = await runKnoxExtract({ runId: 110, db: asExtractDb(db) });
@@ -163,7 +166,7 @@ describe("Knox agentic extraction", () => {
     expect(templateText(retire?.[0])).toContain("- 'needs_darwin_verification'");
     expect(templateText(retire?.[0])).toContain("superseded_by_reread");
     expect(templateText(retire?.[0])).toContain("FROM verified_fee_observations fv");
-    expect(retire?.slice(1)).toEqual(expect.arrayContaining([501, "text_hash=text-hash;"]));
+    expect(retire?.slice(1)).toEqual(expect.arrayContaining([501, `text_hash=${textArtifact.text_hash};`]));
   });
 
   it("keeps dry runs read-only while still reporting candidates", async () => {
@@ -315,7 +318,7 @@ describe("Knox agentic extraction", () => {
 
       expect(result).toMatchObject({ learning: true, insertedFees: 3, outcomes: { ok: 1 } });
       expect(attemptValues(db).at(-1)).toEqual(
-        expect.arrayContaining([42, 501, "extract", KNOX_RULES_STRATEGY.strategy, "text-hash", "ok", 3, 106, 11]),
+        expect.arrayContaining([42, 501, "extract", KNOX_RULES_STRATEGY.strategy, textArtifact.text_hash, "ok", 3, 106, 11]),
       );
       const [query, params] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("FROM pipeline_attempts pa");
@@ -351,6 +354,25 @@ describe("Knox agentic extraction", () => {
       const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
       expect(query).toContain("WHERE older_copy.superseded_by_id = adt.source_document_id");
       expect(query).toContain("live_fee.rolled_back_at IS NULL");
+    });
+
+    it("reads a stale or unread current copy before a large bank's once-per-version repeat", async () => {
+      const db = createDbMock([]);
+      db.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
+        if (text.includes("column_name = 'superseded_by_id'")) return Promise.resolve([{ ready: true }]);
+        return Promise.resolve([]);
+      });
+
+      await runKnoxExtract({ runId: 112, db: asExtractDb(db) });
+
+      const [query] = db.unsafe.mock.calls[0] as [string, unknown[]];
+      const order = query.slice(query.lastIndexOf("ORDER BY"));
+      expect(order).toContain(`current_read.strategy_version >= ${KNOX_STALE_READ_BELOW_VERSION}`);
+      expect(order.indexOf("current_read.strategy_version")).toBeLessThan(
+        order.indexOf(`(COALESCE(inst.asset_size, 0) >= ${KNOX_REREAD_ASSET_FLOOR}) DESC`),
+      );
     });
 
     it("reads a priority bank's current page again while it has no live overdraft fee", async () => {
@@ -422,7 +444,7 @@ describe("Knox agentic extraction", () => {
         "extract.family.services",
         KNOX_RULES_STRATEGY.strategy,
       ]);
-      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["extract.table", 2, "text-hash", "ok", 2, 0]));
+      expect(attemptValues(db)[0]).toEqual(expect.arrayContaining(["extract.table", 2, textArtifact.text_hash, "ok", 2, 0]));
       // Only the rules attempt (the document's total) updates the playbook.
       expect(db.mock.calls.filter((call) => templateText(call[0]).includes("do_not_retry = "))).toHaveLength(1);
       const insertFlags = db.mock.calls
@@ -462,7 +484,7 @@ describe("Knox agentic extraction", () => {
       expect(result.outcomes).toEqual({ no_candidates: 1 });
       const playbookUpdate = db.mock.calls.find((call) => templateText(call[0]).includes("do_not_retry = "));
       expect(JSON.parse(String(playbookUpdate?.[4]))).toEqual([
-        expect.objectContaining({ stage: "extract", fingerprint: "text-hash", outcome: "no_candidates" }),
+        expect.objectContaining({ stage: "extract", fingerprint: textArtifact.text_hash, outcome: "no_candidates" }),
       ]);
     });
   });

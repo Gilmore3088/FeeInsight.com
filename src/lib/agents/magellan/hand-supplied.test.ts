@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 import type { DocumentVault } from "@/lib/agents/document-vault";
 
@@ -242,10 +243,14 @@ describe("Rosetta's read of a hand-supplied copy", () => {
       const sql = text(strings);
       if (sql.includes("FROM source_documents doc")) {
         return Promise.resolve([
-          { source_document_id: 88, institution_id: 102, institution_name: "TowneBank", document_url: URL_FOUND, content_hash: "h", companion_source_id: 77 },
+          { source_document_id: 88, institution_id: 102, institution_name: "TowneBank", document_url: URL_FOUND, content_hash: createHash("sha256").update(PDF).digest("hex"), companion_source_id: 77 },
         ]);
       }
       return Promise.resolve([]);
+    });
+    // Callback-only sink; native Rosetta SQL controls prove rollback.
+    Object.assign(db, {
+      begin: vi.fn(async (work: (scope: typeof db) => Promise<unknown>) => work(db)),
     });
     const schedule = [
       "Schedule of Fees and Charges for Personal Deposit Accounts",

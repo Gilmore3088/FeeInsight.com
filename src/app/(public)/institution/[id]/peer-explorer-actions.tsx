@@ -30,10 +30,10 @@ export async function loadPeerExplorerSection(input: {
   const { institutionId } = input;
   if (typeof institutionId !== "number" || !Number.isInteger(institutionId) || institutionId <= 0) return null;
   const budget = createReadBudget(PAGE_READ_BUDGET_MS, "Institution peer explorer");
-  const sets = await budget.optional(getInstitutionPeerSetsCached(institutionId, value(input.peers)), "peer sets", null);
+  const sets = await budget.optional(() => getInstitutionPeerSetsCached(institutionId, value(input.peers)), "peer sets", null);
   if (!sets) return null;
   const set = await budget.optional(
-    getPeerExplorerSetCached(institutionId, sets.selectedFilters, sets.selected.key === "metro"),
+    () => getPeerExplorerSetCached(institutionId, sets.selectedFilters, sets.selected.key === "metro"),
     "peer explorer",
     null,
   );

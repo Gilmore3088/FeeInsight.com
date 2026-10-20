@@ -16,6 +16,12 @@ describe("password reset tokens", () => {
     expect(verifyPasswordResetToken(token, user, now + 1000)).toBe(true);
   });
 
+  it("verifies when users.id arrives as text, as the bigint column does (#1970)", () => {
+    const token = createPasswordResetToken(42, user.password_hash, now);
+    expect(verifyPasswordResetToken(token, { id: "42", password_hash: user.password_hash }, now + 1000)).toBe(true);
+    expect(verifyPasswordResetToken(token, { id: "43", password_hash: user.password_hash }, now + 1000)).toBe(false);
+  });
+
   it("dies once the password changes, so a link works once", () => {
     const token = createPasswordResetToken(user.id, user.password_hash, now);
     expect(verifyPasswordResetToken(token, { ...user, password_hash: "$2b$10$changed" }, now)).toBe(false);

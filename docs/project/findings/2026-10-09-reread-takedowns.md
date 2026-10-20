@@ -61,3 +61,5 @@ The other two misses (14690, 88118) had the right price under a wrong name.
 A restore needs more than the stored line. It needs a line that sets the name and the price apart as
 one item, or a second reading of the current text. Keeping fees live is narrower: it applies only to
 fees that are still up, and since PR 969 a single ` / `-separated line must pass the shared check.
+
+**Agent lesson:** rosetta/pr-969-reread-keeps-better-text

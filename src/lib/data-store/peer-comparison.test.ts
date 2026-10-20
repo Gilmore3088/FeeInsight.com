@@ -15,10 +15,10 @@ import { getRateFeesByInstitution } from "./rate-fees";
 import {
   comparePeerCategory,
   defaultPeerFilters,
-  describePeerGroup,
   getPeerComparison,
   midRankPercentile,
 } from "./peer-comparison";
+import { describePeerSet } from "./peer-sets";
 
 /** One stated price, as the own-fee reader gives it. */
 const one = (price: number) => ({ category: "", value: price, price, low: price, high: price, fees: [{ name: "Fee", amount: price }] });
@@ -88,9 +88,9 @@ describe("peer comparison math", () => {
   it("builds the default peers from charter, asset tier and Fed district, and names them", () => {
     const filters = defaultPeerFilters({ charter_type: "bank", asset_size_tier: "community_mid", fed_district: 11 });
     expect(filters).toEqual({ charter_type: "bank", asset_tiers: ["community_mid"], fed_districts: [11] });
-    expect(describePeerGroup(filters)).toBe("Banks with $300M to $1B in assets in the Dallas Fed district");
+    expect(describePeerSet(filters)).toBe("Banks with $300M to $1B in assets in the Dallas Fed district");
     expect(defaultPeerFilters({ charter_type: "credit_union", asset_size_tier: null, fed_district: null })).toEqual({ charter_type: "credit_union" });
-    expect(describePeerGroup({ institutionIds: [4, 5] })).toBe("2 chosen institutions");
+    expect(describePeerSet({ institutionIds: [4, 5] })).toBe("2 chosen institutions");
   });
 });
 

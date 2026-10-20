@@ -1,6 +1,7 @@
 "use server";
 
 import { clearSourceSubmissionCountsCache } from "@/lib/admin-queries";
+import { boundedSearchTerm, escapeLikePattern } from "@/lib/api-hardening/query-caps";
 import { sql, withTransaction } from "@/lib/data-store/connection";
 import { headers } from "next/headers";
 
@@ -193,9 +194,11 @@ export async function submitFees(input: SubmitFeeInput): Promise<SubmitResult> {
 }
 
 export async function searchInstitutions(query: string): Promise<{ id: number; name: string; state: string | null }[]> {
-  if (!query || query.length < 2) return [];
+  // A server action anyone can call: at most 100 characters, at least two letters or digits.
+  const term = boundedSearchTerm(query);
+  if (!term) return [];
 
-  const escaped = query.replace(/[%_]/g, "\\$&");
+  const escaped = escapeLikePattern(term);
   const rows = await sql`
     SELECT id, institution_name as name, state_code as state
     FROM institution_sources

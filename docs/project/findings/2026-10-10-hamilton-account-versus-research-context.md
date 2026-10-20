@@ -84,3 +84,5 @@ memberships need an explicit future account-selection design rather than a guess
 No fee changes, migrations, grants, model selection, quota/budget overrides,
 production deployment or consulting-readiness claim. Keep #985 a draft and H01 in
 progress until its remaining acceptance and approved release checks are complete.
+
+**Agent lesson:** hamilton/pr-985-subject-not-account

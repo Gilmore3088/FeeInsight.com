@@ -5,13 +5,13 @@ import { registryPartitionsBySource } from "@/lib/agents/registry-scheduler";
 import { STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
 import { STATE_BILL_JURISDICTIONS } from "@/lib/regulatory/open-states";
 import {
+  countIdentityLinksNeedingReview,
   getIdentityLinksNeedingReview,
   getRegistryPartitionStats,
   getStateBillCoverage,
   type IdentityReviewItem,
   type RegistryPartitionStats,
 } from "@/lib/data-store/registry-profile";
-import { decideIdentityLinksAction } from "./actions";
 import { QueueRegistryButton } from "./queue-button";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +23,11 @@ function formatWhen(iso: string | null): string {
 }
 
 export default async function RegistryPage() {
-  await requireAuth("view");
-  const [stats, review, stateBills] = await Promise.all([
+  await requireAuth("operate");
+  const [stats, review, reviewCount, stateBills] = await Promise.all([
     getRegistryPartitionStats().catch((): RegistryPartitionStats[] => []),
-    getIdentityLinksNeedingReview(200).catch((): IdentityReviewItem[] => []),
+    getIdentityLinksNeedingReview(10).catch((): IdentityReviewItem[] => []),
+    countIdentityLinksNeedingReview().catch((): number | null => null),
     getStateBillCoverage().catch(() => null),
   ]);
   const bySource = new Map(stats.map((row) => [row.source, row]));
@@ -102,27 +103,32 @@ export default async function RegistryPage() {
       </section>
 
       <section className="admin-card">
-        <h2 className="text-base font-semibold">Identity matches waiting for review ({review.length})</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            Identity matches waiting for review
+            <span
+              className="rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold tabular-nums"
+              aria-label={reviewCount === null ? "Count unavailable" : `${reviewCount} waiting`}
+            >
+              {reviewCount === null ? "?" : reviewCount.toLocaleString("en-US")}
+            </span>
+          </h2>
+          <a className="text-sm font-medium underline" href="/admin/magellan/registry/identity">
+            Review identity matches
+          </a>
+        </div>
         <p className="mt-1 text-sm text-ink-muted">
           CFPB company names and SEC filers that could be more than one institution. They are not used for any data
-          until accepted. Tick the rows, then choose once for all of them.
+          until accepted. Accept, re-point, reject or undo them on the review page; the first {review.length} by impact
+          are below.
         </p>
         {review.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">Nothing waiting.</p>
         ) : (
-          <form action={decideIdentityLinksAction} className="mt-3">
-            <div className="flex gap-2">
-              <button type="submit" name="decision" value="accepted" className="rounded-md border border-[var(--admin-border,#ddd5c6)] px-2 py-1 text-xs font-medium hover:bg-black/5">
-                Same bank
-              </button>
-              <button type="submit" name="decision" value="rejected" className="rounded-md border border-[var(--admin-border,#ddd5c6)] px-2 py-1 text-xs font-medium hover:bg-black/5">
-                Not a match
-              </button>
-            </div>
-            <table className="mt-3 w-full text-left text-sm">
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
               <thead className="text-xs uppercase tracking-wide text-ink-muted">
                 <tr>
-                  <th className="px-3 py-2" />
                   <th className="px-3 py-2">External name</th>
                   <th className="px-3 py-2">Best candidate</th>
                   <th className="px-3 py-2">Type</th>
@@ -131,9 +137,6 @@ export default async function RegistryPage() {
               <tbody>
                 {review.map((item) => (
                   <tr key={`${item.link_type}:${item.external_key}`} className="border-t border-black/5">
-                    <td className="px-3 py-2">
-                      <input type="checkbox" name="link" value={`${item.link_type}|${item.external_key}`} aria-label={`Select ${item.external_name ?? item.external_key}`} />
-                    </td>
                     <td className="px-3 py-2">{item.external_name ?? item.external_key}</td>
                     <td className="px-3 py-2">
                       {item.institution_id ? <a className="underline" href={`/admin/institution/${item.institution_id}`}>{item.institution_name ?? `#${item.institution_id}`}</a> : "None"}
@@ -143,7 +146,7 @@ export default async function RegistryPage() {
                 ))}
               </tbody>
             </table>
-          </form>
+          </div>
         )}
       </section>
     </div>

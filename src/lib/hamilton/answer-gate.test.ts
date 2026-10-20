@@ -31,4 +31,15 @@ describe("checkAnswerEvidence", () => {
     expect(HELD_ANSWER_MESSAGE).toBe("This answer didn't pass Hamilton's source check, so it isn't shown. Ask again, or name one fee to compare.");
     expect(checkAnswerEvidence(HELD_ANSWER_MESSAGE ?? "", DATA).passed).toBe(true);
   });
+
+  it("uses scaled financial evidence through the actual answer gate (#2274)", () => {
+    const evidence = { toolResults: [{ output: { _shortened: true, text: JSON.stringify({
+      financials: { units: "dollar amounts in thousands; fee_income_ratio is a fraction (0.068 = 6.8%)",
+        latest: { service_charge_income: 311051, fee_income_ratio: 0.068 } },
+    }) } }] };
+    expect(checkAnswerEvidence("Service-charge income was $311.05 million, with a 6.8% fee-income ratio.", evidence).passed).toBe(true);
+    expect(checkAnswerEvidence("Service-charge income was $311,051.", evidence).problems).toEqual([
+      "These figures are not in DATA: $311,051.",
+    ]);
+  });
 });

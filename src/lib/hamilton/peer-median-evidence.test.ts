@@ -54,6 +54,11 @@ describe("peer median evidence", () => {
     }
     expect(buildFeeResearchEvidence(base).derivations.some(d => d.derivation.kind === "peer_median")).toBe(false);
   });
+  it("reads peer frequencies spelled differently as one frequency (#1975)", () => {
+    const spellings = ["per_item", "per item", "Per-Item", "PER  ITEM"];
+    const respelled = { ...research, peers: research.peers.map((p, i) => ({ ...p, feeRecords: p.feeRecords!.map(r => ({ ...r, frequency: spellings[i % spellings.length] })) })) };
+    expect(peerMedianEvidence(respelled)?.derivation.value).toBe(29.5);
+  });
   it("says how many peers were left out of the record check and why, and never 0 of N (#1717)", () => {
     const three = { ...research, peers: research.peers.map((p, i) => (i < 3 ? { ...p, feeRecords: undefined } : p)) };
     expect(peerMedianCoverage(three)).toEqual({ context: "peer_median", total: 16, leftOut: 3, byReason: { not_verified: 3 } });

@@ -1,4 +1,5 @@
 export const dynamic = "force-dynamic";
+import { readReferenceEligibility } from "@/lib/data-store/answer-key-reference-store";
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -11,11 +12,13 @@ import {
   ANSWER_KEY_DOCUMENT_TYPES,
   answerKeySchemaReady,
   banksToCheck,
+  feeCheckedBy,
   getAnswerKeyInstitution,
   isPersonChecked,
   listAnswerKeyInstitutions,
   VALID_ANSWER_KEY_CANONICAL_KEYS,
   type AnswerKeyFee,
+  type AnswerKeyInstitution,
 } from "@/lib/data-store/answer-key";
 import {
   addAnswerKeyFeeAction,
@@ -33,7 +36,7 @@ function pct(value: number | null | undefined): string {
   return value == null ? "—" : `${(value * 100).toFixed(0)}%`;
 }
 
-function FeeRow({ fee, answerKeyId }: { fee: AnswerKeyFee; answerKeyId: number }) {
+function FeeRow({ fee, answerKeyId, institution }: { fee: AnswerKeyFee; answerKeyId: number; institution: Pick<AnswerKeyInstitution, "status" | "confirmed_by"> }) {
   const formId = `fee-${fee.id}`;
   const tone = fee.status === "confirmed"
     ? ""
@@ -77,7 +80,7 @@ function FeeRow({ fee, answerKeyId }: { fee: AnswerKeyFee; answerKeyId: number }
           <button type="submit" className="rounded px-1.5 py-1 text-gray-400 hover:text-red-600" aria-label="Delete fee row">✕</button>
         </form>
         <span className="mt-0.5 block text-[10px] text-gray-400">
-          {fee.status === "confirmed" ? `ok ${fee.confirmed_by ?? ""}` : fee.uncertain ? "unsure" : "prefilled"}
+          {fee.status === "confirmed" ? `ok ${feeCheckedBy(fee.confirmed_by, institution) ?? ""}` : fee.uncertain ? "unsure" : "prefilled"}
         </span>
       </td>
     </tr>
@@ -91,12 +94,13 @@ export default async function AnswerKeyDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ message?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [{ id }, { message }] = await Promise.all([params, searchParams]);
   const answerKeyId = Number(id);
   if (!Number.isInteger(answerKeyId) || answerKeyId <= 0) notFound();
   if (!(await answerKeySchemaReady().catch(() => false))) notFound();
-  const [entry, all] = await Promise.all([getAnswerKeyInstitution(answerKeyId), listAnswerKeyInstitutions()]);
+  const reference = await readReferenceEligibility();
+  const [entry, all] = await Promise.all([getAnswerKeyInstitution(answerKeyId, undefined, reference), listAnswerKeyInstitutions(undefined, reference)]);
   if (!entry) notFound();
   const { institution, fees } = entry;
   // The next bank a person still has to check, in the shortest-first order the list page uses.
@@ -144,6 +148,12 @@ export default async function AnswerKeyDetailPage({
       {message ? (
         <p role="status" className="rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/20 dark:text-blue-200">{message}</p>
       ) : null}
+
+      <section className="admin-card space-y-1 p-4 text-sm" aria-label="Document eligibility">
+        <p>Document eligibility: <strong>{institution.eligibility?.status ?? "unknown"}</strong> · {(institution.eligibility?.reason ?? "eligibility_missing").replaceAll("_", " ")}</p>
+        <p className="text-xs text-gray-500">Automatic evidence is separate from human confirmation. An excluded document contributes no score or learning label; it needs no additional confirmation from James.</p>
+        {institution.eligibility?.eventId ? <p className="text-xs text-gray-500">Receipt #{institution.eligibility.eventId} · {institution.eligibility.checkedAt ? formatAdminDateTime(institution.eligibility.checkedAt) : "time unavailable"}</p> : null}
+      </section>
 
       <section className="admin-card space-y-2 p-4">
         <div className="flex items-baseline justify-between">
@@ -203,7 +213,7 @@ export default async function AnswerKeyDetailPage({
             </tr>
           </thead>
           <tbody className="divide-y divide-black/[0.04] dark:divide-white/[0.05]">
-            {fees.map((fee) => <FeeRow key={fee.id} fee={fee} answerKeyId={answerKeyId} />)}
+            {fees.map((fee) => <FeeRow key={fee.id} fee={fee} answerKeyId={answerKeyId} institution={institution} />)}
             <tr>
               <td className="px-2 py-1.5">
                 <form id="fee-new" action={addAnswerKeyFeeAction}>

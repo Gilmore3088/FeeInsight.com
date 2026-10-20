@@ -209,9 +209,20 @@ export const EVENT_FEE_CATEGORIES: ReadonlySet<string> = new Set([
   "rush_card",
 ]);
 
-/** Stated frequencies that already mean "each time"; a blank event fee matches only these. */
+/**
+ * One spelling for a stated frequency (#1975): case is ignored and underscores, hyphens and runs of
+ * spaces count as one space, so "per_item", "Per-Item" and "per  item" all read "per item". Blank is null.
+ * Different words stay different: "monthly" never matches "per item".
+ */
+export function normalizeFrequency(frequency: string | null | undefined): string | null {
+  if (typeof frequency !== "string") return null;
+  const spelled = frequency.toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  return spelled.length > 0 ? spelled : null;
+}
+
+/** Stated frequencies (after normalizeFrequency) that already mean "each time"; a blank event fee matches only these. */
 const PER_EVENT_FREQUENCIES: ReadonlySet<string> = new Set([
-  "per item", "per_item", "per transaction", "per_transaction", "per occurrence", "per_occurrence", "each",
+  "per item", "per transaction", "per occurrence", "each",
 ]);
 
 /** True when a fee in this category is charged each time it happens, so a blank frequency means per item. */
@@ -277,7 +288,7 @@ function supportedOwnAggregate(
   if (current === null || !Number.isFinite(current) || current < 0 || facts.length === 0) return false;
   const first = facts[0];
   const product = first.scope.product?.trim().toLowerCase();
-  const frequency = first.frequency?.trim().toLowerCase();
+  const frequency = normalizeFrequency(first.frequency);
   const documentId = first.source.sourceDocumentIds[0];
   if (!product || !frequency || first.source.sourceDocumentIds.length !== 1
     || !Number.isSafeInteger(documentId) || documentId <= 0) return false;
@@ -286,7 +297,7 @@ function supportedOwnAggregate(
   for (const fact of facts) {
     if (typeof fact.value !== "number" || !Number.isFinite(fact.value) || fact.value < 0) return false;
     if (fact.scope.product?.trim().toLowerCase() !== product) return false;
-    if (fact.frequency?.trim().toLowerCase() !== frequency) return false;
+    if (normalizeFrequency(fact.frequency) !== frequency) return false;
     if (fact.scope.accountApplicability !== "consumer" && fact.scope.accountApplicability !== "both") return false;
     if (!Number.isSafeInteger(Number(fact.source.recordId)) || Number(fact.source.recordId) <= 0) return false;
     if (fact.source.sourceDocumentIds.length !== 1 || fact.source.sourceDocumentIds[0] !== documentId) return false;
@@ -388,8 +399,8 @@ function comparabilityProblems(
         && documents.length === 1 && Number.isSafeInteger(documents[0]) && documents[0] > 0;
     };
     if (!trustedSource(left) || !trustedSource(right)) problems.push("source_record_unverified");
-    const leftFrequency = left.frequency?.trim().toLowerCase();
-    const rightFrequency = right.frequency?.trim().toLowerCase();
+    const leftFrequency = normalizeFrequency(left.frequency);
+    const rightFrequency = normalizeFrequency(right.frequency);
     if (!leftFrequency || !rightFrequency) {
       // An event fee charged each time counts as per item when the schedule doesn't say (#1717);
       // a recurring or unlisted category keeps the strict rule.
@@ -563,7 +574,7 @@ export function peerMedianEvidence(research: Pick<FeeResearch, "institutionId" |
   if (new Set(peers.map((peer) => peer.institutionId)).size !== peers.length) return null;
   const records = peers.map(peerValueRecord);
   if (records.some((record) => record === null)) return null;
-  const frequencies = new Set(records.map((record) => record!.frequency?.trim().toLowerCase() ?? null));
+  const frequencies = new Set(records.map((record) => normalizeFrequency(record!.frequency)));
   if (frequencies.size !== 1) return null;
   const facts: HamiltonEvidenceFact[] = peers.map((peer, i) => {
     const record = records[i]!;

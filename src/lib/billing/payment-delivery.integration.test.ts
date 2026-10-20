@@ -18,7 +18,7 @@ import { stagePaymentEmails, drainPaymentEmails, paymentEmailStatus } from "./pa
 import { claimPaymentEmail, finishPaymentEmail, resolvePaymentEmail } from "@/lib/data-store/payment-outbox";
 const url=process.env.PAYMENT_DELIVERY_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
-let db:ReturnType<typeof postgres>;
+let db:postgres.Sql<{ json: unknown }>;
 const provider=new Map<string,string>();
 const effects=(more:Partial<StripeEventEffects>={}):StripeEventEffects=>({welcome:[],reportPaid:[],reportDuplicate:[],reportRefunded:[],...more});
 async function stage(data:StripeEventEffects,event="evt_outbox"){
@@ -27,7 +27,7 @@ async function stage(data:StripeEventEffects,event="evt_outbox"){
     await stagePaymentEmails(tx as unknown as typeof appSql,event,data);
   });
 }
-const welcome=()=>effects({welcome:[{email:"recipient@example.invalid",name:"Fixture"}]});
+const welcome=()=>effects({welcome:[{email:"recipient@example.invalid",name:"Fixture",checkoutSessionId:"cs_fixture",userId:7}]});
 suite("payment delivery with real PostgreSQL and a fake email provider",()=>{
   beforeAll(async()=>{
     const parsed=new URL(url!);
@@ -90,7 +90,7 @@ suite("payment delivery with real PostgreSQL and a fake email provider",()=>{
     expect(ctx.send).toHaveBeenCalledTimes(1);expect(provider.size).toBe(1);
   });
   it("persists each recipient separately so successful delivery does not repeat",async()=>{
-    await stage(effects({welcome:[{email:"one@example.invalid",name:"One"},{email:"two@example.invalid",name:"Two"}]}));
+    await stage(effects({welcome:[{email:"one@example.invalid",name:"One",checkoutSessionId:"cs_fixture",userId:7},{email:"two@example.invalid",name:"Two",checkoutSessionId:"cs_fixture",userId:8}]}));
     ctx.send.mockImplementationOnce(async()=>({status:"failed",error:"temporary failure"}));
     await drainPaymentEmails("evt_outbox");
     expect(await paymentEmailStatus("evt_outbox")).toEqual({pending:1,review:0});
@@ -116,6 +116,13 @@ suite("payment delivery with real PostgreSQL and a fake email provider",()=>{
     await resolvePaymentEmail(row.id,7,"Verified provider history and fulfilled manually");
     const [resolved]=await db`SELECT * FROM payment_email_outbox`;expect(resolved.state).toBe("resolved");expect(Number(resolved.resolved_by)).toBe(7);
     await drainPaymentEmails("evt_outbox",row.id);expect(ctx.send).toHaveBeenCalledTimes(1);
+  });
+  it("stages one welcome per checkout even when a second event for it arrives (#1972)",async()=>{
+    let first:string[]=[];let second:string[]=[];
+    await db.begin(async(tx)=>{await tx.unsafe("INSERT INTO stripe_events(stripe_event_id,event_type) VALUES ('evt_completed','fixture')");first=await stagePaymentEmails(tx as unknown as typeof appSql,"evt_completed",welcome());});
+    await db.begin(async(tx)=>{await tx.unsafe("INSERT INTO stripe_events(stripe_event_id,event_type) VALUES ('evt_async','fixture')");second=await stagePaymentEmails(tx as unknown as typeof appSql,"evt_async",welcome());});
+    expect(first).toEqual(["recipient@example.invalid"]);expect(second).toEqual([]);
+    expect(await db`SELECT id FROM payment_email_outbox WHERE kind='welcome'`).toHaveLength(1);
   });
   it("deduplicates repeated staging and cancels refunded customer deliveries",async()=>{
     const data=effects({reportPaid:[{leadId:1,institutionId:99,name:"Fixture",email:"buyer@example.invalid",cents:30000,checkoutSessionId:"cs_fixture"}]});

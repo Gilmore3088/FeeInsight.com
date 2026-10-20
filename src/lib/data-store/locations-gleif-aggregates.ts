@@ -1,3 +1,5 @@
+import { readFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
+import { createGleifIdentityVeto, FDIC_IDENTITY_HOLD_REASON } from "@/lib/regulatory/gleif-identity-holds";
 import { sql } from "./connection";
 
 /**
@@ -309,7 +311,7 @@ export interface FamilyNode extends FamilyMemberRow {
 
 export interface CorporateFamily {
   institution_id: number;
-  /** The institution's own LEI(s) found in gleif_entities or institution_sources. */
+  /** The institution's own LEI(s) found in gleif_entities, institution_sources or institution_lei_links. */
   institution_leis: string[];
   ultimate_parent_lei: string | null;
   members: number;
@@ -342,17 +344,25 @@ export function buildFamilyTree(root: string, members: FamilyMemberRow[]): Famil
 
 /** The corporate family (by GLEIF ultimate consolidation parent) of one tracked institution. */
 export async function getCorporateFamily(institutionId: number): Promise<CorporateFamily> {
+  const holds = await readFdicIdentityHolds(sql);
+  const veto = createGleifIdentityVeto(holds);
+  const [canonical] = await sql<Array<{ source: string; cert_number: string | null; own_lei: string | null; linked_lei: string | null; candidate_leis: string[] | null }>>`SELECT s.source, s.cert_number, s.lei AS own_lei, l.lei AS linked_lei, l.candidate_leis FROM institution_sources s LEFT JOIN institution_lei_links l ON l.institution_id=s.id WHERE s.id = ${institutionId}`;
+  const held = veto.blocksInstitution(institutionId, canonical?.cert_number, canonical?.source) || veto.blocksLei(canonical?.own_lei) || veto.blocksLei(canonical?.linked_lei) || canonical?.candidate_leis?.some((lei) => veto.blocksLei(lei));
+  const blocked: CorporateFamily = { institution_id: institutionId, institution_leis: [], ultimate_parent_lei: null,
+    members: 0, linked_members: 0, unlinked_members: 0, tree: null, source_note: `${GLEIF_SOURCE_NOTE}. ${FDIC_IDENTITY_HOLD_REASON}.` };
+  if (held) return blocked;
   const own = await sql<Array<{ lei: string; ultimate_parent_lei: string | null }>>`
     SELECT e.lei, e.ultimate_parent_lei FROM gleif_entities e
      WHERE e.institution_id = ${institutionId}
         OR e.lei = (SELECT UPPER(TRIM(lei)) FROM institution_sources WHERE id = ${institutionId})
+        OR e.lei = (SELECT l.lei FROM institution_lei_links l WHERE l.institution_id = ${institutionId} AND l.status = 'linked')
   `;
-  const ownRows = [...own];
+  const ownRows = [...own].filter((row) => !veto.blocksLei(row.lei));
   const empty: CorporateFamily = { institution_id: institutionId, institution_leis: ownRows.map((r) => r.lei), ultimate_parent_lei: null, members: 0, linked_members: 0, unlinked_members: 0, tree: null, source_note: GLEIF_SOURCE_NOTE };
   if (ownRows.length === 0) return empty;
   // An institution with two LEIs in different families is shown under the first; both LEIs are returned.
   const root = ownRows.map((r) => r.ultimate_parent_lei ?? r.lei).sort()[0];
-  const rows = await sql<Array<FamilyMemberRow>>`
+  const rows = await sql<Array<FamilyMemberRow & { identity_source: string | null; identity_certificate: string | null; own_lei: string | null; linked_lei: string | null; candidate_leis: string[] | null }>>`
     WITH latest AS (SELECT MAX(last_seen_publish) AS p FROM gleif_relationships),
     leis AS (
       SELECT ${root}::text AS lei
@@ -362,7 +372,7 @@ export async function getCorporateFamily(institutionId: number): Promise<Corpora
     )
     SELECT l.lei, e.legal_name, e.jurisdiction, e.legal_country, e.entity_status, e.registration_status,
            COALESCE(e.direct_parent_lei, d.parent_lei) AS direct_parent_lei, e.rssd_id,
-           e.institution_id, s.institution_name, e.link_method, (e.lei IS NOT NULL) AS has_record
+           e.institution_id, s.institution_name, s.source AS identity_source, s.cert_number AS identity_certificate, s.lei AS own_lei, li.lei AS linked_lei, li.candidate_leis, e.link_method, (e.lei IS NOT NULL) AS has_record
       FROM leis l
       LEFT JOIN gleif_entities e ON e.lei = l.lei
       LEFT JOIN LATERAL (
@@ -370,8 +380,17 @@ export async function getCorporateFamily(institutionId: number): Promise<Corpora
          WHERE r.child_lei = l.lei AND r.kind = 'direct' AND r.last_seen_publish = latest.p
       ) d ON TRUE
       LEFT JOIN institution_sources s ON s.id = e.institution_id
+      LEFT JOIN institution_lei_links li ON li.institution_id=s.id
   `;
-  const members = [...rows].map((r) => ({ ...r, lei: String(r.lei).trim(), direct_parent_lei: r.direct_parent_lei ? String(r.direct_parent_lei).trim() : null, institution_id: r.institution_id === null ? null : Number(r.institution_id) }));
+  const members = [...rows].map((r) => {
+    const id = r.institution_id === null ? null : Number(r.institution_id);
+    const held = veto.blocksInstitution(id, r.identity_certificate, r.identity_source) || veto.blocksLei(r.lei) || veto.blocksLei(r.own_lei) || veto.blocksLei(r.linked_lei) || r.candidate_leis?.some((lei) => veto.blocksLei(lei));
+    return { lei: String(r.lei).trim(), legal_name: r.legal_name, jurisdiction: r.jurisdiction, legal_country: r.legal_country,
+      entity_status: r.entity_status, registration_status: r.registration_status,
+      direct_parent_lei: r.direct_parent_lei ? String(r.direct_parent_lei).trim() : null, rssd_id: r.rssd_id,
+      institution_id: held ? null : id, institution_name: held ? null : r.institution_name,
+      link_method: held ? null : r.link_method, has_record: r.has_record };
+  });
   const linked = members.filter((m) => m.institution_id !== null).length;
   return {
     ...empty,
@@ -394,14 +413,88 @@ export interface GleifLinkSummary {
 }
 
 export async function getGleifLinkSummary(): Promise<GleifLinkSummary> {
+  await readFdicIdentityHolds(sql); // Missing or invalid hold evidence makes trusted linkage unavailable.
   const [row] = await sql<GleifLinkSummary[]>`
-    SELECT (SELECT COUNT(*) FROM gleif_entities)::int AS entities,
-           (SELECT COUNT(*) FROM gleif_entities WHERE link_method = 'lei')::int AS linked_by_lei,
-           (SELECT COUNT(*) FROM gleif_entities WHERE link_method = 'rssd')::int AS linked_by_rssd,
-           (SELECT COUNT(*) FROM gleif_entities WHERE institution_id IS NULL)::int AS unlinked,
+    WITH trusted AS (
+      SELECT e.*, NOT EXISTS (
+        SELECT 1 FROM institution_identity_holds h
+         WHERE h.institution_id=e.institution_id OR UPPER(TRIM(e.lei))=ANY(h.implicated_leis)
+            OR EXISTS (SELECT 1 FROM institution_sources s LEFT JOIN institution_lei_links l ON l.institution_id=s.id
+              WHERE s.id=e.institution_id AND ((s.source='fdic' AND s.cert_number=h.certificate)
+                OR UPPER(TRIM(s.lei))=ANY(h.implicated_leis) OR UPPER(TRIM(l.lei))=ANY(h.implicated_leis) OR EXISTS (SELECT 1 FROM unnest(l.candidate_leis) candidate(lei) WHERE UPPER(TRIM(candidate.lei))=ANY(h.implicated_leis))))
+      ) AS identity_trusted FROM gleif_entities e
+    )
+    SELECT (SELECT COUNT(*) FROM trusted)::int AS entities,
+           (SELECT COUNT(*) FROM trusted WHERE identity_trusted AND institution_id IS NOT NULL AND link_method = 'lei')::int AS linked_by_lei,
+           (SELECT COUNT(*) FROM trusted WHERE identity_trusted AND institution_id IS NOT NULL AND link_method = 'rssd')::int AS linked_by_rssd,
+           (SELECT COUNT(*) FROM trusted WHERE institution_id IS NULL OR NOT identity_trusted)::int AS unlinked,
            (SELECT COUNT(*) FROM gleif_entities WHERE ultimate_parent_lei IS NOT NULL)::int AS with_parent,
            (SELECT COUNT(*) FROM gleif_relationships WHERE last_seen_publish = (SELECT MAX(last_seen_publish) FROM gleif_relationships))::int AS relationships,
            (SELECT MAX(last_seen_publish) FROM gleif_relationships) AS latest_publish
   `;
   return row;
+}
+
+// ---------------------------------------------------------------------------------------------
+// LEI links (institution_lei_links, #1868)
+
+export interface LeiLinkCoverage {
+  /** Active tracked banks and credit unions. */
+  institutions: number;
+  linked: number;
+  ambiguous: number;
+  unmatched: number;
+  /** Not checked yet: no row in institution_lei_links. */
+  unchecked: number;
+  /** linked / institutions, 0 to 1; null when there are no institutions. */
+  linked_share: number | null;
+  linked_by_basis: Record<string, number>;
+}
+
+/** The share of tracked institutions linked to an LEI, and the review queue's size (ambiguous + unmatched). */
+export async function getLeiLinkCoverage(db: typeof sql = sql): Promise<LeiLinkCoverage> {
+  const veto = createGleifIdentityVeto(await readFdicIdentityHolds(db));
+  const rows = await db<Array<{ id: number; source: string; cert_number: string | null; own_lei: string | null; linked_lei: string | null; candidate_leis: string[] | null; status: string | null; match_basis: string | null }>>`
+    SELECT s.id, s.source, s.cert_number, s.lei AS own_lei, l.lei AS linked_lei, l.candidate_leis, l.status, l.match_basis
+      FROM institution_sources s
+      LEFT JOIN institution_lei_links l ON l.institution_id = s.id
+     WHERE s.source IN ('fdic', 'ncua') AND COALESCE(s.regulatory_status, 'active') <> 'inactive'
+  `;
+  const out: LeiLinkCoverage = { institutions: 0, linked: 0, ambiguous: 0, unmatched: 0, unchecked: 0, linked_share: null, linked_by_basis: {} };
+  for (const r of [...rows]) {
+    const n = 1;
+    const held = veto.blocksInstitution(Number(r.id), r.cert_number, r.source) || veto.blocksLei(r.own_lei) || veto.blocksLei(r.linked_lei) || r.candidate_leis?.some((lei) => veto.blocksLei(lei));
+    out.institutions += n;
+    if (held) out.ambiguous += n;
+    else if (r.status === "linked") {
+      out.linked += n;
+      const basis = r.match_basis ?? "unknown";
+      out.linked_by_basis[basis] = (out.linked_by_basis[basis] ?? 0) + n;
+    } else if (r.status === "ambiguous") out.ambiguous += n;
+    else if (r.status === "unmatched") out.unmatched += n;
+    else out.unchecked += n;
+  }
+  out.linked_share = out.institutions > 0 ? out.linked / out.institutions : null;
+  return out;
+}
+
+export interface InstitutionLeiLink {
+  status: "linked" | "ambiguous" | "unmatched";
+  lei: string | null;
+  match_basis: string | null;
+  reason: string | null;
+}
+
+/** What the LEI match says about one institution; null when it has not been checked. */
+export async function getInstitutionLeiLink(institutionId: number): Promise<InstitutionLeiLink | null> {
+  const veto = createGleifIdentityVeto(await readFdicIdentityHolds(sql));
+  const [row] = await sql<Array<InstitutionLeiLink & { id: number; source: string; cert_number: string | null; own_lei: string | null; candidate_leis: string[] | null }>>`
+    SELECT s.id, s.source, s.cert_number, s.lei AS own_lei, l.candidate_leis, l.status, TRIM(l.lei) AS lei, l.match_basis, l.reason
+    FROM institution_sources s LEFT JOIN institution_lei_links l ON l.institution_id=s.id WHERE s.id = ${institutionId}
+  `;
+  if (!row) return null;
+  if (veto.blocksInstitution(Number(row.id), row.cert_number, row.source) || veto.blocksLei(row.own_lei) || veto.blocksLei(row.lei) || row.candidate_leis?.some((lei) => veto.blocksLei(lei))) {
+    return { status: "ambiguous", lei: null, match_basis: null, reason: FDIC_IDENTITY_HOLD_REASON };
+  }
+  return row.status ? { status: row.status, lei: row.lei, match_basis: row.match_basis, reason: row.reason } : null;
 }

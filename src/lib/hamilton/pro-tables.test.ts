@@ -1,5 +1,5 @@
 /**
- * Structural tests for migration-backed Hamilton Pro persistence.
+ * Structural tests for migration-backed Hamilton persistence.
  *
  * Runtime modules must not create or alter production schema. The Supabase
  * migration chain owns table definitions, metadata columns, and published
@@ -32,7 +32,7 @@ const PUBLISHED_REPORT_SEED_MIGRATION = readFileSync(
   "utf-8",
 );
 
-describe("Hamilton Pro runtime persistence", () => {
+describe("Hamilton runtime persistence", () => {
   it("exports query helpers without runtime schema bootstrapping", () => {
     expect(typeof getPublishedReports).toBe("function");
     expect(SOURCE).not.toContain("ensureHamiltonProTables");
@@ -44,7 +44,7 @@ describe("Hamilton Pro runtime persistence", () => {
   });
 });
 
-describe("Hamilton Pro schema migrations", () => {
+describe("Hamilton schema migrations", () => {
   it("create the expected base tables", () => {
     const tables = [
       "hamilton_saved_analyses",

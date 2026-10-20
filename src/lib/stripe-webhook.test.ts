@@ -1,11 +1,17 @@
 import type Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { listSubscriptions, retrievePaymentIntent } = vi.hoisted(() => ({
-  listSubscriptions: vi.fn(), retrievePaymentIntent: vi.fn(),
+const { listSubscriptions, retrievePaymentIntent, retrieveCustomer, listSessions, listInvoicePayments } = vi.hoisted(() => ({
+  listSubscriptions: vi.fn(), retrievePaymentIntent: vi.fn(), retrieveCustomer: vi.fn(), listSessions: vi.fn(), listInvoicePayments: vi.fn(),
 }));
 vi.mock("@/lib/stripe", () => ({
-  getStripe: () => ({ subscriptions: { list: listSubscriptions }, paymentIntents: { retrieve: retrievePaymentIntent } }),
+  getStripe: () => ({
+    subscriptions: { list: listSubscriptions },
+    paymentIntents: { retrieve: retrievePaymentIntent },
+    customers: { retrieve: retrieveCustomer },
+    checkout: { sessions: { list: listSessions } },
+    invoicePayments: { list: listInvoicePayments },
+  }),
 }));
 
 import { applyStripeEvent, mapStripeStatus, recordStripeEvent } from "./stripe-webhook";
@@ -18,7 +24,7 @@ function event(type: string, object: Record<string, unknown>): Stripe.Event {
 }
 const subscriptionInvoice = { customer: "cus_1", parent: { type: "subscription_details", subscription_details: { subscription: "sub_1" } } };
 const live = (status: string) => ({ data: [{ id: "sub_current", status }], has_more: false });
-let linked: { id: number; email: string; display_name: string | null; subscription_status: string } | null = null;
+let linked: { id: number | string; email: string; display_name: string | null } | null = null;
 
 describe("mapStripeStatus", () => {
   it.each([
@@ -33,7 +39,7 @@ describe("subscription events reconcile authoritative customer state", () => {
     linked = null;
     tx.mockReset();
     tx.mockImplementation(async (strings: TemplateStringsArray) =>
-      strings.join("?").includes("RETURNING id, email, display_name, subscription_status") && linked ? [linked] : [],
+      strings.join("?").includes("RETURNING id, email, display_name") && linked ? [linked] : [],
     );
     listSubscriptions.mockReset();
     listSubscriptions.mockResolvedValue(live("active"));
@@ -107,25 +113,48 @@ describe("subscription events reconcile authoritative customer state", () => {
   });
 
   it("welcomes a newly activated checkout and anchors its institution", async () => {
-    linked = { id: 7, email: "a@b.com", display_name: "Pat", subscription_status: "none" };
+    linked = { id: 7, email: "a@b.com", display_name: "Pat" };
     const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", {
       id: "cs_1", mode: "subscription", payment_status: "paid", customer: "cus_1", metadata: { user_id: "7", institution_id: "8109" },
     }));
-    expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat" }]);
+    expect(effects.welcome).toEqual([{ email: "a@b.com", name: "Pat", checkoutSessionId: "cs_1", userId: 7 }]);
     expect(issued().join("\n")).toContain("INSERT INTO institution_claims");
     // The owner seat waits for a confirmed email that matches the bank's website (#1405).
     expect(issued().join("\n")).toContain("u.email_confirmed_at IS NOT NULL");
     expect(issued()[1]).toContain("stripe_customer_id IS NULL OR stripe_customer_id = ?");
   });
 
-  it("does not re-send a welcome for an already active customer", async () => {
-    linked = { id: 7, email: "a@b.com", display_name: null, subscription_status: "active" };
-    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", customer: "cus_1", metadata: { user_id: "7" } }));
+  it("welcomes a paid checkout whose account /account/welcome or invoice.paid already marked active (#1972)", async () => {
+    // RETURNING no longer reads the stored status; the bigint id arrives as text.
+    linked = { id: "7", email: "a@b.com", display_name: null };
+    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", {
+      id: "cs_1", mode: "subscription", payment_status: "paid", customer: "cus_1", metadata: { user_id: "7" },
+    }));
+    expect(effects.welcome).toEqual([{ email: "a@b.com", name: null, checkoutSessionId: "cs_1", userId: 7 }]);
+    expect(issued().join("\n")).not.toContain("subscription_status !=");
+  });
+
+  it("keys the welcome by checkout session, so completed then async_payment_succeeded share one key", async () => {
+    linked = { id: 7, email: "a@b.com", display_name: null };
+    const session = { id: "cs_1", mode: "subscription", payment_status: "paid", customer: "cus_1", metadata: { user_id: "7" } };
+    const first = await applyStripeEvent(tx as never, { ...event("checkout.session.completed", session), id: "evt_a" } as Stripe.Event);
+    const second = await applyStripeEvent(tx as never, { ...event("checkout.session.async_payment_succeeded", session), id: "evt_b" } as Stripe.Event);
+    expect(first.welcome).toEqual(second.welcome);
+    expect(first.welcome[0].checkoutSessionId).toBe("cs_1");
+  });
+
+  it("returns before linking or welcoming when a subscription checkout completes unpaid", async () => {
+    linked = { id: 7, email: "a@b.com", display_name: null };
+    const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", {
+      id: "cs_1", mode: "subscription", payment_status: "unpaid", customer: "cus_1", metadata: { user_id: "7" },
+    }));
     expect(effects.welcome).toEqual([]);
+    expect(tx).not.toHaveBeenCalled();
+    expect(listSubscriptions).not.toHaveBeenCalled();
   });
 
   it("does not reactivate or welcome a delayed checkout after cancellation", async () => {
-    linked = { id: 7, email: "a@b.com", display_name: null, subscription_status: "canceled" };
+    linked = { id: 7, email: "a@b.com", display_name: null };
     listSubscriptions.mockResolvedValue({ data: [], has_more: false });
     const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", payment_status: "paid", customer: "cus_1", metadata: { user_id: "7" } }));
     expect(effects.welcome).toEqual([]);
@@ -133,7 +162,7 @@ describe("subscription events reconcile authoritative customer state", () => {
   });
 
   it("supports a paid zero-dollar subscription without a payment method", async () => {
-    linked = { id: 7, email: "a@b.com", display_name: null, subscription_status: "none" };
+    linked = { id: 7, email: "a@b.com", display_name: null };
     const effects = await applyStripeEvent(tx as never, event("checkout.session.completed", { mode: "subscription", payment_status: "no_payment_required", customer: "cus_1", metadata: { user_id: "7" } }));
     expect(effects.welcome).toHaveLength(1);
   });
@@ -227,47 +256,132 @@ describe("institution report payments", () => {
 });
 
 describe("institution report refunds", () => {
+  // The lead as stored: paid by `recorded` (a checkout session or invoice id), refunded or not.
+  let lead: { id: string; name: string; email: string; stripe_checkout_session_id: string; refunded: boolean } | null;
   beforeEach(() => {
+    lead = { id: "23", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "cs_paid", refunded: false };
     tx.mockReset();
-    tx.mockResolvedValue([]);
+    tx.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const query = strings.join("?");
+      if (!lead || Number(lead.id) !== values.find((v) => typeof v === "number")) return [];
+      if (query.includes("SET refunded_at")) {
+        if (lead.refunded || values[1] !== lead.stripe_checkout_session_id) return [];
+        lead.refunded = true;
+        return [{ id: lead.id, name: lead.name, email: lead.email }];
+      }
+      if (query.includes("SELECT id, name, email, stripe_checkout_session_id")) return [lead];
+      return [];
+    });
     retrievePaymentIntent.mockReset();
     retrievePaymentIntent.mockResolvedValue({ metadata: { kind: "institution_report", lead_id: "23" } });
+    retrieveCustomer.mockReset();
+    retrieveCustomer.mockResolvedValue({ id: "cus_pro", metadata: {} });
+    listSessions.mockReset();
+    listSessions.mockResolvedValue({ data: [{ id: "cs_paid" }] });
+    listInvoicePayments.mockReset();
+    listInvoicePayments.mockResolvedValue({ data: [{ invoice: "in_paid" }] });
   });
 
   const refund = (overrides: Record<string, unknown> = {}) =>
     event("charge.refunded", { id: "ch_1", refunded: true, amount_refunded: 100, payment_intent: "pi_1", metadata: {}, ...overrides });
+  const alert = (revoked: boolean, leadId = 23) =>
+    [{ leadId, name: "Pat Lee", email: "pat@example.com", cents: 100, chargeId: "ch_1", revoked }];
+  const revokes = () => issued().filter((query) => query.includes("SET refunded_at"));
 
-  it("marks a fully refunded report request refunded once and queues James's alert", async () => {
-    tx.mockResolvedValueOnce([{ id: "23", name: "Pat Lee", email: "pat@example.com" }]);
+  it("closes the request when its recorded card payment is refunded in full", async () => {
     const effects = await applyStripeEvent(tx as never, refund());
     expect(retrievePaymentIntent).toHaveBeenCalledWith("pi_1");
-    const [sql] = issued();
-    expect(sql).toContain("SET refunded_at = NOW(), status = 'refunded'");
-    expect(sql).toContain("paid_at IS NOT NULL AND refunded_at IS NULL");
-    expect(tx.mock.calls[0].slice(1)).toEqual([23]);
-    expect(effects.reportRefunded).toEqual([{ leadId: 23, name: "Pat Lee", email: "pat@example.com", cents: 100, chargeId: "ch_1" }]);
+    expect(listSessions).toHaveBeenCalledWith({ payment_intent: "pi_1", limit: 1 });
+    expect(listInvoicePayments).not.toHaveBeenCalled();
+    expect(revokes()[0]).toContain("paid_at IS NOT NULL AND refunded_at IS NULL AND stripe_checkout_session_id = ?");
+    expect(lead!.refunded).toBe(true);
+    expect(effects.reportRefunded).toEqual(alert(true));
+  });
+
+  it("keeps the report open when a duplicate card payment is refunded, and still alerts James", async () => {
+    listSessions.mockResolvedValue({ data: [{ id: "cs_duplicate" }] });
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(lead!.refunded).toBe(false);
+    expect(effects.reportRefunded).toEqual(alert(false));
   });
 
   it("reads the request from the charge itself when it carries the report metadata", async () => {
     await applyStripeEvent(tx as never, refund({ metadata: { kind: "institution_report", lead_id: "23" } }));
     expect(retrievePaymentIntent).not.toHaveBeenCalled();
-    expect(tx.mock.calls[0].slice(1)).toEqual([23]);
+    expect(lead!.refunded).toBe(true);
   });
 
-  it("leaves a partly refunded report paid", async () => {
-    const effects = await applyStripeEvent(tx as never, refund({ refunded: false, amount_refunded: 50 }));
+  it("closes an invoice-paid request found through its invoice customer when that invoice is refunded (#1973)", async () => {
+    lead = { id: "31", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "in_paid", refunded: false };
+    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
+    retrieveCustomer.mockResolvedValue({ id: "cus_inv", metadata: { kind: "institution_report", lead_id: "31" } });
+    const effects = await applyStripeEvent(tx as never, refund({ customer: "cus_inv" }));
+    expect(retrieveCustomer).toHaveBeenCalledWith("cus_inv");
+    expect(listInvoicePayments).toHaveBeenCalledWith({ payment: { type: "payment_intent", payment_intent: "pi_1" }, limit: 1 });
+    expect(listSessions).not.toHaveBeenCalled();
+    expect(lead!.refunded).toBe(true);
+    expect(effects.reportRefunded).toEqual(alert(true, 31));
+  });
+
+  it("keeps the report open when a duplicate invoice payment is refunded", async () => {
+    lead = { id: "31", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "in_paid", refunded: false };
+    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
+    retrieveCustomer.mockResolvedValue({ id: "cus_dup", metadata: { kind: "institution_report", lead_id: "31" } });
+    listInvoicePayments.mockResolvedValue({ data: [{ invoice: { id: "in_duplicate" } }] });
+    const effects = await applyStripeEvent(tx as never, refund({ customer: "cus_dup" }));
+    expect(lead!.refunded).toBe(false);
+    expect(effects.reportRefunded).toEqual(alert(false, 31));
+  });
+
+  it("keeps the report open when Stripe names no payment for the charge", async () => {
+    listSessions.mockResolvedValue({ data: [] });
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(revokes()).toEqual([]);
+    expect(lead!.refunded).toBe(false);
+    expect(effects.reportRefunded).toEqual(alert(false));
+  });
+
+  it("reads an expanded invoice customer without another Stripe call, and skips a deleted one", async () => {
+    lead = { id: "31", name: "Pat Lee", email: "pat@example.com", stripe_checkout_session_id: "in_paid", refunded: false };
+    retrievePaymentIntent.mockResolvedValue({ metadata: {} });
+    await applyStripeEvent(tx as never, refund({ customer: { id: "cus_inv", metadata: { kind: "institution_report", lead_id: "31" } } }));
+    expect(retrieveCustomer).not.toHaveBeenCalled();
+    expect(lead!.refunded).toBe(true);
+    tx.mockClear();
+    const effects = await applyStripeEvent(tx as never, refund({ customer: { id: "cus_gone", deleted: true } }));
     expect(tx).not.toHaveBeenCalled();
+    expect(effects.reportRefunded).toEqual([]);
+  });
+
+  it("never reads the customer when the PaymentIntent already names the report", async () => {
+    await applyStripeEvent(tx as never, refund({ customer: "cus_inv" }));
+    expect(retrieveCustomer).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { customer: "cus_inv" }])("leaves a partly refunded report paid without any Stripe lookup (%j)", async (more) => {
+    const effects = await applyStripeEvent(tx as never, refund({ refunded: false, amount_refunded: 50, ...more }));
+    expect(tx).not.toHaveBeenCalled();
+    expect(retrievePaymentIntent).not.toHaveBeenCalled();
+    expect(retrieveCustomer).not.toHaveBeenCalled();
     expect(effects.reportRefunded).toEqual([]);
   });
 
   it("ignores refunds of anything that isn't a report, such as a Pro charge", async () => {
     retrievePaymentIntent.mockResolvedValue({ metadata: {} });
-    const effects = await applyStripeEvent(tx as never, refund());
+    const effects = await applyStripeEvent(tx as never, refund({ customer: "cus_pro" }));
+    expect(retrieveCustomer).toHaveBeenCalledWith("cus_pro");
     expect(tx).not.toHaveBeenCalled();
     expect(effects.reportRefunded).toEqual([]);
   });
 
   it("alerts nothing for a redelivered refund of a request already marked refunded", async () => {
+    lead!.refunded = true;
+    const effects = await applyStripeEvent(tx as never, refund());
+    expect(effects.reportRefunded).toEqual([]);
+  });
+
+  it("alerts nothing for a request that was never paid", async () => {
+    lead = null;
     const effects = await applyStripeEvent(tx as never, refund());
     expect(effects.reportRefunded).toEqual([]);
   });

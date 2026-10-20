@@ -1,364 +1,236 @@
 /**
- * /reports — the report's one home (page template briefs, "Reports").
- * One column throughout: the promise and two actions over the report as delivered (drawn from
- * the live sample, so the picture and the sample agree); then the sample's own fee lines as one
- * tappable exhibit, the paid request (steps, what the price includes, the form), the free
- * national and district reports in their own section, every state's free report on one
- * full-width map, Hamilton once, the questions, and published research (hidden while empty). Every figure is read from the live sample or the cached catalog reads; when either is
- * slow or down, its section drops its figures rather than show stale ones.
+ * /reports — the paid report's one home (James's simplified mockup, Oct 19). One offer, one
+ * demonstration, one form: the promise and two actions beside the report as delivered (drawn
+ * from the live sample, so the picture and the sample agree); the sample's position on one fee
+ * at a time; what the report includes; the request form; then two quiet links on, to the free
+ * research and to Hamilton. Every figure is read from the live sample; when it is slow or down,
+ * the picture and the demonstration drop out rather than show stale figures. A link that asks
+ * for a free national or district report (`?report=national|district#request`) still reaches
+ * the free form, shown only then (free-report-request.tsx).
+ *
+ * Regenerated in the background (ISR) at most hourly (#1811): the page reads no session and no
+ * search params. A render whose sample read failed is cached for a minute instead.
  */
 
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getSql } from "@/lib/data-store/connection";
-import type { PublishedReport, ReportType } from "@/lib/report-engine/types";
-import { timeAgo } from "@/lib/format";
 import { TrackLink } from "@/components/track-link";
-import { CONTACT_EMAIL, REPORT_INCLUDES, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
+import { HAMILTON_PAGE_NAV } from "@/components/nav-items";
+import { CONTACT_EMAIL, REPORT_OFFER, SITE_NAME } from "@/lib/constants";
 import { REPORT_SHOWCASE } from "@/lib/report-showcase";
 import { loadSampleReport } from "@/lib/custom-report/sample-report";
-import { COVERAGE_LABELS, getPublicStatsSummary } from "@/lib/public-stats";
-import { ReportFaq } from "./report-faq";
-import { HamiltonLine } from "../hamilton-line";
 import { RequestReportForm } from "@/app/for-institutions/request-report-form";
-import { getMarketReadinessCached, getStatesWithFeeDataCached } from "@/lib/data-store/public-cached-reads";
-import type { MarketReadiness } from "@/lib/data-store/market-readiness";
-import { STATE_CODES, STATE_NAMES } from "@/lib/us-states";
-import { REPORT_TYPE_LABELS, ReportFilters } from "./report-filters";
-import { ReportShowcase } from "./report-cover";
-import { SampleLines, StateReportMap } from "./report-exhibits";
-import { formatReadOn, mapStates, sampleExhibit, type StateCoverage } from "./report-view";
+import { homeSerif } from "@/app/landing-serif";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
+import { FreeReportRequest } from "./free-report-request";
+import { ReportPreview } from "./report-preview";
+import { SamplePosition } from "./sample-position";
+import { SERIF, sampleExhibit } from "./report-view";
 
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Fee Reports",
-  description: `See where your fees stand against your competitors: free national, Fed district and state fee reports, and the ${REPORT_OFFER.name}.`,
+  title: `${REPORT_OFFER.name} for Banks and Credit Unions`,
+  description: `See where your fees stand against your local competitors. The ${REPORT_OFFER.name}, from $${REPORT_OFFER.fromPriceUsd}, with a source for every figure.`,
 };
 
-const SAMPLE_REPORT_HREF = REPORT_SHOWCASE.sampleHref;
+const QUERY_DEADLINE_MS = 5_000;
 
-const H2 = "text-[22px] font-semibold tracking-[-0.02em] text-ink sm:text-[28px]";
+const PAGE = "mx-auto max-w-page px-4 sm:px-6";
+const EYEBROW = "text-[12px] font-semibold uppercase tracking-[0.16em] text-[#2f6aa3]";
+const H2 = "text-[28px] font-medium leading-[1.15] tracking-[-0.01em] text-ink sm:text-[34px]";
+const BAND = "bg-[#f5f7fa]";
 
-/** How a request runs, in the offer's own words. */
-const STEPS = [
-  { title: "Name your institution", body: "And any competitors you want included." },
-  { title: "We confirm your market", body: `${REPORT_OFFER.nextStep}.` },
-  { title: "Get the report", body: "A PDF with a source for every figure." },
-];
-
-const VALID_REPORT_TYPES: Set<string> = new Set<ReportType>([
-  "national_index",
-  "state_index",
-  "peer_brief",
-  "monthly_pulse",
-]);
-
-const QUERY_DEADLINE_MS = 2_500;
+const PRIMARY =
+  "inline-flex min-h-12 items-center justify-center gap-2 rounded-md bg-ink px-6 text-[15px] font-semibold text-on-ink transition-opacity hover:opacity-90";
+const SECONDARY =
+  "inline-flex min-h-12 items-center justify-center rounded-md border border-ink/70 bg-white px-6 text-[15px] font-semibold text-ink transition-colors hover:border-ink hover:bg-[#f5f7fa]";
+const TEXT_LINK = "inline-flex min-h-11 items-center gap-1.5 text-[15px] font-semibold text-[#2f6aa3] hover:text-ink";
 
 function withDeadline<T>(promise: Promise<T>, fallback: T, timeoutMs: number): Promise<T> {
   let timeout: ReturnType<typeof setTimeout>;
   const timeoutPromise = new Promise<T>((resolve) => {
     timeout = setTimeout(() => resolve(fallback), timeoutMs);
   });
+  return Promise.race([promise.catch(() => fallback), timeoutPromise]).finally(() => clearTimeout(timeout));
+}
 
-  return Promise.race([promise.catch(() => fallback), timeoutPromise]).finally(() =>
-    clearTimeout(timeout),
+function Arrow() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3 8h10M9 4l4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
-function dateRangeToIso(range: string): string | null {
-  const days: Record<string, number> = { "30d": 30, "90d": 90, "180d": 180, "365d": 365 };
-  const n = days[range];
-  if (!n) return null;
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString();
-}
-
-interface PageProps {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}
-
-async function loadReports(typeFilter: string | null, fromIso: string | null) {
-  try {
-    const sql = getSql();
-    const reportQuery = sql<PublishedReport[]>`
-      SELECT id, report_type, slug, title, published_at
-      FROM published_reports
-      WHERE is_public = true
-        ${typeFilter ? sql` AND report_type = ${typeFilter}` : sql``}
-        ${fromIso ? sql` AND published_at >= ${fromIso}` : sql``}
-      ORDER BY published_at DESC
-      LIMIT 100
-    `.then((rows) => ({ reports: [...rows] as PublishedReport[], unavailable: false }));
-    return await withDeadline(reportQuery, { reports: [], unavailable: true }, QUERY_DEADLINE_MS);
-  } catch {
-    // Render the rest of the hub gracefully if the DB is unavailable at build time
-    return { reports: [] as PublishedReport[], unavailable: true };
-  }
-}
-
-async function loadStateCoverage(): Promise<StateCoverage[] | null> {
-  try {
-    const rows = await withDeadline<StateCoverage[] | null>(getStatesWithFeeDataCached(), null, QUERY_DEADLINE_MS);
-    if (!rows || rows.length === 0) return null;
-    const inScope = new Set(STATE_CODES);
-    return rows.filter((row) => inScope.has(row.state_code));
-  } catch {
-    return null;
-  }
-}
-
-async function loadSample() {
-  return withDeadline(loadSampleReport().then(sampleExhibit), null, QUERY_DEADLINE_MS * 2);
-}
-
-async function loadMarketReadiness(): Promise<MarketReadiness[] | null> {
-  try {
-    const rows = await withDeadline<MarketReadiness[] | null>(getMarketReadinessCached(), null, QUERY_DEADLINE_MS);
-    if (!rows || rows.length === 0) return null;
-    const inScope = new Set(STATE_CODES);
-    return rows.filter((row) => inScope.has(row.state_code));
-  } catch {
-    return null;
-  }
-}
-
-function PublishedReportItem({ report }: { report: PublishedReport }) {
-  const typeLabel = REPORT_TYPE_LABELS[report.report_type as ReportType] ?? report.report_type;
+function Check() {
   return (
-    <li className="flex flex-col gap-2 border-b border-border py-6">
-      <div className="flex flex-wrap items-center gap-2.5">
-        <span className="rounded bg-paper px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink-soft">
-          {typeLabel}
-        </span>
-        <span className="text-[12px] text-ink-muted">{timeAgo(report.published_at)}</span>
-      </div>
-      <Link href={`/reports/${report.slug}`} className="text-[20px] font-semibold leading-snug tracking-[-0.01em] text-ink no-underline hover:text-brick">
-        {report.title}
-      </Link>
-    </li>
+    <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#dfe9f5] text-[#2f6aa3]">
+      <svg viewBox="0 0 16 16" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.2">
+        <path d="M3.5 8.5l3 3 6-7" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
   );
 }
 
-export default async function ReportsPage({ searchParams }: PageProps) {
-  const params = await searchParams;
-  // A link that asks for a free report (`?report=national|district#request`, from the research
-  // pages) lands on the free form; every other #request lands on the paid one.
-  const rawReport = Array.isArray(params.report) ? params.report[0] : params.report;
-  const freeAsked = rawReport === "national" || rawReport === "district";
-  const rawType = Array.isArray(params.type) ? params.type[0] : params.type;
-  const rawRange = Array.isArray(params.range) ? params.range[0] : params.range;
+/** What the report holds, each with the mark of what it is: a chart, an institution, a document. */
+const INCLUDED = [
+  {
+    title: "Competitive fee analysis",
+    body: "Named local competitors, published fees, local medians and competitive ranges.",
+    icon: <path d="M5 19V11M10 19V7M15 19v-5M20 19V4" strokeLinecap="round" />,
+  },
+  {
+    title: "Financial context",
+    body: "Call Report service-charge income and peer context, where the institution reports it.",
+    icon: <path d="M3 9l9-5 9 5M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18" strokeLinecap="round" strokeLinejoin="round" />,
+  },
+  {
+    title: "Board-ready report",
+    body: "A PDF with the findings and a source for every figure: the document, the page, the date.",
+    icon: <path d="M7 3h7l4 4v14H7zM14 3v4h4M10 12h5M10 16h5" strokeLinecap="round" strokeLinejoin="round" />,
+  },
+];
 
-  // Sanitize inputs (T-16-03)
-  const typeFilter = rawType && VALID_REPORT_TYPES.has(rawType) ? rawType : null;
-  const fromIso = rawRange ? dateRangeToIso(rawRange) : null;
-  const filtersActive = Boolean(typeFilter || rawRange);
+const TRUST = ["No payment today", "Scope and delivery date confirmed before purchase", "Comparisons backed by published fee schedules"];
 
-  const [{ reports, unavailable }, stateCoverage, readiness, sample, coverage] = await Promise.all([
-    loadReports(typeFilter, fromIso),
-    loadStateCoverage(),
-    loadMarketReadiness(),
-    loadSample(),
-    // The headline count is the shared snapshot's, the same figure /fees and /about show (#1591);
-    // the per-state reader below only shades the map.
-    getPublicStatsSummary(),
-  ]);
-  const hasReports = reports.length > 0;
-  // Only show filter controls once there is a catalog to filter (or a filter is already applied).
-  const showFilters = hasReports || filtersActive;
-
-  const readyStates = new Set((readiness ?? []).filter((m) => m.ready).map((m) => m.state_code));
-  const states = stateCoverage ? mapStates(stateCoverage.filter((s) => s.institution_count > 0), STATE_NAMES, readyStates) : [];
+export default async function ReportsPage() {
+  const read = await withDeadline(
+    loadSampleReport().then((report) => ({ sample: sampleExhibit(report), failed: false })),
+    { sample: null, failed: true },
+    QUERY_DEADLINE_MS,
+  );
+  if (read.failed) await shortenPageLife();
+  const sample = read.sample;
+  const preparedOn = new Date();
 
   return (
-    <div className="pb-20">
-      {/* 1. One column: the promise, the two actions, then the report as delivered. */}
-      <section className="border-b border-border bg-paper">
-        <div className="mx-auto max-w-page px-4 pb-12 pt-10 text-center sm:px-6 lg:pb-16 lg:pt-16">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.14em] text-brick">{REPORT_OFFER.name}</p>
-          <h1 className="mx-auto mt-3 max-w-[46rem] text-[32px] font-semibold leading-[1.08] tracking-[-0.03em] text-ink sm:text-[52px]">
-            Know where your fees stand against your market
-          </h1>
-          <p className="mx-auto mt-4 max-w-[34rem] text-[16px] text-ink-soft sm:text-[18px]">
-            Every fee you publish, set against the competitors you name. Each of their figures links to the page of
-            their own fee schedule it came from.
-          </p>
-          <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <TrackLink
-              event="request_report_click"
-              eventProps={{ placement: "reports_hub_hero" }}
-              href="#request"
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-ink px-6 text-[15px] font-semibold text-on-ink hover:opacity-90 sm:w-auto"
-            >
-              {REPORT_OFFER.institutionCtaLabel}
-            </TrackLink>
-            {sample && (
-              <TrackLink
-                event="sample_report_click"
-                eventProps={{ placement: "reports_hero_sample" }}
-                href={SAMPLE_REPORT_HREF}
-                className="inline-flex min-h-12 w-full items-center justify-center rounded-full border border-border bg-surface-0 px-6 text-[15px] font-semibold text-ink hover:border-ink sm:w-auto"
-              >
-                Read a free sample
+    <div className={`${homeSerif.variable} bg-white pb-4`}>
+      {/* 1. The offer, beside the report as delivered. */}
+      <section>
+        <div className={`${PAGE} grid items-center gap-10 pb-14 pt-12 sm:pt-16 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:gap-12 lg:pb-20 lg:pt-20`}>
+          <div>
+            <p className={EYEBROW}>Competitive fee reports</p>
+            <h1 className="mt-4 text-[44px] font-medium leading-[1.02] tracking-[-0.02em] text-ink sm:text-[60px] lg:text-[66px]" style={SERIF}>
+              Know where your fees stand.
+            </h1>
+            <p className="mt-5 max-w-[30rem] text-[17px] leading-relaxed text-ink-soft sm:text-[19px]">
+              A sourced competitive assessment of your institution&apos;s fees, local competitors and financial context.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <TrackLink event="request_report_click" eventProps={{ placement: "reports_hub_hero" }} href="#request" className={PRIMARY}>
+                Request your report <Arrow />
               </TrackLink>
-            )}
+              {sample && (
+                <TrackLink event="sample_report_click" eventProps={{ placement: "reports_hero_sample" }} href={REPORT_SHOWCASE.sampleHref} className={SECONDARY}>
+                  View a sample report
+                </TrackLink>
+              )}
+            </div>
+            <p className="mt-5 flex flex-wrap gap-x-2 gap-y-1 text-[14px] text-ink-muted">
+              <span className="whitespace-nowrap">Starting at ${REPORT_OFFER.fromPriceUsd}</span>
+              <span className="whitespace-nowrap">
+                <span aria-hidden="true">· </span>No payment to request
+              </span>
+              <span className="whitespace-nowrap">
+                <span aria-hidden="true">· </span>Scope confirmed within one business day
+              </span>
+            </p>
           </div>
-          <ul className="mt-5 flex flex-wrap justify-center gap-x-5 gap-y-2 text-[13px] font-medium text-ink-muted">
-            {[REPORT_OFFER.priceLabel, "Board-ready PDF", "A source for every figure"].map((item) => (
-              <li key={item} className="inline-flex items-center gap-2">
-                <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-brick" />
-                {item}
-              </li>
-            ))}
-          </ul>
-          <ReportShowcase sample={sample} preparedOn={new Date()} />
+          {sample && <ReportPreview sample={sample} preparedOn={preparedOn} />}
         </div>
       </section>
 
-      {/* 3. What's inside: the live sample's own fee lines. */}
+      {/* 2. One demonstration: the live sample, one fee at a time. */}
       {sample && (
-        <section aria-labelledby="inside-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-          <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-            <div>
-              <h2 id="inside-heading" className={H2}>
-                Inside: {sample.name} against {sample.competitorsWithData} local competitors
-              </h2>
-              <p className="mt-1 text-[14px] text-ink-muted">
-                The shaded band is the middle half of local competitors&apos; fees. Live, from each bank&apos;s own
-                published fee schedule{sample.readOn ? `, read through ${formatReadOn(sample.readOn)}` : ""}.
-              </p>
+        <section aria-labelledby="sample-heading" className={`${BAND} border-y border-[#e6e9ef]`}>
+          <div className={`${PAGE} py-14 sm:py-16`}>
+            <p className={EYEBROW}>Sample analysis</p>
+            <div className="mt-3">
+              <SamplePosition sample={sample} />
             </div>
-            <TrackLink
-              event="sample_report_click"
-              eventProps={{ placement: "reports_inside_sample" }}
-              href={SAMPLE_REPORT_HREF}
-              className="inline-flex min-h-11 items-center text-[14px] font-semibold text-ink underline decoration-border underline-offset-4 hover:decoration-ink"
-            >
-              Read the whole sample, with sources
-            </TrackLink>
           </div>
-          <SampleLines sample={sample} />
         </section>
       )}
 
-      {/* 4. The paid request: how it runs, what the price includes, then the form, in one column. */}
-      <section id={freeAsked ? "institution-request" : "request"} aria-labelledby="request-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <div className="mx-auto max-w-[36rem]">
-          <h2 id="request-heading" className={`${H2} text-center`}>
-            Get your fee report
-          </h2>
-          <ol className="mt-5 grid gap-2">
-            {STEPS.map((step, i) => (
-              <li key={step.title} className="flex items-center gap-4 rounded-xl bg-paper px-4 py-3">
-                <span className="font-mono text-[20px] font-semibold leading-none text-brick">{i + 1}</span>
-                <span>
-                  <span className="block text-[14px] font-semibold text-ink">{step.title}</span>
-                  <span className="block text-[13px] text-ink-muted">{step.body}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-5 rounded-xl border border-border px-4 py-3">
-            <p className="text-[14px] font-semibold text-ink">{REPORT_OFFER.priceLabel} includes</p>
-            <ul className="mt-1.5 space-y-1 text-[13px] text-ink-soft">
-              {REPORT_INCLUDES.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span aria-hidden="true" className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-brick" />
+      {/* 3. What the report includes. */}
+      <section aria-labelledby="included-heading" className={`${PAGE} py-14 sm:py-16`}>
+        <h2 id="included-heading" className={H2} style={SERIF}>
+          What&apos;s included in the report
+        </h2>
+        <ul className="mt-8 grid gap-8 md:grid-cols-3 md:gap-0 md:divide-x md:divide-[#e6e9ef]">
+          {INCLUDED.map((item, i) => (
+            <li key={item.title} className={`flex gap-4 ${i === 0 ? "md:pr-8" : "md:px-8"}`}>
+              <span aria-hidden="true" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[#e8eff8] text-[#2f6aa3]">
+                <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  {item.icon}
+                </svg>
+              </span>
+              <div>
+                <h3 className="text-[18px] font-medium text-ink" style={SERIF}>
+                  {item.title}
+                </h3>
+                <p className="mt-1 text-[14px] leading-relaxed text-ink-soft">{item.body}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      {/* 4. The one form. */}
+      <section id="request" aria-labelledby="request-heading" className={`${PAGE} scroll-mt-24`}>
+        <div className={`${BAND} grid gap-8 rounded-xl border border-[#e6e9ef] px-5 py-10 sm:px-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-12 lg:py-12`}>
+          <div>
+            <p className={EYEBROW}>Request your report</p>
+            <h2 id="request-heading" className={`${H2} mt-3`} style={SERIF}>
+              Get a custom competitive fee report.
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-ink-soft">
+              Starting at ${REPORT_OFFER.fromPriceUsd}. We&apos;ll confirm your scope and price within one business day.
+            </p>
+            <ul className="mt-6 space-y-3">
+              {TRUST.map((item) => (
+                <li key={item} className="flex items-center gap-3 text-[15px] text-ink">
+                  <Check />
                   {item}
                 </li>
               ))}
             </ul>
           </div>
-          <div className="mt-5">
-            <RequestReportForm
-              contactEmail={CONTACT_EMAIL}
-              defaultSrc="reports-hub"
-              defaultReportType="institution"
-              offer="institution"
-            />
-          </div>
+          <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub" defaultReportType="institution" offer="institution" compact />
         </div>
       </section>
 
-      {/* 5. The free reports, apart from the paid request. */}
-      <section id={freeAsked ? "request" : "free-reports"} aria-labelledby="free-heading" className="scroll-mt-24 mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <div className="mx-auto max-w-[36rem]">
-          <h2 id="free-heading" className={`${H2} text-center`}>
-            Free national and Fed district reports
-          </h2>
-          <p className="mt-2 text-center text-[14px] text-ink-muted">The headline fees for the U.S. or for one Fed district.</p>
-          <div className="mt-5">
-            <RequestReportForm contactEmail={CONTACT_EMAIL} defaultSrc="reports-hub-free" defaultReportType="national" offer="free" idScope="-free" />
-          </div>
-        </div>
-      </section>
+      {/* The free form, only for a link that asked for a free report. */}
+      <FreeReportRequest contactEmail={CONTACT_EMAIL} />
 
-      {/* 6. Every state's free report on one map, full width. */}
-      <section aria-labelledby="states-heading" className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <div className="mx-auto max-w-[44rem] text-center">
-          <h2 id="states-heading" className={H2}>
-            Free state fee reports
-          </h2>
-          {states.length > 0 && (
-            <p className="mt-2 text-[14px] text-ink-muted">
-              {coverage.complete ? `${coverage.institutionsLabel} ${COVERAGE_LABELS.institutions.toLowerCase()}. ` : null}Tap a state.{" "}
-              <Link href="/methodology" className="inline-flex min-h-11 items-center font-medium text-ink underline decoration-border underline-offset-2 hover:decoration-ink">
-                How we verify
-              </Link>
+      {/* 5. Two quiet ways on: the free research, and Hamilton. */}
+      <section className={`${PAGE} pt-14 sm:pt-16`}>
+        <div className="grid gap-10 border-t border-[#e6e9ef] pt-10 md:grid-cols-2 md:gap-0 md:divide-x md:divide-[#e6e9ef]">
+          <div className="md:pr-10">
+            <h2 className="text-[22px] font-medium text-ink" style={SERIF}>
+              Explore our public research
+            </h2>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
+              Free national and Federal Reserve district fee reports from the Bank Fee Index.
             </p>
-          )}
-        </div>
-        {states.length > 0 ? (
-          <div className="mt-6">
-            <StateReportMap states={states} />
-          </div>
-        ) : (
-          <p className="mx-auto mt-3 max-w-[44rem] rounded-lg border border-dashed border-border bg-surface-0 px-5 py-4 text-[14px] text-ink-muted">
-            State coverage is temporarily unavailable. Try again shortly, or browse the{" "}
-            <Link href="/research" className="font-medium text-ink underline underline-offset-2">
-              research hub
+            <Link href="/research" className={`${TEXT_LINK} mt-2`}>
+              View public reports <Arrow />
             </Link>
-            .
-          </p>
-        )}
-      </section>
-
-      {/* 7. Hamilton, once. */}
-      <section className="mx-auto max-w-page px-4 pt-14 sm:px-6 sm:pt-20">
-        <div className="rounded-2xl border border-border bg-surface-0 px-6 py-7 sm:px-8">
-          <p className="text-[20px] font-semibold tracking-[-0.02em] text-ink">After the report</p>
-          <HamiltonLine placement="reports_hub_closing" firstMention className="mt-2 max-w-[40rem] text-[14px]" />
+          </div>
+          <div className="md:pl-10">
+            <h2 className="text-[22px] font-medium text-ink" style={SERIF}>
+              Go beyond a one-time report
+            </h2>
+            <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
+              Hamilton, the {SITE_NAME} workspace, puts competitive fees, financial performance and market research in one place.
+            </p>
+            <TrackLink event="upgrade_click" eventProps={{ placement: "reports_hub_closing" }} href={HAMILTON_PAGE_NAV.href} className={`${TEXT_LINK} mt-2`}>
+              Explore Hamilton <Arrow />
+            </TrackLink>
+          </div>
         </div>
       </section>
-
-      <ReportFaq />
-
-      {/* Published research: hidden while nothing is published (#1174), shown when filters or an outage explain an empty list. */}
-      {(hasReports || filtersActive || unavailable) && (
-        <section className="mx-auto max-w-page px-4 pt-16 sm:px-6" id="research">
-          <h2 className={H2}>Research and analysis from {SITE_NAME}</h2>
-          {showFilters && (
-            <ReportFilters typeFilter={typeFilter} rawRange={rawRange} filtersActive={filtersActive} />
-          )}
-          {hasReports ? (
-            <ul className="m-0 max-w-[800px] list-none p-0">
-              {reports.map((report) => (
-                <PublishedReportItem key={report.id} report={report} />
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-3 max-w-[640px] text-[14px] leading-relaxed text-ink-muted">
-              {unavailable
-                ? "The research catalog is temporarily unavailable. Try again shortly."
-                : filtersActive
-                  ? "No published reports match these filters."
-                  : "No national or peer reports are published yet."}
-            </p>
-          )}
-        </section>
-      )}
     </div>
   );
 }

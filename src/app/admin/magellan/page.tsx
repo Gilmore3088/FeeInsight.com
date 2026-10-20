@@ -8,7 +8,7 @@ import { AgentFrame } from "../agent-frame";
 export const dynamic = "force-dynamic";
 
 export default async function MagellanPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const status = await fetchMagellanStatus().catch(() => ({
     pending: 0,
     rescued: 0,

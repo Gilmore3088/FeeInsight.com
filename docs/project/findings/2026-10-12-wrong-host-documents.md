@@ -46,3 +46,5 @@ Issue: #1033. Read-only production queries, 2026-10-12 around 23:50 UTC.
   newsletter, achievements piece or flyer and no fee, schedule or charge (`isNonFeeDocumentLink`).
 - **Brochures pass.** Several banks' services brochures are their fee list: 21–24 live fees each at First
   Federal Middletown, VFCU and CBSM.
+
+**Agent lesson:** magellan/issue-1033

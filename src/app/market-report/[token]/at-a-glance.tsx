@@ -1,4 +1,6 @@
 import { positionCounts, type ReportChange, type ReportLine } from "@/lib/custom-report/analysis";
+import { EXTRA_ROW, ROWS_SHOWN } from "../rows";
+import { ShowAll } from "../show-all";
 
 const SERIF = { fontFamily: "var(--fi-font-sans)" };
 const DATE = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
@@ -8,12 +10,14 @@ function money(value: number | null | undefined): string {
   return Number.isInteger(value) ? `$${value}` : `$${value.toFixed(2)}`;
 }
 
-type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
+export type PlottedLine = ReportLine & { own: NonNullable<ReportLine["own"]>; peers: NonNullable<ReportLine["peers"]> };
 
+// The dot is the institution itself, in ink: red and blue mean above and below the median on this
+// site, so the subject never takes either. The gap carries the direction, with its ▲/▼ mark.
 const TONE: Record<"above" | "inside" | "below", { dot: string; text: string }> = {
-  above: { dot: "bg-brick", text: "text-brick" },
-  inside: { dot: "bg-ink-soft", text: "text-ink" },
-  below: { dot: "bg-below-market", text: "text-below-market" },
+  above: { dot: "bg-ink", text: "text-variance-above" },
+  inside: { dot: "bg-ink", text: "text-ink" },
+  below: { dot: "bg-ink", text: "text-variance-below" },
 };
 
 function toneFor(line: ReportLine): keyof typeof TONE {
@@ -28,7 +32,7 @@ function toneFor(line: ReportLine): keyof typeof TONE {
  * middle-half band. A fee the report calls "inside the middle half" (by amount) is kept on
  * the band's edge when ties would nudge its rank just past it.
  */
-function rankOf(line: PlottedLine): number {
+export function rankOf(line: PlottedLine): number {
   const n = line.peerFigures.length || line.peers.n;
   const less = line.peerFigures.filter((f) => f.amount < line.own.amount).length;
   const equal = line.peerFigures.filter((f) => f.amount === line.own.amount).length;
@@ -48,7 +52,7 @@ export function ordinal(n: number): string {
 function gap(line: PlottedLine): string {
   const diff = line.own.amount - line.peers.median;
   if (Math.abs(diff) < 0.005) return "at median";
-  return `${diff > 0 ? "+" : "−"}${money(Math.abs(diff))}`;
+  return `${diff > 0 ? "▲ +" : "▼ −"}${money(Math.abs(diff))}`;
 }
 
 /**
@@ -62,12 +66,15 @@ export function AtAGlance({
   narrow = false,
   highlight,
   limit,
+  headingAs: Heading = "h2",
 }: {
   lines: ReportLine[];
   narrow?: boolean;
   highlight?: string;
   /** Rows shown (the highlighted one always among them); the rest are counted under the list. */
   limit?: number;
+  /** The heading's level: h2 in the report; h3 where it sits under a page's own h2 (the homepage excerpt). */
+  headingAs?: "h2" | "h3";
 }) {
   const wide = (classes: string) => (narrow ? "" : classes);
   const counts = positionCounts(lines);
@@ -88,7 +95,7 @@ export function AtAGlance({
   return (
     <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 sm:p-8" aria-labelledby="glance-heading">
       <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">At a glance</p>
-      <h2 id="glance-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
+      <Heading id="glance-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
         Of your {total} comparable fees,{" "}
         {summary.map((part, i) => (
           <span key={part.text}>
@@ -96,7 +103,7 @@ export function AtAGlance({
             {i === 0 ? ", " : i === 1 ? " and " : "."}
           </span>
         ))}
-      </h2>
+      </Heading>
 
       <div className="mt-6" role="table" aria-label="Each comparable fee ranked against local competitors">
         <div
@@ -166,55 +173,62 @@ export function AtAGlance({
   );
 }
 
-function whose(change: ReportChange): string {
-  if (change.subject === "own") return "You";
-  if (change.subject === "median") return "Local median";
-  return change.who ?? "Competitor";
+function whose(change: ReportChange, name: string): string {
+  if (change.subject === "own") return name;
+  if (change.subject === "median") return "Local median, all competitors";
+  return change.who ?? "Named competitor";
 }
 
-/** For a bought report shown on live data: what moved since the copy saved at payment. */
-export function SinceBought({ savedAt, changes }: { savedAt: string; changes: ReportChange[] }) {
+/** The line under "Since this report was bought". */
+export function sinceBoughtFinding(savedAt: string, changes: ReportChange[]): string {
+  const on = DATE.format(new Date(savedAt));
+  if (changes.length === 0) return `No figure has moved since the copy saved on ${on}.`;
+  return `${changes.length} ${changes.length === 1 ? "figure has" : "figures have"} moved since the copy saved on ${on}.`;
+}
+
+/**
+ * For a bought report shown on live data: what moved since the copy saved at payment, the
+ * institution's own fees first, then the local medians, then named competitors. The page sets
+ * the section title, finding and source around it; nothing is drawn when nothing moved.
+ */
+export function SinceBought({ name, changes }: { name: string; changes: ReportChange[] }) {
+  if (changes.length === 0) return null;
   const order = ["own", "median", "competitor"];
   const ordered = [...changes].sort((a, b) => order.indexOf(a.subject) - order.indexOf(b.subject));
   return (
-    <section className="mt-8 rounded-xl border border-border bg-surface-0 p-6 sm:p-8" aria-labelledby="since-heading">
-      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brick">Since you bought this report</p>
-      <h2 id="since-heading" className="font-bold mt-2 text-[1.35rem] leading-snug text-ink sm:text-[1.6rem]" style={SERIF}>
-        {ordered.length === 0
-          ? "Nothing has moved in your market."
-          : `${ordered.length} ${ordered.length === 1 ? "figure has" : "figures have"} moved since ${DATE.format(new Date(savedAt))}.`}
-      </h2>
-      {ordered.length === 0 ? (
-        <p className="mt-2 text-[14px] text-ink-soft">
-          Your fees, the local medians and the named competitors&apos; fees match the copy saved on{" "}
-          {DATE.format(new Date(savedAt))}.
-        </p>
-      ) : (
-        <table className="mt-5 w-full text-left text-[14px]">
-          <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
-            <tr>
-              <th className="py-2 pr-3 font-semibold">Who</th>
-              <th className="py-2 pr-3 font-semibold">Fee</th>
-              <th className="py-2 pr-3 text-right font-semibold">Then</th>
-              <th className="py-2 text-right font-semibold">Now</th>
+    <figure className="min-w-0 max-w-5xl">
+      <figcaption className="text-[14px] font-semibold text-ink">Figures that moved since purchase, then and now</figcaption>
+      <ShowAll total={ordered.length} shown={ROWS_SHOWN} noun="changes">
+    <div className="mt-3 overflow-x-auto">
+      <table className="w-full min-w-[20rem] text-left text-[14px]">
+        <thead className="border-b border-border text-[11px] uppercase tracking-[0.08em] text-ink-muted">
+          <tr>
+            <th className="py-2 pr-3 font-semibold">Whose figure</th>
+            <th className="py-2 pr-3 font-semibold">Fee</th>
+            <th className="py-2 pr-3 text-right font-semibold">Then</th>
+            <th className="py-2 text-right font-semibold">Now</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ordered.map((change, index) => (
+            <tr
+              key={`${change.subject}:${change.who ?? ""}:${change.key}`}
+              className={`border-b border-border last:border-0 ${index >= ROWS_SHOWN ? EXTRA_ROW : ""}`}
+            >
+              <td className="py-2.5 pr-3 text-ink">{whose(change, name)}</td>
+              <td className="py-2.5 pr-3 text-ink-soft">{change.label}</td>
+              <td className="py-2.5 pr-3 text-right tabular-nums text-ink-muted">
+                {change.before === null ? "not published" : money(change.before)}
+              </td>
+              <td className="py-2.5 text-right font-semibold tabular-nums text-ink">
+                {change.after === null ? "no longer published" : money(change.after)}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {ordered.map((change) => (
-              <tr key={`${change.subject}:${change.who ?? ""}:${change.key}`} className="border-b border-[#F1ECE4] last:border-0">
-                <td className="py-2.5 pr-3 text-ink">{whose(change)}</td>
-                <td className="py-2.5 pr-3 text-ink-soft">{change.label}</td>
-                <td className="py-2.5 pr-3 text-right tabular-nums text-ink-muted">
-                  {change.before === null ? "not published" : money(change.before)}
-                </td>
-                <td className="py-2.5 text-right font-semibold tabular-nums text-ink">
-                  {change.after === null ? "no longer published" : money(change.after)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
+          ))}
+        </tbody>
+      </table>
+    </div>
+      </ShowAll>
+    </figure>
   );
 }

@@ -49,6 +49,19 @@ describe("JSON_TEXT_PASSTHROUGH", () => {
     expect(serializeJsonParam(42)).toBe("42");
   });
 
+  it("passes a lone JSON number, string, boolean or null through instead of encoding it again (#2004)", () => {
+    expect(serializeJsonParam(JSON.stringify(1250000))).toBe("1250000");
+    expect(serializeJsonParam(JSON.stringify(-0.35))).toBe("-0.35");
+    expect(serializeJsonParam(JSON.stringify("Acme Bank"))).toBe('"Acme Bank"');
+    expect(serializeJsonParam(JSON.stringify("1250000"))).toBe('"1250000"');
+    expect(serializeJsonParam(JSON.stringify(true))).toBe("true");
+    expect(serializeJsonParam(JSON.stringify(null))).toBe("null");
+    // Text that starts like JSON but is not still reads as a string.
+    expect(serializeJsonParam("12 items")).toBe('"12 items"');
+    expect(serializeJsonParam("true story")).toBe('"true story"');
+    expect(serializeJsonParam('"unclosed')).toBe('"\\"unclosed"');
+  });
+
   it("parses json results", () => {
     expect(JSON_TEXT_PASSTHROUGH.parse('["a"]')).toEqual(["a"]);
   });

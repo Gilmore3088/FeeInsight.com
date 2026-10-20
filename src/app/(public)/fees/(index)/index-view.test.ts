@@ -20,6 +20,7 @@ import {
   stateRanking,
   parseStateView,
   statsFor,
+  zeroBarNote,
 } from "./index-view";
 
 let nextId = 1;
@@ -192,5 +193,13 @@ describe("Bank Fee Index v2 views", () => {
     expect(parseStateView({})).toBe("gap");
     expect(parseStateView({ sv: "price" })).toBe("price");
     expect(parseStateView({ sv: "nonsense" })).toBe("gap");
+  });
+});
+
+describe("the $0 bar's definition", () => {
+  it("names the middle published price, or the highest for highest-price fees, without an em-dash", () => {
+    expect(zeroBarNote("monthly_maintenance")).toBe("$0 bar: institutions whose middle published price is $0.");
+    expect(zeroBarNote("overdraft")).toMatch(/whose (highest|middle) published price is \$0\.$/);
+    for (const fee of ["monthly_maintenance", "overdraft", "nsf"]) expect(zeroBarNote(fee)).not.toContain("\u2014");
   });
 });

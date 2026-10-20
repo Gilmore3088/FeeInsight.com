@@ -1,12 +1,14 @@
 import { sql } from "./connection";
-import { statsRowFilter } from "./fee-stats";
-import { activeInstitutionFilter } from "./district-hub";
+import { activeInstitutionFilter, statsRowFilter } from "./fee-stats";
 import {
   aggregateCityFeeAverages,
   type CityFeeAverage,
   type CityInstitutionFeeRow,
 } from "./city-fee-aggregation";
 import { VALID_US_CODES } from "../us-states";
+import { escapeLikePattern } from "@/lib/api-hardening/query-caps";
+import { citySearchPrefixes, foldCitySpellings } from "@/lib/geo/city-names";
+import { hqCitySpellings } from "./city-spellings";
 
 export interface GeoStats {
   institution_count: number;
@@ -23,7 +25,7 @@ export async function getStateStats(stateCode: string): Promise<GeoStats> {
       COUNT(*) as total,
       SUM(CASE WHEN charter_type = 'bank' THEN 1 ELSE 0 END) as banks,
       SUM(CASE WHEN charter_type = 'credit_union' THEN 1 ELSE 0 END) as cus
-    FROM institution_sources WHERE state_code = ${stateCode}
+    FROM institution_sources ct WHERE ct.state_code = ${stateCode} AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { total: number; banks: number; cus: number }[];
 
   const [fees] = await sql`
@@ -33,6 +35,7 @@ export async function getStateStats(stateCode: string): Promise<GeoStats> {
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.state_code = ${stateCode} AND ef.review_status = 'approved'
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { with_fees: number; total_fees: number; categories: number }[];
 
   return {
@@ -51,7 +54,7 @@ export async function getDistrictStats(districtId: number): Promise<GeoStats> {
       COUNT(*) as total,
       SUM(CASE WHEN charter_type = 'bank' THEN 1 ELSE 0 END) as banks,
       SUM(CASE WHEN charter_type = 'credit_union' THEN 1 ELSE 0 END) as cus
-    FROM institution_sources WHERE fed_district = ${districtId}
+    FROM institution_sources ct WHERE ct.fed_district = ${districtId} AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { total: number; banks: number; cus: number }[];
 
   const [fees] = await sql`
@@ -61,6 +64,7 @@ export async function getDistrictStats(districtId: number): Promise<GeoStats> {
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
     WHERE ct.fed_district = ${districtId} AND ef.review_status = 'approved'
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as { with_fees: number; total_fees: number; categories: number }[];
 
   return {
@@ -71,16 +75,6 @@ export async function getDistrictStats(districtId: number): Promise<GeoStats> {
     total_fees: Number(fees.total_fees),
     fee_categories: Number(fees.categories),
   };
-}
-
-export async function getInstitutionIdsWithFees(): Promise<number[]> {
-  const rows = await sql`
-    SELECT DISTINCT institution_id as id
-    FROM published_fee_catalog
-    WHERE review_status = 'approved'
-    ORDER BY institution_id
-  ` as { id: number }[];
-  return rows.map((r) => Number(r.id));
 }
 
 export interface InstitutionFeeFreshness {
@@ -205,8 +199,14 @@ export async function fullCityForCut(city: string, stateCode: string): Promise<s
   return rows.length === 1 ? rows[0].city : null;
 }
 
+/**
+ * The institutions headquartered in a city that publish fees, every stored spelling of the city
+ * folded in (#2092): "Saint Petersburg" and "St. Petersburg" headquarters list on one page, the
+ * same city the state directory counts.
+ */
 export async function getCityInstitutions(city: string, stateCode: string): Promise<CityInstitution[]> {
   const upperState = stateCode.toUpperCase();
+  const spellings = await hqCitySpellings(city, upperState);
   const rows = await sql`
     SELECT ct.id, ct.institution_name, ct.charter_type, ct.asset_size,
            COALESCE(fc.fee_count, 0) as fee_count,
@@ -233,29 +233,61 @@ export async function getCityInstitutions(city: string, stateCode: string): Prom
         AND ${sql.unsafe(statsRowFilter("published_fee_catalog"))}
       GROUP BY institution_id
     ) fc ON ct.id = fc.institution_id
-    WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}
+    WHERE UPPER(ct.city) = ANY(${spellings}::text[]) AND ct.state_code = ${upperState}
     AND fc.fee_count > 0
+    AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     ORDER BY ct.asset_size DESC NULLS LAST
   ` as RawCityInstitutionRow[];
 
   return rows.map(normalizeCityInstitutionRow);
 }
 
+/** Fee averages across the institutions headquartered in a city, its spellings folded as `getCityInstitutions` folds them. */
 export async function getCityFeeAverages(city: string, stateCode: string): Promise<CityFeeAverage[]> {
   const upperState = stateCode.toUpperCase();
+  const spellings = await hqCitySpellings(city, upperState);
   const rows = await sql`
     SELECT ef.institution_id, ef.fee_category, ef.amount
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
-    WHERE LOWER(ct.city) = LOWER(${city}) AND ct.state_code = ${upperState}
+    WHERE UPPER(ct.city) = ANY(${spellings}::text[]) AND ct.state_code = ${upperState}
       AND ef.review_status = 'approved'
       AND ef.amount IS NOT NULL
       AND ef.amount >= 0
       AND ef.fee_category IS NOT NULL
       AND ${sql.unsafe(statsRowFilter("ef"))}
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
   ` as CityInstitutionFeeRow[];
 
   return aggregateCityFeeAverages(rows);
+}
+
+/**
+ * One row per city once its spellings are folded (#2092): the counts of every spelling in the same
+ * state summed (an institution has one headquarters city, so no institution counts twice), named by
+ * the spelling most institutions use. Ordered most institutions with fees first, then most
+ * institutions. Pure.
+ */
+export function foldCitySummaries(rows: CitySummary[]): CitySummary[] {
+  const byState = new Map<string, CitySummary[]>();
+  for (const row of rows) {
+    const list = byState.get(row.state_code) ?? [];
+    list.push(row);
+    byState.set(row.state_code, list);
+  }
+  const out: CitySummary[] = [];
+  for (const [state_code, list] of byState) {
+    const folded = foldCitySpellings(list.map((row) => ({ name: row.city, branches: row.institution_count, row })));
+    for (const city of folded) {
+      out.push({
+        city: city.name,
+        state_code,
+        institution_count: city.spellings.reduce((n, s) => n + s.row.institution_count, 0),
+        with_fees: city.spellings.reduce((n, s) => n + s.row.with_fees, 0),
+      });
+    }
+  }
+  return out.sort((a, b) => b.with_fees - a.with_fees || b.institution_count - a.institution_count);
 }
 
 export async function getCitiesInState(stateCode: string): Promise<CitySummary[]> {
@@ -271,12 +303,11 @@ export async function getCitiesInState(stateCode: string): Promise<CitySummary[]
       GROUP BY institution_id
     ) fc ON ct.id = fc.institution_id
     WHERE ct.state_code = ${upperState} AND ct.city IS NOT NULL AND ct.city != ''
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     GROUP BY LOWER(ct.city), ct.state_code
-    HAVING COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) > 0
-    ORDER BY COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) DESC, COUNT(*) DESC
   ` as RawCitySummaryRow[];
 
-  return rows.map(normalizeCitySummaryRow);
+  return foldCitySummaries(rows.map(normalizeCitySummaryRow)).filter((c) => c.with_fees > 0);
 }
 
 /**
@@ -288,46 +319,67 @@ export async function getTopCitiesByState(
   minWithFees: number,
   perState: number,
 ): Promise<CitySummary[]> {
+  // Spellings fold before the threshold and the ranking, so a city split across spellings is
+  // counted, and listed, once.
   const rows = await sql`
     WITH fc AS (
       SELECT institution_id, COUNT(*) as fee_count
       FROM published_fee_catalog WHERE review_status = 'approved'
       GROUP BY institution_id
-    ), cities AS (
-      SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code,
-             COUNT(*) as institution_count,
-             COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
-      FROM institution_sources ct
-      LEFT JOIN fc ON ct.id = fc.institution_id
-      WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
-      GROUP BY LOWER(ct.city), ct.state_code
-    ), ranked AS (
-      SELECT *, ROW_NUMBER() OVER (
-        PARTITION BY state_code ORDER BY with_fees DESC, institution_count DESC
-      ) as rn
-      FROM cities
-      WHERE with_fees >= ${minWithFees}
     )
-    SELECT city, state_code, institution_count, with_fees
-    FROM ranked
-    WHERE rn <= ${perState}
-    ORDER BY state_code, rn
+    SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code,
+           COUNT(*) as institution_count,
+           COUNT(DISTINCT CASE WHEN fc.fee_count > 0 THEN ct.id END) as with_fees
+    FROM institution_sources ct
+    LEFT JOIN fc ON ct.id = fc.institution_id
+    WHERE ct.state_code IS NOT NULL AND ct.city IS NOT NULL AND ct.city != ''
+      AND ${sql.unsafe(activeInstitutionFilter("ct"))}
+    GROUP BY LOWER(ct.city), ct.state_code
   ` as RawCitySummaryRow[];
 
-  return rows.map(normalizeCitySummaryRow);
+  const ranked = new Map<string, CitySummary[]>();
+  for (const city of foldCitySummaries(rows.map(normalizeCitySummaryRow))) {
+    if (city.with_fees < minWithFees) continue;
+    const list = ranked.get(city.state_code) ?? [];
+    if (list.length < perState) list.push(city);
+    ranked.set(city.state_code, list);
+  }
+  return [...ranked.keys()].sort().flatMap((state) => ranked.get(state) ?? []);
 }
 
+/**
+ * Spellings read before the fold. Counts are summed after folding within these rows, so a city
+ * whose spellings all sit among the AUTOCOMPLETE_FOLD_ROWS largest matches is counted in full; a
+ * search that matches more cities than this (two common letters) can undercount a small spelling
+ * of a city far below the 25 shown.
+ */
+const AUTOCOMPLETE_FOLD_ROWS = 200;
+
+/**
+ * Cities whose name starts with the search, each once with its spellings folded (#2092): "st pete"
+ * finds St. Petersburg whether a record spells it "Saint", "St" or "St.". The count is the
+ * institutions with approved fees across the spellings found.
+ */
 export async function getCityAutocomplete(query: string, limit: number = 10): Promise<{ city: string; state_code: string; count: number }[]> {
-  const pattern = `${query}%`;
-  return await sql`
+  const cap = Math.min(Math.max(1, Math.floor(limit) || 1), 25);
+  // City-name prefixes, matched literally: an unescaped `%` read every city in the country.
+  const patterns = citySearchPrefixes(query).map((prefix) => `${escapeLikePattern(prefix)}%`);
+  const rows = await sql`
     SELECT (array_agg(ct.city ORDER BY (ct.city = UPPER(ct.city)), ct.city))[1] AS city, ct.state_code, COUNT(DISTINCT ct.id) as count
     FROM institution_sources ct
-    WHERE ct.city ILIKE ${pattern} AND ct.city IS NOT NULL
+    WHERE ct.city ILIKE ANY(${patterns}::text[]) AND ct.city IS NOT NULL
+    AND ${sql.unsafe(activeInstitutionFilter("ct"))}
     AND ct.id IN (SELECT DISTINCT institution_id FROM published_fee_catalog WHERE review_status = 'approved')
     GROUP BY LOWER(ct.city), ct.state_code
     ORDER BY count DESC
-    LIMIT ${limit}
-  ` as { city: string; state_code: string; count: number }[];
+    LIMIT ${AUTOCOMPLETE_FOLD_ROWS}
+  ` as { city: string; state_code: string; count: number | string }[];
+
+  return foldCitySummaries(
+    rows.map((r) => ({ city: r.city, state_code: r.state_code, institution_count: Number(r.count), with_fees: Number(r.count) })),
+  )
+    .slice(0, cap)
+    .map((c) => ({ city: c.city, state_code: c.state_code, count: c.institution_count }));
 }
 
 export async function getStatesWithFeeData(): Promise<{ state_code: string; institution_count: number; fee_count: number }[]> {
@@ -342,6 +394,7 @@ export async function getStatesWithFeeData(): Promise<{ state_code: string; inst
      JOIN published_fee_catalog ef ON ct.id = ef.institution_id
      WHERE ct.state_code IN (${placeholders})
        AND ef.review_status = 'approved'
+       AND ${activeInstitutionFilter("ct")}
      GROUP BY ct.state_code
      ORDER BY COUNT(DISTINCT ct.id) DESC`,
     params
@@ -434,7 +487,7 @@ export function rollUpCoverage(rows: CoverageGroupRow[]): ResearchCoverage {
  * Monitored vs verified coverage by state and Fed district, from one grouped scan: the one
  * source for a state's or district's coverage counts on public pages (headline-counts.ts
  * stateCoverageCounts, #1951). Monitored is every active institution headquartered there, by the
- * state hub's rule (district-hub.ts activeInstitutionFilter, #1955), so a state page's
+ * state hub's rule (fee-stats.ts activeInstitutionFilter, #1955), so a state page's
  * "headquartered" total and its hub figures count one population; verified is at least one approved published fee, as
  * the national "institutions with published fees" headline counts; counted is at least one fee
  * the statistics contract keeps, the population behind the medians.

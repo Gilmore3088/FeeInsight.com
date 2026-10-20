@@ -31,16 +31,24 @@ type SqlTag = typeof sql;
  * shared 12-hour second look (check `darwin.translated_copy`) and is archived on its second failure:
  * rolled back with `translated_copy: #<doc> twin #<fee>`, its verified row rejected with the
  * `translated_copy` flag, never deleted, and a `darwin.translated_copy_takedown` event lists them.
+ * A fee taken down because its English twin was live is not read again if that twin later comes
+ * down under another check; restore it by hand (or with the twin) if that happens.
  *
+ * v2 (review of v1): a fee with no dollar amount (a percent fee, `amount` NULL) never has a twin, so
+ * two percent fees at different rates are not paired; "fondos", "insuficientes" and "cobro" read as
+ * Spanish ("Fondos insuficientes" is a Spanish-only fee, not an English name).
  * Dry run, prod read-only, 2026-10-18 (`translatedCopyRowsSql` through `findTranslatedCopies`): 127
  * live fees on 12 Spanish-copy documents at 11 institutions; 35 would come down (Sound 22, OnPoint 6,
- * M&T 5, FirstBank PR 2), 33 Spanish names have no English twin and 59 carry an English name
+ * M&T 5, FirstBank PR 2), 34 Spanish names have no English twin and 58 carry an English name
  * (East West's 6 twinned rows among them), so 92 stay.
  */
 export const TRANSLATED_COPY_CHECK = "darwin.translated_copy";
-export const TRANSLATED_COPY_CHECK_VERSION = 1;
-/** The switch. Off (shadow) until James sees the dry-run count. Turn on by PR; roll back by setting it to false. */
-export const TRANSLATED_COPY_TAKEDOWN_LIVE = false;
+export const TRANSLATED_COPY_CHECK_VERSION = 2;
+/**
+ * The switch. On since 2026-10-18 (James, "Turn it on" on the decision card, 11:28 UTC), on the dry-run
+ * count of 35 live fees at 4 institutions. Roll back by setting it to false.
+ */
+export const TRANSLATED_COPY_TAKEDOWN_LIVE = true;
 export const TRANSLATED_COPY_REASON = "translated_copy";
 export const TRANSLATED_COPY_FLAG = "translated_copy";
 /** Live fees read per step (every fee on a Spanish-copy document; the cap is a guard). */
@@ -60,7 +68,7 @@ export function spanishCopyDocument(url: string | null | undefined): boolean {
 const SPANISH_LETTERS = /[ñáéíóú¿¡]/iu;
 /** Common Spanish words of a fee schedule (#1312's guard reads the same fees' names). */
 const SPANISH_WORDS =
-  /(?<![\p{L}])(?:cargos?|por|de|del|la|el|los|las|cuentas?|cheques?|pagos?|sobregiro|transferencias?|tarjetas?|caja|copias?|giro|postal|notario|retiros?|efectivo|comision|embargo|reemplazo|llave|cierre|detener|acciones|adelantos?|compra|mensual|mantenimiento|seguridad|extracto|escritura|partida|atrasado|legales|bancaria|nacional|internacional|saliente|entrante|miembro|repuesto|anticipado|regalo|sucursales)(?![\p{L}])/giu;
+  /(?<![\p{L}])(?:cargos?|por|de|del|la|el|los|las|cuentas?|cheques?|pagos?|sobregiro|transferencias?|tarjetas?|caja|copias?|giro|postal|notario|retiros?|efectivo|comision|embargo|reemplazo|llave|cierre|detener|acciones|adelantos?|compra|mensual|mantenimiento|seguridad|extracto|escritura|partida|atrasado|legales|bancaria|nacional|internacional|saliente|entrante|miembro|repuesto|anticipado|regalo|sucursales|fondos|insuficientes|cobro)(?![\p{L}])/giu;
 
 /** Pure: the fee's name reads as Spanish: a letter only Spanish uses, or two Spanish words. */
 export function readsSpanish(name: string | null | undefined): boolean {
@@ -206,7 +214,8 @@ export function translatedCopyRowsSql(db: SqlTag, options: { institutionId?: num
           JOIN source_documents od ON od.id = orw.source_document_id
          WHERE other.institution_id = fp.institution_id
            AND other.canonical_fee_key = fp.canonical_fee_key
-           AND other.amount IS NOT DISTINCT FROM fp.amount
+           AND fp.amount IS NOT NULL
+           AND other.amount = fp.amount
            AND other.fee_published_id <> fp.fee_published_id
            AND other.rolled_back_at IS NULL
            AND other.quarantined_at IS NULL

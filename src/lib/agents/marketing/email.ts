@@ -52,8 +52,12 @@ function money(value: number): string {
 
 function row(cells: string[], head = false): string {
   const tag = head ? "th" : "td";
+  // Header cells take the brand label (tracked capitals); figures line up in tabular numerals.
+  const style = head
+    ? `font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:${RD.inkSoft};`
+    : "font-variant-numeric:tabular-nums lining-nums;";
   return `<tr style="border-bottom:${head ? `2px solid ${RD.ink}` : `1px solid ${RD.rule2}`};">${cells
-    .map((cell, index) => `<${tag} align="${index === 0 ? "left" : "right"}">${cell}</${tag}>`)
+    .map((cell, index) => `<${tag} align="${index === 0 ? "left" : "right"}" style="${style}">${cell}</${tag}>`)
     .join("")}</tr>`;
 }
 
@@ -97,8 +101,8 @@ function link(path: string, month: string, format: string, text: string): string
  * customers see the Hamilton line set on their subscriber record (src/lib/email/monthly-offer.ts).
  */
 function offerHtml(month: string, format: string): string {
-  const url = `https://feeinsight.com/for-institutions?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=agent-${month}&utm_content=${format}#report`;
-  return `${esc(mergeTag(MONTHLY_OFFER_FIELDS.text, FREE_MONTHLY_OFFER.text))} <a href="${esc(mergeTag(MONTHLY_OFFER_FIELDS.url, url))}" style="color:#b3261e;">${esc(mergeTag(MONTHLY_OFFER_FIELDS.cta, FREE_MONTHLY_OFFER.cta))}</a>`;
+  const url = `https://feeinsight.com/reports?report=institution&utm_source=mailerlite&utm_medium=email&utm_campaign=agent-${month}&utm_content=${format}#request`;
+  return `${esc(mergeTag(MONTHLY_OFFER_FIELDS.text, FREE_MONTHLY_OFFER.text))} <a href="${esc(mergeTag(MONTHLY_OFFER_FIELDS.url, url))}" style="color:${RD.terra};">${esc(mergeTag(MONTHLY_OFFER_FIELDS.cta, FREE_MONTHLY_OFFER.cta))}</a>`;
 }
 
 /**
@@ -129,16 +133,16 @@ export function renderEmail(
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(copy.headline)}</title>${FLUID_ML_FOOTER}</head>
 <body style="margin:0;padding:0;background:${RD.sand};font-family:${FONT};color:${RD.ink};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${RD.sand};"><tr><td align="center" style="padding:24px 12px;">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${RD.paper};border:1px solid ${RD.rule2};">
-<tr><td style="padding:28px 32px 8px 32px;"><img src="${esc(EMAIL_LOGO_URL)}" width="124" height="22" alt="${esc(SITE_NAME)}" style="display:block;border:0;width:124px;height:22px;font-family:${FONT};font-size:18px;color:${RD.ink};"></td></tr>
-<tr><td style="padding:16px 32px 0 32px;">
-<div style="font-size:12px;letter-spacing:1px;text-transform:uppercase;color:${RD.terra};font-weight:bold;">${esc(copy.label)}</div>
-<h1 style="font-family:${FONT};font-size:28px;line-height:1.25;margin:8px 0 12px 0;font-weight:normal;text-wrap:balance;">${esc(copy.headline)}</h1>
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${RD.paper};">
+<tr><td style="padding:22px 32px 16px 32px;border-bottom:2px solid ${RD.ink};"><img src="${esc(EMAIL_LOGO_URL)}" width="124" height="22" alt="${esc(SITE_NAME)}" style="display:block;border:0;width:124px;height:22px;font-family:${FONT};font-size:18px;color:${RD.ink};"></td></tr>
+<tr><td style="padding:30px 32px 0 32px;">
+<div style="font-size:12px;line-height:16px;letter-spacing:0.08em;text-transform:uppercase;color:${RD.terra};font-weight:700;">${esc(copy.label)}</div>
+<h1 style="font-family:${FONT};font-size:30px;line-height:36px;margin:10px 0 14px 0;font-weight:800;letter-spacing:-0.025em;text-wrap:balance;">${esc(copy.headline)}</h1>
 ${paragraphs(copy.intro)}
 </td></tr>
 ${table ? `<tr><td style="padding:0 32px;">${table}<p style="font-size:13px;line-height:1.5;color:${RD.inkSoft};margin:8px 0 20px 0;">${sources}</p></td></tr>` : ""}
 <tr><td style="padding:0 32px;">
-${copy.sections.map((s) => `<h2 style="font-family:${FONT};font-size:20px;margin:8px 0 8px 0;font-weight:normal;">${esc(s.heading)}</h2>${paragraphs(s.body)}`).join("")}
+${copy.sections.map((s) => `<h2 style="font-family:${FONT};font-size:20px;line-height:28px;margin:8px 0 8px 0;font-weight:700;letter-spacing:-0.01em;text-wrap:balance;">${esc(s.heading)}</h2>${paragraphs(s.body)}`).join("")}
 <p style="font-size:16px;line-height:1.55;margin:6px 0 20px 0;">${link("/reports/benchmark/national", bundle.month, format, "Open the national report")} · ${link("/research", bundle.month, format, "Find your state")}</p>
 </td></tr>
 <tr><td style="padding:0 32px 28px 32px;">
@@ -146,9 +150,9 @@ ${copy.sections.map((s) => `<h2 style="font-family:${FONT};font-size:20px;margin
 ${offerHtml(bundle.month, format)}
 </td></tr></table>
 ${whatsNew.length ? `<p style="font-size:14px;line-height:1.55;margin:20px 0 0 0;"><strong>What's new:</strong> ${esc(whatsNew.join(" "))}</p>` : ""}
-<p style="font-size:15px;line-height:1.55;margin:20px 0 0 0;">Questions, or a fee you want us to look at? Just reply.<br>James Gilmore, Founder</p>
+<p style="font-size:15px;line-height:1.55;margin:20px 0 0 0;">Questions, or a fee you want us to look at? Just reply.<br><strong style="font-weight:600;">James Gilmore</strong>, Founder</p>
 </td></tr>
-<tr><td style="background:${RD.sand};padding:20px 32px;font-size:12px;line-height:1.6;color:${RD.inkSoft};border-top:1px solid ${RD.rule2};">
+<tr><td style="background:${RD.paper};padding:20px 32px 26px 32px;font-size:12px;line-height:1.6;color:${RD.inkSoft};border-top:1px solid ${RD.rule2};">
 ${esc(SITE_NAME)} · <a href="https://feeinsight.com" style="color:${RD.inkSoft};">feeinsight.com</a> · ${esc(CONTACT_EMAIL)}<br>
 Data from the ${esc(PRODUCT_NAME)}, read from each institution's own published fee schedule.<br>
 ${mailingAddress ? `${esc(mailingAddress)}<br>\n` : ""}<a href="{$unsubscribe}" style="color:${RD.inkSoft};">Unsubscribe</a>

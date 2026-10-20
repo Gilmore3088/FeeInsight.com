@@ -11,3 +11,5 @@ to `::numeric`; `src/lib/data-store/sql-round.test.ts` fails on any uncast `ROUN
 `src/lib/data-store`.
 **Lesson:** In SQL, write `ROUND((expr)::numeric, n)` whenever you round to places. Mocked-SQL
 tests never reach Postgres, so a type error like this only shows on prod; pin the SQL text.
+
+**Guard:** `src/lib/data-store/sql-round.test.ts:90` (no data-store source file rounds a non-numeric value to places; line 54 checks the detector)

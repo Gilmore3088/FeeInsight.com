@@ -24,8 +24,8 @@ import { HELD_SOURCES, STRUCK_AREA_SOURCES } from "@/lib/data-store/struck-sourc
  * series) are filtered by the readers, not here.
  */
 
-/** Licence statuses a catalog entry can carry: a contract's, or Fee Insight's own published data. */
-export type CatalogLicenceStatus = HoovieLicenceStatus | "fee-insight";
+/** Licence statuses a catalog entry can carry: a contract's ("fee-insight" is Fee Insight's own published data). */
+export type CatalogLicenceStatus = HoovieLicenceStatus;
 
 export interface CatalogLicence extends Omit<HoovieLicence, "status"> {
   status: CatalogLicenceStatus;
@@ -53,7 +53,7 @@ export interface CatalogEntry {
   servable: boolean;
   /** Why the entry may not be shown, in plain words; null when servable. */
   notServableReason: string | null;
-  /** How `queryData` addresses this entry: "area:<id>:" plus a series key, "fee:" plus a category, or null when it has no query yet. */
+  /** How `queryData` addresses this entry: "area:<id>:" plus a series key, "fee:" plus a category, "call:" or "fact:" plus a name, or null when it has no query yet. */
   measurePrefix: string | null;
 }
 
@@ -126,13 +126,32 @@ function fromContract(contract: HoovieSourceContract): CatalogEntry {
     notServableReason: reason,
     measurePrefix: areaGeoTypes.length > 0
       ? `area:${contract.source}:`
-      : contract.tables.includes(CALL_REPORT_TABLE) ? CALL_MEASURE_PREFIX : null,
+      : contract.tables.includes(CALL_REPORT_TABLE)
+        ? CALL_MEASURE_PREFIX
+        : contract.tables.includes(FAMILY_TABLE)
+          ? FAMILY_MEASURE
+          : contract.tables.includes(FACT_TABLE) ? FACT_MEASURE_PREFIX : null,
   };
 }
+
+/**
+ * Institution facts read from each institution's own documents (institution_payment_features):
+ * `fact:<name>`, answered for one institution at a time, with the link to its document.
+ */
+export const FACT_TABLE = "institution_payment_features";
+export const FACT_MEASURE_PREFIX = "fact:";
+/** Each fact measure, the institution_payment_features.feature it reads and the registry source that writes it. */
+export const FACT_MEASURES: Readonly<Record<string, { feature: string; source: string; name: string }>> = {
+  offers_zelle: { feature: "zelle", source: "bank-zelle", name: "Offers Zelle (read from the institution's own documents)" },
+};
 
 /** Call-report lines: institution grain, read for one institution or rolled up over a group. */
 export const CALL_REPORT_TABLE = "institution_call_report_items";
 export const CALL_MEASURE_PREFIX = "call:";
+
+/** GLEIF corporate families: one measure, read for one institution (its parents and subsidiaries). */
+export const FAMILY_TABLE = "gleif_entities";
+export const FAMILY_MEASURE = "family:lei";
 
 /** institution_call_report_items.source → the catalog entry (registry source) that loads it. */
 export const CALL_REPORT_ROW_SOURCES: Readonly<Record<string, string>> = { ffiec: "ffiec-call-detail", ncua: "ncua-extras" };

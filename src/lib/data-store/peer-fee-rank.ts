@@ -3,6 +3,7 @@ import { getPeerFeeValues, matchesPeerFilters, type PeerFilterSet } from "./fee-
 import { computeStats } from "./fees";
 import { getReportRuleCheck, type ReportRuleCheck } from "./market-readiness";
 import { MIN_LOCAL_PEERS_PER_LINE } from "@/lib/custom-report/analysis";
+import { OWN_FEE_COVERAGE, PEER_GROUP_ANCHOR } from "@/lib/hamilton/peer-index";
 
 /** The fees the free institution page ranks against peers (value funnel A3). */
 export const PEER_RANK_FEE_KEYS = ["overdraft", "monthly_maintenance"] as const;
@@ -256,10 +257,39 @@ export interface InstitutionPeerSets {
 }
 
 /**
+ * How many of the institution's own published ranked fees a set can compare (a peer median
+ * beside it), and whether that meets the shared default-group rule (#2098): at least
+ * OWN_FEE_COVERAGE of its own fees. With no ranked fee of its own, the anchor fee (overdraft)
+ * having a median is enough, as in Hamilton.
+ */
+export function ownFeeCoverage(comparison: PeerSetComparison): { compared: number; fits: boolean } {
+  const own = comparison.lines.filter((line) => line.own !== null);
+  const compared = own.filter((line) => line.median !== null).length;
+  if (own.length === 0) {
+    const anchor = comparison.lines.find((line) => line.key === PEER_GROUP_ANCHOR);
+    return { compared: 0, fits: anchor?.median != null };
+  }
+  return { compared, fits: compared >= Math.ceil(OWN_FEE_COVERAGE * own.length) };
+}
+
+/**
+ * The default set under main's peer-group rule (James, 2026-10-20; #2098, #2046): the first
+ * (narrowest) set that compares at least 80% of the institution's own fees. When none does, the
+ * rule widens to the set that compares the most of them, so too few publishing peers never pick
+ * the default.
+ */
+function defaultComparable<T extends { comparison: PeerSetComparison }>(comparable: T[]): T {
+  const scored = comparable.map((entry) => ({ entry, coverage: ownFeeCoverage(entry.comparison) }));
+  const fitting = scored.find(({ coverage }) => coverage.fits);
+  if (fitting) return fitting.entry;
+  return scored.reduce((best, next) => (next.coverage.compared > best.coverage.compared ? next : best)).entry;
+}
+
+/**
  * The peer sets worth offering for one institution beyond the report rule's group (state, or
  * Fed district when the state is thin), which the page's findings and headline table already
- * show, and the one to show: the visitor's choice when it clears the floor, else the first
- * that does. Null when none does.
+ * show, and the one to show: the visitor's choice when it clears the floor, else the default
+ * (defaultComparable). Null when none clears the floor.
  */
 export function pickPeerSet(
   institutionId: number,
@@ -274,7 +304,7 @@ export function pickPeerSet(
     .map((choice) => ({ choice, comparison: comparePeerSet(institutionId, choice, all) }))
     .filter(({ comparison }) => isComparable(comparison));
   if (comparable.length === 0) return null;
-  const picked = comparable.find(({ comparison }) => comparison.key === requested) ?? comparable[0];
+  const picked = comparable.find(({ comparison }) => comparison.key === requested) ?? defaultComparable(comparable);
   return {
     options: comparable.map(({ choice, comparison: { key, label } }) => {
       const ids = choice.filters?.institutionIds;

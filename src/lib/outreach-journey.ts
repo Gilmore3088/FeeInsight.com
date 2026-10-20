@@ -7,8 +7,6 @@ import { parseUtmValue } from "@/lib/marketing-touch";
  * James records. No email-open tracking: privacy protections make it unreliable.
  */
 
-export const SNAPSHOT_EVENT_ENDPOINT = "/api/track/snapshot";
-
 /** What a visitor did on a free market snapshot. */
 export const SNAPSHOT_EVENTS = ["opened", "source_click", "fee_view", "competitor_click", "report_click"] as const;
 export type SnapshotEvent = (typeof SNAPSHOT_EVENTS)[number];

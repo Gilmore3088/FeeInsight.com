@@ -6,7 +6,8 @@ import { FEE_FAMILIES, getFeeFamily, onlyPublicFeeTypes, publicFeeTypes } from "
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { maturityTier } from "@/lib/data-store/maturity";
 import { US_STATES_ONLY, VALID_US_CODES } from "@/lib/us-states";
-import { feeHeadlineCounts, publicCategoryCount } from "@/lib/headline-counts";
+import { publicCategoryCount } from "@/lib/headline-counts";
+import { activeInstitutionFilter } from "@/lib/data-store/fee-stats";
 
 /**
  * Single source of truth for every public-facing headline number.
@@ -44,6 +45,26 @@ export { COVERAGE_LABELS } from "@/lib/coverage-labels";
 
 /** Shown in place of a count whose read failed, so a failed read never renders as a real 0. */
 export const UNAVAILABLE_LABEL = "—";
+
+/**
+ * The summary a page shows when the counts could not be read in time (#1988): every label is
+ * UNAVAILABLE_LABEL, never "0", and `complete` is false so callers can shorten the cache life.
+ */
+export const UNAVAILABLE_PUBLIC_STATS: PublicStatsSummary = {
+  institutions: 0,
+  institutionsLabel: UNAVAILABLE_LABEL,
+  monitored: 0,
+  monitoredLabel: UNAVAILABLE_LABEL,
+  observations: 0,
+  observationsLabel: UNAVAILABLE_LABEL,
+  categories: 0,
+  categoriesLabel: UNAVAILABLE_LABEL,
+  states: 0,
+  statesLabel: UNAVAILABLE_LABEL,
+  refreshedOn: null,
+  freshnessLabel: "Data refresh pending",
+  complete: false,
+};
 
 const NUMBER = new Intl.NumberFormat("en-US");
 
@@ -123,6 +144,7 @@ async function readHeadlineCounts(): Promise<HeadlineCounts | null> {
         FROM published_fee_catalog ef
         JOIN institution_sources ct ON ct.id = ef.institution_id
         WHERE ef.review_status = 'approved'
+          AND ${sql.unsafe(activeInstitutionFilter("ct"))}
       ),
       us AS (
         SELECT * FROM approved WHERE state_code IN ${sql([...VALID_US_CODES])}
@@ -149,9 +171,15 @@ async function readHeadlineCounts(): Promise<HeadlineCounts | null> {
   }
 }
 
+/**
+ * Institutions monitored nationally: every institution the regulator has not marked inactive,
+ * the rule each state's "headquartered" total uses (activeInstitutionFilter), so the states add up
+ * to this figure (#1980).
+ */
 async function countMonitoredInstitutions(): Promise<number | null> {
   try {
-    const [row] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources`;
+    const [row] = await sql<{ cnt: number }[]>`
+      SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ${sql.unsafe(activeInstitutionFilter("ct"))}`;
     return Number(row?.cnt ?? 0);
   } catch (error) {
     return logFailedRead("monitored", error);
@@ -251,19 +279,6 @@ export function withPublicCategoryCount(snapshot: PublicSnapshot): PublicStatsSu
     complete: summary.complete && categories !== null,
   };
 }
-
-/**
- * A fee's national counts (institutions behind its median, and those publishing only $0) from the
- * shared snapshot, dated by the snapshot. Pages that state a fee's institution count read it here
- * so the homepage, /fees, /research, the benchmark report and the guides print one number (#1951).
- */
-export const getPublicFeeCounts = cache(
-  async (fee: string): Promise<{ institutions: number; zeroOnly: number; refreshedOn: string | null } | null> => {
-    const { summary, categories } = await getPublicSnapshot();
-    const counts = feeHeadlineCounts(categories, fee);
-    return counts ? { ...counts, refreshedOn: summary.refreshedOn } : null;
-  },
-);
 
 /** The fee types public pages may list (at most 50), ranked on the shared snapshot's institution counts. */
 export const getPublicFeeTypes = cache(async (): Promise<Set<string>> => publicFeeTypes((await cachedPublicSnapshot()).categories));

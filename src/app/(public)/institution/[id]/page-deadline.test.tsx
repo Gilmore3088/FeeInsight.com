@@ -50,6 +50,9 @@ vi.mock("@/lib/data-store/public-cached-reads", () => ({
   getComparableMarketIndexCached: vi.fn(async () => []),
   getInstitutionPeerSetsCached: vi.fn(async () => null),
   getPeerExplorerSetCached: vi.fn(async () => null),
+  getInstitutionFinancialHistoryCached: vi.fn(async () => []),
+  getInstitutionCallItemHistoryCached: vi.fn(async () => []),
+  getFeeShareCohortCached: vi.fn(async () => null),
 }));
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => null) }));
 vi.mock("@/lib/custom-report/sample-report", () => ({ sampleReportAvailable: vi.fn(async () => false) }));
@@ -159,6 +162,27 @@ describe("institution page with a database that never answers (#1919)", () => {
     const ids = collect(node).map((element) => (element.props as { id?: string }).id);
     expect(ids).not.toContain("record-heading");
     // A render with a section missing is cached for a minute, not an hour (#1572).
+    expect(shortenPageLife).toHaveBeenCalled();
+  });
+
+  it("does not start later optional sections after financial context exhausts the shared budget", async () => {
+    const { getComparableMarketIndexCached } = await import("@/lib/data-store/public-cached-reads");
+    const { sampleReportAvailable } = await import("@/lib/custom-report/sample-report");
+    vi.mocked(getComparableMarketIndexCached).mockClear();
+    vi.mocked(sampleReportAvailable).mockClear();
+    db.institution.mockImplementation(async (instId: number) => ({ ...WAFD, id: instId, fee_count: 1 }));
+    db.fees.mockResolvedValue([{ id: 1, institution_id: id, fee_name: "Overdraft Fee", amount: 35,
+      frequency: "per_item", fee_category: "overdraft", review_status: "approved", fee_audience: "consumer",
+      source_url: "https://www.wafdbank.com/fees", source_document_id: 1, conditions: null }]);
+    db.financials.mockImplementation(hanging);
+    const page = InstitutionProfilePage(props(String(id)));
+    await vi.advanceTimersByTimeAsync(PAGE_READ_BUDGET_MS);
+    expect(await page).toBeTruthy();
+    expect(db.fees).toHaveBeenCalledTimes(1);
+    expect(db.rateFees).toHaveBeenCalledTimes(1);
+    expect(db.financials).toHaveBeenCalledTimes(1);
+    for (const read of [db.branchFootprint, db.complaints, db.holdingCompany, db.enforcement, db.regulator,
+      vi.mocked(getComparableMarketIndexCached), vi.mocked(sampleReportAvailable)]) expect(read).not.toHaveBeenCalled();
     expect(shortenPageLife).toHaveBeenCalled();
   });
 

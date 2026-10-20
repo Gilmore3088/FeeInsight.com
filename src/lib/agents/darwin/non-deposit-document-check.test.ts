@@ -48,11 +48,11 @@ const asDb = (db: DbMock) => db as unknown as Parameters<typeof recheckNonDeposi
 const texts = (db: DbMock) => db.mock.calls.map(([strings]) => (strings as TemplateStringsArray).join("?"));
 
 describe("Darwin live non-deposit document re-check (#1442)", () => {
-  it("ships with both switches on (James, 2026-10-16)", () => {
+  it("ships with all three switches on (James, 2026-10-16; card programs 2026-10-18)", () => {
     expect(NON_DEPOSIT_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
     expect(BROKERAGE_DOCUMENT_TAKEDOWN_LIVE).toBe(true);
     expect(NON_DEPOSIT_CHECK_VERSION).toBe(3);
-    expect(CARD_PROGRAM_TAKEDOWN_LIVE).toBe(false);
+    expect(CARD_PROGRAM_TAKEDOWN_LIVE).toBe(true);
     expect(NON_DEPOSIT_BATCH).toBe(2_000);
   });
 

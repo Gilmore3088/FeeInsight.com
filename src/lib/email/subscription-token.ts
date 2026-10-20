@@ -8,8 +8,6 @@ import { SITE_URL } from "@/lib/constants";
 
 export type SubscriptionAction = "confirm" | "unsubscribe";
 
-export const SUBSCRIPTION_ACTIONS: readonly SubscriptionAction[] = ["confirm", "unsubscribe"];
-
 import {
   EMAIL_PREFERENCES_PATH,
   FEE_ALERT_UNSUBSCRIBE_ACTION,

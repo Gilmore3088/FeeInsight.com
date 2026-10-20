@@ -64,7 +64,12 @@ export type HoovieLicenceStatus =
   /** Free to read, but the terms for showing it to customers are not yet confirmed. */
   | "terms-unconfirmed"
   /** Not loaded or shown until a person confirms the terms. */
-  | "held";
+  | "held"
+  /**
+   * Fee Insight's own reading of each institution's own public documents, the same documents the
+   * published fees come from: a fact and one evidence sentence with the link, never a copy of a page.
+   */
+  | "fee-insight";
 
 export interface HoovieLicence {
   status: HoovieLicenceStatus;
@@ -94,6 +99,12 @@ export interface HoovieSourceContract {
   /** Keys that unlock part of a source that otherwise loads without one. */
   optionalEnvKeys?: string[];
   cadence: HoovieCadence;
+  /**
+   * How often the loader re-checks the publisher, in hours (its own refresh constant), when that
+   * is a set rhythm: a feed polled daily is stale after days without a successful check, whatever
+   * the publisher's cadence (#2228).
+   */
+  checkEveryHours?: number;
   /** The level(s) the stored rows describe. */
   grain: HoovieGrain[];
   /** Ids used to tie rows to institutions or places; empty when rows stand alone. */

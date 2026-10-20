@@ -1,7 +1,10 @@
+import { feeSourceFetch } from "@/lib/agents/fee-source-fetch";
 import { sql } from "@/lib/data-store/connection";
 import { EmergencyStopActiveError } from "@/lib/automation-control";
 import { ProviderBudgetBlockedError } from "@/lib/api-hardening/budget";
+import { ProviderCircuitOpenError } from "@/lib/ai-provider-usage";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { lessonsForModel } from "@/lib/agents/learning/lesson-reader";
 import { classifyFetchFailure, type AttemptOutcome } from "@/lib/agents/learning/outcomes";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import {
@@ -340,6 +343,8 @@ async function homepageLinks(row: PaidFindRow, fetchImpl: Fetcher): Promise<Page
 function budgetStop(error: unknown): string | null {
   if (error instanceof ProviderBudgetBlockedError) return error.message || error.reasonCode;
   if (error instanceof EmergencyStopActiveError) return error.message;
+  // A provider billing refusal (#1056) stops the step like a cap; the institution stays queued.
+  if (error instanceof ProviderCircuitOpenError) return error.message;
   return null;
 }
 
@@ -393,7 +398,7 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
   await addBlockedFetch(result, options, db);
   if (result.budgetStopped) return result;
 
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = options.fetchImpl ?? feeSourceFetch;
   const model = PAID_PASS_MODELS.find();
   const usePick = options.pick ?? process.env.MAGELLAN_PAID_PICK?.trim().toLowerCase() !== "off";
   const ownHostsById = await loadOwnHosts(db, rows);
@@ -451,16 +456,18 @@ export async function runMagellanPaidFind(options: RunMagellanPaidFindOptions): 
     }
 
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "paid_find",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, lessons_applied: roleLessons.lessonIds },
         params: {
           model,
           max_tokens: MAX_OUTPUT_TOKENS,
           tools: [webSearchToolFor(siteDomains, WEB_SEARCH_MAX_USES)],
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: paidFindPrompt(row, rung, siteDomains) }],
         },
       });
@@ -684,15 +691,17 @@ async function runPick(
 
   if (links && links.length > 0) {
     try {
+      const roleLessons = lessonsForModel("magellan", "discover-paid");
       const call = await paidModelCall({
         agent: "magellan",
         operation: "paid_pick",
         runId: options.runId,
         create: options.create,
-        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, links: links.length },
+        metadata: { institution_id: institutionId, step_id: options.stepId ?? null, links: links.length, lessons_applied: roleLessons.lessonIds },
         params: {
           model: options.model,
           max_tokens: PICK_MAX_OUTPUT_TOKENS,
+          ...(roleLessons.system ? { system: roleLessons.system } : {}),
           messages: [{ role: "user", content: paidPickPrompt(row, links) }],
         },
       });

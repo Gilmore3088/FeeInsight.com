@@ -58,3 +58,5 @@ model-output acceptance are release gates. Synthetic assertions do not substitut
 for those checks. GitHub #976 and PR #985 hold the final head/run receipts and exact
 remaining blockers. Do not close H01 or merge until every gate passes; H07 records
 deployed SHA and post-release results.
+
+**Agent lesson:** hamilton/pr-985-subject-not-account

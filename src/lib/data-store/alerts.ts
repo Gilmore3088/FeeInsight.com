@@ -182,10 +182,3 @@ export async function removeAlertSubscription(
   return Number(row.affected_count) > 0;
 }
 
-export async function getAlertSubscriptionCount(userId: number): Promise<number> {
-  const [row] = await sql`
-    SELECT COUNT(*) as cnt FROM institution_fee_alert_subscriptions
-    WHERE user_id = ${userId} AND is_active = TRUE
-  `;
-  return Number(row.cnt);
-}

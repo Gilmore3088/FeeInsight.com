@@ -5,6 +5,7 @@ import {
   comparePeerSet,
   peerFiltersForRule,
   peerGroupValuesFrom,
+  ownFeeCoverage,
   pickPeerSet,
   peerRankFromGroupValues,
   rankAgainstPeers,
@@ -172,5 +173,24 @@ describe("peer sets on the institution page", () => {
     expect(picked.selected.key).toBe("nearest");
     expect(picked.selectedFilters).toEqual(nearest.filters);
     expect(pickPeerSet(1, null, [nearest, state], all, "state")!.selectedFilters).toEqual(state.filters);
+  });
+
+  it("should_default_to_the_first_set_that_compares_its_own_fees_and_widen_when_too_few_publish", () => {
+    // Three more Texas banks publish monthly maintenance, so the state set compares both own fees.
+    const wider: PeerRankValue[] = [
+      ...all,
+      ...[7, 9, 11].map((amount, i): PeerRankValue => [300 + i, "monthly_maintenance", amount, "bank", "TX", 11, "community_mid"]),
+    ];
+    const nearest = { key: "nearest", label: "The 25 banks closest in assets", filters: { institutionIds: [101, 102, 103, 104, 105, 106, 107, 108, 200] } };
+    // Nearest compares overdraft only (1 of 2 own fees); the state set compares both, so it is the default.
+    expect(ownFeeCoverage(comparePeerSet(1, nearest, wider))).toEqual({ compared: 1, fits: false });
+    expect(ownFeeCoverage(comparePeerSet(1, state, wider))).toEqual({ compared: 2, fits: true });
+    const picked = pickPeerSet(1, null, [nearest, state], wider, null)!;
+    expect(picked.options.map((o) => o.key)).toEqual(["nearest", "state"]);
+    expect(picked.selected.key).toBe("state");
+    // A visitor's choice still wins.
+    expect(pickPeerSet(1, null, [nearest, state], wider, "nearest")!.selected.key).toBe("nearest");
+    // With no own ranked fee, a set where overdraft has a median fits.
+    expect(ownFeeCoverage(comparePeerSet(999, nearest, wider))).toEqual({ compared: 0, fits: true });
   });
 });

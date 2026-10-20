@@ -30,7 +30,7 @@ function lastLine(lastAt: string | null, status: string | null): { text: string;
 
 /** The Publishing room: what goes out, to whom, when it last went and when it's next due. */
 export default async function PublishingRoomPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const [reports, emails] = await Promise.all([
     getReportFreshness().catch((error): ReportFreshness[] | null => {
       console.error("Publishing room report freshness failed", error);
@@ -66,7 +66,7 @@ export default async function PublishingRoomPage() {
               </p>
             </div>
             <div className="admin-card px-4 py-3">
-              <p className="text-xs text-gray-500">Reports saved by Hamilton Pro users</p>
+              <p className="text-xs text-gray-500">Reports saved by Hamilton users</p>
               <p className="mt-1 font-mono text-2xl font-medium tabular-nums">{proReports?.count ?? 0}</p>
               <p className="mt-1 text-[11.5px] text-gray-500">
                 {proReports?.lastAt ? `Latest ${formatAdminDateTime(proReports.lastAt)}` : "None yet"}

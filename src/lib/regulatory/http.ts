@@ -13,14 +13,47 @@ export const REGISTRY_USER_AGENT = `${crawlerUserAgent("Magellan")} ${CONTACT_EM
 
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
+/** Keep URL credentials out of step errors and partition receipts. */
+export function redactRegistrySecrets(value: string): string {
+  return value.replace(/((?:UserID|api[_-]?key|access[_-]?token|token|key|registrationkey)=)[^&\s]+/gi, "$1***");
+}
+
 export class RegistryHttpError extends Error {
   constructor(
     message: string,
     readonly url: string,
     readonly status: number | null,
   ) {
-    super(message);
+    super(redactRegistrySecrets(message));
+    this.url = redactRegistrySecrets(url);
     this.name = "RegistryHttpError";
+  }
+}
+
+/** One landing page a list loader tried, and what it answered. */
+export interface RegistryPageTried {
+  url: string;
+  status: "ok" | "not_found" | "error";
+  error?: string;
+}
+
+/**
+ * Every landing page a loader tried failed (404 or an error), so nothing was checked at all
+ * (#2306). It is a failure, never an empty check: an empty result says the publisher had nothing
+ * new, which nobody can know when no page answered.
+ */
+export class RegistryUnreachableError extends RegistryHttpError {
+  constructor(readonly pagesTried: readonly RegistryPageTried[], status: number | null) {
+    const allMissing = pagesTried.every((page) => page.status === "not_found");
+    const listed = pagesTried
+      .map((page) => `${page.url} ${page.status === "not_found" ? "404" : page.error ?? "error"}`)
+      .join("; ");
+    super(
+      `No landing page could be fetched${allMissing ? "; every page returned 404" : ""}: ${listed || "no pages configured"}`,
+      pagesTried[0]?.url ?? "",
+      status,
+    );
+    this.name = "RegistryUnreachableError";
   }
 }
 

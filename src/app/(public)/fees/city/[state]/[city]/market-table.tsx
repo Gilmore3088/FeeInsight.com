@@ -4,16 +4,16 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useState } from "react";
 import type { CityFeeKey, CityMarketInstitution } from "@/lib/data-store";
 import type { LocalFee } from "./market-view";
-import { ACCOUNT_NOT_IDENTIFIED, meaningfulConditions } from "./account-details";
+import { ACCOUNT_NOT_IDENTIFIED, meaningfulConditions, SOURCE_WORDING } from "./account-details";
 import { ComparisonBars, feeBars } from "./comparison-bars";
 import { evidenceHeadline, NO_LOCAL_MEDIAN } from "./fee-evidence";
-import { CITY_SORTS, FEE_SELECT_EVENT, lowerLabel, money, type CitySort, type FeeSelectDetail } from "./format";
+import { CITY_SORTS, FEE_SELECT_EVENT, lowerLabel, money, sortOf, type CitySort, type FeeSelectDetail } from "./format";
 import { orderInstitutions, type CharterFilter } from "./table-order";
 
 /** Why a cell is empty: we hold no schedule, we found one but publish none of it yet, or it lists no such fee. */
 function missingNote(inst: CityMarketInstitution): string {
   if (inst.schedule === "none") return "No fee schedule found yet";
-  if (inst.schedule === "found") return "Schedule found; extraction pending.";
+  if (inst.schedule === "found") return "Fee schedule found; amounts not yet added.";
   return "Fee not identified in the reviewed schedule.";
 }
 
@@ -83,6 +83,18 @@ export function MarketTable({
   const [all, setAll] = useState(false);
   const ids = useId();
   const fee = fees.find((f) => f.key === key) ?? fees[0];
+
+  // The page is cached and the same for every address, so a shared link's ?fee= and ?sort=
+  // are applied here, once, in the browser.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedFee = params.get("fee");
+    if (linkedFee && fees.some((f) => f.key === linkedFee)) setKey(linkedFee as CityFeeKey);
+    const linkedSort = params.get("sort");
+    if (linkedSort) setSort(sortOf(linkedSort));
+    // Only the address the page opened with; later choices write it themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onSelect = (event: Event) => {
@@ -265,7 +277,7 @@ export function MarketTable({
                         {conditions.length > 0 && <p className="text-[12px] text-ink-soft">{conditions.join(" · ")}</p>}
                         {v.source_line && (
                           <details className="mt-1 text-[12px]">
-                            <summary className="-my-3 inline-block cursor-pointer py-3 text-ink-muted hover:text-ink">Source wording</summary>
+                            <summary className="-my-3 inline-block cursor-pointer py-3 text-ink-muted hover:text-ink">{SOURCE_WORDING}</summary>
                             <blockquote className="mt-1 border-l-2 border-border pl-3 text-ink-soft [overflow-wrap:anywhere]">
                               &ldquo;{v.source_line}&rdquo;
                             </blockquote>

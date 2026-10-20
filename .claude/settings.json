@@ -57,8 +57,7 @@
       "mcp__github__delete_file",
       "mcp__github__create_repository",
       "mcp__github__fork_repository",
-      "Edit(supabase/migrations/**)",
-      "Write(supabase/migrations/**)"
+      "Edit(supabase/migrations/**)"
     ],
     "allow": [
       "Bash(git push -u origin claude/*)",
@@ -143,17 +142,11 @@
       "Bash(du*)",
       "Bash(date*)",
       "Edit(src/**)",
-      "Write(src/**)",
       "Edit(docs/**)",
-      "Write(docs/**)",
       "Edit(growth-os/**)",
-      "Write(growth-os/**)",
       "Edit(.agents/**)",
-      "Write(.agents/**)",
       "Edit(public/**)",
-      "Write(public/**)",
       "Edit(Reports/**)",
-      "Write(Reports/**)",
       "mcp__github__get_me",
       "mcp__github__get_file_contents",
       "mcp__github__get_commit",

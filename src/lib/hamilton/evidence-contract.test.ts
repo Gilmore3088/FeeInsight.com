@@ -149,8 +149,32 @@ describe("explicit derivations", () => {
     expect(deriveDifference("ok", fact({ id: "a", frequency: null }), fact({ frequency: null, value: 35 })).fact?.value).toBe(-25);
     expect(deriveDifference("ok", fact({ id: "a", frequency: "per_item" }), fact({ frequency: null, value: 35 })).problems).toEqual([]);
     expect(deriveDifference("bad", fact({ id: "a", frequency: "monthly" }), fact({ frequency: null })).problems).toEqual(["fee_frequency_mismatch"]);
-    // Two stated frequencies still have to agree word for word, as before.
-    expect(deriveDifference("bad", fact({ id: "a", frequency: "per_item" }), fact({ frequency: "per item" })).problems).toEqual(["fee_frequency_mismatch"]);
+    expect(deriveDifference("ok", fact({ id: "a", frequency: "Per-Transaction" }), fact({ frequency: null, value: 35 })).problems).toEqual([]);
+  });
+
+  it("compares two stated frequencies by meaning, not spelling (#1975)", () => {
+    // Underscores, hyphens, extra spaces and case are spelling, not a different frequency.
+    for (const [left, right] of [
+      ["per_item", "per item"],
+      ["Per Item", "per-item"],
+      ["  per   item ", "PER_ITEM"],
+      ["per_transaction", "per transaction"],
+      ["Monthly", "monthly "],
+    ]) {
+      const result = deriveDifference("ok", fact({ id: "a", frequency: left }), fact({ frequency: right, value: 35 }));
+      expect(result.problems, `${left} vs ${right}`).toEqual([]);
+      expect(result.fact?.value).toBe(-25);
+    }
+    // Different words are still different frequencies.
+    for (const [left, right] of [
+      ["monthly", "per item"],
+      ["per_item", "per_transaction"],
+      ["per item", "per month"],
+      ["annual", "monthly"],
+    ]) {
+      expect(deriveDifference("bad", fact({ id: "a", frequency: left }), fact({ frequency: right })).problems, `${left} vs ${right}`)
+        .toEqual(["fee_frequency_mismatch"]);
+    }
   });
 
   it("lists only event categories the taxonomy knows, and no recurring one", () => {

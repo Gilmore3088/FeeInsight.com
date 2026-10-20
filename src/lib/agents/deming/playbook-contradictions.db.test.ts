@@ -8,7 +8,7 @@ const connection = process.env.E2E_DATABASE_URL;
 type Db = NonNullable<Parameters<typeof runPlaybookContradictions>[0]>["db"];
 
 describe.skipIf(!connection)("Deming playbook check in isolated PostgreSQL", () => {
-  let db: ReturnType<typeof postgres>;
+  let db: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   beforeAll(async () => {
     if (!connection || !["localhost", "127.0.0.1", "[::1]"].includes(new URL(connection).hostname)) {
       throw new Error("Playbook check tests require a loopback E2E database; production connections are forbidden");
