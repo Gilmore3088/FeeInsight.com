@@ -382,16 +382,22 @@ async function executeAgenticStep(
   // Atlas's hourly nationwide lane sync (state-lane-scheduler.ts), from its own route.
   if (step.stepKey === "lane-sync") {
     const { runNationwideLaneSync } = await import("@/lib/agents/state-lane-scheduler");
-    const synced = await runNationwideLaneSync();
+    const synced = await runNationwideLaneSync({ runId: run.id, stepId: step.id });
     const seconds = Math.round((synced.ms.profiles + synced.ms.unchecked + synced.ms.second_looks + synced.ms.priorities) / 1000);
+    // A failed unchecked read is said as a failure, never as "woke 0" (#2424).
+    const uncheckedPart = synced.uncheckedError
+      ? `woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees, but the read failed for ${synced.uncheckedFailedStates.length > 0 ? `${synced.uncheckedFailedStates.length} state(s) (${synced.uncheckedFailedStates.join(", ")})` : "every state"} (${synced.uncheckedError})`
+      : `woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees`;
     return {
       status: "completed",
-      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); woke ${synced.uncheckedWoken.toLocaleString()} lane(s) with unchecked live fees and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
+      summary: `Synced every state's lane and profiles (${synced.profiles.lanesTouched.toLocaleString()} lanes, ${synced.profiles.profilesTouched.toLocaleString()} profiles); ${uncheckedPart} and ${synced.secondLookWoken.toLocaleString()} with a pending second look; ${synced.priorities.error ? `the priority refresh failed (${synced.priorities.error}), so every lane kept its score` : `rescored ${synced.priorities.updated.toLocaleString()} lane(s)`}; ${seconds} s.`,
       detail: {
         lanes_touched: synced.profiles.lanesTouched,
         profiles_touched: synced.profiles.profilesTouched,
         profile_sync_failures: synced.profiles.failures,
         unchecked_woken: synced.uncheckedWoken,
+        unchecked_wake_error: synced.uncheckedError,
+        unchecked_failed_states: synced.uncheckedFailedStates,
         second_look_woken: synced.secondLookWoken,
         priorities_updated: synced.priorities.updated,
         priorities_error: synced.priorities.error,
