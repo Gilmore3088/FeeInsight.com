@@ -4,6 +4,7 @@
  */
 
 import { FEE_FAMILIES, getDisplayName } from "@/lib/fee-taxonomy";
+import { SPECIAL_UNIT_FREQUENCIES } from "@/lib/fee-unit";
 
 export const FEE_CORRECTION_CHECK = "admin.fee_correction";
 /** Marks the quarantine on a published row a correction replaced. Not an admin hold. */
@@ -36,7 +37,7 @@ export const CORRECTION_FREQUENCIES = [
   "quarterly",
   "semi_annual",
   "annual",
-  "hourly",
+  ...SPECIAL_UNIT_FREQUENCIES,
 ] as const;
 
 export interface FeeCorrectionActor {
@@ -73,8 +74,6 @@ export interface FeeReversalInput {
   idempotencyKey: string;
   reason: string;
 }
-
-export type CorrectionField = keyof FeeCorrectionInput;
 
 export type Validated<T> = { ok: true; value: T } | { ok: false; errors: Partial<Record<string, string>> };
 

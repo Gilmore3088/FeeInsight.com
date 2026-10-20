@@ -47,8 +47,11 @@ export async function getPipelineHealth(): Promise<PipelineHealth> {
           WHERE status IN ('completed', 'complete')
             AND COALESCE(completed_at, updated_at) >= NOW() - INTERVAL '24 hours') AS runs_completed_24h,
         (SELECT COUNT(*)::int FROM agent_runs
-          WHERE status IN ('failed', 'blocked')
-            AND updated_at >= NOW() - INTERVAL '24 hours') AS runs_failed_24h
+          WHERE status = 'failed'
+            AND updated_at >= NOW() - INTERVAL '24 hours') AS runs_failed_24h,
+        (SELECT COUNT(*)::int FROM agent_runs
+          WHERE status = 'blocked'
+            AND updated_at >= NOW() - INTERVAL '24 hours') AS runs_blocked_24h
     `,
   ]);
   const row = rows[0] ?? {};
@@ -67,5 +70,6 @@ export async function getPipelineHealth(): Promise<PipelineHealth> {
     provider_failure_count_24h: Number(row.provider_failures ?? 0),
     runs_completed_24h: Number(row.runs_completed_24h ?? 0),
     runs_failed_24h: Number(row.runs_failed_24h ?? 0),
+    runs_blocked_24h: Number(row.runs_blocked_24h ?? 0),
   };
 }

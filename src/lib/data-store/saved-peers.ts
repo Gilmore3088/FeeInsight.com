@@ -59,8 +59,10 @@ function mapRow(row: Record<string, unknown>): SavedPeerSet {
 }
 
 /**
- * The peer sets a user can see: their own, plus every set of the workspace they are working
- * in (when they are an active member of it). Workspace sets come first.
+ * The peer sets a user can see: their own personal sets, the workspace sets they wrote while
+ * they are still an active member of that workspace, plus every set of the workspace they are
+ * working in (when they are an active member of it). Workspace sets come first. A member who
+ * leaves or is removed keeps none of the team's sets, their own included (#1922).
  */
 export async function getSavedPeerSets(
   userId: string,
@@ -70,14 +72,14 @@ export async function getSavedPeerSets(
   const rows = await sql`
     SELECT ${columns()}
     FROM saved_peer_sets s
-    WHERE s.created_by = ${userId}
+    WHERE (s.created_by = ${userId} AND (s.institution_id IS NULL OR ${memberOf(userId)}))
        OR (${workspace}::int IS NOT NULL AND s.institution_id = ${workspace}::int AND ${memberOf(userId)})
     ORDER BY (s.institution_id IS NULL), s.created_at DESC
   ` as Record<string, unknown>[];
   return rows.map(mapRow);
 }
 
-/** One set the user can use: their own, or one of a workspace they are an active member of. */
+/** One set the user can use: their own personal set, or one of a workspace they are an active member of. */
 export async function getSavedPeerSetById(
   id: number,
   userId: string,
@@ -86,7 +88,7 @@ export async function getSavedPeerSetById(
     SELECT ${columns()}
     FROM saved_peer_sets s
     WHERE s.id = ${id}
-      AND (s.created_by = ${userId} OR (s.institution_id IS NOT NULL AND ${memberOf(userId)}))
+      AND ((s.institution_id IS NULL AND s.created_by = ${userId}) OR (s.institution_id IS NOT NULL AND ${memberOf(userId)}))
     LIMIT 1
   ` as Record<string, unknown>[];
   return rows[0] ? mapRow(rows[0]) : null;
@@ -166,12 +168,17 @@ export async function savePeerSet(
     )
     RETURNING id
   `;
-  return row.id;
+  // id is a bigint and arrives as text ("5"); callers compare it with SavedPeerSet.id, a number.
+  return Number(row.id);
 }
 
-/** Who may change a set: its creator, or an active non-viewer member of its workspace. */
+/**
+ * Who may change a set: the creator of a personal set, or an active non-viewer member of a
+ * workspace set's workspace. Writing a workspace set gives no lasting right to it: once the
+ * creator leaves the team, only its current members may change it (#1922).
+ */
 const editableBy = (userId: string, db: typeof sql = sql) => db`
-  (s.created_by = ${userId} OR (s.institution_id IS NOT NULL AND EXISTS (
+  ((s.institution_id IS NULL AND s.created_by = ${userId}) OR (s.institution_id IS NOT NULL AND EXISTS (
     SELECT 1 FROM institution_workspace_memberships m
      WHERE m.institution_id = s.institution_id
        AND m.user_id::text = ${userId}

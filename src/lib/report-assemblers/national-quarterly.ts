@@ -17,6 +17,8 @@ import { STATE_NAMES, US_STATES_ONLY } from "@/lib/us-states";
 import { priceBands } from "@/lib/hamilton/workspace/bands";
 import { ASSET_TIER_RANGES } from "@/lib/hamilton/peer-index";
 import { getRevenueTrend } from "@/lib/data-store/call-reports";
+import { FINANCIAL_SOURCES } from "@/lib/data-store/financial-sources";
+import { buildFinancialIncomeGroup, type FinancialIncomeGroup } from "./financial-income";
 import { getPublicStatsSummary } from "@/lib/public-stats";
 import { getBeigeBookHeadlines, getBeigeBookThemes, getFredSummary } from "@/lib/data-store/fed";
 import type { BeigeBookTheme } from "@/lib/data-store/fed";
@@ -120,6 +122,8 @@ export interface NationalQuarterlyPayload {
   categories: NationalQuarterlySection[];
   /** Fees that may publish as a rate, by their rates; absent on older payloads. */
   rate_categories?: NationalRateSection[];
+  financial_income_groups?: FinancialIncomeGroup[];
+  /** Retired pooled financial fields are retained only for old saved payloads. */
   revenue: {
     latest_quarter: string;
     total_service_charges: number;
@@ -132,7 +136,6 @@ export interface NationalQuarterlyPayload {
     fed_funds_rate: number | null;
     unemployment_rate: number | null;
     cpi_yoy_pct: number | null;
-    consumer_sentiment: number | null;
     gdp_growth_yoy_pct: number | null;
     personal_savings_rate: number | null;
     bank_lending_standards: number | null;
@@ -227,45 +230,16 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     executed_at: assembled_at,
   });
 
-  // Query 4: Call Report revenue trend (graceful degradation)
-  let revenue: NationalQuarterlyPayload["revenue"] = null;
-  let income_series: IncomeQuarterRow[] = [];
-  try {
-    // Twelve quarters so each of the newest eight has its year-earlier quarter.
-    const trend = await getRevenueTrend(12);
-    income_series = trend.quarters.slice(0, 8).map((q) => ({
-      quarter: q.quarter,
-      total: q.total_service_charges,
-      banks: q.bank_service_charges,
-      credit_unions: q.cu_service_charges,
-      institutions: q.total_institutions,
-      yoy_change_pct: q.yoy_change_pct,
-    }));
-    if (trend.latest) {
-      revenue = {
-        latest_quarter: trend.latest.quarter,
-        total_service_charges: trend.latest.total_service_charges,
-        yoy_change_pct: trend.latest.yoy_change_pct,
-        total_institutions: trend.latest.total_institutions,
-        bank_service_charges: trend.latest.bank_service_charges,
-        cu_service_charges: trend.latest.cu_service_charges,
-      };
-    }
-    manifestEntries.push({
-      sql: "getRevenueTrend(12)",
-      row_count: trend.quarters.length,
-      executed_at: assembled_at,
-    });
-  } catch (e) {
-    console.warn("[assembler] Call Report query failed, skipping:", e);
-    manifestEntries.push({
-      sql: "getRevenueTrend(12)",
-      row_count: 0,
-      executed_at: assembled_at,
-    });
-  }
+  // Each regulator supplies a distinct measure; no pooled total or mean is valid.
+  const revenue: NationalQuarterlyPayload["revenue"] = null;
+  const income_series: IncomeQuarterRow[] = [];
+  const financial_income_groups = await Promise.all(FINANCIAL_SOURCES.map(async (source) => {
+    const trend = await getRevenueTrend(12, source).catch(() => ({ quarters: [], latest: null }));
+    manifestEntries.push({ sql: `getRevenueTrend(12, '${source}')`, row_count: trend.quarters.length, executed_at: assembled_at });
+    return buildFinancialIncomeGroup(source, trend.quarters, 8, "United States", "cohort_history" in trend ? trend.cohort_history : undefined);
+  }));
 
-  // Query 5: FRED economic indicators (graceful degradation)
+  // Query 5: economic indicators from BLS, BEA and the Fed Board (graceful degradation)
   let fred: NationalQuarterlyPayload["fred"] = null;
   try {
     const fredData = await getFredSummary();
@@ -273,7 +247,6 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       fed_funds_rate: fredData.fed_funds_rate,
       unemployment_rate: fredData.unemployment_rate,
       cpi_yoy_pct: fredData.cpi_yoy_pct,
-      consumer_sentiment: fredData.consumer_sentiment,
       gdp_growth_yoy_pct: fredData.gdp_growth_yoy_pct,
       personal_savings_rate: fredData.personal_savings_rate,
       bank_lending_standards: fredData.bank_lending_standards,
@@ -285,7 +258,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
       executed_at: assembled_at,
     });
   } catch (e) {
-    console.warn("[assembler] FRED query failed, skipping:", e);
+    console.warn("[assembler] economic indicator query failed, skipping:", e);
     manifestEntries.push({
       sql: "getFredSummary()",
       row_count: 0,
@@ -437,18 +410,10 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
   const sortedBankPremium = [...bankPremiums].sort((a, b) => b.diff_pct - a.diff_pct);
   const sortedCuPremium = [...bankPremiums].sort((a, b) => a.diff_pct - b.diff_pct);
 
-  // Revenue concentration
-  let revenue_per_institution: number | null = null;
-  let bank_revenue_share_pct: number | null = null;
-  let cu_revenue_share_pct: number | null = null;
-  if (revenue && revenue.total_service_charges > 0) {
-    // Filed in thousands; per institution in dollars, for one quarter.
-    revenue_per_institution = revenue.total_institutions > 0
-      ? (revenue.total_service_charges * 1000) / revenue.total_institutions
-      : null;
-    bank_revenue_share_pct = (revenue.bank_service_charges / revenue.total_service_charges) * 100;
-    cu_revenue_share_pct = (revenue.cu_service_charges / revenue.total_service_charges) * 100;
-  }
+  // Mixed bank/CU revenue metrics are not comparable; old saved fields stay empty.
+  const revenue_per_institution = null;
+  const bank_revenue_share_pct = null;
+  const cu_revenue_share_pct = null;
 
   // Maturity counts
   const strong_maturity_count = categories.filter((c) => c.maturity_tier === "strong").length;
@@ -561,7 +526,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
 
   // Compute data_hash over assembled payload content
   const data_hash = createHash("sha256")
-    .update(JSON.stringify({ categories, rate_categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, overdraft_distribution, developments, fee_changes }))
+    .update(JSON.stringify({ categories, rate_categories, district_headlines, beige_themes: feeRelevantThemes, revenue, fred, derived, regional, income_series, financial_income_groups, overdraft_distribution, developments, fee_changes }))
     .digest("hex");
 
   const pipeline_commit = process.env.VERCEL_GIT_COMMIT_SHA ?? "local";
@@ -588,6 +553,7 @@ export async function assembleNationalQuarterly(): Promise<NationalQuarterlyPayl
     derived,
     regional,
     income_series,
+    financial_income_groups,
     overdraft_distribution,
     developments,
     fee_changes,
@@ -623,23 +589,15 @@ export function buildThesisSummary(
       maturity_tier: c.maturity_tier,
     }));
 
-  const revenue_snapshot = payload.revenue
-    ? {
-        latest_quarter: payload.revenue.latest_quarter,
-        total_service_charges: payload.revenue.total_service_charges,
-        yoy_change_pct: payload.revenue.yoy_change_pct,
-        bank_service_charges: payload.revenue.bank_service_charges,
-        cu_service_charges: payload.revenue.cu_service_charges,
-        total_institutions: payload.revenue.total_institutions,
-      }
-    : null;
+  // Never forward pooled fields from a pre-contract saved payload to Hamilton.
+  const revenue_snapshot = null;
+  const financial_income_groups = payload.financial_income_groups ?? [];
 
   const fred_snapshot = payload.fred
     ? {
         fed_funds_rate: payload.fred.fed_funds_rate,
         unemployment_rate: payload.fred.unemployment_rate,
         cpi_yoy_pct: payload.fred.cpi_yoy_pct,
-        consumer_sentiment: payload.fred.consumer_sentiment,
         as_of: payload.fred.as_of,
       }
     : null;
@@ -653,7 +611,6 @@ export function buildThesisSummary(
     commoditized_count,
     total_priced_categories,
     avg_iqr_spread_pct,
-    revenue_per_institution,
   } = payload.derived;
 
   if (bank_higher_count + cu_higher_count > 0) {
@@ -666,17 +623,13 @@ export function buildThesisSummary(
       `${commoditized_count} of ${total_priced_categories} fee categories have a middle half narrower than 30% of the median`,
     );
   }
-  if (revenue_per_institution !== null) {
-    derived_tensions.push(
-      `Average service-charge income per reporting institution: $${Math.round(revenue_per_institution).toLocaleString()} in ${payload.revenue?.latest_quarter ?? "the latest quarter"}`,
-    );
-  }
 
   return {
     quarter: payload.quarter,
     total_institutions: payload.total_institutions,
     top_categories,
     revenue_snapshot,
+    financial_income_groups,
     fred_snapshot,
     beige_book_themes,
     derived_tensions,

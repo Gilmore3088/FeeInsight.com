@@ -13,12 +13,12 @@ beforeEach(() => { state.queries.length = 0; state.replies.length = 0; });
 
 describe("local consumer evidence", () => {
   it("uses sourced consumer observations without dropping zero or averaging down the overdraft tier", async () => {
-    state.replies.push([{ county_fips: 47037, year: 2026 }], [{ institution_id: 50, institution_name: "Test Bank", charter_type: "bank", deposits: 100, fee_category: "nsf", amount: "0.00", document_url: null, document_date: null }]);
+    state.replies.push([{ city: "NASHVILLE" }], [{ county_fips: 47037, year: 2026 }], [{ institution_id: 50, institution_name: "Test Bank", charter_type: "bank", deposits: 100, fee_category: "nsf", amount: "0.00", document_url: null, document_date: null }]);
     const result = await getLocalMarketCompetitors({ institutionId: 47, certNumber: null, city: "Nashville", stateCode: "TN", categories: ["nsf"] });
     expect(result?.competitors[0].fees.nsf).toBe(0);
     expect(result?.basis).toBe("hq_city");
     expect(result?.competitors[0].market_deposits).toBeNull();
-    const query = state.queries[1];
+    const query = state.queries[2];
     expect(query).toContain("c.source_document_id IS NOT NULL");
     expect(query).toContain("c.fee_audience IN ('consumer', 'both', 'unknown')");
     expect(query).toContain("THEN MAX(c.amount)");

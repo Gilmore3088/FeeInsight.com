@@ -5,6 +5,7 @@ import {
   compareSelectedInstitutionFees,
 } from "./report-evidence";
 import { chargeBasesFromCounts } from "@/lib/data-store/fee-index";
+import { SPECIAL_UNIT_FREQUENCIES, UNIT_LABELS } from "@/lib/fee-unit";
 
 const indexEntries = [
   {
@@ -251,6 +252,36 @@ describe("buildReportPeerCoveragePreview", () => {
 });
 
 describe("compareSelectedInstitutionFees (like for like)", () => {
+  it("keeps special units out even without a dominant peer basis, retaining ordinary own prices (#2248)", () => {
+    const research = {
+      fee_category: "account_research", median_amount: 25, p25_amount: 15, p75_amount: 35,
+      institution_count: 80, maturity_tier: "strong" as const,
+    };
+    for (const frequency of SPECIAL_UNIT_FREQUENCIES) {
+      for (const bases of [undefined, [], chargeBasesFromCounts([
+        { fee_category: "account_research", frequency, n: 100 },
+      ])]) {
+        const selectedFees = [
+          { fee_name: "Research", fee_category: "account_research", amount: 10, frequency,
+            review_status: "approved", source_url: "https://example.com/consumer/fees" },
+        ];
+        const onlySpecial = compareSelectedInstitutionFees({ selectedFees, indexEntries: [research], chargeBases: bases });
+        expect(onlySpecial.deltas, frequency).toEqual([]);
+        expect(onlySpecial.notLikeForLike[0]).toMatchObject({
+          reason: "different_charge_basis", detail: `Charged ${UNIT_LABELS[frequency]}; comparison unavailable`,
+        });
+      }
+      const mixed = compareSelectedInstitutionFees({
+        selectedFees: [
+          { fee_name: "Research by unit", fee_category: "account_research", amount: 10, frequency, review_status: "approved" },
+          { fee_name: "Flat research", fee_category: "account_research", amount: 30, frequency: "per_item", review_status: "approved" },
+        ],
+        indexEntries: [research],
+      });
+      expect(mixed.deltas).toEqual([expect.objectContaining({ institution_amount: 30 })]);
+    }
+  });
+
   const entries = [
     { fee_category: "monthly_maintenance", median_amount: 10, p25_amount: 5, p75_amount: 12, institution_count: 900, maturity_tier: "strong" as const },
     { fee_category: "safe_deposit_box", median_amount: 50, p25_amount: 35, p75_amount: 75, institution_count: 900, maturity_tier: "strong" as const },

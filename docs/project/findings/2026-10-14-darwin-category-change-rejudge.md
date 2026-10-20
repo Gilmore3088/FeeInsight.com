@@ -35,3 +35,5 @@ the judged category among the row's other `canonical_hint:` flags).
 
 **Fix.** `src/lib/agents/darwin/category-change.ts`, shipped off; the read runs in a savepoint so
 a failed count never aborts the verify step's transaction.
+
+**Agent lesson:** darwin/issue-1295

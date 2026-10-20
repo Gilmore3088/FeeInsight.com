@@ -35,14 +35,18 @@ export function parsePasswordResetToken(token: string): { userId: number; expire
   return { userId, expiresAt, sig: match[3] };
 }
 
-/** True when the token is unexpired and was signed over this user's current password hash. */
+/**
+ * True when the token is unexpired and was signed over this user's current password hash.
+ * `users.id` is a bigint, which the driver returns as text ("26"), so the id is compared as a
+ * number; a strict compare against the text made every link read as expired (#1970).
+ */
 export function verifyPasswordResetToken(
   token: string,
-  user: { id: number; password_hash: string },
+  user: { id: number | string; password_hash: string },
   now: number = Date.now(),
 ): boolean {
   const parsed = parsePasswordResetToken(token);
-  if (!parsed || parsed.userId !== user.id || parsed.expiresAt <= now) return false;
+  if (!parsed || parsed.userId !== Number(user.id) || parsed.expiresAt <= now) return false;
   const expected = signature(parsed.userId, parsed.expiresAt, user.password_hash);
   return crypto.timingSafeEqual(Buffer.from(parsed.sig, "hex"), Buffer.from(expected, "hex"));
 }

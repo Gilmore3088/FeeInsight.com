@@ -1,4 +1,5 @@
 import { unstable_cache } from "next/cache";
+import { STATS_METHOD_VERSION } from "./fee-stats";
 
 /**
  * Shared cache for the aggregate reads behind the public site.
@@ -48,7 +49,9 @@ export function cachedPublicRead<A extends unknown[], R>(
       if (isEmpty(value)) throw new UncacheableResult(value);
       return value;
     },
-    ["public-read", key, "consumer-audience-v2"],
+    // The statistics rules' version is part of every key, so a rule change (#1816 took safe deposit
+    // service charges out of the medians) is never served from an entry computed before it.
+    ["public-read", key, "consumer-audience-v2", `stats-v${STATS_METHOD_VERSION}`],
     { tags: [PUBLIC_READ_CACHE_TAG], revalidate: PUBLIC_READ_CEILING_SECONDS },
   );
   return async (...args: A) => {

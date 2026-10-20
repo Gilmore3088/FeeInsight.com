@@ -26,10 +26,10 @@ import { CustomerFooter } from "@/components/customer-footer";
 import { SearchModal } from "@/components/public/search-modal";
 import { TrackLink } from "@/components/track-link";
 import { hasUnstatedAudience, UnstatedAudienceFootnote } from "@/components/unstated-audience";
-import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
+import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TryAPricePanel } from "@/app/subscribe/try-a-price-panel";
 import { buildScenario } from "@/app/subscribe/scenario";
-import { SANS } from "@/app/landing-shared";
+import { SAMPLE_REPORT_HREF, SANS } from "@/app/landing-shared";
 import { ReportOfferSection } from "./report-offer";
 import { MarketLadder, readSampleLadder } from "./market-ladder";
 import { buildCompetitorBoard } from "./pro-view";
@@ -47,7 +47,7 @@ const PAGE_TITLE = "Bank Fee Benchmarking and Competitive Fee Reports";
 // Kept under 160 characters so search results show it whole.
 const PAGE_DESCRIPTION =
   `Know where your fees stand against named local competitors, with a source for every figure. ` +
-  `Hamilton, the Pro workspace, is built on the ${PRODUCT_NAME}.`;
+  `Hamilton, the Fee Insight workspace, is built on the ${PRODUCT_NAME}.`;
 
 export const metadata: Metadata = {
   title: PAGE_TITLE,
@@ -154,12 +154,18 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             Benchmark every fee against your competitors&rsquo; own schedules
           </h1>
           <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-ink-soft">
-            Hamilton, the Pro workspace, names each competitor and its fee, from your counties to the nation.
+            Hamilton, the Fee Insight workspace, names each competitor and its fee, from your counties to the nation.
           </p>
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            <Link href={PRIMARY_CTA_NAV.href} className="fi-btn fi-btn-primary justify-center whitespace-nowrap">
-              {PRIMARY_CTA_NAV.label}
-            </Link>
+            {/* A pricing manager starts on the sample report, not the consumer directory (site audit #1952). */}
+            <TrackLink
+              event="sample_report_click"
+              eventProps={{ placement: "for_institutions_hero" }}
+              href={SAMPLE_REPORT_HREF}
+              className="fi-btn fi-btn-primary justify-center whitespace-nowrap"
+            >
+              View a sample analysis
+            </TrackLink>
             <TrackLink
               event="upgrade_click"
               eventProps={{ placement: "for_institutions_hero" }}
@@ -170,7 +176,7 @@ function Hero({ exhibit }: { exhibit: ReactNode }) {
             </TrackLink>
           </div>
           <p className="mt-4 text-[13px] text-ink-muted">
-            Pro from {fromMonthly}, monthly or annual.{" "}
+            Hamilton from {fromMonthly}, monthly or annual.{" "}
             <TrackLink
               event="contact_sales"
               eventProps={{ placement: "for_institutions_hero_demo" }}
@@ -276,13 +282,13 @@ function PlansSection() {
     <section id="plans" aria-labelledby="plans-heading" className="scroll-mt-16 border-b border-border bg-surface-0">
       <div className={SECTION_INNER}>
         <div className="max-w-2xl">
-          <p className={EYEBROW}>Hamilton Pro</p>
+          <p className={EYEBROW}>Hamilton</p>
           <h2 id="plans-heading" className={`mt-3 ${H2}`} style={SANS}>
             One plan for your whole team
           </h2>
           <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
             Priced by asset size, for up to {WORKSPACE_SEAT_LIMIT} people.
-            {freeMonths > 0 ? ` Pay annually and get ${freeMonths} months free.` : ""}
+            {freeMonths > 0 ? ` Pay annually and get ${freeMonths === 2 ? "two months" : freeMonths === 1 ? "one month" : `${freeMonths} months`} free.` : ""}
           </p>
         </div>
         <ul className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -337,8 +343,8 @@ function DemoClose() {
             Tell us your institution. We&apos;ll walk you through its fees against its competitors.
           </p>
           <p className="mt-6 text-[14px]">
-            <Link href={PRIMARY_CTA_NAV.href} className="font-semibold underline underline-offset-2">
-              {PRIMARY_CTA_NAV.label}
+            <Link href={SAMPLE_REPORT_HREF} className="font-semibold underline underline-offset-2">
+              Or view a sample analysis first
             </Link>
           </p>
         </div>

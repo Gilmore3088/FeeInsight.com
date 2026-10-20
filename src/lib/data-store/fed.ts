@@ -1,4 +1,5 @@
 import { sql } from "./connection";
+import { fedIndicatorServedSql, STRUCK_FRED_SERIES } from "./struck-sources";
 
 export interface BeigeBookSection {
   id: number;
@@ -147,7 +148,9 @@ export async function getDistrictIndicators(
     return await sql`
       SELECT series_id, series_title, observation_date, value, units
       FROM fed_economic_indicators
-      WHERE fed_district = ${district} OR fed_district IS NULL
+      WHERE (fed_district = ${district} OR fed_district IS NULL)
+        AND series_id <> ALL(${[...STRUCK_FRED_SERIES]}::text[])
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY series_id, observation_date DESC
     ` as EconomicIndicator[];
   } catch {
@@ -197,15 +200,6 @@ export interface NationalEconomicSummary {
   fed_funds_rate: RichIndicator | null;
   unemployment_rate: RichIndicator | null;
   cpi_yoy_pct: RichIndicator | null;
-  consumer_sentiment: RichIndicator | null;
-}
-
-export interface DistrictBeigeBookSummary {
-  district_number: number;
-  district_name: string;
-  summary: string;
-  themes: string[];
-  release_date: string;
 }
 
 const DISTRICT_NAMES: Record<number, string> = {
@@ -233,6 +227,7 @@ async function buildRichIndicator(
       FROM fed_economic_indicators
       WHERE series_id = ${seriesId}
         AND value IS NOT NULL
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY observation_date DESC
       LIMIT ${historyLimit}
     ` as { observation_date: string | Date; value: number | string }[];
@@ -268,7 +263,9 @@ async function buildRichIndicator(
 }
 
 export async function getNationalEconomicSummary(): Promise<NationalEconomicSummary> {
-  const [fedFunds, unemployment, cpiRows, consumerSentiment] = await Promise.all([
+  // No consumer sentiment: UMCSENT (University of Michigan) needs a licence for a sold product and
+  // was struck on 2026-10-17 (DECISIONS.md "No non-commercial data").
+  const [fedFunds, unemployment, cpiRows] = await Promise.all([
     buildRichIndicator("FEDFUNDS"),
     buildRichIndicator("UNRATE"),
     (async (): Promise<RichIndicator | null> => {
@@ -278,6 +275,7 @@ export async function getNationalEconomicSummary(): Promise<NationalEconomicSumm
           SELECT observation_date, value
           FROM fed_economic_indicators
           WHERE series_id = 'CPIAUCSL' AND value IS NOT NULL
+            AND ${sql.unsafe(fedIndicatorServedSql())}
           ORDER BY observation_date DESC
           LIMIT 24
         ` as { observation_date: string | Date; value: number | string }[];
@@ -320,71 +318,13 @@ export async function getNationalEconomicSummary(): Promise<NationalEconomicSumm
         return null;
       }
     })(),
-    buildRichIndicator("UMCSENT"),
   ]);
 
   return {
     fed_funds_rate: fedFunds,
     unemployment_rate: unemployment,
     cpi_yoy_pct: cpiRows,
-    consumer_sentiment: consumerSentiment,
   };
-}
-
-export async function getDistrictBeigeBookSummaries(
-  limit = 12
-): Promise<DistrictBeigeBookSummary[]> {
-  try {
-    // Fetch the latest Beige Book summary section per district
-    const rows = await sql`
-      SELECT DISTINCT ON (bb.fed_district)
-        bb.fed_district,
-        bb.content_text,
-        bb.release_date
-      FROM fed_beige_book bb
-      WHERE bb.section_name = 'Summary of Economic Activity'
-        AND bb.fed_district IS NOT NULL
-      ORDER BY bb.fed_district, bb.release_code DESC
-      LIMIT ${limit}
-    ` as { fed_district: number; content_text: string; release_date: string | Date }[];
-
-    return rows.map((row) => {
-      const districtNum = Number(row.fed_district);
-      const districtName = DISTRICT_NAMES[districtNum] ?? `District ${districtNum}`;
-
-      // Truncate summary to ~300 chars
-      const fullText = row.content_text ?? "";
-      const summary = fullText.length > 300
-        ? fullText.slice(0, 297) + "..."
-        : fullText;
-
-      // Extract simple themes from first few sentences (keywords)
-      const themes: string[] = [];
-      const lc = fullText.toLowerCase();
-      if (lc.includes("employment") || lc.includes("labor")) themes.push("Labor Market");
-      if (lc.includes("inflation") || lc.includes("prices")) themes.push("Inflation");
-      if (lc.includes("consumer") || lc.includes("spending")) themes.push("Consumer Spending");
-      if (lc.includes("manufacturing") || lc.includes("industrial")) themes.push("Manufacturing");
-      if (lc.includes("real estate") || lc.includes("housing")) themes.push("Real Estate");
-      if (lc.includes("lending") || lc.includes("credit") || lc.includes("loan")) themes.push("Credit");
-      if (lc.includes("agriculture") || lc.includes("farm")) themes.push("Agriculture");
-      if (lc.includes("energy") || lc.includes("oil")) themes.push("Energy");
-
-      const releaseDate = row.release_date instanceof Date
-        ? row.release_date.toISOString().slice(0, 10)
-        : String(row.release_date);
-
-      return {
-        district_number: districtNum,
-        district_name: districtName,
-        summary,
-        themes: themes.slice(0, 4),
-        release_date: releaseDate,
-      };
-    });
-  } catch {
-    return [];
-  }
 }
 
 const DISTRICT_UNEMPLOYMENT_SERIES: Record<number, string> = {
@@ -433,7 +373,6 @@ export interface FredSummary {
   fed_funds_rate: number | null;
   unemployment_rate: number | null;
   cpi_yoy_pct: number | null;
-  consumer_sentiment: number | null;
   gdp_growth_yoy_pct: number | null;
   personal_savings_rate: number | null;
   bank_lending_standards: number | null;
@@ -504,7 +443,6 @@ export async function getFredSummary(): Promise<FredSummary> {
     fed_funds_rate: null,
     unemployment_rate: null,
     cpi_yoy_pct: null,
-    consumer_sentiment: null,
     gdp_growth_yoy_pct: null,
     personal_savings_rate: null,
     bank_lending_standards: null,
@@ -518,7 +456,8 @@ export async function getFredSummary(): Promise<FredSummary> {
         value,
         observation_date
       FROM fed_economic_indicators
-      WHERE series_id IN ('FEDFUNDS', 'UNRATE', 'CPIAUCSL', 'UMCSENT', 'GDPC1', 'PSAVERT', 'DRCBLACBS')
+      WHERE series_id IN ('FEDFUNDS', 'UNRATE', 'CPIAUCSL', 'GDPC1', 'PSAVERT')
+        AND ${sql.unsafe(fedIndicatorServedSql())}
       ORDER BY series_id, observation_date DESC
     ` as { series_id: string; value: number | null; observation_date: string | Date }[];
 
@@ -540,6 +479,7 @@ export async function getFredSummary(): Promise<FredSummary> {
         SELECT value, observation_date
         FROM fed_economic_indicators
         WHERE series_id = 'CPIAUCSL'
+          AND ${sql.unsafe(fedIndicatorServedSql())}
         ORDER BY observation_date DESC
         LIMIT 13
       ` as { value: number | string | null; observation_date: string | Date }[];
@@ -562,6 +502,7 @@ export async function getFredSummary(): Promise<FredSummary> {
         SELECT value, observation_date
         FROM fed_economic_indicators
         WHERE series_id = 'GDPC1'
+          AND ${sql.unsafe(fedIndicatorServedSql())}
         ORDER BY observation_date DESC
         LIMIT 5
       ` as { value: number | string | null; observation_date: string | Date }[];
@@ -582,7 +523,6 @@ export async function getFredSummary(): Promise<FredSummary> {
       fed_funds_rate: byId.get("FEDFUNDS")?.value ?? null,
       unemployment_rate: byId.get("UNRATE")?.value ?? null,
       cpi_yoy_pct: cpiYoy,
-      consumer_sentiment: byId.get("UMCSENT")?.value ?? null,
       gdp_growth_yoy_pct: gdpYoy !== null ? Math.round(gdpYoy * 10) / 10 : null,
       personal_savings_rate: byId.get("PSAVERT")?.value ?? null,
       bank_lending_standards: byId.get("DRCBLACBS")?.value ?? null,

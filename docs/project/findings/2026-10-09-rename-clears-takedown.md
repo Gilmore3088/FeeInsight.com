@@ -29,3 +29,5 @@ itself is right, and a retidy that fixes the name answers them.
 The Knox lesson that carries `two_column_glue` is written when a takedown confirms, as for every
 confirmed takedown. Knox learns only from confirmed takedowns. For 100157, 100158 and 100162 that is
 after 20:11 UTC.
+
+**Agent lesson:** gutenberg/pr-864-rename-keeps-verdict

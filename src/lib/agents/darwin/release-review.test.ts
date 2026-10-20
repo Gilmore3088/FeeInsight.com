@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { researchSplitTarget } from "@/lib/fee-fold";
 
@@ -49,18 +50,79 @@ const MODEL_ROWS = [
   { name: "bad address fee", category_key: "account_research", count: 20 },
 ];
 
+/** These release fixtures keep the selected raw row unchanged while verification locks it. */
+function currentRawLock(text: string, values: unknown[], rows: Array<Record<string, unknown>>) {
+  return (text.includes("FOR UPDATE OF fr") || text.includes("SELECT fr.*") && text.includes("FROM raw_fee_observations fr"))
+    ? rows.filter((row) => row.fee_raw_id === values[0])
+    : null;
+}
+
 function createDbMock(rows: Array<Record<string, unknown>>): DbMock {
-  const db = vi.fn((strings: TemplateStringsArray) => {
+  // These rule fixtures now expose the actual selected attempt/raw tuple and the
+  // immutable factual document/artifact used by their synthetic model call.
+  const sourceRows = SOURCE_TEXTS.map(source => {
+    const document = {
+      id: source.source_document_id, institution_id: 10, document_url: "https://bank.example/fees.pdf",
+      status: "success", superseded_by_id: null, duplicate_of_id: null,
+      content_hash: createHash("sha256").update(`fixture bytes ${source.source_document_id}`).digest("hex")
+    };
+    const artifact = {
+      ...source, id: 100 + source.source_document_id, institution_id: 10,
+      source_url: document.document_url, source_hash: document.content_hash, status: "completed",
+      text_hash: createHash("sha256").update(source.normalized_text).digest("hex")
+    };
+    return { document, artifact };
+  });
+  const state = (raw: Record<string, unknown>) => JSON.stringify([raw, { id: 1_000 + Number(raw.fee_raw_id) }]);
+  const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = templateText(strings);
+    if (query.includes("paid_source_snapshot")) return Promise.resolve(sourceRows.map(({ document, artifact }) => ({
+      ...artifact, artifact_id: artifact.id, document_state: JSON.stringify(document), artifact_state: JSON.stringify(artifact),
+    })));
+    if (query.includes("paid_input_state")) {
+      const selected = rows.find(row => Number(row.fee_raw_id) === Number(values[3]));
+      const source = sourceRows.find(source => source.document.id === Number(values[1]));
+      return Promise.resolve(selected && source ? [{ state: state(selected), document_state: JSON.stringify(source.document), artifact_state: JSON.stringify(source.artifact) }] : []);
+    }
+    const locked = currentRawLock(query, values, rows);
+    if (locked !== null) return Promise.resolve(locked.map(row => ({ ...row, binding_state: JSON.stringify(row) })));
+    if (query.includes("FROM source_documents") && query.includes("FOR SHARE NOWAIT")) return Promise.resolve(sourceRows.filter(source => (values[0] as number[]).includes(source.document.id)).map(source => source.document));
+    if (query.includes("SELECT id, source_document_id, institution_id, text_hash, source_hash, status")) return Promise.resolve(sourceRows.filter(source => (values[0] as number[]).includes(source.document.id)).map(({ artifact }) => ({ id: artifact.id, source_document_id: artifact.source_document_id, institution_id: artifact.institution_id, text_hash: artifact.text_hash, source_hash: artifact.source_hash, status: artifact.status })));
+    if (query.includes("SELECT * FROM agent_source_texts") && query.includes("FOR SHARE NOWAIT")) return Promise.resolve(sourceRows.filter(source => (values[0] as number[]).includes(source.artifact.id)).map(source => source.artifact));
     if (templateText(strings).includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
     if (templateText(strings).includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
     if (templateText(strings).includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
     return Promise.resolve([]);
   }) as DbMock;
-  db.unsafe = vi.fn(() => Promise.resolve(rows));
+  db.unsafe = vi.fn((query: string, params: unknown[] = []) => Promise.resolve(rows
+    .filter(row => !query.includes(" AND rel.id = $") || Number(row.fee_raw_id) === Number(params.at(-2)) &&
+      1_000 + Number(row.fee_raw_id) === Number(params.at(-1)))
+    .map(row => ({
+    ...row,
+    selected_attempt_id: 1_000 + Number(row.fee_raw_id), selected_policy_state: state(row),
+    }))));
   return db;
 }
 
-const asDb = (db: DbMock) => db as unknown as NonNullable<Parameters<typeof runDarwinReleaseReview>[0]["db"]>;
+function asDb(db: DbMock): NonNullable<Parameters<typeof runDarwinReleaseReview>[0]["db"]> {
+  // Ordinary release-rule fixtures have immutable raw facts; real source locks/authority
+  // are covered by verification-audience.db.test.ts.
+  const original = db.getMockImplementation() as (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+  db.mockImplementation(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const query = templateText(strings);
+    if (query.includes("SELECT fr.*") && query.includes("FROM raw_fee_observations fr")) {
+      const direct = await original(strings, ...values);
+      if (Array.isArray(direct) && direct.length) return direct;
+      const fromUnsafe = db.unsafe ? await (db.unsafe as unknown as (query: string) => Promise<unknown>)("SELECT * FROM raw_fee_observations -- immutable current fixture") : null;
+      const rows = Array.isArray(fromUnsafe) ? fromUnsafe
+        : await original(["SELECT * FROM pipeline_attempts pa"] as unknown as TemplateStringsArray);
+      return (rows as Array<Record<string, unknown>>).filter(row => Number(row.fee_raw_id) === Number(values[0]));
+    }
+    return original(strings, ...values);
+  });
+  Object.assign(db, { savepoint: (work: (scope: DbMock) => Promise<unknown>) => work(db) });
+  return db as unknown as NonNullable<Parameters<typeof runDarwinReleaseReview>[0]["db"]>;
+}
 
 const row = (overrides: Record<string, unknown> = {}) => ({
   fee_raw_id: 1,
@@ -449,9 +511,11 @@ describe("releasing the recorded v17 passes", () => {
       "Per Each ACH Debit $ .25\nPer Each POS Withdrawal $ .25\nPer Each ATM Withdrawal $ .25\nThe monthly average collected balance may earn an Earnings Allowance"), "business_activity_row"],
     [recorded("Vacation Club Excessive Withdrawals (Over 3 per Year)", "account_research", "annual", "Vacation Club Excessive Withdrawals (Over 3 per Year) | $5.00"), "frequency_word_disagrees"],
     [recorded("Monthly Service Charge, Minimum Bal", "monthly_maintenance", "per_item", "Monthly Service Charge, $1000 Minimum Bal. $25.00 Check Copy Fee, Each Check $7.50"), "frequency_word_disagrees"],
-    [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "glued_or_cut_name"],
-    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "glued_or_cut_name"],
-    [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "glued_or_cut_name"],
+    // Guard v74 (#2018): an excess withdrawal or returned mail filed as account research moves to its own type first.
+    [recorded("Account Fees: Excessive Withdrawal Fee (Share Account)", "account_research", null, "Account Fees | Excessive Withdrawal Fee (Share Account) | $5.00 (at the 5th withdrawal in the same month)"), "refiles_to:excess_withdrawal"],
+    // Guard v73 (#1837): a bare direction row under a heading it did not sit under fails the guard first.
+    [recorded("Notary: Outgoing", "notary_fee", "per_item", "This fee is charged by | Outgoing | $55.00 per item"), "category_guard"],
+    [recorded("Savings Excessive Withdrawal - 5 free per month then", "account_research", "per_item", "Savings Excessive Withdrawal - 5 free per month then | $2.00 per withdrawal"), "refiles_to:excess_withdrawal"],
     // Released: the allowance's period agrees with a per-item price, and a real qualifier stays.
     [recorded("Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle", "account_research", "per_item", "$3 Withdrawal Limit Fee charged for each withdrawal, transfer, and payment that exceeds 6 per monthly statement cycle4"), null],
     [recorded("Cashier's Checks: Non-Customer", "cashiers_check", null, "Cashier's Checks | Non-Customer $8.00"), null],
@@ -471,7 +535,7 @@ describe("releasing the recorded v17 passes", () => {
     [recorded("Courtesy Pay Overdraft Fee", "overdraft", null, "Courtesy Pay Overdraft Fee | $5.00", null, { amount: "5" }), "overdraft_nsf_for_person"],
     // Not footnotes: a price ending in 5, or one of several prices on the line; a price at its band is not the band.
     [recorded("Subpoena", "legal_process", null, "Subpoena | $25 per instance", null, { amount: "25" }), null],
-    [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), null],
+    [recorded("Return Mail", "account_research", null, "Return Mail | $3.00 / item | Updating your address", "Return Mail | $3.00 / item | Updating your address\nOther | Return Mail | $3.00 / item | Updating your address", { amount: "3" }), "refiles_to:returned_mail"],
     // The third hand check (Oct 15, 18 of 20): two good fees the glue check held now release, and its two misses hold.
     [recorded("Monthly service fee", "monthly_maintenance", "monthly", "| You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more.",
       "Ways to Avoid the Monthly Service Fee | You can avoid the $10.00 monthly service fee by maintaining a minimum daily balance of $500 or more. | You can avoid the $30.00 monthly service fee by maintaining a minimum daily balance of $5,000 or more. | Not Applicable",
@@ -503,7 +567,7 @@ describe("releasing the recorded v17 passes", () => {
       if (text.includes("verify.release_recorded") || text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
       return Promise.resolve([]);
     });
-    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: false });
+    const result = await releaseRecordedPasses(asDb(db as DbMock), { runId: 9, acts: false });
     expect(result).toMatchObject({ acts: false, recordedPasses: 2, wouldRelease: 1, released: 0, held: { business_activity_row: 1 } });
     expect(result.heldExamples[0]).toMatchObject({ feeRawId: 418400, reason: "business_activity_row" });
     expect(result.releaseByCategory).toEqual({ stop_payment: 1 });
@@ -520,6 +584,8 @@ describe("releasing the recorded v17 passes", () => {
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
+      const locked = currentRawLock(text, values, rows);
+      if (locked !== null) return Promise.resolve(locked);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("FROM agent_source_texts")) return Promise.resolve(SOURCE_TEXTS);
       if (text.includes("FROM published_fee_catalog")) return Promise.resolve(MODEL_ROWS);
@@ -533,8 +599,9 @@ describe("releasing the recorded v17 passes", () => {
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       }
       return Promise.resolve([]);
-    });
-    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    }) as DbMock;
+    db.unsafe = vi.fn((fragment: string) => fragment);
+    const result = await releaseRecordedPasses(asDb(db as DbMock), { runId: 9, acts: true });
     expect(result).toMatchObject({ ...expected, recordedPasses: 1, wouldRelease: 1, releaseByCategory: { stop_payment: 1 } });
     const attempts = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
     expect(attempts).toHaveLength(1);
@@ -552,8 +619,10 @@ describe("releasing the recorded v17 passes", () => {
       row({ fee_raw_id: 2 }),
     ];
     const writes: string[] = [];
-    const db = vi.fn((strings: TemplateStringsArray) => {
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
+      const locked = currentRawLock(text, values, rows);
+      if (locked !== null) return Promise.resolve(locked);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
@@ -564,8 +633,9 @@ describe("releasing the recorded v17 passes", () => {
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       }
       return Promise.resolve([]);
-    });
-    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    }) as DbMock;
+    db.unsafe = vi.fn((fragment: string) => fragment);
+    const result = await releaseRecordedPasses(asDb(db as DbMock), { runId: 9, acts: true });
     expect(result).toMatchObject({ acts: true, recordedPasses: 2, wouldRelease: 1, released: 1, held: { "release_check:category_not_in_text": 1 } });
     expect(result.heldExamples[0]).toMatchObject({ feeRawId: 3, reason: "release_check:category_not_in_text" });
     expect(writes.filter((text) => text.includes("verified_fee_observations"))).toHaveLength(1);
@@ -604,7 +674,7 @@ describe("releasing the recorded v17 passes", () => {
         if (/INSERT|UPDATE/.test(text)) writes.push(text);
         return Promise.resolve([]);
       });
-      const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+      const result = await releaseRecordedPasses(asDb(db as DbMock), { runId: 9, acts: true });
       expect(result).toMatchObject({ modelMissing: true, released: 0, dryRunRecorded: false, acts: false });
       expect(writes).toEqual([]);
     }
@@ -627,6 +697,8 @@ describe("releasing the recorded v17 passes", () => {
     const writes: Array<{ text: string; values: unknown[] }> = [];
     const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
       const text = templateText(strings);
+      const locked = currentRawLock(text, values, rows);
+      if (locked !== null) return Promise.resolve(locked);
       if (text.includes("learning_schema_ready")) return Promise.resolve([{ learning_schema_ready: true }]);
       if (text.includes("AS done")) return Promise.resolve([{ done: true }]);
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve(rows);
@@ -637,8 +709,9 @@ describe("releasing the recorded v17 passes", () => {
         if (text.includes("verified_fee_observations")) return Promise.resolve([{ fee_verified_id: 77 }]);
       }
       return Promise.resolve([]);
-    });
-    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true });
+    }) as DbMock;
+    db.unsafe = vi.fn((fragment: string) => fragment);
+    const result = await releaseRecordedPasses(asDb(db as DbMock), { runId: 9, acts: true });
     expect(result).toMatchObject({ released: 1, held: { "release_check:no_source_text": 1 } });
     const attempted = writes.filter((write) => write.text.includes("INSERT INTO pipeline_attempts"));
     expect(attempted).toHaveLength(1);
@@ -656,7 +729,7 @@ describe("releasing the recorded v17 passes", () => {
       if (text.includes("FROM pipeline_attempts pa")) return Promise.resolve([row({ fee_raw_id: 2 })]);
       return Promise.resolve([]);
     });
-    const result = await releaseRecordedPasses(db as never, { runId: 9, acts: true, dryRun: true });
+    const result = await releaseRecordedPasses(asDb(db as DbMock), { runId: 9, acts: true, dryRun: true });
     expect(result).toMatchObject({ acts: false, dryRunRecorded: false, wouldRelease: 1 });
     expect(db.mock.calls.some(([strings]) => /INSERT|UPDATE/.test(templateText(strings)))).toBe(false);
   });

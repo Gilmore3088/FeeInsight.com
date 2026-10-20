@@ -26,9 +26,11 @@ export interface SearchResult {
   }[];
 }
 
-export async function searchDashboard(query: string): Promise<SearchResult> {
+export async function searchDashboard(rawQuery: string): Promise<SearchResult> {
   await requireAuth("operate");
-  if (!query || query.length < 2) {
+  // A pasted name often carries spaces around it; they must not become part of the match.
+  const query = (rawQuery ?? "").trim();
+  if (query.length < 2) {
     return { institutions: [], categories: [], feeNames: [], conversations: [] };
   }
 

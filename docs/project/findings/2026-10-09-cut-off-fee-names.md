@@ -19,3 +19,5 @@ names stay in `pipeline_feedback` (`name_retidied`); no row is deleted. This PR;
 over the following publish steps (40 institutions each).
 **Lesson:** a rule that only recognises a bad shape (hold it) is half a fix; the live catalog
 needs the repair side too, measured on prod before it ships.
+
+**Agent lesson:** knox/pr-838-name-not-sentence, knox/pr-827-fix-reaches-stored-rows

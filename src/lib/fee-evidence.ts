@@ -99,6 +99,88 @@ function tidy(line: string): string {
   return line.replace(DOT_LEADER, " … ").replace(/\s+/g, " ").replace(/(?:\s…)+/g, " …").trim();
 }
 
+/** Longest gap between the fee's own name and its price for the name to open the line. */
+const NAME_TO_PRICE_CHARS = 80;
+/**
+ * Where a clause ends inside a flattened paragraph: a sentence stop, a semicolon or a table bar, or
+ * a price with its lower-case unit ("$100 per levy order", "$35 each").
+ */
+const CLAUSE_END = /[.;|](?=\s)|\|\s*|\$\s?\d[\d,]*(?:\.\d+)?(?:\s+(?:each|per\s+(?:levy\s+)?[a-z]+|an?\s+[a-z]+))?/g;
+/**
+ * Another fee priced the way a schedule prints one, its own name first: title-case words, the fee
+ * word and the price ("Levy Processing Fee $100", "Levy fee $100"), or a name and a priced cell
+ * ("Stop Payment | $30"). A place or group in front ("In Ohio …", "Simply Basic, …") fails it.
+ */
+const PRICED_FEE = /^(?!(?:In|For|At|To|On|By)\b)[A-Z][\w'&/]*(?:\s+[A-Z][\w'&/]*)*\s*(?:\s(?:[Ff]ee|[Cc]harge)s?\s*[|:–-]?\s*|\|\s*)\$\s?\.?\d/;
+/** Words of a waiver or condition, which belong to the fee that follows and are never cut. */
+const CONDITION_WORDS = /\b(?:waive[ds]?|avoid|minimum|balance|unless|if|when|with|no\s+(?:fee|charge)|free)\b/i;
+/** A clause past this many words that opens "Fee applied …" is a fee's description. */
+const DESCRIPTION_WORDS = 4;
+/** Capitalised words right before the name: its account or direction ("Student Checking"). */
+const CAPITALISED_RUN = /(?:\b[A-Z][\w&'-]*\s+)+$/;
+
+/** Words naming an account or a customer group, which scope the fees after them. */
+const ACCOUNT_WORDS = /\b(?:checking|savings|accounts?|business|personal|consumer|students?|seniors?|club|money\s+market|certificates?|cds?|iras?|members?|customers?|only|\d+\s+and\s+(?:over|older|under|younger))\b/i;
+/** A date or effective period, which says when the fees after it apply. */
+const DATE_WORDS = /\beffective\b|\bas\s+of\b|\b(?:before|after|beginning|starting|until|through)\b|\b\d{1,2}\/\d{1,2}\/\d{2,4}\b|\b(?:19|20)\d{2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d/i;
+/** Dropped words that could scope this fee: a condition, an account or group, or a date. */
+function scopesTheFee(dropped: string): boolean {
+  return CONDITION_WORDS.test(dropped) || ACCOUNT_WORDS.test(dropped) || DATE_WORDS.test(dropped);
+}
+
+/**
+ * Every sentence a cut would drop is another fee, priced the way a schedule prints one, with no
+ * condition of this fee, no heading (a colon) and no account or customer group that could scope
+ * the fee after it ("Basic Checking. Overdraft Fee $35 …" keeps the line whole).
+ */
+function anotherFeesClause(dropped: string): boolean {
+  if (dropped.includes(":") || scopesTheFee(dropped)) return false;
+  const pieces = dropped.replace(/[\s.;|]+$/, "").split(/[.;](?=\s)/).map((piece) => piece.trim()).filter(Boolean);
+  return pieces.length > 0 && pieces.every((piece) => PRICED_FEE.test(piece) && !CONDITION_WORDS.test(piece) && !ACCOUNT_WORDS.test(piece));
+}
+
+/**
+ * A line that opens with another fee's words starts at this fee's own clause (#1902): a schedule
+ * stored as one paragraph gave 1st Source Bank's dormant fee the line "Fee applied to process a
+ * tax liability Dormant Account Fee $5 per month", the levy fee's description first. It reads
+ * "… Dormant Account Fee $5 per month". It errs toward the whole line: a cut that drops this fee's
+ * account or condition misleads more than another fee's words left in front.
+ *
+ * Nothing is cut unless the fee's own name prints its price within NAME_TO_PRICE_CHARS, the opening
+ * neither prints this price nor ends on a price (catalog 30013's "$2.00 paper statement charge,
+ * $5.00 early withdraw penalty"), and the dropped words hold no condition, account or customer
+ * group, or date (`scopesTheFee`). Then one of two cuts:
+ * - after the last clause end, when every sentence before it is another priced fee
+ *   (`anotherFeesClause`) and only capitalised words (an account or direction, kept) sit between
+ *   it and the name: "… Basic Checking Monthly Service Fee $10";
+ * - with no clause end, inside a clause shaped like another fee's description ("Fee applied to
+ *   …", "Charge assessed when …": singular "Fee"/"Charge", a past participle, more than
+ *   DESCRIPTION_WORDS words), at the capitalised words right before the name, else at the name.
+ */
+export function fromOwnName(line: string, feeName: string | null, amount: number): string {
+  const name = (feeName ?? "").replace(/\s+/g, " ").trim();
+  if (name.length < 8) return line;
+  const found = new RegExp(name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").exec(line);
+  const at = found?.index ?? -1;
+  if (at <= 0) return line;
+  const opening = line.slice(0, at);
+  if (!printsAmount(line.slice(at + name.length, at + name.length + NAME_TO_PRICE_CHARS), amount)) return line;
+  if (printsAmount(opening, amount) || /\$\s?\d[\d,]*(?:\.\d+)?\s*$/.test(opening)) return line;
+  let end = 0;
+  for (const match of opening.matchAll(CLAUSE_END)) end = (match.index ?? 0) + match[0].length;
+  const clause = opening.slice(end).replace(/^[.;,|]+/, "");
+  const run = CAPITALISED_RUN.exec(clause)?.[0] ?? "";
+  let cut = 0;
+  if (end === 0) {
+    const words = clause.trim().split(/\s+/).filter(Boolean);
+    if (words.length > DESCRIPTION_WORDS && /^(?:fee|charge)$/i.test(words[0]) && /^[a-z]+ed$/.test(words[1]) && !scopesTheFee(clause.slice(0, clause.length - run.length))) cut = at - run.length;
+  } else if (anotherFeesClause(opening.slice(0, end)) && clause.trim().length === run.trim().length) {
+    cut = end;
+  }
+  if (cut <= 0) return line;
+  return `… ${line.slice(cut).replace(/^[\s.;,|]+/, "")}`;
+}
+
 /** A long line cut to the part around its price, so the reader sees the price and what precedes it. */
 function aroundPrice(line: string, amount: number): string {
   if (line.length <= EVIDENCE_MAX_CHARS) return line;
@@ -653,7 +735,7 @@ export function feeEvidence(fee: EvidenceFee, text: string | null | undefined): 
     // the fee's own name says another account, so the line's heading is not this fee's.
     const named = accountInFeeName(fee.fee_name);
     const heading = part.heading && named && !sameAccount(named, part.heading) ? null : part.heading;
-    return { line: aroundPrice(tidy(part.line), amount), heading, condition: part.condition, basis };
+    return { line: aroundPrice(fromOwnName(tidy(part.line), fee.fee_name, amount), amount), heading, condition: part.condition, basis };
   };
   if (text && fee.fee_name) {
     const traced = checkFeeAgainstSource(text, fee.fee_name, amount, ".", fee.fee_category);

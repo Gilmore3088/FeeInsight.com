@@ -39,8 +39,18 @@ import { combineScores, scoreAnswerKeys, type AnswerKeyDocument, type GateScore 
 // all to 567 / 14; held out stayed 53 / 4. No document gained a wrong read.
 // v76 (Knox recall round 2, Oct 17): every slash variant's price and both column prices of a box size
 // took all to 572 / 14; held out stayed 53 / 4. The wrong reads are the same 14 as v75's.
+// v78 (Knox recall round 3, Oct 17): the next held families, a checking account's free row, a box size
+// before its dot leader and a safe deposit box's bare late fee took all from 573 / 14 (main) to 584 / 12
+// (two late fees no longer read as loan late payments); held out 53 / 4 to 54 / 4.
+// #2278: intentionally withhold eight keyed Texas reads (one held out) whose own
+// direction/physical owner is unresolved. Across both gates, 15 keyed reads are withheld;
+// a separate prior-wrong River City total75 also leaves. This is no numeric fix/rescore.
+// international-wire-answer-key-boundaries.test.ts binds every original text/reason.
+// v90 (#2454, James chose "File them", Oct 20): returned statements file as returned mail, and the
+// gate scores the keys' "unmapped" returned statement lines there too; all from main's 577 / 11 to
+// 578 / 11 (tid 2436 "Return Statement Processing Fee" is now a right read); held out stayed 53 / 4.
 const FLOORS = {
-  all: { right: 572, wrong: 14 },
+  all: { right: 578, wrong: 11 },
   holdout: { right: 53, wrong: 4 },
 };
 

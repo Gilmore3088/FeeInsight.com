@@ -249,7 +249,7 @@ copy to set.
 ### Signed-in Pro nav
 
 No change. The tabs are This month, My fees, Try a price, Reports and Regulatory Wire
-(`PRO_NAV_ITEMS`). The account menu holds My bank and data, All changes, the Reference pages
+(`PRO_NAV_ITEMS`). The account menu holds My bank and data, Alerts and watches, the Reference pages
 (Market, Institutions, Fee categories, Fed districts), Admin for staff, and Account and billing. All of
 these labels are pinned by `nav-items.test.ts` and `consumer-mobile-nav.test.tsx`. The header logo
 stays Fee Insight, and the Hamilton wordmark appears on `/pro` only, per DECISIONS.

@@ -5,6 +5,8 @@
  * fee). Only wording that points one way counts; anything else stays unknown.
  */
 
+import { isSpecialUnitFrequency, normalizedUnitFrequency, specialUnitOnPriceLine } from "@/lib/fee-unit";
+
 export const PER_ITEM_WORDING = /\b(each|per (item|check|transaction|occurrence|request|copy|page|withdrawal|debit|deposit)|\/\s?(item|check|transaction))(?![a-z])/i;
 export const PERIODIC_WORDING = /\b(per (month|year|quarter)|monthly|annual(ly)?|quarterly|\/\s?(mo|month|yr|year)\b|a month|a year)/i;
 
@@ -86,25 +88,68 @@ export function hourlyWording(words: string | null | undefined): boolean {
 /**
  * True when the fee's own row prices it by the hour: its name before its price ("Research (per
  * hour) | $25.00 Each") or the words right after its price ("Research | $25.00/hr", "$40 per hour").
- * The line must print the fee's price. Pure.
+ * The line must print the fee's price. A supplied fee name must occur in that price's own
+ * region, even on a single-price line. Without a name, incompatible equal-price readings stay
+ * unknown. Bounds are not fee prices, and explicit partial-hour units never become hourly. Pure.
  */
-export function hourlyFromLine(sourceLine: string | null | undefined, amount: number | null): boolean {
+export function hourlyFromLine(sourceLine: string | null | undefined, amount: number | null, feeName?: string | null): boolean {
   if (!sourceLine || amount == null) return false;
-  const name = nameWords(sourceLine, amount);
-  if (name == null) return false;
-  if (hourlyWording(name)) return true;
-  // The words after the price in its own cell ("$25.00/hr"), or a next cell that is only the
-  // hour basis ("| $40.00 | per hour"); a next cell naming another fee ("| Research (per hour)")
-  // is that fee's.
-  for (const match of sourceLine.matchAll(PRICE)) {
+  const prices = [...sourceLine.matchAll(PRICE)];
+  const feePrices = prices.filter((match) => !hourlyBoundPrice(sourceLine, match));
+  const readings: boolean[] = [];
+  for (const match of feePrices) {
     if (Math.abs(Number(match[1].replace(/,/g, "")) - amount) >= 0.005) continue;
+    const index = prices.indexOf(match);
+    const previous = feePrices[feePrices.indexOf(match) - 1];
+    const before = sourceLine.slice(previous ? (previous.index ?? 0) + previous[0].length : 0, match.index);
+    // Several priced fees can share one flattened line. Its repeated amount is not an owner:
+    // Stop Payment $30 | Research (per hour) $30 must use the requested fee's own label.
+    let ownName = before.split("|").map((cell) => cell.trim()).filter(Boolean).at(-1) ?? "";
+    if (feeName) {
+      const start = hourlyOwnerStart(before, feeName);
+      if (start == null) continue;
+      ownName = before.slice(start);
+    } else if (previous) {
+      // The words immediately after the previous price belong to that price, not to a later
+      // label in the same cell: Research $25 per hour Counter Check $2 each.
+      const inherited = leadingWording(ownName, HOURLY_WORDING);
+      if (inherited) ownName = ownName.slice(inherited.index + inherited[0].length);
+    }
     const start = (match.index ?? 0) + match[0].length;
-    const cells = sourceLine.slice(start, start + 60).split(/[|;]/);
-    const own = cells[0].split(/\$\s?\.?\d/)[0];
-    if (hourlyWording(own)) return true;
-    if (own.trim() === "" && cells.length > 1 && HOURLY_CELL.test(cells[1]) && hourlyWording(cells[1])) return true;
+    const cells = sourceLine.slice(start, prices[index + 1]?.index ?? sourceLine.length).split(/[|;]/);
+    const own = cells[0];
+    const unitCell = own.trim() === "" && cells.length > 1 ? cells[1] : own;
+    const partial = PARTIAL_HOUR_WORDING.test(ownName) || leadingWording(unitCell, PARTIAL_HOUR_WORDING) != null;
+    const after = leadingWording(own, HOURLY_WORDING) != null;
+    const nextCell = own.trim() === "" && cells.length > 1 && HOURLY_CELL.test(cells[1]);
+    readings.push(!partial && (hourlyWording(ownName) || after || nextCell));
   }
-  return false;
+  // Without a unique named owner, the same price on incompatible rows stays unknown.
+  return readings.length > 0 && readings.every(Boolean);
+}
+
+/** A minimum/maximum is a bound, not another fee at the same amount. */
+function hourlyBoundPrice(line: string, match: RegExpMatchArray): boolean {
+  const before = line.slice(0, match.index ?? 0);
+  const after = line.slice((match.index ?? 0) + match[0].length);
+  return /\b(?:min(?:imum)?|max(?:imum)?)\.?(?:\s+(?:charge|fee))?(?:\s+of)?\s*$/i.test(before)
+    || /^\s*(?:per\s+)?(?:min(?:imum)?|max(?:imum)?)(?![a-z])/i.test(after);
+}
+
+/** A printed fee label, allowing punctuation and whitespace transport changes only. */
+function hourlyOwnerStart(before: string, feeName: string): number | null {
+  const words = feeName.match(/[a-z0-9]+/gi);
+  if (!words?.length) return null;
+  const pattern = new RegExp(`(?:^|[^a-z0-9])(${words.join("[^a-z0-9]*")})(?=$|[^a-z0-9])`, "gi");
+  const matches = [...before.matchAll(pattern)];
+  const last = matches.at(-1);
+  return last ? (last.index ?? 0) + last[0].length - last[1].length : null;
+}
+
+/** Unit wording must start the price suffix, before another fee's label. */
+function leadingWording(words: string, pattern: RegExp): RegExpExecArray | null {
+  const match = pattern.exec(words);
+  return match && /^(?:[\s(*.,:/\-–—†‡]|per\s*|plus\s+tax\s*|charged\s+for\s*)*$/i.test(words.slice(0, match.index)) ? match : null;
 }
 /** A cell that is only an hour basis: "per hour", "(Hourly)", "/hr". */
 const HOURLY_CELL = /^\s*\(?\s*(?:per\s+(?:hour|hr)|hourly|\/\s?(?:hour|hr))s?\s*\)?\.?\s*$/i;
@@ -360,6 +405,12 @@ export function settledFrequency(
   // #1456: an hourly frequency comes from the fee's own words (Darwin's live hourly re-check) and
   // is never replaced by a flat reading of the same line.
   if (stated === HOURLY_FREQUENCY) return HOURLY_FREQUENCY;
+  // #2248: retain a newly source-owned literal unit; generic per-item cleanup must not
+  // erase it. This does not infer units for historical blank/per_item rows or relax categories.
+  const unit = specialUnitOnPriceLine(sourceLine, amount);
+  if (isSpecialUnitFrequency(stated) && unit === normalizedUnitFrequency(stated) &&
+      (!(canonicalKey && (PERIOD_FEE_KEYS.has(canonicalKey) || HOURLY_EXEMPT_KEYS.has(canonicalKey))) ||
+        (canonicalKey === "paper_statement" && unit === "per_statement"))) return unit;
   // #1456: with `hourly: true`, a fee whose own row prices it by the hour is hourly, unless its
   // category is never charged by the hour ("Monthly Fee: (per hour) | $25" is a misread a person
   // looks at). Opt-in: Knox does not read hourly at extraction yet (it rides the next Knox rules

@@ -14,3 +14,5 @@ clear or hold.
 **Lesson:** When a fill and a check share a version, the fill must not write anything the check undoes.
 Dedupe keys hide repeats, so to find a loop compare the live value at two reads, not the feedback
 count.
+
+**Agent lesson:** gutenberg/pr-1355-fill-fixed-point

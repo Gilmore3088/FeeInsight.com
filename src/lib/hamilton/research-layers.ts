@@ -8,6 +8,7 @@
 import { MIN_INSTITUTIONS_FOR_MEDIAN } from "@/lib/data-store/fee-stats";
 import { median, peerPosition, quantile } from "./fee-scenario";
 import type { LocalMarketInfo, MarketLayer, MarketLayerScope, PeerValue } from "./workspace/types";
+import type { DatasetStamp } from "@/lib/dataset-stamp";
 
 export const LAYER_KEYS = ["local", "state", "district", "peers", "national"] as const;
 export type LayerKey = (typeof LAYER_KEYS)[number];
@@ -31,6 +32,8 @@ export interface LayerSummary {
   asOf?: string | null;
   /** The institutions behind the layer, lowest amount first, from the engine (the CSV's rows). */
   members?: PeerValue[];
+  /** The data behind the layer's figures, from the engine (#1924); none for the local market. */
+  stamp?: DatasetStamp;
 }
 
 export function parseLayer(value: string | undefined | null): LayerKey {
@@ -100,9 +103,15 @@ export function layersFromEngine(
   layers: readonly MarketLayer[],
   ownAmount: number | null,
   local: LocalMarketInfo | null,
+  stamps: Partial<Record<MarketLayerScope, DatasetStamp>> = {},
 ): LayerSummary[] {
   return layers
-    .map((l) => ({ ...summarizeLayer(ENGINE_KEYS[l.scope], labelFor(l), scopeFor(l, local), l.amounts, ownAmount), asOf: l.asOf, members: l.members }))
+    .map((l) => ({
+      ...summarizeLayer(ENGINE_KEYS[l.scope], labelFor(l), scopeFor(l, local), l.amounts, ownAmount),
+      asOf: l.asOf,
+      members: l.members,
+      ...(stamps[l.scope] ? { stamp: stamps[l.scope] } : {}),
+    }))
     .sort((a, b) => LAYER_KEYS.indexOf(a.key) - LAYER_KEYS.indexOf(b.key));
 }
 

@@ -12,7 +12,7 @@
  */
 
 import { getSql } from "@/lib/data-store/connection";
-import { FEDERAL_RELEASES_ONLY } from "@/lib/data-store/news";
+import { ENFORCEMENT_TITLE as ENFORCEMENT, FEDERAL_RELEASES_ONLY } from "@/lib/data-store/news";
 import { getStateNews, type StateNews } from "@/lib/data-store/state-news";
 import { loadConfirmedFeeChanges, type PulseChange } from "./monthly-pulse";
 
@@ -89,7 +89,6 @@ export interface RawReleaseRow {
 /** Calendar and procedural notices: not developments. */
 const NOISE = /sunshine act|board of directors meeting|minutes of the board's discount rate|opens registration|workshop|webinar/i;
 
-const ENFORCEMENT = /enforcement (action|order)|consent order|civil money penalt|cease and desist|prohibition order/i;
 const STRUCTURE = /approval of application|application by|merger|acquisition|acquires|assumes all deposits|bank failure|failed bank|de novo|deposit insurance application/i;
 const CONSUMER = /overdraft|\bnsf\b|\bfees?\b|junk fee|consumer|complaint|financial literacy|deposit account|fair lending|\budaap?\b|reg(ulation)? e\b/i;
 const RULEMAKING = /propos|final rule|\brules?\b|guidance|comment period|seek(s)? comment|request(s)? (public )?comment|regulation|framework|burden|exam|supervis|\bcra\b|resolution plan|stress test|capital/i;

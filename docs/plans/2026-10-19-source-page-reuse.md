@@ -1,0 +1,9 @@
+# Reuse physical source-page reads (#2317)
+
+The shared source checker checks each candidate's name, amount and category against its source. Its heading lookback repeatedly assembled the same physical fee rows and rescanned their prices for every line of every candidate. On the unchanged140,747-character official wrapped-bullet PDF, this dominates extraction CPU and the unchanged correctness test has twice exceeded its5-second CI budget under contention.
+
+Cache only the deterministic physical fee row, whether a physical line qualifies as a heading, and its right-column heading. These use the exact existing functions and conditions. A WeakMap keyed by the private physical line array reuses this preparation across candidates without retaining earlier documents beyond the existing current-source cache. No name, category, amount, audience, institution or admission result is cached. All candidate-specific decisions, return reasons and complete source lines are recomputed as before.
+
+This changes no source grammar, release authority, reader/extraction/source-check version, replay floor, public data, provider control or deadline. No migration or production replay is needed. Do not claim it fixes the separate production connection-pool/lifecycle problem. Keep both original CI failures, isolated unchanged test results and before/after profiles in the dated weekly repair artifacts. The unmodified official test remains at its original deadline and assertions.
+
+Required proof includes the full correctness suite, explicit warm-read name/price/category and document/column-isolation regressions, actual-source differential outputs including witness text, and independent exact-head review. Compare measured repeated-document work without introducing a brittle timing assertion into the test suite. Normal CI remains the release gate.

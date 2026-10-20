@@ -12,6 +12,8 @@ export interface CrewMemberMeta {
 export const CREW: CrewMemberMeta[] = [
   { agent: "atlas", name: "Atlas", role: "Runs the schedule and coordinates the crew", href: "/admin/atlas/details" },
   { agent: "magellan", name: "Magellan", role: "Finds and downloads fee schedules", href: "/admin/magellan" },
+  // Hoovie's registry tools sit on the Magellan admin page until they get their own (#1865).
+  { agent: "hoovie", name: "Hoovie", role: "Loads public data: regulator, government and survey datasets", href: "/admin/magellan/registry" },
   { agent: "rosetta", name: "Rosetta", role: "Reads PDFs and web pages", href: "/admin/rosetta" },
   { agent: "knox", name: "Knox", role: "Pulls fees out of documents", href: "/admin/knox" },
   { agent: "darwin", name: "Darwin", role: "Checks every fee before it counts", href: "/admin/darwin" },

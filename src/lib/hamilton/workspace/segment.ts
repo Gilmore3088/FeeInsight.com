@@ -7,12 +7,18 @@
  * charges what; it never says what the bank should charge.
  */
 
+import { countedAmounts } from "@/lib/data-store/counted-amounts";
 import { subjectPossessive } from "./subject";
 import { formatFeeAmount } from "@/lib/format";
 import { STATE_NAMES } from "@/lib/us-states";
 import { plainName, proseFeeName } from "./names";
 import { MIN_PEERS_FOR_POSITION, pricePosition } from "./scenario";
+import { feeScheduleUrls, statedFeeLabel } from "@/lib/own-fee";
 import type { AskSegment, Exhibit, Fact, SegmentMember, SegmentResearch, SourceRef } from "./types";
+import { segmentLabel, shortSegmentLabel } from "@/lib/segment-words";
+
+// The wording lives in lib/segment-words.ts so data-store can use it without a Hamilton import (#2007).
+export { segmentLabel, shortSegmentLabel };
 
 /** Most members an exhibit names. */
 export const MAX_SEGMENT_EXHIBIT = 15;
@@ -37,15 +43,6 @@ function thousands(num: string, unit: string): number | null {
   const mult = UNIT_OF(unit);
   if (!Number.isFinite(n) || !mult) return null;
   return Math.round((n * mult) / 1000);
-}
-
-function assetsWords(thousandsValue: number): string {
-  const dollars = thousandsValue * 1000;
-  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
-  if (dollars >= 1e12) return `$${fmt(dollars / 1e12)} trillion`;
-  if (dollars >= 1e9) return `$${fmt(dollars / 1e9)} billion`;
-  if (dollars >= 1e6) return `$${fmt(dollars / 1e6)} million`;
-  return `$${Math.round(dollars).toLocaleString("en-US")}`;
 }
 
 const STATE_BY_NAME = Object.entries(STATE_NAMES)
@@ -103,45 +100,6 @@ function largestIn(question: string): number | null {
   return /\b(?:largest|biggest)\b/i.test(question) ? DEFAULT_LARGEST : null;
 }
 
-export function segmentLabel(s: Omit<AskSegment, "label">): string {
-  const who = s.charterType === "credit_union" ? "credit unions" : s.charterType === "bank" ? "banks" : "institutions";
-  const size =
-    s.minAssets !== null && s.maxAssets !== null
-      ? ` with ${assetsWords(s.minAssets)} to ${assetsWords(s.maxAssets)} in assets`
-      : s.minAssets !== null
-        ? ` with ${assetsWords(s.minAssets)} or more in assets`
-        : s.maxAssets !== null
-          ? ` with under ${assetsWords(s.maxAssets)} in assets`
-          : "";
-  const where = s.stateCode ? ` in ${STATE_NAMES[s.stateCode] ?? s.stateCode}` : "";
-  const head = s.largest !== null ? `the ${s.largest} largest ${who}` : who;
-  return `${head}${size}${where}`;
-}
-
-function assetsShort(thousandsValue: number): string {
-  const dollars = thousandsValue * 1000;
-  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
-  if (dollars >= 1e12) return `$${fmt(dollars / 1e12)}T`;
-  if (dollars >= 1e9) return `$${fmt(dollars / 1e9)}B`;
-  if (dollars >= 1e6) return `$${fmt(dollars / 1e6)}M`;
-  return `$${Math.round(dollars).toLocaleString("en-US")}`;
-}
-
-/** The segment in a few words for titles and table lines: "$10B+ institutions", "the 20 largest banks in Texas". */
-export function shortSegmentLabel(s: AskSegment): string {
-  const who = s.charterType === "credit_union" ? "credit unions" : s.charterType === "bank" ? "banks" : "institutions";
-  const size =
-    s.minAssets !== null && s.maxAssets !== null
-      ? `${assetsShort(s.minAssets)} to ${assetsShort(s.maxAssets)} `
-      : s.minAssets !== null
-        ? `${assetsShort(s.minAssets)}+ `
-        : s.maxAssets !== null
-          ? `under-${assetsShort(s.maxAssets)} `
-          : "";
-  const where = s.stateCode ? ` in ${STATE_NAMES[s.stateCode] ?? s.stateCode}` : "";
-  return s.largest !== null ? `the ${s.largest} largest ${size}${who}${where}` : `${size}${who}${where}`;
-}
-
 /**
  * The segment a question names, or null when it names none. A charter or a state alone
  * is a segment only with a size or "largest": "banks in Texas" stays with the default peers'
@@ -159,18 +117,6 @@ export function parseSegment(question: string): AskSegment | null {
     largest,
   };
   return { ...s, label: segmentLabel(s) };
-}
-
-/** Does an institution of this size, charter and state fit the segment (ignoring "largest")? */
-export function fitsSegment(
-  segment: AskSegment,
-  inst: { totalAssets: number | null; charterType: string | null; stateCode: string | null },
-): boolean {
-  if (segment.minAssets !== null && (inst.totalAssets === null || inst.totalAssets < segment.minAssets)) return false;
-  if (segment.maxAssets !== null && (inst.totalAssets === null || inst.totalAssets >= segment.maxAssets)) return false;
-  if (segment.charterType && inst.charterType !== segment.charterType) return false;
-  if (segment.stateCode && inst.stateCode !== segment.stateCode) return false;
-  return true;
 }
 
 function quantile(sorted: number[], q: number): number {
@@ -196,7 +142,8 @@ export function buildSegmentResearch(input: {
   const members = [...input.members].sort(
     (a, b) => (b.totalAssets ?? -1) - (a.totalAssets ?? -1) || a.institutionName.localeCompare(b.institutionName),
   );
-  const amounts = members.map((m) => m.amount).sort((a, b) => a - b);
+  // Sister charters of one shared fee schedule count once in the band (statistics rule 7).
+  const amounts = countedAmounts(members);
   const band =
     amounts.length >= MIN_PEERS_FOR_POSITION
       ? { p25: quantile(amounts, 0.25), median: quantile(amounts, 0.5), p75: quantile(amounts, 0.75), n: amounts.length }
@@ -282,19 +229,26 @@ export function segmentClaims(seg: SegmentResearch, feeCategory: string, current
     });
   }
   if (seg.zeroCount > 0) {
-    const zeros = seg.members.filter((m) => m.amount === 0).slice(0, 4).map((m) => m.institutionName);
+    const zeroMembers = seg.members.filter((m) => m.amount === 0);
+    const zeros = zeroMembers.slice(0, 4).map((m) => m.institutionName);
     const more = seg.zeroCount > zeros.length ? ` and ${count(seg.zeroCount - zeros.length)} more` : "";
-    out.push({ text: `${count(seg.zeroCount)} charge $0: ${zeros.join(", ")}${more}.`, source, sampleSize: seg.zeroCount });
+    out.push({ text: zeroMembers.some(m => m.several)
+      ? `${count(seg.zeroCount)} have a $0 value in group statistics: ${zeros.join(", ")}${more}. Their stated prices are listed in the table.`
+      : `${count(seg.zeroCount)} charge $0: ${zeros.join(", ")}${more}.`, source, sampleSize: seg.zeroCount });
   }
   const priced = seg.members.filter((m) => m.amount > 0);
   if (priced.length > 0) {
     const top = [...priced].sort((a, b) => b.amount - a.amount)[0];
-    out.push({ text: `The highest is ${top.institutionName} at ${money(top.amount)}.`, source: { ...source, url: top.documentUrls[0] } });
+    const urls = feeScheduleUrls(top.documentUrls);
+    out.push({ text: seg.members.some(m => m.several)
+      ? `${top.institutionName} lists ${statedFeeLabel(top.amount, top.several, money)}; the table keeps each named fee.`
+      : `The highest is ${top.institutionName} at ${money(top.amount)}.`,
+    source: { ...source, url: urls.length === 1 ? urls[0] : undefined } });
   }
   const largest = seg.members.slice(0, 3);
   if (largest.length > 0) {
     out.push({
-      text: `The largest by assets: ${largest.map((m) => `${plainName(m.institutionName)} (${money(m.amount)})`).join(", ")}.`,
+      text: `The largest by assets: ${largest.map((m) => `${plainName(m.institutionName)} (${statedFeeLabel(m.amount, m.several, money)})`).join(", ")}.`,
       source,
     });
   }
@@ -325,7 +279,11 @@ export function segmentExhibit(seg: SegmentResearch, feeCategory: string, curren
   const items = seg.members
     .slice(0, MAX_SEGMENT_EXHIBIT)
     .sort((a, b) => a.amount - b.amount || a.institutionName.localeCompare(b.institutionName))
-    .map((m) => ({ name: m.institutionName, amount: m.amount, url: m.documentUrls[0] ?? null }));
+    .map((m) => {
+      const documentUrls = feeScheduleUrls(m.documentUrls);
+      return { name: m.institutionName, amount: m.amount, url: documentUrls.length === 1 ? documentUrls[0] : null,
+        documentUrls, ...(m.several ? { several: m.several } : {}) };
+    });
   return {
     kind: "competitor_range",
     title: `${capitalize(name)} fees at the ${items.length} largest ${shortSegmentLabel({ ...seg.segment, largest: null })}`,

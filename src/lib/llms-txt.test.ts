@@ -28,6 +28,6 @@ describe("buildLlmsTxt", () => {
     expect(text).toContain("[Competitive Fee Position Report](https://example.test/reports)");
     expect(text).toContain("https://example.test/research#districts");
     expect(text).not.toContain("https://example.test/districts");
-    expect(text).toContain("Hamilton is the Fee Insight Pro workspace");
+    expect(text).toContain("Hamilton is the Fee Insight workspace");
   });
 });

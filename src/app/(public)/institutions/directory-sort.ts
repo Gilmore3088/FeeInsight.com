@@ -12,13 +12,19 @@ export function hasVerifiedFees(row: Pick<InstitutionSearchResult, "published_fe
   return row.published_fee_count > 0;
 }
 
-/** Verified-first, then alphabetical by institution name. */
+/**
+ * Verified-first, then (for a name search) the institution the query names, then alphabetical by
+ * institution name. `nameRank` returns 0 for a row the query names and 1 otherwise.
+ */
 export function sortVerifiedFirst<T extends Pick<InstitutionSearchResult, "published_fee_count" | "institution_name">>(
   rows: T[],
+  nameRank?: (name: string) => number,
 ): T[] {
   return [...rows].sort((a, b) => {
     const verifiedDelta = Number(hasVerifiedFees(b)) - Number(hasVerifiedFees(a));
     if (verifiedDelta !== 0) return verifiedDelta;
+    const rankDelta = nameRank ? nameRank(a.institution_name) - nameRank(b.institution_name) : 0;
+    if (rankDelta !== 0) return rankDelta;
     return a.institution_name.localeCompare(b.institution_name);
   });
 }

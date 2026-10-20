@@ -1,8 +1,13 @@
+import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { sql } from "@/lib/data-store/connection";
-import { ACCURACY_TARGET, ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
+import { ACCURACY_TARGET_LABEL } from "@/lib/accuracy-target";
 import { inSavepoint } from "@/lib/agents/savepoint";
-import { FRESH_AUDIT_MIN_SCORABLE } from "@/lib/agents/deming/fresh-audit";
+import { accuracyStatusLabel, formatAccuracyBound, type AccuracyMeasure } from "@/lib/agents/deming/accuracy-measure";
+export { poolFreshAudits, wilsonRange } from "@/lib/agents/deming/accuracy-measure";
+import { poolFreshAudits } from "@/lib/agents/deming/accuracy-measure";
 import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/batch-review";
+import { readLiveSourceAudit } from "@/lib/data-store/live-source-audit-read";
+import { liveAuditBrief,validateLiveAuditComponent,type LiveAuditComponent } from "./deming/live-source-audit-records";
 
 /**
  * The goal scorecard (#1040): the numbers that say whether Fee Insight is getting closer to a
@@ -22,6 +27,8 @@ import { BATCH_REVIEW_CHECK, type BatchMissKind } from "@/lib/agents/rosetta/bat
 type SqlTag = typeof sql;
 
 export const GOAL_WINDOW_DAYS = 7;
+/** `published_fee_catalog` shows an institution only once it has live fees in this many categories. */
+export const CATALOG_MIN_CATEGORIES = 3;
 
 /** James, 2026-10-12 (#1028): a state × size group under $10B is covered at 30 live institutions, or 75% below 40. */
 export const COVERAGE_TARGET_INSTITUTIONS = 30;
@@ -97,6 +104,8 @@ export interface CoverageCells {
   totalCells: number;
   /** Covered institutions still needed to bring every group to its target. */
   institutionsShort: number;
+  /** The same gap seven days ago, from the institutions live then. Absent on snapshots from before it. */
+  institutionsShortWeekAgo?: number;
   bySize: Array<{ size: SizeGroupKey; label: string; readyCells: number; totalCells: number; institutionsShort: number }>;
   /** Each state's gap (#1117), largest first: the same groups, summed per state. Absent on snapshots from before it. */
   byState?: StateCoverageGap[];
@@ -129,38 +138,12 @@ export interface LiveInstitutions {
   live: number;
   /** Live now, with no live fee seven days ago. */
   addedThisWeek: number;
+  /** Live seven days ago, with no live fee now (taken down). Absent on snapshots from before it. */
+  droppedThisWeek?: number;
 }
 
-export interface WeeklyAccuracy {
+export interface WeeklyAccuracy extends AccuracyMeasure {
   query: string;
-  /** Right ÷ scorable over every Deming fresh audit in the window; null below the minimum sample. */
-  accuracy: number | null;
-  right: number;
-  scorable: number;
-  audits: number;
-  latestAt: string | null;
-  latestAccuracy: number | null;
-  /** 95% Wilson range around `accuracy` (200 fees gives about ±3–4 points); null with no percentage. */
-  range: { low: number; high: number } | null;
-  /** One dated row per audit in the window, newest first, kept with each daily snapshot (#1119). */
-  daily: FreshAuditDay[];
-  /** Misses per check across the window. */
-  misses: FreshAuditMisses;
-}
-
-export interface FreshAuditMisses {
-  amount: number;
-  category: number;
-  evidence: number;
-  notAFee: number;
-  name: number;
-}
-
-export interface FreshAuditDay extends FreshAuditMisses {
-  at: string;
-  right: number;
-  scorable: number;
-  accuracy: number | null;
 }
 
 export interface WrongAfterPublish {
@@ -239,6 +222,10 @@ export interface AnswerQuality {
   /** When the latest paid sample finished (ISO), the date the paid rates are for; null when none ran in the window. */
   paidAt?: string | null;
   timedOut: boolean;
+  institutionsAsked?: number | null;
+  institutionsPlanned?: number | null;
+  proQuestionsAsked?: number | null;
+  proQuestionsPlanned?: number | null;
   paths: AnswerPathQuality[];
 }
 
@@ -303,6 +290,10 @@ export function answerQualityFrom(
     at,
     paidAt: newestPaid,
     timedOut: detail.timedOut === true,
+    institutionsAsked: detail.institutions == null ? null : Number(detail.institutions),
+    institutionsPlanned: detail.planned == null ? null : Number(detail.planned),
+    proQuestionsAsked: pro?.questions == null ? null : Number(pro.questions),
+    proQuestionsPlanned: pro?.planned == null ? null : Number(pro.planned),
     paths: [
       path("free_ask", "Free Ask, standard questions", detail.answers, detail.passed, detail.correctness),
       ...(pro ? [path("pro_replay", "Free Ask, Pro readers' questions", pro.questions, pro.passed, pro.correctness)] : []),
@@ -396,6 +387,8 @@ export interface GoalScorecard {
   readerRemedies?: ReaderRemedies | null;
   /** Deming's daily data-quality checks (#1065); absent on snapshots from before it. */
   dataQuality?: DataQuality | null;
+  /** Separate automated fresh-site diagnostic; not missing-fee recall or the weekly launch review. */
+  liveSourceAudit?:LiveAuditComponent|null;
 }
 
 const usd = (micro: unknown): number => Math.round(Number(micro ?? 0) / 10_000) / 100;
@@ -416,6 +409,23 @@ export function coverageShort(total: number, covered: number): number {
 }
 
 /**
+ * Institutions live seven days ago, by the catalog's own rule: a fee neither taken down nor
+ * quarantined by then, at an institution with three or more such categories. Without the
+ * three-category rule an institution with one or two fees counted as live a week ago though the
+ * catalog never showed it, so it read as dropped this week (283 "dropped" on 2026-10-17, 98 real).
+ */
+export function liveWeekAgoSql(db: SqlTag) {
+  return db`
+    SELECT fp.institution_id FROM public.published_fee_records fp
+     WHERE fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
+       AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+       AND (fp.quarantined_at IS NULL OR fp.quarantined_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
+     GROUP BY fp.institution_id
+    HAVING COUNT(DISTINCT fp.canonical_fee_key) >= ${CATALOG_MIN_CATEGORIES}::int
+  `;
+}
+
+/**
  * The state × size groups under $10B, one row each: state_code, size_group, total, covered,
  * covered_week_ago, newly_covered, target and short. The one definition the scorecard and Atlas's lane
  * priority (#1117) both read, so the gap a lane works on is the gap the page shows. Institutions
@@ -430,17 +440,15 @@ export function coverageShort(total: number, covered: number): number {
  */
 export function coverageGroupsSql(db: SqlTag, options: { weekAgo?: boolean } = {}) {
   const liveWeekAgo = options.weekAgo
-    ? db`EXISTS (
-        SELECT 1 FROM public.published_fee_records fp
-         WHERE fp.institution_id = i.id
-           AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-           AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-      )`
+    ? db`(i.id IN (SELECT institution_id FROM week_ago))`
     : db`FALSE`;
+  const weekAgoCte = options.weekAgo
+    ? db`, week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})`
+    : db``;
   return db`
     WITH live AS MATERIALIZED (
       SELECT DISTINCT institution_id FROM public.published_fee_catalog
-    )
+    )${weekAgoCte}
     SELECT state_code, size_group, total, covered, covered_week_ago, newly_covered, target,
            GREATEST(0, target - covered)::int AS short
       FROM (
@@ -503,6 +511,9 @@ export function summarizeCoverageCells(rows: CoverageGroupRow[]): Omit<CoverageC
     readyCells: bySize.reduce((sum, row) => sum + row.readyCells, 0),
     totalCells: bySize.reduce((sum, row) => sum + row.totalCells, 0),
     institutionsShort: bySize.reduce((sum, row) => sum + row.institutionsShort, 0),
+    ...(rows.some((row) => row.covered_week_ago !== undefined)
+      ? { institutionsShortWeekAgo: rows.reduce((sum, row) => sum + (row.total > 0 ? coverageShort(row.total, row.covered_week_ago ?? row.covered) : 0), 0) }
+      : {}),
     bySize,
     ...(rows.some((row) => row.state_code) ? { byState: summarizeStateGaps(rows) } : {}),
   };
@@ -556,65 +567,10 @@ export function summarizeWrongAfterPublish(rows: Array<{ reason: string | null; 
   return { published, wrong, rate: ratio(wrong, published), housekeeping, topErrors };
 }
 
-/** Pure: Deming's fresh-audit step details from the window, pooled. */
-/** 95% Wilson score interval for `right` of `n`; rounded to four places. */
-export function wilsonRange(right: number, n: number): { low: number; high: number } | null {
-  if (n <= 0) return null;
-  const z = 1.96;
-  const p = right / n;
-  const denominator = 1 + (z * z) / n;
-  const centre = p + (z * z) / (2 * n);
-  const margin = z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n));
-  const round = (value: number) => Math.round(Math.min(1, Math.max(0, value)) * 10_000) / 10_000;
-  return { low: round((centre - margin) / denominator), high: round((centre + margin) / denominator) };
-}
-
 const missCount = (value: unknown) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 };
-
-/** Pure: Deming's fresh-audit step details from the window, pooled, with a dated row per audit. */
-export function poolFreshAudits(events: Array<{ at: string; detail: Record<string, unknown> | null }>): Omit<WeeklyAccuracy, "query"> {
-  let right = 0;
-  let scorable = 0;
-  const daily: FreshAuditDay[] = [];
-  for (const event of events) {
-    if (!event.detail || event.detail.readable === false) continue;
-    const r = Number(event.detail.right);
-    const s = Number(event.detail.scorable);
-    if (!Number.isFinite(r) || !Number.isFinite(s) || s <= 0) continue;
-    right += r;
-    scorable += s;
-    daily.push({
-      at: event.at,
-      right: r,
-      scorable: s,
-      accuracy: ratio(r, s),
-      amount: missCount(event.detail.amount_miss),
-      category: missCount(event.detail.category_miss),
-      evidence: missCount(event.detail.evidence_miss),
-      notAFee: missCount(event.detail.not_a_fee),
-      name: missCount(event.detail.name_miss),
-    });
-  }
-  daily.sort((a, b) => b.at.localeCompare(a.at));
-  const newest = [...events].sort((a, b) => b.at.localeCompare(a.at))[0];
-  const latestAccuracy = newest?.detail?.accuracy == null ? null : Number(newest.detail.accuracy);
-  const enough = scorable >= FRESH_AUDIT_MIN_SCORABLE;
-  const sum = (key: keyof FreshAuditMisses) => daily.reduce((total, day) => total + day[key], 0);
-  return {
-    accuracy: enough ? ratio(right, scorable) : null,
-    right,
-    scorable,
-    audits: daily.length,
-    latestAt: newest?.at ?? null,
-    latestAccuracy: Number.isFinite(latestAccuracy) ? latestAccuracy : null,
-    range: enough ? wilsonRange(right, scorable) : null,
-    daily,
-    misses: { amount: sum("amount"), category: sum("category"), evidence: sum("evidence"), notAFee: sum("notAFee"), name: sum("name") },
-  };
-}
 
 async function readCoverageCells(db: SqlTag): Promise<CoverageCells> {
   const rows = await db<Array<Record<string, number | string>>>`
@@ -635,17 +591,24 @@ async function readCoverageCells(db: SqlTag): Promise<CoverageCells> {
 }
 
 async function readLiveInstitutions(db: SqlTag): Promise<LiveInstitutions> {
+  // Added and dropped both compare with the institutions live seven days ago, so a week of
+  // takedowns shows beside the week's additions instead of hiding behind them.
   const [row] = await db`
-    SELECT COUNT(*)::int AS live,
-           (COUNT(*) FILTER (WHERE NOT EXISTS (
-             SELECT 1 FROM published_fee_records fp
-              WHERE fp.institution_id = live.institution_id
-                AND fp.published_at < NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int)
-                AND (fp.rolled_back_at IS NULL OR fp.rolled_back_at >= NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int))
-           )))::int AS added
-      FROM (SELECT DISTINCT institution_id FROM published_fee_catalog) live
+    WITH live AS MATERIALIZED (
+      SELECT DISTINCT institution_id FROM published_fee_catalog
+    ), week_ago AS MATERIALIZED (${liveWeekAgoSql(db)})
+    SELECT (SELECT COUNT(*) FROM live)::int AS live,
+           (SELECT COUNT(*) FROM live
+             WHERE NOT EXISTS (SELECT 1 FROM week_ago w WHERE w.institution_id = live.institution_id))::int AS added,
+           (SELECT COUNT(*) FROM week_ago w
+             WHERE NOT EXISTS (SELECT 1 FROM live WHERE live.institution_id = w.institution_id))::int AS dropped
   `;
-  return { query: GOAL_QUERIES.liveInstitutions, live: Number(row?.live ?? 0), addedThisWeek: Number(row?.added ?? 0) };
+  return {
+    query: GOAL_QUERIES.liveInstitutions,
+    live: Number(row?.live ?? 0),
+    addedThisWeek: Number(row?.added ?? 0),
+    ...(row?.dropped == null ? {} : { droppedThisWeek: Number(row.dropped) }),
+  };
 }
 
 async function readAccuracy(db: SqlTag): Promise<WeeklyAccuracy> {
@@ -697,7 +660,7 @@ async function readSpend(db: SqlTag, addedThisWeek: number | null): Promise<Goal
              COALESCE(SUM(estimated_cost_microusd) FILTER (
                WHERE created_at >= date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'), 0)::bigint AS month
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(db)}
          AND created_at >= LEAST(
                NOW() - make_interval(days => ${GOAL_WINDOW_DAYS}::int),
                date_trunc('month', NOW() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC')
@@ -977,6 +940,7 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
   const readerMisses = await guarded(db, GOAL_QUERIES.readerMissWeeks, (scope) => readReaderMissWeeks(scope, now));
   const readerRemedies = await guarded(db, GOAL_QUERIES.readerRemedies, (scope) => readReaderRemedies(scope, now));
   const dataQuality = await guarded(db, GOAL_QUERIES.dataQuality, readDataQuality);
+  const liveSourceAudit=await guarded(db,"goal.live_source_audit",scope=>readLiveSourceAudit(scope,now));
   return {
     readAt: now.toISOString(),
     windowDays: GOAL_WINDOW_DAYS,
@@ -991,18 +955,24 @@ export async function readGoalScorecard(db: SqlTag = sql, now = new Date()): Pro
     readerMisses,
     readerRemedies,
     dataQuality,
+    liveSourceAudit,
   };
 }
 
 const pct = (value: number | null | undefined) => (value == null ? "n/a" : `${(value * 100).toFixed(1)}%`);
 const count = (value: number) => value.toLocaleString("en-US");
+const signedCount = (value: number) => `${value > 0 ? "+" : ""}${count(value)}`;
 
 /** One clause for the step summary: the three numbers the goal turns on. */
 export function goalHeadline(goal: GoalScorecard): string {
   const c = goal.coverageCells;
+  const live = validateLiveAuditComponent(goal.liveSourceAudit)?.summary;
+  const sourceSupport = live
+    ? `live-source support ${live.support == null ? "unmeasured" : `${pct(live.support)} conditional`} (${live.state.replaceAll("_", " ")}; ${count(live.supported + live.mismatch)} scorable of ${count(live.selected)}, ${count(live.unknown)} unknown, ${count(live.unattempted)} unattempted)`
+    : "live-source support unavailable";
   return [
     c ? `${c.readyCells} of ${c.totalCells} groups covered` : "coverage n/a",
-    `accuracy ${pct(goal.accuracy?.accuracy)} (7 days)`,
+    sourceSupport,
     `wrong after publish ${pct(goal.wrongAfterPublish?.rate)}`,
   ].join(", ");
 }
@@ -1010,9 +980,10 @@ export function goalHeadline(goal: GoalScorecard): string {
 /** Plain lines for the morning brief: the same numbers as the page, unknown said as unknown. */
 export function goalBriefLines(goal: GoalScorecard): string[] {
   const lines: string[] = [];
+  lines.push(liveAuditBrief(goal.liveSourceAudit??null));
   const c = goal.coverageCells;
   lines.push(c
-    ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap.`
+    ? `Coverage: ${c.readyCells} of ${c.totalCells} state and size groups under $10B meet the target; ${count(c.institutionsShort)} more covered institutions would close the gap${c.institutionsShortWeekAgo == null ? "" : ` (${count(c.institutionsShortWeekAgo)} 7 days ago)`}.`
     : "Coverage: could not be read today.");
   const gaps = c?.byState?.filter((state) => state.institutionsShort > 0).slice(0, 5) ?? [];
   if (gaps.length > 0) {
@@ -1020,13 +991,13 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
   }
   const live = goal.liveInstitutions;
   lines.push(live
-    ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days.`
+    ? `Institutions with live fees: ${count(live.live)}, ${count(live.addedThisWeek)} added in the last 7 days${live.droppedThisWeek == null ? "" : ` and ${count(live.droppedThisWeek)} dropped (net ${signedCount(live.addedThisWeek - live.droppedThisWeek)})`}.`
     : "Institutions with live fees: could not be read today.");
   const a = goal.accuracy;
-  lines.push(!a ? "Accuracy: could not be read today."
+  lines.push(!a ? "Stored-copy support (secondary): could not be read today."
     : a.accuracy == null
-      ? `Accuracy: not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
-      : `Accuracy: ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${pct(a.range.low)}–${pct(a.range.high)})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees right, ${a.audits} Deming audits; target ${ACCURACY_TARGET_LABEL}, ${a.accuracy >= ACCURACY_TARGET ? "met" : "not met"}.`);
+      ? `Stored-copy support (secondary): not enough audited fees in the last 7 days (${count(a.scorable)} scorable, ${a.audits} audits).`
+      : `Stored-copy support (secondary): ${(Math.floor(a.accuracy * 10000) / 100).toFixed(2)}% over the last 7 days${a.range ? ` (95% range ${formatAccuracyBound(a.range.low, "low")}–${formatAccuracyBound(a.range.high, "high")})` : ""}: ${count(a.right)} of ${count(a.scorable)} fees supported, ${a.audits} Deming audits; diagnostic target ${ACCURACY_TARGET_LABEL}, ${accuracyStatusLabel(a)}.`);
   const w = goal.wrongAfterPublish;
   lines.push(w
     ? `Wrong after publish: ${pct(w.rate)} (${count(w.wrong)} of ${count(w.published)} fees published in the last 7 days taken down as errors).`
@@ -1048,10 +1019,16 @@ export function goalBriefLines(goal: GoalScorecard): string[] {
     const parts = measured.map((p) => `${p.label}${sampleDay(p)}: form ${pct(p.formRate)} (${p.formPassed} of ${p.answers}), figures tie out ${p.checked == null ? "not checked" : `${pct(p.correctRate)} (${p.correct} of ${p.checked})`}`);
     const unmeasured = q.paths.filter((p) => !p.measured).map((p) => p.label.replace(/ \(paid\)$/, "").toLowerCase());
     const paidAt = q.paidAt ? `; paid sample of ${q.paidAt.slice(0, 16).replace("T", " ")} UTC` : "";
+    const completeness = [
+      q.institutionsAsked != null && q.institutionsPlanned != null ? `${q.institutionsAsked} of ${q.institutionsPlanned} planned institutions asked` : null,
+      q.proQuestionsAsked != null && q.proQuestionsPlanned != null ? `${q.proQuestionsAsked} of ${q.proQuestionsPlanned} Pro questions replayed` : null,
+    ].filter(Boolean).join(", ");
+    const smallPaid = measured.some(p => PAID_ANSWER_PATHS.some(paid => paid.path === p.path) && (p.answers ?? 0) < 10)
+      ? " Paid paths with fewer than 10 answers are small samples, not reliability estimates." : "";
     const rest = unmeasured.length === PAID_ANSWER_PATHS.length
       ? " Paid paths not measured yet."
       : unmeasured.length > 0 ? ` Not measured yet: ${unmeasured.join(", ")}.` : "";
-    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}): ${parts.join("; ")}.${rest}`);
+    lines.push(`Hamilton answers (eval of ${q.at.slice(0, 16).replace("T", " ")} UTC${q.timedOut ? ", stopped at its time budget" : ""}${paidAt}${completeness ? `; ${completeness}` : ""}): ${parts.join("; ")}.${rest}${smallPaid}`);
   }
   const d = goal.dataQuality;
   if (d) {

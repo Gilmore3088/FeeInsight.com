@@ -1,3 +1,5 @@
+import { productKey, sameProduct } from "@/lib/fee-product";
+import { PUBLISHED_IDENTITY_COLUMNS, unchangedPublishedIdentities, recordIdentitySkips, withPublishedIdentityWrite, type PublishedIdentity } from "./published-identity";
 import { sql } from "@/lib/data-store/connection";
 import { invalidatePublicReadCache } from "@/lib/data-store/fee-cache";
 import { inSavepoint } from "@/lib/agents/savepoint";
@@ -5,7 +7,7 @@ import { frequencyClass } from "@/lib/agents/hamilton/exact-duplicate";
 import { DUPLICATE_COLLAPSE_REASON_PREFIX, type DuplicateCollapse } from "@/lib/agents/hamilton/duplicate-collapse";
 import { feePageKey } from "@/lib/agents/hamilton/page-key";
 import { effectiveDate, scheduleAudience, type ScheduleAudience } from "@/lib/agents/hamilton/schedule-edition";
-import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules } from "@/lib/agents/hamilton/publish";
+import { linesApartOnPage, nearNames, printedAtPrice, printedInPersonalAndBusinessSchedules, unclearName } from "@/lib/agents/hamilton/publish";
 
 type SqlTag = typeof sql;
 
@@ -17,15 +19,17 @@ type SqlTag = typeof sql;
  * category, variant and amount read from different documents of one page (`feePageKey`) under
  * the same or a near name are one fee: the copy from the latest edition stays.
  *
- * Shadow until James approves the dry-run counts: a step reports what it would close and
- * changes nothing. Set true to close the repeats.
+ * Live since James approved the dry-run counts (Oct 17, 10:47 UTC; 499 closes, 27 kept rows
+ * renamed). Set false to go back to shadow: a step then reports what it would close and changes
+ * nothing.
  */
-export const PAGE_COPY_COLLAPSE_LIVE = false;
+export const PAGE_COPY_COLLAPSE_LIVE = true;
 /** Institutions read per publish step; the step's run id picks which, so steps cover them in turn. */
 export const PAGE_COPY_COLLAPSE_INSTITUTIONS = 25;
 export const PAGE_COPY_COLLAPSE_REASON_SUFFIX = " (copy of the page)";
 
-export interface PageCopyRow {
+export interface PageCopyRow extends Partial<PublishedIdentity> {
+  product_name?: string | null;
   fee_published_id: number | string;
   institution_id: number | string;
   source_document_id: number | string;
@@ -50,6 +54,12 @@ export interface PageCopyCollapse extends DuplicateCollapse {
   renamed?: boolean;
   sourceDocumentId: number;
   keptSourceDocumentId: number;
+  /**
+   * The closed copy's fuller name, carried onto the kept row (`carriedName`): the kept row reads
+   * only the tail of the line ("10X10") and the closed copy also has the heading the kept page
+   * prints above it ("Safe Deposit Box: 10X10").
+   */
+  keptNewName?: string;
 }
 
 export interface PageCopyResult {
@@ -99,6 +109,38 @@ function shareWord(a: string | null, b: string | null): boolean {
   const [sizesA, sizesB] = [[...one].filter((word) => BOX_SIZE.test(word)), [...two].filter((word) => BOX_SIZE.test(word))];
   if (sizesA.length > 0 && sizesB.length > 0 && !sizesA.some((size) => two.has(size))) return false;
   return [...one].some((word) => two.has(word) || two.has(word.replace(/s$/, "")) || two.has(`${word}s`));
+}
+
+/** Text as words: lower case, every run of other characters one space, padded with spaces. */
+function pageWords(text: string): string {
+  return ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim()} `;
+}
+
+/** Most heading words a carried name may add in front of the kept name. */
+export const CARRIED_HEADING_MAX_WORDS = 5;
+/** Words the kept page may print between the heading and the kept name. */
+const CARRIED_HEADING_REACH_WORDS = 40;
+
+/**
+ * Pure: the closed copy's name to carry onto the kept row, or null. The kept copy is kept for its
+ * edition, not its name, and 3 in 10 renamed closes kept a cut-off name ("Farmers ATM" over
+ * "Non-customer use of Farmers ATM", "10X10" over "Safe Deposit Box: 10X10", 17 Oct). The closed
+ * name carries over only when it is the kept name with a heading of one to
+ * CARRIED_HEADING_MAX_WORDS words in front, it reads as a line's name (`unclearName`, no table
+ * cell mark "|"), and the kept page itself prints that heading shortly before the kept name. A
+ * carried-in cell or sentence ("each | Cashier's Check", "per stop payment") never carries.
+ */
+export function carriedName(closedName: string | null, keptName: string | null, keptText: string | null): string | null {
+  const [closed, kept] = [(closedName ?? "").trim(), (keptName ?? "").trim()];
+  if (!closed || !kept || !keptText || closed.includes("|") || unclearName(closed)) return null;
+  const [closedWords, keptWords] = [pageWords(closed), pageWords(kept)];
+  if (keptWords.trim() === "" || closedWords.length <= keptWords.length || !closedWords.endsWith(keptWords)) return null;
+  const heading = closedWords.slice(0, closedWords.length - keptWords.length).trim();
+  const size = heading.split(" ").length;
+  if (size < 1 || size > CARRIED_HEADING_MAX_WORDS) return null;
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const printed = new RegExp(`(?<= )${escape(heading)} (?:[a-z0-9]+ ){0,${CARRIED_HEADING_REACH_WORDS}}?${escape(keptWords.trim())} `);
+  return printed.test(pageWords(keptText)) ? closed : null;
 }
 
 function sameLine(a: string | null, b: string | null): boolean {
@@ -193,6 +235,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     return priceSets.get(id)!;
   };
   const same = new Map<string, boolean>();
+  const renamedKept = new Set<string>();
   // Two documents are copies when both have text, they are not for two audiences (a consumer and
   // a business schedule from one template print mostly the same prices), and their prices match.
   const copies = (one: PageCopyRow, two: PageCopyRow) => {
@@ -209,7 +252,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
   for (const row of rows) {
     const page = feePageKey(row.document_url);
     if (page == null) continue;
-    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", String(Number(row.amount))].join("|");
+    const key = [row.institution_id, page, row.canonical_fee_key, row.variant_type ?? "", productKey(row.product_name), String(Number(row.amount))].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   // The kept copy is a current one (not superseded), then the latest edition: by the editions the
@@ -246,7 +289,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
     const replacedBy = (row: PageCopyRow, keep: PageCopyRow) =>
       row.superseded_by_id != null && String(row.superseded_by_id) === String(keep.source_document_id) && shareWord(row.fee_name, keep.fee_name);
     const agree = (row: PageCopyRow, keep: PageCopyRow) => {
-      if (String(keep.source_document_id) === String(row.source_document_id)) return false;
+      if (!sameProduct(keep.product_name, row.product_name) || String(keep.source_document_id) === String(row.source_document_id)) return false;
       const [f1, f2] = [frequencyClass(keep.frequency), frequencyClass(row.frequency)];
       const [a1, a2] = [keep.fee_audience ?? "unknown", row.fee_audience ?? "unknown"];
       return (f1 == null || f2 == null || f1 === f2) && (a1 === "unknown" || a2 === "unknown" || a1 === a2);
@@ -279,6 +322,9 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
         result.apartOnPage += 1;
         kept.push(row);
       } else {
+        // One carried name per kept row: the first closed copy that carries one.
+        const carried = renamedKept.has(String(match.fee_published_id)) ? null : carriedName(row.fee_name, match.fee_name, text);
+        if (carried) renamedKept.add(String(match.fee_published_id));
         result.collapses.push({
           feePublishedId: Number(row.fee_published_id),
           keptFeePublishedId: Number(match.fee_published_id),
@@ -290,6 +336,7 @@ export function pageCopyRepeats(rows: PageCopyRow[], texts: Map<string, string>)
           sourceDocumentId: Number(row.source_document_id),
           keptSourceDocumentId: Number(match.source_document_id),
           ...(renamed ? { renamed: true } : {}),
+          ...(carried ? { keptNewName: carried } : {}),
         });
       }
     }
@@ -324,7 +371,7 @@ export async function collapsePageCopies(
         `WITH live AS (
            SELECT fp.fee_published_id, fp.institution_id, fr.source_document_id, sd.document_url,
                   GREATEST(sd.last_checked_at, sd.crawled_at) AS crawled_at, sd.superseded_by_id IS NOT NULL AS superseded, sd.superseded_by_id,
-                  fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience
+                  fp.canonical_fee_key, fp.variant_type, fp.amount, fp.fee_name, fp.frequency, fp.fee_audience, fr.product_name, ${PUBLISHED_IDENTITY_COLUMNS}
              FROM published_fee_records fp
              JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
              JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -373,17 +420,52 @@ export async function collapsePageCopies(
   if (!live || options.dryRun || found.collapses.length === 0) return result;
 
   try {
-    const closed = await inSavepoint(db, (scope) => scope<{ fee_published_id: number | string }[]>`
+    const closed = await withPublishedIdentityWrite(db, async (scope) => {
+      const pairIds = new Set(found.collapses.flatMap((r) => [r.feePublishedId, r.keptFeePublishedId]));
+      const unchanged = await unchangedPublishedIdentities(scope, rows.filter((r) => pairIds.has(Number(r.fee_published_id))) as PublishedIdentity[]);
+      const eligible = found.collapses.filter((r) => unchanged.has(r.feePublishedId) && unchanged.has(r.keptFeePublishedId));
+      await recordIdentitySkips(scope, options.runId, "page-copy-collapse", found.collapses.length - eligible.length);
+      if (eligible.length === 0) return [];
+      return scope<{ fee_published_id: number | string }[]>`
       UPDATE published_fee_records fp
          SET rolled_back_at = NOW(),
              rolled_back_by_batch_id = ${options.batchId},
              rolled_back_reason = ${DUPLICATE_COLLAPSE_REASON_PREFIX} || pick.kept::text || ${PAGE_COPY_COLLAPSE_REASON_SUFFIX}
-        FROM unnest(${found.collapses.map((row) => row.feePublishedId)}::bigint[], ${found.collapses.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
-       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL
+        FROM unnest(${eligible.map((row) => row.feePublishedId)}::bigint[], ${eligible.map((row) => row.keptFeePublishedId)}::bigint[]) AS pick(id, kept)
+       WHERE fp.fee_published_id = pick.id AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL
       RETURNING fp.fee_published_id
-    `);
+    `; });
     const ids = new Set(closed.map((row) => Number(row.fee_published_id)));
     result.collapses = found.collapses.filter((row) => ids.has(row.feePublishedId));
+    // The kept row takes the closed copy's fuller name (`carriedName`), only while it is live and
+    // still reads the name it was judged under. The event below records the old and new names.
+    const carried = result.collapses.filter((row) => row.keptNewName);
+    if (carried.length > 0) {
+      let renamed: { fee_published_id: number | string }[] = [];
+      try {
+        renamed = await withPublishedIdentityWrite(db, async (scope) => {
+          const keeperIds = new Set(carried.map((r) => r.keptFeePublishedId));
+          const unchanged = await unchangedPublishedIdentities(scope, rows.filter((r) => keeperIds.has(Number(r.fee_published_id))) as PublishedIdentity[]);
+          const eligible = carried.filter((r) => unchanged.has(r.keptFeePublishedId));
+          if (eligible.length === 0) return [];
+          return scope<{ fee_published_id: number | string }[]>`
+          UPDATE published_fee_records fp
+             SET fee_name = carry.new_name
+            FROM unnest(
+                   ${eligible.map((row) => row.keptFeePublishedId)}::bigint[],
+                   ${eligible.map((row) => row.keptFeeName)}::text[],
+                   ${eligible.map((row) => row.keptNewName as string)}::text[]
+                 ) AS carry(id, old_name, new_name)
+           WHERE fp.fee_published_id = carry.id AND fp.rolled_back_at IS NULL AND fp.quarantined_at IS NULL AND fp.fee_name = carry.old_name
+          RETURNING fp.fee_published_id
+        `; });
+      } catch (error) {
+        // The closes stand; a failed rename only leaves the kept row's shorter name.
+        console.error("page-copy kept-name carry failed:", error);
+      }
+      const done = new Set(renamed.map((row) => Number(row.fee_published_id)));
+      result.collapses = result.collapses.map((row) => (row.keptNewName && !done.has(row.keptFeePublishedId) ? { ...row, keptNewName: undefined } : row));
+    }
   } catch (error) {
     console.error("page-copy collapse failed:", error);
     // Reported, so a failed close does not read as "nothing to close".
@@ -397,7 +479,14 @@ export async function collapsePageCopies(
         VALUES (
           ${options.runId}, 'hamilton.page_copy_duplicates_collapsed', 'completed',
           ${`Closed ${result.collapses.length} published fee(s) that repeated a line of the latest edition of their page`},
-          ${JSON.stringify({ batch_id: options.batchId, collapsed: result.collapses.length, samples: result.collapses.slice(0, 20) })}::jsonb
+          ${JSON.stringify({
+            batch_id: options.batchId,
+            collapsed: result.collapses.length,
+            samples: result.collapses.slice(0, 20),
+            kept_names_carried: result.collapses
+              .filter((row) => row.keptNewName)
+              .map((row) => ({ fee_published_id: row.keptFeePublishedId, old_name: row.keptFeeName, new_name: row.keptNewName })),
+          })}::jsonb
         )
       `);
     } catch (error) {

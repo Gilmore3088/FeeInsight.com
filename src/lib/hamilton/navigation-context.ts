@@ -50,3 +50,25 @@ export function hrefWithHamiltonNavigation(href: string, selection: HamiltonNavi
   }
   return hrefWithInstitutionContext(href, selection.institutionId);
 }
+
+/** Screens that read one institution keep the reader where they are when the subject changes (#2043). */
+const SWITCH_IN_PLACE = new Set(["/pro/analyze", "/pro/research", "/pro/simulate", "/pro/reports", "/pro/monitor"]);
+/** What the reader was looking at, kept across a switch; the subject and saved records are not. */
+const SWITCH_KEEPS = ["fee", "category", "layer"];
+
+/** Where the context bar's switch goes: the same screen for the new institution, else its own page. */
+export function subjectSwitchHref(pathname: string, institutionId: string | number, params: URLSearchParams = new URLSearchParams()): string {
+  const id = normalizeCanonicalInstitutionId(institutionId);
+  if (!id) return "/pro/research";
+  // The one-institution briefing stays the briefing.
+  if (pathname === "/pro/intelligence" && params.get("view") === "institution") return `/pro/intelligence?view=institution&instId=${id}`;
+  if (!SWITCH_IN_PLACE.has(pathname)) return `/pro/research?instId=${id}`;
+  const next = new URLSearchParams({ instId: id });
+  for (const key of SWITCH_KEEPS) { const value = params.get(key); if (value) next.set(key, value); }
+  return `${pathname}?${next}`;
+}
+
+/** The U.S. market from the bar: Ask answers for the market in place; other screens open Research. */
+export function marketSwitchHref(pathname: string, nationalResearch: string): string {
+  return pathname === "/pro/analyze" ? `/pro/analyze?${new URLSearchParams({ research: nationalResearch })}` : "/pro/intelligence";
+}

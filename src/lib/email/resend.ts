@@ -2,6 +2,7 @@
  * Minimal Resend transport shared by transactional senders. Plain fetch, no SDK.
  * Every sender returns a discriminated result and never throws into request paths.
  */
+import { EMAIL_SENDER_NAME } from "@/lib/constants";
 import { emailSendLogConfigured, insertEmailSendLog } from "@/lib/data-store/email-send-log";
 
 export type EmailDeliveryResult =
@@ -34,6 +35,15 @@ export function getResendApiKey() {
 /** Generic transactional From address; specific senders layer their own env var on top. */
 export function getTransactionalFromAddress() {
   return (process.env.TRANSACTIONAL_EMAIL_FROM || process.env.EMAIL_FROM || "").trim();
+}
+
+/**
+ * Every message goes out as "Fee Insight <address>", whatever display name (or none) the
+ * From env var carries, so readers see one sender name across transactional and marketing mail.
+ */
+export function withSenderName(from: string): string {
+  const address = (/<([^<>]+)>/.exec(from)?.[1] ?? from).trim();
+  return address ? `${EMAIL_SENDER_NAME} <${address}>` : from;
 }
 
 export function escapeHtml(value: string | null | undefined) {
@@ -119,7 +129,7 @@ async function deliverThroughResend(message: ResendMessage, failureLabel: string
   if (message.idempotencyKey) headers["Idempotency-Key"] = message.idempotencyKey;
 
   const body: Record<string, unknown> = {
-    from: message.from,
+    from: withSenderName(message.from),
     to: message.to,
     subject: message.subject,
     html: message.html,

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { LocalDate } from "@/components/hamilton/common/LocalDate";
 import { checkMessageFigures, confidenceFromFigureCheck, type FigureCheckResult } from "@/lib/hamilton/figure-check";
 import { useChat } from "@ai-sdk/react";
@@ -31,10 +32,12 @@ import { getDisplayName } from "@/lib/fee-taxonomy";
 import { marketBriefHref, parseMarketQuestion } from "@/lib/hamilton/market-question";
 import { isPeerListContinuationQuestion } from "@/lib/hamilton/peer-list";
 import type { HamiltonSelectedInstitutionContext } from "@/lib/hamilton/institution-context";
+import { AnswerFollowThrough } from "./AnswerFollowThrough";
 import { AddToReportButton } from "@/components/hamilton/basket/AddToReportButton";
 import { DownloadAnswerPdf, type StructuredAnswerInfo } from "./StructuredAsk";
 import { PeerAwareStructuredAsk as StructuredAsk } from "./PeerAwareStructuredAsk";
 import { StorylineView } from "@/components/hamilton/storyline/StorylineView";
+import { readStampedFigures } from "@/lib/dataset-note";
 import { ANSWER_TYPE, AuditPanel, Callout, InterpretationBox, LinkButton, MemoHeader, MemoPage, MemoSection, More, SERIF, SectionHeading } from "@/components/hamilton/memo/memo";
 import type { NarrativeBinding } from "@/lib/hamilton/narrative-bound";
 import { proseFeeName } from "@/lib/hamilton/workspace/names";
@@ -1084,7 +1087,7 @@ function AnalyzeConversationWorkspace({
               What are you working on?
             </h1>
             <p className="text-lg text-[var(--fi-muted)]">
-              Ask a question. Get a research brief built around {instName ?? "your institution"}.
+              {instName ? `Ask a question. Get a research brief built around ${instName}.` : "Choose an institution, then ask a question."}
             </p>
           </header>
           <div className="flex flex-col gap-3">
@@ -1153,6 +1156,8 @@ function AnalyzeConversationWorkspace({
         <StorylineView
           story={reopenedStory}
           identityContext={answerIdentity}
+          // The stamps saved with the answer (#1924), never a fresh read; none on older answers.
+          stamps={readStampedFigures(initialAnalysis?.datasetStamps)}
           memo={initialAnalysis?.memo ? { state: "written", memo: initialAnalysis.memo } : undefined}
           nextSteps={initialAnalysisId && !readOnlyReason ? <><LinkButton href={`/pro/reports?from_analysis=${encodeURIComponent(initialAnalysisId)}`}>Build board brief</LinkButton><DownloadAnswerPdf analysisId={initialAnalysisId} /></> : null}
         />
@@ -1284,19 +1289,6 @@ function AnalyzeConversationWorkspace({
                 >
                   {isExporting ? "Preparing the PDF…" : "Download PDF"}
                 </button>
-                <AddToReportButton
-                  variant="link"
-                  item={{
-                    id: basketItemId("Ask", instId, view.lead),
-                    source: "Ask",
-                    title: view.lead,
-                    detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
-                    feeCategory,
-                    institutionId: instId,
-                    savedAnalysisId,
-                    ...(answerIdentity ? { identityContext: answerIdentity } : {}),
-                  }}
-                />
               </aside>
             ) : null}
           </div>
@@ -1304,6 +1296,30 @@ function AnalyzeConversationWorkspace({
 
           {complete ? (
             <>
+              {readOnlyReason ? null : (
+                <AnswerFollowThrough
+                  analysisId={savedAnalysisId}
+                  institutionId={instId}
+                  institutionName={instName}
+                  feeCategory={feeCategory}
+                  report={<>
+                    <AddToReportButton
+                      variant="link"
+                      item={{
+                        id: basketItemId("Ask", instId, view.lead),
+                        source: "Ask",
+                        title: view.lead,
+                        detail: [view.paragraphs.join(" "), shown.whatThisMeans].filter(Boolean).join(" "),
+                        feeCategory,
+                        institutionId: instId,
+                        savedAnalysisId,
+                        ...(answerIdentity ? { identityContext: answerIdentity } : {}),
+                      }}
+                    />
+                    {savedAnalysisId ? <Link href={hrefWithInstitutionContext(`/pro/reports?from_analysis=${encodeURIComponent(savedAnalysisId)}`, instId)} className="text-sm font-medium text-terra-text underline-offset-2 hover:underline">Build board brief</Link> : null}
+                  </>}
+                />
+              )}
               {exportError ? (
                 <p role="alert" className="text-sm text-terra-text">
                   {exportError}

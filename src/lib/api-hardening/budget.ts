@@ -1,3 +1,4 @@
+import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { sql } from "@/lib/data-store/connection";
 import { getApiRoutePolicy } from "./policies";
 import { recordApiRouteAuditEvent } from "./audit";
@@ -187,7 +188,7 @@ async function currentSpendMicrousd(policy: BudgetPolicyRow, sinceIso: string): 
     rows = await sql`
       SELECT COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(sql)}
          AND route_id = ${policy.route_id}
          AND created_at >= ${sinceIso}
     `;
@@ -195,7 +196,7 @@ async function currentSpendMicrousd(policy: BudgetPolicyRow, sinceIso: string): 
     rows = await sql`
       SELECT COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(sql)}
          AND agent_name = ${policy.agent_name}
          AND created_at >= ${sinceIso}
     `;
@@ -203,7 +204,7 @@ async function currentSpendMicrousd(policy: BudgetPolicyRow, sinceIso: string): 
     rows = await sql`
       SELECT COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(sql)}
          AND created_at >= ${sinceIso}
     `;
   }
@@ -244,7 +245,7 @@ async function agentRunUsage(
     SELECT COALESCE(SUM(request_count), 0)::bigint AS calls,
            COALESCE(SUM(COALESCE(estimated_cost_microusd, 0)), 0)::bigint AS microusd
       FROM public.ai_api_usage_events
-     WHERE status = 'completed'
+     WHERE ${incurredProviderUsageSql(sql)}
        AND agent_run_id = ${agentRunId}
        AND agent_name = ${agentName}
   `;
@@ -288,36 +289,6 @@ async function assertRunCaps(
         policy,
       );
     }
-  }
-}
-
-export async function recordBudgetBlockedAttempt(
-  context: ProviderBudgetContext,
-  error: ProviderBudgetBlockedError,
-): Promise<void> {
-  if (!context.routeId) return;
-  try {
-    const policy = getApiRoutePolicy(context.routeId);
-    await recordApiRouteAuditEvent({
-      policy,
-      statusCode: 423,
-      outcome: "blocked",
-      userId: context.userId ?? null,
-      subjectKey: context.subjectKey ?? null,
-      budgetPolicyId: error.policyId ?? null,
-      provider: context.provider,
-      model: context.model,
-      agentName: context.agent,
-      operation: context.operation,
-      reasonCode: error.reasonCode,
-      metadata: {
-        policy_key: error.policyKey ?? null,
-        message: error.message,
-        ...(context.metadata ?? {}),
-      },
-    });
-  } catch (auditError) {
-    console.error("Provider budget block audit failed", auditError);
   }
 }
 

@@ -79,6 +79,8 @@ export interface FeeCandidate {
   /** The bank's city and FDIC certificate / NCUA charter number. */
   city?: string | null;
   certNumber?: string | number | null;
+  /** The address asked for, when `url` is where it redirected: it may still say "PDF" or "fees". */
+  requestedUrl?: string | null;
 }
 
 export type CandidateVerdict =
@@ -114,6 +116,8 @@ export interface CandidateValidation {
   html: string | null;
   /** The text the fee-page check scored, for the shadow page classifier. */
   scoringText?: string | null;
+  /** Where the candidate's address redirected to, when it did. */
+  finalUrl?: string | null;
 }
 
 /**
@@ -217,7 +221,8 @@ function confirmDocumentHost(candidate: FeeCandidate, validation: CandidateValid
   return { ...rejected("unconfirmed_host", `Candidate is on another host: ${why}`, validation.status, candidate.score), html: validation.html, scoringText: validation.scoringText };
 }
 
-async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
+/** The address checks, before anything is fetched. Null when the address may be the schedule. */
+function rejectedAddress(candidate: FeeCandidate): CandidateValidation | null {
   if (isBusinessOnlyLink(candidate.url)) {
     return rejected("business_schedule", "Candidate address names a business-only schedule", null, candidate.score);
   }
@@ -241,20 +246,53 @@ async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): P
   if (isForeignHostLink(candidate.url, candidate.websiteUrl)) {
     return rejected("foreign_schedule", "Candidate is on another country's domain, not the US bank's schedule", null, candidate.score);
   }
+  return null;
+}
+
+async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): Promise<CandidateValidation> {
+  const address = rejectedAddress(candidate);
+  if (address) return address;
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
+  const finalUrl = response.url && response.url !== candidate.url ? response.url : null;
+  if (!finalUrl) return checkResponse(candidate, response);
+  // A page is judged where it landed: "/fee-schedule" redirecting to a checking page is a product page (#1051).
+  const landed = { ...candidate, url: finalUrl, requestedUrl: candidate.url };
+  const validation = rejectedAddress(landed) ?? (await checkResponse(landed, response));
+  return { ...validation, finalUrl };
+}
+
+async function checkResponse(candidate: FeeCandidate, response: Response): Promise<CandidateValidation> {
   if (!response.ok) {
     return rejected(`http_${response.status}`, `Candidate HTTP ${response.status}`, response.status);
   }
 
   const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-  if (contentType.includes("application/pdf") || (looksLikePdfUrl(candidate.url) && !contentType.includes("text/html"))) {
+  // A ".pdf" link often lands on a signed CDN or download address with no extension.
+  const namedPdf = looksLikePdfUrl(candidate.url) || (candidate.requestedUrl != null && looksLikePdfUrl(candidate.requestedUrl));
+  if (contentType.includes("application/pdf") || (namedPdf && !contentType.includes("text/html"))) {
     return validatePdf(candidate, response);
   }
   if (!contentType.includes("text/html")) {
     return rejected("unsupported_type", `Unsupported content type ${contentType || "unknown"}`, response.status);
   }
 
-  const rawBody = await response.text();
+  return checkFeeHtml(candidate, await response.text(), response.status);
+}
+
+/**
+ * A page a finder opened for its links (a hub page, a crawled page) offered as the schedule
+ * itself: the same address, page and host checks as any candidate (#1051). Before this, the
+ * hub and crawl finders accepted a page on its fee-line count alone, nav and footer included,
+ * with no address: 523 of the 526 thin banks they "found" in the week to Oct 20 were accepted
+ * this way, 478 of them at product addresses, and Rosetta then rejected them as account pages.
+ */
+export function checkOpenedFeePage(candidate: FeeCandidate, html: string, status = 200): CandidateValidation {
+  const validation = rejectedAddress(candidate) ?? checkFeeHtml(candidate, html, status);
+  return validation.ok ? confirmDocumentHost(candidate, validation) : validation;
+}
+
+function checkFeeHtml(candidate: FeeCandidate, rawBody: string, status: number): CandidateValidation {
+  const response = { status };
   const mainText = mainContentText(rawBody);
   const body = mainText.toLowerCase();
   // Fee words in a footer or menu ("Fee Schedule | Truth in Savings") appear on every page
@@ -286,7 +324,7 @@ async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): P
   }
   const accepted =
     page.verdict === "fee_page" ||
-    (keywordMatches >= 2 && urlNamesFeePage(candidate.url)) ||
+    (keywordMatches >= 2 && (urlNamesFeePage(candidate.url) || (candidate.requestedUrl != null && urlNamesFeePage(candidate.requestedUrl) && !looksLikeProductPage(candidate.url)))) ||
     (keywordMatches >= 2 && candidate.score >= 0.88 && page.feeLines >= 1 && !looksLikeProductPage(candidate.url));
   if (accepted) {
     return {

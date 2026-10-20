@@ -8,7 +8,8 @@ import { RESEARCH_SPLIT_KEYS, RESEARCH_SPLIT_LIVE, researchSplitTarget } from "@
 /**
  * The top 50 fee types (James, Oct 8 2026), plus excess withdrawals and returned mail once they
  * leave account research for their own types (James, Oct 15 2026: "Add both", #1398; listed only
- * while `RESEARCH_SPLIT_LIVE` is on). Fifteen smaller categories were folded into these by each
+ * while `RESEARCH_SPLIT_LIVE` is on), plus International ATM, split back out of International ATM &
+ * Card (James, Oct 19, #2037: "Split"). Fourteen smaller categories were folded into these by each
  * fee's own wording (`src/lib/fee-fold.ts`); add a category only by James's decision.
  */
 export const FEE_FAMILIES: Record<string, string[]> = {
@@ -30,6 +31,7 @@ export const FEE_FAMILIES: Record<string, string[]> = {
   ],
   "ATM & Card": [
     "atm_non_network",
+    "atm_international",
     "card_replacement",
     "rush_card",
     "card_foreign_txn",
@@ -113,9 +115,8 @@ export const DISPLAY_NAMES: Record<string, string> = {
   atm_international: "International ATM",
   card_replacement: "Debit Card Replacement",
   rush_card: "Rush Card Delivery",
-  // International ATM folded in (James, Oct 8: "Foreign Card" gave up its spot; one type for
-  // using an ATM or a card abroad).
-  card_foreign_txn: "International ATM & Card",
+  // International ATM & Card from Oct 8 to Oct 19, when James split International ATM back out (#2037).
+  card_foreign_txn: "Foreign Transaction",
   // Wire Transfers
   wire_domestic_outgoing: "Wire Transfer (Domestic Out)",
   wire_domestic_incoming: "Wire Transfer (Domestic In)",
@@ -325,10 +326,10 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   escheatment: "dormant_account",
   escheat_processing_fee: "dormant_account",
   abandoned_property_fee: "dormant_account",
-  // --- Skip-a-pay / late payment variants ---
-  skip_a_pay: "late_payment",
-  skipapay: "late_payment",
-  skipapayment: "late_payment",
+  // --- Skip-a-pay: a lending fee, not a late payment (James, Oct 17; guard v70) ---
+  skip_a_pay: "other_lending_fee",
+  skipapay: "other_lending_fee",
+  skipapayment: "other_lending_fee",
   reinstatement: "late_payment",
   // --- Fax / research / admin variants ---
   // A fax or a document copy is document reproduction (Oct 9: one home for fax and copies).
@@ -410,8 +411,8 @@ export const CANONICAL_KEY_MAP: Record<string, string> = {
   fax_services: "document_reproduction",
   christmas_club_early_withdrawal: "early_closure",
   christmas_club_withdrawal_fee: "early_closure",
-  skipapayment_fee: "late_payment",
-  skipapay_fee: "late_payment",
+  skipapayment_fee: "other_lending_fee",
+  skipapay_fee: "other_lending_fee",
   zipper_bags: "night_deposit",
   membership_share: "monthly_maintenance",
   western_union: "wire_domestic_outgoing",
@@ -620,13 +621,16 @@ export const TAXONOMY_COUNT = Object.values(FEE_FAMILIES).flat().length;
  */
 export const PUBLIC_FEE_TYPE_LIMIT = 50;
 
-const TIER_RANK: Record<FeeTier, number> = { spotlight: 0, core: 1, extended: 2, comprehensive: 3 };
+/** The types added after the original top 50 (Oct 15 research split; Oct 19 International ATM, #2037). */
+const ADDED_AFTER_TOP_50: ReadonlySet<string> = new Set([...RESEARCH_SPLIT_KEYS, "atm_international"]);
+
+const TIER_RANK: Record<FeeTier, number> ={ spotlight: 0, core: 1, extended: 2, comprehensive: 3 };
 
 /**
  * The taxonomy types public pages and API listings may list: the top `PUBLIC_FEE_TYPE_LIMIT` by
  * institution count, the national index's own order (`getNationalIndex` sorts by
  * `institution_count`). A type with no count ranks at 0; ties put the types added after the top 50
- * last (excess withdrawals and returned mail, `RESEARCH_SPLIT_KEYS`), then go by tier and taxonomy
+ * last (excess withdrawals, returned mail and International ATM, `ADDED_AFTER_TOP_50`), then go by tier and taxonomy
  * order, so with no counts at all (a failed read) the public list is the original 50.
  * Categories outside the taxonomy are not ranked and not returned. Pure.
  */
@@ -638,7 +642,7 @@ export function publicFeeTypes(
   for (const entry of entries) counts.set(entry.fee_category, Number(entry.institution_count ?? 0) || 0);
   const order = Object.values(FEE_FAMILIES).flat();
   const ranked = order
-    .map((key, index) => ({ key, index, count: counts.get(key) ?? 0, added: RESEARCH_SPLIT_KEYS.has(key) ? 1 : 0, tier: TIER_RANK[getFeeTier(key)] }))
+    .map((key, index) => ({ key, index, count: counts.get(key) ?? 0, added: ADDED_AFTER_TOP_50.has(key) ? 1 : 0, tier: TIER_RANK[getFeeTier(key)] }))
     .sort((a, b) => b.count - a.count || a.added - b.added || a.tier - b.tier || a.index - b.index);
   return new Set(ranked.slice(0, limit).map((entry) => entry.key));
 }

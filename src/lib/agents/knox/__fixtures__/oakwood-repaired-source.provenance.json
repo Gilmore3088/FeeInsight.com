@@ -1,0 +1,11 @@
+{
+  "institution": "Oakwood Bank",
+  "officialSourceURL": "https://www.oakwoodbank.net/webfiles/fnitools/documents/cra_accounts_and_fees.pdf",
+  "sourceDocumentId": 17019,
+  "retrievalDateUTC": "2026-10-19",
+  "officialPDFSHA256": "e8160b6a4c57816399cfe99fe441fb227dac9e0895c56423286feae80daa0bf3",
+  "normalizedTextSHA256": "dc6eb4136b9e193c6b9c250ba56e74499b1b8d29f3276658e6bdd81af9241ccc",
+  "derivation": "Actual Rosetta stacked-column repair prototype from byte-verified current official PDF; price rows visually checked on physical page 2. This is corrected normalized input for downstream process tests, not an answer key or proof the geometry repair is deployed.",
+  "references": [2219, 2240, 2241, 2246],
+  "limits": "Unit preservation and mixed-basis market comparisons remain separate issue #2248; this fixture does not assert those are repaired."
+}

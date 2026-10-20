@@ -8,6 +8,7 @@ import {
   readerMissSince,
   summarizeReaderRemedies,
   weekStartUtc,
+  coverageGroupsSql,
   coverageTarget,
   goalBriefLines,
   goalHeadline,
@@ -78,19 +79,19 @@ describe("accuracy target (James, Oct 15)", () => {
   const goalWith = (right: number, scorable: number) => ({
     readAt: "2026-10-15T00:00:00Z", windowDays: 7, coverageCells: null, liveInstitutions: null,
     wrongAfterPublish: null, spend: null, knoxPasses: null, unstatedAudience: null,
-    accuracy: {
-      query: "goal.deming_accuracy_7d", accuracy: right / scorable, right, scorable, audits: 7,
-      latestAt: null, latestAccuracy: null, range: null, daily: [],
-      misses: { amount: 0, category: 0, evidence: 0 },
-    },
+    accuracy: { query: "goal.deming_accuracy_7d", ...poolFreshAudits([{ at: "2026-10-15T00:00:00Z", detail: {
+      reporting_version: 1, version: 5, category_guard_version: 75, source_check_version: 18, name_check_version: 23,
+      seed: "2026-10-15", right, scorable, sampled: scorable, no_text: 0,
+      observations: Array.from({ length: scorable }, (_, i) => [i + 1, i < right ? "right" : "amount"]),
+    } }]) },
   }) as unknown as Parameters<typeof goalBriefLines>[0];
 
-  it("states the 99.5% target and whether the week met it", () => {
-    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("target 99.5%, met.");
-    expect(goalBriefLines(goalWith(1385, 1400)).join("\n")).toContain("target 99.5%, not met.");
-    // Two decimals, rounded down, so a week just under the target never reads as 99.50% and "not met".
-    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Accuracy: 99.49% over the last 7 days");
-    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Accuracy: 99.50% over the last 7 days");
+  it("requires a sufficient sample and the 95% lower bound, rather than the point estimate", () => {
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("insufficient sample");
+    expect(goalBriefLines(goalWith(3383, 3400)).join("\n")).toContain("not met on the 95% lower bound");
+    expect(goalBriefLines(goalWith(3400, 3400)).join("\n")).toContain("met on the 95% lower bound");
+    expect(goalBriefLines(goalWith(1392, 1399)).join("\n")).toContain("Stored-copy support (secondary): 99.49% over the last 7 days");
+    expect(goalBriefLines(goalWith(1393, 1400)).join("\n")).toContain("Stored-copy support (secondary): 99.50% over the last 7 days");
   });
 });
 
@@ -137,7 +138,7 @@ describe("wrong after publish", () => {
 });
 
 describe("Deming accuracy over the week", () => {
-  it("pools right and scorable fees across audits and dates the newest", () => {
+  it("keeps historical aggregate counts dated without inferring checker versions or confidence", () => {
     const pooled = poolFreshAudits([
       { at: "2026-10-11T06:00:00.000Z", detail: { right: 90, scorable: 100, accuracy: 0.9 } },
       { at: "2026-10-12T06:00:00.000Z", detail: { right: 47, scorable: 50, accuracy: 0.94, amount_miss: 1, evidence_miss: 2 } },
@@ -148,8 +149,8 @@ describe("Deming accuracy over the week", () => {
     expect(pooled.daily.map((day) => day.at)).toEqual(["2026-10-12T06:00:00.000Z", "2026-10-11T06:00:00.000Z"]);
     expect(pooled.daily[0]).toMatchObject({ right: 47, scorable: 50, accuracy: 0.94, amount: 1, evidence: 2, name: 0 });
     expect(pooled.misses).toEqual({ amount: 1, category: 0, evidence: 2, notAFee: 0, name: 0 });
-    expect(pooled.range!.low).toBeLessThan(pooled.accuracy!);
-    expect(pooled.range!.high).toBeGreaterThan(pooled.accuracy!);
+    expect(pooled.range).toBeNull();
+    expect(pooled.status).toBe("legacy");
   });
 
   it("puts a 95% range of about ±3–4 points around a 200-fee audit", () => {
@@ -239,7 +240,7 @@ function fakeDb(answers: Array<[RegExp, unknown[] | Error]>) {
 describe("readGoalScorecard", () => {
   const answers: Array<[RegExp, unknown[] | Error]> = [
     [/\) coverage_groups/, [{ state_code: "TN", size_group: "under_300m", total: 50, covered: 30, covered_week_ago: 27, newly_covered: 4 }]],
-    [/AS added/, [{ live: 3900, added: 40 }]],
+    [/AS added/, [{ live: 3900, added: 40, dropped: 25 }]],
     [/deming-fresh-audit/, [{ created_at: new Date("2026-10-12T06:00:00Z"), detail: { right: 190, scorable: 200, accuracy: 0.95 } }]],
     [/refresh_copy/, [{ reason: null, count: 1000 }, { reason: "product_page: #1", count: 10 }]],
     [/ai_api_usage_events/, [{ agent: "knox", week: 20_000_000, week_calls: 700, month: 75_000_000 }]],
@@ -264,7 +265,8 @@ describe("readGoalScorecard", () => {
     const groups = queries.find((q) => /AS covered_week_ago\s+FROM public\.institution_sources/.test(q));
     expect(groups).toContain("asset_size <");
     expect(queries.some((q) => /fp\.published_at < NOW\(\)/.test(q))).toBe(true);
-    expect(goal.liveInstitutions).toMatchObject({ live: 3900, addedThisWeek: 40 });
+    expect(goal.liveInstitutions).toMatchObject({ live: 3900, addedThisWeek: 40, droppedThisWeek: 25 });
+    expect(goal.coverageCells?.institutionsShortWeekAgo).toBe(3);
     expect(goal.accuracy).toMatchObject({ accuracy: 0.95, audits: 1 });
     expect(goal.wrongAfterPublish).toMatchObject({ published: 1010, wrong: 10 });
     expect(goal.spend).toMatchObject({ weekUsd: 20, costPerNewInstitutionUsd: 0.5 });
@@ -282,9 +284,13 @@ describe("readGoalScorecard", () => {
     // The window opens at midnight UTC, whatever the session's timezone.
     expect(values[remedyAt]).toContain(`${readerMissSince(new Date("2026-10-12T07:00:00Z"))}T00:00:00Z`);
     // "Added" means no live fee a week ago, and refresh copies leave the publish count.
-    expect(queries.find((q) => /AS added/.test(q))).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
+    expect(queries.find((q) => /AS added/.test(q))).toContain("AS dropped");
+    // Live a week ago uses the catalog's three-category rule, so a one-fee bank never reads as dropped.
+    const weekAgo = queries.find((q) => /HAVING COUNT\(DISTINCT fp\.canonical_fee_key\)/.test(q));
+    expect(weekAgo).toContain("rolled_back_at IS NULL OR fp.rolled_back_at >=");
+    expect(weekAgo).toContain("quarantined_at IS NULL OR fp.quarantined_at >=");
     expect(queries.find((q) => /refresh_copy/.test(q))).toContain("NOT EXISTS (SELECT 1 FROM refresh_copy");
-    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, accuracy 95.0% (7 days), wrong after publish 1.0%");
+    expect(goalHeadline(goal)).toBe("1 of 1 groups covered, live-source support unavailable, wrong after publish 1.0%");
   });
 
   it("leaves a failed read null and keeps the rest", async () => {
@@ -294,7 +300,7 @@ describe("readGoalScorecard", () => {
     errors.mockRestore();
     expect(goal.accuracy).toBeNull();
     expect(goal.liveInstitutions?.live).toBe(3900);
-    expect(goalBriefLines(goal)).toContain("Accuracy: could not be read today.");
+    expect(goalBriefLines(goal)).toContain("Stored-copy support (secondary): could not be read today.");
   });
 });
 
@@ -374,7 +380,7 @@ describe("Hamilton answer quality (#1079)", () => {
     const goal = await readGoalScorecard(db);
     expect(queries.find((text) => text.includes("hamilton-paid-answer-eval"))).toContain("@.answers > 0");
     expect(goalBriefLines(goal).at(-1)).toBe(
-      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report.",
+      "Hamilton answers (eval of 2026-10-14 00:51 UTC; paid sample of 2026-10-14 15:17 UTC): Free Ask, standard questions: form 71.4% (100 of 140), figures tie out 90.0% (108 of 120); Free Ask, Pro readers' questions: form 45.0% (9 of 20), figures tie out 100.0% (10 of 10); Memo (paid): form 80.0% (4 of 5), figures tie out 75.0% (3 of 4). Not measured yet: written answer, simulate, report. Paid paths with fewer than 10 answers are small samples, not reliability estimates.",
     );
   });
 
@@ -416,5 +422,44 @@ describe("Deming's daily data checks on the scorecard (#1065)", () => {
     expect(goal.dataQuality?.lines).toHaveLength(6);
     expect(goal.dataQuality?.lines[0]).toEqual({ catalog: "dollar", check: "duplicates", query: "deming.dq_duplicates", count: 400, rate: 0.04, status: "fail" });
     expect(goalBriefLines(goal).at(-1)).toBe("Data checks (2026-10-16): ALARM, 1 failed their threshold (dollar.duplicates).");
+  });
+});
+
+describe("answer evaluation completeness", () => {
+  it("preserves completed/planned counts on a time-limited run and unknown counts on legacy runs", () => {
+    const measured = answerQualityFrom("2026-10-19T06:50:00Z",{institutions:17,planned:90,answers:51,passed:51,timedOut:true,
+      pro:{questions:24,planned:40,passed:21}});
+    expect(measured).toMatchObject({institutionsAsked:17,institutionsPlanned:90,proQuestionsAsked:24,proQuestionsPlanned:40,timedOut:true});
+    expect(answerQualityFrom("2026-10-19T06:50:00Z",{answers:51})).toMatchObject({institutionsAsked:null,institutionsPlanned:null});
+  });
+});
+
+it("prints the completed and planned samples without filling missing legacy counts", async () => {
+  const {db}=fakeDb([[/hamilton-answer-eval/,[{created_at:new Date("2026-10-19T06:50:00Z"),
+    detail:{institutions:17,planned:90,answers:51,passed:51,timedOut:true,pro:{questions:24,planned:40,passed:21}}}]]]);
+  const line=goalBriefLines(await readGoalScorecard(db)).find(line=>line.startsWith("Hamilton answers"));
+  expect(line).toContain("17 of 90 planned institutions asked, 24 of 40 Pro questions replayed");
+  expect(line).toContain("stopped at its time budget");
+});
+
+// 2026-10-14-catalog-subquery-nested-loop: with the live list as a plain subquery over
+// published_fee_catalog, Postgres misestimated the institution filter and rescanned the catalog
+// once per institution (25.3M rows discarded, 3.9 s every hour).
+describe("coverageGroupsSql reads the live catalog once", () => {
+  type Fragment = { parts: readonly string[]; params: unknown[] };
+  const tag = ((parts: TemplateStringsArray, ...params: unknown[]): Fragment => ({ parts, params })) as unknown as Parameters<typeof coverageGroupsSql>[0];
+  const render = (fragment: Fragment): string =>
+    fragment.parts.reduce((text, part, i) => {
+      const param = fragment.params[i - 1];
+      const inner = param && typeof param === "object" && "parts" in param ? render(param as Fragment) : "?";
+      return text + inner + part;
+    });
+
+  it.each([false, true])("materializes the live list and hash-joins it to institutions (weekAgo %s)", (weekAgo) => {
+    const text = render(coverageGroupsSql(tag, { weekAgo }) as unknown as Fragment).replace(/\s+/g, " ");
+    expect(text).toMatch(/^ ?WITH live AS MATERIALIZED \( SELECT DISTINCT institution_id FROM public\.published_fee_catalog \)/);
+    expect(text.match(/published_fee_catalog/g)).toHaveLength(1);
+    expect(text).toContain("LEFT JOIN live ON live.institution_id = i.id");
+    if (weekAgo) expect(text).toContain("week_ago AS MATERIALIZED (");
   });
 });

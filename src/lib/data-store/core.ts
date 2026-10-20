@@ -1,6 +1,6 @@
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
-import { STATS_SCHEDULE_KEYS, summarizeFeesBy } from "./fee-stats";
+import { activeInstitutionFilter } from "./fee-stats";
 import { VALID_US_CODES } from "../us-states";
 import {
   classifyInstitutionQuality,
@@ -10,13 +10,7 @@ import {
   getInstitutionSourceNeededReason,
   getPublicInstitutionQualityLabel,
 } from "@/lib/institution-quality";
-import type {
-  CollectionStats,
-  InstitutionSummary,
-  ExtractedFee,
-  InstitutionDetail,
-} from "./types";
-import { institutionDisplayName } from "@/lib/institution-display-name";
+import type { CollectionStats, ExtractedFee, InstitutionDetail } from "./types";
 
 export interface PublicStats {
   total_observations: number;
@@ -25,7 +19,7 @@ export interface PublicStats {
   total_states: number;
 }
 
-export async function getPublicStats(): Promise<PublicStats> {
+export async function getPublicStats(options: { strict?: boolean } = {}): Promise<PublicStats> {
   try {
     const validCodes = [...VALID_US_CODES];
     const [row] = await sql<PublicStats[]>`
@@ -38,25 +32,38 @@ export async function getPublicStats(): Promise<PublicStats> {
       FROM institution_sources ct
       JOIN published_fee_catalog ef ON ct.id = ef.institution_id
       WHERE ct.state_code IN ${sql(validCodes)}
-        AND ef.review_status = 'approved'`;
+        AND ef.review_status = 'approved'
+        AND ${sql.unsafe(activeInstitutionFilter("ct"))}`;
     return {
       total_observations: Number(row.total_observations),
       total_institutions: Number(row.total_institutions),
       total_categories: Number(row.total_categories),
       total_states: Number(row.total_states),
     };
-  } catch {
+  } catch (error) {
+    // Analytical prompts must distinguish an unavailable count from a measured zero.
+    if (options.strict) throw error;
     return { total_observations: 0, total_institutions: 0, total_categories: 0, total_states: 0 };
   }
 }
 
+/**
+ * Registry and catalog counts for /methodology ("with a schedule link on file") and
+ * /research/data-sources. Institutions the regulator marks inactive are left out
+ * (activeInstitutionFilter, #2149), so each figure sits on the same base as "institutions monitored".
+ */
 export async function getStats(): Promise<CollectionStats> {
-  const [total] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources`;
-  const [banks] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE charter_type='bank'`;
-  const [cus] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE charter_type='credit_union'`;
-  const [withUrl] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE website_url IS NOT NULL`;
-  const [withFee] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources WHERE fee_schedule_url IS NOT NULL`;
-  const [fees] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM published_fee_catalog`;
+  // A fresh fragment per query: a postgres.js unsafe fragment is a query object, not reusable text.
+  const active = () => sql.unsafe(activeInstitutionFilter("ct"));
+  const [total] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ${active()}`;
+  const [banks] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.charter_type='bank' AND ${active()}`;
+  const [cus] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.charter_type='credit_union' AND ${active()}`;
+  const [withUrl] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.website_url IS NOT NULL AND ${active()}`;
+  const [withFee] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM institution_sources ct WHERE ct.fee_schedule_url IS NOT NULL AND ${active()}`;
+  const [fees] = await sql<{ cnt: number }[]>`
+    SELECT COUNT(*) as cnt FROM published_fee_catalog ef
+      JOIN institution_sources ct ON ef.institution_id = ct.id
+     WHERE ${active()}`;
   const [runs] = await sql<{ cnt: number }[]>`SELECT COUNT(*) as cnt FROM source_collection_runs`;
 
   return {
@@ -70,26 +77,14 @@ export async function getStats(): Promise<CollectionStats> {
   };
 }
 
-export async function getInstitutionsWithFees(): Promise<InstitutionSummary[]> {
-  return await sql<InstitutionSummary[]>`
-    SELECT ct.id, ct.institution_name, ct.state_code, ct.charter_type,
-           ct.asset_size, ct.website_url, ct.fee_schedule_url, ct.document_type,
-           COUNT(ef.id) as fee_count
-    FROM institution_sources ct
-    LEFT JOIN published_fee_catalog ef ON ct.id = ef.institution_id
-    WHERE ct.fee_schedule_url IS NOT NULL
-    GROUP BY ct.id, ct.institution_name, ct.state_code, ct.charter_type,
-             ct.asset_size, ct.website_url, ct.fee_schedule_url, ct.document_type
-    ORDER BY ct.asset_size DESC NULLS LAST
-  `;
-}
-
 export async function getFeesByInstitution(targetId: number): Promise<ExtractedFee[]> {
   const rows = await sql<ExtractedFee[]>`
     SELECT ef.id, ef.fee_name, ef.amount, ef.frequency, ef.conditions,
            ef.extraction_confidence, ef.review_status,
            ef.validation_flags, ef.fee_category, ef.fee_family,
            ef.source_url, ef.created_at, ef.fee_audience, ef.audience_evidence, ef.fee_treatment,
+           ef.account_product_type, ef.min_balance_to_avoid, ef.waiver_text,
+           substring(ef.extraction_note from 'excerpt="(.*)"$') AS source_line,
            ct.institution_name, ef.institution_id, ef.source_document_id
     FROM published_fee_catalog ef
     JOIN institution_sources ct ON ef.institution_id = ct.id
@@ -105,6 +100,7 @@ export async function getFeesByInstitution(targetId: number): Promise<ExtractedF
     extraction_confidence: Number(r.extraction_confidence),
     conditions: readerFeeConditions(r.conditions),
     source_document_id: r.source_document_id == null ? null : Number(r.source_document_id),
+    min_balance_to_avoid: r.min_balance_to_avoid == null ? null : Number(r.min_balance_to_avoid),
   }));
 }
 
@@ -262,7 +258,8 @@ export async function getInstitutionById(id: number): Promise<InstitutionDetail 
         AND NOT EXISTS (
           SELECT 1
           FROM published_fee_catalog pfc
-          WHERE pfc.fee_verified_id = fv.fee_verified_id
+          WHERE pfc.institution_id = fv.institution_id
+            AND pfc.fee_verified_id = fv.fee_verified_id
             AND pfc.review_status <> 'rejected'
         )
       GROUP BY fv.institution_id
@@ -368,32 +365,6 @@ export async function getPublicInstitutionById(id: number): Promise<InstitutionD
   return mapInstitutionDetailRow(row);
 }
 
-export async function getInstitutionMetadataById(
-  id: number,
-): Promise<Pick<
-  InstitutionDetail,
-  "id" | "institution_name" | "state_code" | "charter_type"
-> | null> {
-  const [row] = await sql<Array<{
-    id: number | string;
-    institution_name: string;
-    state_code: string | null;
-    charter_type: string;
-  }>>`
-    SELECT id, institution_name, state_code, charter_type
-    FROM institution_sources
-    WHERE id = ${id}
-  `;
-
-  if (!row) return null;
-  return {
-    id: Number(row.id),
-    institution_name: institutionDisplayName(row.institution_name),
-    state_code: row.state_code,
-    charter_type: row.charter_type,
-  };
-}
-
 function mapInstitutionDetailRow(row: InstitutionDetail & {
   latest_source_error?: string | null;
   latest_source_collected_at?: string | Date | null;
@@ -466,65 +437,6 @@ export async function getPeerAnalysis(targetId: number): Promise<Record<string, 
   // Postgres JSONB returns parsed object; TEXT returns string
   if (typeof row.result_json === "object") return row.result_json as Record<string, unknown>;
   return JSON.parse(row.result_json);
-}
-
-export async function getTierCounts(): Promise<{ tier: string; count: number }[]> {
-  const rows = await sql<{ tier: string; count: number }[]>`
-    SELECT asset_size_tier as tier, COUNT(*) as count
-    FROM institution_sources
-    WHERE asset_size_tier IS NOT NULL
-    GROUP BY asset_size_tier
-    ORDER BY MIN(asset_size)
-  `;
-  return rows.map(r => ({ ...r, count: Number(r.count) }));
-}
-
-export async function getDistrictCounts(): Promise<{ district: number; count: number }[]> {
-  const rows = await sql<{ district: number; count: number }[]>`
-    SELECT fed_district as district, COUNT(*) as count
-    FROM institution_sources
-    WHERE fed_district IS NOT NULL
-    GROUP BY fed_district
-    ORDER BY fed_district
-  `;
-  return rows.map(r => ({ ...r, count: Number(r.count) }));
-}
-
-export async function getDistinctFeeTypes(): Promise<string[]> {
-  const rows = await sql<{ fee_name: string }[]>`
-    SELECT DISTINCT fee_name FROM published_fee_catalog ORDER BY fee_name
-  `;
-  return rows.map((r) => r.fee_name);
-}
-
-export interface CategoryMedian {
-  median: number;
-  p25: number;
-  p75: number;
-  count: number;
-}
-
-export async function getCategoryMedians(): Promise<Record<string, CategoryMedian>> {
-  const rows = await sql<{ fee_category: string; amount: number; institution_id: number; schedule_keys: string[] | null; schedule_group: string | null }[]>`
-    SELECT ef.fee_category, ef.amount, ef.institution_id, ${sql.unsafe(STATS_SCHEDULE_KEYS)}
-    FROM published_fee_catalog ef
-    WHERE fee_category IS NOT NULL
-      AND amount IS NOT NULL
-      AND source_document_id IS NOT NULL
-  `;
-
-  const result: Record<string, CategoryMedian> = {};
-  for (const [category, stats] of summarizeFeesBy(rows, (row) => row.fee_category)) {
-    if (stats.median_amount === null || stats.p25_amount === null || stats.p75_amount === null) continue;
-    result[category] = {
-      median: stats.median_amount,
-      p25: stats.p25_amount,
-      p75: stats.p75_amount,
-      count: stats.institution_count,
-    };
-  }
-
-  return result;
 }
 
 export interface DataFreshness {

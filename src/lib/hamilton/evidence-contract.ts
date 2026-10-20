@@ -49,7 +49,15 @@ export interface HamiltonFactScope {
   reportingDate: string | null;
   effectiveDate: string | null;
   accountApplicability: HamiltonAccountApplicability;
+  /**
+   * "discontinued" marks a fee from a table for accounts the bank no longer offers (#1880: Texas
+   * Capital's closed-account table published as live). Such a fee never supports a claim about
+   * the current fee and is never compared. Absent means current, as every fee was read before.
+   */
+  productStatus?: HamiltonProductStatus;
 }
+
+export type HamiltonProductStatus = "current" | "discontinued";
 
 export interface HamiltonFactSource {
   label: string | null;
@@ -109,6 +117,55 @@ export interface HamiltonEvidenceBundle {
   facts: HamiltonEvidenceFact[];
   derivations: HamiltonDerivedFact[];
   limitations: string[];
+  /** Peers whose fee record could not be used, by reason (#1717); absent when none was left out. */
+  peerCoverage?: PeerCoverage;
+}
+
+/** Why a peer's fee was left out of a comparison or of the record check behind a peer median. */
+export type PeerLeftOutReason = "not_verified" | "audience_unknown" | "frequency_unknown" | "not_comparable";
+
+/** How many peers were left out of how many, and why; each left-out peer counts under one reason. */
+export interface PeerCoverage {
+  context: "peer_comparison" | "peer_median";
+  total: number;
+  leftOut: number;
+  byReason: Partial<Record<PeerLeftOutReason, number>>;
+}
+
+const LEFT_OUT_WORDS: Record<PeerLeftOutReason, string> = {
+  not_verified: "not yet verified",
+  audience_unknown: "audience unknown",
+  frequency_unknown: "no stated frequency",
+  not_comparable: "not the same fee, unit or date",
+};
+const LEFT_OUT_ORDER: readonly PeerLeftOutReason[] = ["not_verified", "audience_unknown", "frequency_unknown", "not_comparable"];
+
+/**
+ * The reader's line for left-out peers (#1717): "3 of 14 peers left out: 2 not yet verified,
+ * 1 audience unknown". One reason reads without its count ("3 of 14 peers left out: not yet
+ * verified"). Null when no peer was left out, so "0 of 14 left out" is never shown.
+ */
+export function readPeerCoverage(coverage: PeerCoverage | null | undefined): string | null {
+  if (!coverage || coverage.leftOut <= 0 || coverage.total <= 0) return null;
+  const reasons = LEFT_OUT_ORDER
+    .map((reason) => [reason, coverage.byReason[reason] ?? 0] as const)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (reasons.length === 0) return null;
+  const why = reasons.length === 1
+    ? LEFT_OUT_WORDS[reasons[0][0]]
+    : reasons.map(([reason, n]) => `${n} ${LEFT_OUT_WORDS[reason]}`).join(", ");
+  const peers = coverage.total === 1 ? "peer" : "peers";
+  return coverage.context === "peer_median"
+    ? `${coverage.leftOut} of ${coverage.total} ${peers} left out of the record check: ${why}.`
+    : `${coverage.leftOut} of ${coverage.total} ${peers} left out: ${why}.`;
+}
+
+function coverageOf(context: PeerCoverage["context"], total: number, reasons: readonly (PeerLeftOutReason | null)[]): PeerCoverage | null {
+  const byReason: Partial<Record<PeerLeftOutReason, number>> = {};
+  for (const reason of reasons) if (reason) byReason[reason] = (byReason[reason] ?? 0) + 1;
+  const leftOut = reasons.filter(Boolean).length;
+  return leftOut > 0 ? { context, total, leftOut, byReason } : null;
 }
 
 export interface HamiltonClaimBinding {
@@ -120,6 +177,57 @@ export interface HamiltonClaimBinding {
   value?: number;
   /** A consumer claim binds a consumer or both-audience record; unknown audience binds nothing. */
   accountApplicability?: Exclude<HamiltonAccountApplicability, "unknown" | "both">;
+  /** A claim is about the current fee unless it says otherwise; a discontinued fee binds only a claim that says "discontinued". */
+  productStatus?: HamiltonProductStatus;
+}
+
+/**
+ * Fee categories charged each time the event happens (#1717, James, 2026-10-18): a fee here with
+ * no stated frequency counts as per item, so it is still compared. Recurring categories (monthly
+ * maintenance and other period-based fees) and any category not listed keep the strict rule: no
+ * stated frequency, no comparison. A category is listed only when every fee in it is per event;
+ * continuous overdraft (per day), safe deposit box (per year), check printing (per order or box),
+ * bill pay and coin counting are left out on purpose.
+ */
+export const EVENT_FEE_CATEGORIES: ReadonlySet<string> = new Set([
+  "overdraft",
+  "nsf",
+  "od_protection_transfer",
+  "stop_payment",
+  "deposited_item_return",
+  "ach_return",
+  "wire_domestic_outgoing",
+  "wire_domestic_incoming",
+  "wire_intl_outgoing",
+  "wire_intl_incoming",
+  "atm_non_network",
+  "atm_international",
+  "cashiers_check",
+  "money_order",
+  "counter_check",
+  "card_replacement",
+  "rush_card",
+]);
+
+/**
+ * One spelling for a stated frequency (#1975): case is ignored and underscores, hyphens and runs of
+ * spaces count as one space, so "per_item", "Per-Item" and "per  item" all read "per item". Blank is null.
+ * Different words stay different: "monthly" never matches "per item".
+ */
+export function normalizeFrequency(frequency: string | null | undefined): string | null {
+  if (typeof frequency !== "string") return null;
+  const spelled = frequency.toLowerCase().replace(/[\s_-]+/g, " ").trim();
+  return spelled.length > 0 ? spelled : null;
+}
+
+/** Stated frequencies (after normalizeFrequency) that already mean "each time"; a blank event fee matches only these. */
+const PER_EVENT_FREQUENCIES: ReadonlySet<string> = new Set([
+  "per item", "per transaction", "per occurrence", "each",
+]);
+
+/** True when a fee in this category is charged each time it happens, so a blank frequency means per item. */
+export function chargedPerEvent(feeCategory: string | null | undefined): boolean {
+  return typeof feeCategory === "string" && EVENT_FEE_CATEGORIES.has(feeCategory);
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -180,7 +288,7 @@ function supportedOwnAggregate(
   if (current === null || !Number.isFinite(current) || current < 0 || facts.length === 0) return false;
   const first = facts[0];
   const product = first.scope.product?.trim().toLowerCase();
-  const frequency = first.frequency?.trim().toLowerCase();
+  const frequency = normalizeFrequency(first.frequency);
   const documentId = first.source.sourceDocumentIds[0];
   if (!product || !frequency || first.source.sourceDocumentIds.length !== 1
     || !Number.isSafeInteger(documentId) || documentId <= 0) return false;
@@ -189,7 +297,7 @@ function supportedOwnAggregate(
   for (const fact of facts) {
     if (typeof fact.value !== "number" || !Number.isFinite(fact.value) || fact.value < 0) return false;
     if (fact.scope.product?.trim().toLowerCase() !== product) return false;
-    if (fact.frequency?.trim().toLowerCase() !== frequency) return false;
+    if (normalizeFrequency(fact.frequency) !== frequency) return false;
     if (fact.scope.accountApplicability !== "consumer" && fact.scope.accountApplicability !== "both") return false;
     if (!Number.isSafeInteger(Number(fact.source.recordId)) || Number(fact.source.recordId) <= 0) return false;
     if (fact.source.sourceDocumentIds.length !== 1 || fact.source.sourceDocumentIds[0] !== documentId) return false;
@@ -252,6 +360,8 @@ export function claimBindingMatches(
   // Unknown is never a match for a stated figure; a genuine $0 is.
   if (claim.value !== undefined && (typeof fact.value !== "number" || !Number.isFinite(fact.value)
     || Math.abs(fact.value - claim.value) > 0.005)) return false;
+  // A fee from a discontinued account's table is never the current fee (#1880).
+  if ((fact.scope.productStatus ?? "current") !== (claim.productStatus ?? "current")) return false;
   return true;
 }
 
@@ -268,6 +378,9 @@ function comparabilityProblems(
   if (typeof left.value !== "number" || typeof right.value !== "number"
     || !Number.isFinite(left.value) || !Number.isFinite(right.value)) problems.push("non_numeric_value");
   if (left.unit !== right.unit) problems.push("unit_mismatch");
+  if (left.scope.productStatus === "discontinued" || right.scope.productStatus === "discontinued") {
+    problems.push("product_discontinued");
+  }
   if (left.currency !== right.currency) problems.push("currency_mismatch");
   if (left.scope.feeCategory !== right.scope.feeCategory) problems.push("fee_category_mismatch");
   const leftProduct = left.scope.product?.trim().toLowerCase();
@@ -286,10 +399,16 @@ function comparabilityProblems(
         && documents.length === 1 && Number.isSafeInteger(documents[0]) && documents[0] > 0;
     };
     if (!trustedSource(left) || !trustedSource(right)) problems.push("source_record_unverified");
-    const leftFrequency = left.frequency?.trim().toLowerCase();
-    const rightFrequency = right.frequency?.trim().toLowerCase();
-    if (!leftFrequency || !rightFrequency) problems.push("fee_frequency_unknown");
-    else if (leftFrequency !== rightFrequency) problems.push("fee_frequency_mismatch");
+    const leftFrequency = normalizeFrequency(left.frequency);
+    const rightFrequency = normalizeFrequency(right.frequency);
+    if (!leftFrequency || !rightFrequency) {
+      // An event fee charged each time counts as per item when the schedule doesn't say (#1717);
+      // a recurring or unlisted category keeps the strict rule.
+      const event = chargedPerEvent(left.scope.feeCategory) && left.scope.feeCategory === right.scope.feeCategory;
+      const stated = leftFrequency || rightFrequency;
+      if (!event) problems.push("fee_frequency_unknown");
+      else if (stated && !PER_EVENT_FREQUENCIES.has(stated)) problems.push("fee_frequency_mismatch");
+    } else if (leftFrequency !== rightFrequency) problems.push("fee_frequency_mismatch");
     const consumer = (audience: HamiltonAccountApplicability) =>
       audience === "consumer" || audience === "both";
     if (!consumer(left.scope.accountApplicability) || !consumer(right.scope.accountApplicability)) {
@@ -381,6 +500,29 @@ export function derivePercentChange(
   };
 }
 
+/** The one reason a peer's comparison problems leave it out, most basic first. */
+function leftOutReason(problems: readonly string[]): PeerLeftOutReason | null {
+  if (problems.length === 0) return null;
+  if (problems.includes("source_record_unverified")) return "not_verified";
+  if (problems.includes("consumer_audience_unverified")) return "audience_unknown";
+  if (problems.includes("fee_frequency_unknown")) return "frequency_unknown";
+  return "not_comparable";
+}
+
+/**
+ * Which peers a comparison with the bank's own fee leaves out, and why (#1717). Each peer is
+ * compared with `deriveDifference`'s own rules; a peer with any problem is left out under one
+ * reason. Null when no peer is left out, or when the bank's own fee is not comparable itself
+ * (then every peer would fail for the bank's reason, not its own).
+ */
+export function peerComparisonCoverage(
+  own: HamiltonEvidenceFact,
+  peers: readonly HamiltonEvidenceFact[],
+): PeerCoverage | null {
+  if (peers.length === 0 || comparabilityProblems(own, own).length > 0) return null;
+  return coverageOf("peer_comparison", peers.length, peers.map((peer) => leftOutReason(comparabilityProblems(own, peer))));
+}
+
 export function structuredEvidenceConfidence(bundle: HamiltonEvidenceBundle | null | undefined): {
   level: "medium";
   basis: string[];
@@ -406,11 +548,25 @@ function peerValueRecord(peer: PeerValue): PeerFeeRecordRef | null {
 }
 
 /**
+ * The peers left out of the peer median's record check (#1717): a peer with no published row of its
+ * value from one stored schedule is not yet verified. Null when every peer has one, and when the
+ * group can't take the record check at all (no band, a size that differs from the band's, more than
+ * MAX_PEER_MEDIAN_RECORDS peers, or a repeated peer), so the line never names a check that didn't run.
+ */
+export function peerMedianCoverage(research: Pick<FeeResearch, "peers" | "band">): PeerCoverage | null {
+  const { band, peers } = research;
+  if (!band || peers.length === 0 || peers.length !== band.n || peers.length > MAX_PEER_MEDIAN_RECORDS) return null;
+  if (new Set(peers.map((peer) => peer.institutionId)).size !== peers.length) return null;
+  return coverageOf("peer_median", peers.length, peers.map((peer) => (peerValueRecord(peer) ? null : "not_verified")));
+}
+
+/**
  * The peer median with its records (#981, H06-T04): one published row per peer, the row whose amount
  * is that peer's value, and a `peer_median` derivation over them that recomputes to the band's median.
  * Null when any peer has no such row, the rows' frequencies differ, the group is larger than
  * MAX_PEER_MEDIAN_RECORDS, or the rows do not reproduce the median: the median then stays directional.
  */
+
 export function peerMedianEvidence(research: Pick<FeeResearch, "institutionId" | "feeCategory" | "peers" | "band">): { facts: HamiltonEvidenceFact[]; derivation: HamiltonDerivedFact } | null {
   const band = research.band;
   const peers = research.peers;
@@ -418,7 +574,7 @@ export function peerMedianEvidence(research: Pick<FeeResearch, "institutionId" |
   if (new Set(peers.map((peer) => peer.institutionId)).size !== peers.length) return null;
   const records = peers.map(peerValueRecord);
   if (records.some((record) => record === null)) return null;
-  const frequencies = new Set(records.map((record) => record!.frequency?.trim().toLowerCase() ?? null));
+  const frequencies = new Set(records.map((record) => normalizeFrequency(record!.frequency)));
   if (frequencies.size !== 1) return null;
   const facts: HamiltonEvidenceFact[] = peers.map((peer, i) => {
     const record = records[i]!;
@@ -504,6 +660,8 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
 
   const peerMedian = peerMedianEvidence(research);
   if (peerMedian) derivations.push(peerMedian.derivation);
+  const peerCoverage = peerMedian ? null : peerMedianCoverage(research);
+  const peerCoverageLine = readPeerCoverage(peerCoverage);
 
   return {
     version: HAMILTON_EVIDENCE_CONTRACT_VERSION,
@@ -514,8 +672,10 @@ export function buildFeeResearchEvidence(research: FeeResearch): HamiltonEvidenc
       STORED_SNAPSHOT_LIMITATION,
       ...(research.current !== null && !currentEvidenceSupported ? [OWN_AGGREGATE_LIMITATION] : []),
       ...(research.peers.length > 0 ? [peerMedian ? PEER_MEDIAN_RECORDS_LIMITATION : PEER_AGGREGATE_LIMITATION] : []),
+      ...(peerCoverageLine ? [peerCoverageLine] : []),
       CLAIM_BINDING_LIMITATION,
     ],
+    ...(peerCoverage ? { peerCoverage } : {}),
   };
 }
 

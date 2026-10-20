@@ -1,6 +1,6 @@
 /**
  * Test data only: a sample report in the shape `loadSampleReport` returns, for the homepage
- * workflow tests. Names are the demo institution and real competitors in its market; every
+ * tests. Names are the demo institution and real competitors in its market; every
  * amount here is made up for the tests and is never shown on a page.
  */
 import { quantile, type CustomReportAnalysis, type LinePosition, type NamedCompetitor, type ReportLine } from "@/lib/custom-report/analysis";

@@ -6,7 +6,7 @@ vi.mock("./connection", () => {
 });
 
 import { sql } from "./connection";
-import { getCharterFeeRevenueSummary, getFeeRevenueData, getTierFeeRevenueSummary } from "./fee-revenue";
+import { getCharterFeeRevenueSummary, getFeeRevenueData, getFiledFeeIncomeData, getTierFeeRevenueSummary } from "./fee-revenue";
 import { unfilteredFinancialReads } from "./financial-sources.test-helper";
 
 const mock = sql as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
@@ -19,6 +19,7 @@ beforeEach(() => {
 
 describe("fee revenue reads use fdic and ncua rows only", () => {
   it.each([
+    ["getFiledFeeIncomeData", () => getFiledFeeIncomeData()],
     ["getFeeRevenueData", () => getFeeRevenueData()],
     ["getTierFeeRevenueSummary", () => getTierFeeRevenueSummary()],
     ["getCharterFeeRevenueSummary", () => getCharterFeeRevenueSummary()],
@@ -51,6 +52,7 @@ describe("fee revenue fee-population contract", () => {
 
 describe("fee revenue reads split NCUA year-to-date income into quarters (#1245)", () => {
   it.each([
+    ["getFiledFeeIncomeData", () => getFiledFeeIncomeData()],
     ["getFeeRevenueData", () => getFeeRevenueData()],
     ["getTierFeeRevenueSummary", () => getTierFeeRevenueSummary()],
     ["getCharterFeeRevenueSummary", () => getCharterFeeRevenueSummary()],

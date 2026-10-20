@@ -25,8 +25,6 @@ export const BRANDS: Record<string, BrandConfig> = {
   },
 };
 
-export type BrandId = keyof typeof BRANDS;
-
 export function getBrand(id?: string): BrandConfig {
   return BRANDS[id || DEFAULT_BRAND_ID] || BRANDS[DEFAULT_BRAND_ID];
 }

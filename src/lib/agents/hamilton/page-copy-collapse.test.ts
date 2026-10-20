@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { collapsePageCopies, pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
+import { carriedName, collapsePageCopies, pageCopyRepeats, sameScheduleText, type PageCopyRow } from "./page-copy-collapse";
 
 const row = (over: Partial<PageCopyRow>): PageCopyRow => ({
   fee_published_id: 1,
@@ -256,6 +256,36 @@ describe("pageCopyRepeats: a copy the newer copy replaced (#1348)", () => {
   });
 });
 
+describe("carriedName: the kept row keeps the fuller name (17 Oct count, 3 of 10 renamed closes)", () => {
+  // Doc 36321 (inst 2233) prints the line whole; the kept row read only its tail.
+  const farmers = "ATM Fees | Non-customer use of Farmers ATM | $3.00 | Foreign ATM | $2.00 | Stop Payment | $30.00";
+  // Doc 24006 (inst 1754) prints the box sizes under a Safe Deposit Box heading.
+  const boxes = "Safe Deposit Box: | 3X5 | $35.00 | 10X10 | $150.00 | Stop Payment | $30.00";
+
+  it("carries a heading the kept page prints before the kept name", () => {
+    expect(carriedName("Non-customer use of Farmers ATM", "Farmers ATM", farmers)).toBe("Non-customer use of Farmers ATM");
+    expect(carriedName("Safe Deposit Box: 10X10", "10X10", boxes)).toBe("Safe Deposit Box: 10X10");
+  });
+
+  it("never carries a table cell, a sentence tail, a heading the page does not print, or a long run-in", () => {
+    expect(carriedName("each | Cashier's Check", "Cashier's Check", "each | Cashier's Check | $7.00")).toBeNull();
+    expect(carriedName("per stop payment", "Stop Payment", "per stop payment $30.00")).toBeNull();
+    expect(carriedName("Wire Transfer - Foreign Incoming", "Foreign Incoming", "Wires Foreign Incoming $25.00")).toBeNull();
+    const sentence = "A transaction fee will be charged for each transaction at an ATM not owned by us";
+    expect(carriedName(sentence, "Transaction at an ATM not owned by us", `${sentence} $1.00`)).toBeNull();
+    expect(carriedName("Farmers ATM", "Non-customer use of Farmers ATM", farmers)).toBeNull();
+  });
+
+  it("puts the carried name on the collapse for the kept row once", () => {
+    const rows = [
+      row({ fee_published_id: 15779, source_document_id: 100, document_url: "https://bank.com/fees?print=1", crawled_at: "2026-09-01", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Non-customer use of Farmers ATM", superseded: true, superseded_by_id: 200 }),
+      row({ fee_published_id: 150723, source_document_id: 200, document_url: "https://bank.com/fees", crawled_at: "2026-10-10", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Farmers ATM" }),
+    ];
+    const found = pageCopyRepeats(rows, new Map([["100", farmers], ["200", farmers]]));
+    expect(found.collapses).toEqual([expect.objectContaining({ feePublishedId: 15779, keptFeePublishedId: 150723, renamed: true, keptNewName: "Non-customer use of Farmers ATM" })]);
+  });
+});
+
 describe("collapsePageCopies (#1439)", () => {
   it("reports a failed close as an error, not as nothing closed", async () => {
     const rows = [
@@ -274,5 +304,45 @@ describe("collapsePageCopies (#1439)", () => {
     quiet.mockRestore();
     expect(result.collapses).toEqual([]);
     expect(result.error).toBe("close failed: deadlock detected");
+  });
+
+  it("renames the kept row to the carried name when the close is live, and records both names", async () => {
+    const text = "ATM Fees | Non-customer use of Farmers ATM | $3.00 | Foreign ATM | $2.00 | Stop Payment | $30.00";
+    const rows = [
+      row({ fee_published_id: 15779, source_document_id: 100, document_url: "https://bank.com/fees?print=1", crawled_at: "2026-09-01", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Non-customer use of Farmers ATM", superseded: true, superseded_by_id: 200 }),
+      row({ fee_published_id: 150723, source_document_id: 200, document_url: "https://bank.com/fees", crawled_at: "2026-10-10", canonical_fee_key: "atm_non_network", amount: 3, fee_name: "Farmers ATM" }),
+    ];
+    const writes: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sqlText = strings.join("?");
+      if (sqlText.includes("INSERT INTO agent_run_events")) {
+        writes.push(String(values[2]));
+        return Promise.resolve([]);
+      }
+      if (sqlText.includes("agent_source_texts")) return Promise.resolve([{ source_document_id: 100, normalized_text: text }, { source_document_id: 200, normalized_text: text }]);
+      if (sqlText.includes("SET rolled_back_at")) return Promise.resolve([{ fee_published_id: 15779 }]);
+      if (sqlText.includes("SET fee_name")) {
+        writes.push(JSON.stringify(values));
+        return Promise.resolve([{ fee_published_id: 150723 }]);
+      }
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve(rows));
+    const result = await collapsePageCopies(db as unknown as Parameters<typeof collapsePageCopies>[0], { runId: 1, batchId: "agentic-run-1", dryRun: false, live: true });
+    expect(result.collapses).toEqual([expect.objectContaining({ feePublishedId: 15779, keptNewName: "Non-customer use of Farmers ATM" })]);
+    expect(writes[0]).toContain('"Farmers ATM"');
+    expect(writes[0]).toContain('"Non-customer use of Farmers ATM"');
+    expect(writes[1]).toContain('"kept_names_carried":[{"fee_published_id":150723,"old_name":"Farmers ATM","new_name":"Non-customer use of Farmers ATM"}]');
+  });
+
+  it("writes nothing in shadow", async () => {
+    const calls: string[] = [];
+    const db = vi.fn((strings: TemplateStringsArray) => {
+      calls.push(strings.join(""));
+      return Promise.resolve([]);
+    }) as unknown as ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
+    db.unsafe = vi.fn(() => Promise.resolve([]));
+    await collapsePageCopies(db as unknown as Parameters<typeof collapsePageCopies>[0], { runId: 1, batchId: "b", dryRun: false, live: false });
+    expect(calls.some((text) => text.includes("UPDATE"))).toBe(false);
   });
 });

@@ -110,3 +110,5 @@ Local `DATABASE_URL` was unset, so prerendering used the application's existing
 unavailable-data fallbacks. This build confirms compilation, type checking,
 static generation, and the admin-route packaging check. It does not establish
 authenticated preview acceptance or live database/provider behavior.
+
+**Guard:** `src/app/layout-fonts.test.tsx:28` (no file under `src` loads a font through `next/font/google`)

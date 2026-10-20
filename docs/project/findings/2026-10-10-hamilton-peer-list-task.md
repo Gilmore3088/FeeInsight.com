@@ -170,3 +170,5 @@ These tests mock authenticated identity and datastore writes; they do not claim 
 production write, authenticated live save, PDF export or current-head full CI.
 The exact `talki to me about institutions in florida over 5b` phrase remains a
 separately recorded grammar gap in #977.
+
+**Agent lesson:** hamilton/pr-985-peer-list-task

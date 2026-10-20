@@ -61,7 +61,7 @@ function LeadCard({ lead, now }: { lead: LeadRow; now: Date }) {
 
 /** The Customers room: requests as a board by stage, plus who could get a report today. */
 export default async function CustomersRoomPage({ searchParams }: { searchParams?: Promise<{ stage?: string }> }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const stageParam = (await searchParams)?.stage;
   const activeLane = LANES.find((lane) => lane.key === stageParam) ?? null;
   const [leads, markets, proAccounts, planWatch, proInstitutions] = await Promise.all([

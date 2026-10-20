@@ -7,6 +7,8 @@ import {
   otherBankFeesSql,
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
+import { DOCUMENT_OWNER_REASON, documentOwnerRefusalsSql } from "@/lib/agents/darwin/document-owner";
+import { readPublicationEvidence } from "./publication-evidence";
 
 type SqlTag = typeof sql;
 
@@ -27,11 +29,19 @@ type SqlTag = typeof sql;
  *
  * On (James's OK, 2026-10-17): the step refuses those rows. Set it to false to only count what it
  * would refuse (`publish_sweep_check` in the publish step's detail).
+ *
+ * A fourth rule (takedowns at the source, 2026-10-17): Darwin's document-owner verdict
+ * (`darwin/document-owner.ts`, #1455). A row whose (institution, document) pair Darwin's latest
+ * read judged `other_bank`, at the document's current text, is refused with Darwin's own reason
+ * (`document_owner: names institution <id>`). Darwin now reads pairs whose verified rows are not
+ * live yet, first, so the verdict is usually on record before publish. Until then the check judged
+ * only live pairs: all 246 fees on the 20 `other_bank` pairs (prod, Oct 17) went live first. The
+ * live re-check is Darwin's, unchanged.
  */
 export const PUBLISH_REFUSE_SWEEP_RULES_LIVE = true;
 export const PUBLISH_SWEEP_REFUSE_REASON_PREFIX = "Refused at publish, a sweep would take it down: ";
 
-export type PublishSweepRule = "other_bank_document" | "unconfirmed_document_host" | "business_schedule";
+export type PublishSweepRule = "other_bank_document" | "unconfirmed_document_host" | "business_schedule" | "document_owner";
 
 export interface PublishSweepRefusal {
   rule: PublishSweepRule;
@@ -52,6 +62,12 @@ export interface BusinessVerdictRow {
   consumer_fee_id: number | string | null;
 }
 
+/** One row of the document-owner read (`documentOwnerRefusalsSql`): the pair was judged `other_bank`. */
+export interface OwnerVerdictRow {
+  fee_verified_id: number | string;
+  named_other_id: number | string | null;
+}
+
 function truthy(value: boolean | string | null | undefined): boolean {
   return value === true || String(value ?? "").toLowerCase() === "true" || value === "t";
 }
@@ -60,11 +76,14 @@ function truthy(value: boolean | string | null | undefined): boolean {
  * Pure: the rows the sweeps would take down, by verified id, from the three reads. The sweeps'
  * own tests: a host row fails when its text does not name the bank; another bank's host wins
  * over an unconfirmed host for the same row; a business row fails only beside a consumer fee.
+ * Darwin's document-owner verdict comes after the three sweeps: a row any of them refuses keeps
+ * that sweep's reason.
  */
 export function publishSweepRefusals(
   otherBank: HostVerdictRow[],
   unconfirmedHost: HostVerdictRow[],
   business: BusinessVerdictRow[],
+  owner: OwnerVerdictRow[] = [],
 ): Map<number, PublishSweepRefusal> {
   const refusals = new Map<number, PublishSweepRefusal>();
   for (const row of otherBank) {
@@ -87,30 +106,35 @@ export function publishSweepRefusals(
       sweepReason: `${BUSINESS_SCHEDULE_REASON}: consumer fee #${Number(row.consumer_fee_id)}`,
     });
   }
+  for (const row of owner) {
+    const id = Number(row.fee_verified_id);
+    const other = row.named_other_id == null || row.named_other_id === "" ? null : Number(row.named_other_id);
+    if (other == null || !Number.isFinite(other) || refusals.has(id)) continue;
+    refusals.set(id, { rule: "document_owner", sweepReason: `${DOCUMENT_OWNER_REASON}: names institution ${other}` });
+  }
   return refusals;
 }
 
 export interface PublishSweepReads {
   refusals: Map<number, PublishSweepRefusal>;
-  /** A failed read, kept for the run ledger; a failed read refuses nothing. */
+  /** Positive refusals remain usable; failed reads never prove no match. */
+  unavailable: PublishSweepRule[];
+  /** Fixed check codes only, safe for the run ledger. */
   error: string | null;
 }
 
 /**
- * The three reads over the rows a publish step is about to decide. Each read runs on its own;
- * one that fails is reported and the others still count. Never throws.
+ * The four reads over the rows a publish step is about to decide. Each read runs on its own;
+ * one that fails is unavailable and the others still count. Never throws.
  */
 export async function selectPublishSweepRefusals(db: SqlTag, feeVerifiedIds: number[]): Promise<PublishSweepReads> {
-  if (feeVerifiedIds.length === 0) return { refusals: new Map(), error: null };
-  const errors: string[] = [];
-  const read = async <T>(label: string, query: string, params: unknown[]): Promise<T[]> => {
-    try {
-      return await inSavepoint(db, (scope) => scope.unsafe<T[]>(query, params as never[]));
-    } catch (error) {
-      console.error(`publish sweep check ${label} read failed:`, error);
-      errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    }
+  if (feeVerifiedIds.length === 0) return { refusals: new Map(), unavailable: [], error: null };
+  const unavailable: PublishSweepRule[] = [];
+  const read = async <T>(label: PublishSweepRule, query: string, params: unknown[]): Promise<T[]> => {
+    const result = await readPublicationEvidence(label, () => inSavepoint(db, (scope) => scope.unsafe<T[]>(query, params as never[])));
+    if (result.state === "available") return result.value;
+    unavailable.push(label);
+    return [];
   };
   const otherBank = await read<HostVerdictRow>("other_bank_document", otherBankFeesSql("verified"), [feeVerifiedIds]);
   const unconfirmed = await read<HostVerdictRow>("unconfirmed_document_host", unconfirmedHostFeesSql("verified"), [feeVerifiedIds]);
@@ -120,7 +144,11 @@ export async function selectPublishSweepRefusals(db: SqlTag, feeVerifiedIds: num
   // leave live when that footnoted fee is the only "consumer" fee beside it; it never publishes
   // one the sweep would take down.
   const business = await read<BusinessVerdictRow>("business_schedule", businessScheduleFeesSql("verified"), [feeVerifiedIds, []]);
-  return { refusals: publishSweepRefusals(otherBank, unconfirmed, business), error: errors.length ? errors.join("; ") : null };
+  const owner = await read<OwnerVerdictRow>("document_owner", documentOwnerRefusalsSql(), [feeVerifiedIds]);
+  return {
+    refusals: publishSweepRefusals(otherBank, unconfirmed, business, owner), unavailable,
+    error: unavailable.length ? `Publication evidence unavailable: ${unavailable.join(", ")}` : null,
+  };
 }
 
 export interface PublishSweepCheck {

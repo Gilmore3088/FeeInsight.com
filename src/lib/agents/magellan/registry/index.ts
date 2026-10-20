@@ -1,10 +1,38 @@
 import type { RegistryDb } from "./partitions";
+import { sql } from "@/lib/data-store/connection";
+import { recordRegistryFailure } from "./failure";
 import { CENSUS_ACS_SOURCE, runRegistryCensusAcs } from "./census-acs";
 import { CFPB_SOURCE, runRegistryCfpb } from "./cfpb";
 import { IRS_ZIP_INCOME_SOURCE, runRegistryIrsZipIncome } from "./irs-zip-income";
+import { ECONOMY_DEFINITIONS, runRegistryEconomy } from "./economy";
+import { MAKING_ENDS_MEET_PARTITION, MAKING_ENDS_MEET_SOURCE, MAKING_ENDS_MEET_TITLE, runRegistryMakingEndsMeet } from "./making-ends-meet";
+import { PAYDAY_REPORTS_SOURCE, runRegistryPaydayReports } from "./payday-reports";
+import { runRegistryStateLists, STATE_DEPOSITORIES_SOURCE, STATE_NONBANK_LENDERS_SOURCE, URBAN_DEBT_PARTITION, URBAN_DEBT_SOURCE } from "./state-lists";
+import { ALLTHEPLACES_SOURCE, runRegistryAlltheplaces } from "./alltheplaces";
+import { GLEIF_SOURCE, runRegistryGleif } from "./gleif";
+import { SEC_MARKET_VALUE_SOURCE, runRegistrySecMarketValue } from "./sec-market-value";
+import { BANK_MERGER_ORDERS_SOURCE, runRegistryBankMergerOrders } from "./bank-merger-orders";
+import { BLS_OEWS_SOURCE, runRegistryBlsOews } from "./bls-oews";
+import { runRegistryUsdaFarm, USDA_FARM_SOURCE } from "./usda-farm";
+import { runRegistryUscourtsBankruptcy, USCOURTS_BANKRUPTCY_SOURCE } from "./uscourts-bankruptcy";
+import { MARKET_GROWTH_DEFINITIONS, runRegistryMarketGrowth } from "./market-growth";
+import { SMALLBIZ_PAYMENTS_DEFINITIONS, runRegistrySmallbizPayments } from "./smallbiz-payments";
+import { NATIONAL_CREDIT_DEFINITIONS, runRegistryNationalCredit } from "./national-credit";
 import { FDIC_FINANCIALS_SOURCE, runRegistryFdicFinancials } from "./fdic-financials";
 import { FFIEC_OVERDRAFT_SOURCE, runRegistryFfiecOverdraft } from "./ffiec-overdraft";
 import { FDIC_SOD_SOURCE, runRegistryFdicSod } from "./fdic-sod";
+import { FFIEC_CALL_DETAIL_SOURCE, runRegistryFfiecCallDetail } from "./ffiec-call-detail";
+import { NCUA_EXTRAS_SOURCE, runRegistryNcuaExtras } from "./ncua-extras";
+import { FDIC_HISTORY_SOURCE, runRegistryFdicHistory } from "./fdic-history";
+import { INDUSTRY_EVENTS_SOURCE, runRegistryIndustryEvents } from "./industry-events";
+import { PAYMENT_NETWORKS_SOURCE, runRegistryPaymentNetworks } from "./payment-networks";
+import { HMDA_APOR_PARTITION, HMDA_APOR_SOURCE, HMDA_SOURCE, runRegistryHmda, runRegistryHmdaApor } from "./hmda";
+import { DESIGNATION_LISTS_SOURCE, runRegistryDesignationLists } from "./designation-lists";
+import { CRA_SOURCE, runRegistryCra } from "./cra";
+import { FR_Y9C_SOURCE, runRegistryFrY9c } from "./fr-y9c";
+import { NIC_STRUCTURE_SOURCE, runRegistryNicStructure } from "./nic-structure";
+import { runRegistryUbprPeerGroups, UBPR_PEER_GROUPS_SOURCE } from "./ubpr-peer-groups";
+import { CFPB_CARD_AGREEMENTS_SOURCE, runRegistryCfpbCardAgreements } from "./cfpb-card-agreements";
 import { FDIC_UNIVERSE_PARTITION, FDIC_UNIVERSE_SOURCE, runRegistryFdicUniverse } from "./fdic-universe";
 import {
   BEIGE_BOOK_SOURCE,
@@ -36,6 +64,14 @@ import { STATE_REGULATORS_PARTITION, STATE_REGULATORS_SOURCE, runRegistryStateRe
 import { STATE_REG_NEWS_PARTITION, STATE_REG_NEWS_SOURCE, runRegistryStateRegNews } from "./state-reg-news";
 import { STATE_BILL_NEWS_PARTITION, STATE_BILL_NEWS_SOURCE, runRegistryStateBillNews } from "./state-bill-news";
 import { WIRE_RESEARCH_PARTITION, WIRE_RESEARCH_SOURCE, WIRE_RESEARCH_STEP_KEY, runRegistryWireResearch } from "./wire-research";
+import { BANK_ZELLE_PARTITION, BANK_ZELLE_SOURCE, runRegistryBankZelle } from "./bank-zelle";
+import {
+  CALL_REPORT_SUMMARIES_PARTITION,
+  CALL_REPORT_SUMMARIES_SOURCE,
+  CALL_REPORT_SUMMARY_TRIGGER_SOURCES,
+  markCallReportSummariesDue,
+  runRegistryCallReportSummaries,
+} from "./call-report-summaries";
 
 /**
  * Magellan regulatory registry: deterministic, run-ledger-visible ingestion of
@@ -177,6 +213,390 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
     },
   },
   {
+    source: FFIEC_CALL_DETAIL_SOURCE,
+    stepKey: "registry-ffiec-call-detail",
+    title: "Pull bank call-report detail (service charges by type, account sizes, past-due loans, charge-offs by loan type)",
+    run: async (input) => {
+      const r = await runRegistryFfiecCallDetail({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingLines.length > 0 ? `; ${r.missingLines.length} lines not loaded (missing or described differently in the file)` : "";
+      return {
+        summary: r.empty
+          ? `No bank call-report detail for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${r.loadedLines.length} call-report detail lines for ${n(r.banks)} banks for ${r.partitionKey}: ${n(r.matchedBanks)} matched, ${n(r.writtenRows)} values written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          file: r.fileName,
+          banks: r.banks,
+          matched_banks: r.matchedBanks,
+          values: r.values,
+          written_rows: r.writtenRows,
+          loaded_lines: r.loadedLines,
+          missing_lines: r.missingLines,
+          charge_off_parts_over_total: r.chargeOffPartsOverTotal,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: NCUA_EXTRAS_SOURCE,
+    stepKey: "registry-ncua-extras",
+    title: "Pull NCUA 5300 extras (account counts, employees, uninsured shares, fee-income lines)",
+    run: async (input) => {
+      const r = await runRegistryNcuaExtras({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.topicsWithoutLines.length > 0 ? `; nothing found for ${r.topicsWithoutLines.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No NCUA 5300 extras for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${r.lines} NCUA 5300 extra lines for ${n(r.creditUnions)} credit unions for ${r.partitionKey}: ${n(r.writtenRows)} values written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          lines: r.lines,
+          credit_unions: r.creditUnions,
+          values: r.values,
+          written_rows: r.writtenRows,
+          topics_without_lines: r.topicsWithoutLines,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: FDIC_HISTORY_SOURCE,
+    stepKey: "registry-fdic-history",
+    title: "Pull FDIC structure history (mergers, charter changes, branch openings and closings)",
+    run: async (input) => {
+      const r = await runRegistryFdicHistory({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields never present: ${r.missingFields.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `FDIC returned no structure events for ${r.partitionKey}.`
+          : `Magellan read ${n(r.events)} FDIC structure events for ${r.partitionKey}: ${n(r.writtenRows)} written, ${n(r.linkedEvents)} linked to a bank we track${r.truncated ? `; FDIC reported ${n(r.total)}, so the year is incomplete` : ""}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          source_url: r.sourceUrl,
+          total: r.total,
+          events: r.events,
+          written_rows: r.writtenRows,
+          linked_events: r.linkedEvents,
+          truncated: r.truncated,
+          missing_fields: r.missingFields,
+          undated_records: r.undatedRecords,
+          top_change_codes: r.topChangeCodes,
+          empty: r.empty,
+        },
+      };
+    },
+  },
+  {
+    source: CFPB_CARD_AGREEMENTS_SOURCE,
+    stepKey: "registry-cfpb-card-agreements",
+    title: "Pull CFPB card and prepaid agreements and the Terms of Credit Card Plans survey",
+    run: async (input) => {
+      const r = await runRegistryCfpbCardAgreements({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const pending = r.feePending > 0 ? `; ${n(r.feePending)} agreements wait for the next run` : "";
+      return {
+        summary: r.empty
+          ? `No CFPB ${r.family} agreements for ${r.period}: ${r.emptyReason}.`
+          : `Magellan loaded ${n(r.agreements)} CFPB ${r.family} agreements for ${r.period} from ${n(r.issuers)} issuers (${n(r.matchedIssuers)} matched, ${n(r.unmatchedIssuers)} unmatched): ${n(r.feeRead)} read, ${n(r.terms)} fee terms${pending}${dry(r.dryRun)}.`,
+        detail: {
+          family: r.family,
+          period: r.period,
+          source_url: r.sourceUrl,
+          agreements: r.agreements,
+          issuers: r.issuers,
+          matched_issuers: r.matchedIssuers,
+          unmatched_issuers: r.unmatchedIssuers,
+          fee_read: r.feeRead,
+          fee_no_text: r.feeNoText,
+          fee_fetch_failed: r.feeFetchFailed,
+          fee_kept: r.feeKept,
+          fee_pending: r.feePending,
+          terms: r.terms,
+          written_rows: r.writtenRows,
+          missing_headers: r.missingHeaders,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: UBPR_PEER_GROUPS_SOURCE,
+    stepKey: "registry-ubpr-peer-groups",
+    title: "Pull UBPR peer groups and peer-group averages (fee-related ratios)",
+    run: async (input) => {
+      const r = await runRegistryUbprPeerGroups({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingRatios.length > 0 ? `; ${r.missingRatios.length} ratios not loaded (missing or described differently in the file)` : "";
+      const averages = r.averagesEmptyReason ? `; no peer averages: ${r.averagesEmptyReason}` : `, ${n(r.writtenAverageRows)} peer averages written`;
+      return {
+        summary: r.empty
+          ? `No UBPR peer groups for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read UBPR peer groups for ${n(r.banks)} banks for ${r.partitionKey} (${n(r.banksWithPeerGroup)} with a group, ${r.peerGroups} groups): ${n(r.matchedBanks)} matched, ${n(r.unmatchedBanks)} kept unmatched, ${n(r.writtenBankRows)} bank rows written${averages}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          file: r.fileName,
+          stats_file: r.statsFileName,
+          banks: r.banks,
+          banks_with_peer_group: r.banksWithPeerGroup,
+          matched_banks: r.matchedBanks,
+          unmatched_banks: r.unmatchedBanks,
+          peer_groups: r.peerGroups,
+          peer_averages: r.peerAverages,
+          written_bank_rows: r.writtenBankRows,
+          written_average_rows: r.writtenAverageRows,
+          peer_group_column: r.peerGroupColumn,
+          loaded_ratios: r.loadedRatios,
+          missing_ratios: r.missingRatios,
+          averages_loaded_ratios: r.averagesLoadedRatios,
+          averages_empty_reason: r.averagesEmptyReason,
+          cleaning: r.cleaning,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: FR_Y9C_SOURCE,
+    stepKey: "registry-fr-y9c",
+    title: "Pull FR Y-9C holding-company lines (assets, deposits, income, service charges, interchange, charge-offs)",
+    run: async (input) => {
+      const r = await runRegistryFrY9c({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingLines.length > 0 ? `; ${r.missingLines.length} lines not loaded (missing or described differently)` : "";
+      return {
+        summary: r.empty
+          ? `No FR Y-9C lines for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${r.loadedLines.length} FR Y-9C lines for ${n(r.filers)} holding companies for ${r.partitionKey}: ${n(r.matchedHoldingCompanies)} parents of banks we track, ${n(r.writtenRows)} values written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          report_date: r.reportDate,
+          source_url: r.sourceUrl,
+          file: r.fileName,
+          filers: r.filers,
+          matched_holding_companies: r.matchedHoldingCompanies,
+          values: r.values,
+          written_rows: r.writtenRows,
+          written_filers: r.writtenFilers,
+          loaded_lines: r.loadedLines,
+          missing_lines: r.missingLines,
+          used_mdrm: r.usedMdrm,
+          quality: r.quality,
+          missing_source: r.missingSource,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: NIC_STRUCTURE_SOURCE,
+    stepKey: "registry-nic-structure",
+    title: "Pull NIC holding-company structure (parent-subsidiary links with dates, parent attributes)",
+    run: async (input) => {
+      const r = await runRegistryNicStructure({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFiles.length > 0 ? `; ${r.missingFiles.length} NIC files unavailable` : "";
+      return {
+        summary: r.empty
+          ? `No NIC structure loaded: ${r.emptyReason}.`
+          : `Magellan read ${n(r.relationships)} NIC parent-subsidiary links (${n(r.parents)} parents, ${n(r.entities)} named), ${n(r.linkedBanks)} banks we track linked${r.parentDisagreements ? `; ${n(r.parentDisagreements)} banks whose recorded holding company is not an open NIC parent` : ""}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          source_url: r.sourceUrl,
+          relationships: r.relationships,
+          parents: r.parents,
+          entities: r.entities,
+          written_relationships: r.writtenRelationships,
+          written_entities: r.writtenEntities,
+          linked_banks: r.linkedBanks,
+          parent_disagreements: r.parentDisagreements,
+          header_checks: r.headerChecks,
+          missing_files: r.missingFiles,
+          quality: r.quality,
+          missing_source: r.missingSource,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: CRA_SOURCE,
+    stepKey: "registry-cra",
+    title: "Pull FFIEC CRA ratings and small business / small farm lending by county",
+    run: async (input) => {
+      const r = await runRegistryCra({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const what = r.kind === "ratings" ? "CRA exam ratings" : `CRA small business and farm lending rows for ${r.partitionKey}`;
+      const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No CRA data loaded for ${r.partitionKey}: ${r.emptyReason}${dry(r.dryRun)}.`
+          : `Magellan read ${n(r.rows)} ${what}: ${n(r.writtenRows)} written, ${n(r.matchedRows)} linked to an institution we track, ${n(r.unmatchedRows)} kept unlinked${r.badLines > 0 ? `; ${n(r.badLines)} lines failed the layout check` : ""}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          kind: r.kind,
+          source_url: r.sourceUrl,
+          rows: r.rows,
+          written_rows: r.writtenRows,
+          matched_rows: r.matchedRows,
+          unmatched_rows: r.unmatchedRows,
+          respondents: r.respondents,
+          missing_fields: r.missingFields,
+          unexpected_fields: r.unexpectedFields,
+          bad_lines: r.badLines,
+          ratings_cleaning: r.ratingsCleaning,
+          lending_cleaning: r.lendingCleaning,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: DESIGNATION_LISTS_SOURCE,
+    stepKey: "registry-designation-lists",
+    title: "Pull designation lists (FDIC MDI and charter flags, NCUA low-income and FOM, NCUA MDI, CDFI Fund)",
+    run: async (input) => {
+      const r = await runRegistryDesignationLists({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.fieldsMissing.length > 0 ? `; fields not found: ${r.fieldsMissing.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No designations from ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${n(r.records)} designations from ${r.partitionKey}: ${n(r.matched)} matched, ${n(r.unmatched)} unmatched, ${n(r.writtenRows)} written, ${n(r.removedRows)} removed${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          source_url: r.sourceUrl,
+          as_of: r.asOf,
+          rows_read: r.rowsRead,
+          records: r.records,
+          matched: r.matched,
+          unmatched: r.unmatched,
+          written_rows: r.writtenRows,
+          removed_rows: r.removedRows,
+          fields_missing: r.fieldsMissing,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: HMDA_SOURCE,
+    stepKey: "registry-hmda",
+    title: "Pull HMDA mortgage originations by lender, county and metro (one year and state)",
+    run: async (input) => {
+      const r = await runRegistryHmda({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields never present: ${r.missingFields.join(", ")}` : "";
+      const tie =
+        r.reconciliationCountDifference === null
+          ? "; could not check against the Data Browser count"
+          : r.reconciliationCountDifference !== 0
+            ? `; ${n(Math.abs(r.reconciliationCountDifference))} loans off the Data Browser count`
+            : "";
+      return {
+        summary: r.empty
+          ? `No HMDA originations loaded for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${n(r.originations)} HMDA originations for ${r.partitionKey} from ${n(r.lenders)} lenders: ${n(r.writtenOriginationRows)} lender-county rows and ${n(r.writtenCostRows)} loan-cost rows written, ${n(r.matchedLenders)} lenders matched to an institution we track${tie}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          source_url: r.sourceUrl,
+          bytes: r.bytes,
+          originations: r.originations,
+          origination_amount: r.originationAmount,
+          lenders: r.lenders,
+          matched_lenders: r.matchedLenders,
+          unmatched_lenders: r.unmatchedLenders,
+          origination_cells: r.originationCells,
+          cost_cells: r.costCells,
+          written_origination_rows: r.writtenOriginationRows,
+          written_cost_rows: r.writtenCostRows,
+          removed_stale_rows: r.removedStaleRows,
+          missing_fields: r.missingFields,
+          panel_available: r.panelAvailable,
+          cleaning: r.cleaning,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: HMDA_APOR_SOURCE,
+    stepKey: "registry-hmda-apor",
+    title: "Pull CFPB average prime offer rate (APOR) tables",
+    fixedPartition: HMDA_APOR_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryHmdaApor({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `No APOR rates loaded: ${r.emptyReason}.`
+          : `Magellan read ${n(r.rates)} APOR rates through ${r.latestEffectiveDate}: ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
+        detail: { source_url: r.sourceUrl, rates: r.rates, latest_effective_date: r.latestEffectiveDate, written_rows: r.writtenRows, tables: r.tables, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: PAYMENT_NETWORKS_SOURCE,
+    stepKey: "registry-payment-networks",
+    title: "Pull payment-network lists (Reg II exempt / not exempt, Reg II interchange tables, OpenStreetMap ATMs and branches)",
+    run: async (input) => {
+      const r = await runRegistryPaymentNetworks({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const what = r.network === null ? `${n(r.figures)} Regulation II table cells` : r.network === "osm" ? `${n(r.listedRows)} OpenStreetMap ATMs and branches` : `${n(r.listedRows)} listed institutions`;
+      const gaps = r.unrecognisedHeaders.length > 0 ? `; headings not recognised: ${r.unrecognisedHeaders.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No ${r.partitionKey} rows: ${r.emptyReason}.`
+          : `Magellan read ${what} for ${r.partitionKey} (as of ${r.asOf})${r.network === null ? "" : `: ${n(r.matchedRows)} matched, ${n(r.unmatchedRows)} unmatched kept`}, ${n(r.writtenRows)} written${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          network: r.network,
+          as_of: r.asOf,
+          source_url: r.sourceUrl,
+          read_url: r.readUrl,
+          stated_date: r.statedDate,
+          listed_rows: r.listedRows,
+          matched_rows: r.matchedRows,
+          unmatched_rows: r.unmatchedRows,
+          figures: r.figures,
+          written_rows: r.writtenRows,
+          unrecognised_headers: r.unrecognisedHeaders,
+          missing_columns: r.missingColumns,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: INDUSTRY_EVENTS_SOURCE,
+    stepKey: "registry-industry-events",
+    title: "Pull industry events (failures, mergers, applications, rule comments, SBA lending, CDFI awards, FHLBank members, SEC fee lines)",
+    run: async (input) => {
+      const r = await runRegistryIndustryEvents({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
+      return {
+        skipped: r.skipped,
+        summary: r.empty
+          ? `No ${r.family} rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : `Magellan read ${n(r.rows)} ${r.family} rows for ${r.partitionKey}: ${n(r.matchedRows)} matched to an institution, ${n(r.writtenRows)} written${r.truncated ? "; more remain for the next run" : ""}${gaps}${dry(r.dryRun)}.`,
+        detail: {
+          family: r.family,
+          source_url: r.sourceUrl,
+          rows: r.rows,
+          written_rows: r.writtenRows,
+          matched_rows: r.matchedRows,
+          unmatched_rows: r.unmatchedRows,
+          missing_fields: r.missingFields,
+          unexpected_fields: r.unexpectedFields,
+          truncated: r.truncated,
+          cleaning: r.cleaning,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+          skipped: r.skipped,
+          ...r.extra,
+        },
+      };
+    },
+  },
+  {
     source: FDIC_SOD_SOURCE,
     stepKey: "registry-fdic-sod",
     title: "Pull FDIC Summary of Deposits branches",
@@ -287,6 +707,275 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   },
+
+  ...ECONOMY_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistryEconomy({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+        skipped: r.skipped,
+      };
+    },
+  })),
+  ...MARKET_GROWTH_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    run: async (input) => {
+      const r = await runRegistryMarketGrowth({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  ...SMALLBIZ_PAYMENTS_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistrySmallbizPayments({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  ...NATIONAL_CREDIT_DEFINITIONS.map((definition): RegistrySourceDefinition => ({
+    source: definition.source,
+    stepKey: `registry-${definition.source}`,
+    title: definition.title,
+    fixedPartition: definition.fixedPartition,
+    run: async (input) => {
+      const r = await runRegistryNationalCredit({
+        source: definition.source,
+        partitionKey: input.partitionKey,
+        runId: input.runId,
+        dryRun: input.dryRun,
+        db: input.db,
+      });
+      return {
+        summary: r.summary,
+        detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  })),
+  {
+    source: USCOURTS_BANKRUPTCY_SOURCE,
+    stepKey: "registry-uscourts-bankruptcy",
+    title: "Pull US Courts bankruptcy filings by district (F-2)",
+    run: async (input) => {
+      const r = await runRegistryUscourtsBankruptcy({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: USDA_FARM_SOURCE,
+    stepKey: "registry-usda-farm",
+    title: "Pull USDA farm income by state and NASS cash rents",
+    run: async (input) => {
+      const r = await runRegistryUsdaFarm({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: { ...r.detail, nass_skipped_no_key: r.nassSkippedNoKey } };
+    },
+  },
+  {
+    source: BLS_OEWS_SOURCE,
+    stepKey: "registry-bls-oews",
+    title: "Pull BLS OEWS wages for bank occupations",
+    run: async (input) => {
+      const r = await runRegistryBlsOews({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { summary: r.summary, detail: r.detail };
+    },
+  },
+  {
+    source: BANK_MERGER_ORDERS_SOURCE,
+    stepKey: "registry-bank-merger-orders",
+    title: "Pull Fed and OCC merger decisions with their stated competitive figures",
+    run: async (input) => {
+      const r = await runRegistryBankMergerOrders({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return { skipped: r.skipped, summary: r.summary, detail: { ...r.detail, source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, matched_rows: r.matchedRows, empty: r.empty, empty_reason: r.emptyReason } };
+    },
+  },
+  {
+    source: MAKING_ENDS_MEET_SOURCE,
+    stepKey: "registry-cfpb-making-ends-meet",
+    title: MAKING_ENDS_MEET_TITLE,
+    fixedPartition: MAKING_ENDS_MEET_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryMakingEndsMeet({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          ...r.detail,
+          source_url: r.sourceUrl,
+          rows: r.rows,
+          written_rows: r.writtenRows,
+          missing_fields: r.missingFields,
+          unexpected_fields: r.unexpectedFields,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: PAYDAY_REPORTS_SOURCE,
+    stepKey: "registry-state-payday-reports",
+    title: "Read state payday and small-dollar lending annual reports",
+    run: async (input) => {
+      const r = await runRegistryPaydayReports({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: { source_url: r.sourceUrl, rows: r.rows, written_rows: r.writtenRows, missing_fields: r.missingFields, dry_run: r.dryRun, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: URBAN_DEBT_SOURCE,
+    stepKey: "registry-urban-debt",
+    title: "Read Urban Institute debt in collections by county and state",
+    fixedPartition: URBAN_DEBT_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: URBAN_DEBT_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          area_rows: r.areaRows,
+          written_rows: r.writtenRows,
+          missing_fields: r.missingFields,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: ALLTHEPLACES_SOURCE,
+    stepKey: "registry-alltheplaces",
+    title: "Pull AllThePlaces bank branch and ATM locations (CC0) and their area counts",
+    run: async (input) => {
+      const r = await runRegistryAlltheplaces({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      const gaps = r.missingFields.length > 0 ? `; fields not found: ${r.missingFields.join(", ")}` : "";
+      return {
+        summary: r.empty
+          ? `No AllThePlaces rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.partitionKey === "area-stats"
+            ? `Magellan wrote ${n(r.writtenRows)} AllThePlaces area counts (run ${r.atpRunId})${dry(r.dryRun)}.`
+            : `Magellan read ${n(r.locations)} AllThePlaces branches and ATMs from ${n(r.spiders.length)} spiders (run ${r.atpRunId}): ${n(r.matched)} linked, ${n(r.unmatched)} unlinked kept, ${n(r.writtenRows)} written${gaps}${dry(r.dryRun)}.`,
+        detail: { atp_run_id: r.atpRunId, source_url: r.sourceUrl, spiders: r.spiders, locations: r.locations, matched: r.matched, unmatched: r.unmatched, area_rows: r.areaRows, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: GLEIF_SOURCE,
+    stepKey: "registry-gleif",
+    title: "Link tracked institutions to GLEIF LEIs, then pull GLEIF legal entities (level 1) and parent relationships (level 2)",
+    run: async (input) => {
+      const r = await runRegistryGleif({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.empty
+          ? `No GLEIF rows for ${r.partitionKey}: ${r.emptyReason}.`
+          : r.leiMatch
+            ? `GLEIF LEI match ${r.partitionKey}: ${n(r.leiMatch.read)} ${r.leiMatch.basis === "name_state" ? "institutions searched" : "GLEIF records read"}, ${n(r.leiMatch.changes)} link changes, ${n(r.writtenRows)} written${r.leiMatch.remaining > 0 ? ", more next run" : ""}${r.leiMatch.coverage ? `; ${n(r.leiMatch.coverage.linked)} of ${n(r.leiMatch.coverage.institutions)} institutions linked` : ""}${dry(r.dryRun)}.`
+          : r.partitionKey === "level2"
+            ? `Magellan read ${n(r.relationships)} GLEIF parent relationships for ${n(r.seeds)} tracked LEIs (publish ${r.publishDate}), ${n(r.writtenRows)} written${dry(r.dryRun)}.`
+            : `Magellan read ${n(r.entities)} GLEIF entities for ${r.partitionKey}: ${n(r.linked)} linked, ${n(r.unlinked)} unlinked, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
+        detail: { source_url: r.sourceUrl, publish_date: r.publishDate, seeds: r.seeds, entities: r.entities, relationships: r.relationships, linked: r.linked, unlinked: r.unlinked, written_rows: r.writtenRows, missing_fields: r.missingFields, checks: r.checks, ...(r.leiMatch ? { lei_match: { basis: r.leiMatch.basis, proposals: r.leiMatch.proposals, changes: r.leiMatch.changes, remaining: r.leiMatch.remaining, coverage: r.leiMatch.coverage, ...r.leiMatch.detail } } : {}), empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
+  {
+    source: STATE_NONBANK_LENDERS_SOURCE,
+    stepKey: "registry-state-nonbank-lenders",
+    title: "Pull state open-data lists of non-bank lenders, check cashers and money transmitters",
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: STATE_NONBANK_LENDERS_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          records: r.records,
+          matched: r.matched,
+          unmatched: r.unmatched,
+          written_rows: r.writtenRows,
+          removed_rows: r.removedRows,
+          area_rows: r.areaRows,
+          missing_fields: r.missingFields,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: STATE_DEPOSITORIES_SOURCE,
+    stepKey: "registry-state-public-depositories",
+    title: "Pull state qualified public depository lists",
+    run: async (input) => {
+      const r = await runRegistryStateLists({ source: STATE_DEPOSITORIES_SOURCE, runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        summary: r.summary,
+        detail: {
+          source_url: r.sourceUrl,
+          rows_read: r.rowsRead,
+          records: r.records,
+          matched: r.matched,
+          unmatched: r.unmatched,
+          written_rows: r.writtenRows,
+          removed_rows: r.removedRows,
+          area_rows: r.areaRows,
+          missing_fields: r.missingFields,
+          dry_run: r.dryRun,
+          empty: r.empty,
+          empty_reason: r.emptyReason,
+        },
+      };
+    },
+  },
+  {
+    source: SEC_MARKET_VALUE_SOURCE,
+    stepKey: "registry-sec-market-value",
+    title: "Pull SEC public float and shares outstanding for linked bank holding companies",
+    run: async (input) => {
+      const r = await runRegistrySecMarketValue({ runId: input.runId, partitionKey: input.partitionKey, dryRun: input.dryRun, db: input.db });
+      return {
+        skipped: r.skipped,
+        summary: r.empty
+          ? `No SEC market-value facts for ${r.partitionKey}: ${r.emptyReason}${dry(r.dryRun)}.`
+          : `Magellan read ${n(r.rows)} public-float and shares-outstanding facts for ${n(r.ciks)} filers in ${r.partitionKey}, ${n(r.writtenRows)} written${dry(r.dryRun)}.`,
+        detail: { ...r.detail, rows: r.rows, written_rows: r.writtenRows, empty: r.empty, empty_reason: r.emptyReason },
+      };
+    },
+  },
   {
     source: SEC_LINKS_SOURCE,
     stepKey: "registry-sec-links",
@@ -337,13 +1026,23 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
   {
     source: FRED_SOURCE,
     stepKey: "registry-fred",
-    title: "Refresh FRED economic indicators",
+    title: "Refresh economic indicators from BLS, BEA and the Federal Reserve Board",
     fixedPartition: FRED_PARTITION,
     run: async (input) => {
       const r = await runRegistryFred({ runId: input.runId, dryRun: input.dryRun, db: input.db });
       return {
-        summary: `Magellan refreshed ${r.refreshedSeries} of ${r.series} FRED series (${n(r.observations)} observations)${dry(r.dryRun)}.`,
-        detail: { series: r.series, refreshed_series: r.refreshedSeries, missing_series: r.missingSeries, observations: r.observations },
+        summary:
+          `Magellan refreshed ${r.refreshedSeries} of ${r.series} economic indicators from BLS, BEA and the Fed Board (${n(r.observations)} observations)` +
+          (r.stillOnFredEra.length > 0 ? `; ${r.stillOnFredEra.length} still on FRED-era values (${r.stillOnFredEra.slice(0, 8).join(", ")}${r.stillOnFredEra.length > 8 ? ", ..." : ""})` : "") +
+          `${dry(r.dryRun)}.`,
+        detail: {
+          series: r.series,
+          refreshed_series: r.refreshedSeries,
+          missing_series: r.missingSeries,
+          still_on_fred_era_values: r.stillOnFredEra,
+          skipped_packages: r.skippedPackages,
+          observations: r.observations,
+        },
       };
     },
   },
@@ -623,6 +1322,58 @@ export const REGISTRY_SOURCES: RegistrySourceDefinition[] = [
       };
     },
   },
+  {
+    source: BANK_ZELLE_SOURCE,
+    stepKey: "registry-bank-zelle",
+    title: "Read whether each institution offers Zelle from its own documents",
+    fixedPartition: BANK_ZELLE_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryBankZelle({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const next = r.passFinished ? "the pass is finished and starts again in a week" : `the next run starts after institution ${r.cursorTo}`;
+      return {
+        summary: `Hoovie read ${n(r.documentsRead)} current documents of ${n(r.institutionsRead)} institutions for Zelle: ${n(r.documentsNamingZelle)} name it; ${n(r.offers)} institutions offer it, ${n(r.doesNotOffer)} say they do not, ${n(r.unclear)} unclear; ${n(r.written)} rows written, ${n(r.removed)} removed; ${next}${dry(r.dryRun)}.`,
+        detail: {
+          matcher_version: r.matcherVersion,
+          cursor_from: r.cursorFrom,
+          cursor_to: r.cursorTo,
+          pass_finished: r.passFinished,
+          institutions_read: r.institutionsRead,
+          documents_read: r.documentsRead,
+          documents_naming_zelle: r.documentsNamingZelle,
+          documents_skipped: r.documentsSkipped,
+          offers: r.offers,
+          does_not_offer: r.doesNotOffer,
+          unclear: r.unclear,
+          written: r.written,
+          removed: r.removed,
+        },
+      };
+    },
+  },
+  {
+    source: CALL_REPORT_SUMMARIES_SOURCE,
+    stepKey: "registry-call-report-summaries",
+    title: "Precompute call-report quarterly income for the readers",
+    fixedPartition: CALL_REPORT_SUMMARIES_PARTITION,
+    run: async (input) => {
+      const r = await runRegistryCallReportSummaries({ runId: input.runId, dryRun: input.dryRun, db: input.db });
+      const changed = r.groupsChanged.length + r.groupsRemoved.length;
+      return {
+        summary: changed === 0
+          ? `Hoovie checked ${n(r.filings)} call-report filings in ${r.groupsChecked} regulator-years; the quarterly summary is current${dry(r.dryRun)}.`
+          : `Hoovie ${r.dryRun ? "would rebuild" : "rebuilt"} the call-report quarterly summary for ${[...r.groupsChanged, ...r.groupsRemoved].join(", ")}: ${n(r.rowsWritten)} filings written, ${n(r.rowsRemoved)} replaced, ${n(r.summaryRows)} in the summary${dry(r.dryRun)}.`,
+        detail: {
+          groups_checked: r.groupsChecked,
+          groups_changed: r.groupsChanged,
+          groups_removed: r.groupsRemoved,
+          filings: r.filings,
+          rows_removed: r.rowsRemoved,
+          rows_written: r.rowsWritten,
+          summary_rows: r.summaryRows,
+        },
+      };
+    },
+  },
 ];
 
 export const REGISTRY_STEP_KEYS = REGISTRY_SOURCES.map((entry) => entry.stepKey);
@@ -648,7 +1399,32 @@ export async function runRegistryStep(input: RegistryStepInput): Promise<Registr
       detail: { registry_source: definition.source, missing_partition: true },
     };
   }
-  const output = await definition.run({ ...input, partitionKey });
+  let output: WorkerOutput;
+  try {
+    output = await definition.run({ ...input, partitionKey });
+  } catch (error) {
+    if (!input.dryRun) {
+      try {
+        const receipt = await recordRegistryFailure(input.db ?? sql, {
+          source: definition.source, partitionKey, runId: input.runId, error,
+        });
+        if (receipt.blocked) return {
+          status: "skipped",
+          summary: `${definition.title}: publisher refused the request; no data loaded. ${receipt.message}`,
+          detail: { registry_source: definition.source, partition_key: partitionKey,
+            missing_source: true, failure_recorded: receipt.recorded },
+        };
+      } catch {
+        // Keep the original worker error; a failed receipt must not replace its cause.
+        console.error("Registry failure receipt could not be stored", { source: definition.source, partitionKey });
+      }
+    }
+    throw error;
+  }
+  // A load that changed the call-report filings makes the quarterly summary due at once.
+  if (!input.dryRun && !output.skipped && CALL_REPORT_SUMMARY_TRIGGER_SOURCES.has(definition.source)) {
+    await markCallReportSummariesDue(input.db ?? sql);
+  }
   return {
     status: output.skipped ? "skipped" : "completed",
     summary: output.summary,

@@ -16,7 +16,7 @@ export type WatchStateResult = { ok: true; watching: boolean } | { ok: false; er
 export async function setWatchedState(formData: FormData): Promise<WatchStateResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "Sign in to watch a state." };
-  if (!canAccessPremium(user)) return { ok: false, error: "Watching states is part of a Hamilton subscription." };
+  if (!canAccessPremium(user)) return { ok: false, error: "Watching states is part of a Pro subscription." };
 
   const code = String(formData.get("state") ?? "").trim().toUpperCase();
   if (!STATE_NAMES[code]) return { ok: false, error: "Choose a state to watch." };

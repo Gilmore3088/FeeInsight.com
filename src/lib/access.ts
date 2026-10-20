@@ -44,11 +44,6 @@ export function canAccessAllCategories(user: User | null): boolean {
   return canAccessPremium(user);
 }
 
-/** Can use peer filters (charter, tier, district). */
-export function canAccessPeerFilters(user: User | null): boolean {
-  return canAccessPremium(user);
-}
-
 /** Can export CSV/bulk data. */
 export function canExportData(user: User | null): boolean {
   return canAccessPremium(user);

@@ -11,16 +11,20 @@ describe("Knox held lines (#1102)", () => {
     expect(shapeInfo("range")).toMatchObject({ hasExit: false });
     expect(shapeInfo("range").owner).toContain("#1060");
     expect(shapeInfo("zero")).toMatchObject({ hasExit: false });
+    expect(shapeInfo("eligibility")).toMatchObject({ hasExit: false });
+    expect(shapeInfo("periodic_program")).toMatchObject({ hasExit: false });
+    expect(shapeInfo("periodic_program").wayOut).toContain("no automatic release");
+    expect(shapeInfo("eligibility").wayOut).toContain("no automatic release");
     expect(shapeInfo("new_shape")).toMatchObject({ hasExit: false, label: "new_shape", owner: "Nobody recorded" });
   });
 
   it("names an owner for every group Knox holds (#1102: who's reviewing it?)", () => {
-    for (const shape of ["unclassified", "range", "range_no_category", "range_band", "percentage", "untraced", "zero", "superseded", "taken_down"]) {
+    for (const shape of ["unclassified", "range", "range_no_category", "range_band", "percentage", "untraced", "zero", "superseded", "taken_down", "eligibility", "periodic_program"]) {
       expect(shapeInfo(shape).owner, shape).not.toBe("Nobody recorded");
     }
-    // The range-band pass is switched off: its way out waits on James.
-    expect(shapeInfo("range_no_category")).toMatchObject({ hasExit: false });
-    expect(shapeInfo("range_no_category").owner).toContain("switched off");
+    // The range-band pass is on (Oct 20): a rate band has its way out.
+    expect(shapeInfo("range_no_category")).toMatchObject({ hasExit: true });
+    expect(shapeInfo("range_no_category").owner).not.toContain("switched off");
     expect(shapeInfo("superseded")).toMatchObject({ hasExit: true });
     expect(shapeInfo("untraced").owner).toContain("Rosetta");
   });

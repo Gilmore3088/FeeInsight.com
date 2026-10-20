@@ -25,7 +25,7 @@ const EVENT = "00000000-0000-4000-8000-000000979000";
 const USER = "979";
 
 describe.skipIf(!connection)("saved output fee rows in isolated PostgreSQL", () => {
-  let raw: ReturnType<typeof postgres>;
+  let raw: postgres.Sql<{ numeric: number; json: unknown; text: string }>;
   let db: Db;
   let nextRaw = 979200;
   const fee: Record<string, number> = {};

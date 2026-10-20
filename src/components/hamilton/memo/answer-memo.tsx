@@ -8,6 +8,8 @@ import type { ReactNode } from "react";
 import type { Exhibit, Fact } from "@/lib/hamilton/workspace/types";
 import { ANSWER_EVIDENCE_LABELS, ExhibitView, SourceChip, type AnswerSpec } from "./exhibit-view";
 import { ANSWER_TYPE, AnswerLead, KeyFigures, More, SectionHeading, fmtMoney } from "./memo";
+import { DatasetNote } from "@/components/hamilton/DatasetNote";
+import type { StampedFigure } from "@/lib/dataset-note";
 
 export interface KeyFigure {
   value: string;
@@ -27,16 +29,18 @@ export function keyFiguresFor(exhibit: Exhibit | null): KeyFigure[] {
   }
   if (exhibit.kind === "competitor_range") {
     if (exhibit.items.length === 0) return [];
+    // Range and count read the same one value per institution; named fees stay on the rows (#1931).
     const amounts = exhibit.items.map((i) => i.amount);
     const lo = Math.min(...amounts);
     const hi = Math.max(...amounts);
+    const several = exhibit.items.some(i => i.several);
     const out: KeyFigure[] = [];
     if (exhibit.own != null) out.push({ value: fmtMoney(exhibit.own), label: exhibit.ownLabel });
-    out.push({ value: `${fmtMoney(lo)} to ${fmtMoney(hi)}`, label: `Range across ${exhibit.items.length} named institutions` });
+    out.push({ value: `${fmtMoney(lo)} to ${fmtMoney(hi)}`, label: several ? `Range of institution values in group statistics (${exhibit.items.length} ${exhibit.items.length === 1 ? "institution" : "institutions"})` : `Range across ${exhibit.items.length} named institutions` });
     if (exhibit.own != null) {
       const own = exhibit.own;
       const less = amounts.filter((a) => a < own - 0.005).length;
-      out.push({ value: `${less} of ${amounts.length}`, label: `Charge less than ${exhibit.ownLabel}` });
+      out.push({ value: `${less} of ${amounts.length}`, label: several ? `Values below ${exhibit.ownLabel} in group statistics` : `Charge less than ${exhibit.ownLabel}` });
     }
     return out;
   }
@@ -100,7 +104,7 @@ function DriverCards({ facts }: { facts: readonly Fact[] }) {
   );
 }
 
-export function AnswerMemo({ answer, nextSteps }: { answer: AnswerSpec; nextSteps?: ReactNode }) {
+export function AnswerMemo({ answer, nextSteps, stamps }: { answer: AnswerSpec; nextSteps?: ReactNode; stamps?: readonly StampedFigure[] | null }) {
   const figures = keyFiguresFor(answer.exhibit);
   const lead = answer.claims.slice(0, 3);
   const rest = answer.claims.slice(3);
@@ -108,7 +112,13 @@ export function AnswerMemo({ answer, nextSteps }: { answer: AnswerSpec; nextStep
     <article className="flex flex-col gap-7">
       <AnswerLead>{answer.headline}</AnswerLead>
 
-      <KeyFigures figures={figures.map((f) => ({ value: f.value, label: f.label, title: f.label }))} />
+      {figures.length > 0 || (stamps && stamps.length > 0) ? (
+        <div className="flex flex-col gap-3">
+          <KeyFigures figures={figures.map((f) => ({ value: f.value, label: f.label, title: f.label }))} />
+          {/* Where the medians and counts came from (#1924); nothing without a stamp. */}
+          <DatasetNote figures={stamps ?? []} />
+        </div>
+      ) : null}
 
       {answer.exhibit ? <ExhibitView exhibit={answer.exhibit} number={1} /> : null}
 

@@ -1,3 +1,4 @@
+import { utilityButton } from "@/components/utility/form-style";
 import Link from "next/link";
 import type { AlertSubscription } from "@/lib/data-store/alerts";
 import { getDisplayName } from "@/lib/fee-taxonomy";
@@ -26,7 +27,7 @@ export function AlertsPanel({ subscriptions }: { subscriptions: AlertSubscriptio
           <p>You aren&rsquo;t following a bank or credit union yet.</p>
           <Link
             href="/institutions"
-            className="mt-3 inline-flex min-h-11 items-center rounded-md bg-brick px-4 text-[14px] font-semibold text-white no-underline hover:bg-brick-ink"
+            className={`mt-3 ${utilityButton("primary")}`}
           >
             Find a bank
           </Link>

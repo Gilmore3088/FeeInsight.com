@@ -57,12 +57,14 @@ describe("Darwin learned category model", () => {
       category_key: example.categoryKey,
       count: String(example.count),
     }));
-    return vi.fn((strings: TemplateStringsArray) => {
+    const tag = vi.fn((strings: TemplateStringsArray) => {
       const text = strings.join("?");
       if (text.includes("to_regclass")) return Promise.resolve([{ ready: answerKey !== null }]);
+      if (text.includes("FROM agent_run_events")) return Promise.resolve([]);
       if (text.includes("pipeline_feedback")) return Promise.resolve(answerKey ?? []);
       return Promise.resolve(catalog);
     });
+    return Object.assign(tag, { unsafe: vi.fn(() => []) });
   }
 
   it("trains from the live catalog once and caches the model", async () => {
@@ -72,11 +74,13 @@ describe("Darwin learned category model", () => {
     expect(loaded?.categories).toHaveLength(4);
     const calls = db.mock.calls.length;
     await loadCategoryModel(db as never, 2_000);
-    expect(db).toHaveBeenCalledTimes(calls);
+    // Trust is refreshed before a cached model can be reused.
+    expect(db.mock.calls.length).toBeGreaterThan(calls);
+    expect(db.mock.calls.filter(([parts]) => parts.join(" ").includes("FROM published_fee_catalog"))).toHaveLength(1);
     resetCategoryModelCache();
   });
 
-  it("also learns from answer-key fees in the shared learning store", async () => {
+  it("combines rows returned by the gated learning query; SQL provenance is exercised in the isolated DB suite", async () => {
     resetCategoryModelCache();
     const db = fakeDb([{ name: "coin counting machine use $5.00", category_key: "coin_counting", count: 5 }]);
     const loaded = await loadCategoryModel(db as never, 1_000);

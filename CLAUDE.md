@@ -2,12 +2,12 @@
 
 ## Brand
 Fee Insight is the company and site (feeinsight.com). Bank Fee Index is its product
-(the dataset/index); Hamilton is the Pro workspace. Never name the site as the product.
+(the dataset/index); Hamilton is the paid workspace; never "Hamilton Pro" ("Pro" only marks who has paid). Never name the site as the product.
 Brand strings live in `src/lib/constants.ts`; `scripts/ci-guards.sh brand-kill` enforces it.
 Contact stays hello@bankfeeindex.com until feeinsight.com mail exists.
 
 ## Money thesis
-A bank/CU marketing, product or pricing manager subscribes to Hamilton Pro, paid monthly or
+A bank/CU marketing, product or pricing manager subscribes to Hamilton, paid monthly or
 annually. That subscription is the site's goal. The Competitive Fee Position Report ("from $300")
 is a high-value lead into Pro, not the goal; free reports and alerts are lead capture. The funnel:
 free sample report, then the paid report, then Pro or a Pro demo request. Why us:
@@ -28,13 +28,27 @@ open issues, PRs and `main` for the same outcome, and reuse or explicitly supers
   version number or a shared check its gates use), or a new migration: a PR that adds one always
   merges `main` and re-runs `migration-version-kill` before merging, since a clashing number shows
   no conflict.
-- Every change a review finds is documented as its own issue under a tracker: one tracker per
-  agent, plus the Foundation tracker for infrastructure, documentation and process work that
+- A review finding the PR can fix is fixed in that PR before merge. Anything else becomes a
+  checklist line on the issue for its root cause, or on the tracker if no such issue exists. A new
+  issue is opened only for a new root cause (James, 2026-10-19; DECISIONS). There is one tracker
+  per agent, plus the Foundation tracker for infrastructure, documentation and process work that
   belongs to no agent. A review also names the issues it closes or merges, so duplicates do not
   pile up. The Now list in #1026 (at most three items) sets the order; it is not a cap on issues.
   The lane that owns an agent keeps that agent's tracker current (Data quality: Magellan, Rosetta,
   Knox, Darwin and Foundation; Hamilton: #975): when a PR merges or an issue closes, its line is
   ticked in the same pass.
+- Merging runs without James (DECISIONS, 2026-10-18). Batch: at most one PR per page or area a
+  day, and fixes from one review ride that PR. A page PR, redesigns included, merges once the
+  growthOS review (defined in DECISIONS, 2026-10-18) approves its desktop and phone screenshots,
+  an independent reviewer of the exact head finds no blockers, and CI is green. It does not wait
+  for James's yes. Other PRs keep the Oct 14 "Reviewed" rule and green CI. Every merge leaves a
+  receipt comment naming the head SHA and both review verdicts, on top of the Oct 14 "Reviewed"
+  rule, and a PR merges only with that record. The day's merges go to James as one digest with
+  screenshots; he can ask for any of them to be reverted. Migrations, production-data changes and
+  the other actions Standing rules excludes still need James's yes.
+- A PR that closes an issue whose root cause is in a pipeline agent adds a lesson to that agent's
+  `src/lib/agents/<agent>/role-lessons.ts` in the same PR, so the agent gets better at its role,
+  not only a check (James, 2026-10-20; DECISIONS). `scripts/ci-guards.sh lesson-kill` checks the files.
 - No scheduled Claude routines run for Fee Insight without James's say-so. A session ends when
   its PR is open and green.
 - Words a visitor reads (pages, headlines, buttons, emails): use the `copywriting` and
@@ -49,6 +63,11 @@ No branch deletion, force-push or direct main push under a general cleanup instr
 - A rule that holds, rejects or re-files a fee ships with its live re-check in Darwin, in the same
   PR, with a dry-run count of the live fees it would take down. Darwin re-checks live fees against
   today's rules (`docs/project/DECISIONS.md`, 2026-10-15).
+- Fix the input and the process, not the output (James, 2026-10-19). When a fee error is found,
+  first fix the pipeline step that caused it (discovery, document capture, extraction,
+  categorisation or verification) so the whole class of error is fixed, then re-run and validate
+  the output. A one-off data fix (an admin correction, hold or re-file) comes only as the last step
+  after that process fix, never instead of it.
 - Accuracy means the share of live published fees whose amount and category match the
   bank's own current fee schedule. The one shared check is `checkFeeAgainstSource` in
   `src/lib/custom-report/source-check.ts`; use it rather than writing another.
@@ -126,6 +145,8 @@ Most are enforced by `scripts/ci-guards.sh` (`npm run guard:legacy` runs them al
   growth (marketing) steps (`MARKETING_STEP_KEYS`), and neither pause holds the other's work. The tick checks the provider budget
   only when a provider step is queued. Don't gate deterministic work on provider budget.
 - Don't query historical `crawl_*` source tables from app code (`source-read-model-kill`).
+- Any change to `/api/v1` or the Claude connector updates the OpenAPI spec and `/api-docs` in the same
+  PR and bumps `API_VERSION` in `src/lib/api-v1.ts` (`api-docs-kill`, `src/lib/api-docs-sync.test.ts`).
 - Document agents use `institution_id`, `source_document_id`, and `agent_source_texts`
   (`agent-source-contract-kill`).
 - Fee-tier agents use the semantic tier tables, never `fees_raw`, `fees_verified`,

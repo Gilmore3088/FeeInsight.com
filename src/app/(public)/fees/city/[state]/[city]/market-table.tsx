@@ -7,7 +7,7 @@ import type { LocalFee } from "./market-view";
 import { ACCOUNT_NOT_IDENTIFIED, meaningfulConditions } from "./account-details";
 import { ComparisonBars, feeBars } from "./comparison-bars";
 import { evidenceHeadline, NO_LOCAL_MEDIAN } from "./fee-evidence";
-import { CITY_SORTS, FEE_SELECT_EVENT, lowerLabel, money, type CitySort, type FeeSelectDetail } from "./format";
+import { CITY_SORTS, FEE_SELECT_EVENT, lowerLabel, money, sortOf, type CitySort, type FeeSelectDetail } from "./format";
 import { orderInstitutions, type CharterFilter } from "./table-order";
 
 /** Why a cell is empty: we hold no schedule, we found one but publish none of it yet, or it lists no such fee. */
@@ -83,6 +83,18 @@ export function MarketTable({
   const [all, setAll] = useState(false);
   const ids = useId();
   const fee = fees.find((f) => f.key === key) ?? fees[0];
+
+  // The page is cached and the same for every address, so a shared link's ?fee= and ?sort=
+  // are applied here, once, in the browser.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedFee = params.get("fee");
+    if (linkedFee && fees.some((f) => f.key === linkedFee)) setKey(linkedFee as CityFeeKey);
+    const linkedSort = params.get("sort");
+    if (linkedSort) setSort(sortOf(linkedSort));
+    // Only the address the page opened with; later choices write it themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const onSelect = (event: Event) => {

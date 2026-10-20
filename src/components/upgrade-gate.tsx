@@ -49,7 +49,7 @@ async function currentPath(): Promise<string | null> {
   }
 }
 
-/** Hamilton is the workspace, Pro the plan (site v3 brief 03 §4); never "Fee Insight Pro" alone. */
+/** Hamilton is the paid product; never "Hamilton Pro" or "Fee Insight Pro" (James, 2026-10-17). */
 const PRO_LABEL = hamiltonFullName(SITE_NAME);
 
 /**
@@ -128,14 +128,5 @@ export async function UpgradeGate({
         </svg>
       </TrackLink>
     </div>
-  );
-}
-
-/** Lock icon badge for quick action tiles. */
-export function PremiumBadge() {
-  return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold bg-brick-tint text-brick uppercase tracking-wider ml-1">
-      Pro
-    </span>
   );
 }

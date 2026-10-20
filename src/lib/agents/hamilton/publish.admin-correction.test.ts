@@ -11,12 +11,15 @@ function createDb(options: { ready: boolean; match: unknown[]; conflictId?: numb
   const db = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => {
     const query = strings.join("?");
     calls.push({ query, values });
+    if (query.includes("AS verified_state")) return Promise.resolve([{ ...(row as object), selected_verified_state: "unchanged fixture", verified_state: "unchanged fixture" }]);
+    if (query.includes("to_jsonb(verified_fee_observations)")) return Promise.resolve([{ fee_verified_id: 5 }]);
     if (query.includes("to_regclass")) return Promise.resolve([{ ready: options.ready }]);
     if (query.includes("FROM published_fee_corrections cur")) return Promise.resolve(options.match);
     if (query.includes("INSERT INTO published_fee_correction_conflicts")) return Promise.resolve(options.conflictId ? [{ id: options.conflictId }] : []);
     if (query.includes("INSERT INTO published_fee_records")) return Promise.resolve([{ fee_published_id: 999 }]);
     return Promise.resolve([]);
   });
+  Object.assign(db, { savepoint: (work: (scope: typeof db) => Promise<unknown>) => work(db) });
   return { db: db as never, calls };
 }
 

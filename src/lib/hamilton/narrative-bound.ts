@@ -28,12 +28,13 @@ import { proseFeeName } from "./workspace/names";
 import {
   claimBindingMatches,
   medianOf,
+  normalizeFrequency,
   type HamiltonDerivedFact,
   type HamiltonEvidenceBundle,
   type HamiltonEvidenceFact,
 } from "./evidence-contract";
 import { extractFigures, type NarrativeFigure } from "./figure-check";
-import { RECOMMENDATION } from "./workspace/four-roles";
+import { findUnrequestedAdvice } from "./workspace/four-roles";
 
 export const NARRATIVE_BINDING_VERSION = 1 as const;
 
@@ -160,7 +161,7 @@ function conflictGroups(facts: HamiltonEvidenceFact[]): Map<string, HamiltonEvid
   const groups = new Map<string, HamiltonEvidenceFact[]>();
   for (const fact of facts) {
     const key = [fact.scope.institutionId, fact.scope.feeCategory, fact.scope.product?.trim().toLowerCase(),
-      fact.frequency?.trim().toLowerCase(), fact.unit].join("|");
+      normalizeFrequency(fact.frequency), fact.unit].join("|");
     groups.set(key, [...(groups.get(key) ?? []), fact]);
   }
   const conflicts = new Map<string, HamiltonEvidenceFact[]>();
@@ -237,7 +238,7 @@ export function bindNarrative(input: BindNarrativeInput): NarrativeBinding {
       binding.omitted.push({ text, reason: "instruction_text" });
       continue;
     }
-    if (RECOMMENDATION.test(text.replace(/"[^"]*"/g, ""))) {
+    if (findUnrequestedAdvice(text.replace(/"[^"]*"/g, ""))) {
       binding.omitted.push({ text, reason: "advice" });
       continue;
     }

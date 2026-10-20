@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { financialPeerComparison } from "@/lib/data-store/financial-peer-contract";
 import type { SelectedInstitutionFeeDelta } from "@/lib/hamilton/report-evidence";
 import {
   buildSelectedInstitutionReportData,
@@ -62,6 +63,7 @@ describe("selected institution report synthesis", () => {
       selectedInstitution: {
         id: 2945,
         institution_name: "Hamilton Federal Credit Union",
+        charter_type: "credit_union",
         fee_publication_status: "provisional",
         insight_readiness: "directional_analysis",
         confidence_summary: "Official source is present but not approved.",
@@ -70,6 +72,7 @@ describe("selected institution report synthesis", () => {
         latest_source_status: "accepted",
       },
       latestFinancial: {
+        source: "ncua",
         report_date: "2026-06-30",
         total_assets: 1_500_000_000,
         total_deposits: 1_200_000_000,
@@ -173,6 +176,28 @@ describe("selected institution report synthesis", () => {
     expect(reportData?.can_generate_verified_benchmark_conclusions).toBe(false);
     expect(reportData?.revenue_trend).toHaveLength(8);
 
+  });
+
+  it("keeps comparable financial lineage through the dollars/percent report adapter and rejects mismatches", () => {
+    const comparison = financialPeerComparison({ source: "ncua", reportDate: "2026-06-30", tier: "regional", minimumAssetsUsd: 1e10, maximumAssetsUsd: 250e9, subjectIncluded: true, eligibleCount: 25, reportedCount: 25, ratioReportedCount: 24, minimumMedianCount: 5 });
+    const params = {
+      selectedInstitution: { id: 1, institution_name: "Synthetic CU", charter_type: "credit_union" },
+      latestFinancial: { source: "ncua", report_date: "2026-06-30", total_assets: 20000, total_deposits: 15000, service_charge_income: 300, total_revenue: 1000, fee_income_ratio: 0.3, roa: null },
+      selectedVisibleFees: [], selectedEvidence: null, selectedFeeDeltas: [],
+      peerIndex: { label: "Mixed fee-price peers", source: "saved-peer-set", filters: {}, peerSetId: null, fallbackReason: null },
+      selectedRevenueTrend: [{ quarter: "2026-Q2", service_charge_income: 160, fee_income_ratio: 0.3 }],
+      selectedPeerRanking: { sc_income: 160, sc_rank: 2, peer_count: 25, peer_median_sc: 75, fee_income_ratio: 0.3, peer_median_fee_ratio: 0.2, tier: "regional", comparison },
+      evidencePolicy: "verified-only" as const,
+    };
+    const result = buildSelectedInstitutionReportData(params)!;
+    expect(result.financials).toMatchObject({ source: "ncua", service_charge_income_dollars: 300000, measure_definition: { unit: "USD", period_basis: "year_to_date" } });
+    expect(result.revenue_trend[0]).toMatchObject({ service_charge_income_dollars: 160000, measure_definition: { unit: "USD", period_basis: "standalone_quarter", ratio_period_basis: "year_to_date" } });
+    expect(result.peer_ranking).toMatchObject({ peer_group: "credit unions with $10B to $250B in assets", service_charge_income_dollars: 160000, fee_income_ratio_pct: 30, comparison: { ...comparison, unit: "USD", ratio_unit: "percent" } });
+    expect(buildSelectedInstitutionReportData({ ...params, latestFinancial: { ...params.latestFinancial, source: "fdic" } })?.financials).toBeNull();
+    expect(buildSelectedInstitutionReportData({ ...params, selectedPeerRanking: { ...params.selectedPeerRanking, comparison: undefined } })?.peer_ranking).toBeNull();
+    expect(buildSelectedInstitutionReportData({ ...params, selectedInstitution: { ...params.selectedInstitution, charter_type: "bank" } })?.peer_ranking).toBeNull();
+    const thin = { ...comparison, eligible_count: 4, reported_count: 4, ratio_reported_count: 3 };
+    expect(buildSelectedInstitutionReportData({ ...params, selectedPeerRanking: { ...params.selectedPeerRanking, peer_count: 4, comparison: thin } })?.peer_ranking).toMatchObject({ peer_median_service_charge_income_dollars: null, peer_median_fee_income_ratio_pct: null });
   });
 
   it("allows verified benchmark conclusions only when a verified delta exists", () => {

@@ -27,6 +27,17 @@ describe("buildComparisons", () => {
     expect(rows[0].national_median).toBe(29);
     expect(rows[0].delta_pct).toBeCloseTo(2.586, 2);
   });
+
+  it("carries the unstated-audience count for the asterisk, 0 when the entry has none (#1132)", () => {
+    const rows = buildComparisons(
+      [entry("overdraft", { unstated_audience_institution_count: 4 }), entry("stop_payment", { institution_count: 20 })],
+      national,
+    );
+    expect(rows.map((r) => [r.fee_category, r.unstated_audience_institution_count])).toEqual([
+      ["overdraft", 4],
+      ["stop_payment", 0],
+    ]);
+  });
 });
 
 describe("computeStateFindings", () => {

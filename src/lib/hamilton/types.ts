@@ -162,6 +162,8 @@ export interface ThesisSummaryPayload {
     institution_count: number;
     maturity_tier: string;
   }>;
+  financial_income_groups?: import("@/lib/report-assemblers/financial-income").FinancialIncomeGroup[];
+  /** Legacy pooled snapshot is ignored by Hamilton generation. */
   revenue_snapshot: {
     latest_quarter: string;
     total_service_charges: number;
@@ -174,7 +176,6 @@ export interface ThesisSummaryPayload {
     fed_funds_rate: number | null;
     unemployment_rate: number | null;
     cpi_yoy_pct: number | null;
-    consumer_sentiment: number | null;
     as_of: string;
   } | null;
   /** Beige Book headline text snippets, one per Fed district that has data. */
@@ -223,6 +224,12 @@ export interface AnalyzeResponse {
    * written with no fee record to bind to.
    */
   narrativeBinding?: import("./narrative-bound").NarrativeBinding;
+  /**
+   * The dataset stamps of the reads behind the answer's medians, percentiles and counts, frozen
+   * when it was saved (#1924). Reopening shows these, never a fresh read. Absent on answers saved
+   * before them, which then show no note.
+   */
+  datasetStamps?: import("@/lib/dataset-note").StampedFigure[];
   // NOTE: No recommendedPosition — screen boundary rule (ARCH-05)
 }
 
@@ -268,7 +275,7 @@ export interface ReportDecision {
 
 /** A table built from data (never written by the model); its title is the takeaway. */
 export interface ReportExhibit {
-  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "statistical_appendix" | "evidence_records";
+  id: "local_market" | "peer_range" | "dollar_impact" | "competitor_moves" | "regulatory" | "fee_income_trend" | "fee_income_trend_fdic" | "fee_income_trend_ncua" | "statistical_appendix" | "evidence_records";
   title: string;
   subtitle: string;
   columns: string[];
@@ -293,6 +300,11 @@ export interface ReportSummaryResponse {
   title: string;
   /** Historical reference identity captured on the authenticated generation request. */
   identityContext?: HamiltonIdentitySnapshot;
+  /**
+   * The dataset stamps behind the report's medians and counts, as they were when it was made
+   * (#1924); a board brief carries its saved answer's. Absent on reports made before them.
+   */
+  datasetStamps?: import("@/lib/dataset-note").StampedFigure[];
   /** Answer page: one-sentence headline and up to three decisions (reports since v4 voice). */
   answer?: { headline: string; decisions: ReportDecision[]; /** The client goal the decisions are ranked by, when one was chosen. */ goal?: string | null };
   exhibits?: ReportExhibit[];

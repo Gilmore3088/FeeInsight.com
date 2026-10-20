@@ -30,7 +30,8 @@ vi.mock("@/lib/ai-provider", () => ({
   MISSING_ANTHROPIC_API_KEY_MESSAGE: "Missing Anthropic API key",
 }));
 
-vi.mock("@/lib/ai-provider-usage", () => ({
+vi.mock("@/lib/ai-provider-usage", async () => ({
+  observedProviderUsage: (await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage")).observedProviderUsage,
   estimateAnthropicCostMicrousd: () => 0,
   guardProviderCall: providerUsageMocks.guardProviderCallMock,
   recordProviderUsage: providerUsageMocks.recordProviderUsageMock,
@@ -43,10 +44,6 @@ vi.mock("@/lib/auth", () => ({
     username: "test",
     display_name: "Test Admin",
   })),
-}));
-
-vi.mock("@/lib/research/rate-limit", () => ({
-  checkAdminRateLimit: () => ({ allowed: true }),
 }));
 
 vi.mock("@/lib/research/history", () => ({
@@ -83,7 +80,8 @@ describe("POST /api/hamilton/chat — shared request contract", () => {
 
   beforeEach(() => {
     streamTextMock.mockReset().mockReturnValue({
-      toUIMessageStreamResponse: () => new Response("ok", { status: 200 }),
+      toUIMessageStream: () => new ReadableStream({ start(c) { c.enqueue({ type: "finish", finishReason: "stop" }); c.close(); } }),
+      consumeStream: async () => {},
     });
     briefingMock.mockReset().mockResolvedValue("\nSELECTED INSTITUTION CONTEXT\n- Name: Example Bank\n");
     providerUsageMocks.guardProviderCallMock.mockReset().mockResolvedValue(Date.now());

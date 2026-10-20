@@ -19,6 +19,7 @@ const {
   runMagellanFetchMock,
   runPublicDiscoveryAuditMock,
   runRosettaReadMock,
+  runRosettaPaidReadMock,
   runRegistryStepMock,
 } = vi.hoisted(() => {
   const tx = vi.fn() as TxMock;
@@ -40,6 +41,7 @@ const {
     runMagellanFetchMock: vi.fn(),
     runPublicDiscoveryAuditMock: vi.fn(),
     runRosettaReadMock: vi.fn(),
+    runRosettaPaidReadMock: vi.fn(),
     runRegistryStepMock: vi.fn(),
   };
 });
@@ -92,12 +94,14 @@ vi.mock("@/lib/agents/fee-alerts", () => ({
   summarizeFeeAlertDispatch: vi.fn(() => "Atlas found 2 reader(s) with fee changes but did not email them."),
 }));
 
-vi.mock("@/lib/agents/darwin/verify", () => ({
+vi.mock("@/lib/agents/darwin/verify", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/agents/darwin/verify")>()),
   runDarwinVerify: runDarwinVerifyMock,
 }));
 
 vi.mock("@/lib/agents/hamilton/publish", () => ({
   runHamiltonPublish: runHamiltonPublishMock,
+  HAMILTON_PUBLISH_MIN_INSTITUTION_FEES: 3,
 }));
 
 vi.mock("@/lib/agents/hamilton/change-pairing", () => ({
@@ -150,6 +154,9 @@ vi.mock("@/lib/agents/public-discovery", () => ({
 vi.mock("@/lib/agents/rosetta/read", () => ({
   runRosettaRead: runRosettaReadMock,
 }));
+vi.mock("@/lib/agents/rosetta/paid-read", () => ({ runRosettaPaidRead: runRosettaPaidReadMock }));
+
+import { narrateStepFinished } from "./narrate";
 
 import {
   cancelAgentRun,
@@ -159,12 +166,18 @@ import {
   TICK_EXCLUDED_STEP_KEYS,
   isLaneRoomRun,
   LANE_ROOM_MAX_IDLE_MS,
+  waitedOutMaxSteps,
+  timedSweep,
+  createStepTurns,
   executeQueuedAgentRuns,
+  PARALLEL_STATE_LANES,
   heldByPause,
   startAgentRun,
   reapStaleAgentSteps,
   recordProRequest,
+  withLessonsApplied,
 } from "./run-store";
+import { lessonIds, lessonsForStep } from "./learning/lesson-reader";
 
 const runRow = {
   id: 101,
@@ -383,6 +396,39 @@ describe("agentic run store", () => {
       dryRun: false,
       results: [],
     });
+  });
+
+  it.each([
+    { label: "mixed", processed: 2, succeeded: 1, failed: 1, costMicrousd: 220, unknownCostResponses: 1, budgetStopped: false },
+    { label: "all unknown", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },
+    { label: "known zero", processed: 1, succeeded: 1, failed: 0, costMicrousd: 0, unknownCostResponses: 0, budgetStopped: false },
+    { label: "rejected unknown", processed: 1, succeeded: 0, failed: 1, costMicrousd: 0, unknownCostResponses: 1, budgetStopped: false },
+    { label: "pre-call denied", processed: 0, succeeded: 0, failed: 0, costMicrousd: 0, unknownCostResponses: 0, budgetStopped: true },
+  ])("saves the actual paid dispatch $label cost contract and independently narrates its saved detail", async (fixture) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const paidStep = [{ ...queuedStepRows[0], step_key: "read-paid", agent_name: "rosetta", title: "Read paid" }];
+    const run = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: paidStep }); installTxMocks(paidStep, run);
+    runRosettaPaidReadMock.mockReset().mockResolvedValue({ ...fixture, selected: 2, budgetReason: fixture.budgetStopped ? "Owned fixture cap" : null,
+      dryRun: false, results: [{ cost_microusd: fixture.unknownCostResponses ? null : 0 }] });
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "completed", executedSteps: 1 });
+    expect(runRosettaPaidReadMock).toHaveBeenCalledTimes(1);
+    const finish = txMock.mock.calls.find((call) => templateText(call[0]).includes("'step.finished'"))!;
+    const detail = JSON.parse(finish.at(-1) as string);
+    const summary = String(finish.at(-2));
+    expect(detail).toMatchObject({ processed: fixture.processed, failed: fixture.failed, cost_microusd: fixture.costMicrousd,
+      unknown_cost_responses: fixture.unknownCostResponses, known_cost_subtotal_microusd: fixture.costMicrousd });
+    const narrated = narrateStepFinished("read-paid", detail);
+    if (fixture.unknownCostResponses) {
+      expect(summary).toContain("known estimates; cost unavailable for 1 returned response");
+      expect(narrated).toContain("known estimates; cost unavailable for 1 returned response");
+      expect(detail.sample_results[0].cost_microusd).toBeNull();
+    } else if (fixture.budgetStopped) {
+      expect(summary).toContain("Paid pass skipped"); expect(narrated).toContain("did not run");
+    } else {
+      expect(summary).toContain("for $0.00"); expect(narrated).toContain("for $0.00");
+      expect(narrated).not.toContain("unavailable");
+    }
   });
 
   it("creates a visible blocked run shell without any legacy backend call when execution is disabled", async () => {
@@ -804,6 +850,122 @@ describe("agentic run store", () => {
     );
   });
 
+  async function savedRecheckRun(
+    alias: "classify" | "verify", recheck: unknown,
+    options: { dryRun?: boolean; learning?: boolean; processed?: number; deferred?: number; deferrals?: Array<{ feeRawId: number; reason: string }> } = {},
+  ) {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: alias, agent_name: "darwin", title: "Verify fees" }];
+    const run = { ...runRow, agent_name: "darwin", run_kind: options.dryRun ? "dry_run" : "manual_repair", progress_total: 1, params_json: { verify_limit: 10 } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+    // No auxiliary held/source rows in this fixture; a count row is not a domain row.
+    txMock.unsafe.mockResolvedValue([]);
+    runDarwinVerifyMock.mockResolvedValue({
+      selectedRawFees: 7, processedRawFees: options.processed ?? 7, verifiedFees: 6, skippedFees: 1,
+      deferredRawFees: options.deferred ?? 0, deferrals: options.deferrals ?? [],
+      limit: 10, dryRun: options.dryRun === true, learning: options.learning ?? true, results: [], recheck,
+      outcomes: {}, reasonCounts: {}, zeroFeesVerified: 0, peerFallbackChecks: 0,
+      peerFallbackOutliers: 0, learnedEnvelopeHolds: 0, categoryModelDisputes: 0,
+      feedbackWritten: 0, categoryChange: null, documentOwner: null,
+    });
+    const result = await executeAgentRun(101);
+    expect(runDarwinVerifyMock, "real runner reached verification").toHaveBeenCalledTimes(1);
+    expect(result, "runner completed before receipt assertions").toMatchObject({ status: "completed", executedSteps: 1 });
+    const finished = txMock.mock.calls.filter(call => templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    expect(finished, "real finishAgenticStep emitted exactly one saved JSON INSERT").toHaveLength(1);
+    expect(finished[0].at(-1)).toEqual(expect.any(String));
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ selected_raw_fees: 7, processed_raw_fees: options.processed ?? 7, verified_fee_observations: 6, skipped_raw_fees: 1 });
+    expect(combinedTransactionSql()).not.toContain("'step.failed'");
+    return { detail, message: String(finished[0].at(-2)) };
+  }
+
+  const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
+
+  it("saves bounded unresolved-admission receipts without source context and excludes deferred zeros from settled counts", async () => {
+    const zero = await import("./darwin/conditional-zero-resolve");
+    const zeroSpy = vi.spyOn(zero, "runDarwinConditionalZeroResolve").mockResolvedValue({
+      selected: 4, verified: 1, dryRun: false, verdicts: { conditional_zero_free_on_schedule: 1 },
+      deferred: 2, deferrals: [{ feeRawId: 89, reason: "no_original_hash" }],
+    });
+    try {
+      const samples = Array.from({ length: 30 }, (_, index) => ({ feeRawId: index + 1,
+        reason: index === 0 ? "SECRET source stack" : "no_original_hash", sourceContext: "SECRET source body" }));
+      const { detail, message } = await savedRecheckRun("verify", recheckZero, { deferred: 30, deferrals: samples });
+      expect(detail.deferred_raw_fees).toBe(30);
+      expect(detail.verification_deferrals).toHaveLength(25);
+      expect(detail.verification_deferrals[0]).toEqual({ feeRawId: 1, reason: "admission_unresolved" });
+      expect(JSON.stringify(detail.verification_deferrals)).not.toContain("SECRET");
+      expect(detail.conditional_zero).toMatchObject({ selected: 4, settled: 2, deferred: 2,
+        deferrals: [{ feeRawId: 89, reason: "no_original_hash" }] });
+      expect(message).toContain("30 row(s) deferred without a verification decision");
+      expect(message).toContain("Settled 2 conditional-$0 hold(s)");
+      expect(message).toContain("2 conditional-$0 hold(s) deferred without a decision");
+    } finally {
+      zeroSpy.mockRestore();
+    }
+  });
+
+  it.each(["classify", "verify"] as const)("saves nonzero producer reports through %s → real finish INSERT", async alias => {
+    const { detail, message } = await savedRecheckRun(alias, {
+      ...recheckZero, checked: 2, passed: 1, restored: [9], flagged: 1, secondLookOtherCode: 1,
+      dueSecondLooks: { due: 3, wouldConfirm: { conditional_zero: 2 }, wouldClear: 1, samples: [] },
+    });
+    expect(detail.recheck).toMatchObject({ state: "reported", assessmentCompleteness: "unknown", checked: 2, passed: 1,
+      restored: { reportedCount: 1, samples: [{ feeVerifiedId: 9 }] }, secondLookOtherCode: 1,
+      dueSecondLooks: { due: 3, wouldConfirm: { conditional_zero: 2 }, wouldClear: 1 } });
+    expect(message).toContain("Recheck producer report: 2 checked");
+    expect(message).toContain("reported IDs do not verify affected rows");
+  });
+
+  it("saves visible partial errors and counters without raw text or invented complements", async () => {
+    const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 1, passed: 1,
+      olderLive: { read: 1, wouldFail: {}, samples: [], error: "SECRET source read stack" },
+      dueSecondLooks: { due: 2, wouldConfirm: {}, samples: [], error: "SECRET fee name" },
+    });
+    expect(detail.recheck.olderLive).toMatchObject({ read: 1, hasError: true, errorCode: "shadow_assessment_error" });
+    expect(detail.recheck.dueSecondLooks).toMatchObject({ due: 2, wouldClear: null, hasError: true, state: "invalid" });
+    expect(JSON.stringify(detail.recheck)).not.toContain("SECRET");
+    expect(message).toContain("assessment error reported");
+  });
+
+  it("saves reported zero distinctly with unknown completeness", async () => {
+    const { detail, message } = await savedRecheckRun("classify", recheckZero);
+    expect(detail.recheck).toMatchObject({ state: "reported", checked: 0, passed: 0, assessmentCompleteness: "unknown", olderLive: { state: "not_reported" } });
+    expect(message).toContain("0 checked");
+    expect(message).not.toContain("backlog");
+  });
+
+  it.each([
+    ["null", null, {}, "unavailable", "missing_report"],
+    ["missing", undefined, {}, "unavailable", "missing_report"],
+    ["dry run", null, { dryRun: true, learning: false }, "not_run", "dry_run"],
+    ["learning unavailable", null, { learning: false }, "not_run", "learning_unavailable"],
+    ["malformed", { checked: "7" }, {}, "invalid", "invalid_report"],
+  ])("keeps a completed verification step independent of its %s recheck disposition", async (_label, input, options, state, reasonCode) => {
+    const { detail } = await savedRecheckRun("verify", input, options);
+    expect(detail.recheck).toMatchObject({ state, reasonCode, checked: null, assessmentCompleteness: "unknown" });
+  });
+
+  it("keeps the recheck summary even when no new raw fees were processed", async () => {
+    const { detail, message } = await savedRecheckRun("verify", { ...recheckZero, checked: 3 }, { processed: 0 });
+    expect(detail.processed_raw_fees).toBe(0);
+    expect(message).toContain("Recheck producer report: 3 checked");
+  });
+
+  it.each(["classify", "verify"] as const)("saves a v2 producer-event reference through %s with no new raw rows",async alias=>{
+    const {detail,message}=await savedRecheckRun(alias,{...recheckZero,secondLookOtherCode:1,checked:3,restored:[9],flagged:1,waiting:1,execution:{
+      protocol:"darwin.recheck.execution.v1",scope:"selected_batch",state:"partial",runId:runRow.id,stepId:queuedStepRows[0].id,eventId:700,
+      batchKey:"fixture-batch",selected:5,assessed:4,settled:3,unresolved:1,reasonCode:null,samples:[{feeVerifiedId:10,code:"identity_changed"}],
+      phases:{primary:"complete",due:"complete",source:"complete",olderShadow:"cadence_skip",dueShadow:"reported_unknown"},
+    }},{processed:0});
+    expect(detail.recheck).toMatchObject({protocol:"darwin.recheck.receipt.v2",state:"referenced",producerEventId:700,assessmentCompleteness:"partial",effects:{restored:1}});
+    expect(message).toContain("witness #700");expect(message).toContain("whole backlog unknown");
+    expect(message).toContain("1 flagged/pending, 1 waiting, 1 other-code pending");
+    expect(message).toContain("do not finalize a fee decision");
+  });
+
   it("runs Darwin verification through the agentic worker instead of measuring only", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const verifyStepRows = [
@@ -904,6 +1066,56 @@ describe("agentic run store", () => {
     );
   });
 
+  it.each([true, false])("saves the real publisher's evidence availability through finishAgenticStep (fault=%s)", async (fault) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: "publish", agent_name: "hamilton", title: "Publish verified fees" }];
+    const run = { ...runRow, agent_name: "hamilton", run_kind: "manual_repair", progress_total: 1,
+      params_json: { institution_id: 42, publish_limit: 10, publish_min_institution_fees: 1 } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+    const base = txMock.getMockImplementation() as (strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown[]>;
+    txMock.mockImplementation((strings: TemplateStringsArray, ...params: unknown[]) =>
+      templateText(strings).includes("INSERT INTO published_fee_records")
+        ? Promise.resolve([{ fee_published_id: 1201 }]) : base(strings, ...params));
+    txMock.unsafe.mockImplementation((query: string) => {
+      if (query.includes("same_line_reselect") && query.includes("document_crawled_at")) return Promise.resolve([{
+        fee_verified_id: 801, fee_raw_id: 701, institution_id: 42, source_url: "https://testbank.example/fees",
+        extraction_confidence: 0.92, canonical_fee_key: "overdraft", fee_audience: "consumer",
+        outlier_flags: ["agentic_darwin_verified"], verified_by_agent_event_id: "00000000-0000-4000-8000-000000000801",
+        fee_name: "Overdraft fee", amount: 35, frequency: "per_item", source_document_id: 77,
+      }]);
+      if (fault && query.includes("consumer_fee_id") && query.includes("fv.fee_verified_id = ANY")) {
+        return Promise.reject(new Error("SECRET SQL source stack"));
+      }
+      return Promise.resolve([]);
+    });
+    const actual = await vi.importActual<typeof import("./hamilton/publish")>("./hamilton/publish");
+    let publication: Awaited<ReturnType<typeof actual.runHamiltonPublish>> | undefined;
+    runHamiltonPublishMock.mockImplementationOnce(async (options: Parameters<typeof actual.runHamiltonPublish>[0]) => {
+      publication = await actual.runHamiltonPublish(options);
+      return publication;
+    });
+    const result = await executeAgentRun(101);
+    expect(result).toMatchObject({ status: "completed", executedSteps: 1 });
+    expect(runHamiltonPublishMock).toHaveBeenCalledTimes(1);
+    expect(publication?.selectedVerifiedFees, "real publisher selected the controlled fee").toBe(1);
+    expect(publication?.publishedFees).toBe(fault ? 0 : 1);
+    const finished = txMock.mock.calls.filter(call =>
+      templateText(call[0]).includes("INSERT INTO agent_run_events") && templateText(call[0]).includes("'step.finished'"));
+    expect(finished, "real finishAgenticStep saved one JSON receipt").toHaveLength(1);
+    const detail = JSON.parse(String(finished[0].at(-1)));
+    expect(detail).toMatchObject({ published_fees: fault ? 0 : 1, evidence_deferred_verified_fees: fault ? 1 : 0,
+      publication_evidence_check: { protocol: "publish.evidence.v1", readState: fault ? "unavailable" : "available", deferred: fault ? 1 : 0 } });
+    if (fault) {
+      expect(detail.publication_evidence_check.unavailableChecks).toEqual(["business_schedule"]);
+      expect(String(finished[0].at(-2))).toContain("left pending because required publication evidence was unavailable");
+      expect(combinedTransactionSql()).not.toContain("INSERT INTO published_fee_records");
+      expect(combinedTransactionSql()).not.toContain("INSERT INTO pipeline_attempts");
+    }
+    expect(JSON.stringify(detail)).not.toContain("SECRET");
+    expect(combinedTransactionSql()).not.toContain("'step.failed'");
+  });
+
   it("reuses an active idempotent run instead of creating a duplicate", async () => {
     sqlMock
       .mockResolvedValueOnce([{ ...runRow, status: "running" }])
@@ -984,18 +1196,29 @@ describe("agentic run store", () => {
     expect(order).not.toContain("discover.operator_schedule");
   });
 
-  it("runs a state whose report James is waiting to review right after failed-lane retries", async () => {
-    sqlMock.mockResolvedValue([]);
+  it.each([
+    { at: "2026-10-19T23:59:59.999Z", states: ["TN"], phase: "through the inclusive UTC end day" },
+    { at: "2026-10-20T00:00:00.000Z", states: [], phase: "after the review boost expires" },
+  ])("keeps report-review ordering $phase (#2420)", async ({ at, states }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(at));
+    try {
+      sqlMock.mockResolvedValue([]);
 
-    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+      await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
 
-    const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
-    const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
-    const retry = order.indexOf("= 'failed') DESC");
-    const review = order.indexOf("::text[])) DESC");
-    expect(review).toBeGreaterThan(retry);
-    expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
-    expect(call!.slice(1)).toEqual(expect.arrayContaining([["TN"]]));
+      const call = sqlMock.mock.calls.find(([strings]) => templateText(strings as TemplateStringsArray).includes("SELECT r.id"));
+      const order = templateText(call![0] as TemplateStringsArray).slice(templateText(call![0] as TemplateStringsArray).indexOf("ORDER BY"));
+      const retry = order.indexOf("= 'failed') DESC");
+      const review = order.indexOf("::text[])) DESC");
+      expect(review).toBeGreaterThan(retry);
+      expect(order.indexOf("INTERVAL '1 hour'")).toBeGreaterThan(review);
+      const reviewBinding = (call![0] as TemplateStringsArray).findIndex((part) => part.endsWith("AND upper(btrim(r.state_code)) = ANY("));
+      expect(reviewBinding).toBeGreaterThanOrEqual(0);
+      expect(call![reviewBinding + 1]).toEqual(states);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("runs Atlas's direct institution runs right after runs already under way", async () => {
@@ -1174,6 +1397,44 @@ describe("agentic run store", () => {
     ).resolves.toMatchObject({ executedSteps: 1 });
   });
 
+  it("times each publish sweep under its key and returns its result unchanged (sweep_ms)", async () => {
+    const times: Record<string, number> = {};
+    await expect(timedSweep(times, "taxonomyFold", async () => ({ moved: 3 }))).resolves.toEqual({ moved: 3 });
+    await expect(timedSweep(times, "categoryGuard", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
+    expect(Object.keys(times).sort()).toEqual(["categoryGuard", "taxonomyFold"]);
+    expect(Object.values(times).every((ms) => Number.isFinite(ms) && ms >= 0)).toBe(true);
+  });
+
+  it("a waited-out Read-now run given every step stops at the deadline: it runs what fits, then defers the next (#1846 review)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: true, reason: null });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const readNowRun = { ...runRow, progress_total: 3, params_json: { source: "atlas.priority_institution" } };
+    const runSteps = [...briefStep, { ...briefStep[0], id: 9002, step_key: "publish", sequence: 2 }, { ...briefStep[0], id: 9003, step_key: "publish", sequence: 3 }];
+    installSqlMocks({ finalRun: readNowRun, finalSteps: runSteps });
+    installTxMocks(runSteps, readNowRun);
+    // The run's queue: the brief runs as the tick's first step; then its publish (120 s at Read-now
+    // prices) does not fit the 50 s left, nor would a third step.
+    const queue = ["daily-brief", "publish", "publish"];
+    let peeks = 0;
+    const base = sqlMock.getMockImplementation()!;
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT step_key") && text.includes("LIMIT 1")) {
+        const key = queue[Math.min(peeks, queue.length - 1)];
+        peeks += 1;
+        return Promise.resolve([{ step_key: key }]);
+      }
+      return base(strings, ...values);
+    });
+
+    const result = await executeAgentRun(101, { maxSteps: waitedOutMaxSteps("atlas.priority_institution", 10), deadlineAt: Date.now() + 50_000 });
+    expect(result.executedSteps).toBe(1);
+    const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
+    expect(deferred).toHaveLength(1);
+    expect(JSON.parse(String(deferred[0][3]))).toMatchObject({ step_key: "publish", expected_ms: 120_000 });
+  });
+
   it("starts no step in a later run of the tick when that step cannot finish by the deadline", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
@@ -1185,6 +1446,23 @@ describe("agentic run store", () => {
     await expect(
       executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false }),
     ).resolves.toMatchObject({ executedSteps: 0 });
+  });
+
+  it("writes one step.deferred event naming the step, its expected time and the time left (2026-10-17)", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Operator maintenance" });
+    const briefStep = [{ ...queuedStepRows[0], step_key: "daily-brief", agent_name: "atlas", title: "Daily brief" }];
+    const briefRun = { ...runRow, progress_total: 1 };
+    installSqlMocks({ finalRun: briefRun, finalSteps: briefStep });
+    installTxMocks(briefStep, briefRun);
+
+    await executeAgentRun(101, { maxSteps: 5, deadlineAt: Date.now() + 60_000, alwaysRunFirstStep: false });
+    const deferred = sqlMock.mock.calls.filter(([strings]) => templateText(strings as TemplateStringsArray).includes("'step.deferred'"));
+    expect(deferred).toHaveLength(1);
+    const values = deferred[0].slice(1) as unknown[];
+    expect(values[0]).toBe(101);
+    expect(String(values[1])).toMatch(/left queued: it needs about \d+ s and the tick has \d+ s left/);
+    expect(JSON.parse(String(values[2]))).toMatchObject({ step_key: "daily-brief", expected_ms: expect.any(Number) });
   });
 
   it("starts no lower lane in a tick once a higher lane is held for the deadline", async () => {
@@ -1212,10 +1490,57 @@ describe("agentic run store", () => {
       return Promise.resolve([]);
     });
 
-    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000 });
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000, parallelLanes: 1 });
 
     expect(result.results.map((run) => run.runId)).toEqual([101, 102, 104]);
     expect(result.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
+
+    // Side by side, the next lanes run in the same group as the held one, never after it.
+    const sideBySide = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 100_000, parallelLanes: 3 });
+    expect(sideBySide.results.map((run) => run.runId)).toEqual([101, 102, 103, 104]);
+    expect(sideBySide.results[1]).toMatchObject({ executedSteps: 0, heldForDeadline: true });
+  });
+
+  it("starts up to PARALLEL_STATE_LANES lanes before any of them finishes", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    let inFlight = 0;
+    let most = 0;
+    sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = templateText(strings);
+      if (text.includes("SELECT r.id")) {
+        return Promise.resolve([101, 102, 103, 104].map((id) => ({ id, run_kind: "workflow_lane" })));
+      }
+      if (text.includes("FROM agent_runs") && text.includes("WHERE id =")) {
+        inFlight += 1;
+        most = Math.max(most, inFlight);
+        // Finished runs do nothing, so each lane's whole visit is this read.
+        return new Promise((resolve) => setTimeout(() => {
+          inFlight -= 1;
+          resolve([{ ...runRow, id: values[0], status: "completed" }]);
+        }, 5));
+      }
+      return Promise.resolve([]);
+    });
+
+    const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+
+    expect(PARALLEL_STATE_LANES).toBe(3);
+    expect(most).toBe(3);
+    expect(result.results.map((run) => run.runId)).toEqual([101, 102, 103, 104]);
+  });
+
+  it("gives lanes side by side one publish step at a time", async () => {
+    const turns = createStepTurns();
+    const order: string[] = [];
+    const lane = async (name: string) => {
+      const release = await turns.take();
+      order.push(`${name} start`);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      order.push(`${name} end`);
+      release();
+    };
+    await Promise.all([lane("a"), lane("b"), lane("c")]);
+    expect(order).toEqual(["a start", "a end", "b start", "b end", "c start", "c end"]);
   });
 
   it("holds a Read-now run that would leave the lane behind it no room for its first work", async () => {
@@ -1291,29 +1616,107 @@ describe("agentic run store", () => {
     expect(started.heldForDeadline).toBeUndefined();
     expect(withTransactionMock).toHaveBeenCalled();
 
-    // A Read-now run keeps leaving the lane its room however long it waits.
+    // A Read-now run's publish (225 s since the 2026-10-17 re-measure) never fits the room a fresh
+    // lane leaves either, so it waits out lane room the same way and starts by the fourth tick.
     const readNow = { source: "atlas.priority_institution", step: "publish" };
-    for (const n of [0, 3, 12]) {
+    for (const n of [0, 1, 2]) {
       expect(await tick(n, readNow)).toMatchObject({ runId: 101, executedSteps: 0, heldForDeadline: true });
     }
+    withTransactionMock.mockClear();
+    const readNowStarted = await tick(3, readNow);
+    expect(readNowStarted.heldForDeadline).toBeUndefined();
+    expect(withTransactionMock).toHaveBeenCalled();
+  });
+
+  it("prices a Read-now run's steps at its own p99s, not a lane's (Oct 17, runs 8086 and 8104)", () => {
+    const readNow = "atlas.priority_institution";
+    expect(expectedStepMs("publish", readNow)).toBe(120_000);
+    expect(expectedStepMs("extract", readNow)).toBe(110_000);
+    expect(expectedStepMs("classify", readNow)).toBe(60_000);
+    // Unlisted steps and other runs keep the lane's prices.
+    expect(expectedStepMs("discover", readNow)).toBe(expectedStepMs("discover"));
+    expect(expectedStepMs("publish", "atlas.priority_state_research")).toBe(expectedStepMs("publish"));
+    expect(expectedStepMs("publish", null)).toBe(225_000);
+    expect(expectedMsToFirstWork(["classify", "publish"], readNow)).toBe(60_000);
+  });
+
+  it("keeps the hourly lane sync out of the tick and prices it at its measured in-tick p99 (2026-10-18)", () => {
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("lane-sync");
+    expect(expectedStepMs("lane-sync")).toBe(200_000);
+  });
+
+  it("prices the publish-sweeps step at the moved sweeps' measured p99 and keeps the publish price (PR B)", () => {
+    expect(expectedStepMs("publish-sweeps")).toBe(205_000);
+    expect(expectedStepMs("publish")).toBe(225_000);
+  });
+
+  it("starts a Read-now run's next step in the next tick behind a fresh lane, without waiting out lane room", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    // A fresh lane's first work (enhance + state-expert + discover, 195 s) leaves the Read-now run
+    // 75 s of the 270 s tick. Its classify (60 s here, 160 s at lane prices) fits, so it does not
+    // wait LANE_ROOM_MAX_IDLE_MS: each tick takes its next step.
+    const tick = async (step: string) => {
+      sqlMock.mockReset();
+      withTransactionMock.mockClear();
+      txMock.mockResolvedValue([]);
+      sqlMock.mockImplementation((strings: TemplateStringsArray, ...values: unknown[]) => {
+        const text = templateText(strings);
+        if (text.includes("SELECT r.id")) {
+          return Promise.resolve([
+            { id: 101, run_kind: "manual_repair", source: "atlas.priority_institution", idle_ms: "600000" },
+            { id: 202, run_kind: "workflow_lane", source: null, idle_ms: "0" },
+          ]);
+        }
+        if (text.includes("SELECT step_key")) {
+          return Promise.resolve(values[0] === 101 ? [{ step_key: step }] : [{ step_key: "enhance" }, { step_key: "state-expert" }, { step_key: "discover" }]);
+        }
+        if (text.includes("FROM agent_runs")) {
+          return Promise.resolve([{ ...runRow, id: values[0], status: values[0] === 101 ? "queued" : "completed", params_json: values[0] === 101 ? { source: "atlas.priority_institution" } : {} }]);
+        }
+        return Promise.resolve([]);
+      });
+      const result = await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10, deadlineAt: Date.now() + 270_000 });
+      return { result: result.results[0], claimed: withTransactionMock.mock.calls.length > 0 };
+    };
+    const classify = await tick("classify");
+    expect(classify.result.heldForDeadline).toBeUndefined();
+    expect(classify.claimed).toBe(true);
+    // Its publish, priced at its p99 (120 s, 2026-10-18), does not fit those 75 s: it waits for a
+    // tick with room, or for LANE_ROOM_MAX_IDLE_MS, rather than starting and being killed.
+    const publish = await tick("publish");
+    expect(publish.claimed).toBe(false);
+    // Waited out (idle past LANE_ROOM_MAX_IDLE_MS), a Read-now run takes every step that fits;
+    // a state re-search run still takes one (#1586).
+    expect(waitedOutMaxSteps("atlas.priority_institution", 10)).toBe(10);
+    expect(waitedOutMaxSteps("atlas.priority_state_research", 10)).toBe(1);
+    // At lane prices the same classify would not fit the room the lane leaves.
+    expect(expectedMsToFirstWork(["classify"])).toBeGreaterThan(270_000 - expectedMsToFirstWork(["enhance", "state-expert", "discover"]));
   });
 
   it("counts a lane run's quick first steps together with the first real step", () => {
     // enhance + state-expert are quick; a later run must also fit discover, or it would
     // count as under way after only the quick steps and jump ahead of retries.
-    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(175_000);
-    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(30_000);
-    expect(expectedMsToFirstWork(["public-discovery"])).toBe(30_000);
+    expect(expectedMsToFirstWork(["enhance", "state-expert", "discover", "discover-paid"])).toBe(195_000);
+    expect(expectedMsToFirstWork(["fetch", "read"])).toBe(45_000);
+    // public-discovery has its own measured entry now, so it is real work, not a quick step.
+    expect(expectedMsToFirstWork(["public-discovery"])).toBe(60_000);
     expect(expectedMsToFirstWork([])).toBe(0);
   });
 
   it("expects long steps to need most of a tick and quick ones only seconds", () => {
-    // Re-measured 2026-10-15 (about p90 with a margin): discover-paid runs in seconds, publish about 80 s.
-    expect(expectedStepMs("discover-paid")).toBe(10_000);
+    // Re-measured 2026-10-17 at about p99 over 24 hours: publish, extract, classify and
+    // discover-paid ran past their old settings and were killed at the tick's 300 s limit.
+    expect(expectedStepMs("discover-paid")).toBe(165_000);
     expect(expectedStepMs("hamilton-answer-eval")).toBe(400_000);
     expect(TICK_EXCLUDED_STEP_KEYS).toContain("hamilton-answer-eval");
-    expect(expectedStepMs("publish")).toBe(105_000);
-    expect(expectedStepMs("public-discovery")).toBe(30_000);
+    expect(expectedStepMs("publish")).toBe(225_000);
+    expect(expectedStepMs("extract")).toBe(165_000);
+    expect(expectedStepMs("classify")).toBe(160_000);
+    expect(expectedStepMs("public-discovery")).toBe(60_000);
+    // Every measured step still fits inside the tick's 270 s budget from the start of a tick.
+    for (const key of ["publish", "extract", "classify", "discover-paid", "discover", "extract-paid", "fetch", "read"]) {
+      expect(expectedStepMs(key), key).toBeLessThan(270_000);
+    }
     expect(expectedStepMs("registry-fdic-sod")).toBe(30_000);
     // registry-cfpb ran 172 s, so its own entry wins over the quick registry- prefix.
     expect(expectedStepMs("registry-cfpb")).toBe(180_000);
@@ -1370,6 +1773,31 @@ describe("agentic run store", () => {
     expect(combinedSql).toContain("SET status = 'failed'");
     expect(combinedSql).toContain("SET status = 'cancelled'");
   });
+
+  it("records the deploy on a reaper death, as a step failure does (#2014)", async () => {
+    const previous = process.env.VERCEL_GIT_COMMIT_SHA;
+    process.env.VERCEL_GIT_COMMIT_SHA = "deploy-2014";
+    try {
+      sqlMock.mockImplementation((strings: TemplateStringsArray) => {
+        const text = templateText(strings);
+        if (text.includes("AS prior_reaps")) {
+          return Promise.resolve([{ id: 9, agent_run_id: 242, step_key: "publish", prior_reaps: 2 }]);
+        }
+        return Promise.resolve([]);
+      });
+      txMock.mockResolvedValue([]);
+
+      await reapStaleAgentSteps({ maxAttempts: 3 });
+
+      const deadCall = txMock.mock.calls.find((call) => (call[0] as string[]).join("?").includes("'step.dead'"));
+      expect(deadCall).toBeDefined();
+      const detail = JSON.parse(String(deadCall!.at(-1)));
+      expect(detail).toMatchObject({ step_key: "publish", attempts: 3, reaper: true, deploy: "deploy-2014" });
+    } finally {
+      if (previous === undefined) delete process.env.VERCEL_GIT_COMMIT_SHA;
+      else process.env.VERCEL_GIT_COMMIT_SHA = previous;
+    }
+  });
 });
 
 describe("recordProRequest", () => {
@@ -1410,6 +1838,20 @@ describe("recordProRequest", () => {
     await expect(
       recordProRequest({ operation: "thesis", title: "t", status: "failed", summary: "s", userId: null }),
     ).resolves.toBeNull();
+  });
+});
+
+describe("lessons_applied on a finished step", () => {
+  it("records the ids of the role lessons that shaped the step, keeping its own detail", () => {
+    const outcome = withLessonsApplied({ agent: "knox", stepKey: "extract-paid" }, { status: "completed", summary: "s", detail: { processed: 3 } });
+    const expected = lessonIds(lessonsForStep("knox", "extract-paid"));
+    expect(expected.length).toBeGreaterThan(0);
+    expect(outcome.detail).toEqual({ processed: 3, lessons_applied: expected });
+  });
+
+  it("leaves a step whose agent keeps no lessons unchanged", () => {
+    const outcome = { status: "completed" as const, summary: "s", detail: { a: 1 } };
+    expect(withLessonsApplied({ agent: "growth", stepKey: "growth-score" }, outcome)).toBe(outcome);
   });
 });
 

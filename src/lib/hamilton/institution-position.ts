@@ -1,12 +1,13 @@
 /**
- * Where the selected institution's fees sit against its benchmark: its own value per
- * category (the statistics contract's per-institution median) against the peer median
- * Hamilton resolves for it. Deterministic, no AI. Priority comes from the size of the
+ * Where the selected institution's fees sit against its benchmark: the price its schedule
+ * states per category against the peer median Hamilton resolves for it. A category where it
+ * states several different fees shows their range and no gap: their median is no price. Deterministic, no AI. Priority comes from the size of the
  * gap, never from how much data exists.
  */
 
 import { getInstitutionById } from "@/lib/data-store";
-import { getInstitutionFeeValues, type IndexEntry } from "@/lib/data-store/fee-index";
+import { getInstitutionOwnFees, type IndexEntry } from "@/lib/data-store/fee-index";
+import type { InstitutionOwnFee, OwnFeeLine } from "@/lib/own-fee";
 import { DISPLAY_NAMES } from "@/lib/fee-taxonomy";
 import { resolveHamiltonPeerIndex, type HamiltonPeerIndexSource } from "./peer-index";
 
@@ -20,15 +21,22 @@ const MAX_POSITION_ROWS = 8;
 export interface InstitutionPositionEntry {
   feeCategory: string;
   displayName: string;
-  yourAmount: number;
+  /** The price the schedule states; null when it states several different fees in the category. */
+  yourAmount: number | null;
+  /** The lowest and highest of its fees in the category (equal when it states one). */
+  yourLow: number;
+  yourHigh: number;
+  /** Each of its fees in the category, lowest first. */
+  yourFees: OwnFeeLine[];
   benchmarkMedian: number;
   /** The benchmark's middle half (25th to 75th percentile); null when too few institutions. */
   benchmarkP25: number | null;
   benchmarkP75: number | null;
   benchmarkCount: number;
   maturityTier: IndexEntry["maturity_tier"];
-  gapAmount: number;
-  /** Percent above (+) or below (-) the benchmark median; null when the median is $0. */
+  /** Null when the institution has no single price for the category. */
+  gapAmount: number | null;
+  /** Percent above (+) or below (-) the benchmark median; null when the median is $0 or there is no single price. */
   gapPct: number | null;
 }
 
@@ -81,30 +89,34 @@ export function buildInstitutionPositioning(params: {
   fedDistrict?: number | null;
   benchmark: (Pick<IndexEntry, "fee_category" | "median_amount" | "institution_count" | "maturity_tier">
     & Partial<Pick<IndexEntry, "p25_amount" | "p75_amount">>)[];
-  ownValues: Map<string, number>;
+  ownFees: Map<string, Pick<InstitutionOwnFee, "price" | "low" | "high" | "fees">>;
 }): InstitutionPositioning {
   const benchmarkByCategory = new Map(params.benchmark.map((entry) => [entry.fee_category, entry]));
   const entries: InstitutionPositionEntry[] = [];
-  for (const [category, yourAmount] of params.ownValues) {
+  for (const [category, own] of params.ownFees) {
     const benchmark = benchmarkByCategory.get(category);
     if (!benchmark || benchmark.median_amount === null) continue;
     const median = benchmark.median_amount;
-    const gapAmount = yourAmount - median;
+    const yourAmount = own.price;
+    const gapAmount = yourAmount === null ? null : yourAmount - median;
     entries.push({
       feeCategory: category,
       displayName: displayNameFor(category),
       yourAmount,
+      yourLow: own.low,
+      yourHigh: own.high,
+      yourFees: own.fees,
       benchmarkMedian: median,
       benchmarkP25: benchmark.p25_amount ?? null,
       benchmarkP75: benchmark.p75_amount ?? null,
       benchmarkCount: benchmark.institution_count,
       maturityTier: benchmark.maturity_tier,
       gapAmount,
-      gapPct: median === 0 ? null : (gapAmount / median) * 100,
+      gapPct: gapAmount === null || median === 0 ? null : (gapAmount / median) * 100,
     });
   }
   entries.sort((a, b) => gapSize(b) - gapSize(a) || a.displayName.localeCompare(b.displayName));
-  const topGap = entries[0] ?? null;
+  const topGap = entries.find((entry) => entry.gapAmount !== null) ?? null;
   return {
     institutionId: params.institutionId,
     institutionName: params.institutionName,
@@ -113,7 +125,7 @@ export function buildInstitutionPositioning(params: {
     stateCode: params.stateCode ?? null,
     fedDistrict: params.fedDistrict ?? null,
     entries: keepOverdraft(entries, MAX_POSITION_ROWS),
-    ownFeeCount: params.ownValues.size,
+    ownFeeCount: params.ownFees.size,
     topGap,
     priority: topGap ? gapPriority(topGap.gapPct) : null,
   };
@@ -129,9 +141,9 @@ export async function fetchInstitutionPositioning(
 ): Promise<InstitutionPositioning | null> {
   const institution = await getInstitutionById(institutionId);
   if (!institution) return null;
-  const [peerIndex, ownValues] = await Promise.all([
+  const [peerIndex, ownFees] = await Promise.all([
     resolveHamiltonPeerIndex({ selectedInstitution: institution, institutionId, userId: userId ?? null }),
-    getInstitutionFeeValues(institutionId),
+    getInstitutionOwnFees(institutionId),
   ]);
   return buildInstitutionPositioning({
     institutionId,
@@ -141,6 +153,6 @@ export async function fetchInstitutionPositioning(
     stateCode: institution.state_code ?? null,
     fedDistrict: institution.fed_district ?? null,
     benchmark: peerIndex.entries,
-    ownValues,
+    ownFees,
   });
 }

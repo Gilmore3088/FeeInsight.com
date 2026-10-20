@@ -3,6 +3,7 @@ import { listScoreboardSnapshots, scoreboardSchemaReady, type ScoreboardSnapshot
 import { sql } from "@/lib/data-store/connection";
 import { getSpendSummary, type SpendLine } from "@/lib/data-store/console-spend";
 import { formatAdminDateTime } from "@/lib/admin-time";
+import { readAgentLessons, type StoredLesson } from "@/lib/agents/learning/lesson-sync";
 import { VitalsRow, type Vital } from "./today-panels";
 
 /**
@@ -140,6 +141,8 @@ async function readRecentSteps(agent: FrameAgent): Promise<RecentStep[]> {
     SELECT id, step_key, title, status, summary, error_summary, queued_at, started_at, completed_at
       FROM agent_run_steps
      WHERE agent_name = ${agent}
+       -- Registry steps under Magellan's name before #1865 are Hoovie's, not Magellan's.
+       AND NOT (agent_name = 'magellan' AND step_key LIKE 'registry-%')
        AND updated_at > NOW() - INTERVAL '7 days'
      ORDER BY COALESCE(completed_at, started_at, queued_at) DESC
      LIMIT ${RECENT_STEP_LIMIT}
@@ -166,8 +169,53 @@ const STATUS_TONE: Record<string, string> = {
   queued: "bg-gray-300 dark:bg-white/20",
 };
 
+const REPO_BASE = "https://github.com/Gilmore3088/FeeInsight.com/";
+
+/** The links under a lesson: its issues, the PRs that fixed them, and the files they name. */
+export function lessonEvidenceLinks(lesson: Pick<StoredLesson, "issues" | "prs" | "files">): Array<{ label: string; href: string }> {
+  return [
+    ...lesson.issues.map((n) => ({ label: `#${n}`, href: `${REPO_BASE}issues/${n}` })),
+    ...lesson.prs.map((n) => ({ label: `PR #${n}`, href: `${REPO_BASE}pull/${n}` })),
+    ...lesson.files.map((path) => ({ label: path.split("/").pop() ?? path, href: `${GUIDE_BASE}${path}` })),
+  ];
+}
+
+/** "What this agent has learned": its active role lessons from agent_lessons, newest first. */
+function LearnedLessons({ lessons }: { lessons: StoredLesson[] | null }) {
+  return (
+    <div className="admin-card space-y-2 p-4">
+      <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">What this agent has learned</h2>
+      {lessons == null ? (
+        <p className="text-xs text-red-700 dark:text-red-300">The lessons table could not be read.</p>
+      ) : lessons.length === 0 ? (
+        <p className="text-xs text-gray-500">No lessons yet. A PR that fixes a mistake rooted in this agent adds one to its role-lessons.ts.</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {lessons.map((lesson) => (
+            <li key={lesson.id} className="text-xs text-gray-700 dark:text-gray-300">
+              <p className="font-semibold text-gray-900 dark:text-gray-100">{lesson.lesson}</p>
+              {lesson.why ? <p className="text-gray-500">Why: {lesson.why}</p> : null}
+              <p className="text-gray-500">
+                {lesson.since ? `Since ${lesson.since}` : lesson.id}
+                {lessonEvidenceLinks(lesson).map((link) => (
+                  <span key={link.href}>
+                    {" · "}
+                    <a href={link.href} target="_blank" rel="noreferrer" className="font-semibold text-[var(--brand-primary)]">
+                      {link.label}
+                    </a>
+                  </span>
+                ))}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export async function AgentFrame({ agent }: { agent: FrameAgent }) {
-  const [snapshot, spend, steps] = await Promise.all([
+  const [snapshot, spend, steps, lessons] = await Promise.all([
     getCachedLatestSnapshot().catch((error) => {
       console.error(`Agent frame (${agent}) scorecard read failed`, error);
       return null;
@@ -178,6 +226,10 @@ export async function AgentFrame({ agent }: { agent: FrameAgent }) {
     }),
     readRecentSteps(agent).catch((error) => {
       console.error(`Agent frame (${agent}) recent steps read failed`, error);
+      return null;
+    }),
+    readAgentLessons(sql, agent).catch((error) => {
+      console.error(`Agent frame (${agent}) lessons read failed`, error);
       return null;
     }),
   ]);
@@ -220,6 +272,7 @@ export async function AgentFrame({ agent }: { agent: FrameAgent }) {
           </ul>
         )}
       </div>
+      <LearnedLessons lessons={lessons} />
     </section>
   );
 }

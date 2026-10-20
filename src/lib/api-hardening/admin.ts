@@ -1,3 +1,4 @@
+import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { sql } from "@/lib/data-store/connection";
 
 export interface ApiTrustOverview {
@@ -80,7 +81,7 @@ export async function getApiTrustOverview(): Promise<ApiTrustOverview> {
           COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN COALESCE(estimated_cost_microusd, 0) ELSE 0 END), 0)::bigint AS seven_day,
           COALESCE(SUM(CASE WHEN created_at >= date_trunc('month', NOW()) THEN COALESCE(estimated_cost_microusd, 0) ELSE 0 END), 0)::bigint AS month
         FROM public.ai_api_usage_events
-       WHERE status = 'completed'
+       WHERE ${incurredProviderUsageSql(sql)}
       `,
       sql`
         SELECT
@@ -112,7 +113,7 @@ export async function getApiTrustOverview(): Promise<ApiTrustOverview> {
               AND created_at >= date_trunc('day', NOW())) AS failed_today,
           (SELECT COALESCE(SUM(request_count), 0)::int
              FROM public.ai_api_usage_events
-            WHERE status = 'completed'
+            WHERE ${incurredProviderUsageSql(sql)}
               AND created_at >= date_trunc('day', NOW())) AS provider_calls_today,
           (SELECT COUNT(*)::int
              FROM public.api_route_audit_events
