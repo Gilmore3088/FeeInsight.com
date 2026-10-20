@@ -1645,7 +1645,8 @@ function severalField(
  * Each listed institution's own fees per category, kept apart (src/lib/own-fee.ts): the
  * statistics value, the price its schedule states (null when it states several different
  * fees) and each fee by name. For rows that name an institution; medians and percentiles
- * read `getFeeValuesForInstitutions` (the same `value`).
+ * read `getFeeValuesForInstitutions` (the same `value`). An inactive institution is left out,
+ * as getContractFeeRows leaves it out, so a member shown here is one the answer eval can read.
  */
 export async function getOwnFeesForInstitutions(
   institutionIds: number[],
@@ -1656,10 +1657,12 @@ export async function getOwnFeesForInstitutions(
   const rows = (await sql.unsafe(
     `SELECT ef.institution_id, ef.fee_category, ef.fee_name, ef.amount
        FROM published_fee_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.institution_id = ANY($1::int[])
         AND ef.fee_category = ANY($2::text[])
         AND ef.review_status = 'approved'
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [institutionIds, categories] as never[],
   )) as { institution_id: number | string; fee_category: string; fee_name: string | null; amount: number | string | null }[];
   for (const category of categories) {
