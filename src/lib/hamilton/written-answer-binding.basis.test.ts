@@ -28,13 +28,15 @@ const view = (hamiltonView: string) => ({ hamiltonView, whatThisMeans: "", whyIt
 
 describe("index statistics in a written answer's tools", () => {
   it("reads each median and quartile with its group and count", () => {
+    const national = { state: null, charter: null, district: null };
+    const texasBanks = { state: "TX", charter: "bank", district: null };
     expect(writtenAnswerIndexStats([NATIONAL, TEXAS_BANKS])).toEqual([
-      { feeCategory: "overdraft", statistic: "median", value: 29, institutionCount: 3120, scope: "national" },
-      { feeCategory: "overdraft", statistic: "p25", value: 25, institutionCount: 3120, scope: "national" },
-      { feeCategory: "overdraft", statistic: "p75", value: 35, institutionCount: 3120, scope: "national" },
-      { feeCategory: "overdraft", statistic: "median", value: 32, institutionCount: 210, scope: "TX banks" },
-      { feeCategory: "overdraft", statistic: "p25", value: 30, institutionCount: 210, scope: "TX banks" },
-      { feeCategory: "overdraft", statistic: "p75", value: 35, institutionCount: 210, scope: "TX banks" },
+      { feeCategory: "overdraft", statistic: "median", value: 29, institutionCount: 3120, scope: "national", group: national },
+      { feeCategory: "overdraft", statistic: "p25", value: 25, institutionCount: 3120, scope: "national", group: national },
+      { feeCategory: "overdraft", statistic: "p75", value: 35, institutionCount: 3120, scope: "national", group: national },
+      { feeCategory: "overdraft", statistic: "median", value: 32, institutionCount: 210, scope: "TX banks", group: texasBanks },
+      { feeCategory: "overdraft", statistic: "p25", value: 30, institutionCount: 210, scope: "TX banks", group: texasBanks },
+      { feeCategory: "overdraft", statistic: "p75", value: 35, institutionCount: 210, scope: "TX banks", group: texasBanks },
     ]);
   });
 
@@ -104,5 +106,42 @@ describe("a written answer with an index median", () => {
   it("reads a saved binding with no basis as before", () => {
     const older = { ...binding, readingBasis: undefined };
     expect(readNarrativeBinding(JSON.parse(JSON.stringify(older)))?.readingBasis).toBeUndefined();
+  });
+});
+
+describe("the basis line when two groups share a figure", () => {
+  // Invented index figures: the national and Texas medians are both $29.
+  const TEXAS = { scope: "filtered", filters: { state: "TX" }, data: [{ category: "overdraft", median: 29, institution_count: 400 }] };
+  const NATIONAL_29 = { scope: "national", data: [{ category: "overdraft", median: 29, institution_count: 3120 }] };
+  const CALIFORNIA = { scope: "filtered", filters: { state: "CA" }, data: [{ category: "overdraft", median: 29, institution_count: 300 }] };
+
+  it("ties the figure to the group the sentence names, whichever tool came first", () => {
+    for (const tools of [[NATIONAL_29, TEXAS], [TEXAS, NATIONAL_29]]) {
+      const stats = writtenAnswerIndexStats(tools);
+      expect(indexBasisFor("The Texas overdraft median is $29.", stats)).toBe("Basis: overdraft median from the index for TX, 400 institutions.");
+      expect(indexBasisFor("The national overdraft median is $29.", stats)).toBe("Basis: overdraft median from the national index, 3,120 institutions.");
+    }
+  });
+
+  it("gives no basis when the sentence names a group no statistic covers", () => {
+    const stats = writtenAnswerIndexStats([NATIONAL_29, TEXAS]);
+    expect(indexBasisFor("The California overdraft median is $29.", stats)).toBeNull();
+    expect(indexBasisFor("The overdraft median for credit unions is $29.", stats)).toBeNull();
+    expect(indexBasisFor("The overdraft median for Texas credit unions is $29.", stats)).toBeNull();
+    expect(indexBasisFor("The Texas overdraft median is $29.", writtenAnswerIndexStats([NATIONAL_29]))).toBeNull();
+  });
+
+  it("gives no basis when the sentence names no group and the groups that match differ", () => {
+    expect(indexBasisFor("The overdraft median is $29.", writtenAnswerIndexStats([TEXAS, CALIFORNIA]))).toBeNull();
+  });
+
+  it("reads a sentence that names no group as the national index when one matches", () => {
+    const stats = writtenAnswerIndexStats([TEXAS, NATIONAL_29]);
+    expect(indexBasisFor("The overdraft median is $29.", stats)).toBe("Basis: overdraft median from the national index, 3,120 institutions.");
+  });
+
+  it("does not read West Virginia as Virginia", () => {
+    const virginia = writtenAnswerIndexStats([{ scope: "filtered", filters: { state: "VA" }, data: [{ category: "overdraft", median: 29, institution_count: 90 }] }]);
+    expect(indexBasisFor("The West Virginia overdraft median is $29.", virginia)).toBeNull();
   });
 });

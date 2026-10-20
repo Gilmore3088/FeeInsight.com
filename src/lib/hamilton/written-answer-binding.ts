@@ -28,6 +28,7 @@ import { HELD_ANSWER_MESSAGE } from "./answer-gate";
 import { bindNarrative, INTERPRETATION_LIMITATION, NARRATIVE_BINDING_VERSION, type NarrativeBinding, type OmitReason } from "./narrative-bound";
 import { extractFigures } from "./figure-check";
 import { proseFeeName } from "./workspace/names";
+import { STATE_NAMES, VALID_US_CODES } from "../us-states";
 
 /** The prose sections of a written answer, as `parseAnalyzeResponse` returns them. */
 export interface WrittenAnswerSections {
@@ -161,7 +162,17 @@ export interface IndexStatistic {
   institutionCount: number;
   /** "national", or the filters in words ("TX banks"). */
   scope: string;
+  /** The filters the statistic was read with; every one null for the national index. */
+  group: IndexGroup;
 }
+
+export interface IndexGroup {
+  state: string | null;
+  charter: "bank" | "credit_union" | null;
+  district: string | null;
+}
+
+const NATIONAL_GROUP: IndexGroup = { state: null, charter: null, district: null };
 
 const STATISTIC_WORDS: Record<IndexStatistic["statistic"], RegExp> = {
   // "Middle" alone is not the median: "the middle 50%" is the band between the quartiles.
@@ -170,13 +181,95 @@ const STATISTIC_WORDS: Record<IndexStatistic["statistic"], RegExp> = {
   p75: /\b(?:75th percentile|upper quartile|third quartile|p75)\b|\bmiddle (?:50%|50 percent|half)/i,
 };
 
-function indexScope(filters: Record<string, unknown> | null): string {
-  if (!filters) return "national";
-  const state = typeof filters.state === "string" && filters.state.trim() ? filters.state.trim().toUpperCase() : null;
-  const charter = filters.charter === "bank" ? "banks" : filters.charter === "credit_union" ? "credit unions" : null;
-  const district = typeof filters.district === "string" && filters.district.trim() ? `Fed district ${filters.district.trim()}` : null;
-  const parts = [state, district, charter].filter(Boolean);
+function indexGroup(filters: Record<string, unknown> | null): IndexGroup {
+  if (!filters) return NATIONAL_GROUP;
+  const text = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : null);
+  return {
+    state: text(filters.state)?.toUpperCase() ?? null,
+    charter: filters.charter === "bank" || filters.charter === "credit_union" ? filters.charter : null,
+    district: text(filters.district),
+  };
+}
+
+function indexScope(group: IndexGroup): string {
+  const charter = group.charter === "bank" ? "banks" : group.charter === "credit_union" ? "credit unions" : null;
+  const district = group.district ? `Fed district ${group.district}` : null;
+  const parts = [group.state, district, charter].filter(Boolean);
   return parts.length > 0 ? parts.join(" ") : "national";
+}
+
+const isNationalGroup = (group: IndexGroup) => !group.state && !group.charter && !group.district;
+
+// Longest names first, each blanked once read, so "West Virginia" is never also read as Virginia.
+const STATE_BY_NAME = Object.entries(STATE_NAMES)
+  .map(([code, name]) => ({ code, pattern: new RegExp(`\\b${name.replace(/ /g, "\\s+")}\\b`, "i"), length: name.length }))
+  .sort((a, b) => b.length - a.length);
+
+/** The groups a sentence names: states, charters, Fed districts, or the nation as a whole. */
+function namedGroups(sentence: string) {
+  let rest = sentence;
+  const states = new Set<string>();
+  for (const { code, pattern } of STATE_BY_NAME) {
+    if (pattern.test(rest)) {
+      states.add(code);
+      rest = rest.split(pattern).join(" ");
+    }
+  }
+  // A postal code only in capitals, so "in" or "me" in prose is never read as a state.
+  for (const code of rest.match(/\b[A-Z]{2}\b/g) ?? []) if (VALID_US_CODES.has(code)) states.add(code);
+  const charters = new Set<string>();
+  if (/\bbanks\b/i.test(sentence)) charters.add("bank");
+  if (/\bcredit unions\b/i.test(sentence)) charters.add("credit_union");
+  const districts = new Set((sentence.match(/\bdistrict\s+(\d{1,2})\b/gi) ?? []).map((m) => m.replace(/\D/g, "")));
+  const national = /\b(?:national(?:ly)?|nationwide|across the (?:country|nation|u\.?s\.?))\b/i.test(sentence);
+  return { states, charters, districts, national };
+}
+
+type NamedGroups = ReturnType<typeof namedGroups>;
+
+/**
+ * How far a statistic's group is from the one the sentence names: the count of its filters the
+ * sentence leaves unnamed. Null when the sentence names a group the statistic does not cover, or
+ * calls the figure national when the statistic is filtered.
+ */
+function groupMisfit(group: IndexGroup, named: NamedGroups): number | null {
+  // "National" may sit beside a state ("Texas is above the national median"): it covers the
+  // national index whatever else the sentence names.
+  if (named.national && isNationalGroup(group)) return 0;
+  const dims: Array<[string | null, Set<string>]> = [
+    [group.state, named.states],
+    [group.charter, named.charters],
+    [group.district, named.districts],
+  ];
+  let unnamed = 0;
+  for (const [value, names] of dims) {
+    if (names.size > 0 && (value === null || !names.has(value))) return null;
+    if (names.size === 0 && value !== null) unnamed += 1;
+  }
+  if (named.national && unnamed > 0) return null;
+  return unnamed;
+}
+
+/**
+ * The statistic a figure is: same fee, statistic and amount, from the group the sentence names.
+ * Null when none fits, or when the closest fits come from different groups.
+ */
+function statisticFor(sentence: string, figure: { value: number; tolerance: number }, stats: readonly IndexStatistic[], named: NamedGroups): IndexStatistic | null {
+  const lower = sentence.toLowerCase();
+  let best: IndexStatistic[] = [];
+  let bestMisfit = Number.POSITIVE_INFINITY;
+  for (const stat of stats) {
+    if (Math.abs(stat.value - figure.value) > Math.max(figure.tolerance, 0.005)) continue;
+    if (!STATISTIC_WORDS[stat.statistic].test(sentence)) continue;
+    if (!lower.includes(proseFeeName(stat.feeCategory).toLowerCase())) continue;
+    const misfit = groupMisfit(stat.group, named);
+    if (misfit === null || misfit > bestMisfit) continue;
+    if (misfit < bestMisfit) best = [];
+    bestMisfit = misfit;
+    best.push(stat);
+  }
+  if (best.length === 0 || best.some((stat) => stat.scope !== best[0].scope)) return null;
+  return best[0];
 }
 
 /** The index statistics in a written answer's tool outputs, as each tool returned them. */
@@ -185,7 +278,8 @@ export function writtenAnswerIndexStats(toolOutputs: readonly unknown[]): IndexS
   for (const output of toolOutputs) {
     const obj = record(output);
     if (!obj || !Array.isArray(obj.data)) continue;
-    const scope = obj.scope === "filtered" ? indexScope(record(obj.filters)) : "national";
+    const group = obj.scope === "filtered" ? indexGroup(record(obj.filters)) : NATIONAL_GROUP;
+    const scope = indexScope(group);
     for (const item of obj.data) {
       const row = record(item);
       const count = positiveInt(row?.institution_count);
@@ -193,7 +287,7 @@ export function writtenAnswerIndexStats(toolOutputs: readonly unknown[]): IndexS
       for (const statistic of ["median", "p25", "p75"] as const) {
         const value = row[statistic];
         if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
-          stats.push({ feeCategory: row.category, statistic, value, institutionCount: count, scope });
+          stats.push({ feeCategory: row.category, statistic, value, institutionCount: count, scope, group });
         }
       }
     }
@@ -205,18 +299,16 @@ const STATISTIC_LABEL: Record<IndexStatistic["statistic"], string> = { median: "
 
 /**
  * The basis line for a sentence of Hamilton's reading whose figure is an index statistic the
- * tools returned: the sentence names that fee and the statistic, and the figure equals it to the
- * cent. Null when no figure in the sentence is one.
+ * tools returned: the sentence names that fee, the statistic and its group, and the figure equals
+ * it to the cent. Null when no figure in the sentence is one; a sentence that names a group no
+ * statistic covers gets no line rather than another group's.
  */
 export function indexBasisFor(sentence: string, stats: readonly IndexStatistic[]): string | null {
-  const lower = sentence.toLowerCase();
+  const named = namedGroups(sentence);
   const lines: string[] = [];
   for (const figure of extractFigures(sentence)) {
     if (figure.kind !== "usd") continue;
-    const match = stats.find((stat) =>
-      Math.abs(stat.value - figure.value) <= Math.max(figure.tolerance, 0.005)
-      && STATISTIC_WORDS[stat.statistic].test(sentence)
-      && lower.includes(proseFeeName(stat.feeCategory).toLowerCase()));
+    const match = statisticFor(sentence, figure, stats, named);
     if (!match) continue;
     const scope = match.scope === "national" ? "national index" : `index for ${match.scope}`;
     const line = `${proseFeeName(match.feeCategory)} ${STATISTIC_LABEL[match.statistic]} from the ${scope}, ${match.institutionCount.toLocaleString("en-US")} institutions`;
