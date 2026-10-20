@@ -29,6 +29,23 @@ export const REFRESH_COPY_REASON_PREFIX = "refreshed by #";
 // #2109 tightens the audience identity without a bump: no prior decision needs replaying.
 export const REFRESH_COPY_STRATEGY = { strategy: "hamilton.refresh_copy", version: 2 } as const;
 
+/**
+ * Moved pages (#1200): a live fee also follows its page when the page stopped answering at its own
+ * address. Magellan's live-source pass (`magellan/live-source-refetch.ts`) fetches every page live
+ * fees cite once it is LIVE_SOURCE_REFETCH_DAYS old; a page that still serves its schedule gets a
+ * fresh check date or a newer copy (which supersedes the old one, the case above). A page it has
+ * tried that still has no copy that recent has moved or gone (Synergy FCU's fees cited a February
+ * copy of a page the bank had replaced with another address). Such a fee moves to the newest
+ * current document of its bank that states the same line (same category, variant, frequency,
+ * amount, audience, product and name), under the same publish rules as a superseded copy.
+ * Sampled clean before switching on (Oct 20, read-only): 86 live fees at 17 banks had a stale page
+ * and such a line, and 20 of 20 drawn were printed on the newer document on the fee's own line.
+ */
+export const MOVED_PAGE_REFRESH_LIVE = true;
+/** Same window as Magellan's LIVE_SOURCE_REFETCH_DAYS: a page fetched within it is not moved. */
+export const MOVED_PAGE_DAYS = 30;
+export const MOVED_PAGE_DOCUMENT_LIMIT = 200;
+
 /** One check per (live fee, current-copy row) pair. */
 export function refreshCopyFingerprint(feePublishedId: number | string, feeVerifiedId: number | string): string {
   return `v${REFRESH_COPY_STRATEGY.version}:${feePublishedId}:${feeVerifiedId}`;
@@ -45,6 +62,8 @@ export interface RefreshCopyCandidate extends VerifiedFeeRow, Partial<Omit<Publi
   prior_rate_percent?: number | string | null;
   prior_source_document_id: number | string;
   prior_fee_audience?: FeeAudience | null;
+  /** The live fee follows a moved page, not a superseded copy (MOVED_PAGE_REFRESH_LIVE). */
+  moved_page?: boolean;
 }
 
 export type RefreshCopySkip = "product_differs" | "audience_differs" | "name_differs" | "value_differs" | "category_guard" | "publish_rule" | "pair_taken";
@@ -116,9 +135,62 @@ export interface RefreshCopyResult {
   refreshed: number;
   skipped: Partial<Record<RefreshCopySkip, number>>;
   samples: Array<{ priorFeePublishedId: number; feePublishedId: number | null; institutionId: number; feeName: string }>;
+  /** Of `refreshed`, fees that followed a moved page rather than a superseded copy. */
+  movedPage?: number;
 }
 
-const EMPTY: RefreshCopyResult = { checked: 0, refreshed: 0, skipped: {}, samples: [] };
+const EMPTY: RefreshCopyResult = { checked: 0, refreshed: 0, skipped: {}, samples: [], movedPage: 0 };
+
+const PAGE_KEY = (column: string) =>
+  `lower(regexp_replace(regexp_replace(regexp_replace(btrim(COALESCE(${column}, '')), '^https?://(www\\.)?', '', 'i'), ':443(/|$)', '\\1'), '/+$', ''))`;
+
+/**
+ * Documents live fees cite whose page moved (see MOVED_PAGE_REFRESH_LIVE): not superseded, not a
+ * companion page, no successful copy of the page within MOVED_PAGE_DAYS, and tried by Magellan's
+ * live-source pass. A page that pass never tried (the plain fetch's own address) never counts.
+ */
+export async function selectMovedPageDocuments(
+  db: SqlTag,
+  options: { institutionId?: number; stateCode?: string | null; limit?: number },
+): Promise<number[]> {
+  const rows = await db<{ id: number | string }[]>`
+    WITH cited AS MATERIALIZED (
+      SELECT sd.id, sd.institution_id, ${db.unsafe(PAGE_KEY("sd.document_url"))} AS page
+        FROM source_documents sd
+        JOIN institution_sources inst ON inst.id = sd.institution_id
+       WHERE sd.superseded_by_id IS NULL
+         AND sd.companion_source_id IS NULL
+         AND btrim(COALESCE(sd.document_url, '')) ~* '^https?://'
+         AND (${options.institutionId ?? null}::bigint IS NULL OR sd.institution_id = ${options.institutionId ?? null}::bigint)
+         AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
+         AND EXISTS (
+           SELECT 1 FROM raw_fee_observations fr
+             JOIN verified_fee_observations fv ON fv.fee_raw_id = fr.fee_raw_id
+             JOIN published_fee_records fp ON fp.lineage_ref = fv.fee_verified_id AND fp.rolled_back_at IS NULL
+            WHERE fr.source_document_id = sd.id
+         )
+    )
+    SELECT cited.id
+      FROM cited
+     WHERE NOT EXISTS (
+             SELECT 1 FROM source_documents copy
+              WHERE copy.institution_id = cited.institution_id
+                AND copy.status = 'success'
+                AND COALESCE(copy.last_checked_at, copy.crawled_at) >= NOW() - make_interval(days => ${MOVED_PAGE_DAYS}::int)
+                AND ${db.unsafe(PAGE_KEY("copy.document_url"))} = cited.page
+           )
+       AND EXISTS (
+             SELECT 1 FROM pipeline_attempts pa
+              WHERE pa.institution_id = cited.institution_id
+                AND pa.stage = 'fetch'
+                AND pa.strategy = 'fetch.live_source'
+                AND pa.detail->>'live_page' = cited.page
+           )
+     ORDER BY cited.id
+     LIMIT ${options.limit ?? MOVED_PAGE_DOCUMENT_LIMIT}
+  `;
+  return rows.map((row) => Number(row.id));
+}
 
 /**
  * Hamilton repair: a live fee follows its page to the current copy. When Magellan fetches
@@ -146,13 +218,20 @@ export async function refreshFeesFromCurrentCopy(
   const limit = options.limit ?? REFRESH_COPY_FEE_LIMIT;
   let candidates: RefreshCopyCandidate[];
   try {
+    const movedDocuments = MOVED_PAGE_REFRESH_LIVE || options.dryRun
+      ? await inSavepoint(db, (scope) => selectMovedPageDocuments(scope as SqlTag, options)).catch((error) => {
+        console.error("refreshFeesFromCurrentCopy moved-page select failed:", error);
+        return [] as number[];
+      })
+      : [];
     candidates = await inSavepoint(db, (scope) => scope<RefreshCopyCandidate[]>`
       WITH stale AS MATERIALIZED (
         SELECT fp.fee_published_id, fp.institution_id, fp.canonical_fee_key,
                COALESCE(fp.variant_type, '') AS variant_type, COALESCE(fp.frequency, '') AS frequency,
                fp.amount, fp.amount_kind, fp.rate_percent, fp.fee_name,
                COALESCE(fp.fee_audience, 'unknown') AS fee_audience,
-               fr.source_document_id, fr.product_name, fp.lineage_ref, ${scope.unsafe(PUBLISHED_IDENTITY_COLUMNS)}, sd.superseded_by_id AS current_document_id
+               fr.source_document_id, fr.product_name, fp.lineage_ref, ${scope.unsafe(PUBLISHED_IDENTITY_COLUMNS)}, sd.superseded_by_id AS current_document_id,
+               sd.crawled_at AS document_crawled_at, sd.superseded_by_id IS NULL AS moved_page
           FROM published_fee_records fp
           JOIN verified_fee_observations fv ON fv.fee_verified_id = fp.lineage_ref
           JOIN raw_fee_observations fr ON fr.fee_raw_id = fv.fee_raw_id
@@ -162,10 +241,26 @@ export async function refreshFeesFromCurrentCopy(
            -- A quarantined fee (an operator's hold, H03 #978) is not refreshed: closing it would
            -- drop the hold and put a new copy live without a release.
            AND fp.quarantined_at IS NULL
-           AND sd.superseded_by_id IS NOT NULL
-           AND sd.superseded_by_id <> sd.id
+           AND ((sd.superseded_by_id IS NOT NULL AND sd.superseded_by_id <> sd.id)
+                OR (sd.superseded_by_id IS NULL AND sd.id = ANY(${movedDocuments}::bigint[])))
            AND (${options.institutionId ?? null}::bigint IS NULL OR fp.institution_id = ${options.institutionId ?? null}::bigint)
            AND (${options.stateCode ?? null}::text IS NULL OR upper(btrim(inst.state_code)) = ${options.stateCode ?? null}::text)
+      ), targets AS (
+        -- A superseded copy's fees go to its current copy. A moved page's fees go to the bank's
+        -- current documents read after it, newest first.
+        SELECT stale.fee_published_id, stale.current_document_id AS document_id, 0::bigint AS rank
+          FROM stale
+         WHERE NOT stale.moved_page
+        UNION ALL
+        SELECT stale.fee_published_id, nd.id,
+               row_number() OVER (PARTITION BY stale.fee_published_id ORDER BY nd.crawled_at DESC, nd.id DESC)
+          FROM stale
+          JOIN source_documents nd ON nd.institution_id = stale.institution_id
+         WHERE stale.moved_page
+           AND nd.id <> stale.source_document_id
+           AND nd.status = 'success'
+           AND nd.superseded_by_id IS NULL
+           AND nd.crawled_at > stale.document_crawled_at
       )
       SELECT nv.fee_verified_id, nv.fee_raw_id, nv.institution_id, nv.source_url, nv.document_r2_key,
              nv.extraction_confidence, nv.canonical_fee_key, nv.variant_type, nv.outlier_flags,
@@ -181,9 +276,10 @@ export async function refreshFeesFromCurrentCopy(
              stale.amount AS prior_amount, stale.amount_kind AS prior_amount_kind,
              stale.rate_percent AS prior_rate_percent, stale.source_document_id AS prior_source_document_id,
              stale.fee_audience AS prior_fee_audience, stale.product_name AS prior_product_name, stale.lineage_ref AS prior_lineage_ref,
-             stale.published_state, stale.identity_raw_id, stale.identity_product
+             stale.published_state, stale.identity_raw_id, stale.identity_product, stale.moved_page
         FROM stale
-        JOIN raw_fee_observations nr ON nr.source_document_id = stale.current_document_id
+        JOIN targets ON targets.fee_published_id = stale.fee_published_id
+        JOIN raw_fee_observations nr ON nr.source_document_id = targets.document_id
         JOIN verified_fee_observations nv ON nv.fee_raw_id = nr.fee_raw_id
        WHERE nv.institution_id = stale.institution_id
          AND nv.canonical_fee_key = stale.canonical_fee_key
@@ -204,7 +300,7 @@ export async function refreshFeesFromCurrentCopy(
               AND pa.strategy = ${REFRESH_COPY_STRATEGY.strategy}
               AND pa.input_fingerprint = ${`v${REFRESH_COPY_STRATEGY.version}:`} || stale.fee_published_id::text || ':' || nv.fee_verified_id::text
          )
-       ORDER BY stale.fee_published_id, nv.fee_verified_id
+       ORDER BY stale.fee_published_id, targets.rank, nv.fee_verified_id
        LIMIT ${limit}
     `);
   } catch (error) {
@@ -227,10 +323,12 @@ export async function refreshFeesFromCurrentCopy(
       institutionId: Number(candidate.institution_id),
       feeName: candidate.fee_name,
     })),
+    movedPage: plan.refresh.filter((candidate) => candidate.moved_page).length,
   };
   if (options.dryRun) return result;
 
   let refreshed = 0;
+  let movedPage = 0;
   const samples: RefreshCopyResult["samples"] = [];
   try {
     await inSavepoint(db, async (scope) => {
@@ -289,6 +387,7 @@ export async function refreshFeesFromCurrentCopy(
         });
         if (feePublishedId) {
           refreshed += 1;
+          if (candidate.moved_page) movedPage += 1;
           if (samples.length < 20) {
             samples.push({ priorFeePublishedId: priorId, feePublishedId, institutionId: Number(candidate.institution_id), feeName: candidate.fee_name });
           }
@@ -310,6 +409,7 @@ export async function refreshFeesFromCurrentCopy(
             fee_verified_id: Number(candidate.fee_verified_id),
             fee_published_id: feePublishedId,
             in_place: true,
+            moved_page: Boolean(candidate.moved_page),
             prior_source_document_id: Number(candidate.prior_source_document_id),
             current_document_id: candidate.source_document_id == null ? null : Number(candidate.source_document_id),
           },
@@ -333,6 +433,7 @@ export async function refreshFeesFromCurrentCopy(
             fee_verified_id: Number(skip.candidate.fee_verified_id),
             reason: skip.reason,
             reason_detail: skip.detail ?? null,
+            moved_page: Boolean(skip.candidate.moved_page),
           },
         });
       }
@@ -340,17 +441,17 @@ export async function refreshFeesFromCurrentCopy(
         INSERT INTO agent_run_events (agent_run_id, event_type, status, message, detail)
         VALUES (
           ${options.runId}, 'hamilton.refresh_copy', 'completed',
-          ${`Moved ${refreshed} live fee(s) to the current copy of their page in place (same name and amount); ${plan.skipped.length} pair(s) left as they are`},
-          ${JSON.stringify({ batch_id: options.batchId, checked: candidates.length, refreshed, skipped, samples })}::jsonb
+          ${`Moved ${refreshed} live fee(s) to the current copy of their page in place (same name and amount), ${movedPage} of them from a page that moved; ${plan.skipped.length} pair(s) left as they are`},
+          ${JSON.stringify({ batch_id: options.batchId, checked: candidates.length, refreshed, moved_page: movedPage, skipped, samples })}::jsonb
         )
       `;
     });
   } catch (error) {
     console.error("refreshFeesFromCurrentCopy write failed:", error);
-    return { ...result, refreshed: 0, samples: [] };
+    return { ...result, refreshed: 0, samples: [], movedPage: 0 };
   }
   if (refreshed > 0) invalidatePublicReadCache();
-  return { ...result, refreshed, samples };
+  return { ...result, refreshed, samples, movedPage };
 }
 
 /** Superseded copies whose fees move to an identical current copy, per publish step. */

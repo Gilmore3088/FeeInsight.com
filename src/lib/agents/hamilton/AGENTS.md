@@ -639,6 +639,10 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     states at the same amount moves to that copy in place (v2, #1068): the live row takes the
     current copy's verified row as its lineage and keeps its id, name and published date. Before
     v2 a new row was written and the old one closed as `refreshed by #<new id>`.
+    Moved pages (#1200, `MOVED_PAGE_REFRESH_LIVE`): a live fee also follows its page when the
+    page stopped answering at its own address, that is Magellan's live-source pass has tried it
+    and no copy of it is under 30 days old. It moves to the newest current document of its bank
+    read after it that states the same line, under the same rules as a superseded copy.
     Both rows must keep the same audience (#2109): missing legacy audience means `unknown`,
     never a wildcard for consumer, business or both. The selector, pure plan and final write
     enforce it; an audience changed since selection leaves the live row where it was. This

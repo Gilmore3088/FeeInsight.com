@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  MOVED_PAGE_DAYS,
   REFRESH_COPY_REASON_PREFIX,
+  selectMovedPageDocuments,
   moveRowsToIdenticalCopy,
   planRefreshes,
   refreshCopyFingerprint,
@@ -9,6 +11,7 @@ import {
   type RefreshCopyCandidate,
 } from "./refresh-copy";
 import type { FeeAudience } from "@/lib/fee-audience";
+import { LIVE_SOURCE_REFETCH_DAYS, LIVE_SOURCE_REFETCH_STRATEGY } from "@/lib/agents/magellan/live-source-refetch";
 
 type DbMock = ReturnType<typeof vi.fn>;
 
@@ -204,6 +207,71 @@ describe("refreshFeesFromCurrentCopy", () => {
     const statements = writes(db);
     expect(statements.some((text) => text.includes("published_fee_records"))).toBe(false);
     expect(statements.some((text) => text.includes("INSERT INTO pipeline_attempts"))).toBe(true);
+  });
+});
+
+describe("moved pages (#1200)", () => {
+  function movedDb(rows: RefreshCopyCandidate[], moved: number[]) {
+    const db = createDb(rows);
+    const base = db.getMockImplementation()!;
+    db.mockImplementation(((strings: TemplateStringsArray, ...values: unknown[]) => {
+      if (templateText(strings).includes("WITH cited AS MATERIALIZED")) return Promise.resolve(moved.map((id) => ({ id })));
+      return base(strings, ...values);
+    }) as typeof base);
+    return db;
+  }
+
+  it("waits the same window as Magellan's live-source pass and needs that pass to have tried the page", async () => {
+    expect(MOVED_PAGE_DAYS).toBe(LIVE_SOURCE_REFETCH_DAYS);
+    const db = movedDb([], []);
+    await selectMovedPageDocuments(asDb(db), {});
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("WITH cited AS MATERIALIZED"))!;
+    const text = templateText(call[0]);
+    expect(text).toContain("sd.superseded_by_id IS NULL");
+    expect(text).toContain("sd.companion_source_id IS NULL");
+    expect(text).toContain("fp.rolled_back_at IS NULL");
+    expect(text).toContain("COALESCE(copy.last_checked_at, copy.crawled_at) >= NOW() - make_interval(days => ");
+    expect(text).toContain("pa.detail->>'live_page' = cited.page");
+    expect(text).toContain(`pa.strategy = '${LIVE_SOURCE_REFETCH_STRATEGY.strategy}'`);
+    expect(call).toContain(MOVED_PAGE_DAYS);
+  });
+
+  it("pairs a moved page's live fees with the bank's newer current documents, newest first", async () => {
+    const db = movedDb([], [2547]);
+    await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "b", dryRun: true });
+    const call = db.mock.calls.find((c) => templateText(c[0]).includes("WITH stale AS MATERIALIZED"))!;
+    const text = templateText(call[0]);
+    expect(call.slice(1)).toContainEqual([2547]);
+    expect(text).toContain("sd.superseded_by_id IS NULL AND sd.id = ANY(");
+    expect(text).toContain("JOIN raw_fee_observations nr ON nr.source_document_id = targets.document_id");
+    expect(text).toContain("nd.crawled_at > stale.document_crawled_at");
+    expect(text).toContain("nd.superseded_by_id IS NULL");
+    expect(text).toContain("ORDER BY nd.crawled_at DESC, nd.id DESC");
+    expect(text).toContain("ORDER BY stale.fee_published_id, targets.rank, nv.fee_verified_id");
+  });
+
+  it("moves a moved page's fee in place like a superseded copy's and counts it", async () => {
+    const db = movedDb([candidate({ moved_page: true })], [500]);
+    const result = await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "b", dryRun: false });
+    expect(result).toMatchObject({ checked: 1, refreshed: 1, movedPage: 1 });
+    const attempt = db.mock.calls.find((call) => templateText(call[0]).includes("INSERT INTO pipeline_attempts"))!;
+    expect(attempt).toContain(refreshCopyFingerprint(501, 9801));
+    expect(JSON.stringify(attempt)).toContain('\\"moved_page\\":true');
+  });
+
+  it("holds a moved page's fee to the same line rules (name, audience, value)", () => {
+    const plan = planRefreshes([
+      candidate({ moved_page: true, fee_name: "Overdraft Fee - Business" }),
+      candidate({ moved_page: true, prior_fee_published_id: 502, fee_verified_id: 9802, prior_fee_audience: "consumer", fee_audience: "unknown" }),
+    ]);
+    expect(plan.refresh).toEqual([]);
+    expect(plan.skipped.map((skip) => skip.reason)).toEqual(["name_differs", "audience_differs"]);
+  });
+
+  it("selects no moved page when none qualifies", async () => {
+    const db = movedDb([], []);
+    const result = await refreshFeesFromCurrentCopy(asDb(db), { runId: 9, batchId: "b", dryRun: true });
+    expect(result).toMatchObject({ checked: 0, refreshed: 0, movedPage: 0 });
   });
 });
 
