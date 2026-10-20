@@ -29,8 +29,8 @@ mapped confirmed key line in the bound observed document, using whitespace norma
 only. A PDF or plain-text reference is byte-bound: the key's stored hash must equal the fetched
 bytes. An HTML page's bytes change on every fetch, so an HTML reference is bound to its extracted
 main text: the key's hash names those bytes or that main text, or every mapped confirmed key line
-is in the observed main text and the page's effective date, when present, is not after the key was
-confirmed; otherwise it stays unknown (#2466). Combined schedules require those
+is in the observed main text, the key has a confirmation date, and the page's effective date, when
+present, is not after it; otherwise it stays unknown (#2466). Combined schedules require those
 lines in their consumer section; service copy and incidental consumer words do not attest a heading.
 A schedule with no consumer heading passes only with no business evidence (business URL/text/heading
 or a business section label, bullets ignored) and every mapped key line present. Protocol 1 receipts

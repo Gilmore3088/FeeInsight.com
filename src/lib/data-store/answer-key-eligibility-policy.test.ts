@@ -128,6 +128,9 @@ describe("recordable reference-document decisions (#1862)", () => {
     expect(decide([html], snapshot).facts.current).toEqual({ status: "unknown", reasons: ["reference_main_text_changed"] });
     // The same edition is still bound when its main text hash is the key's hash.
     expect(decide([html], { ...snapshot, contentHash: hash(later) }).facts.current.status).toBe("pass");
+    // Without a confirmation date, key lines alone cannot bind an HTML edition.
+    const undated = { ...page(consumerText, "https://bank.example/fees"), contentType: "text/html", contentHash: hash("fresh bytes") };
+    expect(decide([undated], { ...snapshot, confirmedAt: null }).facts.current.reasons).toEqual(["reference_main_text_changed"]);
   });
 
   it("accepts a consumer schedule with no audience heading and no business evidence (#2466)", () => {
@@ -136,6 +139,8 @@ describe("recordable reference-document decisions (#1862)", () => {
     expect(receipt.facts.consumer).toEqual({ status: "pass", reasons: ["consumer_reference_lines_no_business_evidence"] });
     expect(receipt.status).toBe("eligible");
     expect(decide([page(`${plain}\nFunds are available within two business days`)]).facts.consumer.status).toBe("pass");
+    // A consumer fee line whose price sits on the next line is not a business section label.
+    expect(decide([page(`${plain}\nMerchant Dispute Fee\nTreasury Check Cashing Fee`)]).facts.consumer.status).toBe("pass");
   });
 
   it.each([
@@ -143,6 +148,7 @@ describe("recordable reference-document decisions (#1862)", () => {
     ["a bulleted business label", "Schedule of Fees\nOverdraft fee $25\n• Business Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a cash management label", "Schedule of Fees\nOverdraft fee $25\nCash Management Services\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a non-personal label", "Schedule of Fees\nOverdraft fee $25\n## Non-Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a spaced non personal label", "Schedule of Fees\nOverdraft fee $25\nNon Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a business-only schedule", "Business Fee Schedule\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
     ["a business URL", "Schedule of Fees\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
     ["a missing key line", "Schedule of Fees\nNSF fee $25\nWire transfer fee $15", "unknown", "key_line_not_in_reference"],

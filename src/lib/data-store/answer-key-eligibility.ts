@@ -156,7 +156,7 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
     && /\b(?:fees?|schedule|charges|accounts?)\b/i.test(title);
 }
 /** A short line that opens with a business audience word ("Business Checking", "Commercial Accounts"). */
-const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant|non-?personal|organi[sz]ation(?:al)?)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
+const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant services|non[- ]?personal|organi[sz]ation(?:al)?)\b(?! days?\b)(?![^$0-9.!?;]*\bfees?\s*$)[^$0-9.!?;]{0,60}$/i;
 /** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
 const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
 const LEGACY = /\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i;
@@ -255,7 +255,8 @@ function htmlReferenceBound(key: ReferenceKeySnapshot, keyHash: string | null, p
   // Key lines alone cannot pin an edition: a page dated after the key was confirmed may add
   // fees the key never saw, so it is not the confirmed reference.
   const edition = effectiveDate(page.text);
-  return !(edition && key.confirmedAt && edition > key.confirmedAt.slice(0, 10));
+  if (!key.confirmedAt) return false;
+  return !(edition && edition > key.confirmedAt.slice(0, 10));
 }
 
 function currentFact(key: ReferenceKeySnapshot, page: ReferencePageObservation | undefined,
