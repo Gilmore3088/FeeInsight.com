@@ -198,7 +198,7 @@ function FeeBars({ bars }: { bars: PacketFeeBar[] }) {
             )}
             <Text style={s.barValue}>
               {b.current === null ? (
-                <Text style={{ color: C.textTertiary }}>Not on the schedule</Text>
+                <Text style={{ color: C.textTertiary }}>{b.ownRange ? `${b.ownRange}, no single price` : "Not on the schedule"}</Text>
               ) : (
                 <Text style={{ fontFamily: "Helvetica-Bold", color: outside ? C.accent : C.textPrimary }}>{packetMoney(b.current)}</Text>
               )}

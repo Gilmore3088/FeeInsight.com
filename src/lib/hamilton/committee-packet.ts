@@ -186,8 +186,10 @@ export interface PacketNextStep {
 export interface PacketFeeBar {
   feeCategory: string;
   name: string;
-  /** The bank's comparison value; null when it does not publish the fee. */
+  /** The bank's comparison value; null when it does not publish the fee or states no single price. */
   current: number | null;
+  /** "$15 to $35": the bank's published amounts when it lists the fee with no single price; else null. */
+  ownRange: string | null;
   /** Null below MIN_PEERS_FOR_POSITION peers publishing. */
   median: number | null;
   q1: number | null;
@@ -515,7 +517,8 @@ function readFees(input: CommitteePacketInput, notes: Footnotes, group: string):
     const n = sorted.length;
     const enough = n >= MIN_PEERS_FOR_POSITION;
     const rows = fee.ownRows.filter((r) => r.amount !== null);
-    const ownMark = fee.current === null
+    // A fee listed at several amounts has no comparison value but is still on the schedule: cite it.
+    const ownMark = fee.current === null && rows.length === 0
       ? null
       : notes.schedule(
           input.institutionId,
@@ -557,8 +560,38 @@ function readFees(input: CommitteePacketInput, notes: Footnotes, group: string):
   });
 }
 
-/** "$32", or "$32 (2 published amounts, $15 to $32)" when the schedule lists several. */
+/** The bank lists the fee, but at several amounts and with no single price to compare (#1930). */
+function noSinglePrice(r: FeeRead): boolean {
+  return r.fee.current === null && r.amounts.length > 0;
+}
+
+/** The bank lists the fee, at one price or several. */
+function publishes(r: FeeRead): boolean {
+  return r.fee.current !== null || r.amounts.length > 0;
+}
+
+/** "$15 to $35": the bank's published amounts for a fee with no single price. */
+function ownRangeOf(amounts: number[]): string {
+  const lo = Math.min(...amounts);
+  const hi = Math.max(...amounts);
+  return Math.abs(lo - hi) < SAME ? packetMoney(lo) : span(lo, hi);
+}
+
+/** The plain statement for a fee listed with no single price, sourced to Appendix C. */
+function unpricedNote(r: FeeRead, institutionName: string): string {
+  const k = r.amounts.length;
+  return `${institutionName}'s schedule lists ${inText(r.name)} at ${k} ${k === 1 ? "amount" : "amounts"}, ${ownRangeOf(r.amounts)} (Appendix C). With no single price, it is not placed against the peers.`;
+}
+
+/**
+ * "$32", or "$32 (2 published amounts, $15 to $32)" when the schedule lists several; "$15 to $35
+ * (3 published amounts, no single price)" when it lists several and states no single price.
+ */
 function ownValue(r: FeeRead): string {
+  if (noSinglePrice(r)) {
+    const k = r.amounts.length;
+    return `${ownRangeOf(r.amounts)} (${k} published ${k === 1 ? "amount" : "amounts"}, no single price)`;
+  }
   if (r.fee.current === null) return NOT_PUBLISHED;
   const lo = r.amounts.length ? Math.min(...r.amounts) : r.fee.current;
   const hi = r.amounts.length ? Math.max(...r.amounts) : r.fee.current;
@@ -569,6 +602,7 @@ function ownValue(r: FeeRead): string {
 const BAND_TEXT: Record<Band, string> = { above: "Above the middle 50%", within: "Within the middle 50%", below: "Below the middle 50%" };
 
 function positionCell(r: FeeRead): string {
+  if (noSinglePrice(r)) return "Not placed: no single price";
   if (!r.band || !r.check || r.check.percentile === null) return "Not placed";
   return `${BAND_TEXT[r.band]}; ${placeAmong(r.check.percentile, r.n, true)}`;
 }
@@ -576,7 +610,7 @@ function positionCell(r: FeeRead): string {
 function positionTable(input: CommitteePacketInput, reads: FeeRead[], group: string, feeListNote: string): PacketTable {
   const rows = reads.map((r) => [
     r.widened ? `${r.name} (compared with ${r.fee.peerLabel})` : r.name,
-    r.fee.current === null ? NOT_PUBLISHED : `${ownValue(r)} ${refs([r.ownMark])}`,
+    publishes(r) ? `${ownValue(r)} ${refs([r.ownMark])}` : NOT_PUBLISHED,
     r.med === null ? NOT_PLACED : `${packetMoney(r.med)} (${r.n} peers) ${refs([r.peerMark])}`,
     r.q1 === null || r.q3 === null ? NOT_PLACED : span(r.q1, r.q3),
     positionCell(r),
@@ -684,7 +718,7 @@ function investigate(r: FeeRead): PacketNextStep {
 function assessFees(reads: FeeRead[], input: CommitteePacketInput, group: string): Pick<CommitteePacket["brief"], "conclusion" | "findings" | "unresolved" | "impact" | "nextStep"> {
   const placed = reads.filter((r) => r.band !== null && r.check?.percentile !== null && r.check?.percentile !== undefined);
   if (!placed.length) {
-    const published = reads.filter((r) => r.fee.current !== null).length;
+    const published = reads.filter(publishes).length;
     return {
       conclusion: `${input.institutionName} publishes ${published} of the ${reads.length} fees in this packet, but none has ${MIN_PEERS_FOR_POSITION} or more peers in ${group} publishing it, so no benchmark difference can be assessed yet.`,
       findings: [],
@@ -929,7 +963,7 @@ function matrixTable(input: CommitteePacketInput, reads: FeeRead[], notes: Footn
   const ownMarks = reads.map((r) => r.ownMark);
   const ownRow = [
     input.institutionName,
-    ...input.fees.map((f) => (f.current === null ? NOT_FOUND : packetMoney(f.current))),
+    ...reads.map((r) => (noSinglePrice(r) ? ownRangeOf(r.amounts) : r.fee.current === null ? NOT_FOUND : packetMoney(r.fee.current))),
     refs(ownMarks) || NOT_FOUND,
   ];
   const rows = shown.map(([id, entry]) => {
@@ -948,7 +982,7 @@ function matrixTable(input: CommitteePacketInput, reads: FeeRead[], notes: Footn
       : `${ranked.length} ${ranked.length === 1 ? "peer" : "peers"}, those publishing the most of these fees first; ${input.institutionName} first.`,
     columns: ["Institution", ...input.fees.map((f) => feeName(f.feeCategory)), "Source"],
     rows: [ownRow, ...rows],
-    note: `"${NOT_FOUND}": the fee is not found in that institution's published schedule in the index. It is never read as $0.`,
+    note: `"${NOT_FOUND}": the fee is not found in that institution's published schedule in the index. It is never read as $0.${reads.some(noSinglePrice) ? " A range means the institution publishes several amounts for the fee, so it has no single price." : ""}`,
     source: SCHEDULES,
     ownFirst: true,
   };
@@ -1015,7 +1049,7 @@ function productTable(input: CommitteePacketInput, reads: FeeRead[]): PacketTabl
     subtitle: `Every live row on ${input.institutionName}'s published schedule behind the comparison value.`,
     columns: ["Fee", ownWording ? "Name on the schedule" : "Listed in the index as", "Amount", "Charged", "Conditions", "Source"],
     rows,
-    note: "Where a fee has several amounts, the comparison value is their median, or the highest tier for overdraft.",
+    note: "Where overdraft has several amounts, its highest tier is compared. Any other fee listed at several amounts has no single price and is not placed.",
     source: SCHEDULES,
     ownFirst: false,
   };
@@ -1163,9 +1197,10 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
   const assessment = assessFees(reads, input, group);
 
   const thin = reads.filter((r) => r.fee.current !== null && r.n < MIN_PEERS_FOR_POSITION);
-  const missing = reads.filter((r) => r.fee.current === null);
+  const missing = reads.filter((r) => !publishes(r));
+  const unpriced = reads.filter(noSinglePrice);
   const widened = reads.filter((r) => r.widened);
-  const several = reads.filter(severalAmounts);
+  const several = reads.filter((r) => r.fee.current !== null && severalAmounts(r));
   const q = input.quarterly;
   const limitations = [
     ...(thin.length ? [`Coverage: fewer than ${MIN_PEERS_FOR_POSITION} peers publish ${listOf(thin.map((r) => inText(r.name)))}, so ${thin.length === 1 ? "it is" : "they are"} not placed.`] : []),
@@ -1174,7 +1209,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
     q?.kind === "diff"
       ? `History: two stored quarterly copies (${quarterLabel(q.diff.fromQuarter)} and ${quarterLabel(q.diff.toQuarter)}); earlier quarters are not compared.`
       : `History: ${q?.kind === "first" ? "one stored quarterly copy" : "no stored quarterly copy"}, so this packet shows positions today and no quarter-on-quarter movement.`,
-    `Comparability: each institution counts once per fee; product tiers, waivers and conditions differ between schedules and are not matched${several.length ? `. ${capitalize(listOf(several.map((r) => inText(r.name))))} ${several.length === 1 ? "has" : "have"} several published amounts at ${input.institutionName} (Appendix C)` : ""}. Fees stated as a rate are left out.`,
+    `Comparability: each institution counts once per fee; product tiers, waivers and conditions differ between schedules and are not matched${several.length ? `. ${capitalize(listOf(several.map((r) => inText(r.name))))} ${several.length === 1 ? "has" : "have"} several published amounts at ${input.institutionName} (Appendix C)` : ""}.${unpriced.map((r) => ` ${unpricedNote(r, input.institutionName)}`).join("")} Fees stated as a rate are left out.`,
     ...(input.financials || normalized.value ? ["Income: filed income is the whole institution's deposit service charge income; it does not show the income from any one fee."] : []),
   ];
 
@@ -1199,6 +1234,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
       feeCategory: r.fee.feeCategory,
       name: r.name,
       current: r.fee.current,
+      ownRange: noSinglePrice(r) ? ownRangeOf(r.amounts) : null,
       median: r.med,
       q1: r.q1,
       q3: r.q3,
@@ -1236,7 +1272,7 @@ export function buildCommitteePacket(input: CommitteePacketInput): CommitteePack
     feeListNote,
     glance: {
       fees: reads.length,
-      published: reads.filter((r) => r.fee.current !== null).length,
+      published: reads.filter(publishes).length,
       placed: placed.length,
       above: placed.filter((r) => r.band === "above").length,
       within: inside.length,

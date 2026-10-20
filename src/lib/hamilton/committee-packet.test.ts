@@ -163,20 +163,21 @@ describe("buildCommitteePacket: executive brief", () => {
     const packet = buildCommitteePacket(fullPacketInput());
     // By percentage gap from the median: wire 25%, cashier's check 21%, NSF 20%. A routine fee ranks with a headline one.
     expect(packet.brief.findings.map((f) => f.feeCategory)).toEqual(["wire_domestic_outgoing", "cashiers_check", "nsf"]);
-    expect(packet.brief.conclusion).toMatch(/^On a like-for-like basis, 3 of the 8 fees compared sit outside the peers' middle 50%\. The largest benchmark difference selected for review is outgoing domestic wire: \$30, \$6 \(25%\) above the peer median of \$24 \[\d+, \d+\]\.$/);
+    // Monthly maintenance is listed at several amounts with no single price, so it is not compared.
+    expect(packet.brief.conclusion).toMatch(/^On a like-for-like basis, 3 of the 7 fees compared sit outside the peers' middle 50%\. The largest benchmark difference selected for review is outgoing domestic wire: \$30, \$6 \(25%\) above the peer median of \$24 \[\d+, \d+\]\.$/);
     const [wire] = packet.brief.findings;
     expect(wire.statement).toBe("Outgoing domestic wire, at $30, is above all 9 peers.");
     expect(wire.evidence).toMatch(/^\$6 \(25%\) above the peer median of \$24; middle 50% \$22 to \$26; 9 of 12 peers publish it \[\d+, \d+\]$/);
     // The business impact is said to be unknown, never implied by the ranking.
     expect(packet.brief.impact).toContain("Business impact is unknown");
     expect(JSON.stringify(packet.brief)).not.toMatch(/matters most|most material|headline fee/i);
-    // Several published amounts keep monthly maintenance out of the findings until resolved.
+    // Several published amounts keep overdraft (compared at its highest tier) out of the findings until resolved.
     expect(packet.brief.unresolved).toEqual([
       {
-        feeCategory: "monthly_maintenance",
-        fee: "Monthly maintenance",
-        position: "$4, below all 10 peers",
-        caveats: ["The schedule lists 3 amounts ($4 to $25); the comparison uses $4; another product's amount would change the position."],
+        feeCategory: "overdraft",
+        fee: "Overdraft",
+        position: "$45, above all 12 peers",
+        caveats: ["The schedule lists 2 amounts ($15 to $45); the comparison uses $45; another product's amount would change the position."],
       },
     ]);
   });
@@ -222,8 +223,62 @@ describe("buildCommitteePacket: executive brief", () => {
     expect(text).toContain("Coverage: stop payment is not on Capital City Bank's published schedule in the index.");
     expect(text).toContain("History: no stored quarterly copy");
     expect(text).toContain("Comparability: each institution counts once per fee");
+    // Overdraft is the one fee still compared from several amounts: its highest tier (#1930).
     expect(text).toContain("Overdraft has several published amounts at Capital City Bank (Appendix C)");
     expect(packet.brief.limitations.length).toBeLessThanOrEqual(6);
+  });
+
+  describe("a fee published at several amounts, with no single price", () => {
+    // Since #1930 a fee other than overdraft with several different amounts has no comparison
+    // value, so it arrives with `current: null` and its rows in `ownRows`.
+    const nsfPeers = [
+      peer(5, "U.S. Bank", 34, 501),
+      peer(21, "M&T Bank", 30, 2101),
+      peer(4956, "Navy Federal Credit Union", 29, 495601),
+      peer(6741, "SchoolsFirst Federal Credit Union", 25, 674101),
+      peer(9001, "Example Savings Bank", 32, 900101),
+    ];
+    const nsf = {
+      feeCategory: "nsf",
+      current: null,
+      peerLabel: "Florida peers",
+      peers: nsfPeers,
+      ownRows: [15, 35, 25].map((amount) => ({ amount, sourceDocumentId: 32377, documentUrl: "https://example.test/ccb-nsf.pdf", publishedAt: "2026-10-01T00:00:00.000Z" })),
+    };
+    const base = input();
+    const packet = buildCommitteePacket({ ...base, fees: [base.fees[0], nsf, base.fees[1]] });
+    const nsfRow = (table: { rows: string[][] }) => table.rows.find((row) => /NSF/.test(row[0]))!;
+
+    it("never calls it missing from the schedule", () => {
+      const text = packet.brief.limitations.join("\n");
+      expect(text).toContain("Coverage: stop payment is not on Capital City Bank's published schedule in the index.");
+      expect(text).not.toMatch(/NSF[^.]* (?:is|are) not on Capital City Bank's published schedule/);
+      expect(JSON.stringify(packet)).not.toMatch(/NSF[^"]*Not found/);
+    });
+
+    it("shows the published range with the bank's schedule cited", () => {
+      const row = nsfRow(packet.position.table);
+      expect(row[1]).toMatch(/^\$15 to \$35 \(3 published amounts, no single price\) \[\d+\]$/);
+      expect(row[4]).toBe("Not placed: no single price");
+      const mark = Number(row[1].match(/\[(\d+)\]$/)![1]);
+      const note = packet.footnotes.find((f) => f.n === mark)!;
+      expect(`${note.label} ${note.detail} ${note.url}`).toMatch(/Capital City Bank/);
+      const matrix = packet.appendix.find((t) => t.id === "peer_fee_matrix")!;
+      const nsfColumn = matrix.columns.findIndex((c) => /NSF/.test(c));
+      expect(matrix.rows[0][nsfColumn]).toBe("$15 to $35");
+      const bar = packet.position.bars.find((b) => b.feeCategory === "nsf")!;
+      expect(bar.current).toBeNull();
+      expect(bar.ownRange).toBe("$15 to $35");
+      expect(bar.marks).toMatch(new RegExp(`\\b${mark}\\b`));
+    });
+
+    it("says once that no single price can be placed, and counts the fee as published", () => {
+      const text = packet.brief.limitations.join("\n");
+      expect(text).toContain("Capital City Bank's schedule lists NSF / returned item at 3 amounts, $15 to $35 (Appendix C). With no single price, it is not placed against the peers.");
+      expect(text).not.toContain("NSF / returned item has several published amounts");
+      expect(packet.glance.published).toBe(2);
+      expect(packet.glance.placed).toBe(1);
+    });
   });
 
   it("drops the watched-fee label when no fees are saved", () => {

@@ -187,6 +187,8 @@ interface TrackRow {
   name: string;
   note: string | null;
   own: number | null;
+  /** Said in place of the value when `own` is null. */
+  ownMissing: string;
   median: number | null;
   q1: number | null;
   q3: number | null;
@@ -207,6 +209,7 @@ function feeRow(b: PacketFeeBar): TrackRow {
     name: b.name,
     note: b.comparedWith ? `Compared with ${b.comparedWith}` : null,
     own: b.current,
+    ownMissing: b.ownRange ? `${b.ownRange}, no single price` : "Not on the schedule",
     median: b.median,
     q1: b.q1,
     q3: b.q3,
@@ -226,6 +229,7 @@ function incomeRow(n: NormalizedIncome): TrackRow {
     name: "Income per $10,000 of assets",
     note: null,
     own: n.own,
+    ownMissing: "Not on the schedule",
     median: n.median,
     q1: n.q1,
     q3: n.q3,
@@ -251,7 +255,7 @@ function Track({ row }: { row: TrackRow }) {
   return (
     <div
       role="img"
-      aria-label={`${row.name}: ${row.own === null ? "not published" : row.fmt(row.own)}; peers' middle 50% ${row.fmt(q1)} to ${row.fmt(q3)}; median ${row.fmt(median)}`}
+      aria-label={`${row.name}: ${row.own === null ? row.ownMissing.toLowerCase() : row.fmt(row.own)}; peers' middle 50% ${row.fmt(q1)} to ${row.fmt(q3)}; median ${row.fmt(median)}`}
       className="relative h-8"
     >
       {row.low !== null && row.high !== null ? (
@@ -288,7 +292,7 @@ function TrackRows({ rows }: { rows: TrackRow[] }) {
             <div className="order-3 col-span-2 md:order-none md:col-span-1">{placed ? <Track row={row} /> : <p className="text-xs text-warm-600">{row.empty}</p>}</div>
             <div className={`text-right text-[15px] ${ANSWER_TYPE.num}`}>
               {row.own === null ? (
-                <span className="text-warm-600">Not on the schedule</span>
+                <span className="text-warm-600">{row.ownMissing}</span>
               ) : (
                 <span className={`font-semibold ${row.outside ? "text-terra-text" : "text-warm-900"}`}>{row.fmt(row.own)}</span>
               )}

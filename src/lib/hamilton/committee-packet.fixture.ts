@@ -22,9 +22,11 @@ const PEERS = [
 ];
 
 const FEES: { category: string; current: number | null; amounts: number[]; base: number; step: number; publishers: number }[] = [
-  { category: "overdraft", current: 36, amounts: [36, 15], base: 25, step: 1.5, publishers: 12 },
+  // Overdraft is compared at its highest tier, so several amounts still give one value to resolve.
+  { category: "overdraft", current: 45, amounts: [45, 15], base: 25, step: 1.5, publishers: 12 },
   { category: "nsf", current: 34, amounts: [34], base: 22, step: 1.25, publishers: 11 },
-  { category: "monthly_maintenance", current: 4, amounts: [4, 12, 25], base: 6, step: 1, publishers: 10 },
+  // Several different amounts and not overdraft: no single price, so no comparison value (#1930).
+  { category: "monthly_maintenance", current: null, amounts: [4, 12, 25], base: 6, step: 1, publishers: 10 },
   { category: "atm_non_network", current: 3, amounts: [3], base: 2, step: 0.25, publishers: 12 },
   { category: "wire_domestic_outgoing", current: 30, amounts: [30], base: 20, step: 1, publishers: 9 },
   { category: "stop_payment", current: 30, amounts: [30], base: 25, step: 1, publishers: 8 },
