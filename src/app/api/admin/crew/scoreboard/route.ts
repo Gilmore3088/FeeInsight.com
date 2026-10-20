@@ -49,6 +49,8 @@ async function handleGET(request: NextRequest) {
       { key: "deming-source-health", agent: "atlas", title: "Deming: report each public-data source as fresh, stale, empty, failed or skipped (read-only)" },
       { key: "scoreboard-snapshot", agent: "atlas", title: "Record the daily scoreboard" },
       { key: "deming-change-outcomes", agent: "atlas", title: "Deming: check whether each change moved the number it named, a week on" },
+      // On the 1st of the month (UTC) only: each agent's 2026-10-12 review measures, re-read (#1107).
+      { key: "deming-monthly-review", agent: "atlas", title: "Deming: on the 1st of the month, re-read each agent's review measures (read-only)" },
       { key: "deming-sunday-maintenance", agent: "atlas", title: "Deming: on Sunday, write James's hour of maintenance tasks" },
       // New live-bank work obeys the pipeline pause and follows every existing exempt measurement.
       { key: "deming-live-source-draw", agent: "atlas", title: "Deming: freeze today's separate live-source diagnostic draw (no network)" },

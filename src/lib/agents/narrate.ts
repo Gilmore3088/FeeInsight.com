@@ -353,6 +353,13 @@ function narrateFinished(
       const soFar = rate && Number(rate.judged) > 0 ? ` So far ${Number(rate.moved)} of ${count(Number(rate.judged), "change")} moved their number.` : "";
       return `Checked ${count(judged.length, "change")} a week after merge: ${moved} moved as expected; ${n(detail, "pending")} still within their week.${soFar}`;
     }
+    case "deming-monthly-review": {
+      if (detail.ran === false) return "Not the 1st of the month: no monthly agent review this time.";
+      const alarms = Array.isArray(detail.alarms) ? detail.alarms.length : 0;
+      return alarms === 0
+        ? "Ran the monthly agent review: no measure moved the wrong way past its limit."
+        : `Ran the monthly agent review: ${count(alarms, "measure")} moved the wrong way past ${alarms === 1 ? "its" : "their"} limit.`;
+    }
     case "deming-sunday-maintenance":
       if (detail.ran === false) return "Not Sunday: no maintenance email this time.";
       return detail.delivery_status === "sent"
@@ -739,6 +746,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   "deming-knox-misses": "atlas",
   "deming-playbook-check": "atlas",
   "deming-change-outcomes": "atlas",
+  "deming-monthly-review": "atlas",
   "deming-sunday-maintenance": "atlas",
   "deming-regression": "atlas",
   "scoreboard-snapshot": "atlas",

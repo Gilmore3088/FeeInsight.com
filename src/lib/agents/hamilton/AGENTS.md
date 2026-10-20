@@ -562,11 +562,17 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
     dollar fee from a product page whose bank's schedule documents list the same category only
     at other prices; the schedule wins. Per-account and multi-item categories are left out
     (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
-    nothing comes down until a hand check of 10 finds 9 right; then a PR turns it on and a
+    nothing comes down until an automatic sample of its dry run against the banks' stored documents
+    checks clean (James, Oct 20); then a PR turns it on and a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
     A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
     name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending
     flag the check no longer raises on a live fee is cleared (`takedown_cleared`).
+    The schedule must price the same item, not only the same category (`isSameItemConflict`,
+    Oct 20): a category holds several items, and 12 of 20 sampled takedowns paired different ones
+    (an HSA closing fee against a Christmas Club penalty). A product price named as a discount,
+    and a tier's own product page or fee (`/checking/bankon`), are never conflicts. Lesson: judge
+    a fee against the same line of the schedule, never against its category's prices.
 13. Cross-page conflict (`cross-page-conflict.ts`): one product priced differently on two
     current pages (or two editions of one document); the older one comes down on its second
     look, `cross_page_conflict: #<older doc> older than #<newer doc> (fee <id>)` (or `older
