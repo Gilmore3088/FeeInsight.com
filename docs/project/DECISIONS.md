@@ -5,6 +5,12 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**Returned statements file as returned mail.** James, 2026-10-20 03:51 UTC, decision card "File
+returned statements under returned mail instead of keeping them held?": "File them". On Oct 7 (v26)
+he had kept them held because no category fit; the returned-mail type made on Oct 15 (#1398) covers
+"returned or undeliverable mail or statements". Knox v90 files them there, the held re-check sends
+the held ones (231 in the Oct 20 dry run) to Darwin, and live ones already sit under returned mail.
+
 **Issues become lessons for the agents, not only checks.** James, 2026-10-20: "I don't want a
 check, I want a lesson for the agents so they get better at their roles. This is the whole point
 of the recursive agent architecture." Until then the pipeline agents learned only per institution

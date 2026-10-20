@@ -256,6 +256,12 @@ fees found (54.7%); 56 of the 59 wrong reads are the right price under another c
 
 ## Rules versions (`extract.rules`)
 
+v90 (Oct 20) restores the held-name rule for returned statements: "Returned Statement Fee" and
+other mailed-back statements file as returned mail, the type made for returned or undeliverable
+mail or statements (#1398). James chose "File them" on his decision card (03:51 UTC), replacing
+his v26 call that they stay held. The Oct 20 dry run counted 231 such held lines; live returned
+statements already sit under returned mail (83 at 82 banks).
+
 v89 (Oct 20, #1102) turns on the held-name rules (`KNOX_HELD_NAME_RULES_LIVE`) under James's
 sampled-clean rule, and drops their returned-statement rule so returned statements stay held
 (his v26 call). New reads file "Stop Pay Fee", reconveyance, a bare or short-window early
@@ -561,7 +567,7 @@ refinancing and document fees into other lending. The answer keys left these lin
 so the gate re-files them the same way. At v26: Texas 486 right of 500 reads; seven states 712
 of 759; no new wrong reads. Dry run on 13,383 held lines: 1,622 get a category (1,559 by the
 fold). Membership, phone transfer, credit card, uncollected funds and returned statement fees
-stay held.
+stay held (returned statements file as returned mail since v90).
 
 v27 (rules 27) reads two-column schedules where the right column's footnotes run beside a left-column
 heading ("Wire Transfer Fees | being returned NSF."). A two-cell line with no price, whose left cell
@@ -841,7 +847,7 @@ by its heading where its own words mislead, and the next held families get names
 - Left held on purpose: travel and reloadable cards (one gate key leaves "Travel Money Card"
   unfiled, the 62-bank key files them two ways), a printout without "statement" (the keys split it
   between research and copies), a copy of a title, stop pay (`HELD_NAME_PATTERNS`, James's switch),
-  returned statements, reopening an account, and a bare "Service Fee", "Checking Fee" or "Shipping
+  reopening an account, and a bare "Service Fee", "Checking Fee" or "Shipping
   Fee" (on live texts those names took rows the heading pass reads right, "Cashier's Checks: |
   Performance Checking", "Credit/Debit Replacement Card: | Standard Shipping").
 - 62-bank key, free-team replay of the 62 key texts (scorer fee rule, a key's account research
@@ -937,7 +943,7 @@ that key's fold home.
 - "Mobile Check Deposit" is mobile deposit.
 - One price for a "Debit Card or Credit Card Replacement" is the debit card's (a credit card alone
   is still a lending fee).
-- Left held on purpose: returned statements (James's call since v26); a bare "Wire Transfer Fee"
+- Left held on purpose (returned statements file as returned mail since v90): a bare "Wire Transfer Fee"
   (about 1 in 5 say incoming or international after the price); and printouts, instant-issue cards,
   travel and reloadable cards, loan coupon books, remote deposit capture and a bare "Expedited
   Delivery", which the Texas or seven-state gate keys leave unfiled or file elsewhere.
@@ -1258,14 +1264,14 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   an IRA closeout or withdrawal, and a box size written with prime marks ("3″x5″"). They come
   after every other rule. A loan's, HELOC's, mortgage's or certificate's early closure, a window
   over a year, and a bare "Wire Transfer Fee" (about 1 in 5 say incoming or international after
-  the price) stay held, and so do returned statements (James's v26 call; their rule was dropped
-  when the switch went on). While `KNOX_HELD_NAME_RULES_LIVE` was false, each extract step read every
+  the price) stay held. Returned statements file as returned mail since v90 (James, Oct 20, "File
+  them"); their rule was dropped from v89 to keep his v26 call. While `KNOX_HELD_NAME_RULES_LIVE` was false, each extract step read every
   held line whose excerpt could match (`HELD_NAME_PREFILTER_SQL`) and reports in
   `held_name_preview` how many only these rules price at the row's own amount, and how many of
   those pass Darwin's category guard and trace on their own line. It writes nothing. On
   14 Oct 2026, 638 lines at 299 banks passed both checks (436 set aside), and a hand check of
   20 found 20 right. On 20 Oct the global dry run released 478 (440 passing both checks, at 207
-  banks); without the 231 returned statements about 209 remain, and a random 20 of the 478 were
+  banks, 231 of them returned statements), and a random 20 of the 478 were
   all printed on the bank's document. Switching on took a rules version bump (v89): new reads
   file these names, `recheckHeldRows` sends the held lines to Darwin with
   `knox_held_name_rule`, and Hamilton's rules re-check reads them the same way. With the
@@ -1703,7 +1709,7 @@ fails a PR that changes one of these constants without updating its line here (#
 | `LINEUP_CORRECT_STRATEGY` | `knox.lineup_correct` | v2 | `knox/lineup-correct.ts` |
 | `NAME_RETIDY_STRATEGY` | `knox.name_retidy` | v23 | `knox/name-retidy.ts` |
 | `KNOX_PAID_STRATEGY` | `extract.paid` | v2 | `knox/paid-extract.ts` |
-| `KNOX_RULES_STRATEGY` | `extract.rules` | v89 | `knox/specialists.ts` |
+| `KNOX_RULES_STRATEGY` | `extract.rules` | v90 | `knox/specialists.ts` |
 | `KNOX_REREAD_FEEDBACK_STRATEGY` | `knox.reread_feedback` | v1 | `knox/reread-feedback.ts` |
 | `KNOX_TABLE_STRATEGY` | `extract.table` | v7 | `knox/table-rows.ts` |
 | `TAKEDOWN_LESSONS_VERSION` | — | v2 | `knox/takedown-lessons.ts` |
