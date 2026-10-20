@@ -52,13 +52,16 @@ export const KNOX_REFILED_FROM_PREFIX = "knox_refiled_from:";
  */
 export const KNOX_TAKEOVER_FROM_PREFIX = "knox_takeover_from:";
 /**
- * Whether `knox_takeover_from:<old>` counts as proof, as `knox_refiled_from:<old>` does. Off until
- * James says yes: on, rows it proves join the re-judge above, and judging them again can publish
- * fees. Off, each verify step counts the rows it would add and samples them in its ledger detail
- * (`category_change_rejudge.takeover_proof`); Knox writes the flag either way, since the flag
- * itself changes no decision.
+ * Whether `knox_takeover_from:<old>` counts as proof, as `knox_refiled_from:<old>` does. On, rows it
+ * proves join the re-judge above, and judging them again can publish fees; each verify step still
+ * counts and samples them in its ledger detail (`category_change_rejudge.takeover_proof`).
+ *
+ * On since Oct 20 under James's sampled-clean rule (DECISIONS, Oct 20): the global dry run found 3
+ * rows (raw 129981 "Return Mail" $3, 143924 "Fax" $5, 152419 "Image copy" $2), each rejected as a
+ * too-cheap account research fee and now filed under the category its line names; all 3 pass the
+ * shared source check and the category guard against the bank's stored schedule (#1295).
  */
-export const DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE = false;
+export const DARWIN_TAKEOVER_CATEGORY_PROOF_LIVE = true;
 
 /** One earlier `verify.rules` decision on the row. */
 export interface PriorDecision {
