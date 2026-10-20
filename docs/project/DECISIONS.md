@@ -12,6 +12,36 @@ the full record of decisions. `scripts/ci-guards.sh lessons-index-kill` keeps th
 it fails a PR when a finding or a decision entry has no line in LESSONS.md, or when LESSONS.md links
 a finding that does not exist.
 
+**Legacy event-log partitions are dropped, not trimmed.** James, 2026-10-19; migration approved 2026-10-20. Atlas drops expired
+legacy `agent_events` partitions through a migration function instead of deleting rows (#2453,
+migration 072). Dry run 04:19 UTC: partitions `_2026_04` to `_2026_07`, about 386 MB.
+
+**Call-report quarterly summaries are computed once per load.** James, 2026-10-20. Hoovie stores
+each filing's standalone quarter when filings load and the readers read that summary; the raw
+filings are kept unchanged (#2459, migration 073).
+
+**Main's peer-group widening rule wins over exact saved groups.** James, 2026-10-20. #1785 was
+closed: a saved group widens when too few peers publish a fee. Its new filters (asset size
+range, regulator, CU charter, holding company) are to be ported onto `main`, tracked on #975.
+
+**The market report uses one comparison set.** James, 2026-10-20. #1736 reads every rank and
+median from `main`'s #2353 comparison and drops its own separate share cohort.
+
+**Institution page: one connected panel.** James, 2026-10-20, approved #1864's plan: `main`'s
+#1984 `ConnectedPanel` stays the only panel and is fed from #1864's call-report data; #1864's own
+panel is removed.
+
+**HMDA matching repair merges with every release flag off.** James, 2026-10-20. #2253 merged
+with all four HMDA release flags false, accepting that new HMDA lender rows are not linked to an
+institution until the release is approved.
+
+**Hourly line check and hand-takedown returns merge on re-measured counts.** James, 2026-10-20.
+#2436 merged after a re-measure at 04:13 UTC (2,013 fees changed at 1,578 banks; 9 takedowns),
+with its CLAUDE.md self-exception removed: a PR does not widen its own merge authority.
+
+**Superseded PRs closed.** James, 2026-10-20. #1011 (Hamilton preview) and #1575 (API docs)
+closed as superseded.
+
 **Returned statements file as returned mail.** James, 2026-10-20 03:51 UTC, decision card "File
 returned statements under returned mail instead of keeping them held?": "File them". On Oct 7 (v26)
 he had kept them held because no category fit; the returned-mail type made on Oct 15 (#1398) covers

@@ -53,6 +53,7 @@ describe("buildPublicInstitutionProfileLinks", () => {
     );
     // The plans open on this institution's tier and come back to its page (growth OS review M4).
     expect(links.plansHref).toBe("/subscribe?inst=1391&from=%2Finstitution%2F1391#pro");
+    expect(links.peerSetsHref).toBe("/subscribe?inst=1391&from=%2Fpro%2Fsettings%3FinstId%3D1391%23peer-sets#pro");
   });
 
   it("keeps direct Pro routes for signed-in viewers", () => {
@@ -62,6 +63,7 @@ describe("buildPublicInstitutionProfileLinks", () => {
       isAuthenticated: true,
     });
     expect(links.briefHref).toBe("/pro/reports?instId=1391&intent=competitive-brief");
+    expect(links.peerSetsHref).toBe("/pro/settings?instId=1391#peer-sets");
     expect(links.plansHref).toBe("/subscribe?inst=1391&from=%2Finstitution%2F1391#pro");
   });
 });

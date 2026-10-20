@@ -16,9 +16,17 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Decisions
 
-173 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
+181 entries, newest first. The full text, who decided and why are in [DECISIONS.md](DECISIONS.md).
 
 - 2026-10-20 — One front door for decisions and lessons. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Legacy event-log partitions are dropped, not trimmed. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Call-report quarterly summaries are computed once per load. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Main's peer-group widening rule wins over exact saved groups. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — The market report uses one comparison set. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Institution page: one connected panel. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — HMDA matching repair merges with every release flag off. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Hourly line check and hand-takedown returns merge on re-measured counts. — [decision](DECISIONS.md#2026-10-20)
+- 2026-10-20 — Superseded PRs closed. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Returned statements file as returned mail. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — A process fix switches on once its sample checks clean; James hears after. — [decision](DECISIONS.md#2026-10-20)
 - 2026-10-20 — Issues become lessons for the agents, not only checks. — [decision](DECISIONS.md#2026-10-20)
@@ -194,7 +202,7 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 
 ## Lessons by theme
 
-239 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
+247 findings from `findings/`, grouped by where the problem was, newest first in each theme. Each line: date — the lesson (the finding's `**Lesson:**` line, or its title when it has none) — link — what enforces it.
 
 ### Extraction and fee reading (31)
 
@@ -371,8 +379,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A public page reads catalog aggregates through `public-cached-reads.ts`, never the uncached data-store functions. — [finding](findings/2026-10-09-guide-pages-skipped-public-cache.md) — Guard: `src/app/(public)/guides/[slug]/page.test.ts:22` (+1 more)
 - 2026-10-09 — Each reference to published_fee_catalog recomputes the whole catalog. — [finding](findings/2026-10-09-catalog-view-recomputed-per-reference.md) — Guard: `src/lib/data-store/search.test.ts:267` (+2 more)
 
-### Migrations, deploys and builds (11)
+### Migrations, deploys and builds (14)
 
+- 2026-10-20 — A migration number is claimed when any open PR uses it, not when it reaches `main`, so check open PRs before taking one. — [finding](findings/2026-10-20-migration-number-collisions-across-open-prs.md) — Guard: Foundation tracker #1048 line "guard for migration numbers claimed by open PRs"; until then, merge `main` and re-run `migration-version-kill`
+- 2026-10-20 — Agents never run deploy-capable `vc`/`vercel` commands and never write a Vercel token to disk. — [finding](findings/2026-10-20-vercel-env-run-deploys.md) — Guard: Foundation tracker #1048 line "ban deploy-capable vercel commands for agents"
+- 2026-10-20 — Whether a preview builds should depend on the PR's own change against its merge-base, not on the last commit. — [finding](findings/2026-10-20-preview-build-queue-from-merge-main-pushes.md) — Guard: Foundation tracker #1048 lines "ignoreCommand diffs against the PR merge-base and skips drafts" and "sitemap rendered on request with caching"
 - 2026-10-19 — Schema changes go in `supabase/migrations` with James's approval, never in request code. — [finding](findings/2026-10-19-runtime-schema-ddl.md) — Guard: `scripts/ci-guards.sh runtime-ddl-kill` (+3 more)
 - 2026-10-19 — A required read on a prerendered page failed the deploy. — [finding](findings/2026-10-19-required-read-fails-build.md) — Guard: `src/app/(public)/institutions/directory-deadline.test.tsx:110`
 - 2026-10-17 — Vercel usage: the agents tick is the compute bill. — [finding](findings/2026-10-17-vercel-usage-agents-tick.md) — Guard: `src/lib/vercel-config.test.ts:31` (+1 more)
@@ -427,8 +438,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-10 — Written answers need account identity as well as a research subject. — [finding](findings/2026-10-10-hamilton-account-versus-research-context.md) — Agent lesson: hamilton/pr-985-subject-not-account
 - 2026-10-09 — Any comparison of one institution with a peer statistic must filter the institution's rows the same way the statistic filters its own. — [finding](findings/2026-10-09-pro-compared-unlike-fees.md) — Guard: `src/lib/hamilton/report-evidence.test.ts`
 
-### Site, pages and copy (15)
+### Site, pages and copy (16)
 
+- 2026-10-19 — `font-mono` and `font-sans` resolve to nothing on the public site. — [finding](findings/2026-10-19-font-mono-undefined-var.md) — Guard: none yet; #2166 adds a check for `globals.css` custom properties nothing defines
 - 2026-10-19 — Named segment rows quote an institution median as a published fee. — [finding](findings/2026-10-19-segment-median-as-published-price.md) — Guard: `src/lib/data-store/segment-stated-prices.db.test.ts` (+7 more)
 - 2026-10-19 — Public fee-index applicability and source attribution. — [finding](findings/2026-10-19-public-fee-index-applicability.md) — Guard: `src/lib/data-store/public-fee-applicability.db.test.ts` (+5 more); 1 more Guard line(s)
 - 2026-10-19 — Read the query behind a public count before writing what the count means. — [finding](findings/2026-10-19-monitored-count-includes-closed.md) — Guard: `src/lib/public-stats.test.ts` (+1 more)
@@ -445,8 +457,11 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — When an agent writes a link into a draft, check that the route exists on main. — [finding](findings/2026-10-09-outreach-snapshot-links-404.md) — Guard: `src/lib/agents/growth/norman.test.ts`
 - 2026-10-09 — An outgoing side effect needs its own record in Postgres; don't rely on a provider's read API that needs broader credentials than sending. — [finding](findings/2026-10-09-no-sent-email-log.md) — Guard: `src/lib/email/resend.test.ts` (+1 more)
 
-### CI, tests, tooling and PR workflow (11)
+### CI, tests, tooling and PR workflow (14)
 
+- 2026-10-20 — Parallel agents write PR bodies to a unique `mktemp` file and re-read the body after every edit. — [finding](findings/2026-10-20-shared-scratch-file-overwrote-pr-body.md) — Guard: Foundation tracker #1048 line "agents use mktemp for PR bodies and verify the body after edit"
+- 2026-10-20 — A push that drops scope while reconciling with `main` updates the PR title and body in the same push. — [finding](findings/2026-10-20-pr-descriptions-stale-after-reconcile.md) — Guard: the independent review of the exact head checks that the body matches the diff
+- 2026-10-20 — A caught error is recorded where people look (a step warning or a logged error), never turned silently into an empty result. — [finding](findings/2026-10-20-swallowed-errors-hid-failures.md) — Guard: the `step.warning` added in #2414, and the #975 line for the `layout.tsx:94` lookup
 - 2026-10-19 — Test-toolchain mock and Windows path guards. — [finding](findings/2026-10-19-test-toolchain-path-guards.md) — Guard: `src/lib/test-toolchain-security.test.ts`
 - 2026-10-19 — Compatible schema, cache and filesystem tooling safety. — [finding](findings/2026-10-19-schema-cache-filesystem-tooling.md) — Guard: `src/lib/tooling-dependency-security.test.ts`
 - 2026-10-19 — The Hamilton journeys ran on a schema missing everything added since 2026-10-04. — [finding](findings/2026-10-19-journey-schema-catch-up.md) — Guard: `tests/e2e/hamilton/schema-catch-up.test.ts`
@@ -459,8 +474,9 @@ Contents: [Decisions](#decisions) · [Lessons by theme](#lessons-by-theme) ·
 - 2026-10-09 — A shared log that every PR appends to at the same spot needs one file per entry. — [finding](findings/2026-10-09-findings-md-merge-conflicts.md) — Guard: `scripts/ci-guards.sh findings-file-kill`
 - 2026-10-09 — Backlog Node checks were accidentally discovered by application Vitest. — [finding](findings/2026-10-09-backlog-node-test-discovery.md) — Guard: `src/lib/vitest-collection.test.ts:26` (+2 more)
 
-### Agent process, learning and measurement (12)
+### Agent process, learning and measurement (13)
 
+- 2026-10-20 — The answer-key eligibility gate admitted none of the 62 confirmed keys. — [finding](findings/2026-10-20-answer-key-eligibility-admits-none.md) — Agent lesson: deming/issue-2466-reference-binding
 - 2026-10-19 — Define the weekly live sampling and repair protocol. — [finding](findings/2026-10-19-weekly-live-accuracy-plan.md) — no Guard or Agent lesson named
 - 2026-10-19 — A learned takedown needs the same fee and original judged text. — [finding](findings/2026-10-19-takedown-lesson-identity.md) — Guard: `src/lib/agents/knox/takedown-lessons.test.ts` (+5 more)
 - 2026-10-19 — A stored-copy support score cannot establish a current official schedule. — [finding](findings/2026-10-19-live-source-audit.md) — Guard: `src/lib/agents/deming/live-source-audit.test.ts` (+10 more)

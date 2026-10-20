@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./connection", () => ({ sql: vi.fn() }));
 
-import { banksToCheck, confirmAnswerKeyInstitution, feeCheckedBy, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, seriesBreaks } from "./answer-key";
+import { banksToCheck, confirmAnswerKeyInstitution, documentHashAfterEdit, feeCheckedBy, isPersonChecked, listScoreboardSnapshots, normalizeFeeAmount, parseAnswerKeyPrefill, saveAnswerKeyDocument, seriesBreaks } from "./answer-key";
 
 describe("normalizeFeeAmount", () => {
   it("derives the amount kind when it is missing", () => {
@@ -89,6 +89,36 @@ describe("person-checked answer keys", () => {
     expect(feeUpdate.text).not.toContain("COALESCE(confirmed_by");
     expect(feeUpdate.values).toEqual(["hello@bankfeeindex.com", 12, ["knox-hand-key"]]);
     expect(queries[1].text).toContain("UPDATE answer_key_institutions");
+  });
+});
+
+describe("document edits and the stored content hash (#2466)", () => {
+  const stored = { document_url: "https://bank.example/old-fees.pdf", content_hash: "a".repeat(64) };
+
+  it("clears the pre-filled old hash when the document URL changes", () => {
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: "a".repeat(64) })).toBeNull();
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: ` ${"A".repeat(64)} ` })).toBeNull();
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: null })).toBeNull();
+  });
+
+  it("keeps a hash entered for the new URL, and the submitted hash when the URL is unchanged", () => {
+    expect(documentHashAfterEdit(stored, { document_url: "https://bank.example/new-fees", content_hash: "b".repeat(64) })).toBe("b".repeat(64));
+    expect(documentHashAfterEdit(stored, { document_url: stored.document_url, content_hash: "a".repeat(64) })).toBe("a".repeat(64));
+    expect(documentHashAfterEdit(stored, { document_url: stored.document_url, content_hash: "" })).toBeNull();
+  });
+
+  it("writes the cleared hash when a URL edit resubmits the old one", async () => {
+    const queries: { text: string; values: unknown[] }[] = [];
+    const tx = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      queries.push({ text: strings.join("?"), values });
+      return queries.length === 1 ? [stored] : [];
+    });
+    const db = { begin: async (fn: (tx: unknown) => Promise<void>) => fn(tx) };
+    await saveAnswerKeyDocument(7, { document_url: "https://bank.example/new-fees", document_type: "html",
+      content_hash: stored.content_hash, notes: null }, "james", db as never);
+    expect(queries[0].text).toContain("FOR UPDATE");
+    expect(queries[1].text).toContain("UPDATE answer_key_institutions");
+    expect(queries[1].values.slice(0, 3)).toEqual(["https://bank.example/new-fees", "html", null]);
   });
 });
 
