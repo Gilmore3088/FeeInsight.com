@@ -162,3 +162,27 @@ export function useAutoAdvance({
 
   return { index, elapsed, manual, paused, playing, reduced, go, togglePause };
 }
+
+/**
+ * Fades an element up once, the first time it scrolls into view, with the homepage's own
+ * `.fi-home-fade` keyframe (landing-motion.css). An element already on screen at load, and every
+ * element under reduced motion, never moves; the class is added straight to the node, so the
+ * reveal re-renders nothing.
+ */
+export function useRevealOnScroll<T extends HTMLElement>(): RefObject<T | null> {
+  const ref = useRef<T | null>(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === "undefined") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (node.getBoundingClientRect().top < window.innerHeight) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries[0]?.isIntersecting) return;
+      node.classList.add("fi-home-fade");
+      observer.disconnect();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  return ref;
+}
