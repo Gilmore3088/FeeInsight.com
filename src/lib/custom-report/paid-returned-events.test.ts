@@ -82,6 +82,14 @@ describe("complete source-owned paid/returned unit", () => {
       expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
     });
 
+  it.each(["Overdraft Fee (deposited or drawn items)", "NSF Fee (checks, ACH, deposited items)",
+    "Overdraft Fee - daily overdraft cap 5", "NSF Fee (no daily NSF limit)", "Overdraft Item Fee (overdraft transfer not available)",
+    "Overdraft Fee, extended overdraft after 5 days", "Bounce Fee", "Privilege Pay Fee", "Bounce Protection Item", "Item Paid Fee"])
+    ("refuses %s: the exemption reads only the charge's own name", label => {
+      expect(paidReturnedUnits(source(row, "Stop Payment | $30.00", `${label} | $35.00`))).toEqual([]);
+      expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
+    });
+
   it.each(["Returned Item (Deposited)", "Return Item Chargeback (deposited)", "Returned Check Deposited",
     "Continuous Overdraft Fee (per day)", "Daily Overdraft Charge", "Overdraft from Savings Transfer", "Extended Overdraft Fee",
     "Overdraft Transfer Fee", "Returned Deposited Item"])

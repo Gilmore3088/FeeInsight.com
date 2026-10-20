@@ -31,13 +31,20 @@ const SEPARATE_EVENT = new RegExp(String.raw`^(?:${BASE}(?:\s+(?:paid|returned?|
 const SEPARATE_TOKEN = new RegExp(String.raw`\b(?:(?:overdrafts?|o\/?d)\b(?!\s+(?:protection|transfers?|sweeps?|lines?\b|limits?))`
   + String.raw`|courtesy\s+pay\b|paid\s+items?\b|return(?:ed)?\s+(?:items?|checks?)\b|items?\s+returned\b`
   + String.raw`|nsf\b|non[-\s]?sufficient\s+funds?\b|insufficient\s+funds?\b|bounced?\s+checks?\b`
-  + String.raw`|overdrawn\s+items?\b|(?:unavailable|uncollected)\s+funds?\b|re-?present(?:ed|ment)\b|return(?:ed)?\s+payments?\b)`, "i");
+  + String.raw`|overdrawn\s+items?\b|(?:unavailable|uncollected)\s+funds?\b|re-?present(?:ed|ment)\b|return(?:ed)?\s+payments?\b`
+  + String.raw`|bounce\b|privilege\s+pay\b|items?\s+paid\b)`, "i");
 /**
  * Another service only when the service word is part of the charge's own name: a returned
  * deposited item, a daily, continuous, sustained or extended overdraft charge, an overdraft
  * transfer or sweep, an ACH origination. A qualifier on an item price ("(deposit accounts)",
  * "max 5 per day", "checks, ACH, transfers") does not make it another service.
  */
+/**
+ * The charge's own name: the label before its first qualifier ("(", " - ", ","). A bare
+ * "(deposited)" names the item itself ("Returned Item (Deposited)") and stays part of it.
+ */
+const chargeName = (label: string) => label.replace(/\(\s*deposited\s*\)/gi, "deposited").split(/\s*\(|\s+-\s+|,/)[0];
+
 const OTHER_SERVICE = new RegExp([
   String.raw`\bdeposited\b`,
   String.raw`\b(?:daily|continuous|sustained|extended)\s+(?:overdraft|o\/?d|nsf)\b`,
@@ -141,7 +148,7 @@ function separateEvent(lines: string[], start: number, end: number, from: number
       // Another compressed paid/returned row is a repeated owner, held by the unit count, not here.
       if (SEPARATE_EVENT.test(label)
         || (!lines.slice(i, last + 1).some(line => START.test(line))
-          && SEPARATE_TOKEN.test(label) && !OTHER_SERVICE.test(label))) return true;
+          && SEPARATE_TOKEN.test(label) && !OTHER_SERVICE.test(chargeName(label)))) return true;
       break;
     }
   }
