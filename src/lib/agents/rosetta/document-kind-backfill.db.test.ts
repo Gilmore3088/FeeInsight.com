@@ -75,4 +75,34 @@ describe.skipIf(!connection)("document kind backfill", () => {
       expect((await backfill.backfillDocumentKinds(scope, { dryRun: true })).classified).toBe(0);
     });
   });
+
+  it("decides a companion page's kind as a read does: a disclosure, not the bank's product page", async () => {
+    await rolledBack(async (scope) => {
+      const [inst] = await scope`
+        INSERT INTO institution_sources (institution_name, charter_type, state_code, source, fee_schedule_url)
+        VALUES ('Kind companion fixture', 'bank', 'ZW', 'e2e', 'https://fixture.example/checking') RETURNING id
+      `;
+      const institutionId = Number(inst.id);
+      const body = "Disclosure of Account Terms\nMinimum balance to open $25\nMonthly maintenance fee $5.00\nOverdraft item $32.00";
+      const main = await text(scope, institutionId, "https://fixture.example/checking", body, null, null);
+      const companion = await text(scope, institutionId, "https://fixture.example/personal/checking", body, null, null);
+      await scope`
+        UPDATE source_documents SET companion_source_id = 1
+         WHERE id = (SELECT source_document_id FROM agent_source_texts WHERE id = ${companion})
+      `;
+      const empty = await text(scope, institutionId, "https://fixture.example/empty.pdf", "", null, null);
+
+      await backfill.backfillDocumentKinds(scope, { dryRun: false, institutionId });
+      const rows = await scope<Array<{ id: number | string; document_kind: string | null }>>`
+        SELECT id, document_kind FROM agent_source_texts WHERE institution_id = ${institutionId}
+      `;
+      const byId = new Map(rows.map((row) => [Number(row.id), row.document_kind]));
+      for (const [id, feeSchedule] of [[main, true], [companion, false]] as const) {
+        expect(byId.get(id)).toBe(kinds.documentKind({ text: body, url: id === main ? "https://fixture.example/checking" : "https://fixture.example/personal/checking", feeSchedule }).kind);
+      }
+      expect(byId.get(main)).not.toBe(byId.get(companion));
+      // A read stores no kind for an empty text; neither does the backfill.
+      expect(byId.get(empty)).toBeNull();
+    });
+  });
 });

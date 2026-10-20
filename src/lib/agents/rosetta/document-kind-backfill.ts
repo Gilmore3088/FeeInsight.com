@@ -41,6 +41,7 @@ export async function backfillDocumentKinds(
       ${companions ? db`LEFT JOIN source_documents sd ON sd.id = adt.source_document_id` : db``}
      WHERE adt.status = 'completed'
        AND adt.normalized_text IS NOT NULL
+       AND adt.normalized_text <> ''
        AND (adt.document_kind IS NULL OR adt.document_kind_version IS DISTINCT FROM ${DOCUMENT_KIND_VERSION})
        ${options.institutionId ? db`AND adt.institution_id = ${options.institutionId}` : db``}
      ORDER BY adt.id DESC
