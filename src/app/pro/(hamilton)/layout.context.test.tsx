@@ -46,14 +46,36 @@ it.each(["scenario", "scenario_id"])("keeps a reopened simulation's subject in t
   expect(value.institutionContext.name).toBe("Original saved A");
 });
 
-it.each(["missing", "unscoped", "failed read"])("leaves the shell unscoped for a %s saved simulation", async (kind) => {
+it.each(["missing", "unscoped"])("leaves the shell unscoped for a %s saved simulation", async () => {
   mocks.headers.mockResolvedValue(new Headers({ "x-invoke-path": "/pro/simulate?scenario_id=saved-a&instId=1535" }));
-  if (kind === "failed read") mocks.artifact.mockRejectedValue(new Error("Synthetic database failure"));
-  else mocks.artifact.mockResolvedValue(null);
+  mocks.artifact.mockResolvedValue(null);
   const value = await props();
   expect(mocks.resolve).not.toHaveBeenCalled();
   expect(value.selectedInstitutionId).toBeNull();
   expect(value.institutionContext.name).toBeNull();
+});
+
+it.each([
+  ["/pro/simulate?scenario_id=saved-a&instId=1535", "scenario"],
+  ["/pro/reports?report_id=saved-a", "report"],
+])("surfaces a failed saved-artifact read at %s instead of an empty shell", async (path, kind) => {
+  // A failed read is not a missing artifact: it is logged with context and reaches the Pro error
+  // boundary (Hamilton's error state), never silently turned into "no saved institution".
+  mocks.headers.mockResolvedValue(new Headers({ "x-invoke-path": path }));
+  const failure = new Error("Synthetic database failure");
+  mocks.artifact.mockRejectedValue(failure);
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await expect(props()).rejects.toBe(failure);
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(logged).toHaveBeenCalledWith(
+      "[hamilton-shell] saved artifact context read failed",
+      expect.objectContaining({ userId: 25, kind, artifactId: "saved-a", pathname: path.split("?")[0] }),
+      failure,
+    );
+  } finally {
+    logged.mockRestore();
+  }
 });
 
 it.each(["legacy unscoped", "unavailable private"])("does not borrow B for a %s saved report", async (kind) => {
