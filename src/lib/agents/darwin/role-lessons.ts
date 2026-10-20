@@ -152,7 +152,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "verify",
     lesson: "A paid review the provider refuses for billing says nothing about the fee: stop the pass, record no attempt for the fee, and keep it queued. Only an answer about the fee itself settles it.",
     why: "On Oct 5 and Oct 9 the provider answered 'credit balance is too low' with HTTP 400. The paid passes recorded that as http_other, a settled outcome, so 145 items (88 adjudications, 29 release reviews, 23 paid extractions and 1 scan) were never selected again after billing was fixed.",
-    evidence: { issues: [1056], prs: [], files: ["docs/project/findings/2026-10-20-billing-refusal-settled-paid-items.md", "src/lib/agents/paid-pass.ts"] },
+    evidence: { issues: [1056], prs: [2464], files: ["docs/project/findings/2026-10-20-billing-refusal-settled-paid-items.md", "src/lib/agents/paid-pass.ts"] },
     appliesTo: "all",
     since: "2026-10-20",
   },
