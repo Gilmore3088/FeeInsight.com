@@ -150,7 +150,13 @@ describe("restoreStillPrinted", () => {
     expect(restoreStillPrinted(fee("ATM Surcharge Rev", "8"), doc("ATM Fees | ATM Surcharge Rev Cashier's Checks | $ 5.00\nReturned Wire | $ 8.00"), "amount_not_the_fee")).toBe(false);
     expect(restoreStillPrinted(fee("Stop Payments", "30"), doc("Outgoing Domestic Wire | $30.00 Stop Payments | $35.00"), "amount_not_the_fee")).toBe(false);
     expect(restoreStillPrinted(fee("Deposit item return fee", "15"), doc("Re-opening an account | $15.00\n$30.00 | Deposit item return fee"), "amount_not_the_fee")).toBe(false);
-    expect(restoreStillPrinted(fee("Photocopy", "5"), doc("Stop Payment Photocopy Notary\n$32.00/Item $5.00/Copy $5.00"), "amount_not_the_fee")).toBe(false);
+    // A column-split schedule: names in one run, prices in another (supported by hand, but unprovable here).
+    expect(restoreStillPrinted(fee("Photocopy", "5"), doc("Stop Payment\nPhotocopy\nNotary\n$32.00/Item $5.00/Copy $5.00"), "amount_not_the_fee")).toBe(false);
+  });
+  it("refuses a name glued to the column before it, and reads only the name's first place on a line", () => {
+    expect(restoreStillPrinted(fee("Orders Inactive Par Value Share Account", "1"), doc("Money Orders Inactive Par Value Share Account $1.00 / Item Inactive for 12 Months & Balance < $50 $5.00 / Month"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Stop Payment $35.00 Stop Payment $32.00"), "amount_not_the_fee")).toBe(false);
+    expect(restoreStillPrinted(stopPayment, doc("Fees: Stop Payment $32.00"), "amount_not_the_fee")).toBe(true);
   });
   it("refuses a cut word as the end of the name", () => {
     expect(restoreStillPrinted(fee("See Safe Deposit Fee Schedul", "25"), doc("See Safe Deposit Fee Schedule for details. Signature Guarantee | $25.00"), "amount_not_the_fee")).toBe(false);

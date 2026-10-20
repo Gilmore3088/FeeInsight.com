@@ -282,7 +282,8 @@ const FIRST_PRICE = /\$\s*\d[\d,]*(?:\.\d+)?/;
  * a word boundary, and the first price after it on the same line must be the fee's price. Lane
  * speed's re-samples of restores (Oct 20) found the name and price printed apart: 21757 passed on
  * another row's "$ 8.00", 59622 on the wire row's $30 above "Stop Payments | $35.00", and the cut
- * sentence "See Safe Deposit Fee Schedul" on the next row's $25. A schedule read column by column,
+ * sentence "See Safe Deposit Fee Schedul" on the next row's $25. Only the name's first place on a line
+ * counts, and it must open its cell. A schedule read column by column,
  * names in one run and prices in another, cannot prove its fees this way and stays down.
  */
 export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], reason: string): boolean {
@@ -291,13 +292,15 @@ export function restoreStillPrinted(fee: LiveFeeRow, texts: InstitutionText[], r
   const own = texts.find((text) => Number(text.source_document_id) === ownId);
   const name = fee.fee_name.trim().split(/\s+/).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
   if (own == null || name.length === 0) return false;
-  const named = new RegExp(`(?<![a-z0-9])${name}(?![a-z0-9])`, "gi");
+  // The name opens its cell: at the line start or after a separator, never after another word
+  // ("Money Orders Inactive Par Value Share Account" is two columns glued, pub 93666).
+  const named = new RegExp(`(?<![a-z0-9][^\\S\\n]*)${name}(?![a-z0-9])`, "i");
   const price = new RegExp(`^${printedPrice(Number(fee.amount)).source}`);
-  return (own.normalized_text ?? "").split("\n").some((line) =>
-    [...line.matchAll(named)].some((match) => {
-      const next = line.slice((match.index ?? 0) + match[0].length).match(FIRST_PRICE);
-      return next != null && price.test(next[0]);
-    }));
+  return (own.normalized_text ?? "").split("\n").some((line) => {
+    const match = line.match(named);
+    const next = match == null ? null : line.slice((match.index ?? 0) + match[0].length).match(FIRST_PRICE);
+    return next != null && price.test(next[0]);
+  });
 }
 
 const GLUED_COLUMNS = /\s\|\s|\/.*\/|\s\/$/;
