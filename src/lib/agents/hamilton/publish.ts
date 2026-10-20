@@ -20,7 +20,7 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
-import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
+import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, PAID_RETURNED_EVENT_KEYS } from "@/lib/custom-report/paid-returned-events";
 import { matchOriginalRawSource, withLockedSourcePrefix } from "../darwin/locked-raw-source";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
@@ -755,6 +755,11 @@ interface PublishedInsertOptions {
     /** Called when an admin correction of the same logical fee blocked this publish. */
     onCorrected?: (block: CorrectionBlock) => void;
     onInternationalDeferred?: (detail: InternationalPublicationDeferral) => void;
+    /**
+     * For a paired paid/returned event, the compressed line it was projected from: an operator's
+     * hold or correction on that line, under either event's category, keeps the event off too.
+     */
+    pairedLabel?: string | null;
 }
 
 /** All exported direct insertions enter the same actual-lineage gate as the normal owner. */
@@ -776,7 +781,7 @@ export async function insertPublishedFee(db: SqlTag, options: PublishedInsertOpt
       WHERE fee_verified_id=${Number(current.fee_verified_id)} AND to_jsonb(verified_fee_observations)::text=${current.selected_verified_state!}`;
     if (unchanged.length === 0) return deferInternationalPublication("selected_changed");
     if (!(await paidReturnedPublicationUnchanged(scope, event))) return null;
-    return writePublishedFee(scope, { ...options, row: actual ?? options.row });
+    return writePublishedFee(scope, { ...options, row: actual ?? options.row, pairedLabel: event ? event.originalLabel : null });
   });
   if (guarded.kind === "deferred") { options.onInternationalDeferred?.(guarded.detail); return null; }
   return guarded.value;
@@ -793,6 +798,7 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
   // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
   const publishEventId = options.row.verified_by_agent_event_id;
   const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
+  const pairedLabel = options.pairedLabel ?? null;
   // Current raw applicability survives a stale verified selection or a direct insertion.
   if (options.row.fee_raw_id != null) {
     const heldEvent = await db`SELECT fee_raw_id FROM raw_fee_observations
@@ -809,7 +815,8 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
     SELECT fee_published_id
       FROM published_fee_records
      WHERE institution_id = ${institutionId}
-       AND canonical_fee_key = ${options.row.canonical_fee_key}
+       AND (canonical_fee_key = ${options.row.canonical_fee_key}
+         OR (${pairedLabel}::text IS NOT NULL AND canonical_fee_key = ANY(${[...PAID_RETURNED_EVENT_KEYS]}::text[])))
        AND quarantined_at IS NOT NULL
        AND left(quarantine_reason, ${ADMIN_HOLD_PREFIX.length}) = ${ADMIN_HOLD_PREFIX}
        AND amount_kind = ${percent ? "percent" : "flat"}
@@ -818,7 +825,11 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
        AND COALESCE(variant_type, '') = COALESCE(${options.row.variant_type}, '')
        AND COALESCE(frequency, '') = COALESCE(${options.row.frequency}, '')
        AND (fee_audience = ${audience} OR fee_audience IN ('unknown', 'both') OR ${audience} IN ('unknown', 'both'))
-       AND regexp_replace(lower(fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${feeName}), '[^a-z0-9]+', '', 'g')
+       AND (
+         (canonical_fee_key = ${options.row.canonical_fee_key}
+           AND regexp_replace(lower(fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${feeName}), '[^a-z0-9]+', '', 'g'))
+         OR regexp_replace(lower(fee_name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(${pairedLabel}::text), '[^a-z0-9]+', '', 'g')
+       )
      LIMIT 1
   `;
   if (held.length > 0) {
@@ -840,6 +851,7 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
     sourceDocumentId: options.row.source_document_id == null ? null : Number(options.row.source_document_id),
     priorFeePublishedId: options.priorFeePublishedId ?? null,
     runId: options.runId,
+    pairedLabel,
   });
   if (corrected) {
     options.onCorrected?.(corrected);
@@ -927,7 +939,12 @@ interface PaidEventPublicationRaw {
   product_name: string | null; line_share: string; extraction_note: string | null; conditions: string | null;
   raw_state: string | null;
 }
-interface PaidEventPublicationSelection { rawId: number; rawState: string }
+interface PaidEventPublicationSelection {
+  rawId: number;
+  rawState: string;
+  /** The compressed source line both events come from ("NSF Paid/Returned"); holds on it apply to each. */
+  originalLabel: string;
+}
 
 /** Source prefix first, before the existing published→verified→raw suffix. No new global lock abstraction. */
 async function preparePaidReturnedPublication(db: SqlTag, row: VerifiedFeeRow): Promise<PaidEventPublicationSelection | false | null> {
@@ -951,7 +968,7 @@ async function preparePaidReturnedPublication(db: SqlTag, row: VerifiedFeeRow): 
   if (!source || matchOriginalRawSource(raw, source).kind !== "matched") return null;
   const proof = paidReturnedCandidateProof(source.normalizedText, raw.fee_name, Number(raw.amount), row.canonical_fee_key, raw.line_share);
   if (!proof || proof.unit.eligibility !== "admit" || proof.unit.frequency !== raw.frequency) return null;
-  return { rawId: Number(raw.fee_raw_id), rawState: raw.raw_state };
+  return { rawId: Number(raw.fee_raw_id), rawState: raw.raw_state, originalLabel: proof.unit.originalLabel };
 }
 
 async function paidReturnedPublicationUnchanged(db: SqlTag, selection: PaidEventPublicationSelection | false): Promise<boolean> {
@@ -2507,6 +2524,7 @@ export async function runHamiltonPublish(
           onHeld: (heldId) => { heldBy = heldId; },
           priorFeePublishedId: priorPublishedFee?.fee_published_id == null ? null : Number(priorPublishedFee.fee_published_id),
           onCorrected: (block) => { correctedBy = block; },
+          pairedLabel: event ? event.originalLabel : null,
         });
         if (!feePublishedId || !priorPublishedFee) {
           return { feePublishedId, superseded: false, changeRecorded: false };

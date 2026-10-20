@@ -344,6 +344,68 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
     });
   });
 
+  it("an admin hold on the compressed line keeps both projected events off the live page", async () => {
+    await rollback(async tx => {
+      const f = await seed(tx); expect(await insert(tx, f)).toBe(true);
+      const [item] = await raw(tx, f);
+      const verifiedId = await darwin.insertVerifiedFee(tx, { runId: f.runId,
+        row: { ...item, conditions: item.extraction_note } as unknown as import("../darwin/verify").RawFeeRow,
+        canonicalFeeKey: "overdraft" });
+      const [verified] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,fr.product_name,fr.source_document_id,fr.agent_event_id AS raw_agent_event_id
+        FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id WHERE fv.fee_verified_id=${verifiedId!}`;
+      // An operator held the bank's old compressed line, published before the pair existed.
+      const legacyRaw = await oldRaw(tx, f);
+      const [legacy] = await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${legacyRaw}`;
+      const legacyVerified = await darwin.insertVerifiedFee(tx, { runId: f.runId,
+        row: { ...legacy, conditions: legacy.extraction_note } as unknown as import("../darwin/verify").RawFeeRow, canonicalFeeKey: "nsf" });
+      const [{ fee_published_id: heldId }] = await tx`INSERT INTO published_fee_records
+        (lineage_ref,institution_id,canonical_fee_key,published_by_adversarial_event_id,fee_name,amount,frequency,amount_kind,
+          fee_audience,audience_evidence,quarantined_at,quarantine_reason)
+        VALUES (${legacyVerified!},${f.institutionId},'nsf',gen_random_uuid(),'NSF Paid/Returned',29,'per_item','flat',
+          'consumer','Consumer Checking Fees',now(),'admin_hold:fixture') RETURNING fee_published_id`;
+      const held: number[] = [];
+      const options = { runId: f.runId, batchId: "paired-held", onHeld: (id: number) => held.push(id),
+        row: verified as unknown as import("../hamilton/publish").VerifiedFeeRow };
+      expect(await publish.insertPublishedFee(tx, options)).toBeNull();
+      expect(held).toEqual([Number(heldId)]);
+      expect(await tx`SELECT 1 FROM published_fee_records WHERE institution_id=${f.institutionId} AND quarantined_at IS NULL`).toHaveLength(0);
+    });
+  });
+
+  it("an admin correction of the compressed line keeps the projected event from republishing", async () => {
+    await rollback(async tx => {
+      const f = await seed(tx); expect(await insert(tx, f)).toBe(true);
+      const [item] = await raw(tx, f);
+      const verifiedId = await darwin.insertVerifiedFee(tx, { runId: f.runId,
+        row: { ...item, conditions: item.extraction_note } as unknown as import("../darwin/verify").RawFeeRow,
+        canonicalFeeKey: "overdraft" });
+      const [verified] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,fr.product_name,fr.source_document_id,fr.agent_event_id AS raw_agent_event_id
+        FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id WHERE fv.fee_verified_id=${verifiedId!}`;
+      const legacyRaw = await oldRaw(tx, f);
+      const [legacy] = await tx`SELECT * FROM raw_fee_observations WHERE fee_raw_id=${legacyRaw}`;
+      const legacyVerified = await darwin.insertVerifiedFee(tx, { runId: f.runId,
+        row: { ...legacy, conditions: legacy.extraction_note } as unknown as import("../darwin/verify").RawFeeRow, canonicalFeeKey: "nsf" });
+      const [{ fee_published_id: correctedId }] = await tx`INSERT INTO published_fee_records
+        (lineage_ref,institution_id,canonical_fee_key,published_by_adversarial_event_id,fee_name,amount,frequency,amount_kind,
+          fee_audience,audience_evidence)
+        VALUES (${legacyVerified!},${f.institutionId},'nsf',gen_random_uuid(),'NSF Paid/Returned',29,'per_item','flat',
+          'consumer','Consumer Checking Fees') RETURNING fee_published_id`;
+      await tx`INSERT INTO published_fee_corrections
+        (fee_chain_id,version,action,institution_id,fee_audience,previous_fee_published_id,fee_published_id,
+          before_canonical_fee_key,before_fee_name,before_amount,canonical_fee_key,fee_name,amount,frequency,
+          source_document_id,source_excerpt,source_location,reason,actor_user_id,actor_name,idempotency_key,agent_run_id)
+        VALUES (${correctedId},1,'correct',${f.institutionId},'consumer',${correctedId},${correctedId},'nsf','NSF Paid/Returned',29,
+          'nsf','NSF Paid/Returned',25,'per_item',${f.documentId},${OWN},'line 3','Synthetic operator correction',
+          1,'Fixture actor',${`paired-legacy-correction-${correctedId}`},${f.runId})`;
+      const corrected: unknown[] = [];
+      const options = { runId: f.runId, batchId: "paired-corrected", onCorrected: (block: unknown) => corrected.push(block),
+        row: verified as unknown as import("../hamilton/publish").VerifiedFeeRow };
+      expect(await publish.insertPublishedFee(tx, options)).toBeNull();
+      expect(corrected).toHaveLength(1);
+      expect(await tx`SELECT 1 FROM published_fee_records WHERE institution_id=${f.institutionId} AND canonical_fee_key='overdraft'`).toHaveLength(0);
+    });
+  });
+
   async function committedFixture() { return db.begin(scope => seed(scope as unknown as Db)); }
   async function cleanCommitted(f: Fixture) {
     await observer.begin(async scope => {

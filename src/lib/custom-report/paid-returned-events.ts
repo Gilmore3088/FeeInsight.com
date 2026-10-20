@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 export const PAID_RETURNED_EVENT_VERSION = 1;
 export const PAID_RETURNED_EVENT_FLAG = "knox_owned_event:v1";
 export const PAID_RETURNED_ELIGIBILITY_FLAG = "knox_eligibility:paid_returned";
+/** The categories a pair publishes under: the paid event as overdraft, the returned event as nsf. */
+export const PAID_RETURNED_EVENT_KEYS: readonly string[] = ["overdraft", "nsf"];
 const KEY_PREFIX = "paired_event:v1:";
 const MAX_TEXT_BYTES = 1_000_000;
 const MAX_UNIT_CHARS = 1_200;
