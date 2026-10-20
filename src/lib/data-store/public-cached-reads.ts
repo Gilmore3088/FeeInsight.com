@@ -197,7 +197,11 @@ export const getNationalIndicatorsCached = cachedPublicRead(
   isEmptyNationalIndicators,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
-export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
+// v6: the shared source check now passes a waiver's "otherwise" price (#1797), so a copy saved
+// before it can still be missing a record the institution profile shows.
+// v7: a row read under its section heading takes the category word from that heading (#1835),
+// so Capital City Bank's incoming domestic wire ($25) enters its report.
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v7", getCustomReportMarketData);
 /**
  * Every institution's headline coverage, shared by all institution pages. Each page used to
  * recount the whole catalog for its own report rule check: about a second, 830 times an hour
@@ -232,7 +236,7 @@ export async function getInstitutionHeadlineCoverageCached(ids: number[]): Promi
   }
   return coverage;
 }
-export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint-v2", getMarketBranchFootprint);
 /** The city a ZIP code belongs to, from the branch records; the fee check reads it per ZIP. */
 export const getBranchCityForZipCached = cachedPublicRead("branch-city-for-zip-v1", getBranchCityForZip);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */

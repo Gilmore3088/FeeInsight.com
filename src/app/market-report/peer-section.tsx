@@ -111,7 +111,7 @@ export function PeerSection({ name, peers }: { name: string; peers: ReportPeerCo
       <p className="mt-4 text-[12px] leading-relaxed text-ink-muted">
         Fee medians count each institution once, from its own published schedule.
         {peers.financial &&
-          ` Reported figures are as each institution filed them in its ${filing} for the quarter (${peers.financial.peerCount.toLocaleString("en-US")} peers filed). The efficiency ratio is noninterest expense as a share of revenue.`}{" "}
+          ` Reported figures are as each institution filed them in its ${filing} for ${quarterOfDate(peers.financial.reportDate)}. That quarter, ${peers.financial.peerCount.toLocaleString("en-US")} peers filed one, not counting ${name}. The efficiency ratio is noninterest expense as a share of revenue.`}{" "}
         A published price does not say how often a fee is charged or waived.
       </p>
     </section>
