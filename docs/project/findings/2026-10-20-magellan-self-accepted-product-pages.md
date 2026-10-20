@@ -27,7 +27,9 @@ already rejected. Counted read-only on prod.
   plus its address and host checks). A page that fails is still followed for its links, so the
   crawl moves on from a product page to its "Fees" link.
 - **Redirects are checked.** The finders record where an address redirected to and never accept
-  one that lands on a rejected page or on the link a re-search is replacing.
+  one that lands on a rejected page or on the link a re-search is replacing. Every candidate link
+  (free finders, paid find, schedule search, second document) is now judged by the address it
+  landed on, so "/fee-schedule" redirecting to a checking page is a product page.
 - `discover.hub_pages` and `discover.site_crawl` are now version 2.
 - No stored data changes. The 351 banks already sent back are pending and get the fixed finders
   on their next search.
@@ -35,8 +37,9 @@ already rejected. Counted read-only on prod.
 **Guard:** `src/lib/agents/magellan/discovery.test.ts` ("#1051"):
 - a product page with four fee lines that links to the schedule yields the schedule (fails on
   the old self-accept);
-- an address that redirects to a ruled-out page is never accepted (fails without the redirect
-  check).
+- an opened page or a candidate link that redirects to a ruled-out page is never accepted (each
+  fails without its redirect check);
+- `find-validate.test.ts`: a fee-schedule address that lands on a checking page is a product page.
 
 **Lesson (Magellan).** A page Magellan opens for its links has to pass the same check as a link
 before it is accepted as the schedule. A page listing a few fees is a product page until its

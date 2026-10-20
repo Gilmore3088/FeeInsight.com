@@ -251,9 +251,12 @@ async function checkFeeCandidate(candidate: FeeCandidate, fetchImpl: Fetcher): P
   const address = rejectedAddress(candidate);
   if (address) return address;
   const response = await fetchWithTimeout(fetchImpl, candidate.url);
-  const validation = await checkResponse(candidate, response);
   const finalUrl = response.url && response.url !== candidate.url ? response.url : null;
-  return finalUrl ? { ...validation, finalUrl } : validation;
+  if (!finalUrl) return checkResponse(candidate, response);
+  // A page is judged where it landed: "/fee-schedule" redirecting to a checking page is a product page (#1051).
+  const landed = { ...candidate, url: finalUrl };
+  const validation = rejectedAddress(landed) ?? (await checkResponse(landed, response));
+  return { ...validation, finalUrl };
 }
 
 async function checkResponse(candidate: FeeCandidate, response: Response): Promise<CandidateValidation> {

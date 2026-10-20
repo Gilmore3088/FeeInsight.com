@@ -198,3 +198,20 @@ describe("the bank's own documents only (#1033)", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
+
+describe("judged where it landed (#1051)", () => {
+  it("rejects a fee-schedule address that redirects to a checking page", async () => {
+    const productPage = "<h1>Personal Checking</h1><p>Monthly maintenance fee $10.00</p><p>Overdraft fee $32.00</p>" +
+      "<p>Stop payment fee $35.00</p><p>Paper statement fee $3.00</p>";
+    const fetchImpl = vi.fn(async () => {
+      const landed = new Response(productPage, { status: 200, headers: { "content-type": "text/html" } });
+      Object.defineProperty(landed, "url", { value: "https://bank.example/personal/checking" });
+      return landed;
+    });
+
+    const result = await validateFeeCandidate(candidate("https://bank.example/fee-schedule"), fetchImpl);
+
+    expect(result).toMatchObject({ ok: false, verdict: "product_page", finalUrl: "https://bank.example/personal/checking" });
+  });
+});
+

@@ -706,6 +706,24 @@ describe("Magellan agentic discovery", () => {
       expect(fetched(fetchImpl)).toContain("https://footer.example/fee-schedule");
       expect(result.results[0]).toMatchObject({ outcome: "dead", url: null });
     });
+
+    it("never accepts a candidate link that redirects to a page already ruled out (#1051)", async () => {
+      const ruledOut = "https://footer.example/documents/fee-schedule-2024.pdf";
+      const db = vaultDb([ruledOut]);
+      const fetchImpl = site({
+        "https://footer.example/": () => response('<a href="/disclosures/schedule-of-fees">Schedule of Fees</a>'),
+        "https://footer.example/disclosures/schedule-of-fees": () => {
+          const landed = response(FEE_TABLE);
+          Object.defineProperty(landed, "url", { value: ruledOut });
+          return landed;
+        },
+      });
+
+      const result = await runMagellanDiscovery({ runId: 706, db: asDiscoveryDb(db), fetchImpl, politeDelayMs: 0 });
+
+      expect(fetched(fetchImpl)).toContain("https://footer.example/disclosures/schedule-of-fees");
+      expect(result.results[0]).toMatchObject({ outcome: "dead", url: null });
+    });
   });
 
   describe("pages already ruled out", () => {

@@ -431,7 +431,7 @@ async function tryCandidates(ctx: SearchContext, result: FinderResult, candidate
         entry.page_p = Math.round(classifyPage(ctx.pageClassifier, validation.scoringText, candidate.url) * 1000) / 1000;
       }
       if (validation.html && sameSite(new URL(candidate.url), ctx.site)) ctx.pages.set(identity, validation.html);
-      if (validation.finalUrl) (ctx.redirects ??= new Map()).set(identity, validation.finalUrl);
+      if (validation.finalUrl) recordRedirect(ctx, identity, validation.finalUrl);
       if (validation.ok && !acceptableAddress(ctx, candidate.url)) {
         entry.verdict = "redirects_to_rejected";
         continue;
@@ -465,7 +465,7 @@ async function openPage(
   try {
     const response = await fetchWithTimeout(ctx.fetchImpl, url);
     entry.verdict = `http_${response.status}`;
-    if (response.url && response.url !== url) (ctx.redirects ??= new Map()).set(identity, response.url);
+    if (response.url && response.url !== url) recordRedirect(ctx, identity, response.url);
     if (!response.ok || !(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) return null;
     const html = await response.text();
     ctx.pages.set(identity, html);
@@ -474,6 +474,10 @@ async function openPage(
     entry.verdict = "fetch_failed";
     return null;
   }
+}
+
+function recordRedirect(ctx: SearchContext, identity: string, landed: string): void {
+  (ctx.redirects ??= new Map()).set(identity, landed);
 }
 
 /**
@@ -494,6 +498,7 @@ function acceptableAddress(ctx: SearchContext, url: string): boolean {
  */
 function pageIsFeeSchedule(ctx: SearchContext, url: string, html: string): boolean {
   if (!acceptableAddress(ctx, url)) return false;
+  // A cheap pre-filter on the whole HTML; the candidate check below is what decides.
   const page = scoreFeePage(htmlToScoringText(html));
   if (page.verdict !== "fee_page" || (page.rateTerms >= 4 && page.feeLines < 4)) return false;
   const landed = ctx.redirects?.get(urlIdentity(url)) ?? url;
