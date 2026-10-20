@@ -159,8 +159,8 @@ export function peersBesideRevenue(peers: ReportPeerContext, revenue: RevenueCon
 
 /**
  * The institution's reported fee income and where it sits in one comparison (#2353): the same
- * charter, filing, quarter and asset band, the institution included. The dollar rank, the dollar
- * median and the share-of-revenue median all come from that one set.
+ * charter, filing, quarter and asset band, the institution included. The dollar rank and the dollar
+ * median count that set; the share-of-revenue median counts the members of it with a share on file.
  */
 export function RevenueSection({ name, revenue }: { name: string; revenue: RevenueContext }) {
   const latest = revenue.quarters[0];
@@ -180,7 +180,7 @@ export function RevenueSection({ name, revenue }: { name: string; revenue: Reven
       id="revenue"
       title={revenue.measureLabel}
       line={finding}
-      source={`${name}'s ${filing}, ${quarter}${peer ? "; the rank and both medians come from the same quarter's filings" : ""}.`}
+      source={`${name}'s ${filing}, ${quarter}${peer ? "; the rank and the medians come from the same quarter's filings" : ""}.`}
     >
       <figure className="min-w-0 max-w-5xl">
         <figcaption className={FIGURE_CAPTION}>{revenue.measureLabel} reported by {name}{peer ? `, against ${peer.charterLabel} its size` : ""}</figcaption>
@@ -205,8 +205,10 @@ export function RevenueSection({ name, revenue }: { name: string; revenue: Reven
         )}
         {peer && (
           <p className="mt-4 text-[13px] text-ink-soft sm:mx-0 sm:text-left">
-            The rank and both medians count one set: {band} that reported {measure} for {quarter}, {name} included. That
-            asset band is broad, so the rank in dollars partly reflects size.{" "}
+            {showShare
+              ? `The rank and the dollar median count one set: ${band} that reported ${measure} for ${quarter}, ${name} included. The share median counts the ${peer.peerShareCount.toLocaleString("en-US")} of them with a share of revenue on file.`
+              : `The rank and the median count one set: ${band} that reported ${measure} for ${quarter}, ${name} included.`}{" "}
+            That asset band is broad, so the rank in dollars partly reflects size.{" "}
             {creditUnion
               ? "Banks are left out: their deposit service charges are a narrower measure than NCUA fee income. Broad fee income includes member-service and membership fees; it is not deposit-only or overdraft-only income."
               : "Credit unions are left out: their NCUA fee income is a wider measure than bank deposit service charges."}
