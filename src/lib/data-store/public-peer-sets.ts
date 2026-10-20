@@ -101,13 +101,33 @@ async function keepExplorerMembers(choices: ResolvedChoice[]): Promise<PeerSetCh
   const chosen = new Set(choices.flatMap((choice) => (choice.filters ? (peerInstitutionIds(choice.filters) ?? []) : [])));
   if (chosen.size === 0) return choices.map(strip);
   const members = await explorerMemberIds([...chosen]);
-  return choices.map((choice) => {
+  const trimmed = choices.map((choice) => {
     const ids = choice.filters ? peerInstitutionIds(choice.filters) : null;
     if (!ids) return strip(choice);
     const kept = ids.filter((id) => members.has(id));
     const { definition, market } = choice.resolved;
     const label = definition.nearest !== undefined && kept.length > 0 ? describePeerSet(definition, market, kept.length) : choice.label;
     return { ...strip(choice), label, filters: kept.length > 0 ? { ...choice.filters, institutionIds: kept } : null };
+  });
+  return nameHomeMetroCharters(trimmed);
+}
+
+/** How many members a choice keeps; null when it lists none or is a filter set. */
+function memberCount(choice: PeerSetChoice | undefined): number | null {
+  return choice?.filters?.institutionIds?.length ?? null;
+}
+
+/**
+ * The home metro is named "Banks and credit unions" only when it keeps a credit union. Its
+ * banks-only view is the same members without credit unions, so the same count means none, and
+ * the set is named "Banks in the ... metro" like that view (James, 2026-10-20).
+ */
+function nameHomeMetroCharters(choices: PeerSetChoice[]): PeerSetChoice[] {
+  const banksOnly = choices.find((choice) => choice.key === "metro_banks");
+  return choices.map((choice) => {
+    if (choice.key !== "metro" || !banksOnly) return choice;
+    const count = memberCount(choice);
+    return count !== null && count === memberCount(banksOnly) ? { ...choice, label: banksOnly.label } : choice;
   });
 }
 

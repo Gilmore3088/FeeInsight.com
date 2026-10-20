@@ -46,7 +46,7 @@ import {
 import { ShowAll } from "./show-all";
 import type { IndexEntry } from "@/lib/data-store/fee-index";
 import { FEE_FAMILIES } from "@/lib/fee-taxonomy";
-import { isHomeMetroKey } from "@/lib/peer-explorer";
+import { homeMetroHasCreditUnions, isHomeMetroKey } from "@/lib/peer-explorer";
 import { RegistryCards } from "./registry-cards";
 import { assetSizeToDollars, feeIncomeTerms, formatReportQuarter, selectFinancialsByQuarter } from "./financial-units";
 import { buildLedger, connectedPanelSeries } from "./quarterly-ledger";
@@ -280,6 +280,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
   // when the page shows no explorer or does not offer that set.
   const metroOption = !sparse && peerExplorerSet ? peerSets?.options.find((option) => option.key === "metro") : undefined;
   const metroPeerCount = metroOption ? metroOption.count : null;
+  const metroHasCreditUnions = homeMetroHasCreditUnions(peerSets?.options ?? []);
   const schedule = scheduleState({ publishedFees: verifiedFees.length, hasSchedule: Boolean(inst.fee_schedule_url) });
   const categories = [...new Set(verifiedFees.map((fee) => fee.fee_category).filter((c): c is string => Boolean(c)))];
   const rawRows = compareRows(
@@ -673,6 +674,7 @@ export async function InstitutionProfile({ id, focusFeeCategory }: { id: string;
                   institutionId={instId}
                   institutionName={inst.institution_name}
                   metroPeerCount={metroPeerCount}
+                  metroHasCreditUnions={metroHasCreditUnions}
                 />
               </div>
             </section>

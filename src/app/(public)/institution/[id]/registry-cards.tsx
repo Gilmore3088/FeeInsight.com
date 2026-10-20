@@ -91,6 +91,7 @@ export function RegistryCards({
   institutionId,
   institutionName = "This bank",
   metroPeerCount,
+  metroHasCreditUnions = false,
 }: {
   footprint: BranchFootprint | null;
   complaints: ComplaintTrend | null;
@@ -100,6 +101,8 @@ export function RegistryCards({
   market?: MarketPosition | null;
   /** The explorer's home metro set size for the market card's link; null hides the link. */
   metroPeerCount?: number | null;
+  /** Whether that set holds a credit union, so the link names credit unions only then. */
+  metroHasCreditUnions?: boolean;
   /** Needed with `market`: its "compare fees" link opens this institution's metro peer set. */
   institutionId?: number;
   institutionName?: string;
@@ -128,6 +131,7 @@ export function RegistryCards({
           selectedCode={metroCode}
           onSelect={setMetroCode}
           metroPeerCount={metroPeerCount}
+          metroHasCreditUnions={metroHasCreditUnions}
         />
       )}
       {(complaints || enforcement || holdingCompany) && (

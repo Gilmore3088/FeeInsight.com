@@ -37,6 +37,7 @@ import {
   shownLine,
   PEER_EXPLORER_MAX_SHOWN,
   BANKS_ONLY_METRO_KEY,
+  homeMetroHasCreditUnions,
   HOME_METRO_NOTE,
   isHomeMetroKey,
   peerSetChipKey,
@@ -94,6 +95,14 @@ describe("home metro with credit unions", () => {
     peers: [...set.peers.slice(0, 3).map((peer) => ({ ...peer, charter: "bank" })), { ...inst(6, 1.2e9, {}), name: "Tally Federal CU", charter: "credit_union" }],
     market: { name: "Tallahassee, FL", cities: [] },
   };
+
+  it("should_say_whether_the_home_metro_holds_credit_unions_from_its_two_counts", () => {
+    expect(homeMetroHasCreditUnions([{ key: "metro", count: 17 }, { key: BANKS_ONLY_METRO_KEY, count: 9 }])).toBe(true);
+    expect(homeMetroHasCreditUnions([{ key: "metro", count: 9 }, { key: BANKS_ONLY_METRO_KEY, count: 9 }])).toBe(false);
+    // No banks-only view offered (no bank there publishes fees): the metro set is all credit unions.
+    expect(homeMetroHasCreditUnions([{ key: "metro", count: 4 }])).toBe(true);
+    expect(homeMetroHasCreditUnions([{ key: "nearest", count: 25 }])).toBe(false);
+  });
 
   it("should_name_banks_and_credit_unions_when_the_metro_set_holds_both", () => {
     expect(whyThesePeers(mixed, "metro")[0]).toBe("Banks and credit unions");
@@ -284,7 +293,7 @@ describe("peer set purpose", () => {
       "Banks in the same asset-size band that publish fees, for comparing published prices. All are headquartered in Florida. A pricing set: it is not the financial cohort under Financial performance, which is drawn from Call Report filings in the band.",
     );
     expect(purposeLine("metro", { ...set, market: { name: "Tallahassee, FL", cities: [] } })).toBe(
-      "Banks and credit unions with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $2.1B to $6.1B in assets, so compare prices here, not size.",
+      "Banks with branches in the Tallahassee, FL metro: the local competitors for deposits and customers. They range from $2.1B to $6.1B in assets, so compare prices here, not size.",
     );
   });
 });

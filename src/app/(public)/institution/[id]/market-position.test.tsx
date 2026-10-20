@@ -61,7 +61,7 @@ describe("MarketPositionCard", () => {
     expect(container.textContent).toContain("Source: NCUA branch file, quarter ending June 30, 2026.");
     expect(container.textContent).not.toContain("Showing 3 of");
     expect(container.textContent).toContain("Position over time, 2024 to 2026");
-    expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks and credit unions in its home-metro peer set/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
+    expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks in its home-metro peer set/ })).toHaveAttribute("href", "/institution/323?peers=metro#peers");
     expect(container.textContent).not.toMatch(/Frost/);
   });
 
@@ -88,7 +88,7 @@ describe("MarketPositionCard", () => {
     const onSelect = vi.fn();
     const { container } = render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={23540} onSelect={onSelect} />);
     expect(container.textContent).toContain("Only the 2026 survey has Subject Bank in this metro");
-    expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks and credit unions in its home-metro peer set/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks in its home-metro peer set/ })).toBeInTheDocument();
     // The explorer compares the home metro only, so a non-home chip says so.
     expect(container.textContent).toContain("The fee comparison uses its home metro, Tallahassee, FL.");
     fireEvent.click(screen.getByRole("button", { name: "Tallahassee, FL" }));
@@ -99,7 +99,7 @@ describe("MarketPositionCard", () => {
     window.history.replaceState(null, "", "/institution/323?fee=nsf");
     try {
       render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} />);
-      expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks and credit unions in its home-metro peer set/ })).toHaveAttribute(
+      expect(screen.getByRole("link", { name: /Compare fees with Tallahassee, FL banks in its home-metro peer set/ })).toHaveAttribute(
         "href",
         "/institution/323?fee=nsf&peers=metro#peers",
       );
@@ -110,7 +110,7 @@ describe("MarketPositionCard", () => {
 
   it("should_name_the_explorer_count_of_the_home_metro_set_on_the_link", () => {
     const { container } = render(
-      <MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={14} />,
+      <MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={14} metroHasCreditUnions />,
     );
     const link = screen.getByRole("link", { name: /Compare fees with the 14 Tallahassee, FL banks and credit unions in its home-metro peer set/ });
     expect(link).toBeInTheDocument();
@@ -140,7 +140,16 @@ describe("MarketPositionCard", () => {
   });
 
   it("should_say_one_bank_in_the_singular", () => {
-    expect(metroPeersLinkText("Tallahassee, FL", 1)).toBe("Compare fees with the 1 Tallahassee, FL bank or credit union in its home-metro peer set");
+    expect(metroPeersLinkText("Tallahassee, FL", 1, true)).toBe("Compare fees with the 1 Tallahassee, FL bank or credit union in its home-metro peer set");
+  });
+
+  it("should_name_banks_alone_when_the_metro_set_holds_no_credit_union", () => {
+    expect(metroPeersLinkText("Tallahassee, FL", 14, false)).toBe("Compare fees with the 14 Tallahassee, FL banks in its home-metro peer set");
+    expect(metroPeersLinkText("Tallahassee, FL", 1, false)).toBe("Compare fees with the 1 Tallahassee, FL bank in its home-metro peer set");
+    expect(metroPeersLinkText("Tallahassee, FL", undefined, false)).toBe("Compare fees with Tallahassee, FL banks in its home-metro peer set");
+    expect(metroPeersLinkText("Tallahassee, FL", undefined, true)).toBe("Compare fees with Tallahassee, FL banks and credit unions in its home-metro peer set");
+    render(<MarketPositionCard institutionId={323} position={POSITION} institutionName="Subject Bank" selectedCode={45220} onSelect={() => {}} metroPeerCount={14} />);
+    expect(screen.getByRole("link", { name: /Compare fees with the 14 Tallahassee, FL banks in its home-metro peer set/ })).toBeInTheDocument();
   });
 });
 

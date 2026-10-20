@@ -119,6 +119,8 @@ describe("public peer sets", () => {
     const sets = pickPeerSet(323, null, choices, all, "metro");
     const linkCount = sets?.options.find((option) => option.key === "metro")?.count;
     expect(sets?.selected.key).toBe("metro");
+    // No credit union in the set, so its name says banks alone (James, 2026-10-20).
+    expect(choices.find((choice) => choice.key === "metro")?.label).toBe("Banks in the Tallahassee, FL metro");
 
     const explorer = await getPeerExplorerSet(323, sets!.selectedFilters);
     expect(explorer?.peers.map((peer) => peer.id)).toEqual([2, 5, 8, 9, 10, 11, 12, 13]);
