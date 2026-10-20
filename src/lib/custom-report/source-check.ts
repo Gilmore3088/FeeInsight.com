@@ -1132,19 +1132,51 @@ const ROW_PRICE_CELL = /^\s*(?:\*\*)?\s*(?:\$\s?\d[\d,]*(?:\.\d{1,2})?(?:\s*[-�
 /** A line that opens with its price and then names a fee: "$1,000.00 Mortgage modification". */
 const PRICE_THEN_NAME = /^\s*(?:\*\*)?\s*(\$\s?\d[\d,]*(?:\.\d{1,2})?)\s*(?:\*\*)?\s*\|?\s*([A-Za-z].*)$/;
 
+// Bold marks and footnote marks ("Monthly Service Charge* | $8.00", "Fee† | $5") are not the name.
+const ROW_MARKS = /[*†‡¹²³⁴⁵⁶⁷⁸⁹⁰]+/g;
+const ROW_QUOTES = /[‘’ʼ`]/g;
+// Bullets, the PDF symbol-font bullet U+F0B7 among them, are not the name either.
+const ROW_BULLETS = /[|•·\uF0B7]/g;
+// Nor a trailing dash before the price cell ("Copy of a Paid Check — | $3.00 each").
+const ROW_TRAIL = /[\s:.\-–—]+$/g;
+const ROW_SPACES = /\s+/g;
+
 function rowName(value: string): string {
   return value
     .toLowerCase()
     .replace(ROW_SIZE, (_match, width: string, length: string) => `${width}x${length}`)
-    // Bold marks and footnote marks ("Monthly Service Charge* | $8.00", "Fee† | $5") are not the name.
-    .replace(/[*†‡¹²³⁴⁵⁶⁷⁸⁹⁰]+/g, " ")
-    .replace(/[‘’ʼ`]/g, "'")
-    // Bullets, the PDF symbol-font bullet U+F0B7 among them, are not the name either.
-    .replace(/[|•·\uF0B7]/g, " ")
-    // Nor a trailing dash before the price cell ("Copy of a Paid Check — | $3.00 each").
-    .replace(/[\s:.\-–—]+$/g, "")
-    .replace(/\s+/g, " ")
+    .replace(ROW_MARKS, " ")
+    .replace(ROW_QUOTES, "'")
+    .replace(ROW_BULLETS, " ")
+    .replace(ROW_TRAIL, "")
+    .replace(ROW_SPACES, " ")
     .trim();
+}
+
+interface RowNameIndex {
+  lines: string[];
+  /** rowName of each line, in the same order. */
+  names: string[];
+  /** The names joined by newlines: one includes() says whether any line holds a name. */
+  joined: string;
+}
+
+/**
+ * Darwin checks many fees against one stored text in a row, so each text's lines are normalised
+ * once, not once per fee. Keyed by the text itself; the last few texts are kept.
+ */
+const rowNameIndexes = new Map<string, RowNameIndex>();
+const ROW_NAME_INDEX_LIMIT = 8;
+
+function rowNameIndex(text: string): RowNameIndex {
+  const cached = rowNameIndexes.get(text);
+  if (cached) return cached;
+  const lines = text.split("\n");
+  const names = lines.map(rowName);
+  const index = { lines, names, joined: names.join("\n") };
+  if (rowNameIndexes.size >= ROW_NAME_INDEX_LIMIT) rowNameIndexes.delete(rowNameIndexes.keys().next().value as string);
+  rowNameIndexes.set(text, index);
+  return index;
 }
 
 function rowSizes(value: string): string[] {
@@ -1200,9 +1232,13 @@ export function ownRowRefusal(text: string, feeName: string, amount: number): st
   const printsAmount = (line: string) =>
     moneyTokens(line).some((token) => Math.round(token.value * 100) / 100 === rounded) ||
     (rounded === 0 && /\b(?:free|none|no charge|no fee|n\/c|waived)\b/i.test(line));
+  const index = rowNameIndex(text);
+  // No line holds the fee's name: nothing decides it, so skip the line scan.
+  if (!index.joined.includes(own)) return null;
   let pricedOwnRow: string | null = null;
-  for (const line of text.split("\n")) {
-    if (!rowName(line).includes(own)) continue;
+  for (let i = 0; i < index.lines.length; i += 1) {
+    if (!index.names[i].includes(own)) continue;
+    const line = index.lines[i];
     const cells = line.split("|").map((cell) => cell.trim()).filter((cell) => cell.length > 0 && cell !== "**");
     const row = pricedRow(line);
     // Only a table row (two cells or more) or a name line whose price "varies" is a row here: a
