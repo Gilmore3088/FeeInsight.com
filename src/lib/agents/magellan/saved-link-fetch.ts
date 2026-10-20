@@ -1,10 +1,12 @@
 import type { sql } from "@/lib/data-store/connection";
 import { documentVaultSchemaReady, getDocumentVault, type DocumentVault } from "@/lib/agents/document-vault";
 import { learningSchemaReady, recordAttempt } from "@/lib/agents/learning/attempts";
+import { urlNamesFeePage } from "@/lib/agents/learning/fee-page";
+import { classifyFetchFailure } from "@/lib/agents/learning/outcomes";
 import type { AttemptOutcome } from "@/lib/agents/learning/outcomes";
 
 import { fetchAndRecordLink, samePage, type FetchCandidateRow } from "./fetch";
-import { validateFeeCandidate, type CandidateValidation } from "./find-validate";
+import { UNREADABLE_PDF_MIN_SCORE, validateFeeCandidate, type CandidateValidation } from "./find-validate";
 
 type SqlTag = typeof sql;
 type Fetcher = typeof fetch;
@@ -154,20 +156,27 @@ export async function selectUnfetchedSavedLinks(db: SqlTag, limit: number, insti
 /** A refused link's attempt outcome: a page that answered and is not the schedule is a wrong document. */
 export function refusedOutcome(verdict: CandidateValidation["verdict"]): AttemptOutcome {
   if (verdict === "fetch_failed") return "network_error";
+  if (verdict === "unreadable_pdf_weak_label") return "scanned_pdf";
+  if (verdict === "not_a_pdf" || verdict === "unsupported_type") return "unsupported_format";
   if (verdict === "http_403" || verdict === "http_404" || verdict === "http_410" || verdict === "http_429") return verdict;
   if (verdict.startsWith("http_5")) return "http_5xx";
   if (verdict.startsWith("http_")) return "http_other";
   return "wrong_document";
 }
 
+/** A refused check that never got a page carries the fetch failure's own outcome (`too_large`, `timeout`). */
+type SavedLinkCheck = CandidateValidation & { failure?: AttemptOutcome };
+
 /** The shared candidate check on the saved link. A network error refuses it for this try only. */
-async function checkSavedLink(row: SavedLinkRow, link: string, fetchImpl: Fetcher): Promise<CandidateValidation> {
+async function checkSavedLink(row: SavedLinkRow, link: string, fetchImpl: Fetcher): Promise<SavedLinkCheck> {
   try {
     return await validateFeeCandidate(
       {
         url: link,
-        // A saved link carries no link label, so it gets no label credit: its page or address must show it is the schedule.
-        score: 0,
+        // A saved link has no link label. An address that names the fee page earns the credit a
+        // strong label would, so a scanned or large PDF schedule there is still taken; any other
+        // address gets none, and its page must show it is the schedule.
+        score: urlNamesFeePage(link) ? UNREADABLE_PDF_MIN_SCORE : 0,
         reasons: ["saved link"],
         websiteUrl: row.website_url ?? null,
         institutionName: row.institution_name ?? null,
@@ -177,7 +186,7 @@ async function checkSavedLink(row: SavedLinkRow, link: string, fetchImpl: Fetche
       fetchImpl,
     );
   } catch (error) {
-    return { ok: false, documentType: null, confidence: 0, reason: String(error), verdict: "fetch_failed", status: null, html: null };
+    return { ok: false, documentType: null, confidence: 0, reason: String(error), verdict: "fetch_failed", status: null, html: null, failure: classifyFetchFailure(null, error) };
   }
 }
 
@@ -218,7 +227,7 @@ export async function runSavedLinkFetch(options: {
     const check = await checkSavedLink(row, link, options.fetchImpl);
     if (!check.ok) {
       result.refused += 1;
-      const outcome = refusedOutcome(check.verdict);
+      const outcome = check.failure ?? refusedOutcome(check.verdict);
       await recordAttempt(db, {
         institutionId: Number(row.id),
         stage: "fetch",
@@ -237,6 +246,8 @@ export async function runSavedLinkFetch(options: {
       result.results.push({ institutionId: Number(row.id), link, remembered, outcome, sourceDocumentId: null, refused: check.reason });
       continue;
     }
+    // The check fetched the page once; the store fetches it again, so the budget is checked between them.
+    if (Date.now() > deadline) break;
     const fetched = await fetchAndRecordLink(db, { ...row, profile_canonical_source_url: null }, options.fetchImpl, {
       learning: true,
       vaultSchema,

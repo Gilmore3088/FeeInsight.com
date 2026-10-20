@@ -126,6 +126,18 @@ describe("runSavedLinkFetch", () => {
     }));
   });
 
+  it("takes a scanned PDF at an address that names the fee schedule, and refuses one elsewhere", async () => {
+    fetchAndRecordLinkMock.mockResolvedValue({ result: { outcome: "success", attemptOutcome: "ok" }, sourceDocumentId: 1, supersededCopies: 0 });
+    // Not a parseable PDF body: the check reads no text from it, as from a scanned schedule.
+    const scanned = answering("%PDF-1.4 scanned", "application/pdf");
+    const named = { ...texasCapital, fee_schedule_url: "https://texascapitalbank.com/docs/fee-schedule.pdf" };
+    expect(await runSavedLinkFetch({ db: dbReturning([named]), fetchImpl: scanned, runId: 9, live: true })).toMatchObject({ stored: 1, refused: 0 });
+    const unnamed = { ...texasCapital, fee_schedule_url: "https://texascapitalbank.com/docs/form-7731.pdf" };
+    const result = await runSavedLinkFetch({ db: dbReturning([unnamed]), fetchImpl: scanned, runId: 9, live: true });
+    expect(result).toMatchObject({ stored: 0, refused: 1 });
+    expect(result.results[0].outcome).toBe("scanned_pdf");
+  });
+
   it("refuses a saved link that does not answer, for this try only", async () => {
     const down = vi.fn(async () => { throw new Error("ECONNRESET"); }) as unknown as typeof fetch;
     const result = await runSavedLinkFetch({ db: dbReturning([texasCapital]), fetchImpl: down, runId: 9, live: true });
@@ -140,6 +152,9 @@ describe("runSavedLinkFetch", () => {
     expect(refusedOutcome("http_503")).toBe("http_5xx");
     expect(refusedOutcome("http_418")).toBe("http_other");
     expect(refusedOutcome("fetch_failed")).toBe("network_error");
+    expect(refusedOutcome("unreadable_pdf_weak_label")).toBe("scanned_pdf");
+    expect(refusedOutcome("not_a_pdf")).toBe("unsupported_format");
+    expect(refusedOutcome("unsupported_type")).toBe("unsupported_format");
   });
 
   it("starts no fetch past its deadline", async () => {
