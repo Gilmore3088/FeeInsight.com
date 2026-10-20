@@ -176,12 +176,17 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = state.marketing = false;
     const firstTick = await (await tick(request("agents/tick"))).json();
-    expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 11, terminal: false }] });
-    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 11, current_stage: "deming-live-source-draw" });
+    // The tick runs at most 10 steps of a run (DEFAULT_MAX_STEPS_PER_RUN): it stops after the monthly review.
+    expect(firstTick).toMatchObject({ measurementOnly: true, selected: 1, results: [{ runId: body.runId, executedSteps: 10, terminal: false }] });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-sunday-maintenance" });
     expect((await db`SELECT agent_run_id FROM fixture_snapshots`)[0].agent_run_id).toBe(body.runId);
     expect(state.effects.indexOf("scoreboard-snapshot")).toBeGreaterThan(state.effects.indexOf("deming-source-health"));
+    // Still paused: the last pause-exempt step (the Sunday email) runs, then the paused tail holds.
     const secondTick = await (await tick(request("agents/tick"))).json();
-    expect(secondTick.selected).toBe(0);
+    expect(secondTick).toMatchObject({ selected: 1, results: [{ runId: body.runId, executedSteps: 1, terminal: false }] });
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 11, current_stage: "deming-live-source-draw" });
+    const thirdTick = await (await tick(request("agents/tick"))).json();
+    expect(thirdTick.selected).toBe(0);
     expect((await steps(body.runId)).slice(-4).map(s => s.status)).toEqual(["queued", "queued", "queued", "queued"]);
     expect(state.schedule).not.toHaveBeenCalled();
     expect(state.provider).not.toHaveBeenCalled();
@@ -197,11 +202,14 @@ describe.skipIf(!connection)("scoreboard execution in isolated PostgreSQL", () =
     const body = await (await queueScoreboard(request("crew/scoreboard"))).json();
     state.pipeline = pipeline; state.marketing = marketing;
     const first = await (await tick(request("agents/tick"))).json();
-    expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 11 }]);
+    expect(first.results).toMatchObject([{ runId: body.runId, executedSteps: 10 }]);
+    expect(await row(body.runId)).toMatchObject({ status: "queued", progress_current: 10, current_stage: "deming-sunday-maintenance" });
     expect((await db`SELECT count(*)::int AS n FROM fixture_snapshots`)[0].n).toBe(1);
     const tail = await (await tick(request("agents/tick"))).json();
     expect(await row(body.runId)).toMatchObject({ status: pipeline ? "completed" : "queued", progress_current: pipeline ? 15 : 11 });
-    expect(tail.selected).toBe(pipeline ? 1 : 0);
+    // The second tick picks the run up either way: paused, it runs only the Sunday email (exempt).
+    expect(tail.selected).toBe(1);
+    expect(tail.results).toMatchObject([{ runId: body.runId, executedSteps: pipeline ? 5 : 1 }]);
     expect(state.provider).not.toHaveBeenCalled();
   });
 

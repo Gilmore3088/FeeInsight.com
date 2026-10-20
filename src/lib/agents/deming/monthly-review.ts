@@ -1,6 +1,6 @@
 import { sql } from "@/lib/data-store/connection";
 import { SITE_URL } from "@/lib/constants";
-import { ANSWER_KEY_SCORER_VERSION } from "@/lib/data-store/answer-key";
+import { getLatestAnswerKeyScoreRun, type AnswerKeyScoreRunRow } from "@/lib/data-store/answer-key";
 import { incurredProviderUsageSql } from "@/lib/provider-usage-accounting";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { OTHER_BANK_DOCUMENT_REASON, UNCONFIRMED_HOST_REASON } from "@/lib/agents/hamilton/other-bank-document";
@@ -30,10 +30,17 @@ export const MONTHLY_REVIEW_VERSION = 1;
 export const MONTHLY_REVIEW_STEP_KEY = "deming-monthly-review";
 /** The reviews these baselines come from. */
 export const MONTHLY_REVIEW_BASELINE_DATE = "2026-10-12";
-/** One slow measure cannot hold the step: it times out and is stored as unknown. */
+/** One slow measure cannot hold the step: its statement times out and it is stored as unknown. */
 export const MONTHLY_MEASURE_TIMEOUT_MS = 30_000;
-/** Measures not reached within this budget are stored as unknown for this month. */
-export const MONTHLY_REVIEW_BUDGET_MS = 150_000;
+/** Statement timeout for the reads before the measures (last month's review, the answer-key run). */
+export const MONTHLY_PREREAD_TIMEOUT_MS = 10_000;
+/**
+ * The step's whole budget, the reads before the measures included. A measure starts only while
+ * it can finish inside it at its statement timeout (every measure is one SELECT; the answer-key
+ * measures read the run fetched before them), so the step ends within about this long. Matches
+ * `STEP_EXPECTED_MS["deming-monthly-review"]` in run-store, which adds a margin for the ledger.
+ */
+export const MONTHLY_REVIEW_BUDGET_MS = 110_000;
 
 export const MONTHLY_REVIEW_AGENTS = ["magellan", "rosetta", "knox", "hamilton"] as const;
 export type MonthlyReviewAgent = (typeof MONTHLY_REVIEW_AGENTS)[number];
@@ -61,8 +68,28 @@ export interface MonthlyMeasure {
   baseline: number | null;
   /** Where the baseline comes from, and how its window differs from this measure's, if it does. */
   baselineNote: string | null;
-  /** One read-only SELECT. Returns null when there is nothing to measure (for example no paid rows). */
-  read: (db: SqlTag) => Promise<number | null>;
+  /**
+   * What the baseline was measured on, when that can change (the answer-key scorer and cohort).
+   * A baseline is compared, and can alarm, only when this month's reading has the same basis.
+   */
+  baselineBasis?: string | null;
+  /**
+   * One read-only SELECT. Returns null when there is nothing to measure (for example no paid rows),
+   * or a reading with its basis when the number depends on one.
+   */
+  read: (db: SqlTag, context: MeasureContext) => Promise<number | null | MeasureReading>;
+}
+
+export interface MeasureReading {
+  value: number | null;
+  /** What the number was measured on; two readings compare only when their bases are equal. */
+  basis: string | null;
+}
+
+/** Reads made once before the measures, shared by the measures that need them. */
+export interface MeasureContext {
+  /** The newest answer-key score run, through the shared reader's reference-cohort check. */
+  answerKey: { run: AnswerKeyScoreRunRow | null; error: string | null };
 }
 
 export interface MonthlyAgentDefinition {
@@ -117,22 +144,35 @@ function takedowns(prefixes: readonly string[]) {
   `);
 }
 
-/** One stage's precision or recall from the newest answer-key score at the current scorer version. */
+/**
+ * One stage's precision or recall from the newest answer-key score at the current scorer version,
+ * read through `getLatestAnswerKeyScoreRun`, so a run scored on another reference cohort is not a
+ * score: it is stored as unknown. The basis names the scorer version and cohort, so a month scored
+ * on a different one is never compared with this one. Pure over the context.
+ */
+export function answerKeyReading(context: MeasureContext, stage: "knox" | "hamilton", field: "precision" | "recall"): MeasureReading {
+  const { run, error } = context.answerKey;
+  if (error) throw new Error(`The answer-key score could not be read: ${error}`);
+  if (!run) throw new Error("No answer-key score at the current scorer version.");
+  if (run.referenceState !== "measured") {
+    throw new Error(`The newest answer-key score is not comparable with the current reference cohort (${run.referenceState ?? "unknown"}).`);
+  }
+  const value = num((run.by_stage[stage] as Record<string, unknown> | undefined)?.[field]);
+  if (value == null) throw new Error(`The newest answer-key score has no ${stage} ${field}.`);
+  return { value, basis: `answer-key scorer v${run.scorer_version}, cohort ${run.reference?.cohortFingerprint ?? "unknown"}` };
+}
+
 function answerKey(stage: "knox" | "hamilton", field: "precision" | "recall") {
-  return (db: SqlTag) => one(db`
-    SELECT (by_stage->${stage}::text->>${field}::text)::numeric AS value
-      FROM answer_key_score_runs
-     WHERE scorer_version = ${ANSWER_KEY_SCORER_VERSION}
-     ORDER BY scored_at DESC
-     LIMIT 1
-  `);
+  return async (_db: SqlTag, context: MeasureContext) => answerKeyReading(context, stage, field);
 }
 
 /** The publish step and its aliases, and the sweeps split out of it after the review (HR3). */
 const PUBLISH_STEP_KEYS = ["publish", "publish-index", "publish-context", "publish-sweeps"] as const;
 
 const ANSWER_KEY_NOTE =
-  "Answer key of 2026-10-11 (62 banks, 2,321 fees, first scorer). The key and the scorer have grown since, so read the move against last month first.";
+  "Answer key of 2026-10-11 (62 banks, 2,321 fees, scorer v1). Not comparable with today's scorer and cohort, so it never raises an alarm; only last month at the same scorer and cohort does.";
+/** The basis the answer-key baselines were scored on; no current reading has it. */
+const ANSWER_KEY_BASELINE_BASIS = "answer-key scorer v1, 62-bank key of 2026-10-11";
 
 /** Each agent's measures, from its 2026-10-12 review. Baselines are the reviews' own figures. */
 export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
@@ -144,13 +184,18 @@ export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
     measures: [
       {
         key: "live_institutions",
-        label: "Institutions with live fees",
+        label: "Active institutions with live fees",
         unit: "count",
         better: "higher",
         limit: { relative: 0.05 },
         baseline: 3835,
         baselineNote: "Review: 3,835 of 8,522 active institutions have live fees.",
-        read: (db) => one(db`SELECT COUNT(DISTINCT institution_id)::int AS value FROM published_fee_catalog`),
+        read: (db) => one(db`
+          SELECT COUNT(DISTINCT c.institution_id)::int AS value
+            FROM published_fee_catalog c
+            JOIN institution_sources inst ON inst.id = c.institution_id
+           WHERE COALESCE(inst.status, 'active') = 'active'
+        `),
       },
       {
         key: "wrong_bank_takedowns_7d",
@@ -252,6 +297,7 @@ export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
         limit: { points: 0.03 },
         baseline: 0.65,
         baselineNote: ANSWER_KEY_NOTE,
+        baselineBasis: ANSWER_KEY_BASELINE_BASIS,
         read: answerKey("knox", "recall"),
       },
       {
@@ -262,6 +308,7 @@ export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
         limit: { points: 0.03 },
         baseline: 0.78,
         baselineNote: ANSWER_KEY_NOTE,
+        baselineBasis: ANSWER_KEY_BASELINE_BASIS,
         read: answerKey("knox", "precision"),
       },
       {
@@ -368,13 +415,18 @@ export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
     measures: [
       {
         key: "live_rows",
-        label: "Live fee rows",
+        label: "Live fee rows (not taken down, not quarantined)",
         unit: "count",
         better: "higher",
         limit: { relative: 0.05 },
         baseline: 76749,
         baselineNote: "Review: 76,749 live rows of 129,793 ever written.",
-        read: (db) => one(db`SELECT COUNT(*)::int AS value FROM published_fee_records WHERE rolled_back_at IS NULL`),
+        read: (db) => one(db`
+          SELECT COUNT(*)::int AS value
+            FROM published_fee_records
+           WHERE rolled_back_at IS NULL
+             AND quarantined_at IS NULL
+        `),
       },
       {
         key: "answer_key_recall_live",
@@ -384,6 +436,7 @@ export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
         limit: { points: 0.03 },
         baseline: 0.56,
         baselineNote: ANSWER_KEY_NOTE,
+        baselineBasis: ANSWER_KEY_BASELINE_BASIS,
         read: answerKey("hamilton", "recall"),
       },
       {
@@ -394,6 +447,7 @@ export const MONTHLY_REVIEW_DEFINITIONS: readonly MonthlyAgentDefinition[] = [
         limit: { points: 0.03 },
         baseline: 0.89,
         baselineNote: ANSWER_KEY_NOTE,
+        baselineBasis: ANSWER_KEY_BASELINE_BASIS,
         read: answerKey("hamilton", "precision"),
       },
       {
@@ -494,9 +548,15 @@ export interface MeasureResult {
   /** This month's value; null when it could not be read (`error`) or there was nothing to measure. */
   value: number | null;
   error: string | null;
+  /** What this month's value was measured on, when that can change; null for plain counts. */
+  basis: string | null;
   lastMonth: number | null;
+  /** Whether last month's value was measured on the same basis; a different one is not compared. */
+  lastMonthComparable: boolean;
   baseline: number | null;
   baselineNote: string | null;
+  /** Whether the 2026-10-12 figure was measured on the same basis; a different one is not compared. */
+  baselineComparable: boolean;
   vsLastMonth: Move;
   vsBaseline: Move;
   /** What the alarm compared against: last month when both are known, else the 2026-10-12 figure. */
@@ -555,14 +615,22 @@ export function pastLimit(measure: Pick<MonthlyMeasure, "better" | "limit">, now
   return false;
 }
 
-/** One measure's row: this month against last month and the 2026-10-12 figure. Pure. */
+/**
+ * One measure's row: this month against last month and the 2026-10-12 figure. Each comparison is
+ * made only on the same basis (for the answer key: the same scorer version and cohort); one on a
+ * different basis shows no move and cannot alarm. Pure.
+ */
 export function compareMeasure(
   measure: Omit<MonthlyMeasure, "read">,
-  value: number | null,
-  error: string | null,
-  lastMonth: number | null,
+  reading: { value: number | null; error: string | null; basis?: string | null },
+  last: { value: number | null; basis?: string | null } | null,
 ): MeasureResult {
-  const comparedWith = value == null ? null : lastMonth != null ? "last_month" : measure.baseline != null ? "baseline" : null;
+  const value = reading.value;
+  const basis = reading.basis ?? null;
+  const lastMonth = last?.value ?? null;
+  const lastMonthComparable = lastMonth != null && (last?.basis ?? null) === basis;
+  const baselineComparable = measure.baseline != null && (measure.baselineBasis ?? null) === basis;
+  const comparedWith = value == null ? null : lastMonthComparable ? "last_month" : baselineComparable ? "baseline" : null;
   const before = comparedWith === "last_month" ? lastMonth : comparedWith === "baseline" ? measure.baseline : null;
   return {
     key: measure.key,
@@ -571,12 +639,15 @@ export function compareMeasure(
     better: measure.better,
     limit: measure.limit,
     value,
-    error,
+    error: reading.error,
+    basis,
     lastMonth,
+    lastMonthComparable,
     baseline: measure.baseline,
     baselineNote: measure.baselineNote,
-    vsLastMonth: moveOf(value, lastMonth),
-    vsBaseline: moveOf(value, measure.baseline),
+    baselineComparable,
+    vsLastMonth: lastMonthComparable ? moveOf(value, lastMonth) : "unknown",
+    vsBaseline: baselineComparable ? moveOf(value, measure.baseline) : "unknown",
     comparedWith,
     alarm: pastLimit(measure, value, before),
   };
@@ -634,18 +705,33 @@ export async function readLatestMonthlyReview(db: SqlTag = sql, beforeMonth?: st
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 300);
 
+/**
+ * `work` in its own savepoint under a statement timeout, restored afterwards. A failure rolls back
+ * only the savepoint (the timeout setting with it) and is rethrown for the caller.
+ */
+async function timed<T>(db: SqlTag, timeoutMs: number, restoreTimeout: string | null, work: (scope: SqlTag) => Promise<T>): Promise<T> {
+  return inSavepoint(db, async (scope) => {
+    await scope`SELECT set_config('statement_timeout', ${String(timeoutMs)}::text, true)`;
+    const result = await work(scope);
+    if (restoreTimeout != null) await scope`SELECT set_config('statement_timeout', ${restoreTimeout}::text, true)`;
+    return result;
+  });
+}
+
 /** One measure in its own savepoint with a statement timeout; a failure becomes unknown, never 0. */
-async function readMeasure(db: SqlTag, measure: MonthlyMeasure, restoreTimeout: string | null): Promise<{ value: number | null; error: string | null }> {
+async function readMeasure(
+  db: SqlTag,
+  measure: MonthlyMeasure,
+  context: MeasureContext,
+  restoreTimeout: string | null,
+): Promise<{ value: number | null; error: string | null; basis: string | null }> {
   try {
-    const value = await inSavepoint(db, async (scope) => {
-      await scope`SELECT set_config('statement_timeout', ${String(MONTHLY_MEASURE_TIMEOUT_MS)}::text, true)`;
-      const read = await measure.read(scope);
-      if (restoreTimeout != null) await scope`SELECT set_config('statement_timeout', ${restoreTimeout}::text, true)`;
-      return read;
-    });
-    return { value, error: null };
+    const read = await timed(db, MONTHLY_MEASURE_TIMEOUT_MS, restoreTimeout, (scope) => measure.read(scope, context));
+    return read != null && typeof read === "object"
+      ? { value: read.value, error: null, basis: read.basis }
+      : { value: read, error: null, basis: null };
   } catch (error) {
-    return { value: null, error: message(error) };
+    return { value: null, error: message(error), basis: null };
   }
 }
 
@@ -670,27 +756,33 @@ export async function runMonthlyReview({
     return { ran: false, reason: "Not the 1st of the month (UTC).", review: null };
   }
   const month = now.toISOString().slice(0, 7);
-  const previous = await inSavepoint(db, (scope) => readLatestMonthlyReview(scope, month)).catch((error: unknown) => {
-    console.error("Monthly agent review: last month's review could not be read", error);
-    return null;
-  });
+  const started = clock();
   const restoreTimeout = await inSavepoint(db, async (scope) => {
     const [row] = await scope<Array<{ value: string }>>`SELECT current_setting('statement_timeout') AS value`;
     return row?.value ?? null;
   }).catch(() => null);
+  const previous = await timed(db, MONTHLY_PREREAD_TIMEOUT_MS, restoreTimeout, (scope) => readLatestMonthlyReview(scope, month)).catch((error: unknown) => {
+    console.error("Monthly agent review: last month's review could not be read", error);
+    return null;
+  });
+  const context: MeasureContext = {
+    answerKey: await timed(db, MONTHLY_PREREAD_TIMEOUT_MS, restoreTimeout, (scope) => getLatestAnswerKeyScoreRun(scope))
+      .then((run) => ({ run, error: null }))
+      .catch((error: unknown) => ({ run: null, error: message(error) })),
+  };
 
-  const started = clock();
   const agents: MonthlyAgentPage[] = [];
   for (const definition of definitions) {
     const before = previous?.agents.find((page) => page.agent === definition.agent);
     const measures: MeasureResult[] = [];
     for (const measure of definition.measures) {
-      const outOfTime = clock() - started > MONTHLY_REVIEW_BUDGET_MS;
-      const { value, error } = outOfTime
-        ? { value: null, error: "Not read: the step's time budget ran out." }
-        : await readMeasure(db, measure, restoreTimeout);
-      const lastMonth = before?.measures.find((row) => row.key === measure.key)?.value ?? null;
-      measures.push(compareMeasure(measure, value, error, lastMonth));
+      // Start a measure only while it can finish, at its statement timeout, inside the budget.
+      const outOfTime = clock() - started + MONTHLY_MEASURE_TIMEOUT_MS > MONTHLY_REVIEW_BUDGET_MS;
+      const reading = outOfTime
+        ? { value: null, error: "Not read: the step's time budget ran out.", basis: null }
+        : await readMeasure(db, measure, context, restoreTimeout);
+      const last = before?.measures.find((row) => row.key === measure.key);
+      measures.push(compareMeasure(measure, reading, last ? { value: last.value, basis: last.basis ?? null } : null));
     }
     agents.push({ agent: definition.agent, name: definition.name, tracker: definition.tracker, review: definition.review, measures });
   }

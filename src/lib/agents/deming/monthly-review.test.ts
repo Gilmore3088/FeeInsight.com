@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/data-store/connection", () => ({ sql: vi.fn() }));
 
 import {
+  answerKeyReading,
   compareMeasure,
   isFirstOfMonthUtc,
   MONTHLY_REVIEW_AGENTS,
@@ -93,9 +94,32 @@ describe("comparison", () => {
 
   it("compares with last month when known, else with the review's figure", () => {
     const measure = { key: "held", label: "Held", unit: "count" as const, better: "lower" as const, limit: { relative: 0.25 }, baseline: 100, baselineNote: null };
-    expect(compareMeasure(measure, 140, null, null)).toMatchObject({ comparedWith: "baseline", alarm: true, vsBaseline: "up" });
-    expect(compareMeasure(measure, 140, null, 130)).toMatchObject({ comparedWith: "last_month", alarm: false, vsLastMonth: "up" });
-    expect(compareMeasure(measure, null, "boom", 130)).toMatchObject({ comparedWith: null, alarm: false, vsLastMonth: "unknown" });
+    expect(compareMeasure(measure, { value: 140, error: null }, null)).toMatchObject({ comparedWith: "baseline", alarm: true, vsBaseline: "up" });
+    expect(compareMeasure(measure, { value: 140, error: null }, { value: 130 })).toMatchObject({ comparedWith: "last_month", alarm: false, vsLastMonth: "up" });
+    expect(compareMeasure(measure, { value: null, error: "boom" }, { value: 130 })).toMatchObject({ comparedWith: null, alarm: false, vsLastMonth: "unknown" });
+  });
+
+  it("never compares or alarms across a different basis (answer-key scorer or cohort)", () => {
+    const recall = { key: "recall", label: "Recall", unit: "share" as const, better: "higher" as const, limit: { points: 0.03 }, baseline: 0.65, baselineNote: null, baselineBasis: "answer-key scorer v1" };
+    const v3 = "answer-key scorer v3, cohort abc";
+    // The v1 baseline is far above, but it is not comparable: no alarm, no arrow.
+    expect(compareMeasure(recall, { value: 0.4, error: null, basis: v3 }, null)).toMatchObject({ comparedWith: null, alarm: false, baselineComparable: false, vsBaseline: "unknown" });
+    // Last month on another cohort is shown but not compared.
+    expect(compareMeasure(recall, { value: 0.4, error: null, basis: v3 }, { value: 0.6, basis: "answer-key scorer v3, cohort old" }))
+      .toMatchObject({ comparedWith: null, alarm: false, lastMonthComparable: false, vsLastMonth: "unknown", lastMonth: 0.6 });
+    // Same scorer and cohort: compared and alarmed.
+    expect(compareMeasure(recall, { value: 0.4, error: null, basis: v3 }, { value: 0.6, basis: v3 })).toMatchObject({ comparedWith: "last_month", alarm: true, vsLastMonth: "down" });
+  });
+
+  it("reads the answer key only through a comparable reference cohort", () => {
+    const run = (referenceState: string, stages: Record<string, unknown>) => ({ answerKey: { error: null, run: {
+      id: 1, agent_run_id: 1, scorer_version: 3, scored_at: "2026-11-01", banks_scored: 60, fees_expected: 2000, precision: 0.8, recall: 0.6,
+      by_stage: stages, by_category: {}, by_document_type: {}, reference: { cohortFingerprint: "abc" } as never, referenceState: referenceState as never,
+    } } });
+    expect(answerKeyReading(run("measured", { knox: { recall: 0.61, precision: 0.8 } }), "knox", "recall")).toEqual({ value: 0.61, basis: "answer-key scorer v3, cohort abc" });
+    expect(() => answerKeyReading(run("cohort_changed", {}), "knox", "recall")).toThrow(/not comparable.*cohort_changed/);
+    expect(() => answerKeyReading({ answerKey: { run: null, error: null } }, "knox", "recall")).toThrow(/No answer-key score/);
+    expect(() => answerKeyReading({ answerKey: { run: null, error: "timeout" } }, "knox", "recall")).toThrow(/could not be read: timeout/);
   });
 });
 
@@ -149,7 +173,7 @@ describe("runMonthlyReview", () => {
       db,
       now: FIRST,
       clock,
-      definitions: definitions([async () => { now = MONTHLY_REVIEW_BUDGET_MS + 1; return 1; }, async () => 0.7, async () => 1]),
+      definitions: definitions([async () => { now = MONTHLY_REVIEW_BUDGET_MS - 1_000; return 1; }, async () => 0.7, async () => 1]),
     });
     const rows = result.review!.agents[0].measures;
     expect(rows[0].value).toBe(1);

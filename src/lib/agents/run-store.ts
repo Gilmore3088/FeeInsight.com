@@ -3611,6 +3611,10 @@ const STEP_EXPECTED_MS: Record<string, number> = {
   "magellan-live-audit-capture":150_000,
   "deming-live-source-draw":30_000,
   "deming-live-source-archive":30_000,
+  // #1107, the 1st of the month only (other days it returns at once): MONTHLY_REVIEW_BUDGET_MS
+  // (110 s) bounds the reads and measures, since a measure starts only while it fits at its 30 s
+  // statement timeout; 10 s more for the ledger.
+  "deming-monthly-review": 120_000,
   // Re-measured 2026-10-17: p50 65 s, p90 143 s, p99 160 s.
   "discover-paid": 165_000,
   "registry-cfpb": 180_000,

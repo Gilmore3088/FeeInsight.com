@@ -222,8 +222,12 @@ institutions remains the only human launch workflow.
   list of named read-only SQL measures, each with a direction (higher or lower is better) and a
   move limit. A baseline is the review's own figure, or null where the review states none.
 - Each measure runs in its own savepoint with a 30-second statement timeout; a failed or timed-out
-  read is stored as unknown (null with its error), never 0. Measures not reached within the
-  step's time budget are unknown too.
+  read is stored as unknown (null with its error), never 0. A measure starts only while it can
+  finish inside the step's 110-second budget at that timeout; the rest are unknown for the month.
+- The answer-key measures read the newest score through `getLatestAnswerKeyScoreRun`: a run on
+  another reference cohort is unknown, never a score. Each reading carries its basis (scorer
+  version and cohort), and a month or baseline on a different basis is shown but never compared
+  or alarmed against. The 2026-10-12 answer-key figures were scored at v1, so they never alarm.
 - A measure that moves the wrong way past its limit since last month (or, with no last month, since
   the 2026-10-12 figure) is an ALARM in the step summary, on /admin/agents/health and in the next
   Sunday email. The app has no GitHub access: an alarm is added to that agent's tracker by hand.

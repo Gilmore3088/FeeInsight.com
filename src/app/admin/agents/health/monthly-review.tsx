@@ -14,7 +14,7 @@ const TONE_CLASS = {
 } as const;
 const REPO = "https://github.com/Gilmore3088/FeeInsight.com";
 
-function Compared({ row, before, move, label }: { row: MeasureResult; before: number | null; move: Move; label: string }) {
+function Compared({ row, before, move, label, comparable }: { row: MeasureResult; before: number | null; move: Move; label: string; comparable: boolean }) {
   const tone = moveTone(move, row.better);
   return (
     <span className="block tabular-nums">
@@ -22,6 +22,7 @@ function Compared({ row, before, move, label }: { row: MeasureResult; before: nu
         {ARROW[move]}
       </span>{" "}
       <span className="text-gray-600 dark:text-gray-400">{formatMeasure(before, row.unit)}</span>
+      {before != null && !comparable ? <span className="block text-[11px] text-gray-400">not comparable</span> : null}
     </span>
   );
 }
@@ -91,13 +92,13 @@ export function MonthlyReviewSection({ review, failed }: { review: MonthlyReview
                             {formatMeasure(row.value, row.unit)}
                           </td>
                           <td className="py-1.5 pr-2 text-right">
-                            <Compared row={row} before={row.lastMonth} move={row.vsLastMonth} label="Since last month" />
+                            <Compared row={row} before={row.lastMonth} move={row.vsLastMonth} label="Since last month" comparable={row.lastMonthComparable !== false} />
                           </td>
                           <td className="py-1.5 text-right">
                             {row.baseline == null ? (
                               <span className="text-gray-400">not stated</span>
                             ) : (
-                              <Compared row={row} before={row.baseline} move={row.vsBaseline} label={`Since ${review.baselineDate}`} />
+                              <Compared row={row} before={row.baseline} move={row.vsBaseline} label={`Since ${review.baselineDate}`} comparable={row.baselineComparable !== false} />
                             )}
                           </td>
                         </tr>

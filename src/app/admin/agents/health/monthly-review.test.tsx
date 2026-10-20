@@ -20,7 +20,7 @@ const review: MonthlyReview = {
     name: "Knox",
     tracker: 1092,
     review: "docs/plans/knox-review-2026-10-12.md",
-    measures: [compareMeasure(held, 800, null, 500), compareMeasure(recall, null, "statement timeout", 0.7)],
+    measures: [compareMeasure(held, { value: 800, error: null }, { value: 500 }), compareMeasure(recall, { value: null, error: "statement timeout" }, { value: 0.7 })],
   }],
   alarms: [{ agent: "knox", key: held.key, label: held.label, from: 500, to: 800, comparedWith: "last_month", tracker: 1092 }],
   measured: 1,
