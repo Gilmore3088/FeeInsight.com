@@ -1,7 +1,7 @@
 import type { FeeAudience, FeeTreatment } from "@/lib/fee-audience";
 import { sql } from "./connection";
 import { readerFeeConditions } from "../fee-conditions";
-import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, summarizeRates, type RateStatistics } from "./fee-stats";
+import { STATS_ROW_FILTER, STATS_SCHEDULE_KEYS, activeInstitutionFilter, summarizeRates, type RateStatistics } from "./fee-stats";
 import { formatRateFee, type RateFields } from "../percent-fees";
 import { institutionDisplayName } from "@/lib/institution-display-name";
 
@@ -91,7 +91,8 @@ export async function getRateFeesByInstitution(institutionId: number, scope: "al
 
 /**
  * National rate statistics for one category, under the stats contract: sourced rows only,
- * one value per institution, the same minimum sample as dollars.
+ * one value per institution, the same minimum sample as dollars, over the same active
+ * institutions as the dollar median beside it (activeInstitutionFilter, #2149).
  */
 export async function getNationalRateStats(category: string): Promise<RateStatistics> {
   const rows = await sql.unsafe<Array<{
@@ -103,8 +104,10 @@ export async function getNationalRateStats(category: string): Promise<RateStatis
   }>>(
     `SELECT ef.institution_id, ef.rate_percent, ef.amount_kind, ${STATS_SCHEDULE_KEYS}
        FROM published_fee_rate_catalog ef
+       JOIN institution_sources ct ON ef.institution_id = ct.id
       WHERE ef.fee_category = $1
-        AND ${STATS_ROW_FILTER}`,
+        AND ${STATS_ROW_FILTER}
+        AND ${activeInstitutionFilter("ct")}`,
     [category],
   );
   return summarizeRates(rows);

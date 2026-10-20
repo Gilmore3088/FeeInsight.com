@@ -9,6 +9,7 @@ vi.mock("./connection", () => {
 import {
   getPeerFeeValues,
   getPeerGroupCounts,
+  getPeerGroupMembers,
   getPeerIndex,
   getPeerIndexes,
   matchesPeerFilters,
@@ -126,5 +127,28 @@ describe("getPeerGroupCounts", () => {
       { institutions: 2, publishing: 1 },
       { institutions: 1, publishing: 1 },
     ]);
+  });
+});
+
+describe("getPeerGroupMembers (#2033)", () => {
+  beforeEach(() => db.unsafe.mockReset());
+
+  it("binds the filters in order, and chosen peers override them", async () => {
+    db.unsafe.mockResolvedValueOnce([
+      { id: "7", institution_name: "Bank 7", state_code: "FL", asset_size: "900000", has_schedule: true, has_uncounted_fee: true, total: 3 },
+    ]);
+    const out = await getPeerGroupMembers({ charter_type: "credit_union", state_code: "FL", asset_tiers: ["community_mid"] }, 8109, "nsf", 50);
+    const [query, params] = db.unsafe.mock.calls[0];
+    expect(params).toEqual([8109, null, "credit_union", "FL", null, ["community_mid"], null, 50, "nsf"]);
+    // An inactive institution is in only when the peer figures count its fee, as getPeerFeeValues does.
+    expect(query).toMatch(/<> 'inactive' OR EXISTS \(SELECT 1 FROM published_fee_catalog ef WHERE ef\.institution_id = ct\.id AND ef\.fee_category = \$9/);
+    expect(out).toEqual({
+      total: 3,
+      members: [{ institution_id: 7, institution_name: "Bank 7", state_code: "FL", total_assets: 900000, has_schedule: true, has_uncounted_fee: true }],
+    });
+
+    db.unsafe.mockResolvedValueOnce([]);
+    expect(await getPeerGroupMembers({ institutionIds: [3, 4], charter_type: "bank" }, 1, "nsf")).toEqual({ total: 0, members: [] });
+    expect(db.unsafe.mock.calls[1][1]).toEqual([1, [3, 4], null, null, null, null, null, 200, "nsf"]);
   });
 });

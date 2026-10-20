@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { User } from "@/lib/auth";
 import { withTransaction } from "@/lib/data-store/connection";
+import { PRE_CHECKOUT_INTENT } from "@/lib/pro-checkout-institution";
 import {
   acceptWorkspaceInvitation,
   getWorkspaceInvitationForAccept,
@@ -16,7 +17,10 @@ import {
  * link is issued and none is accepted; there is no development fallback here.
  *
  * A seat becomes active only when the invitee opens a valid link while signed in with the
- * invited email, and the invitation is still pending and unexpired.
+ * invited email, has confirmed that email (users.email_confirmed_at), and the invitation is
+ * still pending and unexpired. The link alone proves nothing about the inbox: the owner copies
+ * it from Settings and can send it anywhere, so the confirmed email is what ties the seat to
+ * the invited person (#2002).
  */
 
 export const WORKSPACE_INVITE_PATH = "/workspace-invite";
@@ -72,6 +76,7 @@ export type SignedInviteResult =
   | { status: "not_configured" }
   | { status: "invalid_link" }
   | { status: "wrong_email"; invitedEmail: string }
+  | { status: "email_unconfirmed"; invitedEmail: string }
   | { status: "expired" }
   | { status: "revoked" }
   | { status: "used" }
@@ -90,6 +95,8 @@ export function signedInviteMessage(result: SignedInviteResult, signedInEmail: s
       return "This invite link isn't valid. Ask the account owner to copy the link again from Hamilton Settings.";
     case "wrong_email":
       return `This invitation is for ${result.invitedEmail}, but you're signed in as ${signedInEmail ?? "a different email"}. Sign in with the invited email to accept it.`;
+    case "email_unconfirmed":
+      return `Confirm ${result.invitedEmail} before you join. Open the confirmation link we emailed you, then open this invite link again.`;
     case "expired":
       return "This invitation has expired. Ask the account owner to invite you again.";
     case "revoked":
@@ -104,8 +111,8 @@ export function signedInviteMessage(result: SignedInviteResult, signedInEmail: s
 /**
  * Accepts the invitation in a signed link for the signed-in user. Checks, in order: the
  * secret is set, the invitation exists and the token matches it, it is pending and
- * unexpired, and the user's email is the invited email. Runs in one transaction with the
- * invitation row locked.
+ * unexpired, the user's email is the invited email, and that email is confirmed. Runs in one
+ * transaction with the invitation row locked.
  */
 export async function acceptSignedWorkspaceInvite(params: {
   invitationId: number;
@@ -138,6 +145,15 @@ export async function acceptSignedWorkspaceInvite(params: {
       if (!userEmail || userEmail !== invitation.email.trim().toLowerCase()) {
         return { status: "wrong_email", invitedEmail: invitation.email };
       }
+      // The account's own email must be the invited one and confirmed; a username that only
+      // looks like the address does not count.
+      const [confirmed] = await tx<Array<{ confirmed: boolean }>>`
+        SELECT email_confirmed_at IS NOT NULL AS confirmed
+          FROM users
+         WHERE id = ${params.user.id} AND lower(email) = ${userEmail}`;
+      if (!confirmed?.confirmed) {
+        return { status: "email_unconfirmed", invitedEmail: invitation.email };
+      }
 
       const membership = await acceptWorkspaceInvitation(
         { invitationId: invitation.id, userId: params.user.id, email: userEmail },
@@ -145,15 +161,18 @@ export async function acceptSignedWorkspaceInvite(params: {
       );
       if (!membership) return { status: "failed" };
       // A teammate with no saved bank starts on the team's bank, so Hamilton follows the
-      // team's peer group from their first visit. A bank they already saved is kept.
+      // team's peer group from their first visit. A bank they already saved is kept, except
+      // one picked before paying, which the team's bank replaces.
       await tx`
         INSERT INTO hamilton_workspace_contexts (user_id, selected_institution_id, selected_source, created_at, updated_at)
         VALUES (${params.user.id}, ${invitation.institutionId}, 'manual', NOW(), NOW())
         ON CONFLICT (user_id) DO UPDATE SET
           selected_institution_id = EXCLUDED.selected_institution_id,
           selected_source = EXCLUDED.selected_source,
+          last_intent = NULL,
           updated_at = NOW()
         WHERE hamilton_workspace_contexts.selected_institution_id IS NULL
+           OR hamilton_workspace_contexts.last_intent = ${PRE_CHECKOUT_INTENT}
       `;
       return { status: "accepted", membership };
     });

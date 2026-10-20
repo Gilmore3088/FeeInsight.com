@@ -7,3 +7,4 @@
 **Fix:** the webhook now handles `charge.refunded`. A full refund of a report charge sets `leads.refunded_at` (migration 20270110000039) and status `refunded`, and alerts James. `/market-report/<token>` and its CSV return 404 when every paid report for that institution has been refunded. The pay page says the payment was refunded. `/admin/stripe/webhook-check` now lists `charge.refunded` as required.
 
 **Still needed by hand:** add `charge.refunded` to the Stripe webhook endpoint (Developers > Webhooks > the feeinsight.com endpoint > Add events). Until then Stripe sends no refund events.
+**Guard:** `src/lib/stripe-webhook.test.ts` (`charge.refunded` marks the lead refunded)

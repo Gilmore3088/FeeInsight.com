@@ -43,9 +43,11 @@ vi.mock("ai", async () => {
 
 vi.mock("@ai-sdk/anthropic", () => ({
   anthropic: (model: string) => ({ model }),
+  createAnthropic: () => (model: string) => ({ model }),
 }));
 
-vi.mock("@/lib/ai-provider-usage", () => ({
+vi.mock("@/lib/ai-provider-usage", async () => ({
+  observedProviderUsage: (await vi.importActual<typeof import("@/lib/ai-provider-usage")>("@/lib/ai-provider-usage")).observedProviderUsage,
   estimateAnthropicCostMicrousd: () => 0,
   ProviderCircuitOpenError: class ProviderCircuitOpenError extends Error {
     constructor(message: string) {
@@ -75,11 +77,6 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/access", () => ({
   canAccessPremium: vi.fn(() => true),
-}));
-
-vi.mock("@/lib/research/rate-limit", () => ({
-  checkAdminRateLimit: () => ({ allowed: true }),
-  checkPublicRateLimit: () => ({ allowed: true }),
 }));
 
 vi.mock("@/lib/research/history", () => ({
@@ -188,6 +185,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "ATM fees sit around $3.50 out of network.",
         "Maintenance fees average $12 monthly.",
       ].join("\n"),
+      finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
     });
 
@@ -210,6 +208,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   it("records every tool step's tokens and cache use for a gated answer, not the last step's (#1418)", async () => {
     generateTextMock.mockResolvedValue({
       text: "No figures here.",
+      finishReason: "stop",
       usage: { inputTokens: 10, outputTokens: 5 },
       totalUsage: { inputTokens: 900, outputTokens: 300, inputTokenDetails: { noCacheTokens: 200, cacheReadTokens: 600, cacheWriteTokens: 100 } },
     });
@@ -242,6 +241,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Fifth Third Bank reports a $37 NSF fee per published fee records.",
       ].join("\n"),
       steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3, amount: 37 } }] }],
+      finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
     });
 
@@ -271,6 +271,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
         "Fifth Third Bank reports a $41 NSF fee per published fee records, so you should lower the fee.",
       ].join("\n"),
       steps: [{ toolResults: [{ output: { median: 35, fee: 34, change_pct: 3.6, p75: 38, rate: 5.3 } }] }],
+      finishReason: "stop",
       usage: { inputTokens: 100, outputTokens: 200 },
     });
 
@@ -290,7 +291,7 @@ describe("POST /api/research/hamilton — citation gate", () => {
   });
 
   it("should_answer_an_admin_on_the_analyze_screen_with_the_pro_prompt", async () => {
-    generateTextMock.mockResolvedValue({ text: "## Hamilton's View\nShort answer.", usage: { inputTokens: 10, outputTokens: 10 } });
+    generateTextMock.mockResolvedValue({ text: "## Hamilton's View\nShort answer.", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 10 } });
     getHamiltonMock.mockClear();
 
     const { POST } = await import("./route");

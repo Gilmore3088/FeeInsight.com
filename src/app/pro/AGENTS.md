@@ -14,7 +14,7 @@ Before editing Hamilton-specific behavior, also read:
 
 - Preserve canonical numeric `instId` across Analyze, Reports, Simulate, Monitor, Settings, Account, Subscribe, and login redirects whenever an institution is selected.
 - Resolve institution context in the established order: URL `instId`, saved artifact context, stored workspace context, then profile fallback.
-- Keep `/pro/research` as a compatibility redirect only. New visible Pro entry points should use `/pro/analyze`, `/pro/reports`, `/pro/simulate`, `/pro/monitor`, or `/pro/settings`.
+- `/pro/research` is the institution tab of Research, beside `/pro/intelligence` (Market) (#2044). New visible Pro entry points should use the five workspace areas in `src/lib/hamilton/navigation.ts`, `/pro/monitor` or `/pro/settings`.
 - Label provisional-first Hamilton analysis separately from verified-only benchmark/export data. Provisional evidence must not be presented as verified benchmark scoring.
 - Thin or empty evidence should produce diligence, source-submission, or readiness paths, not generic consulting briefs.
 - Reference routes such as Data, Market, News, Districts, Categories, and Peers should hand users back into Hamilton workflows instead of acting like competing workspaces.

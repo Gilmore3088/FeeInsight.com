@@ -4,15 +4,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   article: null as Record<string, unknown> | null,
   related: [] as Record<string, unknown>[],
-  after: vi.fn(),
   incrementViewCount: vi.fn(async () => undefined),
-  user: null as Record<string, unknown> | null,
   sample: false,
 }));
 
 // next/font runs only under the Next compiler; the page reads just the CSS variable name.
 vi.mock("next/font/local", () => ({ default: () => ({ variable: "home-serif", className: "" }) }));
-vi.mock("next/server", () => ({ after: mocks.after }));
+// The browser counter is a client component; the server render only places it.
+vi.mock("./view-count", () => ({ ArticleViewCount: ({ slug }: { slug: string }) => <span data-view-count={slug} /> }));
 vi.mock("@/lib/data-store/articles", () => ({
   getArticleBySlug: vi.fn(async () => mocks.article),
   getPublishedArticles: vi.fn(async () => mocks.related),
@@ -21,7 +20,6 @@ vi.mock("@/lib/data-store/articles", () => ({
 vi.mock("@/lib/data-store/guides", () => ({
   getGuidesForCategory: vi.fn(async (category: string) => (category === "overdraft" ? [{ slug: "overdraft-fees", title: "How overdraft fees work" }] : [])),
 }));
-vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => mocks.user) }));
 vi.mock("@/lib/custom-report/sample-report", () => ({ sampleReportAvailable: vi.fn(async () => mocks.sample) }));
 vi.mock("@/components/track-link", () => ({
   TrackLink: ({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) => (
@@ -82,9 +80,7 @@ describe("research article page", () => {
   beforeEach(() => {
     mocks.article = published();
     mocks.related = [];
-    mocks.user = null;
     mocks.sample = false;
-    mocks.after.mockClear();
     mocks.incrementViewCount.mockClear();
   });
 
@@ -114,12 +110,10 @@ describe("research article page", () => {
     }
   });
 
-  it("writes nothing while rendering: the view count waits for after()", async () => {
+  it("writes nothing while rendering: the view is counted from the browser", async () => {
     await renderPage();
     expect(mocks.incrementViewCount).not.toHaveBeenCalled();
-    expect(mocks.after).toHaveBeenCalledTimes(1);
-    await mocks.after.mock.calls[0][0]();
-    expect(mocks.incrementViewCount).toHaveBeenCalledWith("overdraft-fees-by-state-2026-10");
+    expect(document.querySelector('[data-view-count="overdraft-fees-by-state-2026-10"]')).toBeTruthy();
   });
 
   it("gives each section its title, finding, labeled exhibit and source", async () => {
@@ -155,14 +149,10 @@ describe("research article page", () => {
     expect(screen.getByRole("link", { name: "Ask for a demo" })).toBeTruthy();
   });
 
-  it("offers the sample report when it is live, and no Hamilton band for Pro readers", async () => {
+  it("offers the sample report when it is live", async () => {
     mocks.sample = true;
-    const { unmount } = await renderPage();
-    expect(screen.getByRole("link", { name: "See the sample Competitive Fee Position Report" })).toBeTruthy();
-    unmount();
-    mocks.user = { id: 1, role: "premium", subscription_status: "active" };
     await renderPage();
-    expect(screen.queryByRole("link", { name: "See Hamilton plans" })).toBeNull();
+    expect(screen.getByRole("link", { name: "See the sample Competitive Fee Position Report" })).toBeTruthy();
   });
 
   it("puts further paragraphs after the source, and a quiet consumer next step before More research", async () => {

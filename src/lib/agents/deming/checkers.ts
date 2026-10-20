@@ -39,10 +39,6 @@ export interface ReplayVerdict {
 /** Checks Deming can replay offline. */
 export const REPLAYABLE_CHECKS: readonly string[] = [LIMIT_GUARD_CHECK, SOURCE_CHECK_NAME];
 
-export function isReplayable(checkName: string | null | undefined): boolean {
-  return checkName != null && REPLAYABLE_CHECKS.includes(checkName);
-}
-
 /** Replays one case; null when the input has no replayer. */
 export function replayCase(input: CaseInput): ReplayVerdict | null {
   if (input.kind === "limit_guard") {

@@ -78,3 +78,76 @@ describe("money exhibit evidence identity", () => {
     expect(html).not.toContain(" · You");
   });
 });
+
+describe("peer list (#2033)", () => {
+  // Invented institutions and fees for tests only.
+  const list: StoryExhibit = {
+    id: "list-peerList",
+    actionTitle: "Overdraft fees of 3 peers, largest institutions first",
+    exhibit: {
+      kind: "peer_list",
+      title: "Overdraft fees of 3 peers, largest institutions first",
+      feeLabel: "Overdraft fee",
+      rows: [
+        { institutionId: 1, institutionName: "Example Valley Credit Union", stateCode: null, totalAssets: null, amount: 32, status: "published", documentUrl: "https://example.test/own.pdf", publishedAt: "2026-09-12", own: true },
+        { institutionId: 2, institutionName: "Peer Two Credit Union", stateCode: "TN", totalAssets: 1_500_000, amount: 30, status: "published", documentUrl: "https://example.test/two.pdf", publishedAt: "2026-08-01" },
+        { institutionId: 3, institutionName: "Peer Three Credit Union", stateCode: "TN", totalAssets: 900_000, amount: null, status: "not_on_schedule", documentUrl: null, publishedAt: null },
+        { institutionId: 4, institutionName: "Peer Four Credit Union", stateCode: "TN", totalAssets: null, amount: null, status: "no_schedule", documentUrl: null, publishedAt: null },
+      ],
+      unlisted: 2,
+      sources: [{ label: "Bank Fee Index, published fee schedules", table: "published_fee_catalog" }],
+      note: "Peer group picked by Hamilton: Credit unions, Tennessee.",
+    },
+  };
+
+  it("names every institution with its fee and source, or why it has none", () => {
+    const html = renderToStaticMarkup(<StoryExhibitView item={list} number={1} />);
+    for (const name of ["Peer Two Credit Union", "Peer Three Credit Union", "Peer Four Credit Union"]) expect(html).toContain(name);
+    expect(html).toContain("$30");
+    expect(html).toContain("$1.5B");
+    expect(html).toContain('href="https://example.test/two.pdf"');
+    expect(html).toContain("Not found on its schedule");
+    expect(html).toContain("No schedule on file");
+    expect(html).toContain("2 more peers in this group are not shown.");
+    expect(html).toContain("Peer group picked by Hamilton");
+  });
+
+  it("leaves the readings section off a list answer", () => {
+    const html = renderToStaticMarkup(<StorylineView story={{ ...sampleStoryline(), kind: "list", exhibits: [list], situation: [], complication: [], lenses: { finance: [], market: [] }, watch: [], options: undefined }} />);
+    expect(html).not.toContain("What it means for you");
+    expect(html).toContain("Peer Three Credit Union");
+  });
+});
+
+describe("every row is listable (#2036)", () => {
+  it("shows the institution and 12 others, and folds the rest under Show all", () => {
+    const rows = [{ name: "Subject CU", cells: ["$30"], own: true }, ...Array.from({ length: 14 }, (_, i) => ({ name: `Local ${i + 1}`, cells: ["$35"] }))];
+    const item: StoryExhibit = { id: "structure", actionTitle: "Of 14 local competitors: 1 charge an NSF fee.", exhibit: { kind: "structure_matrix", title: "t", columns: ["Overdraft fee"], rows, sources: [] } };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={4} />);
+    expect(html).toContain("Show 2 more");
+    expect(html).toContain("Local 14");
+    expect(html.indexOf("Local 12")).toBeLessThan(html.indexOf("Show 2 more"));
+    expect(html.indexOf("Local 13")).toBeGreaterThan(html.indexOf("Show 2 more"));
+  });
+
+  it("lists the competitors beyond the charted largest under Show all", () => {
+    const item: StoryExhibit = {
+      id: "local",
+      actionTitle: "Local",
+      exhibit: { kind: "competitor_range", title: "t", unit: "dollars", own: 30, ownLabel: "Subject CU", items: [{ name: "Big", amount: 35, url: null }], rest: [{ name: "Small A", amount: 10, url: null }, { name: "Small B", amount: 40, url: null }], sources: [] },
+    };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={4} />);
+    expect(html).toContain("Show 2 more");
+    expect(html.indexOf("Small A")).toBeGreaterThan(html.indexOf("Show 2 more"));
+    expect(html).toContain("Charges less");
+  });
+
+  it("never folds a table with no institution row, such as every fee against its median", () => {
+    const rows = Array.from({ length: 20 }, (_, i) => ({ name: `Fee ${i + 1}`, cells: ["$5"] }));
+    const item: StoryExhibit = { id: "schedule-overview", actionTitle: "Every fee", exhibit: { kind: "structure_matrix", title: "t", columns: ["Median"], rows, sources: [] } };
+    const html = renderToStaticMarkup(<StoryExhibitView item={item} number={1} />);
+    expect(html).not.toContain("more</summary>");
+    expect(html).not.toMatch(/Show \d+ more/);
+    expect(html).toContain("Fee 20");
+  });
+});

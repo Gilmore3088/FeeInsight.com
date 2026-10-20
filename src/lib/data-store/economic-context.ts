@@ -1,12 +1,13 @@
 import { CPI_BANK_SERVICES_SERIES } from "@/lib/regulatory/fed";
 import { sql } from "./connection";
+import { fedIndicatorServedSql } from "./struck-sources";
 import { getBeigeBookThemes, getLatestBeigeBook } from "./fed";
-import { STATE_NEWS_SOURCE_PATTERNS } from "./news";
+import { STATE_NEWS_SOURCE_PATTERNS, TOPIC_SQL } from "./news";
 
 /**
  * Economic and regulatory context for a state report, read from the tables the registry
  * steps already keep fresh: fed_beige_book (+ beige_book_themes), fed_economic_indicators
- * (FRED and BLS series), fed_fomc_minutes, fed_publications and reg_articles. Nothing here
+ * (BLS, BEA and Fed Board series), fed_fomc_minutes, fed_publications and reg_articles. Nothing here
  * fetches from outside.
  */
 
@@ -72,7 +73,7 @@ export interface StateEconomicContext {
 }
 
 const HISTORY_POINTS = 72;
-const REGULATORY_TOPICS = ["overdraft", "fees_pricing", "rulemaking_compliance", "consumer_lending"];
+const REGULATORY_TOPICS = ["overdraft", "fees_pricing", "rulemaking_compliance", "enforcement", "consumer_lending"];
 const REGULATORY_LIMIT = 5;
 const BANKING_SECTION = /bank|financ|credit|lending|loan/i;
 
@@ -115,6 +116,7 @@ async function loadSeries(seriesIds: string[]): Promise<Map<string, IndicatorSer
                ROW_NUMBER() OVER (PARTITION BY series_id ORDER BY observation_date DESC) AS rn
           FROM fed_economic_indicators
          WHERE series_id = ANY(${seriesIds}::text[]) AND value IS NOT NULL
+           AND ${sql.unsafe(fedIndicatorServedSql())}
       ) ranked
      WHERE rn <= ${HISTORY_POINTS}
      ORDER BY series_id, observation_date DESC
@@ -213,9 +215,9 @@ async function loadDistrictResearch(district: number): Promise<DistrictResearchI
 async function loadRegulatory(): Promise<RegulatoryItem[]> {
   try {
     const rows = await sql`
-      SELECT source, title, link, topic, published_at
+      SELECT source, title, link, ${sql.unsafe(TOPIC_SQL)} AS topic, published_at
         FROM reg_articles
-       WHERE topic = ANY(${REGULATORY_TOPICS}::text[])
+       WHERE ${sql.unsafe(TOPIC_SQL)} = ANY(${REGULATORY_TOPICS}::text[])
          AND NOT (source LIKE ANY(${STATE_NEWS_SOURCE_PATTERNS}::text[]))
        ORDER BY published_at DESC NULLS LAST, created_at DESC
        LIMIT ${REGULATORY_LIMIT}
@@ -251,9 +253,39 @@ export async function getStateEconomicContext(stateCode: string, district: numbe
   };
 }
 
-export function isEmptyEconomicContext(ctx: StateEconomicContext): boolean {
-  return (
-    !ctx.state_unemployment && !ctx.state_payrolls && !ctx.national_unemployment && !ctx.fed_funds && !ctx.cpi_all_items &&
-    !ctx.cpi_bank_services && !ctx.beige_book && ctx.regulatory.length === 0
-  );
+/** One national series' latest month and the month a year before it, without the chart history. */
+export interface NationalIndicator {
+  series_id: string;
+  latest: IndicatorPoint;
+  year_ago: IndicatorPoint | null;
+}
+
+/** The national figures the research hub shows: BLS unemployment and CPI, the Fed Board's funds rate. */
+export interface NationalIndicators {
+  unemployment: NationalIndicator | null;
+  fed_funds: NationalIndicator | null;
+  cpi_all_items: NationalIndicator | null;
+  cpi_bank_services: NationalIndicator | null;
+}
+
+function latestOnly(series: IndicatorSeries | undefined): NationalIndicator | null {
+  return series ? { series_id: series.series_id, latest: series.latest, year_ago: series.year_ago } : null;
+}
+
+/**
+ * The latest national indicators, read with the same series query as the state reports
+ * (served rows only). Pages read it through getNationalIndicatorsCached.
+ */
+export async function getNationalIndicators(): Promise<NationalIndicators> {
+  const series = await loadSeries(["UNRATE", "FEDFUNDS", "CUUR0000SA0", CPI_BANK_SERVICES_SERIES]);
+  return {
+    unemployment: latestOnly(series.get("UNRATE")),
+    fed_funds: latestOnly(series.get("FEDFUNDS")),
+    cpi_all_items: latestOnly(series.get("CUUR0000SA0")),
+    cpi_bank_services: latestOnly(series.get(CPI_BANK_SERVICES_SERIES)),
+  };
+}
+
+export function isEmptyNationalIndicators(ind: NationalIndicators): boolean {
+  return !ind.unemployment && !ind.fed_funds && !ind.cpi_all_items && !ind.cpi_bank_services;
 }

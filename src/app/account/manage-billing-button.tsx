@@ -3,11 +3,13 @@
 import { createPortalSession } from "@/lib/stripe-actions";
 import { CONTACT_EMAIL } from "@/lib/constants";
 import { useState } from "react";
+import { utilityButton, type UtilityButtonVariant } from "@/components/utility/form-style";
 
 export function ManageBillingButton({
   label = "Manage billing",
   returnPath = "/account",
-}: { label?: string; returnPath?: string } = {}) {
+  variant = "secondary",
+}: { label?: string; returnPath?: string; variant?: UtilityButtonVariant } = {}) {
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
 
@@ -28,7 +30,7 @@ export function ManageBillingButton({
       <button
         onClick={handleClick}
         disabled={pending}
-        className="inline-flex items-center rounded-md border border-border bg-surface-0 px-4 py-2 text-sm font-medium text-ink hover:border-ink disabled:opacity-50 transition-colors"
+        className={utilityButton(variant)}
       >
         {pending ? "Loading..." : label}
       </button>

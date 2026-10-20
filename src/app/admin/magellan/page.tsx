@@ -8,7 +8,7 @@ import { AgentFrame } from "../agent-frame";
 export const dynamic = "force-dynamic";
 
 export default async function MagellanPage() {
-  await requireAuth("view");
+  await requireAuth("operate");
   const status = await fetchMagellanStatus().catch(() => ({
     pending: 0,
     rescued: 0,
@@ -33,7 +33,7 @@ export default async function MagellanPage() {
           <a href="/admin/magellan/registry" className="font-medium underline">
             Regulatory registry
           </a>{" "}
-          — FDIC, NCUA, CFPB, SEC, and Federal Reserve data loads.
+          — FDIC, NCUA, CFPB, SEC, and Federal Reserve data loads, run by Hoovie.
         </p>
         <p className="mt-1 text-sm">
           <a href="/admin/magellan/hit-list" className="font-medium underline">

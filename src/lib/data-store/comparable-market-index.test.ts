@@ -12,6 +12,7 @@ import type { ExtractedFee } from "./types";
 import { COMPARABILITY_SCREEN, SAFE_DEPOSIT_SERVICE_REASON, notComparableReason } from "@/lib/fee-comparability";
 import { BUSINESS_URL_SCREEN, MARKET_AUDIENCES, countsInMarketComparison, marketIneligibleReason } from "@/lib/market-eligibility";
 import { marketEligibilityOf, pickHeadlineValues } from "@/app/(public)/institution/[id]/profile-data";
+import { SPECIAL_UNIT_FREQUENCIES } from "@/lib/fee-unit";
 
 type Mock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn> };
 const db = sql as unknown as Mock;
@@ -29,6 +30,7 @@ interface CatalogFee {
   account_product_type: string | null;
   /** The stored note the catalog keeps; the schedule line is its excerpt="..." tail. */
   extraction_note: string | null;
+  frequency?: string | null;
 }
 
 const line = (note: string | null) => note?.match(/excerpt="(.*)"$/)?.[1] ?? null;
@@ -47,7 +49,7 @@ function asSubject(fee: CatalogFee): ExtractedFee {
     source_url: fee.source_url,
     account_product_type: fee.account_product_type,
     source_line: line(fee.extraction_note),
-    frequency: null,
+    frequency: fee.frequency ?? null,
     conditions: null,
     extraction_confidence: 1,
     review_status: "approved",
@@ -82,6 +84,7 @@ function asMarketRead(fee: CatalogFee): ComparableMarketRow | null {
     fee_name: text ? fee.fee_name : null,
     account_product_type: text ? fee.account_product_type : null,
     source_line: text ? line(fee.extraction_note) : null,
+    frequency: fee.frequency ?? null,
   };
 }
 
@@ -104,6 +107,11 @@ function catalogFee(overrides: Partial<CatalogFee>): CatalogFee {
 
 /** Every eligibility rule, with a row it keeps and a row it drops. */
 const CASES: Array<{ label: string; fee: CatalogFee; counts: boolean }> = [
+  ...SPECIAL_UNIT_FREQUENCIES.map(frequency => ({
+    label: `a literal ${frequency} research price`,
+    fee: catalogFee({ fee_category: "account_research", fee_name: "Research Fee", frequency: `\u00a0${frequency.toUpperCase()}\v` }),
+    counts: false,
+  })),
   { label: "a plain personal fee", fee: catalogFee({}), counts: true },
   { label: "a consumer fee", fee: catalogFee({ fee_audience: "consumer" }), counts: true },
   { label: "a fee for both audiences", fee: catalogFee({ fee_audience: "both" }), counts: true },
@@ -127,6 +135,12 @@ const CASES: Array<{ label: string; fee: CatalogFee; counts: boolean }> = [
   { label: "a lost key under safe deposit box", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Lost Key Replacement", amount: 35 }), counts: false },
   { label: "late rent under safe deposit box", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Safe Deposit Late Payment Fee", amount: 10 }), counts: false },
   { label: "a safe deposit box's rent", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Safe Deposit Box 3x5", amount: 40 }), counts: true },
+  { label: "a quarterly dormant fee (#1901)", fee: catalogFee({ fee_category: "dormant_account", fee_name: "Dormant Checking fee", amount: 3, frequency: "quarterly" }), counts: false },
+  { label: "a monthly dormant fee", fee: catalogFee({ fee_category: "dormant_account", fee_name: "Dormant Checking fee", amount: 5, frequency: "monthly" }), counts: true },
+  { label: "a per-item dormant fee keeps its place", fee: catalogFee({ fee_category: "dormant_account", fee_name: "Dormant Account Fee", amount: 5, frequency: "per_item" }), counts: true },
+  { label: "a monthly safe deposit rent", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Safe Deposit Box 3x5", amount: 4, frequency: "monthly" }), counts: false },
+  { label: "an annual safe deposit rent", fee: catalogFee({ fee_category: "safe_deposit_box", fee_name: "Safe Deposit Box 3x5", amount: 40, frequency: "annual" }), counts: true },
+  { label: "a quarterly frequency outside the basis categories", fee: catalogFee({ fee_category: "paper_statement", fee_name: "Paper Statement", amount: 6, frequency: "quarterly" }), counts: true },
   { label: "a night depository key, under night deposit", fee: catalogFee({ fee_category: "night_deposit", fee_name: "Night Depository Key, per additional key", amount: 15 }), counts: true },
 ];
 

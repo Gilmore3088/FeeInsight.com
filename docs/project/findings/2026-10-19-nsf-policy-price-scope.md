@@ -1,0 +1,17 @@
+# 2026-10-19: item policy prices and cumulative totals need separate evidence
+
+**What happened:** W43 found New Valley's cumulative NSF total published as a $20 item fee. #2133 removed that exact row, but a read-only replay at main15cfd2d64 still produced $136/$20 NSF candidates from the official DOM and omitted the separate34/5 item prices. Existing publication now has no live NSF/OD row, so this is an upstream recovery gap, not a claim that the removed cap returned.
+
+**Cause:** The old context reader expected a price followed by an explicit fee/charge word. The literal price-first returned/paid-item paragraphs instead describe both events, while the later exception sentence supplies an explicit dollar total. The shared own-row guard did not recognize that total shape. Publishing all four recovered rows would create a second defect: NSF's per-bank median would be19.50 and the same-name headline could pick5 without represented eligibility; overdraft's existing highest-tier statistic would be34.
+
+**Fix:** #2209 adds one bounded single-column policy witness shared by Knox and the source check. Complete standard34 evidence yields NSF/OD twins. The literal5 age/product variants retain complete evidence and twin keys as eligibility-held raw rows without a verification flag. Customer raw previews exclude those holds, admin inspection retains them, and the held queue names the unresolved product/standard-tier contract. No fee-data update, general source-check version bump, product-ownership backfill or numeric-policy change is included. PDF interleaved-column reconstruction remains unresolved and outside this repair.
+
+The new refusal joins live review through extract.rules84's changed free-team signature, so already-passed live documents are selected again by the existing state/institution rules re-check. A failed read must independently fail its own source trace and then complete the shared12-hour second look. Confirmed changes reject/archive through the run ledger and use the existing cache invalidation; this is not a new takedown control.
+
+Independent review found the evidence reader cached admin and ordinary projections under the same institution-only key. #2223 partitions that existing 60-second cache by read mode and tests both read orders for the same institution, so an earlier admin inspection cannot bypass the new eligibility-preview exclusion. The cache has no separate invalidator to update.
+
+Read-only complete-vocabulary scans at13:32:59UTC found zero matching current live NSF/OD documents or own raw/name evidence. A same-snapshot count using the exact owner's selection at13:37:18UTC found12,083 ordinary due rereads at83 and12,487 at84, an additional404. Existing stale78/lineup73/twin82 floors remain unchanged. Release must account for that ordinary replay cohort; the zero-match refusal scan does not mean the version bump redoes nothing.
+
+**Lesson:** Re-extract the actual policy unit, retain every qualifying scope clause, and inspect downstream price selection before making a restricted price eligible. A correct amount with discarded eligibility is still an incorrect customer result.
+
+**Guard:** `nsf-policy-prices.test.ts`, the PostgreSQL stage regression in `wrapped-fee-bullets.db.test.ts`, `rules-recheck.test.ts`, `eligibility-held-preview.test.ts`, and `held-queue.test.ts`; the existing Texas/state answer-key gates, guide-version and Bayes-manifest CI guards also apply. Detailed source/query/test receipts are in `Weekly Review/results/2026-W43/pipeline-repairs-20261019/`.

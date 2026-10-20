@@ -1,8 +1,10 @@
-import { Unzip, UnzipInflate, strFromU8, unzipSync } from "fflate";
+import { createHash } from "node:crypto";
+import { unzipSync } from "fflate";
 import { STATE_NAMES } from "@/lib/us-states";
 import { STATE_FROM_FIPS, type AreaFetch, type AreaStat } from "./economy";
 import type { RegistryFetchOptions } from "./http";
 import { bump, fetchFirstAvailable, isZip, valueWithFlag } from "./risk-costs";
+import { streamXlsxRows } from "./xlsx-stream";
 
 /**
  * BLS Occupational Employment and Wage Statistics (OEWS, May estimates) for the occupations a
@@ -34,9 +36,9 @@ export const OEWS_LEVELS: OewsLevel[] = ["nat", "st", "ma"];
 
 /** Workbook inside each zip (May 2024 naming: national_M2024_dl.xlsx, state_M2024_dl.xlsx, MSA_M2024_dl.xlsx). */
 const WORKBOOK_PATTERN: Record<OewsLevel, RegExp> = {
-  nat: /national_M\d{4}_dl\.xlsx$/i,
-  st: /state_M\d{4}_dl\.xlsx$/i,
-  ma: /MSA_M\d{4}_dl\.xlsx$/i,
+  nat: /^national_M\d{4}_dl\.xlsx$/i,
+  st: /^state_M\d{4}_dl\.xlsx$/i,
+  ma: /^MSA_M\d{4}_dl\.xlsx$/i,
 };
 
 export function oewsUrl(year: number, level: OewsLevel): string {
@@ -60,109 +62,9 @@ export function oewsSeriesKey(slug: string, suffix: string): string {
   return `oews_${slug}_${suffix}`;
 }
 
-// ---------------------------------------------------------------------------
 // Streaming xlsx rows: the metro workbook's sheet inflates to hundreds of megabytes, so it is
-// read row by row and never held as one string.
-// ---------------------------------------------------------------------------
-
-const XML_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
-
-function decodeXml(s: string): string {
-  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
-    if (e[0] === "#") return String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : Number(e.slice(1)));
-    return XML_ENTITIES[e] ?? m;
-  });
-}
-
-function columnIndex(ref: string): number {
-  let n = 0;
-  for (const ch of ref.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
-  return n - 1;
-}
-
-function parseRowXml(rowXml: string, shared: string[]): string[] {
-  const row: string[] = [];
-  for (const cell of rowXml.matchAll(/<c([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
-    const attrs = cell[1];
-    const body = cell[2] ?? "";
-    const ref = attrs.match(/\br="([A-Z]+)\d+"/i)?.[1];
-    const type = attrs.match(/\bt="([^"]+)"/)?.[1];
-    let value = "";
-    if (type === "inlineStr") value = decodeXml([...body.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((m) => m[1]).join(""));
-    else {
-      const v = body.match(/<v>([\s\S]*?)<\/v>/)?.[1];
-      if (v !== undefined) value = type === "s" ? shared[Number(v)] ?? "" : decodeXml(v);
-    }
-    const at = ref ? columnIndex(ref) : row.length;
-    while (row.length < at) row.push("");
-    row[at] = value.trim();
-  }
-  return row;
-}
-
-/** Calls `onRow` for each row of the workbook's first sheet, streaming the sheet XML. */
-export function streamXlsxRows(bytes: Uint8Array, onRow: (row: string[]) => void): { sheet: string | null; rows: number } {
-  const names: string[] = [];
-  const sharedFiles = unzipSync(bytes, {
-    filter: (f) => {
-      names.push(f.name);
-      return /^xl\/sharedStrings\.xml$/i.test(f.name);
-    },
-  });
-  const sheet =
-    names
-      .filter((n) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(n))
-      .sort((a, b) => Number(a.match(/(\d+)\.xml$/)![1]) - Number(b.match(/(\d+)\.xml$/)![1]))[0] ?? null;
-  if (!sheet) return { sheet: null, rows: 0 };
-  const shared: string[] = [];
-  const sharedName = Object.keys(sharedFiles)[0];
-  if (sharedName) {
-    const xml = strFromU8(sharedFiles[sharedName]);
-    for (const si of xml.match(/<si>[\s\S]*?<\/si>/g) ?? []) {
-      shared.push(decodeXml([...si.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((m) => m[1]).join("")));
-    }
-  }
-  let rows = 0;
-  let carry = "";
-  let failure: Error | null = null;
-  const decoder = new TextDecoder();
-  const drain = (final: boolean) => {
-    let end = carry.indexOf("</row>");
-    while (end >= 0) {
-      const start = carry.lastIndexOf("<row", end);
-      if (start >= 0) {
-        const open = carry.indexOf(">", start);
-        rows += 1;
-        onRow(parseRowXml(carry.slice(open + 1, end), shared));
-      }
-      carry = carry.slice(end + 6);
-      end = carry.indexOf("</row>");
-    }
-    if (final) carry = "";
-  };
-  const unzip = new Unzip((entry) => {
-    if (entry.name !== sheet) return;
-    entry.ondata = (error, data, final) => {
-      if (error) {
-        failure ??= error;
-        return;
-      }
-      try {
-        carry += decoder.decode(data, { stream: !final });
-        drain(final);
-      } catch (err) {
-        failure ??= err instanceof Error ? err : new Error(String(err));
-      }
-    };
-    entry.start();
-  });
-  unzip.register(UnzipInflate);
-  const CHUNK = 1 << 20;
-  for (let at = 0; at < bytes.length; at += CHUNK) unzip.push(bytes.subarray(at, at + CHUNK), false);
-  unzip.push(new Uint8Array(0), true);
-  if (failure) throw failure;
-  return { sheet, rows };
-}
+// read row by row (shared reader in ./xlsx-stream).
+export { streamXlsxRows } from "./xlsx-stream";
 
 // ---------------------------------------------------------------------------
 // Parsing
@@ -284,18 +186,67 @@ export function parseOewsWorkbook(bytes: Uint8Array, year: number, level: OewsLe
 }
 
 /** Picks the level's workbook out of a downloaded BLS zip (or takes the bytes as the workbook). */
-export function oewsWorkbookFromZip(bytes: Uint8Array, level: OewsLevel): { name: string | null; bytes: Uint8Array | null } {
+export function oewsWorkbookFromZip(bytes: Uint8Array, level: OewsLevel, year?: number): { name: string | null; bytes: Uint8Array | null } {
   // A bare xlsx is itself a zip with an xl/ folder; a BLS download holds the xlsx.
   let isWorkbook = false;
-  const inner = unzipSync(bytes, {
+  const workbooks: string[] = [];
+  // Inspect directory metadata before inflating anything. Resource forks are not workbooks.
+  unzipSync(bytes, {
     filter: (f) => {
       if (/^xl\//i.test(f.name)) isWorkbook = true;
-      return WORKBOOK_PATTERN[level].test(f.name);
+      const parts = f.name.split(/[\\/]/);
+      const basename = parts.at(-1) ?? "";
+      if (parts.some(part => /^__MACOSX$/i.test(part)) || basename.startsWith("._")) return false;
+      if (!WORKBOOK_PATTERN[level].test(basename)) return false;
+      if (year !== undefined && !basename.toLowerCase().endsWith(`_m${year}_dl.xlsx`)) return false;
+      if (f.originalSize > OEWS_MAX_WORKBOOK_BYTES) throw new Error(`workbook exceeds ${OEWS_MAX_WORKBOOK_BYTES} bytes: ${f.originalSize}`);
+      workbooks.push(f.name);
+      if (workbooks.length > 1) throw new Error(`multiple ${level} workbooks in archive: ${workbooks.map(name => JSON.stringify(name.slice(0, 100))).join(", ")}`);
+      return false;
     },
   });
   if (isWorkbook) return { name: null, bytes };
-  const [name] = Object.keys(inner);
-  return name ? { name, bytes: inner[name] } : { name: null, bytes: null };
+  const [name] = workbooks;
+  if (!name) return { name: null, bytes: null };
+  const inner = unzipSync(bytes, { filter: file => file.name === name });
+  return { name, bytes: inner[name] };
+}
+
+/** Explicit memory bounds for the download and the selected compressed XLSX workbook. */
+export const OEWS_MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024;
+export const OEWS_MAX_WORKBOOK_BYTES = 128 * 1024 * 1024;
+
+/** Cancel on overflow; a failed body read must not leave its stream running. */
+export async function readOewsBytes(response: Response, maxBytes = OEWS_MAX_DOWNLOAD_BYTES): Promise<Uint8Array> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error(`declared download exceeds ${maxBytes} bytes (${declared})`);
+  }
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const {done,value} = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > maxBytes) throw new Error(`received download exceeds ${maxBytes} bytes (${total})`);
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally { reader.releaseLock(); }
+  const encoding = response.headers.get("content-encoding");
+  if (declared > 0 && (!encoding || encoding === "identity") && declared !== total) {
+    throw new Error(`incomplete download: declared ${declared} bytes, received ${total}`);
+  }
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) { bytes.set(chunk,at); at += chunk.length; }
+  return bytes;
 }
 
 export async function fetchOewsLevel(year: number, level: OewsLevel, options: RegistryFetchOptions = {}): Promise<OewsParse> {
@@ -303,11 +254,31 @@ export async function fetchOewsLevel(year: number, level: OewsLevel, options: Re
   const blankInfo = { level, workbook: null, occupations_found: [], occupations_missing: OEWS_OCCUPATIONS.map((o) => o.code), title_mismatches: [], missing_optional_columns: [] };
   const found = await fetchFirstAvailable([url], { timeoutMs: 240_000, ...options });
   if (found.url === null) return { url: null, rows: [], missingFields: [`${level} file`], skipped: {}, emptyReason: `BLS has not published OEWS May ${year} at ${url}`, info: blankInfo };
-  const bytes = new Uint8Array(await found.response.arrayBuffer());
-  if (!isZip(bytes)) return { url, rows: [], missingFields: [`${level} file`], skipped: {}, emptyReason: `The OEWS ${level} download is not a zip (BLS may have served a block page)`, info: blankInfo };
-  const workbook = oewsWorkbookFromZip(bytes, level);
-  if (!workbook.bytes) return { url, rows: [], missingFields: [`${level} workbook (${WORKBOOK_PATTERN[level].source})`], skipped: {}, emptyReason: `No ${level} workbook in ${url}`, info: blankInfo };
-  return parseOewsWorkbook(workbook.bytes, year, level, url, workbook.name);
+  let phase = "download";
+  let bytes: Uint8Array | null = null;
+  let workbookName: string | null = null;
+  try {
+    bytes = await readOewsBytes(found.response);
+    if (!isZip(bytes)) throw new Error("response is not a ZIP (possibly a block page)");
+    phase = "outer ZIP";
+    const workbook = oewsWorkbookFromZip(bytes, level, year);
+    if (!workbook.bytes) throw new Error(`no ${level} workbook (${WORKBOOK_PATTERN[level].source}) in archive`);
+    phase = "XLSX";
+    workbookName = workbook.name;
+    let hasWorkbook = false, hasWorksheet = false;
+    unzipSync(workbook.bytes, {filter:file=>{
+      hasWorkbook ||= /^xl\/workbook\.xml$/i.test(file.name);
+      hasWorksheet ||= /^xl\/worksheets\/sheet\d+\.xml$/i.test(file.name);
+      return false;
+    }});
+    if (!hasWorkbook || !hasWorksheet) throw new Error("ZIP is missing XLSX workbook/worksheet entries");
+    return parseOewsWorkbook(workbook.bytes, year, level, url, workbook.name);
+  } catch (error) {
+    const contentType = (found.response.headers.get("content-type") ?? "unknown").replace(/\s+/g," ").slice(0,80);
+    const hash = bytes ? createHash("sha256").update(bytes).digest("hex") : "unavailable";
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`OEWS ${year} ${level} ${phase}: ${message.slice(0,300)}; bytes=${bytes?.length ?? "unavailable"}; declared=${found.response.headers.get("content-length") ?? "unknown"}; content_type=${contentType}; sha256=${hash}; workbook=${workbookName ?? "unknown/bare"}; url=${url}`, {cause:error});
+  }
 }
 
 /** Nation, states and metros for one May estimate year, combined into one fetch. */

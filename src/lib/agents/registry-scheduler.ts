@@ -22,7 +22,7 @@ import {
   FDIC_HISTORY_SOURCE,
   fdicHistoryPartitions,
 } from "@/lib/agents/magellan/registry/fdic-history";
-import { BEIGE_BOOK_SOURCE, beigeBookCandidates } from "@/lib/agents/magellan/registry/fed";
+import { BEIGE_BOOK_SOURCE, beigeBookCandidates, FED_INDICATORS_PARSER_VERSION, FRED_SOURCE } from "@/lib/agents/magellan/registry/fed";
 import { NCUA_FILING_LAG_DAYS, NCUA_FINANCIALS_SOURCE, NCUA_PARSER_VERSION } from "@/lib/agents/magellan/registry/ncua-financials";
 import { CFPB_PARSER_VERSION, CFPB_SOURCE } from "@/lib/agents/magellan/registry/cfpb";
 import { CENSUS_ACS_PARSER_VERSION, CENSUS_ACS_SOURCE, censusAcsPartitions } from "@/lib/agents/magellan/registry/census-acs";
@@ -66,7 +66,7 @@ import {
   INDUSTRY_EVENTS_SOURCE,
   industryEventsPartitions,
 } from "@/lib/agents/magellan/registry/industry-events";
-import { ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES } from "@/lib/agents/magellan/registry/economy";
+import { BEA_PARSER_VERSION, BRANCH_TRACT_PARSER_VERSION, ECONOMY_DEFINITIONS, ECONOMY_PARSER_VERSION, ECONOMY_SOURCES, REMITTANCE_PARSER_VERSION } from "@/lib/agents/magellan/registry/economy";
 import { MAKING_ENDS_MEET_PARSER_VERSION, MAKING_ENDS_MEET_SOURCE } from "@/lib/agents/magellan/registry/making-ends-meet";
 import { PAYDAY_REPORTS_PARSER_VERSION, PAYDAY_REPORTS_SOURCE, paydayReportsPartitions } from "@/lib/agents/magellan/registry/payday-reports";
 import {
@@ -97,6 +97,9 @@ import {
 import { MARKET_GROWTH_DEFINITIONS, MARKET_GROWTH_PARSER_VERSION } from "@/lib/agents/magellan/registry/market-growth";
 import { SMALLBIZ_PAYMENTS_DEFINITIONS, SMALLBIZ_PAYMENTS_PARSER_VERSION } from "@/lib/agents/magellan/registry/smallbiz-payments";
 import { NATIONAL_CREDIT_DEFINITIONS, NATIONAL_CREDIT_PARSER_VERSION } from "@/lib/agents/magellan/registry/national-credit";
+import { BANK_ZELLE_SOURCE } from "@/lib/agents/magellan/registry/bank-zelle";
+import { CALL_REPORT_SUMMARIES_SOURCE } from "@/lib/agents/magellan/registry/call-report-summaries";
+import { BANK_ZELLE_MATCHER_VERSION } from "@/lib/agents/magellan/registry/bank-zelle-match";
 import { REGISTRY_SOURCES } from "@/lib/agents/magellan/registry";
 import { isProviderStep } from "@/lib/agents/types";
 import { STATE_BILLS_PARTITION, STATE_BILLS_SOURCE } from "@/lib/agents/magellan/registry/state-bills";
@@ -106,6 +109,9 @@ import { STATE_ENFORCEMENT_PARSER_VERSION, STATE_ENFORCEMENT_SOURCE } from "@/li
 import { STATE_NEWS_PARSER_VERSION, STATE_REG_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-reg-news";
 import { STATE_BILL_NEWS_SOURCE } from "@/lib/agents/magellan/registry/state-bill-news";
 import { CFPB_FIRST_YEAR } from "@/lib/regulatory/cfpb";
+import { readLatestTableSizes } from "@/lib/agents/atlas/storage-retention";
+import { sourcesHeldForSize } from "@/lib/agents/hoovie/size-budgets";
+import { HOOVIE_AGENT } from "@/lib/agents/hoovie/names";
 import {
   compareQuarters,
   latestPublishableQuarter,
@@ -129,6 +135,12 @@ import {
  * (default 2010Q1).
  */
 
+/**
+ * The run marker every registry run carries (`params_json.source`), before and after #1865 moved
+ * the runs from Magellan to Hoovie. It stays as it is: the registry tick, the queued-run lookup and
+ * the one-run-at-a-time check find registry runs by it, never by agent name, so runs written under
+ * either name are found alike.
+ */
 export const REGISTRY_RUN_SOURCE = "magellan.registry";
 export const DEFAULT_BACKFILL_FROM: Quarter = { year: 2010, quarter: 1 };
 /** If a scheduled run dies without recording an outcome, retry after this long. */
@@ -141,6 +153,7 @@ const CLAIM_RETRY_HOURS = 6;
  */
 export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_FINANCIALS_SOURCE]: NCUA_PARSER_VERSION,
+  [FRED_SOURCE]: FED_INDICATORS_PARSER_VERSION,
   [FDIC_UNIVERSE_SOURCE]: FDIC_UNIVERSE_PARSER_VERSION,
   [ENFORCEMENT_SOURCE]: ENFORCEMENT_MATCHER_VERSION,
   [STATE_ENFORCEMENT_SOURCE]: STATE_ENFORCEMENT_PARSER_VERSION,
@@ -154,6 +167,9 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NCUA_EXTRAS_SOURCE]: NCUA_EXTRAS_PARSER_VERSION,
   [FDIC_HISTORY_SOURCE]: FDIC_HISTORY_PARSER_VERSION,
   ...Object.fromEntries(ECONOMY_DEFINITIONS.map((d) => [d.source, ECONOMY_PARSER_VERSION])),
+  [ECONOMY_SOURCES.remittances]: REMITTANCE_PARSER_VERSION,
+  [ECONOMY_SOURCES.branchTracts]: BRANCH_TRACT_PARSER_VERSION,
+  [ECONOMY_SOURCES.bea]: BEA_PARSER_VERSION,
   ...Object.fromEntries(MARKET_GROWTH_DEFINITIONS.map((d) => [d.source, MARKET_GROWTH_PARSER_VERSION])),
   ...Object.fromEntries(SMALLBIZ_PAYMENTS_DEFINITIONS.map((d) => [d.source, SMALLBIZ_PAYMENTS_PARSER_VERSION])),
   ...Object.fromEntries(NATIONAL_CREDIT_DEFINITIONS.map((d) => [d.source, NATIONAL_CREDIT_PARSER_VERSION])),
@@ -179,6 +195,7 @@ export const REGISTRY_PARSER_VERSIONS: Record<string, number> = {
   [NIC_STRUCTURE_SOURCE]: NIC_STRUCTURE_PARSER_VERSION,
   [UBPR_PEER_GROUPS_SOURCE]: UBPR_PEER_GROUPS_PARSER_VERSION,
   [CFPB_CARD_AGREEMENTS_SOURCE]: CFPB_CARD_AGREEMENTS_PARSER_VERSION,
+  [BANK_ZELLE_SOURCE]: BANK_ZELLE_MATCHER_VERSION,
 };
 
 /**
@@ -197,19 +214,45 @@ export function isParserStale(
   if (current === undefined) return false;
   if (status === "succeeded" || status === "empty") return (parserVersion ?? 1) < current;
   if (status === "scheduled") return (claimedParserVersion ?? 1) < current;
+  if (status === "failed") return (parserVersion ?? claimedParserVersion ?? 1) < current;
   return false;
 }
 
 /**
- * A Census vintage skipped because no CENSUS_API_KEY was set is due as soon as a key is set,
- * instead of waiting out its daily re-check. A vintage Census rejected with a key stays put.
+ * A partition skipped because its free API key was not set is due as soon as that key is set,
+ * instead of waiting out its normal re-check (a day for Census and BEA, a month for USDA farm
+ * data, whose ERS half loads without a key while the NASS cash-rent half is skipped). A partition
+ * the publisher rejected with a key stays put.
  */
 export function isKeylessSkipNowKeyed(keylessSkip: boolean, key: string | undefined = process.env.CENSUS_API_KEY): boolean {
   return keylessSkip && Boolean(key?.trim());
 }
 
-/** SQL test for a partition recorded as skipped because no Census key was set. */
-const KEYLESS_SKIP_REASON = "No CENSUS_API_KEY set%";
+/** The keyed sources whose keyless skips re-run once the key appears, and which key each waits for. */
+export const KEYLESS_SKIP_KEYS = ["CENSUS_API_KEY", "BEA_API_KEY", "NASS_API_KEY"] as const;
+export type KeylessSkipKey = (typeof KEYLESS_SKIP_KEYS)[number];
+
+/** The keys, among those a keyless skip waits for, that are set now. */
+export function keylessSkipKeysSet(env: Record<string, string | undefined> = process.env): Record<KeylessSkipKey, boolean> {
+  // Not via isKeylessSkipNowKeyed: its default would read an unset key as CENSUS_API_KEY.
+  const set = (key: KeylessSkipKey) => Boolean(env[key]?.trim());
+  return { CENSUS_API_KEY: set("CENSUS_API_KEY"), BEA_API_KEY: set("BEA_API_KEY"), NASS_API_KEY: set("NASS_API_KEY") };
+}
+
+/**
+ * SQL test, per key, for a partition recorded as skipped because that key was not set. Census and
+ * BEA record the year as empty with a "No <KEY> set" reason; USDA farm records its ERS rows as a
+ * success (or empty) with detail.nass.skipped_no_key.
+ */
+function keylessSkipSql(alias: "p" | "registry_ingest_partitions", keys: Record<KeylessSkipKey, boolean>) {
+  const t = sql(alias);
+  return sql`(
+       (${keys.CENSUS_API_KEY}::boolean AND ${t}.status = 'empty' AND COALESCE(${t}.detail->>'reason', '') LIKE 'No CENSUS_API_KEY set%')
+    OR (${keys.BEA_API_KEY}::boolean AND ${t}.status = 'empty' AND COALESCE(${t}.detail->>'reason', '') LIKE 'No BEA_API_KEY set%')
+    OR (${keys.NASS_API_KEY}::boolean AND ${t}.source = 'usda-farm' AND ${t}.status IN ('succeeded', 'empty')
+        AND COALESCE(${t}.detail->'nass'->>'skipped_no_key', 'false') = 'true')
+  )`;
+}
 
 export interface RegistryPartitionCandidate {
   source: string;
@@ -223,6 +266,8 @@ export interface RegistryScheduleResult {
   partitionKey?: string;
   runId?: number;
   reused?: boolean;
+  /** Sources skipped because a table they write is over its size budget, with those tables. */
+  heldForSize?: Array<{ source: string; tables: string[] }>;
 }
 
 export function backfillStart(env: string | undefined = process.env.REGISTRY_BACKFILL_FROM): Quarter {
@@ -238,14 +283,21 @@ function years(from: number, to: number): string[] {
 /**
  * Sources whose data terms are unconfirmed: the loader code stays, but no partition is scheduled
  * (nor offered to a manual run) until James confirms the terms. Their Hoovie contracts say `held`.
+ * state-bill-news (Google News RSS) since 2026-10-18; World Bank remittance prices left on
+ * 2026-10-18 (CC BY 4.0, DECISIONS.md "No non-commercial data").
  */
-export const HELD_REGISTRY_SOURCES: ReadonlySet<string> = new Set([ECONOMY_SOURCES.remittances]);
+export const HELD_REGISTRY_SOURCES: ReadonlySet<string> = new Set([STATE_BILL_NEWS_SOURCE]);
 
-/** Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES. */
+/**
+ * Each source's partitions, newest first. Fixed-partition sources come from REGISTRY_SOURCES.
+ * `sizeHeld` names sources held because a table they write is over its size budget
+ * (`src/lib/agents/hoovie/size-budgets.ts`); like held sources, they get no partitions.
+ */
 export function registryPartitionsBySource(
   now: Date,
   from: Quarter = backfillStart(),
   env: NodeJS.ProcessEnv = process.env,
+  sizeHeld: ReadonlySet<string> = new Set(),
 ): Array<{ source: string; partitions: string[] }> {
   const quarters = (lagDays: number) =>
     quartersNewestFirst(from, latestPublishableQuarter(now, lagDays)).map(quarterKey);
@@ -294,7 +346,8 @@ export function registryPartitionsBySource(
   return REGISTRY_SOURCES.map((definition) => ({
     source: definition.source,
     // Held sources schedule nothing: DECISIONS.md "No non-commercial data" (2026-10-17).
-    partitions: HELD_REGISTRY_SOURCES.has(definition.source)
+    // Size-held sources wait until Atlas measures their table back under budget, or a PR raises it.
+    partitions: HELD_REGISTRY_SOURCES.has(definition.source) || sizeHeld.has(definition.source)
       ? []
       : definition.fixedPartition
         ? [definition.fixedPartition]
@@ -307,12 +360,14 @@ export function registryPartitionsBySource(
  * partitions is due, so the closed-institution and merger checks (Atlas marks closed or merged
  * charters inactive from these) keep their cadence however many data sources are added. The
  * FDIC universe and NCUA 5300 syncs set `institution_sources.status`; ffiec-overdraft feeds the
- * overdraft income series. Every other source shares the remaining runs round-robin.
+ * overdraft income series; call-report-summaries rebuilds the readers' quarterly income right
+ * after a call-report load makes it due. Every other source shares the remaining runs round-robin.
  */
 export const PRIORITY_REGISTRY_SOURCES: readonly string[] = [
   FDIC_UNIVERSE_SOURCE,
   NCUA_FINANCIALS_SOURCE,
   FFIEC_OVERDRAFT_SOURCE,
+  CALL_REPORT_SUMMARIES_SOURCE,
 ];
 
 function roundRobin(lists: Array<{ source: string; partitions: string[] }>): RegistryPartitionCandidate[] {
@@ -334,8 +389,12 @@ function roundRobin(lists: Array<{ source: string; partitions: string[] }>): Reg
  * REGISTRY_SOURCES order applies, which puts identity syncs (FDIC universe, SEC links) ahead
  * of the data that depends on them.
  */
-export function registryCandidates(now: Date, from: Quarter = backfillStart()): RegistryPartitionCandidate[] {
-  const lists = registryPartitionsBySource(now, from);
+export function registryCandidates(
+  now: Date,
+  from: Quarter = backfillStart(),
+  sizeHeld: ReadonlySet<string> = new Set(),
+): RegistryPartitionCandidate[] {
+  const lists = registryPartitionsBySource(now, from, process.env, sizeHeld);
   const priority = new Set(PRIORITY_REGISTRY_SOURCES);
   return [
     ...roundRobin(lists.filter((list) => priority.has(list.source))),
@@ -381,7 +440,7 @@ async function hasActiveRegistryRun(): Promise<boolean> {
 /** Atomically claim a partition so two ticks never schedule the same one. */
 async function claimPartition(candidate: RegistryPartitionCandidate): Promise<boolean> {
   const parserVersion = REGISTRY_PARSER_VERSIONS[candidate.source] ?? 0;
-  const censusKeySet = isKeylessSkipNowKeyed(true);
+  const keysSet = keylessSkipKeysSet();
   const rows = await sql`
     INSERT INTO registry_ingest_partitions (source, partition_key, status, attempts, next_attempt_after, detail)
     VALUES (${candidate.source}, ${candidate.partitionKey}, 'scheduled', 1,
@@ -399,12 +458,46 @@ async function claimPartition(candidate: RegistryPartitionCandidate): Promise<bo
            AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int, 1) < ${parserVersion})
        OR (registry_ingest_partitions.status = 'scheduled'
            AND COALESCE((registry_ingest_partitions.detail->>'claimed_parser_version')::int, 1) < ${parserVersion})
-       OR (${censusKeySet}::boolean
-           AND registry_ingest_partitions.status = 'empty'
-           AND registry_ingest_partitions.detail->>'reason' LIKE ${KEYLESS_SKIP_REASON})
+       OR (registry_ingest_partitions.status = 'failed'
+           AND COALESCE((registry_ingest_partitions.detail->>'parser_version')::int,
+                        (registry_ingest_partitions.detail->>'claimed_parser_version')::int,1) < ${parserVersion})
+       OR ${keylessSkipSql("registry_ingest_partitions", keysSet)}
     RETURNING id
   `;
   return [...rows].length > 0;
+}
+
+export interface RegistryLedgerAgent {
+  agent: "hoovie" | "magellan";
+  /** Why the run is written under Magellan's name instead of Hoovie's; absent when it is Hoovie's. */
+  fallback?: string;
+}
+
+let hoovieRowCheck: Promise<boolean> | null = null;
+
+/**
+ * The name new registry runs are written under. agent_runs.agent_name references
+ * agent_registry(agent_name), so a run written as `hoovie` before the row from
+ * 20270110000061_hoovie_agent.sql exists would fail to insert. The row is read once per process and
+ * the answer cached; while it is missing (or the read fails) runs keep Magellan's name, as before
+ * #1865, and say so in `params_json.ledger_agent_fallback`. Every reader accepts both names. A
+ * failed read is not cached, so the next run asks again.
+ */
+export async function registryLedgerAgent(): Promise<RegistryLedgerAgent> {
+  hoovieRowCheck ??= sql<{ present: boolean }[]>`
+    SELECT EXISTS (SELECT 1 FROM agent_registry WHERE agent_name = ${HOOVIE_AGENT}) AS present
+  `.then((rows) => Boolean(rows[0]?.present));
+  try {
+    return (await hoovieRowCheck) ? { agent: HOOVIE_AGENT } : { agent: "magellan", fallback: "hoovie row missing" };
+  } catch {
+    hoovieRowCheck = null;
+    return { agent: "magellan", fallback: "hoovie row check failed" };
+  }
+}
+
+/** Test seam: forget the cached agent_registry read. */
+export function resetRegistryLedgerAgentCache(): void {
+  hoovieRowCheck = null;
 }
 
 export async function startRegistryRun(input: {
@@ -417,14 +510,19 @@ export async function startRegistryRun(input: {
   const definition = REGISTRY_SOURCES.find((entry) => entry.source === input.source);
   if (!definition) throw new Error(`Unknown registry source: ${input.source}`);
   const label = input.partitionKey === definition.fixedPartition ? "" : ` ${input.partitionKey}`;
+  // Hoovie owns public data (#1865). The idempotency key keeps its `magellan:registry:` prefix so
+  // a run queued under Magellan's name before the switch is reused rather than started twice.
+  const ledger = await registryLedgerAgent();
+  const name = ledger.agent === HOOVIE_AGENT ? "Hoovie" : "Magellan";
   return startAgentRun({
-    agent: "magellan",
+    agent: ledger.agent,
     kind: input.dryRun ? "dry_run" : "workflow",
-    title: `Magellan registry: ${definition.title}${label}`,
+    title: `${name} registry: ${definition.title}${label}`,
     params: {
       source: REGISTRY_RUN_SOURCE,
       registry_source: input.source,
       partition_key: input.partitionKey,
+      ...(ledger.fallback ? { ledger_agent_fallback: ledger.fallback } : {}),
     },
     triggeredBy: input.triggeredBy,
     triggerSource: input.triggerSource ?? "schedule",
@@ -432,14 +530,14 @@ export async function startRegistryRun(input: {
     steps: [
       {
         key: definition.stepKey,
-        agent: "magellan",
+        agent: ledger.agent,
         title: `${definition.title}${label}`,
         input: { partition_key: input.partitionKey },
       },
     ],
     summary: isProviderStep(definition.stepKey)
-      ? `Magellan registry run for ${input.source} ${input.partitionKey}. Provider step: budget-checked model calls, each logged with its cost.`
-      : `Magellan registry run for ${input.source} ${input.partitionKey}. Deterministic: published regulator data only, no provider calls.`,
+      ? `${name} registry run for ${input.source} ${input.partitionKey}. Provider step: budget-checked model calls, each logged with its cost.`
+      : `${name} registry run for ${input.source} ${input.partitionKey}. Deterministic: published regulator data only, no provider calls.`,
   });
 }
 
@@ -450,19 +548,23 @@ export async function scheduleDueRegistryRuns({
   try {
     if (await hasActiveRegistryRun()) return { scheduled: false, reason: "active_run" };
 
-    const candidates = registryCandidates(now);
+    // Atlas's latest measurement of the public-data tables. No measurement (or a failed read) holds nothing.
+    const sizes = await readLatestTableSizes().catch(() => null);
+    const held = sourcesHeldForSize(sizes);
+    const heldForSize = held.size > 0 ? { heldForSize: [...held].map(([source, tables]) => ({ source, tables })) } : {};
+    const candidates = registryCandidates(now, backfillStart(), new Set(held.keys()));
     const rows = await sql<(PartitionStateRow & { status: string | null; parser_version: string | null; claimed_parser_version: string | null; keyless_skip: boolean })[]>`
-      SELECT source, partition_key, (next_attempt_after <= NOW()) AS due, status,
-             detail->>'parser_version' AS parser_version,
-             detail->>'claimed_parser_version' AS claimed_parser_version,
-             (status = 'empty' AND COALESCE(detail->>'reason', '') LIKE ${KEYLESS_SKIP_REASON}) AS keyless_skip
-        FROM registry_ingest_partitions
-       WHERE source IN ${sql([...new Set(candidates.map((c) => c.source))])}
+      SELECT p.source, p.partition_key, (p.next_attempt_after <= NOW()) AS due, p.status,
+             p.detail->>'parser_version' AS parser_version,
+             p.detail->>'claimed_parser_version' AS claimed_parser_version,
+             ${keylessSkipSql("p", keylessSkipKeysSet())} AS keyless_skip
+        FROM registry_ingest_partitions p
+       WHERE p.source IN ${sql([...new Set(candidates.map((c) => c.source))])}
     `;
     const states = [...rows].map((row) => ({
       source: row.source,
       partition_key: row.partition_key,
-      due: row.due || isKeylessSkipNowKeyed(Boolean(row.keyless_skip)) || isParserStale(
+      due: row.due || Boolean(row.keyless_skip) || isParserStale(
         row.source,
         row.status,
         row.parser_version === null ? null : Number(row.parser_version),
@@ -470,8 +572,8 @@ export async function scheduleDueRegistryRuns({
       ),
     }));
     const candidate = pickDueCandidate(candidates, states);
-    if (!candidate) return { scheduled: false, reason: "nothing_due" };
-    if (!(await claimPartition(candidate))) return { scheduled: false, reason: "claim_lost" };
+    if (!candidate) return { scheduled: false, reason: "nothing_due", ...heldForSize };
+    if (!(await claimPartition(candidate))) return { scheduled: false, reason: "claim_lost", ...heldForSize };
 
     const started = await startRegistryRun({ ...candidate, triggeredBy });
     await sql`
@@ -486,6 +588,7 @@ export async function scheduleDueRegistryRuns({
       partitionKey: candidate.partitionKey,
       runId: started.run.id,
       reused: started.reused,
+      ...heldForSize,
     };
   } catch (error) {
     if (isMissingSchemaError(error)) return { scheduled: false, reason: "schema_missing" };

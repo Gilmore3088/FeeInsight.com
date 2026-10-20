@@ -15,7 +15,7 @@ export interface NamedPhoneRow {
 
 /**
  * Named competitors on a phone: one fee line at a time, picked from a menu, so the
- * institution-by-fee grid never scrolls sideways. From `sm` the report shows the full grid.
+ * institution-by-fee grid never scrolls sideways. From `lg` the report shows the full grid.
  */
 export function NamedCompetitorsPhone({
   lines,
@@ -66,7 +66,7 @@ export function NamedCompetitorsPhone({
     );
   };
   return (
-    <div className="mt-4 sm:hidden print:hidden">
+    <div className="mt-4 lg:hidden print:hidden">
       <label className="block">
         <span className="sr-only">Fee line</span>
         <select

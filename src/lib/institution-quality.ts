@@ -269,23 +269,6 @@ export function getInstitutionConfidenceSummary(
   }
 }
 
-export function getInstitutionSourceNeededReasonLabel(
-  reason: InstitutionSourceNeededReason,
-): string {
-  switch (reason) {
-    case "not_applicable":
-      return "No source gap";
-    case "official_source_missing":
-      return "Official fee schedule needed";
-    case "source_needs_extraction":
-      return "Source needs extraction";
-    case "latest_source_failed":
-      return "Latest source collection failed";
-    case "review_needed":
-      return "Evidence needs review";
-  }
-}
-
 export function classifyInstitutionQuality(
   input: InstitutionQualityInput,
 ): InstitutionQualityResult {

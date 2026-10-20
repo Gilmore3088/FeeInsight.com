@@ -1149,6 +1149,24 @@
     "source_check": "amount_not_the_fee",
     "eval_rule": "balance_threshold"
    }
+  },
+  {
+   "case_key": "eval_critical:93480",
+   "family": "wrong_amount",
+   "takedown": "eval_critical",
+   "fee_published_id": 93480,
+   "canonical_fee_key": "wire_intl_outgoing",
+   "fee_name": "Cash Management International Wire Origination",
+   "amount": "10.00",
+   "source_document_id": 14370,
+   "agent_source_text_id": 2019,
+   "text_hash": "8a88c5d8ad9d964461a0e53cd2d32014541dcfc21e8dbf1b5a047384d9af4d26",
+   "excerpt": "Cash Management International Wire Origination / $10.",
+   "text": "Cash Management Monthly Fee\n\nCash Management Domestic Wire Origination\n\nCash Management International Wire Origination\n\n$10.00",
+   "refused_by": {
+    "knox": "not_read"
+   },
+   "scope_refusal_note": "Prospective source-owned applicability guard: the stored stacked names do not prove the claimed outgoing direction. This is a conservative missing-scope refusal, not a repaired numeric price reading."
   }
  ],
  "known_misses": [
@@ -1221,20 +1239,6 @@
    "text_hash": "74dc3a119142664e60fc4c4e3231f0787b4ca6cc51af03d0fcc1dcee379948fc",
    "excerpt": "Official Bank Check (Non-Customers) | $20.00",
    "text": "Night Depository Bag | $15.00\n\nOfficial Bank Check (Customers) | $7.00\n\nOfficial Bank Check (Non-Customers) | $20.00\n\nSafe Deposit Box Lock Drill (both keys lost) | $250.00"
-  },
-  {
-   "case_key": "eval_critical:93480",
-   "family": "wrong_amount",
-   "takedown": "eval_critical",
-   "fee_published_id": 93480,
-   "canonical_fee_key": "wire_intl_outgoing",
-   "fee_name": "Cash Management International Wire Origination",
-   "amount": "10.00",
-   "source_document_id": 14370,
-   "agent_source_text_id": 2019,
-   "text_hash": "8a88c5d8ad9d964461a0e53cd2d32014541dcfc21e8dbf1b5a047384d9af4d26",
-   "excerpt": "Cash Management International Wire Origination / $10.",
-   "text": "Cash Management Monthly Fee\n\nCash Management Domestic Wire Origination\n\nCash Management International Wire Origination\n\n$10.00"
   },
   {
    "case_key": "wrong_amount:85861",

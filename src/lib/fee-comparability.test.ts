@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CARD_INACTIVITY_REASON, COMPARABILITY_SCREEN, SAFE_DEPOSIT_SERVICE_REASON, notComparableReason } from "./fee-comparability";
+import {
+  CARD_INACTIVITY_REASON,
+  CATEGORY_BASIS,
+  COMPARABILITY_SCREEN,
+  CONTRADICTING_FREQUENCIES,
+  SAFE_DEPOSIT_SERVICE_REASON,
+  SAFE_DEPOSIT_SERVICE_SQL,
+  basisMismatchReason,
+  notComparableReason,
+} from "./fee-comparability";
 
 describe("notComparableReason: card inactivity under an account-dormancy category", () => {
   it("keeps a card's inactivity fee out of the dormant-account median, by name", () => {
@@ -45,10 +54,59 @@ describe("notComparableReason: safe deposit service charges under the box's rent
     expect(notComparableReason("night_deposit", "Night Depository Key, per additional key", null)).toBeNull();
   });
 
+  it("compares a lock box's rent, and still leaves out a lockout or a lost key (#1816)", () => {
+    for (const name of ["Lock Box Rental 5x5", "Lock Box Annual Fee 3 x 5", "Lockbox 10x10"]) {
+      expect(notComparableReason("safe_deposit_box", name, null), name).toBeNull();
+    }
+    for (const name of ["Lock Change", "Locked out of box", "Lock Box Drilling", "Lock Box Lost Key"]) {
+      expect(notComparableReason("safe_deposit_box", name, null), name).toBe(SAFE_DEPOSIT_SERVICE_REASON);
+    }
+  });
+
+  it("the statistics filter's Postgres pattern reads the same names the same way", () => {
+    // Postgres \m and \M are word starts and ends; JavaScript's \b stands in for both here.
+    const asJs = new RegExp(SAFE_DEPOSIT_SERVICE_SQL.replace(/\\[mM]/g, "\\b"), "i");
+    const names = ["Box Drilling Fee (both keys lost)", "Key Deposit Fee", "Late Payment Fee", "Past due rent", "Forced Entry",
+      "Lock Change", "Lock Box Rental 5x5", "Lock Box Annual Fee 3 x 5", "Safe Deposit Box 3x5", "Blockade", "Chocolate"];
+    for (const name of names) {
+      expect(asJs.test(name), name).toBe(notComparableReason("safe_deposit_box", name, null) !== null);
+    }
+  });
+
   it("every word a rule tests passes the screen the market read uses", () => {
     const screen = new RegExp(COMPARABILITY_SCREEN, "i");
     for (const text of ["CD", "IRAs", "share certificate", "Individual Retirement", "time deposit", "the card will be charged", "card balance", "drilling", "keys", "locked", "late", "past due", "forced"]) {
       expect(screen.test(text), text).toBe(true);
+    }
+  });
+});
+
+describe("charging basis (#1901)", () => {
+  it("leaves out Navy Federal's $3 a quarter dormant fee and keeps monthly, per-item and blank ones", () => {
+    expect(notComparableReason("dormant_account", "Dormant Checking fee", null, null, "quarterly")).toBe("Quarterly charge, not monthly");
+    expect(notComparableReason("dormant_account", "Dormant Checking fee", null, null, "monthly")).toBeNull();
+    expect(notComparableReason("dormant_account", "Dormant Checking fee", null, null, "per_item")).toBeNull();
+    expect(notComparableReason("dormant_account", "Dormant Checking fee", null, null, null)).toBeNull();
+    expect(notComparableReason("dormant_account", "Dormant Checking fee", null, null)).toBeNull();
+  });
+
+  it("reads safe deposit and IRA fees as annual prices", () => {
+    expect(basisMismatchReason("safe_deposit_box", "monthly")).toBe("Monthly charge, not annual");
+    expect(basisMismatchReason("safe_deposit_box", "annual")).toBeNull();
+    expect(basisMismatchReason("ira_administration", "one_time")).toBe("One-time charge, not annual");
+    expect(basisMismatchReason("ira_administration", " Quarterly ")).toBe("Quarterly charge, not annual");
+  });
+
+  it("leaves categories without a basis alone", () => {
+    expect(basisMismatchReason("paper_statement", "quarterly")).toBeNull();
+    expect(basisMismatchReason("overdraft", "daily")).toBeNull();
+    expect(basisMismatchReason(null, "quarterly")).toBeNull();
+  });
+
+  it("never lists a category's own basis as a contradiction", () => {
+    for (const [category, basis] of Object.entries(CATEGORY_BASIS)) {
+      expect(CONTRADICTING_FREQUENCIES[basis], category).not.toContain(basis);
+      expect(basisMismatchReason(category, basis), category).toBeNull();
     }
   });
 });

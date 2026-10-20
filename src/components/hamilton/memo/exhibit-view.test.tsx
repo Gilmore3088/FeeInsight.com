@@ -1,8 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { AnswerView, ExhibitView, axisFor, placeLabels } from "./exhibit-view";
+import { AnswerView, ExhibitView, axisFor, ownLabelStyle, placeLabels } from "./exhibit-view";
 
 const src = { label: "Bank Fee Index", asOf: "2026-10-01" };
+
+describe("ownLabelStyle (#2080)", () => {
+  it("keeps the institution's label inside the track at any width, the axis ends included", () => {
+    // At the axis maximum the label ends at the mark; at the minimum it starts at it.
+    expect(ownLabelStyle(100)).toEqual({ left: "100%", transform: "translateX(-100%)" });
+    expect(ownLabelStyle(0)).toEqual({ left: "0%", transform: "translateX(-0%)" });
+    expect(ownLabelStyle(140)).toEqual({ left: "100%", transform: "translateX(-100%)" });
+    expect(ownLabelStyle(65)).toEqual({ left: "65%", transform: "translateX(-65%)" });
+  });
+
+  it("renders a price at the top of the axis with its label ending at the mark, never past the frame", () => {
+    const exhibit = {
+      kind: "fee_position" as const,
+      title: "Overdraft against peers",
+      unit: "dollars" as const,
+      own: 40,
+      ownLabel: "Example Valley Credit Union",
+      band: { label: "Peer group", p25: 20, median: 25, p75: 30, n: 18 },
+      markers: [],
+      sources: [src],
+    };
+    const html = renderToStaticMarkup(<ExhibitView exhibit={exhibit} />);
+    expect(html).toMatch(/max-w-full truncate[^"]*" style="left:\d+(\.\d+)?%;transform:translateX\(-\d+(\.\d+)?%\)" title="Example Valley Credit Union \$40"/);
+    expect(html).not.toContain("whitespace-nowrap text-xs font-semibold");
+  });
+});
 
 describe("axisFor", () => {
   it("pads both ends and never goes below $0", () => {
@@ -104,5 +130,30 @@ describe("phone readings (Space Coast review, 2026-10-15)", () => {
     );
     expect(html).toContain("Charges more");
     expect(html).not.toContain("Charges less");
+  });
+});
+
+describe("competitor range with several fees (#1931)", () => {
+  it("shows a competitor's one fee as its price and several fees as their range with names", () => {
+    const html = renderToStaticMarkup(
+      <ExhibitView
+        exhibit={{
+          kind: "competitor_range",
+          title: "Local",
+          unit: "dollars",
+          own: 160,
+          ownLabel: "Subject",
+          items: [
+            { name: "A", amount: 120, url: null },
+            { name: "B", amount: 162.5, url: null, several: { low: 150, high: 175, fees: [{ name: "Levy", amount: 150 }, { name: "Garnishment", amount: 175 }] } },
+          ],
+          sources: [],
+        }}
+      />,
+    );
+    expect(html).toContain("$120");
+    expect(html).toContain("$150 to $175");
+    expect(html).toContain("Levy $150; Garnishment $175");
+    expect(html).not.toContain("$162.50");
   });
 });

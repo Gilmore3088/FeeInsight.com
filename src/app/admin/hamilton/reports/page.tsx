@@ -1,3 +1,4 @@
+import { requireAuth } from "@/lib/auth";
 import { getSql } from "@/lib/data-store/connection";
 import type { ReportJob } from "@/lib/report-engine/types";
 import { ReportControls } from "../report-controls";
@@ -28,6 +29,7 @@ export default async function HamiltonReportsPage({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
+  await requireAuth("operate");
   const params = await searchParams;
   const statusFilter = params.status && VALID_STATUSES.has(params.status) ? params.status : null;
   const typeFilter = params.type && VALID_TYPES.has(params.type) ? params.type : null;

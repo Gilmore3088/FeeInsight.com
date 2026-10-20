@@ -13,16 +13,27 @@ import {
 import { FEE_TYPE_LABELS, feeTypesOf } from "@/lib/regulatory/wire-fee-types";
 import type { FeeDataStrip } from "@/lib/regulatory/wire-fee-links";
 import { billTimeline, researchKey, type RelatedItem, type ResearchNote } from "@/lib/regulatory/wire-research";
+import { STRUCK_REGULATOR_STATES } from "@/lib/data-store/struck-sources";
 import { STATE_NAMES } from "@/lib/us-states";
 import { ResearchPanel } from "./research-panel";
 import { FeeChips, WireDate, WirePager, WireSummary } from "./wire-controls";
 
 /**
  * The Regulatory Wire's States view: one chronological feed for the chosen jurisdiction,
- * mixing its fee bills, its regulators' own posts and the press coverage. Every item carries
- * its kind; official items (bills, regulator posts) have a solid rule and badge, press has a
- * dashed rule and an outlined badge naming the outlet, so a story never reads as a release.
+ * mixing its fee bills and its regulators' own posts. Every item carries its kind; official
+ * items (bills, regulator posts) have a solid rule and badge, press has a dashed rule and an
+ * outlined badge naming the outlet, so a story never reads as a release. Press coverage is held
+ * until its licence is confirmed (struck-sources.ts), so its filter and count are not shown.
  */
+
+/** The kinds a reader can filter by; press is held, so it has no tab. */
+const SHOWN_KINDS = WIRE_KINDS.filter((k) => k.key !== "press");
+
+/** Why a state's regulator posts are missing, when its regulator's site was struck. */
+function struckRegulatorNote(state: string | undefined): string | null {
+  if (!state || !STRUCK_REGULATOR_STATES.includes(state)) return null;
+  return `${stateName(state)} regulator posts are not shown because the regulator's website terms do not allow commercial use.`;
+}
 
 function stateName(code: string): string {
   return STATE_NAMES[code] ?? code;
@@ -239,14 +250,14 @@ function ItemRow({
   );
 }
 
-function emptyMessage(params: WireParams, where: string, phrase: string): string {
+export function emptyMessage(params: WireParams, where: string, phrase: string): string {
   const searched = params.q ? ` matching “${params.q}”` : "";
   const bills = "Fee bills come from Open States and are kept only when the bill names a bank or credit union fee; each state's bills are checked once a week.";
-  const news = "Regulator posts and press stories are read once a day.";
+  const news = struckRegulatorNote(params.state) ?? "Regulator posts are read once a day.";
   if (params.kind === "bills") return `No fee bills are stored for ${where} ${phrase}${searched}. ${bills}`;
   if (params.kind === "regulators") return `No regulator posts are stored for ${where} ${phrase}${searched}. Only the state banking and credit union regulators' posts about banking are kept. ${news}`;
-  if (params.kind === "press") return `No press stories are stored for ${where} ${phrase}${searched}. Press stories are the news coverage of state fee bills and bank fees. ${news}`;
-  return `Nothing is stored for ${where} ${phrase}${searched}: no fee bills, regulator posts or press stories. ${news} ${bills}`;
+  if (params.kind === "press") return "Press coverage is paused while we confirm its license.";
+  return `Nothing is stored for ${where} ${phrase}${searched}: no fee bills or regulator posts. ${news} ${bills}`;
 }
 
 /** The reader's watched states, for My states and the Watch toggle. */
@@ -365,6 +376,8 @@ export function StateWire({
   const mine = Boolean(params.mine && watch && watch.states.length > 0);
   const where = params.state ? stateName(params.state) : mine ? "your watched states" : "any state";
   const noun = params.kind === "bills" ? "fee bills" : params.kind === "regulators" ? "regulator posts" : params.kind === "press" ? "press stories" : "items";
+  // Press is held, so a failed press read is not news to the reader.
+  const failed = wire.failed.filter((k) => k !== "press");
   const count = (k: WireKind) => {
     const n = wire.counts[k];
     if (wire.failed.includes(k)) return `${KIND_NOUN[k][1]} could not be read`;
@@ -376,7 +389,7 @@ export function StateWire({
       <div className="flex flex-col gap-1.5 sm:flex-row sm:items-baseline sm:justify-between">
         <h2 className="text-[1.375rem] leading-tight text-warm-900">{params.state ? stateName(params.state) : mine ? "My states" : "All states"}</h2>
         <p className="text-[12px] text-warm-600 [font-variant-numeric:tabular-nums]">
-          {count("bills")} · {count("regulators")} · {count("press")} <span className="whitespace-nowrap">{phrase}</span>
+          {count("bills")} · {count("regulators")} <span className="whitespace-nowrap">{phrase}</span>
         </p>
       </div>
 
@@ -393,7 +406,7 @@ export function StateWire({
       ) : null}
 
       <nav aria-label="Kind" className="mt-3 flex gap-1 overflow-x-auto border-b border-warm-200 text-[12px]">
-        {WIRE_KINDS.map((k) => {
+        {SHOWN_KINDS.map((k) => {
           const active = (params.kind ?? null) === k.key;
           return (
             <Link
@@ -413,9 +426,13 @@ export function StateWire({
       <WireSummary params={params} win={win} noun={noun} phrase={phrase} />
       <FeeChips params={params} />
 
-      {wire.failed.length > 0 ? (
+      {params.kind !== "bills" && struckRegulatorNote(params.state) && wire.items.length > 0 ? (
+        <p className="mt-2 text-[11px] text-warm-600">{struckRegulatorNote(params.state)}</p>
+      ) : null}
+
+      {failed.length > 0 ? (
         <p role="status" className="mt-2 rounded-lg border border-warm-300 bg-warm-150 px-3 py-2 text-[12px] text-warm-700">
-          {wire.failed.map((k) => KIND_NOUN[k][1].replace(" tracked", "")).join(" and ")} could not be read just now, so they are missing from this list and its count.
+          {failed.map((k) => KIND_NOUN[k][1].replace(" tracked", "")).join(" and ")} could not be read just now, so they are missing from this list and its count.
         </p>
       ) : null}
 
@@ -451,10 +468,8 @@ export function StateWire({
       <p className="mt-5 text-[11px] leading-relaxed text-warm-600">
         <strong className="font-semibold text-warm-700">Bill</strong> and <strong className="font-semibold text-warm-700">Regulator</strong> items are
         official: a bill in the state legislature (from Open States) or a post by the state&apos;s banking or credit union
-        regulator. <strong className="font-semibold text-warm-700">Press</strong> items are news coverage, named by outlet, and are
-        not the regulator&apos;s word. Dates are the publication day or, for bills, the latest action (UTC). Research
-        panels hold an AI summary of an official item&apos;s own text where one has been written, labelled as such;
-        press stories are never summarised. A story is linked to a bill when its headline names the bill.
+        regulator. Dates are the publication day or, for bills, the latest action (UTC). Research panels hold an AI
+        summary of an official item&apos;s own text where one has been written, labelled as such.
       </p>
     </div>
   );

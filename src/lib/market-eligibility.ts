@@ -11,7 +11,8 @@ import { notComparableReason } from "@/lib/fee-comparability";
  * It is the statistics contract's row rules (fee-stats.ts, rules 1, 3 and 6: sourced, a real
  * non-negative amount, not business, not from a business-only schedule) plus the comparability
  * rule (fee-comparability.ts: a CD or IRA fee, a card's inactivity fee or a safe deposit service
- * charge filed under a category that measures something else). Read-time only; no data changes.
+ * charge filed under a category that measures something else, or a fee whose stated frequency
+ * contradicts its category's charging basis). Read-time only; no data changes.
  */
 
 /** Audiences the statistics count (fee-stats.ts rule 6); business never does. A blank one is unknown. */
@@ -34,6 +35,8 @@ export interface MarketEligibilityInput {
   feeName: string | null | undefined;
   accountProduct: string | null | undefined;
   sourceLine: string | null | undefined;
+  /** The stated charging frequency, read by the basis rule (#1901). Absent reads as unstated. */
+  frequency?: string | null;
 }
 
 export type MarketIneligibleReason = "no_amount" | "unsourced" | "business" | "business_schedule" | "not_comparable";
@@ -45,7 +48,7 @@ export function marketIneligibleReason(fee: MarketEligibilityInput): MarketIneli
   // An audience left blank is unstated, as everywhere else (fee-audience isAudienceUnstated).
   if (!MARKET_AUDIENCES.includes(fee.audience ?? "unknown")) return "business";
   if (fee.sourceUrl && isBusinessOnlyLink(fee.sourceUrl)) return "business_schedule";
-  if (notComparableReason(fee.category, fee.feeName, fee.accountProduct, fee.sourceLine) !== null) return "not_comparable";
+  if (notComparableReason(fee.category, fee.feeName, fee.accountProduct, fee.sourceLine, fee.frequency) !== null) return "not_comparable";
   return null;
 }
 

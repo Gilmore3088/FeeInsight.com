@@ -46,7 +46,7 @@ export default async function HitListPage({
 }: {
   searchParams: Promise<{ view?: string; state?: string }>;
 }) {
-  await requireAuth("view");
+  await requireAuth("operate");
   const params = await searchParams;
   const view: PageView = params.view === "no_overdraft" || params.view === "top10" || params.view === "gaps" ? params.view : "no_fees";
   const state = params.state && /^[A-Za-z]{2}$/.test(params.state) ? params.state.toUpperCase() : null;

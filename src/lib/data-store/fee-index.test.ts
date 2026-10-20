@@ -6,8 +6,8 @@ vi.mock("./connection", () => {
   return { sql, getSql: () => sql };
 });
 
-import { buildIndexEntries, getDistrictFeeMedians, getInstitutionFeeValues, getPeerIndexes, getNationalIndexCached, getNationalUnstatedAudienceCountsCached, refreshFeeIndexCache } from "./fee-index";
-import { STATS_METHOD_VERSION } from "./fee-stats";
+import { buildIndexEntries, getDistrictFeeMedians, getInstitutionOwnFees, getPeerIndexes, getNationalIndexCached, getNationalUnstatedAudienceCountsCached, refreshFeeIndexCache } from "./fee-index";
+import { STATS_METHOD_VERSION, activeInstitutionFilter } from "./fee-stats";
 import { sql } from "./connection";
 
 type Mock = ReturnType<typeof vi.fn> & { unsafe: ReturnType<typeof vi.fn>; savepoint?: ReturnType<typeof vi.fn> };
@@ -149,23 +149,26 @@ describe("getNationalIndexCached", () => {
   });
 });
 
-describe("getInstitutionFeeValues", () => {
+describe("getInstitutionOwnFees", () => {
   beforeEach(() => {
     db.unsafe.mockReset();
   });
 
-  it("returns the institution's median per category from approved, sourced rows", async () => {
+  it("returns the institution's value per category from approved, sourced rows", async () => {
     db.unsafe.mockResolvedValueOnce([
-      { fee_category: "wire_transfer", amount: "30.00" },
-      { fee_category: "wire_transfer", amount: "35.50" },
-      { fee_category: "wire_transfer", amount: "40.00" },
-      { fee_category: "overdraft", amount: 0 },
-      { fee_category: "nsf", amount: null },
+      { fee_category: "wire_transfer", fee_name: "Wire", amount: "30.00" },
+      { fee_category: "wire_transfer", fee_name: "Wire", amount: "35.50" },
+      { fee_category: "wire_transfer", fee_name: "Wire", amount: "40.00" },
+      { fee_category: "overdraft", fee_name: "Overdraft", amount: 0 },
+      { fee_category: "nsf", fee_name: "NSF", amount: null },
     ]);
 
-    const values = await getInstitutionFeeValues(2945, ["wire_transfer", "overdraft", "nsf"]);
+    const fees = await getInstitutionOwnFees(2945, ["wire_transfer", "overdraft", "nsf"]);
 
-    expect(Object.fromEntries(values)).toEqual({ wire_transfer: 35.5, overdraft: 0 });
+    expect(Object.fromEntries([...fees].map(([category, fee]) => [category, fee.value]))).toEqual({ wire_transfer: 35.5, overdraft: 0 });
+    // Three different wires have no single price: the export and Hamilton show the range.
+    expect(fees.get("wire_transfer")).toMatchObject({ price: null, low: 30, high: 40 });
+    expect(fees.get("overdraft")?.price).toBe(0);
     const [query, params] = db.unsafe.mock.calls[0];
     expect(query).toContain("source_document_id IS NOT NULL");
     expect(query).toContain("review_status = 'approved'");
@@ -228,11 +231,13 @@ describe("getDistrictFeeMedians audience boundary", () => {
     const query = text(db.mock.calls[0]);
     expect(query).toContain("ef.amount >= 0");
     expect(query).not.toContain("ef.amount > 0");
-    // Two fragments: the schedule keys (statistics rule 7) and the row filter.
-    expect(db.unsafe).toHaveBeenCalledTimes(2);
+    // Three fragments: the schedule keys (statistics rule 7), the row filter and the
+    // active-institution rule every public median uses (#1980).
+    expect(db.unsafe).toHaveBeenCalledTimes(3);
     expect(String(db.unsafe.mock.calls[0][0])).toContain("AS schedule_keys");
     const predicate = String(db.unsafe.mock.calls[1][0]);
     expect(predicate).toContain("ef.source_document_id IS NOT NULL");
     expect(predicate).toContain("ef.fee_audience IN ('consumer', 'both', 'unknown')");
+    expect(String(db.unsafe.mock.calls[2][0])).toBe(activeInstitutionFilter("ct"));
   });
 });

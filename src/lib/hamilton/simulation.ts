@@ -4,6 +4,12 @@
  * No imports from react, next, or server-side modules.
  */
 
+import type { DatasetStamp } from "@/lib/dataset-stamp";
+import { midRankPercentile } from "@/lib/percentile";
+
+/** Peers needed before a percentile is read from their own amounts, as in every Hamilton answer. */
+const MIN_AMOUNTS_FOR_MID_RANK = 5;
+
 export interface DistributionData {
   fee_category: string;
   median_amount: number;
@@ -18,11 +24,21 @@ export interface DistributionData {
   peer_source?: "saved-peer-set" | "selected-institution-default" | "national";
   peer_set_id?: string | null;
   peer_fallback_reason?: string | null;
+  /** The data behind the distribution (#1924). */
+  stamp?: DatasetStamp;
+  /** One amount per peer institution, so the percentile is the shared mid-rank one (#2048). */
+  peer_amounts?: number[];
+  /** The peers' amounts could not be read, so the percentile is estimated for that reason (#2103). */
+  peer_amounts_unread?: boolean;
 }
 
 export interface FeePosition {
-  /** 0-100, estimated from p25/median/p75 breakpoints via linear interpolation */
+  /** 0-100: mid-rank over the peers' own amounts when enough are on file, else estimated from the quartiles. */
   percentile: number;
+  /** Which way the percentile was figured, so the screen can say so (#2048). */
+  method: "mid_rank" | "estimated";
+  /** Why an estimate: the amounts could not be read, rather than too few are on file (#2103). */
+  amountsUnread?: boolean;
   /** proposed - median (negative = below median = cost advantage) */
   medianGap: number;
   riskProfile: "low" | "medium" | "high";
@@ -85,10 +101,14 @@ export function classifyRisk(percentile: number): "low" | "medium" | "high" {
  * Compute fee position (percentile, medianGap, riskProfile) for a given fee amount.
  */
 export function computeFeePosition(fee: number, dist: DistributionData): FeePosition {
-  const percentile = Math.round(estimatePercentile(fee, dist));
+  // The same mid-rank method every Hamilton answer uses (#2048); the quartile estimate only when the amounts are not on file.
+  const amounts = dist.peer_amounts ?? [];
+  const midRank = amounts.length >= MIN_AMOUNTS_FOR_MID_RANK ? midRankPercentile(fee, amounts) : null;
+  const method: FeePosition["method"] = midRank !== null ? "mid_rank" : "estimated";
+  const percentile = midRank ?? Math.round(estimatePercentile(fee, dist));
   const medianGap = parseFloat((fee - dist.median_amount).toFixed(2));
   const riskProfile = classifyRisk(percentile);
-  return { percentile, medianGap, riskProfile };
+  return { percentile, method, ...(method === "estimated" && dist.peer_amounts_unread ? { amountsUnread: true } : {}), medianGap, riskProfile };
 }
 
 /**

@@ -1,10 +1,16 @@
-export const dynamic = "force-dynamic";
+/**
+ * Regenerated in the background (ISR) at most hourly (#1811); publishing, editing or
+ * unpublishing an article from admin revalidates it at once. The page reads no session,
+ * cookies or search params. Views are counted from the browser (view-count.tsx), since the
+ * server render no longer runs once per reader.
+ */
+export const revalidate = 3600;
+
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { after } from "next/server";
 import Link from "next/link";
 import { ArrowRight, ChartColumn, Table2, TextQuote, type LucideIcon } from "lucide-react";
-import { incrementViewCount, getPublishedArticles, type Article } from "@/lib/data-store/articles";
+import { getPublishedArticles, type Article } from "@/lib/data-store/articles";
 import { getGuidesForCategory } from "@/lib/data-store/guides";
 import { BreadcrumbJsonLd } from "@/components/breadcrumb-jsonld";
 import { TrackLink } from "@/components/track-link";
@@ -12,8 +18,6 @@ import { DEMO_REQUEST_NAV, PRIMARY_CTA_NAV, PRO_PLANS_NAV } from "@/components/n
 import { PAGE_CRUMBS, PAGE_HEADER, PAGE_HEADER_BLOCK } from "@/components/public/page-header";
 import { homeSerif } from "@/app/landing-serif";
 import { SERIF, SERIF_HEAD } from "@/app/landing-shared";
-import { getCurrentUser } from "@/lib/auth";
-import { canAccessPremium } from "@/lib/access";
 import { PRODUCT_NAME, REPORT_OFFER, RESEARCH_IMPRINT, SITE_NAME, SITE_URL } from "@/lib/constants";
 import { sampleReportAvailable } from "@/lib/custom-report/sample-report";
 import { linkPreview } from "@/lib/link-preview";
@@ -33,6 +37,12 @@ import {
 } from "./article-view";
 import { loadPublishedArticle } from "./load-article";
 import { PREVIEW_FIXTURE_SLUG } from "./preview-fixture";
+import { ArticleViewCount } from "./view-count";
+
+/** Nothing is rendered at build time; each article renders on its first visit, then from cache. */
+export function generateStaticParams() {
+  return [];
+}
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -215,19 +225,16 @@ export default async function ArticlePage({ params }: PageProps) {
   if (!article) notFound();
   const fixture = article.slug === PREVIEW_FIXTURE_SLUG;
 
-  // The view is counted after the response is sent: no database write holds the page.
-  if (!fixture) after(() => incrementViewCount(slug).catch(() => undefined));
-
   const tags = articleTags(article.tags);
-  const [related, user, sampleLive, guides] = await Promise.all([
+  // No session read: the page is cached (ISR) and identical for every reader, so the Hamilton
+  // band shows to all.
+  const [related, sampleLive, guides] = await Promise.all([
     getPublishedArticles(4).catch(() => [] as Article[]),
-    getCurrentUser().catch(() => null),
     sampleReportAvailable().catch(() => false),
     tags[0] ? getGuidesForCategory(tags[0]).catch(() => []) : Promise.resolve([]),
   ]);
   const relatedArticles = related.filter((a) => a.slug !== slug).slice(0, 3);
   const guide = guides[0] ?? null;
-  const isPro = canAccessPremium(user);
 
   const published = bylineDate(article.published_at);
   // The "As of" date is read before the source line is built, so a first pass finds it.
@@ -241,6 +248,8 @@ export default async function ArticlePage({ params }: PageProps) {
 
   return (
     <div className={homeSerif.variable}>
+      {/* Views are counted from the browser; the cached render cannot count them. */}
+      {!fixture && <ArticleViewCount slug={slug} />}
       <BreadcrumbJsonLd
         items={[
           { name: "Home", href: "/" },
@@ -333,48 +342,46 @@ export default async function ArticlePage({ params }: PageProps) {
           </details>
 
           {/* Hamilton, once, in the house band: "Hey Hamilton," one line, one action. */}
-          {!isPro && (
-            <section aria-labelledby="hamilton-heading" className="border-t border-border pt-10 sm:pt-12 print:hidden">
-              <h2 id="hamilton-heading" className={`${SERIF_HEAD} text-ink`} style={SERIF}>
-                <span className="block text-brick">Hey Hamilton,</span>
-                <span className="block">How do our fees compare?</span>
-              </h2>
-              <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
-                Hamilton sets your own published fees beside the peers and markets you choose.
-              </p>
-              <div className="mt-6 flex flex-wrap items-center gap-x-7 gap-y-4">
+          <section aria-labelledby="hamilton-heading" className="border-t border-border pt-10 sm:pt-12 print:hidden">
+            <h2 id="hamilton-heading" className={`${SERIF_HEAD} text-ink`} style={SERIF}>
+              <span className="block text-brick">Hey Hamilton,</span>
+              <span className="block">How do our fees compare?</span>
+            </h2>
+            <p className="mt-4 text-[16px] leading-relaxed text-ink-soft">
+              Hamilton sets your own published fees beside the peers and markets you choose.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-x-7 gap-y-4">
+              <TrackLink
+                event="upgrade_click"
+                eventProps={{ placement: "research_article_end", article: slug }}
+                href={PRO_PLANS_NAV.href}
+                className={`fi-btn fi-btn-brick min-h-12 px-8 text-[15px] ${FOCUS}`}
+              >
+                {PRO_PLANS_NAV.label}
+              </TrackLink>
+              {sampleLive ? (
                 <TrackLink
-                  event="upgrade_click"
+                  event="sample_report_click"
                   eventProps={{ placement: "research_article_end", article: slug }}
-                  href={PRO_PLANS_NAV.href}
-                  className={`fi-btn fi-btn-brick min-h-12 px-8 text-[15px] ${FOCUS}`}
+                  href="/reports/sample-competitive-fee-position"
+                  className={`${SECONDARY} ${FOCUS}`}
                 >
-                  {PRO_PLANS_NAV.label}
+                  See the sample {REPORT_OFFER.name}
+                  <ArrowRight className="size-4" aria-hidden="true" />
                 </TrackLink>
-                {sampleLive ? (
-                  <TrackLink
-                    event="sample_report_click"
-                    eventProps={{ placement: "research_article_end", article: slug }}
-                    href="/reports/sample-competitive-fee-position"
-                    className={`${SECONDARY} ${FOCUS}`}
-                  >
-                    See the sample {REPORT_OFFER.name}
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </TrackLink>
-                ) : (
-                  <TrackLink
-                    event="contact_sales"
-                    eventProps={{ placement: "research_article_end_demo", article: slug }}
-                    href={DEMO_REQUEST_NAV.href}
-                    className={`${SECONDARY} ${FOCUS}`}
-                  >
-                    {DEMO_REQUEST_NAV.standaloneLabel}
-                    <ArrowRight className="size-4" aria-hidden="true" />
-                  </TrackLink>
-                )}
-              </div>
-            </section>
-          )}
+              ) : (
+                <TrackLink
+                  event="contact_sales"
+                  eventProps={{ placement: "research_article_end_demo", article: slug }}
+                  href={DEMO_REQUEST_NAV.href}
+                  className={`${SECONDARY} ${FOCUS}`}
+                >
+                  {DEMO_REQUEST_NAV.standaloneLabel}
+                  <ArrowRight className="size-4" aria-hidden="true" />
+                </TrackLink>
+              )}
+            </div>
+          </section>
 
           {/* A quiet next step for a reader checking their own bank: text links, no second button. */}
           <p className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[14px] text-ink-soft sm:mx-0">

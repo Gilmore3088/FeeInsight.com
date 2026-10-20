@@ -80,7 +80,7 @@ export function workPiles(input: WorkPileInputs): WorkPile[] {
     {
       key: "verify",
       title: "Banks to sample by hand",
-      href: "/admin/verify",
+      href: "/admin/knox?queue=gold",
       count: input.verifyCandidates,
       unit: input.verifyCandidates != null && input.verifyCandidates >= input.verifyLimit ? `banks shown (the first ${input.verifyLimit})` : "banks ready",
       oldest: null,

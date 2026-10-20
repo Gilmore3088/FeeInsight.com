@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 
 import type { DocumentVault } from "@/lib/agents/document-vault";
 
@@ -19,6 +20,9 @@ interface DbSetup {
   institution?: string | null;
   otherBank?: { id: number; institution_name: string; state_code: string } | null;
   duplicateOf?: number | null;
+  /** Whether the copy on file has a completed text (default true); its vault key. */
+  duplicateRead?: boolean;
+  duplicateKey?: string | null;
   companions?: Array<{ id: number; url: string; status: string; reason: string | null }>;
 }
 
@@ -34,7 +38,13 @@ function createDb(setup: DbSetup = {}): DbMock {
     }
     if (sql.includes("INSERT INTO agent_runs")) return Promise.resolve([{ id: 900 }]);
     if (sql.includes("INSERT INTO agent_run_steps")) return Promise.resolve([{ id: 901 }]);
-    if (sql.includes("SELECT id FROM source_documents")) return Promise.resolve(setup.duplicateOf ? [{ id: setup.duplicateOf }] : []);
+    if (sql.includes("FROM source_documents d")) {
+      return Promise.resolve(
+        setup.duplicateOf
+          ? [{ id: setup.duplicateOf, document_r2_key: setup.duplicateKey ?? null, read_ok: setup.duplicateRead ?? true }]
+          : [],
+      );
+    }
     if (sql.includes("SELECT id, url, status, reason FROM institution_additional_sources")) return Promise.resolve(setup.companions ?? []);
     if (sql.includes("INSERT INTO institution_additional_sources")) return Promise.resolve([{ id: 77 }]);
     if (sql.includes("INSERT INTO source_documents")) return Promise.resolve([{ id: 88 }]);
@@ -110,6 +120,32 @@ describe("hand-supplied fee schedules", () => {
     expect(calls(db, "INSERT INTO source_documents")).toHaveLength(0);
     expect(calls(db, "INSERT INTO institution_additional_sources")).toHaveLength(0);
     expect(read).not.toHaveBeenCalled();
+  });
+
+  it("reads a copy on file that was never read, from the uploaded bytes (#1754)", async () => {
+    // Alliant's 2026-02 copy: same bytes, but Rosetta was refused by the bank's site (HTTP 403).
+    const db = createDb({ duplicateOf: 1933, duplicateRead: false });
+    const store = vault();
+    const read = fakeRead();
+    const result = await load(db, { vault: store, read });
+    expect(result).toMatchObject({ outcome: "loaded", sourceDocumentId: 1933, readStatus: "completed", runId: 900 });
+    expect(result.message).toContain("never read until now");
+    expect(store.store).toHaveBeenCalledTimes(1);
+    expect(calls(db, "SET document_r2_key")[0]).toContain(1933);
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ sourceDocumentId: 1933, bytes: PDF }));
+    expect(calls(db, "INSERT INTO source_documents")).toHaveLength(0);
+    expect(calls(db, "INSERT INTO institution_additional_sources")).toHaveLength(0);
+    expect(calls(db, "UPDATE agent_runs")[0]).toContain("completed");
+  });
+
+  it("keeps the vault copy of an unread copy that already has one", async () => {
+    const db = createDb({ duplicateOf: 1933, duplicateRead: false, duplicateKey: "documents/abc" });
+    const store = vault();
+    const read = fakeRead();
+    await load(db, { vault: store, read });
+    expect(store.store).not.toHaveBeenCalled();
+    expect(calls(db, "SET document_r2_key")).toHaveLength(0);
+    expect(read).toHaveBeenCalledWith(expect.objectContaining({ sourceDocumentId: 1933 }));
   });
 
   it("joins a page already on file as a hand-found link, and leaves a ruled-out page alone", async () => {
@@ -207,10 +243,14 @@ describe("Rosetta's read of a hand-supplied copy", () => {
       const sql = text(strings);
       if (sql.includes("FROM source_documents doc")) {
         return Promise.resolve([
-          { source_document_id: 88, institution_id: 102, institution_name: "TowneBank", document_url: URL_FOUND, content_hash: "h", companion_source_id: 77 },
+          { source_document_id: 88, institution_id: 102, institution_name: "TowneBank", document_url: URL_FOUND, content_hash: createHash("sha256").update(PDF).digest("hex"), companion_source_id: 77 },
         ]);
       }
       return Promise.resolve([]);
+    });
+    // Callback-only sink; native Rosetta SQL controls prove rollback.
+    Object.assign(db, {
+      begin: vi.fn(async (work: (scope: typeof db) => Promise<unknown>) => work(db)),
     });
     const schedule = [
       "Schedule of Fees and Charges for Personal Deposit Accounts",

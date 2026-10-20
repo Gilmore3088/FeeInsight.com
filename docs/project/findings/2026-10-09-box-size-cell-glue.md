@@ -21,3 +21,5 @@ Known gap. Two fees in the same document are still not read:
   wrapped description.
 - NSF is "$28 per paid or returned item". It sits on a line glued to the transaction list.
 Both need a reader for a price below a wrapped description. That is not in v63.
+
+**Agent lesson:** knox/pr-872-side-by-side-cells

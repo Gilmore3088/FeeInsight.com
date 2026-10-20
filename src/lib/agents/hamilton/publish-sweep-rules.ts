@@ -8,6 +8,7 @@ import {
   unconfirmedHostFeesSql,
 } from "@/lib/agents/hamilton/other-bank-document";
 import { DOCUMENT_OWNER_REASON, documentOwnerRefusalsSql } from "@/lib/agents/darwin/document-owner";
+import { readPublicationEvidence } from "./publication-evidence";
 
 type SqlTag = typeof sql;
 
@@ -116,25 +117,24 @@ export function publishSweepRefusals(
 
 export interface PublishSweepReads {
   refusals: Map<number, PublishSweepRefusal>;
-  /** A failed read, kept for the run ledger; a failed read refuses nothing. */
+  /** Positive refusals remain usable; failed reads never prove no match. */
+  unavailable: PublishSweepRule[];
+  /** Fixed check codes only, safe for the run ledger. */
   error: string | null;
 }
 
 /**
- * The three reads over the rows a publish step is about to decide. Each read runs on its own;
- * one that fails is reported and the others still count. Never throws.
+ * The four reads over the rows a publish step is about to decide. Each read runs on its own;
+ * one that fails is unavailable and the others still count. Never throws.
  */
 export async function selectPublishSweepRefusals(db: SqlTag, feeVerifiedIds: number[]): Promise<PublishSweepReads> {
-  if (feeVerifiedIds.length === 0) return { refusals: new Map(), error: null };
-  const errors: string[] = [];
-  const read = async <T>(label: string, query: string, params: unknown[]): Promise<T[]> => {
-    try {
-      return await inSavepoint(db, (scope) => scope.unsafe<T[]>(query, params as never[]));
-    } catch (error) {
-      console.error(`publish sweep check ${label} read failed:`, error);
-      errors.push(`${label}: ${error instanceof Error ? error.message : String(error)}`);
-      return [];
-    }
+  if (feeVerifiedIds.length === 0) return { refusals: new Map(), unavailable: [], error: null };
+  const unavailable: PublishSweepRule[] = [];
+  const read = async <T>(label: PublishSweepRule, query: string, params: unknown[]): Promise<T[]> => {
+    const result = await readPublicationEvidence(label, () => inSavepoint(db, (scope) => scope.unsafe<T[]>(query, params as never[])));
+    if (result.state === "available") return result.value;
+    unavailable.push(label);
+    return [];
   };
   const otherBank = await read<HostVerdictRow>("other_bank_document", otherBankFeesSql("verified"), [feeVerifiedIds]);
   const unconfirmed = await read<HostVerdictRow>("unconfirmed_document_host", unconfirmedHostFeesSql("verified"), [feeVerifiedIds]);
@@ -145,7 +145,10 @@ export async function selectPublishSweepRefusals(db: SqlTag, feeVerifiedIds: num
   // one the sweep would take down.
   const business = await read<BusinessVerdictRow>("business_schedule", businessScheduleFeesSql("verified"), [feeVerifiedIds, []]);
   const owner = await read<OwnerVerdictRow>("document_owner", documentOwnerRefusalsSql(), [feeVerifiedIds]);
-  return { refusals: publishSweepRefusals(otherBank, unconfirmed, business, owner), error: errors.length ? errors.join("; ") : null };
+  return {
+    refusals: publishSweepRefusals(otherBank, unconfirmed, business, owner), unavailable,
+    error: unavailable.length ? `Publication evidence unavailable: ${unavailable.join(", ")}` : null,
+  };
 }
 
 export interface PublishSweepCheck {

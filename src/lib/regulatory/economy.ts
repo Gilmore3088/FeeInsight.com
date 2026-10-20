@@ -2,18 +2,20 @@ import { strFromU8, Unzip, UnzipInflate, unzipSync } from "fflate";
 import { FIPS_TO_STATE } from "@/lib/geo/state-fips";
 import { STATE_NAMES } from "@/lib/us-states";
 import { CensusKeyError } from "./census-acs";
+import { validCoordinates } from "./coordinates";
 import { toCensusCsv, type GeocodeInput } from "./census-geocoder";
 import { FDIC_API_BASE } from "./fdic";
-import { registryFetch, registryFetchJson, RegistryHttpError, type RegistryFetchOptions } from "./http";
+import { registryFetch, registryFetchJson, RegistryHttpError, redactRegistrySecrets, type RegistryFetchOptions } from "./http";
 import { checkValues, flaggedOnly, type KeyValueReport, type ValueCheckInput } from "./data-checks";
 import { parseCsv } from "./ncua";
+import { streamXlsxSheets } from "./xlsx-stream";
 
 /**
  * Local-economy public data, one parser per source. Pure transport and parsing: no DB access.
  *
  * Every source lands as area statistics: one value for one area (nation, state, county or
  * metro), one period and one series, with its unit and source. Census ACS income and population
- * (`demographics`), IRS ZIP income (`irs_zip_income`) and FRED state unemployment and payrolls
+ * (`demographics`), IRS ZIP income (`irs_zip_income`) and BLS state unemployment and payrolls
  * (`fed_economic_indicators`) are loaded elsewhere and are not repeated here.
  *
  * The regulator and statistics sites are blocked from the sandbox this was written in, so every
@@ -31,6 +33,8 @@ import { parseCsv } from "./ncua";
 export type AreaGeoType = "nation" | "state" | "county" | "metro";
 
 export interface AreaStat {
+  /** A specific upstream request when a source combines several tables/geographies. */
+  source_url?: string | null;
   geo_type: AreaGeoType;
   geo_code: string;
   geo_name: string | null;
@@ -98,6 +102,8 @@ async function fetchFirst(
 
 /** Result of one source fetch: rows plus the gaps the parser found. */
 export interface AreaFetch {
+  /** Explicit unavailable subrequests; valid values may still have loaded elsewhere. */
+  unavailableParts?: Array<{key:string;reason:string}>;
   url: string | null;
   rows: AreaStat[];
   /** Expected columns or fields the file did not carry. */
@@ -127,14 +133,6 @@ export function ruccUrls(vintage: string): string[] {
     `https://ers.usda.gov/sites/default/files/_laserfiche/DataFiles/53251/Ruralurbancontinuumcodes${vintage}.csv`,
     `https://www.ers.usda.gov/webdocs/DataFiles/53251/Ruralurbancontinuumcodes${vintage}.csv`,
   ];
-}
-
-/** RUCC 1-3 are metro counties, 4-9 nonmetro; institution_sources.urban_rural records them as urban / rural. */
-export function ruccClass(code: number | null): "urban" | "rural" | null {
-  if (code === null || !Number.isInteger(code)) return null;
-  if (code >= 1 && code <= 3) return "urban";
-  if (code >= 4 && code <= 9) return "rural";
-  return null;
 }
 
 /**
@@ -516,6 +514,7 @@ export function parsePointTract(body: unknown): string | null {
 }
 
 export async function placePointInTract(latitude: number, longitude: number, options: RegistryFetchOptions = {}): Promise<string | null> {
+  if (!validCoordinates(latitude, longitude)) return null;
   const params = new URLSearchParams({
     x: String(longitude),
     y: String(latitude),
@@ -832,7 +831,7 @@ export async function fetchSaipe(year: number, options: RegistryFetchOptions = {
 }
 
 // ---------------------------------------------------------------------------
-// (e) BEA personal income by county, state and metro (CAINC1; needs BEA_API_KEY)
+// (e) BEA personal income by county, state and metro (SAINC1/CAINC1; needs BEA_API_KEY)
 // ---------------------------------------------------------------------------
 
 export const BEA_API_URL = "https://apps.bea.gov/api/data";
@@ -843,10 +842,10 @@ export const BEA_LINES = [
   { line: 3, key: "bea_per_capita_personal_income", unit: "dollars" },
 ] as const;
 
-const BEA_GEOS: Array<{ geo_type: AreaGeoType; geoFips: string }> = [
-  { geo_type: "state", geoFips: "STATE" },
-  { geo_type: "county", geoFips: "COUNTY" },
-  { geo_type: "metro", geoFips: "MSA" },
+const BEA_GEOS: Array<{ geo_type: AreaGeoType; geoFips: string; table: string }> = [
+  { geo_type: "state", geoFips: "STATE", table: "SAINC1" },
+  { geo_type: "county", geoFips: "COUNTY", table: "CAINC1" },
+  { geo_type: "metro", geoFips: "MSA", table: "CAINC1" },
 ];
 
 /** BEA refused the key (or none was given). */
@@ -857,12 +856,12 @@ export class BeaKeyError extends Error {
   }
 }
 
-export function beaUrl(key: string, line: number, geoFips: string, year: number): string {
+export function beaUrl(key: string, line: number, geoFips: string, year: number, table = geoFips === "STATE" ? "SAINC1" : "CAINC1"): string {
   const params = new URLSearchParams({
     UserID: key,
     method: "GetData",
     datasetname: "Regional",
-    TableName: "CAINC1",
+    TableName: table,
     LineCode: String(line),
     GeoFips: geoFips,
     Year: String(year),
@@ -871,28 +870,54 @@ export function beaUrl(key: string, line: number, geoFips: string, year: number)
   return `${BEA_API_URL}?${params.toString()}`;
 }
 
+/** Official Regional metadata method, filtered by table rather than a guessed release year. */
+export function beaYearsUrl(key: string, table: string): string {
+  return `${BEA_API_URL}?${new URLSearchParams({UserID:key,method:"GetParameterValuesFiltered",
+    datasetname:"Regional",TargetParameter:"Year",TableName:table,ResultFormat:"json"})}`;
+}
+
+interface BeaApiError {
+  APIErrorCode?: string | number;
+  APIErrorDescription?: string;
+  error?: string;
+  AdditionalDetails?: unknown;
+  ErrorDetail?: { Description?: string };
+}
+interface BeaResult {
+  ParamValue?: Array<{Key?: unknown}> | {Key?: unknown};
+  Error?: BeaApiError | BeaApiError[];
+  Data?: Array<Record<string, unknown>>;
+}
 interface BeaResponse {
-  BEAAPI?: {
-    Error?: { APIErrorDescription?: string; ErrorDetail?: { Description?: string } };
-    Results?: {
-      Error?: { APIErrorDescription?: string; ErrorDetail?: { Description?: string } };
-      Data?: Array<Record<string, unknown>>;
-    };
-  };
+  BEAAPI?: { Error?: BeaApiError | BeaApiError[]; Results?: BeaResult | BeaResult[] };
+}
+
+function beaResults(body: unknown): BeaResult[] {
+  const results = (body as BeaResponse)?.BEAAPI?.Results;
+  return results ? Array.isArray(results) ? results : [results] : [];
 }
 
 export const BEA_FIELDS = ["GeoFips", "GeoName", "TimePeriod", "DataValue"] as const;
 
-/** BEA's error text, when the reply carries one. */
-export function beaError(body: unknown): string | null {
+/** BEA's official client documents both error locations, arrays and AdditionalDetails. */
+export function beaError(body: unknown, key?: string): string | null {
   const api = (body as BeaResponse)?.BEAAPI;
-  const err = api?.Error ?? api?.Results?.Error;
-  if (!err) return null;
-  return text(err.APIErrorDescription) ?? text(err.ErrorDetail?.Description) ?? "BEA returned an error";
+  const errors = [api?.Error, ...beaResults(body).map(result => result.Error)]
+    .flatMap(error => error ? Array.isArray(error) ? error : [error] : []);
+  if (errors.length === 0) return null;
+  const bounded = (value: unknown) => typeof value === "string" || typeof value === "number"
+    ? redactRegistrySecrets(key ? String(value).replaceAll(key, "***") : String(value)).replace(/\s+/g, " ").trim().slice(0, 500) : "";
+  return errors.slice(0, 5).map(error => {
+    const code = bounded(error.APIErrorCode);
+    const details = [...new Set([error.APIErrorDescription, error.error, error.ErrorDetail?.Description, error.AdditionalDetails]
+      .map(bounded).filter(Boolean))];
+    return `${code ? `code=${code}; ` : ""}${details.join("; ") || "BEA returned an error"}`;
+  }).join(" | ").slice(0, 2000);
 }
 
 export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeof BEA_LINES)[number], year: number): AreaFetch {
-  const data = (body as BeaResponse)?.BEAAPI?.Results?.Data;
+  const results = beaResults(body);
+  const data = results.length > 0 && results.every(result => Array.isArray(result.Data)) ? results.flatMap(result => result.Data!) : null;
   if (!Array.isArray(data)) return emptyFetch(null, beaError(body) ?? "BEA reply held no Data array");
   const missing = data.length > 0 ? BEA_FIELDS.filter((f) => !data.some((d) => f in d)) : [];
   const skipped: Record<string, number> = {};
@@ -919,7 +944,9 @@ export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeo
       bump(skipped, "unreadable_geography");
       continue;
     }
-    const value = publishedNumber(d.DataValue);
+    const reference = text(d.NoteRef);
+    const suppressed = Boolean(reference && /\((?:D|NA|NM|L)\)/i.test(reference));
+    const value = suppressed ? null : publishedNumber(d.DataValue);
     out.push({
       ...geo,
       geo_name: text(d.GeoName),
@@ -927,7 +954,7 @@ export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeo
       series_key: series.key,
       value,
       unit: text(d.CL_UNIT)?.toLowerCase() ?? series.unit,
-      note: value === null ? blankFlag(d.DataValue) : null,
+      note: value === null ? (suppressed ? reference : blankFlag(d.DataValue)) : null,
       raw: d,
     });
   }
@@ -935,26 +962,67 @@ export function parseBeaData(body: unknown, geoType: AreaGeoType, series: (typeo
 }
 
 export async function fetchBea(year: number, key: string, options: RegistryFetchOptions = {}): Promise<AreaFetch> {
+  const availableYears = new Map<string, Set<number>>();
+  const yearsFor = async (table: string): Promise<Set<number>> => {
+    const cached = availableYears.get(table);
+    if (cached) return cached;
+    const body = await registryFetchJson<unknown>(beaYearsUrl(key,table),options);
+    const error = beaError(body,key);
+    const context = `BEA Regional/${table} published-year metadata`;
+    if (error && /code=1(?:;|$)|user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(`${context}: ${error}`);
+    if (error) throw new Error(`${context}: ${error}`);
+    const years = new Set<number>();
+    for (const result of beaResults(body)) {
+      for (const row of result.ParamValue ? Array.isArray(result.ParamValue) ? result.ParamValue : [result.ParamValue] : []) {
+        const match = /^(\d{4})(?:-(\d{4}))?$/.exec(String(row.Key ?? "").trim());
+        if (!match) continue;
+        const first = Number(match[1]), last = Number(match[2] ?? match[1]);
+        if (last < first || last-first > 300) continue;
+        for (let value=first;value<=last;value++) years.add(value);
+      }
+    }
+    if (years.size === 0) throw new Error(`${context}: missing published-year metadata`);
+    availableYears.set(table,years);
+    return years;
+  };
   const combined: AreaFetch = { url: null, rows: [], missingFields: [], skipped: {}, emptyReason: null };
   for (const series of BEA_LINES) {
     for (const geo of BEA_GEOS) {
-      const url = beaUrl(key, series.line, geo.geoFips, year);
+      if (!(await yearsFor(geo.table)).has(year)) {
+        combined.missingFields.push(`${series.key} ${geo.geo_type}: ${geo.table} has no published year ${year}`);
+        continue;
+      }
+      const url = beaUrl(key, series.line, geo.geoFips, year, geo.table);
       const body = await registryFetchJson<unknown>(url, options);
-      const error = beaError(body);
-      if (error && /user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(error);
-      if (error && /year|not available|no data/i.test(error)) {
+      const rawError = beaError(body, key);
+      const error = rawError ? redactRegistrySecrets(rawError.replaceAll(key, "***")) : null;
+      const context = `BEA Regional/${geo.table} year=${year} line=${series.line} GeoFips=${geo.geoFips}`;
+      if (error && /code=1(?:;|$)|user ?id|api ?key|not registered|invalid.*key/i.test(error)) throw new BeaKeyError(`${context}: ${error}`);
+      if (error && /no data|data.*not available/i.test(error)) {
         combined.missingFields.push(`${series.key} ${geo.geo_type}: ${error.slice(0, 120)}`);
         continue;
       }
-      if (error) throw new Error(`BEA: ${error}`);
+      if (error && geo.geo_type === "metro" && /^code=101;/.test(error)) {
+        // Observed on production's CAINC1/MSA requests for 2023 and 2024. Do not invent
+        // a metro sum or discard the valid published state/county responses.
+        const reason = `${context}: ${error}`;
+        (combined.unavailableParts ??= []).push({key:`MSA/line=${series.line}`,reason:reason.slice(0,500)});
+        combined.missingFields.push(reason.slice(0,160));
+        continue;
+      }
+      if (error) throw new Error(`${context}: ${error}`);
+      const results = beaResults(body);
+      if (results.length === 0 || results.some(result => !Array.isArray(result.Data))) throw new Error(`${context}: missing Data array`);
       const parsed = parseBeaData(body, geo.geo_type, series, year);
       combined.url ??= url.replace(/UserID=[^&]+/, "UserID=***");
-      combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation")));
+      combined.rows.push(...parsed.rows.filter((r) => r.geo_type === geo.geo_type || (geo.geo_type === "state" && r.geo_type === "nation"))
+        .map(row=>({...row,source_url:url.replace(/UserID=[^&]+/, "UserID=***")})));
       combined.missingFields.push(...parsed.missingFields.map((f) => `${series.key} ${geo.geo_type}: ${f}`));
       for (const [k, v] of Object.entries(parsed.skipped)) combined.skipped[`${geo.geo_type}_${k}`] = (combined.skipped[`${geo.geo_type}_${k}`] ?? 0) + v;
     }
   }
-  if (combined.rows.length === 0) combined.emptyReason = `BEA has not published ${year} county personal income`;
+  if (combined.rows.length === 0 && combined.unavailableParts?.length) throw new Error(combined.unavailableParts[0].reason);
+  if (combined.rows.length === 0) combined.emptyReason = `BEA has no published personal-income values for ${year} in the requested tables`;
   return combined;
 }
 
@@ -1023,7 +1091,6 @@ export async function fetchFhfaHpi(options: RegistryFetchOptions = {}): Promise<
  * UNBANKED / UNDERBANKED columns, and refuses a file that has neither.
  */
 export const FDIC_SURVEY_URL_ENV = "FDIC_HOUSEHOLD_SURVEY_CSV_URL";
-export const FDIC_SURVEY_YEARS_FIRST = 2009;
 
 const STATE_BY_NAME: Record<string, string> = {
   ...Object.fromEntries(Object.entries(STATE_NAMES).map(([code, full]) => [full.toUpperCase(), code])),
@@ -1394,8 +1461,46 @@ export async function fetchConfiguredCsv(
 // World Bank Remittance Prices Worldwide: corridors sending from the United States
 // ---------------------------------------------------------------------------
 
-/** The RPW dataset is published as a workbook; the URL of a CSV export is configuration. */
+/**
+ * Licence read 2026-10-18 (licence audit): CC BY 4.0, commercial use allowed with attribution.
+ * Every stored row and every read carries this attribution.
+ */
+export const REMITTANCE_PRICES_LICENCE = "CC BY 4.0";
+export const REMITTANCE_PRICES_ATTRIBUTION = "The World Bank: Remittance Prices Worldwide";
+
+/**
+ * Optional override: a direct link to the RPW workbook (or a CSV export of it). Unset, the loader
+ * finds the workbook on the RPW data-download page and falls back to RPW_DEFAULT_WORKBOOK_URL.
+ * The name is kept from when only a CSV was read, so a value already set still works.
+ */
 export const RPW_URL_ENV = "WORLD_BANK_RPW_CSV_URL";
+
+/** The RPW site's data page; its "download in MS Excel format" link is the full dataset workbook. */
+export const RPW_DATA_PAGE_URL = "https://remittanceprices.worldbank.org/data-download";
+
+/**
+ * The workbook the data page linked on 2026-10-18 (read through a web fetch; remittanceprices
+ * .worldbank.org is blocked from the container this was written in). The file name carries the
+ * last quarter it covers, so the page is read first and this is only the fallback.
+ */
+export const RPW_DEFAULT_WORKBOOK_URL = "https://remittanceprices.worldbank.org/sites/default/files/rpw_dataset_2011_2025_q1.xlsx";
+
+/** Largest RPW download read; a bigger file is refused rather than held in a serverless step. */
+export const RPW_MAX_BYTES = 50 * 1024 * 1024;
+
+/** The named problem a run records when the RPW download is over RPW_MAX_BYTES. */
+export const RPW_TOO_LARGE_PROBLEM = "rpw_file_too_large";
+
+export class RpwFileTooLargeError extends Error {
+  readonly problem = RPW_TOO_LARGE_PROBLEM;
+  constructor(
+    readonly url: string,
+    readonly bytes: number,
+  ) {
+    super(`${RPW_TOO_LARGE_PROBLEM}: ${url} is over ${Math.round(RPW_MAX_BYTES / 1024 / 1024)} MB (${Math.round(bytes / 1024 / 1024)} MB or more); not read`);
+    this.name = "RpwFileTooLargeError";
+  }
+}
 
 export interface RemittancePrice {
   period: string;
@@ -1411,65 +1516,247 @@ export interface RemittancePrice {
   raw: Record<string, string>;
 }
 
-/** Header patterns for the RPW columns (names unconfirmed; matched loosely, reported when absent). */
+/**
+ * Header patterns for the RPW columns, matched on the upper-cased header. The workbook's own
+ * names ("cc1 lcu fee", "cc1 total cost %", "payment instrument" on the sheet from Q2 2016) come
+ * from third-party code that reads the workbook, not from the file itself, so they are matched
+ * loosely and any that is absent is reported.
+ */
 export const RPW_COLUMNS = {
   period: /^PERIOD$/,
   source: /^SOURCE([_ ](NAME|COUNTRY))?$/,
   destination: /^DESTINATION([_ ](NAME|COUNTRY))?$/,
   firm: /^FIRM$/,
   firmType: /^FIRM[_ ]TYPE$/,
-  product: /^PRODUCT$/,
-  fee: /^CC1[_ ]FEE|^FEE([_ ]USD)?$/,
+  product: /^PRODUCT$|^PAYMENT[_ ]INSTRUMENT$/,
+  fee: /^CC1[_ ](LCU[_ ])?FEE|^FEE([_ ]USD)?$/,
   fxMargin: /^CC1[_ ]FX[_ ]MARGIN|^FX[_ ]MARGIN/,
   totalCost: /^CC1[_ ]TOTAL[_ ]COST|^TOTAL[_ ]COST/,
-  amount: /^CC1[_ ](LCU[_ ]AMOUNT|AMOUNT)|^AMOUNT[_ ]SENT/,
+  amount: /^CC1[_ ](LCU[_ ])?AMOUNT|^AMOUNT[_ ]SENT/,
 } as const;
+
+type RpwColumnMap = Record<keyof typeof RPW_COLUMNS, string | null>;
+
+function rpwColumns(headers: string[]): { col: RpwColumnMap; missingFields: string[]; usable: boolean } {
+  const col = Object.fromEntries(
+    Object.entries(RPW_COLUMNS).map(([k, re]) => [k, headers.find((h) => re.test(h)) ?? null]),
+  ) as RpwColumnMap;
+  const missingFields = Object.entries(col).filter(([, v]) => !v).map(([k]) => k);
+  return { col, missingFields, usable: Boolean(col.period && col.source && col.destination && col.firm) };
+}
+
+/** A published number, or the exponent form Excel stores some values in ("5E-2"). */
+function rpwNumber(value: string | undefined): number | null {
+  const raw = value?.trim().replace(/%$/, "");
+  const n = publishedNumber(raw);
+  if (n !== null || !raw || !/^-?\d+(\.\d+)?E[+-]?\d+$/i.test(raw)) return n;
+  const e = Number(raw);
+  return Number.isFinite(e) ? e : null;
+}
+
+/** One RPW row as a quote: "non_us" for another sending country, null when a key field is blank. */
+function remittanceFromRow(row: Record<string, string>, col: RpwColumnMap): RemittancePrice | "non_us" | null {
+  const source = text(row[col.source ?? ""]);
+  if (!source || !/^(UNITED STATES|USA|US)$/i.test(source)) return "non_us";
+  const destination = text(row[col.destination ?? ""]);
+  const firm = text(row[col.firm ?? ""]);
+  const period = text(row[col.period ?? ""]);
+  if (!destination || !firm || !period) return null;
+  const num = (c: string | null) => (c ? rpwNumber(row[c]) : null);
+  return {
+    period,
+    source_country: source,
+    destination_country: destination,
+    firm,
+    firm_type: col.firmType ? text(row[col.firmType]) : null,
+    product: col.product ? text(row[col.product]) : null,
+    amount_sent: num(col.amount),
+    fee: num(col.fee),
+    fx_margin_pct: num(col.fxMargin),
+    total_cost_pct: num(col.totalCost),
+    raw: row,
+  };
+}
 
 export interface RemittanceParse {
   rows: RemittancePrice[];
   missingFields: string[];
   nonUsRows: number;
   emptyReason: string | null;
+  /** Workbook only: each worksheet that held RPW data, with its row counts and missing fields. */
+  sheets?: Array<{ sheet: string; rows: number; us_rows: number; missing_fields: string[] }>;
 }
 
 export function parseRemittancePrices(csv: string): RemittanceParse {
   const rows = parseCsv(csv.replace(/^﻿/, ""));
   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-  const col = Object.fromEntries(
-    Object.entries(RPW_COLUMNS).map(([k, re]) => [k, headers.find((h) => re.test(h)) ?? null]),
-  ) as Record<keyof typeof RPW_COLUMNS, string | null>;
-  const missingFields = Object.entries(col).filter(([, v]) => !v).map(([k]) => k);
-  if (!col.period || !col.source || !col.destination || !col.firm) {
+  const { col, missingFields, usable } = rpwColumns(headers);
+  if (!usable) {
     return { rows: [], missingFields, nonUsRows: 0, emptyReason: `RPW file not in the expected layout; headers seen: ${headers.slice(0, 20).join(", ") || "none"}` };
   }
   let nonUsRows = 0;
   const out: RemittancePrice[] = [];
   for (const row of rows) {
-    const source = text(row[col.source]);
-    if (!source || !/^(UNITED STATES|USA|US)$/i.test(source)) {
-      nonUsRows += 1;
-      continue;
-    }
-    const destination = text(row[col.destination]);
-    const firm = text(row[col.firm]);
-    const period = text(row[col.period]);
-    if (!destination || !firm || !period) continue;
-    const num = (c: string | null) => (c ? publishedNumber(row[c]?.replace(/%$/, "")) : null);
-    out.push({
-      period,
-      source_country: source,
-      destination_country: destination,
-      firm,
-      firm_type: col.firmType ? text(row[col.firmType]) : null,
-      product: col.product ? text(row[col.product]) : null,
-      amount_sent: num(col.amount),
-      fee: num(col.fee),
-      fx_margin_pct: num(col.fxMargin),
-      total_cost_pct: num(col.totalCost),
-      raw: row,
-    });
+    const quote = remittanceFromRow(row, col);
+    if (quote === "non_us") nonUsRows += 1;
+    else if (quote) out.push(quote);
   }
   return { rows: out, missingFields, nonUsRows, emptyReason: out.length === 0 ? "RPW file held no US-send corridor rows" : null };
+}
+
+/** Rows above the header a sheet may carry (a title or a note line). */
+const RPW_HEADER_SEARCH_ROWS = 10;
+
+interface RpwSheetState {
+  seen: number;
+  header: string[] | null;
+  map: ReturnType<typeof rpwColumns> | null;
+  rows: number;
+  usRows: number;
+  firstLine: string[];
+}
+
+/**
+ * Reads the RPW workbook: every worksheet whose header row (within its first rows) names the
+ * period, source, destination and firm columns. The dataset is split across two such sheets
+ * ("up to Q1 2016" and "from Q2 2016"); a notes sheet has no such header and is passed over.
+ * Rows stream one at a time and only US-send quotes are kept, holding only the loader's columns.
+ */
+export function parseRemittanceWorkbook(bytes: Uint8Array): RemittanceParse {
+  const sheets = new Map<string, RpwSheetState>();
+  const out: RemittancePrice[] = [];
+  let nonUsRows = 0;
+  streamXlsxSheets(bytes, (cells, sheet) => {
+    let s = sheets.get(sheet);
+    if (!s) {
+      s = { seen: 0, header: null, map: null, rows: 0, usRows: 0, firstLine: [] };
+      sheets.set(sheet, s);
+    }
+    s.seen += 1;
+    if (!s.map) {
+      if (s.seen > RPW_HEADER_SEARCH_ROWS) return;
+      const header = cells.map((h) => h.trim().replace(/\s+/g, " ").toUpperCase());
+      const map = rpwColumns(header);
+      if (map.usable) {
+        // Columns the loader does not map are blanked out of the header, so they are never read.
+        const used = new Set(Object.values(map.col).filter((c): c is string => Boolean(c)));
+        s.header = header.map((h) => (used.has(h) ? h : ""));
+        s.map = map;
+      } else if (s.firstLine.length === 0) s.firstLine = header.filter(Boolean).slice(0, 20);
+      return;
+    }
+    s.rows += 1;
+    // Only the columns the loader maps are kept, so a stored quote's raw stays small.
+    const row: Record<string, string> = {};
+    s.header!.forEach((h, i) => {
+      if (h) row[h] = cells[i] ?? "";
+    });
+    const quote = remittanceFromRow(row, s.map.col);
+    if (quote === "non_us") nonUsRows += 1;
+    else if (quote) {
+      s.usRows += 1;
+      out.push(quote);
+    }
+  });
+  const data = [...sheets.entries()].filter(([, s]) => s.map);
+  const sheetInfo = data.map(([sheet, s]) => ({ sheet, rows: s.rows, us_rows: s.usRows, missing_fields: s.map!.missingFields }));
+  if (data.length === 0) {
+    const seen = [...sheets.values()].flatMap((s) => s.firstLine).slice(0, 20);
+    return {
+      rows: [],
+      missingFields: rpwColumns([]).missingFields,
+      nonUsRows: 0,
+      emptyReason: `RPW workbook not in the expected layout; no sheet names the period, source, destination and firm columns; headers seen: ${seen.join(", ") || "none"}`,
+      sheets: sheetInfo,
+    };
+  }
+  // A field counts as missing when any data sheet lacks it.
+  const missingFields = [...new Set(data.flatMap(([, s]) => s.map!.missingFields))];
+  return { rows: out, missingFields, nonUsRows, emptyReason: out.length === 0 ? "RPW workbook held no US-send corridor rows" : null, sheets: sheetInfo };
+}
+
+/** A workbook (a zip, starting "PK") is read as xlsx; anything else as CSV text. */
+export function parseRemittanceFile(bytes: Uint8Array): RemittanceParse {
+  return bytes[0] === 0x50 && bytes[1] === 0x4b ? parseRemittanceWorkbook(bytes) : parseRemittancePrices(strFromU8(bytes));
+}
+
+/** RPW dataset workbook links on the data page, newest coverage first. */
+export function rpwWorkbookLinks(html: string, pageUrl: string): string[] {
+  const links = new Set<string>();
+  for (const m of html.matchAll(/href\s*=\s*["']([^"']*rpw_dataset[^"'?]*\.xlsx)(?:\?[^"']*)?["']/gi)) {
+    try {
+      links.add(new URL(m[1].replace(/&amp;/g, "&"), pageUrl).toString());
+    } catch {
+      // An href that is not a URL is passed over.
+    }
+  }
+  // "rpw_dataset_2011_2025_q1.xlsx": the last year and quarter covered order the files.
+  const coverage = (u: string) => {
+    const m = u.match(/(\d{4})[_-]?q([1-4])[^/]*\.xlsx$/i);
+    return m ? Number(m[1]) * 10 + Number(m[2]) : 0;
+  };
+  return [...links].sort((a, b) => coverage(b) - coverage(a));
+}
+
+export interface RpwLocation {
+  url: string;
+  via: "env" | "data-page" | "default";
+  /** Why the data page did not give the link, when the default was used. */
+  pageProblem: string | null;
+}
+
+/**
+ * The RPW file to read: the env override when set, else the newest workbook the data page links,
+ * else RPW_DEFAULT_WORKBOOK_URL (the page unreachable, or no workbook link on it).
+ */
+export async function locateRpwWorkbook(env: Record<string, string | undefined>, options: RegistryFetchOptions = {}): Promise<RpwLocation> {
+  const override = env[RPW_URL_ENV]?.trim();
+  if (override) return { url: override, via: "env", pageProblem: null };
+  try {
+    const response = await registryFetch(RPW_DATA_PAGE_URL, { timeoutMs: 30_000, ...options });
+    const found = rpwWorkbookLinks(await response.text(), response.url || RPW_DATA_PAGE_URL)[0];
+    if (found) return { url: found, via: "data-page", pageProblem: null };
+    return { url: RPW_DEFAULT_WORKBOOK_URL, via: "default", pageProblem: "The RPW data page linked no rpw_dataset workbook" };
+  } catch (error) {
+    return { url: RPW_DEFAULT_WORKBOOK_URL, via: "default", pageProblem: `The RPW data page could not be read: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+/**
+ * A download's bytes, up to `maxBytes`. Throws RpwFileTooLargeError when the declared length or
+ * the bytes received pass it, so an oversized file is never held whole.
+ */
+export async function readRpwBytes(response: Response, url: string, maxBytes: number = RPW_MAX_BYTES): Promise<Uint8Array> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new RpwFileTooLargeError(url, declared);
+  }
+  if (!response.body) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > maxBytes) throw new RpwFileTooLargeError(url, bytes.length);
+    return bytes;
+  }
+  const reader = response.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new RpwFileTooLargeError(url, total);
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

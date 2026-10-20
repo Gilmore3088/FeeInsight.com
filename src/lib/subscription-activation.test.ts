@@ -29,6 +29,8 @@ describe("activateIfPaid", () => {
     expect(list).toHaveBeenCalledWith({ customer: "cus_1", status: "all", limit: 10 });
     expect((sqlMock.mock.calls[0][0] as TemplateStringsArray).join("?")).toContain("subscription_status = 'active'");
     expect(anchor).toHaveBeenCalledWith(sqlMock, { userId: 7, institutionId: 8109, note: "Filed at Pro checkout (sub_1)." });
+    // The webhook counts pro_activated once per checkout; the fallback must not count it too.
+    expect(track).not.toHaveBeenCalled();
   });
 
   it("changes nothing when no subscription is paid", async () => {

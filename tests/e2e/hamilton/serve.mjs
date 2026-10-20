@@ -40,6 +40,8 @@ for (const key of [
 env.DATABASE_URL = url;
 env.DATABASE_POOL_MAX = "4";
 env.BFI_COOKIE_SECRET = "hamilton-e2e-local-cookie-secret";
+// Signs report links (/market-report/<token>) so the access journey can open one; local only.
+env.CUSTOM_REPORT_LINK_SECRET = "hamilton-e2e-local-report-link-secret";
 env.MAILERLITE_SYNC_ENABLED = "false";
 env.NEXT_TELEMETRY_DISABLED = "1";
 env.EXECUTION_BACKEND = "agentic_v1";

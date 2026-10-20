@@ -41,6 +41,15 @@ describe("resetPassword", () => {
     expect(String(mocks.tx.mock.calls[1][0].join("?"))).toContain("DELETE FROM sessions");
   });
 
+  it("accepts a fresh link when users.id arrives as text (#1970)", async () => {
+    mocks.sql.mockResolvedValue([{ id: "9", password_hash: OLD_HASH }]);
+    const { resetPassword } = await import("./actions");
+    const token = createPasswordResetToken(9, OLD_HASH);
+    const result = await resetPassword(form({ token, password: "newpassword1", confirm: "newpassword1" }));
+    expect(result).toEqual({ ok: true });
+    expect(mocks.tx.mock.calls[0].slice(1)).toEqual(["$2b$10$newhash", 9, OLD_HASH]);
+  });
+
   it("refuses a link signed over an older password", async () => {
     const { resetPassword } = await import("./actions");
     const token = createPasswordResetToken(9, "$2b$10$previous");

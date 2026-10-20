@@ -6,6 +6,7 @@ import { countsInMarketComparison } from "@/lib/market-eligibility";
 import { formatFeeAmount } from "@/lib/format";
 import { getFrequencyLabel } from "./enum-labels";
 import { FeeAudienceTabs, type FeeAudienceTab } from "./fee-audience-tabs";
+import { displayFeeIdentity } from "./fee-row-identity";
 
 export interface DisplayFee {
   feeAudience?: FeeAudience;
@@ -44,9 +45,9 @@ function AudienceMark({ fee }: { fee: DisplayFee }) {
   return <UnstatedAudienceMark show={isAudienceUnstated(fee.feeAudience)} />;
 }
 
-/** "CD/IRA fee" or "Card inactivity fee" when the row prices a different product than its category's median measures. */
+/** "CD/IRA fee", "Card inactivity fee" or a charging-basis reason when the row prices something other than its category's median measures. */
 function notComparable(fee: DisplayFee): string | null {
-  return notComparableReason(fee.feeCategory, fee.rawFeeName ?? fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null);
+  return notComparableReason(fee.feeCategory, fee.rawFeeName ?? fee.feeName, fee.accountProduct ?? null, fee.sourceLine ?? null, fee.frequency);
 }
 
 function NotCompared({ reason }: { reason: string }) {
@@ -64,6 +65,7 @@ function countsAgainstMarket(fee: DisplayFee): boolean {
     feeName: fee.rawFeeName ?? fee.feeName,
     accountProduct: fee.accountProduct ?? null,
     sourceLine: fee.sourceLine ?? null,
+    frequency: fee.frequency,
   });
 }
 
@@ -103,7 +105,7 @@ export function countPositions(fees: DisplayFee[], benchmarks: FeeBenchmarks): R
   for (const fee of fees) {
     const benchmark = benchmarkFor(fee, benchmarks);
     if (!benchmark || fee.amount === null) continue;
-    const key = dedupeKey(fee);
+    const key = displayFeeIdentity(fee);
     if (seen.has(key)) continue;
     seen.add(key);
     counts[fee.amount < benchmark.p25 ? "below" : fee.amount > benchmark.p75 ? "above" : "within"] += 1;
@@ -194,18 +196,15 @@ function familyFor(fee: DisplayFee): string {
   return (fee.feeCategory ? getFeeFamily(fee.feeCategory) : null) ?? OTHER_FAMILY;
 }
 
-function dedupeKey(fee: DisplayFee): string {
-  return `${fee.feeName.trim().toLowerCase()}|${fee.rate ? `${fee.rate.rate} ${fee.rate.detail ?? ""}` : fee.amount ?? "null"}`;
-}
 
-/** Groups fees by family, collapses duplicate name + amount pairs, keeps taxonomy order for families and rows. */
+/** Groups fees by family, collapses identical displayed fee rows, keeps taxonomy order for families and rows. */
 export function groupFeesByFamily(fees: DisplayFee[]): FeeGroup[] {
   const groups = new Map<string, FeeGroup>();
   const seen = new Set<string>();
 
   for (const fee of fees) {
     const family = familyFor(fee);
-    const key = `${family}|${dedupeKey(fee)}`;
+    const key = `${family}|${displayFeeIdentity(fee)}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -241,7 +240,8 @@ function GroupBadge({ group }: { group: FeeGroup }) {
 }
 
 const HEADER_CELL = "px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-ink-muted";
-const MONO_FIGURE = { fontFamily: "var(--fi-font-mono)" } as const;
+/** Figures in the site sans with even digits, as James's design file sets them. */
+const FIGURE = { fontFamily: "var(--fi-font-sans)", fontVariantNumeric: "tabular-nums" } as const;
 
 const FOCUSED_ROW = "border-l-2 border-l-brick bg-brick/[0.035]";
 
@@ -451,6 +451,8 @@ function FeeRow({
   return (
     <tr
       id={focused && rowId && fee.feeCategory ? `fee-${fee.feeCategory}` : undefined}
+      data-fee-id={fee.id}
+      data-fee-category={fee.feeCategory ?? undefined}
       data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
       className={`fi-row-interaction scroll-mt-24 border-b border-surface-200 last:border-0 ${focused ? FOCUSED_ROW : ""} ${extra ? EXTRA_ROW : ""}`}
     >
@@ -462,7 +464,7 @@ function FeeRow({
         <AudienceLabel fee={fee} />
         {showUnderReview && <UnderReviewChip />}
       </td>
-      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base tabular-nums text-ink" style={MONO_FIGURE}>
+      <td className="font-semibold whitespace-nowrap px-4 py-2.5 text-right align-top text-base text-ink" style={FIGURE}>
         <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
           {fee.rate ? <RateValue rate={fee.rate} /> : amount ?? "Not stated"}
         </AmountLink>
@@ -473,7 +475,7 @@ function FeeRow({
         )}
         {!benchmark && fee.amount !== null && notComparable(fee) && <NotCompared reason={notComparable(fee) as string} />}
       </td>
-      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="sr-only">Not stated</span>}</td>
+      <td className="whitespace-nowrap px-4 py-2.5 align-top text-ink-soft">{basis || <span className="text-ink-muted">Not stated</span>}</td>
       <td className="max-w-[280px] px-4 py-2.5 align-top text-xs leading-relaxed text-ink-muted">
         {fee.conditions ? <span className="break-words">{fee.conditions}</span> : <span className="sr-only">None</span>}
       </td>
@@ -514,6 +516,8 @@ function FeeScheduleStack({
               return (
                 <li
                   key={fee.id}
+                  data-fee-id={fee.id}
+                  data-fee-category={fee.feeCategory ?? undefined}
                   data-fee-anchor={focused ? fee.feeCategory ?? undefined : undefined}
                   className={`scroll-mt-24 border-b border-surface-200 px-4 py-3 last:border-0 ${focused ? FOCUSED_ROW : ""} ${
                     extra.has(fee.id) ? EXTRA_ITEM : ""
@@ -526,7 +530,7 @@ function FeeScheduleStack({
                       <AudienceLabel fee={fee} />
                       {showUnderReview && <UnderReviewChip />}
                     </span>
-                    <span className="shrink-0 font-semibold text-base tabular-nums text-ink" style={MONO_FIGURE}>
+                    <span className="shrink-0 font-semibold text-base text-ink" style={FIGURE}>
                       <AmountLink href={sourceUrl} fallback={!fee.sourceUrl}>
                         {fee.rate ? <RateValue rate={fee.rate} /> : formatFeeAmount(fee.amount) ?? "Not stated"}
                       </AmountLink>

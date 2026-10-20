@@ -2,7 +2,6 @@ import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  after: vi.fn(),
   getArticleBySlug: vi.fn(async () => null),
   incrementViewCount: vi.fn(async () => undefined),
   notFound: vi.fn(() => {
@@ -13,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 // next/font runs only under the Next compiler; the page reads just the CSS variable name.
 vi.mock("next/font/local", () => ({ default: () => ({ variable: "home-serif", className: "" }) }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
-vi.mock("next/server", () => ({ after: mocks.after }));
+vi.mock("./view-count", () => ({ ArticleViewCount: ({ slug }: { slug: string }) => <span data-view-count={slug} /> }));
 vi.mock("@/lib/data-store/articles", () => ({
   getArticleBySlug: mocks.getArticleBySlug,
   getPublishedArticles: vi.fn(async () => []),
@@ -22,7 +21,6 @@ vi.mock("@/lib/data-store/articles", () => ({
 vi.mock("@/lib/data-store/guides", () => ({
   getGuidesForCategory: vi.fn(async () => []),
 }));
-vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn(async () => null) }));
 vi.mock("@/lib/custom-report/sample-report", () => ({
   sampleReportAvailable: vi.fn(async () => false),
 }));
@@ -39,7 +37,6 @@ const params = Promise.resolve({ slug: PREVIEW_FIXTURE_SLUG });
 describe("article template preview fixture", () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
-    mocks.after.mockClear();
     mocks.getArticleBySlug.mockClear();
     mocks.notFound.mockClear();
   });
@@ -85,7 +82,7 @@ describe("article template preview fixture", () => {
     expect(document.body.textContent).not.toContain("Source: Bank Fee Index, from");
     const ld = [...document.querySelectorAll('script[type="application/ld+json"]')].map((el) => el.textContent ?? "");
     expect(ld.some((text) => text.includes('"@type":"Article"'))).toBe(false);
-    expect(mocks.after).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-view-count]")).toBeNull();
     expect(mocks.getArticleBySlug).not.toHaveBeenCalled();
     const meta = await generateMetadata({ params });
     expect(meta.robots).toEqual({ index: false, follow: false });

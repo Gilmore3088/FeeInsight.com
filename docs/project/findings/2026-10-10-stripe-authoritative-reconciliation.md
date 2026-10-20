@@ -27,3 +27,5 @@ real PostgreSQL lock contention and Stripe test-mode end-to-end verification
 remain acceptance requirements, not results claimed by this change.
 
 Stripe event delivery contract: https://docs.stripe.com/webhooks
+
+**Guard:** `src/lib/stripe-webhook.test.ts:55` (an older active snapshot cannot resurrect a canceled account; line 69 checks the customer lock is taken before Stripe is read)

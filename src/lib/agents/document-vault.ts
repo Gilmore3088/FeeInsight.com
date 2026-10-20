@@ -1,4 +1,4 @@
-import { GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 import type { sql } from "@/lib/data-store/connection";
@@ -23,7 +23,7 @@ export type VaultStoreStatus = "stored" | "already_stored" | "not_configured" | 
 
 export interface DocumentVault {
   configured: boolean;
-  store(bytes: Uint8Array, contentHash: string, contentType: string | null): Promise<{ status: VaultStoreStatus; key: string | null; error?: string }>;
+  store(bytes: Uint8Array, contentHash: string, contentType: string | null, options?: { signal?: AbortSignal }): Promise<{ status: VaultStoreStatus; key: string | null; error?: string }>;
   read(key: string): Promise<Uint8Array>;
   presign(key: string): Promise<string>;
 }
@@ -37,13 +37,14 @@ export function isVaultKey(value: string | null | undefined): value is string {
   return typeof value === "string" && /^[0-9a-f]{2}\/[0-9a-f]{64}$/.test(value);
 }
 
-function documentsBucket(): string {
+export function documentsBucket(): string {
   return process.env.R2_DOCUMENTS_BUCKET?.trim() || DEFAULT_DOCUMENTS_BUCKET;
 }
 
 let cachedClient: S3Client | null = null;
 
-function r2Client(): S3Client | null {
+/** The shared R2 client (S3 API), or null without R2 credentials. Also used by Hoovie's cold files. */
+export function r2Client(): S3Client | null {
   const endpoint = process.env.R2_ENDPOINT;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
@@ -66,24 +67,27 @@ function isNotFound(error: unknown): boolean {
 export function createDocumentVault(client: S3Client | null, bucket: string = documentsBucket()): DocumentVault {
   return {
     configured: client != null,
-    async store(bytes, contentHash, contentType) {
+    async store(bytes, contentHash, contentType, options) {
       if (!client) return { status: "not_configured", key: null };
+      if(options?.signal?.aborted)return {status:"failed",key:null,error:"Document vault operation cancelled"};
       const key = documentKey(contentHash);
       try {
         try {
-          await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+          const command=new HeadObjectCommand({ Bucket: bucket, Key: key });
+          await vaultAbortable(options?.signal ? client.send(command,{abortSignal:options.signal}) : client.send(command),options?.signal);
+          if(options?.signal?.aborted)throw new Error("Document vault operation cancelled");
           return { status: "already_stored", key };
         } catch (error) {
           if (!isNotFound(error)) throw error;
         }
-        await client.send(
-          new PutObjectCommand({
+        if(options?.signal?.aborted)throw new Error("Document vault operation cancelled");
+        const command=new PutObjectCommand({
             Bucket: bucket,
             Key: key,
             Body: bytes,
             ContentType: contentType ?? "application/octet-stream",
-          }),
-        );
+          });
+        await vaultAbortable(options?.signal ? client.send(command,{abortSignal:options.signal}) : client.send(command),options?.signal);
         return { status: "stored", key };
       } catch (error) {
         return { status: "failed", key: null, error: error instanceof Error ? error.message : String(error) };
@@ -102,8 +106,28 @@ export function createDocumentVault(client: S3Client | null, bucket: string = do
   };
 }
 
+/** SDK cancellation plus a finite await even for an injected client ignoring abortSignal. */
+async function vaultAbortable<T>(work:Promise<T>,signal?:AbortSignal):Promise<T>{
+  if(!signal)return work;
+  if(signal.aborted)throw new Error("Document vault operation cancelled");
+  let abort:()=>void=()=>undefined;
+  const cancelled=new Promise<never>((_,reject)=>{abort=()=>reject(new Error("Document vault operation cancelled"));signal.addEventListener("abort",abort,{once:true});});
+  try{return await Promise.race([work,cancelled]);}finally{signal.removeEventListener("abort",abort);}
+}
+
 export function getDocumentVault(): DocumentVault {
   return createDocumentVault(r2Client());
+}
+
+/**
+ * Removes one stored document from the vault (#1041). Only Atlas's vault retention calls it, and
+ * only for a key its lineage check cleared and only while `VAULT_RETENTION_LIVE` is on
+ * (`src/lib/agents/atlas/vault-retention.ts`). Refuses anything that is not a vault key, so a
+ * cold file or another object in the same bucket can never be removed through it.
+ */
+export async function deleteVaultObject(client: S3Client, key: string, bucket: string = documentsBucket()): Promise<void> {
+  if (!isVaultKey(key)) throw new Error(`Not a document vault key: ${key}`);
+  await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
 const readyCache = new WeakMap<object, boolean>();

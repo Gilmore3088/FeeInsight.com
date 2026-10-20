@@ -45,11 +45,12 @@ export function CommandPalette() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
-    if (query.length < 2) return;
+    const trimmed = query.trim();
+    if (trimmed.length < 2) return;
 
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      const data = await searchDashboard(query);
+      const data = await searchDashboard(trimmed);
       setResults(data);
       setSelectedIndex(0);
       setLoading(false);
@@ -319,11 +320,11 @@ export function CommandPalette() {
 
         {results && items.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
-            No results for &quot;{query}&quot;
+            No results for &quot;{query.trim()}&quot;
           </div>
         )}
 
-        {!results && query.length < 2 && (
+        {!results && query.trim().length < 2 && (
           <div className="px-4 py-6 text-center text-sm text-gray-400 dark:text-gray-500">
             Type at least 2 characters to search
           </div>

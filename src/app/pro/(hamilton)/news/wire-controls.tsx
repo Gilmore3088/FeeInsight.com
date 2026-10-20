@@ -218,7 +218,7 @@ export function WireHeader({ params }: { params: WireParams }) {
       </h1>
       <p className="mt-1 text-[13px] text-ink-muted">
         {states
-          ? "State fee bills, state banking regulators' own posts, and the press coverage of them, in one feed."
+          ? "State fee bills and state banking regulators' own posts, in one feed."
           : "Federal rulemaking with its comment deadlines and effective dates, and the agencies' own releases."}
       </p>
       <nav aria-label="Wire view" className="mt-4 inline-flex overflow-hidden rounded-lg border border-warm-200 bg-white/70 text-[12px]">

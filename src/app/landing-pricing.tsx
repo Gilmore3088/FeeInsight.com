@@ -1,14 +1,19 @@
+import Link from "next/link";
 import { DEMO_REQUEST_NAV, PRO_PLANS_NAV } from "@/components/nav-items";
 import { TrackLink } from "@/components/track-link";
 import { WORKSPACE_SEAT_LIMIT } from "@/lib/hamilton/workspace-seats";
 import { PRO_TIERS, tierAmountLabel } from "@/lib/pro-tiers";
 import { HOME_WRAP, SERIF } from "./landing-shared";
 
+/** The billing and data questions live with the plans on /subscribe (James, Oct 18: "put an FAQ link"). */
+export const FAQ_HREF = `${PRO_PLANS_NAV.href}#faq`;
+
 const MONTH_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
 /**
  * How pricing works, read from PRO_TIERS and the seat limit: when every tier's annual price is
- * the same whole number of monthly payments, the line says how many; otherwise it says only
+ * the same whole number of monthly payments, the line says how many months annual billing
+ * saves; otherwise it says only
  * "Monthly or annual." and names no figure.
  */
 export function pricingLine(
@@ -19,19 +24,20 @@ export function pricingLine(
   const months = new Set(tiers.map((t) => t.annualUsd / t.monthlyUsd));
   const [n] = [...months];
   if (tiers.length > 0 && months.size === 1 && Number.isInteger(n) && MONTH_WORDS[n]) {
-    return `${who} Annual billing is ${MONTH_WORDS[n]} monthly payments.`;
+    const free = 12 - n;
+    if (free > 0 && MONTH_WORDS[free]) return `${who} Pay annually and get ${MONTH_WORDS[free]} ${free === 1 ? "month" : "months"} free.`;
   }
   return `${who} Monthly or annual.`;
 }
 
 /**
  * Pricing (James's example, Oct 17; heading by growth): "One plan for your whole pricing team." Three tiers by assets,
- * every price from PRO_TIERS (the subhead carries the seat count), then the plan button and the demo link.
+ * every price from PRO_TIERS (the subhead carries the seat count), then the plan button, the demo link and the FAQ link.
  * No standalone report offer here or anywhere on the homepage (James, Oct 17).
  */
 export function LandingPricing() {
   return (
-    <section id="plans" aria-labelledby="pricing-title" className="scroll-mt-20 bg-paper py-10 sm:py-14">
+    <section id="plans" aria-labelledby="pricing-title" className="scroll-mt-20 border-t border-border bg-paper py-10 sm:py-14">
       <div className={HOME_WRAP}>
         <h2 id="pricing-title" className="text-[35px] !font-medium leading-[1.06] tracking-[-0.025em] text-ink sm:text-[50px]" style={SERIF}>
           One plan for your whole pricing team.
@@ -66,6 +72,9 @@ export function LandingPricing() {
           >
             Ask for a demo
           </TrackLink>
+          <Link href={FAQ_HREF} className="text-[14px] text-ink-muted underline decoration-ink-muted/40 underline-offset-4 hover:text-ink">
+            Questions? Read the FAQ
+          </Link>
         </div>
       </div>
     </section>

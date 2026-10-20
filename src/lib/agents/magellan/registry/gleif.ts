@@ -25,6 +25,7 @@ import {
   type RelationshipChecks,
 } from "@/lib/regulatory/gleif";
 import { registryFetchJson, type RegistryFetchOptions } from "@/lib/regulatory/http";
+import { isLeiMatchPartition, runGleifLeiMatch, type LeiMatchResult } from "./gleif-lei-match";
 import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -35,6 +36,8 @@ import { chunk, recordRegistryPartition, type RegistryDb } from "./partitions";
  * - level1-<0..7>: GLEIF API records for the LEIs we track (institution_sources.lei) plus every
  *   LEI gleif_relationships names, in eight hash shards, into gleif_entities. Each entity links
  *   to an institution by its LEI, else by an RSSD id in the record, else stays unlinked.
+ * - lei-match-*: links tracked institutions to LEIs into institution_lei_links (gleif-lei-match.ts).
+ *   "The LEIs we track" above means institution_sources.lei plus every linked LEI there.
  */
 
 export const GLEIF_SOURCE = "gleif";
@@ -57,6 +60,8 @@ export interface RegistryGleifOptions {
   dryRun?: boolean;
   db?: RegistryDb;
   fetchOptions?: RegistryFetchOptions;
+  /** Wait between GLEIF calls in the lei-match partitions; tests pass 0. */
+  spacingMs?: number;
 }
 
 export interface RegistryGleifResult {
@@ -72,13 +77,15 @@ export interface RegistryGleifResult {
   writtenRows: number;
   missingFields: string[];
   checks: Level1Checks | RelationshipChecks | null;
+  /** Set for the lei-match-* partitions. */
+  leiMatch: LeiMatchResult | null;
   dryRun: boolean;
   empty: boolean;
   emptyReason: string | null;
 }
 
 function base(options: RegistryGleifOptions): RegistryGleifResult {
-  return { source: GLEIF_SOURCE, partitionKey: options.partitionKey, sourceUrl: null, publishDate: null, seeds: 0, entities: 0, relationships: 0, linked: 0, unlinked: 0, writtenRows: 0, missingFields: [], checks: null, dryRun: Boolean(options.dryRun), empty: false, emptyReason: null };
+  return { source: GLEIF_SOURCE, partitionKey: options.partitionKey, sourceUrl: null, publishDate: null, seeds: 0, entities: 0, relationships: 0, linked: 0, unlinked: 0, writtenRows: 0, missingFields: [], checks: null, leiMatch: null, dryRun: Boolean(options.dryRun), empty: false, emptyReason: null };
 }
 
 async function recordEmpty(db: RegistryDb, options: RegistryGleifOptions, out: RegistryGleifResult, reason: string, detail: Record<string, unknown> = {}) {
@@ -98,11 +105,13 @@ async function recordEmpty(db: RegistryDb, options: RegistryGleifOptions, out: R
 }
 
 async function institutionLeis(db: RegistryDb): Promise<Array<{ id: number; lei: string | null; rssd: string | null }>> {
+  // The institution's own LEI, else the one the LEI match linked (institution_lei_links).
   const rows = await db<Array<{ id: number | string; lei: string | null; rssd_id: string | null }>>`
-    SELECT id, lei, rssd_id
-      FROM institution_sources
-     WHERE source IN ('fdic', 'ncua')
-       AND COALESCE(regulatory_status, 'active') <> 'inactive'
+    SELECT s.id, COALESCE(NULLIF(TRIM(s.lei), ''), TRIM(l.lei)) AS lei, s.rssd_id
+      FROM institution_sources s
+      LEFT JOIN institution_lei_links l ON l.institution_id = s.id AND l.status = 'linked'
+     WHERE s.source IN ('fdic', 'ncua')
+       AND COALESCE(s.regulatory_status, 'active') <> 'inactive'
   `;
   return [...(rows as unknown as Array<Record<string, unknown>>)].map((r) => ({ id: Number(r.id), lei: (r.lei as string | null) ?? null, rssd: r.rssd_id === null || r.rssd_id === undefined ? null : String(r.rssd_id) }));
 }
@@ -348,6 +357,21 @@ async function runLevel1(db: RegistryDb, options: RegistryGleifOptions, shard: n
 
 export async function runRegistryGleif(options: RegistryGleifOptions): Promise<RegistryGleifResult> {
   const db = options.db ?? sql;
+  if (isLeiMatchPartition(options.partitionKey)) {
+    const m = await runGleifLeiMatch({ runId: options.runId, partitionKey: options.partitionKey, dryRun: options.dryRun, db, fetchOptions: options.fetchOptions, spacingMs: options.spacingMs });
+    return {
+      ...base(options),
+      sourceUrl: m.sourceUrl,
+      entities: m.read,
+      linked: m.coverage?.linked ?? 0,
+      unlinked: m.coverage ? m.coverage.institutions - m.coverage.linked : 0,
+      writtenRows: m.writtenRows,
+      missingFields: Array.isArray(m.detail.missing_fields) ? (m.detail.missing_fields as string[]) : [],
+      leiMatch: m,
+      empty: m.empty,
+      emptyReason: m.emptyReason,
+    };
+  }
   if (options.partitionKey === GLEIF_LEVEL2_PARTITION) return runLevel2(db, options);
   const shard = level1ShardOf(options.partitionKey);
   if (shard === null) throw new Error(`Invalid GLEIF partition: ${options.partitionKey}`);

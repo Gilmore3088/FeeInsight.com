@@ -18,3 +18,5 @@
 **Lessons:**
 - An extract or publish sub-pass added to every step must take the step's `stateCode` and `institutionId`.
 - Re-measure `STEP_EXPECTED_MS` when a step's p90 moves. A budget under the real time lets a step start too late and run past the tick limit. A budget over it makes lanes give up their slot.
+
+**Agent lesson:** knox/pr-1378-scope-to-lane, atlas/pr-1378-measured-budgets

@@ -6,7 +6,7 @@ import { assetBand, quarterLabel, type InstitutionPrice } from "./common";
 import { buildFeeDependence, latestYearOf, withinTrend, type DependenceRow } from "./fee-dependence";
 import { buildInferredVolume, type IncomeFeeRow } from "./inferred-volume";
 import { runPriceStudy } from "./price-study";
-import { median, midRankPercentile, ols, quartileOf, ranks, spearman } from "./stats";
+import { median, midRankPercentile, ols, pricePercentile, quartileOf, ranks, spearman } from "./stats";
 import { sourcesChanged } from "./store";
 
 describe("stats", () => {
@@ -20,6 +20,13 @@ describe("stats", () => {
     expect(midRankPercentile(30, [10, 20, 30, 40])).toBe(62.5);
     expect(quartileOf(62.5)).toBe(3);
     expect(median([3, 1, 2])).toBe(2);
+  });
+
+  it("ties only equal ratios, but prices within half a cent", () => {
+    // Fee income over deposits: 0.0031 and 0.0042 are different institutions, not one price.
+    expect(midRankPercentile(0.0031, [0.0028, 0.0031, 0.0042, 0.0055])).toBe(37.5);
+    expect(midRankPercentile(0.0042, [0.0031, 0.0038, 0.0045, 0.006, 0.007])).toBe(40);
+    expect(pricePercentile(30, [29.996, 30.004, 31, 28])).toBe(50);
   });
 
   it("recovers known OLS coefficients", () => {

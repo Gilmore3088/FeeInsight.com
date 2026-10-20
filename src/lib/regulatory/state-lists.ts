@@ -749,14 +749,18 @@ export function lenderAreaStats(counts: LenderCountRow[], period: string): AreaS
 }
 
 // ===========================================================================
-// 3. Urban Institute, Debt in America (license: Check)
+// 3. Urban Institute, Debt in America (ODC-By 1.0)
 // ===========================================================================
 
 export const URBAN_DEBT_PAGE_URL_ENV = "URBAN_DEBT_PAGE_URL";
 export const URBAN_DEBT_COUNTY_URL_ENV = "URBAN_DEBT_COUNTY_CSV_URL";
 export const URBAN_DEBT_STATE_URL_ENV = "URBAN_DEBT_STATE_CSV_URL";
-/** Set to true only after a person has read the license text the loader recorded. */
-export const URBAN_DEBT_LICENSE_CONFIRMED_ENV = "URBAN_DEBT_LICENSE_CONFIRMED";
+/**
+ * Licence read 2026-10-17 (licence audit): Open Data Commons Attribution 1.0, "These rights
+ * explicitly include commercial use". Every row and every read carries the attribution.
+ */
+export const URBAN_DEBT_LICENCE = "ODC-By 1.0";
+export const URBAN_DEBT_ATTRIBUTION = "Braga et al., Debt in America, Urban Institute";
 /** Urban's data catalog entry for the 2023 release (from memory; checked at run time). */
 export const URBAN_DEBT_DEFAULT_PAGE_URL = "https://datacatalog.urban.org/dataset/debt-america-2023";
 
@@ -922,7 +926,7 @@ export function parseUrbanDebt(bytes: Uint8Array, geoType: "county" | "state", p
         value,
         unit: scale[measure],
         note: value === null && cell !== null ? cell.slice(0, 40) : null,
-        raw: { column: headers[col], cell, scale: scale[measure] },
+        raw: { column: headers[col], cell, scale: scale[measure], attribution: URBAN_DEBT_ATTRIBUTION },
       });
     }
   }

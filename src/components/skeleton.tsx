@@ -39,17 +39,3 @@ export function SkeletonCards({ count = 4 }: { count?: number }) {
     </div>
   );
 }
-
-export function SkeletonPage() {
-  return (
-    <div className="admin-content space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-3 w-32" />
-        <Skeleton className="h-6 w-56" />
-        <Skeleton className="h-3.5 w-40" />
-      </div>
-      <SkeletonCards />
-      <SkeletonTable />
-    </div>
-  );
-}

@@ -1,8 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, type Mock } from "vitest";
 
-vi.mock("./connection", () => ({ sql: vi.fn() }));
+vi.mock("./connection", () => ({ sql: Object.assign(vi.fn(), { unsafe: vi.fn((text: string) => text) }) }));
 
-import { buildIndicatorSeries, fomcPolicyAction, withoutBeigeBookFooter } from "./economic-context";
+import { sql } from "./connection";
+import {
+  buildIndicatorSeries,
+  fomcPolicyAction,
+  getNationalIndicators,
+  isEmptyNationalIndicators,
+  withoutBeigeBookFooter,
+} from "./economic-context";
+
+const sqlMock = sql as unknown as Mock;
 
 describe("buildIndicatorSeries", () => {
   it("finds the year-ago point and returns history oldest first", () => {
@@ -54,5 +63,26 @@ describe("withoutBeigeBookFooter (#1175)", () => {
     expect(withoutBeigeBookFooter(stored)).toBe("Credit quality stayed strong.");
     expect(withoutBeigeBookFooter("Activity was flat.\n\nBack to Top \r\nLast Update:\r\nOctober 15, 2025")).toBe("Activity was flat.");
     expect(withoutBeigeBookFooter("No footer here.")).toBe("No footer here.");
+  });
+});
+
+describe("getNationalIndicators", () => {
+  it("keeps each national series' latest and year-ago month, without the chart history", async () => {
+    sqlMock.mockResolvedValueOnce([
+      { series_id: "UNRATE", observation_date: "2026-09-01", value: "4.3" },
+      { series_id: "CUUR0000SA0", observation_date: "2026-09-01", value: "330" },
+      { series_id: "CUUR0000SA0", observation_date: "2025-09-01", value: "320" },
+    ] as never);
+    const ind = await getNationalIndicators();
+    expect(ind.unemployment).toEqual({ series_id: "UNRATE", latest: { date: "2026-09-01", value: 4.3 }, year_ago: null });
+    expect(ind.cpi_all_items?.year_ago).toEqual({ date: "2025-09-01", value: 320 });
+    expect(ind.fed_funds).toBeNull();
+    expect(ind.cpi_bank_services).toBeNull();
+    expect(isEmptyNationalIndicators(ind)).toBe(false);
+  });
+
+  it("is empty when no series has rows, so the empty result is never cached", async () => {
+    sqlMock.mockResolvedValueOnce([] as never);
+    expect(isEmptyNationalIndicators(await getNationalIndicators())).toBe(true);
   });
 });

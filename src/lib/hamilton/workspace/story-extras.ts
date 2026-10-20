@@ -145,7 +145,8 @@ export function incomeTrendExhibit(trend: readonly IntensityQuarter[], peerLabel
 export function withStoryExhibits(response: AskResponse, extra: readonly (StoryExhibit | null)[]): AskResponse {
   const story = response.answer?.storyline;
   const add = extra.filter((e): e is StoryExhibit => e !== null);
-  if (!story || !response.answer || add.length === 0) return response;
+  // A list answer is the list alone (#2033).
+  if (!story || !response.answer || add.length === 0 || story.kind === "list") return response;
   const exhibits = [...add, ...story.exhibits.filter((e) => !add.some((a) => a.id === e.id))]
     .slice(0, MAX_STORY_EXHIBITS)
     .map((e, i) => ({ ...e, number: i + 1 }));

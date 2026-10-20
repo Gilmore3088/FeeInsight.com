@@ -17,21 +17,19 @@ describe("admin rooms", () => {
     expect(roomForPath("/admin/live").key).toBe("today");
     expect(roomForPath("/admin/scoreboard").key).toBe("today");
     expect(roomForPath("/admin/states/TX/runs/12").key).toBe("pipeline");
-    expect(roomForPath("/admin/verify").key).toBe("work");
     expect(roomForPath("/admin/answer-key/12").key).toBe("work");
     expect(roomForPath("/admin/customers/marketing").key).toBe("work");
     expect(roomForPath("/admin/institution/281").key).toBe("data");
     expect(roomForPath("/admin/leads").key).toBe("hamilton");
     expect(roomForPath("/admin/hamilton/reports").key).toBe("hamilton");
     expect(roomForPath("/admin/growth").key).toBe("growth");
-    expect(roomForPath("/admin/agents/marketing").key).toBe("growth");
     expect(roomForPath("/admin/api-trust").key).toBe("settings");
   });
 
   it("picks the most specific screen", () => {
     expect(findRoomPage("/admin/agents/health")?.page.label).toBe("Health");
     expect(findRoomPage("/admin/agents")?.page.label).toBe("Overview");
-    expect(findRoomPage("/admin/agents/knox/reviews/4")?.page.label).toBe("Knox");
+    expect(findRoomPage("/admin/verify/42")?.page.label).toBe("Knox");
     expect(findRoomPage("/admin/hamilton/research/usage")?.page.label).toBe("Usage");
     expect(findRoomPage("/admin/hamilton/research/darwin")?.page.label).toBe("Research agents");
   });

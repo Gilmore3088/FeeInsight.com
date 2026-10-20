@@ -23,9 +23,16 @@ export const FFIEC_CALL_DETAIL_PARSER_VERSION = 4;
 const EMPTY_RETRY_HOURS = 24;
 const WRITE_CHUNK = 5_000;
 
-/** Same quarters and order as the overdraft line: Schedule RI Memo 15 starts in 2015. */
+/**
+ * Same order as the overdraft line, but only back to 2023 Q1 (Oct 18, 2026): the back-fill had
+ * loaded 13 quarters to 2023 Q3, and the years still due to 2015 would have added several GB to
+ * institution_call_report_items. 2023 Q4 still loads so that year is whole. Lower it only by PR,
+ * with the table's size budget (`src/lib/agents/hoovie/size-budgets.ts`) in view.
+ */
+export const FFIEC_CALL_DETAIL_FIRST: Quarter = { year: 2023, quarter: 1 };
+
 export function ffiecCallDetailPartitions(now: Date): string[] {
-  return ffiecOverdraftPartitions(now);
+  return ffiecOverdraftPartitions(now, FFIEC_CALL_DETAIL_FIRST);
 }
 
 export interface RegistryFfiecCallDetailOptions {

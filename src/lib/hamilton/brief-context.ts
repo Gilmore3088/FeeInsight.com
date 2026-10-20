@@ -139,13 +139,13 @@ export function buildEconomy(ctx: StateEconomicContext, place: string, districtN
           : "Fewer people out of work than nationally means fewer accounts under strain, which matters most for overdraft and returned-item fees, the charges that fall on strained accounts.",
       );
     }
-    sources.push(`BLS unemployment rates via FRED (${st.series_id}${us ? `, ${us.series_id}` : ""})`);
+    sources.push(`BLS unemployment rates (${st.series_id}${us ? `, ${us.series_id}` : ""})`);
   }
   const jobs = change12m(ctx.state_payrolls);
   if (jobs !== null && ctx.state_payrolls) {
     tiles.push({ label: `${place} payroll jobs`, figure: `${jobs >= 0 ? "+" : ""}${pct1(jobs)}`, comparison: `over 12 months to ${monthLabel(ctx.state_payrolls.latest.date)}` });
     commentary.push(`Payroll jobs in ${place} ${jobs >= 0 ? "grew" : "fell"} ${pct1(Math.abs(jobs))} over the year.`);
-    sources.push(`BLS payroll employment via FRED (${ctx.state_payrolls.series_id})`);
+    sources.push(`BLS payroll employment (${ctx.state_payrolls.series_id})`);
   }
   const bank = change12m(ctx.cpi_bank_services);
   const all = change12m(ctx.cpi_all_items);
@@ -164,7 +164,7 @@ export function buildEconomy(ctx: StateEconomicContext, place: string, districtN
   }
   if (ctx.fed_funds) {
     tiles.push({ label: "Federal funds rate", figure: pct2(ctx.fed_funds.latest.value), comparison: `${monthLabel(ctx.fed_funds.latest.date)}${ctx.fed_funds.year_ago ? `; ${pct2(ctx.fed_funds.year_ago.value)} a year earlier` : ""}` });
-    sources.push("Federal Reserve via FRED (FEDFUNDS)");
+    sources.push("Federal Reserve Board H.15 (FEDFUNDS)");
   }
   const book = ctx.beige_book;
   const beigeBook = book
