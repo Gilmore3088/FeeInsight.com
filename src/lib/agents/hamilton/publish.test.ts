@@ -897,7 +897,7 @@ describe("Hamilton agentic publish", () => {
 
     const result = await runHamiltonPublish({ runId: 118, stateCode: "CA", limit: 10, db: asPublishDb(db) });
 
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS MATERIALIZED ("));
     expect(selects).toHaveLength(2);
     expect(selects[0][1]).toContain("CA");
     expect(selects[1][1]).not.toContain("CA");
@@ -908,7 +908,7 @@ describe("Hamilton agentic publish", () => {
   it("keeps a single bank's read scoped to that bank", async () => {
     const db = createDbMock([]);
     await runHamiltonPublish({ runId: 119, stateCode: "CA", institutionId: 42, db: asPublishDb(db) });
-    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS ("));
+    const selects = db.unsafe.mock.calls.filter((call) => String(call[0]).includes(" eligible AS MATERIALIZED ("));
     expect(selects).toHaveLength(1);
   });
 
