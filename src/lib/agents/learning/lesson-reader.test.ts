@@ -73,7 +73,9 @@ describe("lessonsPromptBlock", () => {
 
   it("puts the real Knox lessons into the paid extraction's instructions", () => {
     const model = lessonsForModel("knox", "extract-paid");
-    expect(model.system).toContain("[issue-2209]");
+    // The newest PROMPT_LESSON_LIMIT lessons go in, so pin none by id: an added lesson pushes the oldest out.
+    expect(model.lessonIds.length).toBeGreaterThan(0);
+    for (const id of model.lessonIds) expect(model.system).toContain(`[${id}]`);
     expect(model.lessonIds).toContain("issue-2286");
     expect(lessonsForModel("knox", "extract").lessonIds).not.toContain("issue-2286");
   });
