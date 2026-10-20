@@ -72,7 +72,11 @@ export const SOURCE_CHECK_REASON = "source_check_untraceable";
 // (per item)" for a $30 read), and a sized fee does not trace to a row of another size ("Rental of
 // 3 × 5 Box" at the 5 × 5 row's $55) (#1827). The bump re-checks every institution, so the live
 // fees that took a neighbour's price come down (16 on Oct 20; the PR lists them).
-export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 19 } as const;
+// Version 20 (#1916): on a two-column page a fee's own price prints under its name, so the other
+// column's price beside the name ("ATM Transactions | $10.00 monthly for average" over "Free | Money
+// Market Checking*") or under the other of two names ("Account Reopen | Member-Requested ATM/Debit"
+// over "$10 | $5") is not the fee's (`refusesOtherColumnPrice`). Follows #2465's v19.
+export const SOURCE_CHECK_STRATEGY = { strategy: "hamilton.source_check", version: 20 } as const;
 
 /**
  * An institution is checked again whenever a newer live fee appears, so a fee

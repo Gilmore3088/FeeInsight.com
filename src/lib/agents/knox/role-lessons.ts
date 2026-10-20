@@ -365,4 +365,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1916-each-column-keeps-its-own-price",
+    agent: "knox",
+    stage: "extract",
+    lesson: "On a two-column page printed name / price / note, a fee's price is the cell under its name in its own column. A price beside the name that runs on into words (\"$10.00 monthly for average\") is the other column's fee, and under a row of two names each name takes only its own column's price.",
+    why: "Advia FCU's ATM Transactions and Garnishment/Tax Levy/Subpoena went live at \"$10 a month\", Money Market Checking's low-balance fee from the right column, and Member-Requested ATM/Debit went live at Account Reopen's $10 instead of its own $5.",
+    evidence: { issues: [1916], prs: [2522], files: ["src/lib/custom-report/column-pair-prices.ts", "src/lib/custom-report/source-check.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

@@ -21,6 +21,7 @@ import { accountTableRow } from "@/lib/custom-report/account-table";
 import { chargedFeeCountTotal, nsfPolicyPrices } from "./nsf-policy-prices";
 import { capFirstItemPrices, refusesStackedFeePrice, stackedLabelKey } from "./stacked-fee-prices";
 import { checkWireClausePrice } from "./wire-clause-prices";
+import { refusesOtherColumnPrice } from "./column-pair-prices";
 const NSF_POLICY_CATEGORIES = new Set(["nsf", "overdraft"]);
 
 export type SourceCheckFailure =
@@ -1343,6 +1344,9 @@ function checkFeeAgainstSourceText(
   // #2240/#2241: an exact physical label with an unambiguous price run cannot borrow
   // another service's amount or turn its own annual program price into a paid-item fee.
   if (refusesStackedFeePrice(text, feeName, amount, canonicalFeeKey)) return { ok: false, reason: "amount_not_the_fee" };
+  // #1916: on a two-column page a fee's own price prints under its name; the other column's
+  // price beside the name ("ATM Transactions | $10.00 monthly for average") is not the fee's.
+  if (refusesOtherColumnPrice(text, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   // A complete returned/paid-item policy paragraph owns its stated price and linked exceptions.
   // Only the exact shared reader's name/amount/category can use this witness.
   if (canonicalFeeKey == null || NSF_POLICY_CATEGORIES.has(canonicalFeeKey)) {
