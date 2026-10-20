@@ -46,4 +46,14 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-19",
   },
+  {
+    id: "issue-1295",
+    agent: "darwin",
+    stage: "verify",
+    lesson: "When Knox re-files a row under a new category, judge it again under that category: a decision made under the old category says nothing about the new one, and a take-over that changed the category is proof of the change.",
+    why: "Rows Darwin rejected as too-cheap account research fees stayed rejected after Knox took them over as returned mail, fax and image copy fees, because a take-over drops the old category flags and Darwin judged a raw row once per rule version.",
+    evidence: { issues: [1295], prs: [1296, 1629], files: ["src/lib/agents/darwin/category-change.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

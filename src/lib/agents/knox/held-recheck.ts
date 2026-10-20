@@ -457,8 +457,13 @@ export async function previewHeldNameRules(
  * Switched off, the extract step writes nothing and its detail (`range_band_set_aside`) carries the
  * dry-run count for the lane: `candidates` is every line in the lane the SQL picks, and `checked`
  * the ones read this step (at most `RANGE_BAND_LIMIT`). It holds, rejects or re-files no live fee.
+ *
+ * On since Oct 20 under James's sampled-clean rule (his decision card, 01:54 UTC, "all eight with
+ * rules"): read only, the pass's SQL picked 4,091 held lines at 482 banks, the first 2,000
+ * all passed the band test, and a random 20 read against each bank's stored document were all
+ * deposit rate or balance tiers, not fees.
  */
-export const RANGE_BAND_SET_ASIDE_LIVE = false;
+export const RANGE_BAND_SET_ASIDE_LIVE = true;
 export const RANGE_BAND_FLAG = "knox_range_band";
 /** On a line this pass set aside (and only then), so an undo leaves other passes' set-asides alone. */
 export const RANGE_BAND_SET_ASIDE_BY_FLAG = "knox_set_aside_by:range_band";
