@@ -309,6 +309,22 @@ describe("getDistrictFeeRevenue", () => {
     expect(result!.total_other_noninterest).toBeGreaterThan(0);
   });
 
+  it("dates a source-scoped district read by that source's own newest filing", async () => {
+    getMock().unsafe = vi.fn()
+      .mockResolvedValueOnce([{ latest_date: "2026-03-31" }])
+      .mockResolvedValueOnce([{
+        fed_district: "6", institution_count: "40", total_sc_income: "1200",
+        avg_sc_income: "30", total_other_noninterest: "900",
+      }]);
+
+    const result = await getDistrictFeeRevenue(6, undefined, "ncua");
+
+    expect(getMock().unsafe.mock.calls[0][0]).toContain("inf.source = 'ncua'");
+    expect(getMock().unsafe.mock.calls[1][0]).toContain("inf.source = 'ncua'");
+    expect(getMock().unsafe.mock.calls[1][1]).toEqual(["2026-03-31", 6]);
+    expect(result).toMatchObject({ source: "ncua", report_date: "2026-03-31", institution_count: 40, total_sc_income: 1200 });
+  });
+
   it("returns null for district with no data", async () => {
     getMock().mockResolvedValue([{ latest_date: "2024-12-31" }]);
     getMock().unsafe = vi.fn().mockResolvedValue([]);
@@ -346,6 +362,7 @@ describe("getDistrictFeeRevenue", () => {
   it("type-checks DistrictFeeRevenue shape", () => {
     const rev: DistrictFeeRevenue = {
       fed_district: 7,
+      report_date: "2024-12-31",
       institution_count: 200,
       total_sc_income: 750000000,
       avg_sc_income: 3750000,

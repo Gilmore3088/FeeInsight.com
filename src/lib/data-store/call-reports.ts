@@ -341,6 +341,11 @@ export async function getDistrictIncomeTrend(quarterCount = 20, source?: Financi
 
 export interface DistrictFeeRevenue {
   fed_district: number;
+  /** The filing date every figure comes from (the newest one with income, unless one was asked for). */
+  report_date: string;
+  /** Present when the read was scoped to one regulator; unscoped reads pool unlike measures. */
+  source?: FinancialSource;
+  /** Institutions with positive single-quarter income at report_date. */
   institution_count: number;
   total_sc_income: number;
   avg_sc_income: number;
@@ -372,6 +377,8 @@ export async function getDistrictFeeRevenue(
   const r = rows[0];
   return {
     fed_district: Number(r.fed_district),
+    report_date: date,
+    ...(source ? { source } : {}),
     institution_count: Number(r.institution_count),
     total_sc_income: Number(r.total_sc_income),
     avg_sc_income: Number(r.avg_sc_income),
