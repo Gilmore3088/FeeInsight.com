@@ -49,7 +49,7 @@ test("H07-AC2 H02-AC1 H02-AC3 H02-AC4 H05-AC1 H06-AC3 H04-AC1: ask, ten peers, r
   await expect(page.getByRole("heading", { name: `10 of 12 matching institutions for ${HOME.name}.` })).toBeVisible();
   await expect(peerRows(page)).toHaveCount(10);
   for (const row of await peerRows(page).all()) {
-    await expect(row).toContainText(/\$\d+(\.\d)?[MBT]\b/);
+    await expect(row).toContainText(/Total assets:\$\d+(\.\d)?[MBT]/);
     await expect(row).toContainText("Jun 2026");
   }
   await expect(page.getByText(/Selection criteria: credit unions · nationwide · ≥ \$4\.5B · ≤ \$18B/)).toBeVisible();
