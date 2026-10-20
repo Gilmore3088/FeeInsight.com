@@ -18,6 +18,7 @@ import {
   getFeeRevenueData,
   getTierFeeRevenueSummary,
 } from "./fee-revenue";
+import { getFeeRevenueResearchPreview } from "./fee-revenue-research";
 import { getInstitutionStateDirectorySummaries, getLargestInstitutions, searchInstitutions } from "./search";
 import { getPublishedArticleSummaries } from "./articles";
 import { getNationalIndicators, isEmptyNationalIndicators } from "./economic-context";
@@ -132,6 +133,11 @@ export const getMarketConcentrationCached = cachedPublicRead("market-concentrati
 export const getStateDemographicsCached = cachedPublicRead("state-demographics", getStateDemographics);
 export const getCountyFeeMapCached = cachedPublicRead("county-fee-map", getCountyFeeMap, (map) => map.counties.length === 0);
 export const getFeeRevenueDataCached = cachedPublicRead("fee-revenue-data", getFeeRevenueData);
+export const getFeeRevenueResearchCached = cachedPublicRead(
+  "fee-revenue-research-source-date-preview-v1",
+  getFeeRevenueResearchPreview,
+  (result) => result.groups.length === 0,
+);
 export const getCharterFeeRevenueSummaryCached = cachedPublicRead(
   "charter-fee-revenue-summary",
   getCharterFeeRevenueSummary,

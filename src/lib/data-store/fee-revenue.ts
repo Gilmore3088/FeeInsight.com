@@ -51,6 +51,34 @@ export interface FeeRevenueCorrelation extends FiledFeeIncome {
   median_overdraft: number | null;
 }
 
+/** Postgres bigint/numeric values may be strings; retain stored USD thousands here. */
+function numberOrNull(value: unknown): number | null {
+  if ((typeof value !== "number" && typeof value !== "string") || (typeof value === "string" && value.trim() === "")) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function requiredNumber(value: unknown): number {
+  const number = numberOrNull(value);
+  if (number === null) throw new Error("Invalid numeric financial record");
+  return number;
+}
+
+/** Both filing-only and fee-price correlation reads share the same numeric boundary. */
+function financialNumbers<T extends FiledFeeIncome>(row: T) {
+  const institutionId = requiredNumber(row.institution_id);
+  if (!Number.isSafeInteger(institutionId) || institutionId <= 0) throw new Error("Invalid financial institution identifier");
+  return {
+    ...row,
+    institution_id: institutionId,
+    fed_district: numberOrNull(row.fed_district),
+    report_date: row.report_date === null || row.report_date === undefined ? null : String(row.report_date).slice(0, 10),
+    total_assets: numberOrNull(row.total_assets),
+    service_charge_income: numberOrNull(row.service_charge_income),
+    fee_income_ratio: numberOrNull(row.fee_income_ratio),
+  };
+}
+
 /**
  * Financial-only peers use filed income, not fee-schedule collection coverage. Keep the
  * source, latest canonical filing and NCUA quarter conversion identical to correlation reads.
@@ -77,15 +105,7 @@ export async function getFiledFeeIncomeData(source?: FinancialSource): Promise<F
     ORDER BY ifin.total_assets DESC NULLS LAST, ct.id
   ` as FiledFeeIncome[];
 
-  return rows.map((row) => ({
-    ...row,
-    institution_id: Number(row.institution_id),
-    fed_district: row.fed_district === null || row.fed_district === undefined ? null : Number(row.fed_district),
-    report_date: row.report_date === null || row.report_date === undefined ? null : String(row.report_date).slice(0, 10),
-    total_assets: row.total_assets === null ? null : Number(row.total_assets),
-    service_charge_income: row.service_charge_income === null ? null : Number(row.service_charge_income),
-    fee_income_ratio: row.fee_income_ratio === null ? null : Number(row.fee_income_ratio),
-  }));
+  return rows.map(financialNumbers);
 }
 
 export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRevenueCorrelation[]> {
@@ -157,12 +177,10 @@ export async function getFeeRevenueData(source?: FinancialSource): Promise<FeeRe
   ` as FeeRevenueCorrelation[];
 
   return rows.map((r) => ({
-    ...r,
-    fed_district: r.fed_district === null || r.fed_district === undefined ? null : Number(r.fed_district),
-    report_date: r.report_date === null || r.report_date === undefined ? null : String(r.report_date).slice(0, 10),
-    fee_income_ratio: r.fee_income_ratio !== null ? Number(r.fee_income_ratio) : null,
-    avg_fee: Number(r.avg_fee),
-    fee_count: Number(r.fee_count),
+    ...financialNumbers(r),
+    avg_fee: requiredNumber(r.avg_fee),
+    fee_count: requiredNumber(r.fee_count),
+    median_overdraft: numberOrNull(r.median_overdraft),
   }));
 }
 
