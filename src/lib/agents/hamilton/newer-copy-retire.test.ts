@@ -113,6 +113,12 @@ describe("Hamilton newer-copy check", () => {
     expect(newerCopyVerdict({ fee_name: "Early Closing of AccountClub Account", amount: 35 }, current, older)).not.toBe("still_stated");
   });
 
+  it("does not retry the split name on the older copy, so an unproven fee stays unproven", () => {
+    const olderSplit = "Early Closing of Account\nClub Account: $20.00\nSavings Account - Under 90 Days: $20.00";
+    const newerWithout = "Savings Account - Under 90 Days: $20.00\nWire Transfer | $25.00";
+    expect(newerCopyVerdict({ fee_name: "Early Closing of AccountClub Account", amount: 20 }, newerWithout, olderSplit)).toBe("unproven");
+  });
+
   it("never drops a fee the reader cannot find in the older copy either", () => {
     expect(newerCopyVerdict({ fee_name: "Notary Service", amount: 10 }, newerText, olderText)).toBe("unproven");
   });
