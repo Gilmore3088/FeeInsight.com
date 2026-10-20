@@ -17,3 +17,5 @@ refetch has logged it since 7 Oct, and the companions carry the schedule.
 the same host with the same file name points at it (`superseded_by_id`). Hamilton's refresh then
 moves the fees the new copy restates, and its current-copy check looks at the rest. Dry run on
 prod: one pair, 21132 -> 23188.
+
+**Agent lesson:** magellan/pr-807-one-current-copy
