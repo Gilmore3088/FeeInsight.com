@@ -76,7 +76,10 @@ export function providerRefusalError(error: unknown): ProviderCircuitOpenError |
   if (error instanceof ProviderCircuitOpenError) return error;
   if (!isProviderLimitError(error)) return null;
   const message = error instanceof Error ? error.message : String(error);
-  return new ProviderCircuitOpenError(`Provider refused the call for billing: ${message.slice(0, 300)}`);
+  // Keep the SDK error's status and request id, so logs and callers that read them still can.
+  const refusal = new ProviderCircuitOpenError(`Provider refused the call for billing: ${message.slice(0, 300)}`);
+  const { status, requestID } = (error ?? {}) as { status?: unknown; requestID?: unknown };
+  return Object.assign(refusal, { cause: error, status, requestID });
 }
 
 /** Matches an attempt's error text that a provider billing refusal wrote (see providerRefusalError). */
