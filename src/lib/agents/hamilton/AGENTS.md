@@ -561,9 +561,9 @@ own few rows (Oct 17). The step detail records `publish_time_box`, `sweep_ms` (e
 12a. Product page against the schedule (`product-page-conflict.ts`, James 2026-10-13): a live
     dollar fee from a product page whose bank's schedule documents list the same category only
     at other prices; the schedule wins. Per-account and multi-item categories are left out
-    (`PER_ACCOUNT_CATEGORIES`). Off (`PRODUCT_PAGE_CONFLICT_LIVE`): first looks are logged and
-    nothing comes down until an automatic sample of its dry run against the banks' stored documents
-    checks clean (James, Oct 20); then a PR turns it on and a
+    (`PER_ACCOUNT_CATEGORIES`). On since Oct 20 (`PRODUCT_PAGE_CONFLICT_LIVE`), after an automatic
+    sample of its dry run against the banks' stored documents checked clean (2 takedowns, 1 right,
+    0 wrong, 1 doubtful): a
     conflict comes down on its second look, `product_page_conflict: #<doc> at $x vs schedule $y`.
     A tier's own schedule (premium, private-banking, BankOn: Darwin's `tier-perk.ts` address and
     name tests) is not the bank's schedule and is left off the schedule side (#1397); a pending

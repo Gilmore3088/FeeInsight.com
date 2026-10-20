@@ -21,3 +21,5 @@ benchmark report read the shared sources. Rule 7 on `getIndexRows` lands with #1
 **Lesson:** a number printed on more than one page gets one helper and one definition in
 `headline-counts.ts`; a page never re-derives it from a different read, and a different population (the
 institution page's comparable index) says so beside the number.
+
+**Guard:** `src/lib/headline-counts.test.ts:48` (the category headline counts the public top 50, never every taxonomy type with data; the cases after it pin one definition each for fee institution counts and state coverage. A page that re-derives a count from its own read is not caught)

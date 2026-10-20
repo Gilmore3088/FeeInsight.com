@@ -31,3 +31,5 @@ Dry read on prod, 2026-10-16: 84 machine-accepted links change; 72 of the 212 in
 accepted match lose it (their complaint counts become unknown); 9,141 complaints for 2025 leave
 those institutions. One known leftover: Bell Bank keeps "Bell Financial Services" and "Bell LLC"
 because it is over $10B and the names lead with its word.
+
+**Agent lesson:** hoovie/pr-1627-non-bank-company-names

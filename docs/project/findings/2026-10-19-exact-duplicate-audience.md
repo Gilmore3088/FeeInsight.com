@@ -73,3 +73,5 @@ are explicitly listed in CI's `E2E_TESTS`. The pair guard does not claim seriali
 against newly inserted fee lines outside the selected pairs.
 
 No new provider call, runtime surface, production write or replay was used for validation.
+
+**Agent lesson:** gutenberg/pr-2143-audience-in-exact-identity

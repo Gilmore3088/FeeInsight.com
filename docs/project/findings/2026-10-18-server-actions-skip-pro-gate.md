@@ -6,3 +6,5 @@
 
 Run the journey locally (steps in `2026-10-17-hamilton-release-runbook.md`; no browser is launched):
 `E2E_DATABASE_URL=... npx playwright test -c tests/e2e/hamilton/playwright.config.ts billing-access`. The observed matrix is written to `test-results/hamilton-billing-access/matrix.md`.
+
+**Guard:** `tests/e2e/hamilton/billing-access.test.ts:132` (every exported server action under `src/app/pro` is listed and checks access in its own body; runs in the CI unit job)

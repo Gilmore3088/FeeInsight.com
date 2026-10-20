@@ -2657,7 +2657,8 @@ async function executeAgenticStep(
       return { status: "completed", summary: summarizeLessonSync(result), detail: lessonSyncDetail(result) };
     }
     case "atlas-storage-retention": {
-      const result = await runStorageRetention({ db: tx, dryRun: run.runKind === "dry_run",context:{runId:run.id,stepId:step.id,stepKey:step.stepKey} });
+      // commitDb: each expired legacy event-log partition is dropped in its own committed transaction.
+      const result = await runStorageRetention({ db: tx, commitDb: sql, dryRun: run.runKind === "dry_run", context: { runId: run.id, stepId: step.id, stepKey: step.stepKey } });
       // #1870: Hoovie's cold-tier plan on the same connection. Counts only; export is off and nothing prunes.
       const cold = await runColdTier({ db: tx, dryRun: run.runKind === "dry_run", runId: run.id });
       // #1041: the document vault's size and growth, and the rejected-document retention count (deletion off).
@@ -4230,6 +4231,11 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- The daily scoreboard holds its 150 s score step for a tick with that much left,
+              -- and fresh lanes left at most 128 s, so run 9476 sat queued all of Oct 19 with
+              -- the storage watch behind it. Once lanes have had 15 minutes it goes first.
+              (COALESCE(r.params_json->>'source' = 'atlas.scoreboard', false)
+                AND r.started_at < NOW() - INTERVAL '15 minutes') DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'

@@ -46,19 +46,22 @@ const FLOORS: Record<string, { right: number; wrong: number }> = {
   // finite parser limits (15 across both gates); prior-wrong River City total75 leaves too.
   // No numeric fix/rescore: original keys and wrong ceilings stay. Every case/text/reason
   // is explicit in international-wire-answer-key-boundaries.test.ts. FL/GA/IL/MI stay.
+  // v90 (#2454, James chose "File them", Oct 20): returned statements file as returned mail, and the
+  // gate scores the keys' "unmapped" returned statement lines there too; from main's reads (GA 171,
+  // IL 114, MI 128, MN 119, all 865 / 33) to GA 172, IL 115, MI 130, MN 120, all 870 / 33; no wrong read added.
   CA: { right: 153, wrong: 5 },
   FL: { right: 136, wrong: 6 },
-  GA: { right: 171, wrong: 9 },
+  GA: { right: 172, wrong: 9 },
   // 88 since the top-50 fold (Oct 8): a "Travel Card Reload" at $4.95 now files as a gift card
   // at $4.95, the same (category, price) pair as that schedule's gift card, so two right reads count once.
-  IL: { right: 112, wrong: 5 },
-  MI: { right: 128, wrong: 0 },
+  IL: { right: 115, wrong: 5 },
+  MI: { right: 130, wrong: 0 },
   // 96 since collection items got their own type (Oct 8): the key files a "$20.00 for the first
   // item" line under check cashing, and Knox now reads that schedule's "Collection Item" $20
   // as a collection item, so one right read became one wrong one.
-  MN: { right: 119, wrong: 8 },
+  MN: { right: 120, wrong: 8 },
   NY: { right: 43, wrong: 5 },
-  all: { right: 862, wrong: 38 },
+  all: { right: 870, wrong: 38 },
 };
 
 const fixture = JSON.parse(

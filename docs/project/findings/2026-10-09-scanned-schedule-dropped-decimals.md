@@ -12,3 +12,5 @@ re-priced, because the true price is inferred. The $2,500 ACH software fee is le
 a real software fee could cost that. Seven live rows match (read-only SQL). This PR.
 **Lesson:** tracing a price to its line proves the text says it, not that the text is right. A
 scanned page needs a plausibility bound per category.
+
+**Agent lesson:** darwin/pr-786-price-ceiling
