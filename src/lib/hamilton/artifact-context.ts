@@ -5,6 +5,14 @@ export type HamiltonArtifactContextLookup =
   | { kind: "scenario"; artifactId: string }
   | { kind: "report"; artifactId: string };
 
+// Saved analyses, scenarios and reports are keyed by Postgres uuid columns. Any other id text
+// makes the query throw, so a hand-edited or truncated link must be caught before the read.
+const SAVED_ARTIFACT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isSavedArtifactId(value: string): boolean {
+  return SAVED_ARTIFACT_ID_PATTERN.test(value);
+}
+
 function cleanArtifactId(value: string | null): string | null {
   const text = value?.trim();
   return text || null;

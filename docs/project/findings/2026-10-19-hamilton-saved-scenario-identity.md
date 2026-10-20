@@ -54,6 +54,12 @@ Local verification after `npm ci` and `next typegen`:
   been independently rerun on base. Logs are under `/tmp/hamilton-975/` in this
   workspace; they are not hosted CI evidence.
 
+**Malformed ids (growthOS review, 2026-10-20):** saved scenario, analysis and
+report ids are Postgres `uuid` columns, so a non-uuid link made the query throw
+and the page showed Hamilton's outage screen. `isSavedArtifactId` now checks the
+format first: `/pro/simulate` returns not found, and the shell's artifact lookup
+returns no institution without querying. Real read failures still surface.
+
 **Limits:** this patch preserves institution/fee identity when restoring a
 scenario. It still recomputes against current published fees and comparison
 layers; it does not establish historical cohort/result/export parity. No SQL,
