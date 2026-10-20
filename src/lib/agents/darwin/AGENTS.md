@@ -1541,7 +1541,10 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
   #2449, category-guard gap): account verification is guarded by name. Research or reconciling without a
   verification re-files to account research and a domestic wire to the outgoing wire fee; a
   medallion stamp or signature guarantee (unmapped in the answer keys), a checking or spending
-  account or a positive pay name fails and goes to the second look. v77 (Oct 19,
+  account or a positive pay name fails and goes to the second look, as does a verification glued to
+  a wire's direction row ("Account Verification NC: Domestic", borrowed direction). The live sweep
+  re-files only `RESTORE_REFILES`, so the one live domestic wire (a twin of the bank's live outgoing
+  wire) goes to the second look too. v77 (Oct 19,
   #2388): a card that draws only on credit ("Credit Card Replacement", "Visa Credit Card Rush Fee",
   "HELOC Access Card Replacement") fails card replacement and rush card; a line that also names a
   debit, ATM or check card stays. v76 (Oct 19, #2037, James chose "Split"): an ATM used abroad

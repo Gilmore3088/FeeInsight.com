@@ -709,14 +709,15 @@ export const CATEGORY_GUARD_RULES: Readonly<Record<string, CategoryRule>> = {
     exclude:
       /(reconcil|(?<!\b(?:address(?:es)?|locator|locate)\s+(?:[\w/-]+\s+)?)\bresearch|excess|\bwires?\b|\b(?:photo ?)?cop(?:y|ies)\b|\breturn(?:ed)?\s+(?:checks?|items?|deposits?|ach|payments?|loans?|drafts?)\b|\bnsf\b|\bdeposit\w*|\bdrafts?\b|\b(?:items?|checks?|drafts?)\s+returned\b|change of address|address change|\breturn(?:ing)?\s+to\s+paper|\bre-?enroll|\b(?:branch|atm)\s+locat)/i,
   },
-  // v78 (category-guard gap, Oct 20): account verification names a verification, a confirmation or
-  // certification, a VOD or a letter about the account. A checking account's name, a positive pay
-  // service, a signature guarantee or a wire is a different fee, and research or reconciling is
-  // account research unless the name also verifies ("Account reconciliation/research/verification of
-  // deposit fee" stays).
+  // v78 (#2449, Oct 20): account verification names a verification, a confirmation or certification,
+  // a VOD, a bank or credit reference, proof of funds, an audit or a letter about the account. A
+  // name with none of those (a checking account, a positive pay service, a bare wire) does not count,
+  // a signature guarantee, a letter of credit, a payoff or a collection letter is a different fee,
+  // and research or reconciling is account research unless the name also verifies ("Account
+  // reconciliation/research/verification of deposit fee" stays).
   account_verification: {
-    include: /(verif|confirm|certif|cer\W?fic|\bvods?\b|\bcartas?\b|\bletters?\b)/i,
-    exclude: SIGNATURE_GUARANTEE,
+    include: /(verif|confirm|certif|cer\W?fic|\bvods?\b|\bcartas?\b|\bletters?\b|\breferences?\b|proof of (?:funds|deposits?)|\baudit)/i,
+    exclude: new RegExp(`${SIGNATURE_GUARANTEE.source}|\\bletters?\\s+of\\s+credit\\b|\\bpay-?offs?\\b|\\bcollection\\b`, "i"),
     excludeUnless: { pattern: RESEARCH_WORD, unless: /verif|confirm/i },
   },
   // v74 (James's 20 live defects, Oct 19): research is checked by name too. Withdrawals over a
@@ -850,9 +851,11 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // v77 (Oct 19, W43 live check): a card that draws only on credit (`CREDIT_CARD_ONLY`) fails the
 // replacement and rushed card rules; a credit card is a lending product. Counts in the PR.
 // v78 (Oct 20, #2449): account verification is guarded by name. Research re-files to
-// account research and a domestic wire to the outgoing wire fee; a signature guarantee (unmapped in
-// the answer keys), a checking or spending account or a positive pay name fails and goes to the
-// second look. Counts in the PR.
+// account research and a domestic wire to the outgoing wire fee (on Darwin's path; the live sweep
+// re-files only `RESTORE_REFILES`); a signature guarantee (unmapped in the answer keys), a checking
+// or spending account or a positive pay name fails and goes to the second look, and once the
+// category is guarded the borrowed-direction rule also fails a verification glued to a wire's
+// direction row ("Account Verification NC: Domestic"). Counts in the PR.
 export const CATEGORY_GUARD_VERSION = 78;
 
 /**
