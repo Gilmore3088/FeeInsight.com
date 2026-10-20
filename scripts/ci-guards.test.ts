@@ -14,12 +14,23 @@ const GUARD = resolve("scripts/ci-guards.sh");
 const VERSION_FILE = "src/lib/agents/darwin/selftest-version.ts";
 const MANIFESTS = "src/lib/agents/bayes/manifests.ts";
 
-const env: NodeJS.ProcessEnv = { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+// Background gc/maintenance can still be writing into .git when afterEach removes the temp repo
+// (ENOTEMPTY in CI run 39326702861), so every git call here, the guard's included, turns it off.
+const env: NodeJS.ProcessEnv = {
+  ...process.env,
+  GIT_CONFIG_NOSYSTEM: "1",
+  GIT_CONFIG_GLOBAL: "/dev/null",
+  GIT_CONFIG_COUNT: "2",
+  GIT_CONFIG_KEY_0: "gc.auto",
+  GIT_CONFIG_VALUE_0: "0",
+  GIT_CONFIG_KEY_1: "maintenance.auto",
+  GIT_CONFIG_VALUE_1: "false",
+};
 delete env.GITHUB_BASE_REF;
 
 let repo = "";
 afterEach(() => {
-  if (repo) rmSync(repo, { recursive: true, force: true });
+  if (repo) rmSync(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   repo = "";
 });
 

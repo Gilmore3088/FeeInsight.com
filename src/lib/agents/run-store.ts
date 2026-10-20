@@ -4239,6 +4239,11 @@ export async function executeQueuedAgentRuns({
      -- then state lanes by Atlas's priority score (open work, report requests,
      -- near-ready markets), then launch order.
      ORDER BY (r.run_kind = 'report') DESC,
+              -- The daily scoreboard holds its 150 s score step for a tick with that much left,
+              -- and fresh lanes left at most 128 s, so run 9476 sat queued all of Oct 19 with
+              -- the storage watch behind it. Once lanes have had 15 minutes it goes first.
+              (COALESCE(r.params_json->>'source' = 'atlas.scoreboard', false)
+                AND r.started_at < NOW() - INTERVAL '15 minutes') DESC,
               (r.run_kind = 'workflow_lane'
                 AND progress.last_work_at < NOW() - INTERVAL '15 minutes') DESC,
               CASE WHEN r.run_kind = 'workflow_lane'
