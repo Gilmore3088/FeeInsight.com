@@ -32,8 +32,13 @@ vi.mock("../institution/[id]/profile-data", () => ({
   isVerifiedFee: vi.fn(),
   pickHeadlineValues: vi.fn(() => []),
 }));
-vi.mock("@/lib/guides/source", () => ({ loadConsumerGuides: vi.fn(async () => []) }));
+vi.mock("@/lib/guides/source", () => ({
+  loadGuidesWithSource: vi.fn(async () => ({ guides: [], source: "database", readFailed: false })),
+}));
+vi.mock("@/lib/data-store/public-read-cache", () => ({ shortenPageLife: vi.fn(async () => undefined) }));
 
+import { loadGuidesWithSource } from "@/lib/guides/source";
+import { shortenPageLife } from "@/lib/data-store/public-read-cache";
 import CheckPage, { generateMetadata } from "./page";
 
 function findElement(node: ReactNode, component: unknown): ReactElement | undefined {
@@ -201,5 +206,35 @@ describe("Fee Check page schema", () => {
     expect(intakeUrl.pathname).toBe("/submit-fees");
     expect(intakeUrl.searchParams.get("institutionId")).toBe("857");
     expect(intakeUrl.searchParams.get("institutionName")).toBe("Example & Trust");
+  });
+
+  // #2491: a failed guides read serves the seed guides; that render must not be kept long.
+  it.each([
+    { readFailed: true, shortened: true },
+    { readFailed: false, shortened: false },
+  ])("shortens the page life when the guides read failed: %j", async ({ readFailed, shortened }) => {
+    vi.mocked(getPublicInstitutionForPage).mockResolvedValue({
+      id: 323,
+      institution_name: "Example Bank",
+      fee_count: 1,
+      state_code: "FL",
+    } as Awaited<ReturnType<typeof getPublicInstitutionForPage>>);
+    vi.mocked(getVisibleFeesForPage).mockResolvedValue([{
+      id: 1,
+      institution_id: 323,
+      fee_name: "Overdraft fee",
+      fee_category: "overdraft",
+      fee_audience: "consumer",
+      amount: 30,
+      review_status: "approved",
+    } as Awaited<ReturnType<typeof getVisibleFeesForPage>>[number]]);
+    vi.mocked(isVerifiedFee).mockReturnValue(true);
+    vi.mocked(loadGuidesWithSource).mockResolvedValueOnce({ guides: [], source: "seed", readFailed });
+    vi.mocked(shortenPageLife).mockClear();
+    const page = await CheckPage({ searchParams: Promise.resolve({ id: "323" }) });
+    const answer = findAnswer(page)!;
+    await (answer.type as (props: typeof answer.props) => Promise<ReactElement>)(answer.props);
+    expect(loadGuidesWithSource).toHaveBeenCalled();
+    expect(vi.mocked(shortenPageLife).mock.calls.length > 0).toBe(shortened);
   });
 });
