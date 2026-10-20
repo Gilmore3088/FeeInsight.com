@@ -23,7 +23,7 @@ export const ZERO_WORD = /^(?:free|none|no charge|n\/c)$/i;
 const PROSE = /\b(you|your|we|will|may|must|shall|would|could|should)\b/i;
 const LEADERS = /(?:\.\s?){3,}|…+|_{3,}|…+/g;
 /**
- * v92 (#1828): a price stated in words at the end of a dot-leader row ("Reconveyance………… Actual
+ * v93 (#1828): a price stated in words at the end of a dot-leader row ("Reconveyance………… Actual
  * Cost", "Check Orders………… Prices Vary", "Incoming Wire....... Free"). The row is closed: its
  * name never runs into the next row's.
  */
@@ -205,7 +205,7 @@ function trimEnd(name: string): string {
  * (the evidence) are untouched. Returns the input when tidying would leave no usable name.
  */
 export function tidyFeeName(raw: string): string {
-  // v92 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
+  // v93 (#1828): a cell that is a row priced in words ("Check Orders .. Prices Vary | Duplicate Lien
   // Release", "Reconveyance .. Actual Cost: Returned payment") is the row before this fee's, so the
   // name starts after it.
   const rawCells = raw.split(/\s*\|\s*|(?<=[A-Za-z])\s*:\s+/);

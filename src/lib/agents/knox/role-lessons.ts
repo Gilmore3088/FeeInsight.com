@@ -335,4 +335,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: "all",
     since: "2026-10-20",
   },
+  {
+    id: "issue-1828-price-in-words-closes-the-line",
+    agent: "knox",
+    stage: "extract",
+    lesson: "A dot-leader row priced in words (\"Reconveyance...... Actual Cost\", \"Check Orders...... Prices Vary\", \"Incoming Wire...... Free\") is that fee's whole row. Never read it as a heading, never start the next fee's name with it, and never take a direction from it for the row below.",
+    why: "Oregon Community FCU's \"Reconveyance .. Actual Cost: Returned payment\" went live at the next row's $4.95. Read as a heading, Gunnison's free \"Incoming Wire\" row would have filed the $25 \"Wire Fee\" under it as the incoming wire.",
+    evidence: { issues: [1828], prs: [2467], files: ["src/lib/agents/knox/rules.ts", "src/lib/agents/knox/families.ts", "src/lib/agents/knox/layout.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];

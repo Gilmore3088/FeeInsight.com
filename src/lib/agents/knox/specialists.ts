@@ -150,12 +150,14 @@ import { internationalWireEligibility } from "./international-wire-eligibility";
 // v89 (#1102): the held-name rules are on (stop pay, reconveyance, early closure, paper
 // statements, box sizes, IRA close-outs); returned statements stay held (James's v26 call).
 // v90: returned statements file as returned mail (James's decision card, Oct 20, "File them").
-// v92 (#1828): a dot-leader row priced in words ("Reconveyance………… Actual Cost", "Check Orders……
-// Prices Vary", "Incoming Wire....... Free") closes its line. It is never a heading for the row under
-// it, and a name never runs on from it ("Reconveyance .. Actual Cost: Returned payment" was read at
-// the next row's $4.95, Oregon Community FCU, doc 19849). Follows #2465's v91. The stale-read floor
-// stays at v78; name re-tidy v24 renames the live names it left.
-export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 92 } as const;
+// v93 (#1828): a dot-leader row priced in words ("Reconveyance………… Actual Cost", "Check Orders……
+// Prices Vary", "Incoming Wire....... Free") closes its line. It is never a heading or a name for
+// the row under it, in the rules or the family passes, and a name never runs on from it
+// ("Reconveyance .. Actual Cost: Returned payment" was read at the next row's $4.95, Oregon
+// Community FCU, doc 19849; Gunnison's "Wire Fee" $25 never borrows the free incoming wire's
+// direction). Follows #2465's v92 and #2470's v91. The stale-read floor stays at v78; name re-tidy
+// v24 renames the live names it left.
+export const KNOX_RULES_STRATEGY = { strategy: "extract.rules", version: 93 } as const;
 
 export interface SpecialistRun {
   strategy: string;

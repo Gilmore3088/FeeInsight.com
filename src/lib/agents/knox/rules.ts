@@ -915,7 +915,7 @@ export function headingName(rawLine: string): string | null | undefined {
 }
 
 /**
- * v92 (#1828): a dot-leader row priced in words (`LEADER_PRICE_WORDS`: "Reconveyance………… Actual
+ * v93 (#1828): a dot-leader row priced in words (`LEADER_PRICE_WORDS`: "Reconveyance………… Actual
  * Cost", "Balance transfer…… Varies", "Notary…… N/C") is that fee's own row, never a heading: read
  * as one, it named the row under it ("Reconveyance .. Actual Cost: Returned payment" at the next
  * row's $4.95, Oregon Community FCU, doc 19849). When it names a fee of its own it ends the reach of

@@ -619,7 +619,7 @@ describe("v81: two fees named together at one price", () => {
   });
 });
 
-describe("v92: a row priced in words closes its line (#1828)", () => {
+describe("v93: a row priced in words closes its line (#1828)", () => {
   it("never reads a dot-leader row priced in words as the heading of the row under it (Oregon Community FCU)", () => {
     // Doc 19849 (bank 7859): read as "Reconveyance .. Actual Cost: Returned payment" at $4.95.
     const occu = [
@@ -630,17 +630,26 @@ describe("v92: a row priced in words closes its line (#1828)", () => {
       "4 If the loan has had no late payment fee activity in the past 12 calendar months, the late payment fee will be refunded.",
     ].join("\n");
     expect(fees(occu).filter(([name]) => /reconveyance/i.test(name))).toEqual([]);
-    // Doc 17871: the wire fees were read under "Incoming Wire.......Free".
-    const wires = ["Stop Payment.......$20.00", "Incoming Wire.......Free", "Wire Fee.......$25.00", "International Wire Fee.......$30.00"].join("\n");
-    expect(fees(wires).filter(([name]) => /incoming wire/i.test(name))).toEqual([]);
+    expect(fees(occu).map(([, , hint]) => hint)).not.toContain("wire_domestic_incoming");
+    // Gunnison S&L, doc 17871: the incoming wire is free (live 154798 at $0), so "Wire Fee" $25 is
+    // never the incoming wire. Every read is named and filed by its own row.
+    const wires = ["Research Fee (1hr min).......$25.00/hr.", "Stop Payment.......$20.00", "Incoming Wire.......Free", "Wire Fee.......$25.00", "International Wire Fee.......$30.00"].join("\n");
+    expect(fees(wires)).toEqual([
+      ["Research Fee (1hr min)", 25, "account_research"],
+      ["Stop Payment", 20, "stop_payment"],
+    ]);
+    expect(held(wires)).toEqual([
+      ["zero", "Incoming Wire", 0, "wire_domestic_incoming"],
+      ["unclassified", "Wire Fee", 25, null],
+      ["eligibility", "International Wire Fee", 30, "wire_intl_outgoing"],
+    ]);
   });
 
   it("starts a name after a cell priced in words (docs 29875, 29042)", () => {
     const loanColumn = "Checking & Savings Account Fees | Loan Fees\nCheck Orders………………………………..………………………Prices Vary | Duplicate Lien Release……………………………………..…………$30.00";
-    expect(fees(loanColumn).map(([name, amount]) => [name, amount])).toContainEqual(["Duplicate Lien Release", 30]);
-    expect(fees(loanColumn).filter(([name]) => /check orders/i.test(name))).toEqual([]);
+    expect(fees(loanColumn)).toEqual([["Duplicate Lien Release", 30, "mortgage_lien_release"]]);
     const misc = "MISCELLANEOUS\nStatement, Passbook and Club Accounts…………………….....…..……None | Abandoned Property Fee……………………………….……$75.00 per account";
-    expect(fees(misc).map(([name, amount]) => [name, amount])).toContainEqual(["Abandoned Property Fee", 75]);
+    expect(fees(misc)).toEqual([["Abandoned Property Fee", 75, "dormant_account"]]);
   });
 
   it("tidies a name that runs on from a row priced in words", () => {
