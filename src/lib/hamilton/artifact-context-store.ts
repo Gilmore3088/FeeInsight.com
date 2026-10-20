@@ -1,12 +1,14 @@
 import { sql } from "@/lib/data-store/connection";
 import { normalizeCanonicalInstitutionId } from "@/lib/hamilton/context-link";
-import type { HamiltonArtifactContextLookup } from "@/lib/hamilton/artifact-context";
+import { isSavedArtifactId, type HamiltonArtifactContextLookup } from "@/lib/hamilton/artifact-context";
 
 export async function getHamiltonArtifactInstitutionId(params: {
   userId: number;
   lookup: HamiltonArtifactContextLookup | null;
 }): Promise<string | null> {
   if (!params.lookup) return null;
+  // A malformed id names no saved artifact; it is not a failed read.
+  if (!isSavedArtifactId(params.lookup.artifactId)) return null;
 
   if (params.lookup.kind === "analysis") {
     const rows = await sql`

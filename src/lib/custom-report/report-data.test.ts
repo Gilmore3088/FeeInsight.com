@@ -12,10 +12,10 @@ const KEYS = ["overdraft", "nsf", "stop_payment", "cashiers_check", "wire_domest
 function market(competitors: number): CustomReportMarketData {
   const lines: MarketFeeLine[] = [];
   const rivals = [];
-  for (const key of KEYS) lines.push({ institution_id: 1, line: key, amount: 20, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: key });
+  for (const key of KEYS) lines.push({ institution_id: 1, line: key, amount: 20, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: `${key} | $20` });
   for (let i = 0; i < competitors; i += 1) {
     rivals.push({ institution_id: 100 + i, institution_name: `R${i}`, city: null, state_code: "TX", charter_type: "bank", market_deposits: 100 - i });
-    for (const key of KEYS) lines.push({ institution_id: 100 + i, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: key });
+    for (const key of KEYS) lines.push({ institution_id: 100 + i, line: key, amount: 10 + i, fee_name: key, source_url: null, updated_at: null, schedule_read_on: null, source_line: `${key} | $${10 + i}` });
   }
   return {
     subject: { institution_id: 1, institution_name: "S", city: null, state_code: "TX", charter_type: "bank", market_deposits: null, asset_size: null },
@@ -44,7 +44,7 @@ describe("loadMarketReport", () => {
   it("lists what moved since a bought report was saved", async () => {
     const before = market(20);
     const after = market(20);
-    after.lines = after.lines.map((l) => (l.institution_id === 1 && l.line === "overdraft" ? { ...l, amount: 25 } : l));
+    after.lines = after.lines.map((l) => (l.institution_id === 1 && l.line === "overdraft" ? { ...l, amount: 25, source_line: "overdraft | $25" } : l));
     live.mockResolvedValue(after);
     saved.mockResolvedValue({ data: before, savedAt: "2026-10-06T14:00:00Z" });
     const report = await loadMarketReport(1);

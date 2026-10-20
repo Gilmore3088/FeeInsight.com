@@ -164,6 +164,48 @@ export function useAutoAdvance({
 }
 
 /**
+ * A figure that counts up from 0 to `target` once `rootRef` scrolls into view (the homepage's
+ * motion, shared with the market report's position split). The server renders the final figure,
+ * so print, no-JS and reduced motion all show it as is; with reduced motion it never moves.
+ */
+export function useCountUp(target: number, rootRef: RefObject<HTMLElement | null>, duration = 700): number {
+  const reduced = useReducedMotion();
+  const [value, setValue] = useState(target);
+  useEffect(() => {
+    const root = rootRef.current;
+    const still =
+      reduced || target <= 0 || !root || typeof IntersectionObserver === "undefined" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let frame = 0;
+    let observer: IntersectionObserver | null = null;
+    if (still) {
+      frame = requestAnimationFrame(() => setValue(target));
+    } else {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (!entries[0]?.isIntersecting) return;
+          observer?.disconnect();
+          let start = 0;
+          const step = (now: number) => {
+            if (!start) start = now;
+            const t = Math.min(1, (now - start) / duration);
+            setValue(Math.round(target * (1 - (1 - t) ** 3)));
+            if (t < 1) frame = requestAnimationFrame(step);
+          };
+          frame = requestAnimationFrame(step);
+        },
+        { threshold: 0.4 },
+      );
+      observer.observe(root);
+    }
+    return () => {
+      observer?.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [target, reduced, duration, rootRef]);
+  return value;
+}
+
+/**
  * Fades an element up once, the first time it scrolls into view, with the homepage's own
  * `.fi-home-fade` keyframe (landing-motion.css). An element already on screen at load, and every
  * element under reduced motion, never moves; the class is added straight to the node, so the

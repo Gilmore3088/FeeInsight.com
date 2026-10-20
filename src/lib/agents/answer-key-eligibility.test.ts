@@ -74,6 +74,29 @@ describe("bounded current-reference observation (injected networking only)", () 
     expect(evaluateReferenceEligibility({ ...fixture.input, ...observed, asOf: new Date().toISOString() }).status).not.toBe("eligible");
   });
 
+  it("does not count navigation hubs left past the page cap as incomplete discovery (#2466)", async () => {
+    const fixture = fixtureReference();
+    const hubs = Array.from({ length: 8 }, (_, i) => `<a href="/disclosures-${i}">Disclosures ${i}</a>`).join("");
+    const fetchImpl = vi.fn(async (url: unknown) => String(url).endsWith(".pdf") ? response(CONSUMER_TEXT, "text/plain")
+      : response(`<html><main><a href="/consumer-fees.pdf">Consumer Fee Schedule</a>${hubs}</main></html>`));
+    const observed = await observeReferenceDocument(fixture.input, options(fetchImpl as typeof fetch));
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(observed.discovery.examinedUrls.slice(0, 2)).toEqual(["https://bank.example/", fixture.input.key.documentUrl]);
+    expect(observed.discovery).toMatchObject({ completeWithinProtocol: true, limitReason: null, linkedFromOfficialSite: true, skippedHubCount: 4 });
+    expect(evaluateReferenceEligibility({ ...fixture.input, ...observed, asOf: new Date().toISOString() }).status).toBe("eligible");
+  });
+
+  it("observes fee-schedule links before hubs and still marks an unseen one incomplete", async () => {
+    const fixture = fixtureReference();
+    const hubs = Array.from({ length: 3 }, (_, i) => `<a href="/disclosures-${i}">Disclosures ${i}</a>`).join("");
+    const fees = Array.from({ length: 6 }, (_, i) => `<a href="/fees-${i}.pdf">Fee Schedule ${i}</a>`).join("");
+    const fetchImpl = vi.fn(async (url: unknown) => String(url).endsWith(".pdf") ? response(CONSUMER_TEXT, "text/plain")
+      : response(`<html><main>${hubs}<a href="/consumer-fees.pdf">Consumer Fee Schedule</a>${fees}</main></html>`));
+    const observed = await observeReferenceDocument(fixture.input, options(fetchImpl as typeof fetch));
+    expect(observed.discovery.examinedUrls.some((url) => url.includes("/disclosures-"))).toBe(false);
+    expect(observed.discovery).toMatchObject({ completeWithinProtocol: false, limitReason: "page_limit" });
+  });
+
   it("passes cancellation and PDF limits into the shared Rosetta parser", async () => {
     const pdfText = vi.fn(async () => ({ text: CONSUMER_TEXT, totalPages: 1 }));
     await observeReferenceDocument(fixtureReference().input, { ...options((async () => response("%PDF-fixture", "application/pdf")) as typeof fetch), pdfText });

@@ -12,7 +12,8 @@ import { getAtmNetworkMentions } from "./atm-networks";
 import { isEmptyNetworkMentions } from "@/lib/guides/atm-networks";
 import { getComparableMarketIndex, getDistrictFeeIndexes, getPeerIndex, getStateFeeIndexes } from "./fee-index";
 import { getDistrictStats, getResearchCoverage, getStateStats } from "./geographic";
-import { getDataCoverageSummary, getMarketConcentration, getStateDemographics } from "./financial";
+import { getDataCoverageSummary, getFinancialHistory, getMarketConcentration, getStateDemographics } from "./financial";
+import { getFeeShareCohort, getInstitutionCallItemHistory } from "./institution-quarterly";
 import {
   getCharterFeeRevenueSummary,
   getFeeRevenueData,
@@ -197,7 +198,11 @@ export const getNationalIndicatorsCached = cachedPublicRead(
   isEmptyNationalIndicators,
 );
 export const getMarketReadinessCached = cachedPublicRead("market-readiness", getMarketReadiness);
-export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market", getCustomReportMarketData);
+// v6: the shared source check now passes a waiver's "otherwise" price (#1797), so a copy saved
+// before it can still be missing a record the institution profile shows.
+// v7: a row read under its section heading takes the category word from that heading (#1835),
+// so Capital City Bank's incoming domestic wire ($25) enters its report.
+export const getCustomReportMarketDataCached = cachedPublicRead("custom-report-market-v7", getCustomReportMarketData);
 /**
  * Every institution's headline coverage, shared by all institution pages. Each page used to
  * recount the whole catalog for its own report rule check: about a second, 830 times an hour
@@ -232,7 +237,7 @@ export async function getInstitutionHeadlineCoverageCached(ids: number[]): Promi
   }
   return coverage;
 }
-export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint", getMarketBranchFootprint);
+export const getMarketBranchFootprintCached = cachedPublicRead("market-branch-footprint-v2", getMarketBranchFootprint);
 /** The city a ZIP code belongs to, from the branch records; the fee check reads it per ZIP. */
 export const getBranchCityForZipCached = cachedPublicRead("branch-city-for-zip-v1", getBranchCityForZip);
 /** The district hub's exhibits beyond the fee board (district-hub.ts), one entry per district. */
@@ -240,3 +245,29 @@ export const getBranchCityForZipCached = cachedPublicRead("branch-city-for-zip-v
 export const getDistrictHubCached = cachedPublicRead("district-hub-v3", getDistrictHub, isEmptyDistrictHub);
 /** The same exhibits for one whole state's page (getStateHub), one entry per state. */
 export const getStateHubCached = cachedPublicRead("state-hub-v1", getStateHub, isEmptyDistrictHub);
+/**
+ * The institution page's overview and financial performance reads: its call-report history (both
+ * stores) and the asset-size cohort its service-charge share is read against. The cohort is keyed
+ * by charter, tier, quarter and source, so every institution in one cohort shares one entry.
+ */
+export const getInstitutionFinancialHistoryCached = cachedPublicRead("institution-financial-history-v1", getFinancialHistory);
+export const getInstitutionCallItemHistoryCached = cachedPublicRead("institution-call-items-v1", getInstitutionCallItemHistory);
+export const getFeeShareCohortCached = cachedPublicRead("fee-share-cohort-v1", getFeeShareCohort);
+
+export type InstitutionCohortKey = { found: true; charterType: string; assetSizeTier: string | null } | { found: false };
+
+/**
+ * The charter and asset tier the cohort route reads one institution's cohort by. An id the site
+ * does not show is cached as `{ found: false }` too (never treated as empty), so a request for a
+ * random id reaches the database once per cache life rather than on every request. A failed read
+ * throws and is not cached.
+ */
+export const getInstitutionCohortKeyCached = cachedPublicRead(
+  "institution-cohort-key-v1",
+  async (institutionId: number): Promise<InstitutionCohortKey> => {
+    const inst = await getPublicInstitutionById(institutionId);
+    if (!inst?.charter_type) return { found: false };
+    return { found: true, charterType: inst.charter_type, assetSizeTier: inst.asset_size_tier ?? null };
+  },
+  () => false,
+);

@@ -10,7 +10,10 @@ vi.mock("./connection", () => ({
   }),
 }));
 
-import { getLocalMarketMembers, maintenanceLineIsNotChecking, reportRowProblem } from "./custom-report-market";
+import { getLocalMarketMembers, maintenanceLineIsNotChecking, recordSourceLine, reportRowProblem } from "./custom-report-market";
+import { checkFeeAgainstSource } from "@/lib/custom-report/source-check";
+import { FEE_LINE_RULES } from "@/lib/custom-report/rules";
+import { evidenceProblem } from "@/lib/custom-report/evidence";
 
 function countyQuery(): string {
   const query = calls.find((call) => call.text.includes("hq AS ("));
@@ -77,5 +80,36 @@ describe("monthly maintenance compares checking only", () => {
     const checking = "A Maintenance Service Charge of $8.95 each statement cycle applies to this account.";
     expect(maintenanceLineIsNotChecking("monthly_maintenance", checking)).toBe(false);
     expect(maintenanceLineIsNotChecking("overdraft", "Savings overdraft $29")).toBe(false);
+  });
+});
+
+describe("recordSourceLine (Hancock Whitney, rows 66419 and 66411, read 17 Oct 2026)", () => {
+  // The stored text of source document 19615, cut to the two places it states $36 for overdraft.
+  const text = [
+    "Customers who do not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This fee is charged when an account remains overdrawn",
+    "On Us Check Cashing Fee** | $9.00",
+    "Overdraft Charge/Overdraft Fee (each item) | $36.00",
+    "Nonsufficient Funds Charge (NSF Charge or NSF Fee) each item | $36.00",
+    "Stop Payment Fee | $36.00",
+    "Sustained Overdraft Fee | $36.00",
+  ].join("\n");
+  const excerpt = "Overdraft Charge/Overdraft Fee (each item) | $36.00";
+  const sustained = "not qualify as a direct deposit. | Sustained Overdraft Fee of $36.00. This";
+
+  it("keeps the per-item overdraft fee in, on the line it was read from", () => {
+    const line = recordSourceLine("overdraft", sustained, excerpt, 36, text);
+    expect(line).toBe(excerpt);
+    expect(evidenceProblem("overdraft", { product: "Overdraft Charge/Overdraft Fee (each item)", amount: 36, quote: line, source_url: "https://www.hancockwhitney.com/hubfs/Forms/Access-TISA.pdf" })).toBeNull();
+    // The shared check alone passes on the document and the record's own excerpt.
+    const include = FEE_LINE_RULES.find((r) => r.key === "overdraft")!.include;
+    expect(checkFeeAgainstSource(text, "Overdraft Charge/Overdraft Fee (each item)", 36, include).ok).toBe(true);
+  });
+
+  it("keeps the checked line when the excerpt is not on that document or does not label the fee", () => {
+    expect(recordSourceLine("overdraft", sustained, excerpt, 36, "Sustained Overdraft Fee of $36.00")).toBe(sustained);
+    expect(recordSourceLine("overdraft", sustained, null, 36, text)).toBe(sustained);
+    // TD's "$3 monthly fee" excerpt must not hide the paper statement fee its line names (row 64716).
+    const td = "Paper statements | $3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee";
+    expect(recordSourceLine("monthly_maintenance", td, "$3 monthly fee | Free for customers aged 60+, otherwise $3 monthly fee", 3, td)).toBe(td);
   });
 });

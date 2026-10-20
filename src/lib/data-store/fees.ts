@@ -84,17 +84,9 @@ export interface FeeChangeEvent {
   detected_at: string;
 }
 
-export function computePercentile(sorted: number[], p: number): number {
-  if (sorted.length === 0) return 0;
-  // Coerce defensively: NUMERIC values that reach here as strings would otherwise
-  // concatenate ("10.00" + 5 = "10.005") instead of interpolating.
-  const idx = (p / 100) * (sorted.length - 1);
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  const loValue = Number(sorted[lo]);
-  if (lo === hi) return loValue;
-  return loValue + (idx - lo) * (Number(sorted[hi]) - loValue);
-}
+import { computePercentile } from "@/lib/fee-institution-value";
+
+export { computePercentile };
 
 /**
  * Rounds to cents, half up, on the decimal value: a median of $4.22 and $4.23 is $4.225, which

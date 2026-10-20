@@ -8,6 +8,7 @@ import { recheckReceiptNote } from "./darwin/verified-recheck-receipt";
  */
 
 type Detail = Record<string, unknown>;
+const isRecord = (value: unknown): value is Detail => value !== null && typeof value === "object" && !Array.isArray(value);
 
 function n(detail: Detail, key: string): number {
   const value = Number(detail[key] ?? 0);
@@ -56,6 +57,13 @@ function narrateFinished(
 ): string | null {
   const scope = where(stateCode);
   switch (stepKey) {
+    case "hmda-identity-repair": {
+      if (detail.mode === "preview") return "Reviewed the bounded HMDA identity scope; no source or identity data changed.";
+      if (detail.replayed === true) return "Verified the prior bounded HMDA repair receipt; no repeated identity writes.";
+      if (detail.mode === "apply") return "Applied the bounded HMDA identity repair; its receipt records the exact changed rows.";
+      if (detail.mode === "rollback") return "Restored the bounded HMDA identities after checking the repair's recorded post-images.";
+      return "Completed the bounded HMDA identity review; see the recorded receipt for its result.";
+    }
     case "enhance":
       return `Checked institution records ${scope}: ${count(n(detail, "total_institutions"), "institution")}, ${count(n(detail, "backlog_missing_urls"), "missing fee URL")}.`;
     case "state-expert": {
@@ -369,7 +377,12 @@ function narrateFinished(
     case "deming-regression": {
       if (detail.schema_ready === false) return "Deming read no test cases: the case store is not created yet.";
       const regressions = n(detail, "regressions");
-      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.`;
+      const source = isRecord(detail.corrective_source) ? detail.corrective_source as Detail : null;
+      const sourceCount = (value: unknown): string => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? String(value) : "unknown";
+      const sourceNote = source ? ` Corrective source contexts: ${sourceCount(source.evaluated)} evaluated, ${sourceCount(source.caught)} matched; unavailable ${isRecord(source.unavailable) && sourceCount(source.unavailable.count) !== "unknown" ? `${source.unavailable.atLeast === true ? "at least " : ""}${source.unavailable.count}` : "unknown"}. Original extraction binding is unknown; CI fixture import remains unimplemented.` : "";
+      const failed = source && Array.isArray(source.warnings) ? source.warnings.filter(isRecord).map((w) => `${String(w.phase).replaceAll("_", " ")}${w.timedOut === true ? " (statement timeout)" : ""}`) : [];
+      const warnNote = failed.length > 0 ? ` Could not finish: ${failed.join(", ")}; those rows are unknown.` : "";
+      return `Deming added ${count(n(detail, "promoted"), "confirmed mistake")} as test cases and replayed ${count(n(detail, "replayed"), "case")}: ${n(detail, "caught")} still caught, ${regressions === 0 ? "no regressions" : count(regressions, "regression")}.${sourceNote}${warnNote}`;
     }
     case "scoreboard-snapshot": {
       const coverage = (detail.coverage ?? {}) as Detail;
@@ -769,6 +782,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   fetch: "magellan",
   "public-discovery": "magellan",
   "public-audit": "magellan",
+  "hmda-identity-repair": "hoovie",
   "registry-fdic-universe": "hoovie",
   "registry-fdic-financials": "hoovie",
   "registry-ncua-financials": "hoovie",

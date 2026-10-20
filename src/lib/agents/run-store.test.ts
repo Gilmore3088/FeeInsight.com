@@ -21,6 +21,8 @@ const {
   runRosettaReadMock,
   runRosettaPaidReadMock,
   runRegistryStepMock,
+  executeHmdaIdentityRepairMock,
+  parseHmdaRepairParamsMock,
 } = vi.hoisted(() => {
   const tx = vi.fn() as TxMock;
   tx.unsafe = vi.fn();
@@ -43,6 +45,8 @@ const {
     runRosettaReadMock: vi.fn(),
     runRosettaPaidReadMock: vi.fn(),
     runRegistryStepMock: vi.fn(),
+    executeHmdaIdentityRepairMock: vi.fn(),
+    parseHmdaRepairParamsMock: vi.fn(),
   };
 });
 
@@ -131,6 +135,12 @@ vi.mock("@/lib/agents/magellan/fetch", () => ({
 vi.mock("@/lib/agents/magellan/registry", () => ({
   isRegistryStepKey: (key: string) => key.startsWith("registry-"),
   runRegistryStep: runRegistryStepMock,
+}));
+
+vi.mock("@/lib/agents/hoovie/hmda-identity-repair", () => ({
+  HMDA_IDENTITY_REPAIR_STEP_KEY: "hmda-identity-repair",
+  executeHmdaIdentityRepair: executeHmdaIdentityRepairMock,
+  parseHmdaRepairParams: parseHmdaRepairParamsMock,
 }));
 
 vi.mock("@/lib/agents/public-discovery", () => ({
@@ -315,6 +325,12 @@ describe("agentic run store", () => {
     getPipelineControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getMarketingControlMock.mockReset().mockResolvedValue({ enabled: true, reason: null });
     getExecutionBackendMock.mockReset().mockReturnValue("disabled");
+    runRegistryStepMock.mockReset();
+    executeHmdaIdentityRepairMock.mockReset().mockResolvedValue({
+      summary: "Reviewed the fixed HMDA cohort without identity writes.",
+      detail: { mode: "preview", writes: 0 },
+    });
+    parseHmdaRepairParamsMock.mockReset().mockImplementation((value: unknown) => value);
     runDarwinVerifyMock.mockReset().mockResolvedValue({
       selectedRawFees: 7,
       processedRawFees: 7,
@@ -654,6 +670,77 @@ describe("agentic run store", () => {
     expect(withTransactionMock.mock.calls.length - transactionsBefore).toBe(2);
   });
 
+  it("advances the manual HMDA repair outside the wrapper transaction using only its reviewed run config", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const params = { source: "hoovie.hmda-identity-repair", mode: "preview", manifest_digest: "reviewed-digest" };
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair", agent_name: "hoovie",
+      input_payload: { mode: "apply", manifest_digest: "unreviewed-override" } }];
+    const run = { ...runRow, agent_name: "hoovie", run_kind: "dry_run", params_json: params, progress_total: 1 };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 1 });
+
+    expect(parseHmdaRepairParamsMock).toHaveBeenCalledWith(params);
+    expect(executeHmdaIdentityRepairMock).toHaveBeenCalledWith({ db: sqlMock, runId: 101, stepId: 201, params });
+    expect(runRegistryStepMock).not.toHaveBeenCalled();
+    // Claim + finish only: the repair verifies the public source, then owns its transaction.
+    expect(withTransactionMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("holds the manual HMDA repair while the pipeline is paused", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    getPipelineControlMock.mockResolvedValue({ enabled: false, reason: "Review in progress" });
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, run_kind: "dry_run", progress_total: 1,
+      params_json: { source: "hoovie.hmda-identity-repair", mode: "preview", manifest_digest: "reviewed-digest" } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ executedSteps: 0, status: "queued", terminal: false });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+    expect(withTransactionMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { trigger_source: "schedule", run_kind: "dry_run", mode: "preview" },
+    { trigger_source: "admin", run_kind: "workflow", mode: "preview" },
+    { trigger_source: "admin", run_kind: "dry_run", mode: "apply" },
+  ])("refuses HMDA repair runs outside explicit admin/mode configuration: %j", async ({ mode, ...invalid }) => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, ...invalid, progress_total: 1,
+      params_json: { source: "hoovie.hmda-identity-repair", mode, manifest_digest: "reviewed-digest" } };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed" });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+  });
+
+  it("records malformed HMDA repair parameters as failure without calling the executor", async () => {
+    getExecutionBackendMock.mockReturnValue("agentic_v1");
+    parseHmdaRepairParamsMock.mockImplementation(() => { throw new Error("Reviewed manifest digest does not match"); });
+    const steps = [{ ...queuedStepRows[0], step_key: "hmda-identity-repair" }];
+    const run = { ...runRow, run_kind: "dry_run", progress_total: 1, params_json: {} };
+    installSqlMocks({ finalRun: run, finalSteps: steps });
+    installTxMocks(steps, run);
+
+    await expect(executeAgentRun(101)).resolves.toMatchObject({ status: "failed" });
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+    expect(combinedTransactionSql()).toContain("step.failed");
+  });
+
+  it("keeps reviewed HMDA repair steps out of cron selection", async () => {
+    sqlMock.mockResolvedValue([]);
+    await executeQueuedAgentRuns({ runLimit: 10, maxStepsPerRun: 10 });
+    expect(TICK_EXCLUDED_STEP_KEYS).toContain("hmda-identity-repair");
+    const selection = sqlMock.mock.calls.find(([strings]) => templateText(strings).includes("SELECT r.id"));
+    expect(selection).toBeDefined();
+    expect(templateText(selection![0])).toContain("OR s.step_key = ANY(");
+    expect(selection!.slice(1)).toContainEqual(expect.arrayContaining(["hmda-identity-repair"]));
+    expect(executeHmdaIdentityRepairMock).not.toHaveBeenCalled();
+  });
+
   it("passes state lane scope into worker execution", async () => {
     getExecutionBackendMock.mockReturnValue("agentic_v1");
     const fetchStepRows = [
@@ -880,6 +967,40 @@ describe("agentic run store", () => {
     expect(combinedTransactionSql()).not.toContain("'step.failed'");
     return { detail, message: String(finished[0].at(-2)) };
   }
+
+  it("saves corrective-source counts and an explicit artifact failure through the real finished-step INSERT", async () => {
+    const regression = await import("./deming/regression");
+    const source = await import("./deming/corrective-source-store");
+    const { fixtureArtifact } = await import("./deming/corrective-source");
+    const observed = { warnings: [{ phase: "replay_read" as const, count: 1, timedOut: true, error: "canceling statement due to statement timeout" }], promoted: 1, admissionLimitReached: false, replayLimitReached: false, evaluated: 1, caught: 1, activated: 1, regressions: 0,
+      regressionCases: [], unavailable: { count: null, atLeast: false }, deferred: 0, artifact: fixtureArtifact([]) };
+    const replay = vi.spyOn(regression, "runDemingRegression").mockResolvedValue({ schemaReady: true, dryRun: false, promoted: 1, promotedActive: 0,
+      promotedBySeverity: { critical: 0, major: 1, minor: 0, info: 0 }, replayed: 1, caught: 1, regressions: [], activated: 1, retired: 0,
+      activeTotal: 9, candidateTotal: 301, corrective: observed });
+    const persist = vi.spyOn(source, "persistCorrectiveArtifact").mockResolvedValue({ state: "unavailable", scope: "evaluated_this_run", complete: false,
+      bytes: 0, cases: 0, chunks: 0, digest: observed.artifact.digest, ciImport: "not_implemented" });
+    try {
+      getExecutionBackendMock.mockReturnValue("agentic_v1");
+      const steps = [{ ...queuedStepRows[0], step_key: "deming-regression", agent_name: "atlas", title: "Deming replay" }];
+      const run = { ...runRow, progress_total: 1 };
+      installSqlMocks({ finalRun: run, finalSteps: steps }); installTxMocks(steps, run);
+      expect(await executeAgentRun(101)).toMatchObject({ status: "completed", executedSteps: 1 });
+      expect(replay).toHaveBeenCalledTimes(1); expect(persist).toHaveBeenCalledWith(txMock,101,steps[0].id,observed.artifact);
+      const saved = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.finished'")); expect(saved).toHaveLength(1);
+      const detail = JSON.parse(String(saved[0].at(-1)));
+      expect(detail).toMatchObject({ replayed: 1, caught: 1, totals_scope: "historical_all_datasets", corrective_source: {
+        protocol: 2, evaluated: 1, caught: 1, unavailable: { count: null }, fixture: { state: "unavailable", ciImport: "not_implemented" } } });
+      expect(detail.corrective_source).not.toHaveProperty("artifact");
+      expect(detail.corrective_source.warnings).toEqual(observed.warnings);
+      const warned = txMock.mock.calls.filter(call => templateText(call[0]).includes("'step.warning'"));
+      expect(warned, "a swallowed replay timeout leaves a visible step warning").toHaveLength(1);
+      expect(JSON.parse(String(warned[0].at(-1)))).toMatchObject({ check: "admin.fee_correction.source_context.replay_read" });
+      expect(String(warned[0].at(-2))).toContain("statement timeout");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("Could not finish: replay read (statement timeout)");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("unavailable unknown");
+      expect(narrateStepFinished("deming-regression",detail)).toContain("CI fixture import remains unimplemented");
+    } finally { replay.mockRestore(); persist.mockRestore(); }
+  });
 
   const recheckZero = { checked: 0, passed: 0, rejected: [], restored: [], cleared: 0, flagged: 0, waiting: 0, takenDown: [] };
 

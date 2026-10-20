@@ -2,9 +2,10 @@
 export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { hrefWithInstitutionContext } from "@/lib/hamilton/context-link";
+import { isSavedArtifactId, resolveArtifactContextInstitutionId } from "@/lib/hamilton/artifact-context";
 import { layerDates, loadFeeWorkspace } from "@/lib/hamilton/fee-workspace-data";
 import { buildAuditTrail } from "@/lib/hamilton/audit-trail";
 import { defaultLayer, parseLayer } from "@/lib/hamilton/research-layers";
@@ -59,22 +60,64 @@ interface PageProps {
 const inputClass =
   "w-full rounded-md border border-warm-300 bg-white px-3 py-2 text-sm text-warm-900 focus:border-terra focus:outline-none focus:ring-1 focus:ring-terra";
 
+/** A saved scenario that can't be modelled: a heading, one sentence and a way on, like Hamilton's other stopped screens. */
+function SavedScenarioNotice({ title, message }: { title: string; message: string }) {
+  return (
+    <MemoPage width="reading">
+      <div role="alert" className="flex flex-col gap-4">
+        <MemoHeader kicker="Try a price" title={title} dek={message} />
+        {/* Centred under the centred phone header, left-aligned from sm up like MemoHeader. */}
+        <div className="flex justify-center sm:justify-start">
+          <LinkButton href="/pro/simulate" primary>
+            Try a new price
+          </LinkButton>
+        </div>
+      </div>
+    </MemoPage>
+  );
+}
+
 export default async function ModelPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect("/");
 
   // Saved scenarios from the old Scenario screen open here with their fee and price.
-  const scenarioId = params.scenario_id || params.scenario;
-  const saved = scenarioId ? await getHamiltonScenarioById(scenarioId, user.id).catch(() => null) : null;
+  const scenarioId = params.scenario_id?.trim() || params.scenario?.trim();
+  // A malformed id (a hand-edited or truncated link) names no scenario; querying it would throw.
+  if (scenarioId && !isSavedArtifactId(scenarioId)) notFound();
+  const saved = scenarioId ? await getHamiltonScenarioById(scenarioId, user.id) : null;
+  // A missing/private scenario is never a request to model today's selection instead.
+  if (scenarioId && !saved) notFound();
+  const contextInstitutionId = resolveArtifactContextInstitutionId({
+    urlInstitutionId: params.instId,
+    artifactInstitutionId: saved?.institution_id,
+    preferArtifact: Boolean(saved),
+  });
+  if (saved && !contextInstitutionId) {
+    return (
+      <SavedScenarioNotice
+        title="This saved scenario can't be reopened"
+        message="It has no institution on record, so Hamilton can't compare its price with peers."
+      />
+    );
+  }
 
   const ws = await loadFeeWorkspace({
     userId: user.id,
-    instId: params.instId ?? saved?.institution_id ?? null,
-    fee: params.fee ?? params.category ?? saved?.fee_category ?? null,
+    instId: contextInstitutionId ?? null,
+    fee: saved?.fee_category ?? params.fee ?? params.category ?? null,
     intent: "simulate",
   });
   const inst = ws.institution;
+  if (saved && String(inst?.id) !== contextInstitutionId) {
+    return (
+      <SavedScenarioNotice
+        title="This saved scenario didn't open"
+        message="Hamilton couldn't load the institution saved with this scenario."
+      />
+    );
+  }
   const instId = inst ? String(inst.id) : null;
   const layerKey = params.layer ? parseLayer(params.layer) : defaultLayer(ws.layers);
   const layer = ws.layers.find((l) => l.key === layerKey) ?? ws.layers[ws.layers.length - 1];

@@ -8,6 +8,11 @@ Each finding is its own file in this folder, named `YYYY-MM-DD-short-slug.md` (l
 letters, digits and hyphens), so parallel PRs never edit the same lines. Newest first is the
 reverse of the file names: `ls -r docs/project/findings`.
 
+Every finding also gets one line in `../LESSONS.md`, the front door that indexes every lesson
+and decision, in the same PR: date, the lesson in plain words, a link to the file, and its Guard
+or Agent lesson, under the theme it belongs to. `scripts/ci-guards.sh lessons-index-kill` fails a
+PR whose finding has no line there.
+
 Entries up to 2026-10-09 stay in `../FINDINGS.md`. That file takes no new entries;
 `scripts/ci-guards.sh findings-file-kill` fails on a FINDINGS.md heading dated after
 2026-10-09 or on a misnamed file here.

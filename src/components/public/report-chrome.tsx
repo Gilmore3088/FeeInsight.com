@@ -10,7 +10,7 @@ export function ReportChrome({ preparedFor }: { preparedFor: string }) {
         <Link href="/" className="flex items-center gap-2 text-ink no-underline" aria-label={`${SITE_NAME} home`}>
           <Logo mark="fee-insight-oneline" height={22} title="" />
         </Link>
-        <p className="text-[12px] text-ink-muted">Prepared for {preparedFor}</p>
+        <p className="min-w-0 truncate pl-4 text-[12px] text-ink-muted">Prepared for {preparedFor}</p>
       </div>
     </header>
   );
