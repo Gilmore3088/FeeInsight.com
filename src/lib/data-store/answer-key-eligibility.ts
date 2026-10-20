@@ -82,6 +82,8 @@ export interface ReferenceDiscoveryEvidence {
   candidateUrls: string[];
   completeWithinProtocol: boolean;
   limitReason: string | null;
+  /** Same-site hubs queued but not visited under the page cap; a receipt shows what went unseen. */
+  skippedHubCount?: number;
   /** At least one followed path starts on the recorded official institution website. */
   linkedFromOfficialSite: boolean;
 }
@@ -154,7 +156,9 @@ export function audienceHeading(line: string, audience: "consumer" | "business")
     && /\b(?:fees?|schedule|charges|accounts?)\b/i.test(title);
 }
 /** A short line that opens with a business audience word ("Business Checking", "Commercial Accounts"). */
-const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
+const BUSINESS_SECTION = /^(?:small business|business|commercial|corporate|treasury|cash management|account analysis|merchant|non-?personal|organi[sz]ation(?:al)?)\b(?! days?\b)[^$0-9.!?;]{0,60}$/i;
+/** Leading bullets and markdown markers ("• Business Checking", "## Business") are not part of a label. */
+const businessSectionLine = (line: string): boolean => BUSINESS_SECTION.test(line.trim().replace(/^(?:[-*•·▪◦#>]+\s*|\d+[.)]\s+)+/, ""));
 const LEGACY = /\b(?:closed to new (?:customers|accounts)|no longer (?:available|offered) to open|previously offered (?:accounts|products)|legacy accounts? (?:only|closed))\b/i;
 
 /** A positive audience attestation requires the key's own lines in consumer scope. */
@@ -182,7 +186,7 @@ function consumerFact(key: ReferenceKeySnapshot, page: ReferencePageObservation)
   // A schedule with no audience heading, no business evidence and every key line present
   // is the consumer reference; a bare business section label still leaves scope unproven.
   if (!consumerHeading) {
-    return lines.some((line) => BUSINESS_SECTION.test(line.trim()))
+    return lines.some(businessSectionLine)
       ? fact("unknown", "consumer_scope_unproven")
       : fact("pass", "consumer_reference_lines_no_business_evidence");
   }
@@ -247,7 +251,11 @@ function htmlReferenceBound(key: ReferenceKeySnapshot, keyHash: string | null, p
   }
   const mapped = key.fees.filter((fee) => fee.status === "confirmed" && fee.canonicalKey !== "unmapped");
   const observedText = compact(page.text);
-  return mapped.length > 0 && mapped.every((fee) => !!fee.sourceLine?.trim() && observedText.includes(compact(fee.sourceLine)));
+  if (!(mapped.length > 0 && mapped.every((fee) => !!fee.sourceLine?.trim() && observedText.includes(compact(fee.sourceLine))))) return false;
+  // Key lines alone cannot pin an edition: a page dated after the key was confirmed may add
+  // fees the key never saw, so it is not the confirmed reference.
+  const edition = effectiveDate(page.text);
+  return !(edition && key.confirmedAt && edition > key.confirmedAt.slice(0, 10));
 }
 
 function currentFact(key: ReferenceKeySnapshot, page: ReferencePageObservation | undefined,

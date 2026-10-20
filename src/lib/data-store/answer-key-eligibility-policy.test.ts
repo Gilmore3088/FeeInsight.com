@@ -121,6 +121,15 @@ describe("recordable reference-document decisions (#1862)", () => {
     expect(decide([html()], { ...snapshot, documentType: "text_pdf" }).facts.current.reasons).toEqual(["reference_bytes_changed"]);
   });
 
+  it("does not bind an HTML edition dated after the key was confirmed by key lines alone (#2466)", () => {
+    const later = consumerText.replace("July 15, 2024", "October 19, 2026");
+    const html = { ...page(later, "https://bank.example/fees"), contentType: "text/html", contentHash: hash("fresh bytes") };
+    const snapshot = { ...key(page(consumerText, "https://bank.example/fees")), documentType: "html", contentHash: hash("old bytes") };
+    expect(decide([html], snapshot).facts.current).toEqual({ status: "unknown", reasons: ["reference_main_text_changed"] });
+    // The same edition is still bound when its main text hash is the key's hash.
+    expect(decide([html], { ...snapshot, contentHash: hash(later) }).facts.current.status).toBe("pass");
+  });
+
   it("accepts a consumer schedule with no audience heading and no business evidence (#2466)", () => {
     const plain = consumerText.replace("Consumer Fee Schedule", "Schedule of Fees");
     const receipt = decide([page(plain)]);
@@ -131,6 +140,9 @@ describe("recordable reference-document decisions (#1862)", () => {
 
   it.each([
     ["a business section label", "Schedule of Fees\nOverdraft fee $25\nBusiness Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a bulleted business label", "Schedule of Fees\nOverdraft fee $25\n• Business Checking\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a cash management label", "Schedule of Fees\nOverdraft fee $25\nCash Management Services\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
+    ["a non-personal label", "Schedule of Fees\nOverdraft fee $25\n## Non-Personal Accounts\nWire transfer fee $15", "unknown", "consumer_scope_unproven"],
     ["a business-only schedule", "Business Fee Schedule\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
     ["a business URL", "Schedule of Fees\nOverdraft fee $25\nWire transfer fee $15", "fail", "business_document"],
     ["a missing key line", "Schedule of Fees\nNSF fee $25\nWire transfer fee $15", "unknown", "key_line_not_in_reference"],

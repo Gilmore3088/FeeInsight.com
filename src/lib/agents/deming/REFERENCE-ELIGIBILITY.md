@@ -18,7 +18,8 @@ not a provider. These are bounded observations, not proof of exhaustive site dis
 process-isolation CPU guarantee. Missing/unreadable candidates and hit limits remain unknown.
 Within the page cap, fee-schedule-like links are observed before navigation hubs (Disclosures,
 Forms). Only an unvisited fee-schedule-like link makes discovery incomplete; an unvisited hub
-is not evidence of a newer schedule (#2466).
+is not evidence of a newer schedule (#2466). The receipt records how many hubs went unvisited
+(`skippedHubCount`).
 Oldest attempted unknowns rotate behind never-attempted keys.
 
 Protocol 1 receipts record three independent facts (consumer/current/priced), reasons, requested
@@ -28,10 +29,12 @@ mapped confirmed key line in the bound observed document, using whitespace norma
 only. A PDF or plain-text reference is byte-bound: the key's stored hash must equal the fetched
 bytes. An HTML page's bytes change on every fetch, so an HTML reference is bound to its extracted
 main text: the key's hash names those bytes or that main text, or every mapped confirmed key line
-is in the observed main text; otherwise it stays unknown (#2466). Combined schedules require those
+is in the observed main text and the page's effective date, when present, is not after the key was
+confirmed; otherwise it stays unknown (#2466). Combined schedules require those
 lines in their consumer section; service copy and incidental consumer words do not attest a heading.
 A schedule with no consumer heading passes only with no business evidence (business URL/text/heading
-or a business section label) and every mapped key line present. Legacy/closed-to-new products, future-effective key
+or a business section label, bullets ignored) and every mapped key line present. Protocol 1 receipts
+issued before 2026-10-20 ran under stricter rules that admitted no key. Legacy/closed-to-new products, future-effective key
 documents and priced fees' absence cannot pass. A linked newer applicable schedule fails;
 an unreadable or unclassifiable candidate cannot prove that the old key is current. An explicit
 stored supersession of the exact key bytes remains contradictory authority even when the old

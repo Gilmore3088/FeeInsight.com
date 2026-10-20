@@ -124,6 +124,8 @@ export async function observeReferenceDocument(input: ReferenceInput, options: {
         sourceDocumentId: null, sourceTextId: null, textHash: null, status: 0, text: "", links: [] });
     } finally { clearTimeout(timer); }
   }
+  const skippedHubs = new Set(queue.filter((item) => item.hub && !seen.has(urlKey(item.url))).map((item) => urlKey(item.url)));
+  discovery.skippedHubCount = skippedHubs.size;
   if (queue.some((item) => !item.hub && !seen.has(urlKey(item.url)))) incomplete(options.signal.aborted ? "total_budget" : "page_limit");
   if (options.signal.aborted) incomplete("total_budget");
   discovery.candidateUrls = [...new Set(discovery.candidateUrls)];

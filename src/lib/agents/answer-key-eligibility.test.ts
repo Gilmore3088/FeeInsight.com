@@ -82,7 +82,7 @@ describe("bounded current-reference observation (injected networking only)", () 
     const observed = await observeReferenceDocument(fixture.input, options(fetchImpl as typeof fetch));
     expect(fetchImpl).toHaveBeenCalledTimes(6);
     expect(observed.discovery.examinedUrls.slice(0, 2)).toEqual(["https://bank.example/", fixture.input.key.documentUrl]);
-    expect(observed.discovery).toMatchObject({ completeWithinProtocol: true, limitReason: null, linkedFromOfficialSite: true });
+    expect(observed.discovery).toMatchObject({ completeWithinProtocol: true, limitReason: null, linkedFromOfficialSite: true, skippedHubCount: 4 });
     expect(evaluateReferenceEligibility({ ...fixture.input, ...observed, asOf: new Date().toISOString() }).status).toBe("eligible");
   });
 
