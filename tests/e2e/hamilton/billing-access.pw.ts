@@ -130,6 +130,7 @@ function gateFor(pathname: string): Outcome | null {
   if (pathname === "/login") return "login";
   if (pathname === "/subscribe") return "subscribe";
   if (pathname === "/account/billing-issue") return "billing";
+  if (pathname === "/account/team-billing") return "team_billing";
   return null;
 }
 
