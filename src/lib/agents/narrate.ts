@@ -57,6 +57,13 @@ function narrateFinished(
 ): string | null {
   const scope = where(stateCode);
   switch (stepKey) {
+    case "hmda-identity-repair": {
+      if (detail.mode === "preview") return "Reviewed the bounded HMDA identity scope; no source or identity data changed.";
+      if (detail.replayed === true) return "Verified the prior bounded HMDA repair receipt; no repeated identity writes.";
+      if (detail.mode === "apply") return "Applied the bounded HMDA identity repair; its receipt records the exact changed rows.";
+      if (detail.mode === "rollback") return "Restored the bounded HMDA identities after checking the repair's recorded post-images.";
+      return "Completed the bounded HMDA identity review; see the recorded receipt for its result.";
+    }
     case "enhance":
       return `Checked institution records ${scope}: ${count(n(detail, "total_institutions"), "institution")}, ${count(n(detail, "backlog_missing_urls"), "missing fee URL")}.`;
     case "state-expert": {
@@ -775,6 +782,7 @@ export const STEP_OWNER: Record<string, AdminAgent> = {
   fetch: "magellan",
   "public-discovery": "magellan",
   "public-audit": "magellan",
+  "hmda-identity-repair": "hoovie",
   "registry-fdic-universe": "hoovie",
   "registry-fdic-financials": "hoovie",
   "registry-ncua-financials": "hoovie",

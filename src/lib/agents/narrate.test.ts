@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { narrateEvent, narrateStepFinished } from "./narrate";
+import { narrateEvent, narrateStepFinished, STEP_OWNER } from "./narrate";
 import { verifiedRecheckReceipt } from "./darwin/verified-recheck-receipt";
 
 describe("narrateStepFinished", () => {
+  it("attributes bounded HMDA repair to Hoovie and separates preview, apply and receipt replay", () => {
+    expect(STEP_OWNER["hmda-identity-repair"]).toBe("hoovie");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "preview", writes: 0 })).toBe("Reviewed the bounded HMDA identity scope; no source or identity data changed.");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "apply" })).toContain("receipt records the exact changed rows");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "apply", replayed: true })).toContain("no repeated identity writes");
+    expect(narrateStepFinished("hmda-identity-repair", { mode: "rollback" })).toContain("recorded post-images");
+  });
+
   it("independently discloses unknown returned-response costs without calling them zero", () => {
     expect(narrateStepFinished("read-paid", { processed: 2, succeeded: 1, cost_microusd: 220, unknown_cost_responses: 1 }))
       .toContain("$0.00 in known estimates; cost unavailable for 1 returned response");

@@ -17,6 +17,10 @@ import {
   type HmdaPanel,
 } from "@/lib/regulatory/hmda";
 import type { RegistryFetchOptions } from "@/lib/regulatory/http";
+import { readFdicIdentityHolds, lockFdicIdentityHolds } from "@/lib/data-store/fdic-identity-holds";
+import { HMDA_ORDINARY_IDENTITY_WRITES_ENABLED } from "@/lib/agents/hoovie/hmda-repair-release";
+import { heldHmdaAnnualLinks, matchHmdaIdentities, summarizeHmdaMatching, type HmdaInstitutionIdentity, type HmdaIdentityMatch, type HmdaMatchingSummary } from "@/lib/regulatory/hmda-identity";
+import { lockHmdaYear } from "./hmda-lock";
 import { recordRegistryPartition, type RegistryDb } from "./partitions";
 
 /**
@@ -32,7 +36,8 @@ import { recordRegistryPartition, type RegistryDb } from "./partitions";
  */
 
 export const HMDA_SOURCE = "hmda";
-export const HMDA_PARSER_VERSION = 2;
+export const HMDA_PARSER_VERSION = 3;
+export const HMDA_SCHEDULED_PARSER_VERSION = HMDA_ORDINARY_IDENTITY_WRITES_ENABLED ? HMDA_PARSER_VERSION : 2;
 const LATEST_REFRESH_HOURS = 24 * 90;
 const HISTORICAL_REFRESH_HOURS = 24 * 365;
 const NOT_PUBLISHED_RETRY_HOURS = 24 * 14;
@@ -80,8 +85,11 @@ export interface RegistryHmdaResult {
   writtenLenders: number;
   matchedLenders: number;
   unmatchedLenders: number;
+  matching: HmdaMatchingSummary;
   writtenOriginationRows: number;
   writtenCostRows: number;
+  propagatedOriginationRows: number;
+  propagatedCostRows: number;
   removedStaleRows: number;
   missingFields: string[];
   reconciliationCountDifference: number | null;
@@ -98,13 +106,17 @@ async function writeLenders(
   leis: string[],
   panel: HmdaPanel,
   runId: number | null,
+  matches: HmdaIdentityMatch[],
+  fallbackSourceUrl: string,
 ): Promise<{ written: number; matched: number }> {
   let written = 0;
   let matched = 0;
+  const byLei = new Map(matches.map((match) => [match.lei, match]));
   for (let at = 0; at < leis.length; at += WRITE_CHUNK) {
     const payload = JSON.stringify(
       leis.slice(at, at + WRITE_CHUNK).map((lei) => {
         const p = panel.lenders.get(lei);
+        const match = byLei.get(lei)!;
         return {
           lei,
           respondent_name: p?.respondentName ?? null,
@@ -115,7 +127,11 @@ async function writeLenders(
           assets: p?.assets ?? null,
           other_lender_code: p?.otherLenderCode ?? null,
           in_panel: Boolean(p),
-          raw_json: p?.raw ?? {},
+          institution_id: HMDA_ORDINARY_IDENTITY_WRITES_ENABLED ? match.institutionId : null,
+          match_method: HMDA_ORDINARY_IDENTITY_WRITES_ENABLED ? match.method : null,
+          raw_json: { ...p?.raw, ...(HMDA_ORDINARY_IDENTITY_WRITES_ENABLED ? {
+            feeinsight_identity: { ...match, version: HMDA_PARSER_VERSION, panel_available: panel.available, panel_url: panel.url },
+          } : {}) },
         };
       }),
     );
@@ -123,27 +139,16 @@ async function writeLenders(
       WITH r AS (
         SELECT * FROM jsonb_to_recordset(${payload}::jsonb) AS x(
           lei text, respondent_name text, rssd_id text, parent_rssd text, top_holder_rssd text,
-          agency_code text, assets text, other_lender_code text, in_panel boolean, raw_json jsonb)
-      ), m AS (
-        SELECT r.*, COALESCE(by_lei.id, by_rssd.id) AS institution_id,
-               CASE WHEN by_lei.id IS NOT NULL THEN 'lei' WHEN by_rssd.id IS NOT NULL THEN 'rssd' END AS match_method
-          FROM r
-          LEFT JOIN LATERAL (
-            SELECT s.id FROM institution_sources s WHERE s.lei = r.lei ORDER BY s.id LIMIT 1
-          ) by_lei ON true
-          LEFT JOIN LATERAL (
-            SELECT s.id FROM institution_sources s
-             WHERE r.rssd_id IS NOT NULL AND r.rssd_id <> '0' AND s.rssd_id = r.rssd_id
-             ORDER BY s.id LIMIT 1
-          ) by_rssd ON true
+          agency_code text, assets text, other_lender_code text, in_panel boolean, raw_json jsonb,
+          institution_id bigint, match_method text)
       )
       INSERT INTO hmda_lenders AS l (
         activity_year, lei, respondent_name, rssd_id, parent_rssd, top_holder_rssd, agency_code, assets,
         other_lender_code, institution_id, match_method, in_panel, raw_json, source_url, agent_run_id, fetched_at)
-      SELECT ${year}, m.lei, m.respondent_name, m.rssd_id, m.parent_rssd, m.top_holder_rssd, m.agency_code, m.assets,
-             m.other_lender_code, m.institution_id, m.match_method, m.in_panel, COALESCE(m.raw_json, '{}'::jsonb),
-             ${panel.url}, ${runId}, NOW()
-        FROM m
+      SELECT ${year}, r.lei, r.respondent_name, r.rssd_id, r.parent_rssd, r.top_holder_rssd, r.agency_code, r.assets,
+             r.other_lender_code, r.institution_id, r.match_method, r.in_panel, COALESCE(r.raw_json, '{}'::jsonb),
+             ${panel.available ? panel.url : fallbackSourceUrl}, ${runId}, NOW()
+        FROM r
       ON CONFLICT (activity_year, lei) DO UPDATE SET
         respondent_name = EXCLUDED.respondent_name,
         rssd_id = EXCLUDED.rssd_id,
@@ -152,10 +157,12 @@ async function writeLenders(
         agency_code = EXCLUDED.agency_code,
         assets = EXCLUDED.assets,
         other_lender_code = EXCLUDED.other_lender_code,
-        institution_id = EXCLUDED.institution_id,
-        match_method = EXCLUDED.match_method,
+        institution_id = CASE WHEN ${HMDA_ORDINARY_IDENTITY_WRITES_ENABLED} THEN EXCLUDED.institution_id ELSE l.institution_id END,
+        match_method = CASE WHEN ${HMDA_ORDINARY_IDENTITY_WRITES_ENABLED} THEN EXCLUDED.match_method ELSE l.match_method END,
         in_panel = EXCLUDED.in_panel,
-        raw_json = EXCLUDED.raw_json,
+        raw_json = CASE WHEN ${HMDA_ORDINARY_IDENTITY_WRITES_ENABLED} THEN EXCLUDED.raw_json
+          ELSE (EXCLUDED.raw_json - 'feeinsight_identity') || CASE WHEN l.raw_json ? 'feeinsight_identity'
+            THEN jsonb_build_object('feeinsight_identity', l.raw_json->'feeinsight_identity') ELSE '{}'::jsonb END END,
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
         fetched_at = NOW()
@@ -166,6 +173,74 @@ async function writeLenders(
     matched += rows.filter((row) => row.matched).length;
   }
   return { written, matched };
+}
+
+/** Annual identities must agree in every state's cells, including when a match is cleared. */
+async function writeAnnualIdentities(
+  db: RegistryDb,
+  year: number,
+  leis: string[],
+  panel: HmdaPanel,
+  runId: number | null,
+  matches: HmdaIdentityMatch[],
+  fallbackSourceUrl: string,
+): Promise<{ written: number; matched: number; propagatedOriginationRows: number; propagatedCostRows: number }> {
+  const tx = db;
+  const lenders = await writeLenders(tx, year, leis, panel, runId, matches, fallbackSourceUrl);
+  let propagatedOriginationRows = 0;
+  let propagatedCostRows = 0;
+  if (!HMDA_ORDINARY_IDENTITY_WRITES_ENABLED) return { ...lenders, propagatedOriginationRows, propagatedCostRows };
+  for (let at = 0; at < leis.length; at += WRITE_CHUNK) {
+    const selectedLeis = leis.slice(at, at + WRITE_CHUNK);
+    const originations = await tx`
+      UPDATE hmda_lender_originations c SET institution_id = l.institution_id
+        FROM hmda_lenders l
+       WHERE l.activity_year = ${year} AND l.lei IN ${tx(selectedLeis)}
+         AND c.activity_year = l.activity_year AND c.lei = l.lei
+         AND c.institution_id IS DISTINCT FROM l.institution_id
+      RETURNING c.id
+    `;
+    const costs = await tx`
+      UPDATE hmda_lender_loan_costs c SET institution_id = l.institution_id
+        FROM hmda_lenders l
+       WHERE l.activity_year = ${year} AND l.lei IN ${tx(selectedLeis)}
+         AND c.activity_year = l.activity_year AND c.lei = l.lei
+         AND c.institution_id IS DISTINCT FROM l.institution_id
+      RETURNING c.id
+    `;
+    propagatedOriginationRows += [...(originations as unknown as unknown[])].length;
+    propagatedCostRows += [...(costs as unknown as unknown[])].length;
+  }
+  return { ...lenders, propagatedOriginationRows, propagatedCostRows };
+}
+
+/** Read once after the LAR finishes; missing identity infrastructure is an error, never zero matches. */
+async function readInstitutionIdentities(db: RegistryDb): Promise<HmdaInstitutionIdentity[]> {
+  const tx = db;
+  const rows = await tx`
+    SELECT s.id, s.lei, s.rssd_id, s.source, s.cert_number, s.registry_synced_at,
+           l.status AS lei_status, l.lei AS linked_lei, l.match_basis, l.candidate_leis,
+           l.source_url AS lei_source_url, l.checked_at AS lei_checked_at, l.match_key
+      FROM institution_sources s
+      LEFT JOIN institution_lei_links l ON l.institution_id = s.id
+  `;
+  return [...(rows as unknown as Array<Record<string, unknown>>)].map((row) => ({
+    id: Number(row.id),
+    lei: row.lei == null ? null : String(row.lei),
+    rssdId: row.rssd_id == null ? null : String(row.rssd_id),
+    source: row.source == null ? null : String(row.source),
+    certNumber: row.cert_number == null ? null : String(row.cert_number),
+    registrySyncedAt: row.registry_synced_at instanceof Date ? row.registry_synced_at.toISOString() : row.registry_synced_at == null ? null : String(row.registry_synced_at),
+    leiLink: row.lei_status == null ? null : {
+      status: String(row.lei_status),
+      lei: row.linked_lei == null ? null : String(row.linked_lei),
+      basis: row.match_basis == null ? null : String(row.match_basis),
+      candidates: Array.isArray(row.candidate_leis) ? row.candidate_leis.map(String) : [],
+      sourceUrl: row.lei_source_url == null ? null : String(row.lei_source_url),
+      checkedAt: row.lei_checked_at instanceof Date ? row.lei_checked_at.toISOString() : row.lei_checked_at == null ? null : String(row.lei_checked_at),
+      matchKey: row.match_key == null ? null : String(row.match_key),
+    },
+  }));
 }
 
 async function writeOriginations(db: RegistryDb, year: number, cells: HmdaOriginationCell[], sourceUrl: string, runId: number | null): Promise<number> {
@@ -199,7 +274,7 @@ async function writeOriginations(db: RegistryDb, year: number, cells: HmdaOrigin
         agent_run_id, fetched_at)
       SELECT ${year}, r.lei, r.state_code, r.county_fips, r.msa_md, l.institution_id, r.originations,
              r.origination_amount, r.amount_missing, r.purchase_count, r.purchase_amount, r.refinance_count,
-             r.refinance_amount, ${sourceUrl}, ${runId}, NOW()
+             r.refinance_amount, ${sourceUrl}, ${runId}, clock_timestamp()
         FROM r LEFT JOIN hmda_lenders l ON l.activity_year = ${year} AND l.lei = r.lei
       ON CONFLICT ON CONSTRAINT hmda_lender_originations_key DO UPDATE SET
         institution_id = EXCLUDED.institution_id,
@@ -212,7 +287,7 @@ async function writeOriginations(db: RegistryDb, year: number, cells: HmdaOrigin
         refinance_amount = EXCLUDED.refinance_amount,
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
-        fetched_at = NOW()
+        fetched_at = clock_timestamp()
       RETURNING 1 AS written
     `;
     written += [...(result as unknown as unknown[])].length;
@@ -257,7 +332,7 @@ async function writeCosts(db: RegistryDb, year: number, cells: HmdaCostCell[], s
       SELECT ${year}, r.lei, r.state_code, r.msa_md, l.institution_id, r.originations,
              r.total_loan_costs_n, r.total_loan_costs_median, r.origination_charges_n, r.origination_charges_median,
              r.discount_points_n, r.discount_points_median, r.lender_credits_n, r.lender_credits_median,
-             COALESCE(r.cost_detail, '{}'::jsonb), ${sourceUrl}, ${runId}, NOW()
+             COALESCE(r.cost_detail, '{}'::jsonb), ${sourceUrl}, ${runId}, clock_timestamp()
         FROM r LEFT JOIN hmda_lenders l ON l.activity_year = ${year} AND l.lei = r.lei
       ON CONFLICT ON CONSTRAINT hmda_lender_loan_costs_key DO UPDATE SET
         institution_id = EXCLUDED.institution_id,
@@ -273,7 +348,7 @@ async function writeCosts(db: RegistryDb, year: number, cells: HmdaCostCell[], s
         cost_detail = EXCLUDED.cost_detail,
         source_url = EXCLUDED.source_url,
         agent_run_id = EXCLUDED.agent_run_id,
-        fetched_at = NOW()
+        fetched_at = clock_timestamp()
       RETURNING 1 AS written
     `;
     written += [...(result as unknown as unknown[])].length;
@@ -322,104 +397,144 @@ export async function runRegistryHmda(options: RegistryHmdaOptions): Promise<Reg
     emptyReason = `CSV header lacks required fields: ${missing.join(", ")}`;
   } else if (cells.length === 0) emptyReason = "HMDA returned no originations for this year and state";
 
-  const base: RegistryHmdaResult = {
-    source: HMDA_SOURCE,
-    partitionKey: options.partitionKey,
-    year,
-    state,
-    sourceUrl: pull.url,
-    bytes: pull.bytes,
-    originations: acc?.stats.originationsCounted ?? 0,
-    originationAmount: acc?.stats.originationAmountCounted ?? 0,
-    lenders: leis.length,
-    originationCells: cells.length,
-    costCells: costCells.length,
-    writtenLenders: 0,
-    matchedLenders: 0,
-    unmatchedLenders: 0,
-    writtenOriginationRows: 0,
-    writtenCostRows: 0,
-    removedStaleRows: 0,
-    missingFields: acc?.missingFields ?? [],
-    reconciliationCountDifference: cleaningBefore.reconciliation.count_difference,
-    panelAvailable: panel.available,
-    cleaning: cleaningBefore,
-    dryRun,
-    empty: emptyReason !== null,
-    emptyReason,
-  };
-  if (dryRun) return base;
+  // No network work occurs while holding the lock. Every database read/write that can affect
+  // this annual identity or its state cells shares one transaction with the scoped repair path.
+  return (await db.begin(async (raw) => {
+    const db = raw as unknown as RegistryDb;
+    if (dryRun) await db`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`;
+    await db`SET LOCAL statement_timeout = '15s'`;
+    if (!dryRun) {
+      await lockHmdaYear(db, year);
+      await db`LOCK TABLE institution_sources,institution_lei_links IN SHARE MODE`;
+      await lockFdicIdentityHolds(db);
+    }
+    const institutions = emptyReason === null ? await readInstitutionIdentities(db) : [];
+    const identityHolds = emptyReason === null ? await readFdicIdentityHolds(db) : [];
+    const matches = emptyReason === null
+      ? matchHmdaIdentities(leis.map((lei) => ({ lei, rssdId: panel.lenders.get(lei)?.rssdId ?? null,
+        sourceConflict: panel.conflictingLeis?.includes(lei) })), institutions, identityHolds)
+      : [];
+    // A held legacy annual ID must not be copied into newly ingested state cells while
+    // identity cleanup remains release-disabled. Preserve the whole partition for review.
+    if (!dryRun && !HMDA_ORDINARY_IDENTITY_WRITES_ENABLED && emptyReason === null) {
+      const annual = await db`SELECT lei, institution_id FROM hmda_lenders
+        WHERE activity_year=${year} AND lei::text=ANY(${leis}::text[])`;
+      const preserved = annual.map((row) => ({ lei: String(row.lei).trim(),
+        institutionId: row.institution_id == null ? null : Number(row.institution_id) }));
+      if (matches.some((row) => row.reason === "fdic_identity_hold")
+        || heldHmdaAnnualLinks(preserved, institutions, identityHolds).length > 0) {
+        throw new Error("HMDA partition is affected by durable FDIC identity holds; identity writes remain disabled pending review");
+      }
+    }
+    const matching = summarizeHmdaMatching(matches);
+    const base: RegistryHmdaResult = {
+      source: HMDA_SOURCE,
+      partitionKey: options.partitionKey,
+      year,
+      state,
+      sourceUrl: pull.url,
+      bytes: pull.bytes,
+      originations: acc?.stats.originationsCounted ?? 0,
+      originationAmount: acc?.stats.originationAmountCounted ?? 0,
+      lenders: leis.length,
+      originationCells: cells.length,
+      costCells: costCells.length,
+      writtenLenders: 0,
+      matchedLenders: matching.matched,
+      unmatchedLenders: matching.unmatched + matching.ambiguous,
+      matching,
+      writtenOriginationRows: 0,
+      writtenCostRows: 0,
+      propagatedOriginationRows: 0,
+      propagatedCostRows: 0,
+      removedStaleRows: 0,
+      missingFields: acc?.missingFields ?? [],
+      reconciliationCountDifference: cleaningBefore.reconciliation.count_difference,
+      panelAvailable: panel.available,
+      cleaning: cleaningBefore,
+      dryRun,
+      empty: emptyReason !== null,
+      emptyReason,
+    };
+    if (dryRun) return base;
 
-  const refreshHours = year >= latestHmdaYear(now) ? LATEST_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS;
-  const detail = {
-    parser_version: HMDA_PARSER_VERSION,
-    year,
-    state,
-    bytes: pull.bytes,
-    first_line: pull.firstLine,
-    panel_url: panel.url,
-  };
-  if (emptyReason !== null) {
+    const refreshHours = year >= latestHmdaYear(now) ? LATEST_REFRESH_HOURS : HISTORICAL_REFRESH_HOURS;
+    const detail = {
+      parser_version: HMDA_SCHEDULED_PARSER_VERSION,
+      identity_writes_enabled: HMDA_ORDINARY_IDENTITY_WRITES_ENABLED,
+      year,
+      state,
+      bytes: pull.bytes,
+      first_line: pull.firstLine,
+      panel_url: panel.url,
+    };
+    if (emptyReason !== null) {
+      await recordRegistryPartition(db, {
+        source: HMDA_SOURCE,
+        partitionKey: options.partitionKey,
+        status: "empty",
+        rowCount: 0,
+        sourceUrl: pull.url,
+        runId: options.runId ?? null,
+        nextAttemptAfterHours: acc ? refreshHours : NOT_PUBLISHED_RETRY_HOURS,
+        detail: { ...detail, reason: emptyReason, cleaning: cleaningBefore },
+      });
+      return base;
+    }
+
+    const [{ started_at: startedAt }] = [...((await db`SELECT clock_timestamp() AS started_at`) as unknown as Array<{ started_at: Date | string }>)];
+    const runId = options.runId ?? null;
+    const lenders = await writeAnnualIdentities(db, year, leis, panel, runId, matches, pull.url);
+    const writtenOriginationRows = await writeOriginations(db, year, cells, pull.url, runId);
+    const writtenCostRows = await writeCosts(db, year, costCells, pull.url, runId);
+    // Old cells are removed only when the stream tied out to the Data Browser's own count, so a
+    // short read never deletes rows a complete earlier read wrote.
+    const tiedOut = cleaningBefore.reconciliation.count_difference === 0;
+    const removedStaleRows = tiedOut ? await removeStale(db, year, state, startedAt) : 0;
+    const unmatched = lenders.written - lenders.matched;
+    const cleaning = { ...cleaningBefore, unmatched_lenders: unmatched };
+
     await recordRegistryPartition(db, {
       source: HMDA_SOURCE,
       partitionKey: options.partitionKey,
-      status: "empty",
-      rowCount: 0,
+      status: "succeeded",
+      rowCount: cells.length,
+      matchedCount: lenders.matched,
+      unmatchedCount: unmatched,
+      insertedCount: writtenOriginationRows,
       sourceUrl: pull.url,
-      runId: options.runId ?? null,
-      nextAttemptAfterHours: acc ? refreshHours : NOT_PUBLISHED_RETRY_HOURS,
-      detail: { ...detail, reason: emptyReason, cleaning: cleaningBefore },
+      runId,
+      nextAttemptAfterHours: refreshHours,
+      detail: {
+        ...detail,
+        originations: base.originations,
+        origination_amount: base.originationAmount,
+        lenders: leis.length,
+        matched_lenders: lenders.matched,
+        unmatched_lenders: unmatched,
+        matching,
+        written_origination_rows: writtenOriginationRows,
+        written_cost_rows: writtenCostRows,
+        propagated_origination_rows: lenders.propagatedOriginationRows,
+        propagated_cost_rows: lenders.propagatedCostRows,
+        removed_stale_rows: removedStaleRows,
+        stale_rows_kept_because: tiedOut ? null : "streamed count did not tie out to the Data Browser aggregation",
+        cleaning,
+      },
     });
-    return base;
-  }
-
-  const [{ started_at: startedAt }] = [...((await db`SELECT NOW() AS started_at`) as unknown as Array<{ started_at: Date | string }>)];
-  const runId = options.runId ?? null;
-  const lenders = await writeLenders(db, year, leis, panel, runId);
-  const writtenOriginationRows = await writeOriginations(db, year, cells, pull.url, runId);
-  const writtenCostRows = await writeCosts(db, year, costCells, pull.url, runId);
-  // Old cells are removed only when the stream tied out to the Data Browser's own count, so a
-  // short read never deletes rows a complete earlier read wrote.
-  const tiedOut = cleaningBefore.reconciliation.count_difference === 0;
-  const removedStaleRows = tiedOut ? await removeStale(db, year, state, startedAt) : 0;
-  const unmatched = lenders.written - lenders.matched;
-  const cleaning = { ...cleaningBefore, unmatched_lenders: unmatched };
-
-  await recordRegistryPartition(db, {
-    source: HMDA_SOURCE,
-    partitionKey: options.partitionKey,
-    status: "succeeded",
-    rowCount: cells.length,
-    matchedCount: lenders.matched,
-    unmatchedCount: unmatched,
-    insertedCount: writtenOriginationRows,
-    sourceUrl: pull.url,
-    runId,
-    nextAttemptAfterHours: refreshHours,
-    detail: {
-      ...detail,
-      originations: base.originations,
-      origination_amount: base.originationAmount,
-      lenders: leis.length,
-      matched_lenders: lenders.matched,
-      unmatched_lenders: unmatched,
-      written_origination_rows: writtenOriginationRows,
-      written_cost_rows: writtenCostRows,
-      removed_stale_rows: removedStaleRows,
-      stale_rows_kept_because: tiedOut ? null : "streamed count did not tie out to the Data Browser aggregation",
+    return {
+      ...base,
+      writtenLenders: lenders.written,
+      matchedLenders: lenders.matched,
+      unmatchedLenders: unmatched,
+      writtenOriginationRows,
+      writtenCostRows,
+      propagatedOriginationRows: lenders.propagatedOriginationRows,
+      propagatedCostRows: lenders.propagatedCostRows,
+      removedStaleRows,
       cleaning,
-    },
-  });
-  return {
-    ...base,
-    writtenLenders: lenders.written,
-    matchedLenders: lenders.matched,
-    unmatchedLenders: unmatched,
-    writtenOriginationRows,
-    writtenCostRows,
-    removedStaleRows,
-    cleaning,
-  };
+    };
+  })) as RegistryHmdaResult;
 }
 
 /**
