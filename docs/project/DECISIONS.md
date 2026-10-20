@@ -5,6 +5,15 @@ Seeded 2026-10-05 from the project's working memory; earlier decisions were not 
 
 ## 2026-10-20
 
+**Hosted report tokens are rotated and kept out of the repo.** James, 2026-10-20, on #2001 (found
+in the #1922 customer data isolation review; tracker #975): rotate the `/r/<token>` prospect report
+tokens and move them out of the repository. The committed `Reports/studio/hosted-reports.json` is
+deleted. Tokens now come only from the `HOSTED_REPORT_TOKENS` environment variable (a JSON object,
+token to record), compared in constant time; missing or malformed config resolves no token, so
+every link 404s rather than opening. A token must be 32 to 64 hex characters, so none of the old
+16-character tokens resolve once this deploys. James issues new tokens by the steps in
+`docs/runbooks/hosted-report-tokens.md`; no token value goes in a PR, issue or file in the repo.
+
 **Previews build only for PRs that change visible files.** James, 2026-10-20: previews build only
 for PRs that change visible files (src/app, src/components, styles, public, build config,
 dependencies); a build failure in a non-visible PR surfaces at the production deploy, which keeps

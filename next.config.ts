@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   // package stays external and those files ship with the routes that run agent steps.
   serverExternalPackages: ["tesseract.js", "tesseract.js-core"],
   outputFileTracingIncludes: {
-    "/r/**": ["./Reports/studio/out/*.html", "./Reports/studio/hosted-reports.json"],
+    "/r/**": ["./Reports/studio/out/*.html"],
     "/reports/sample-competitive-fee-position": ["./Reports/studio/sample/*.html"],
     "/api/admin/**": [
       "./node_modules/tesseract.js/package.json",
