@@ -20,6 +20,8 @@ import { WHOLE_DOCUMENT_BATCH } from "@/lib/agents/document-batch";
 import { inSavepoint } from "@/lib/agents/savepoint";
 import { normalizeStateCode } from "@/lib/agents/state-lane-memory";
 import { checkFeeCategory, type CategoryGuardCode } from "@/lib/fee-category-guard";
+import { paidReturnedCandidateProof, PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG } from "@/lib/custom-report/paid-returned-events";
+import { matchOriginalRawSource, withLockedSourcePrefix } from "../darwin/locked-raw-source";
 import { limitGuardVerdict } from "@/lib/agents/hamilton/limit-guard";
 import { repairNameShape, tidyFeeName } from "@/lib/agents/knox/layout";
 import { classifyFeeText, stripFootnoteMarks } from "@/lib/agents/knox/rules";
@@ -735,6 +737,8 @@ export async function insertPublishedFee(db: SqlTag, options: PublishedInsertOpt
     feeVerifiedId: Number(options.row.fee_verified_id), expectedVerifiedState: options.row.selected_verified_state,
     expectedCategory: options.row.canonical_fee_key,
   }, async (scope, actual, current) => {
+    const event = await preparePaidReturnedPublication(scope, actual ?? current);
+    if (event === null) return null;
     // Direct ordinary callers do not have the normal owner's final identity guard.
     // Lock only the candidate suffix, nonwaiting, and compare the complete preflight
     // verification before an ordinary→international transition could use old fields.
@@ -745,6 +749,7 @@ export async function insertPublishedFee(db: SqlTag, options: PublishedInsertOpt
     const unchanged = await scope`SELECT fee_verified_id FROM verified_fee_observations
       WHERE fee_verified_id=${Number(current.fee_verified_id)} AND to_jsonb(verified_fee_observations)::text=${current.selected_verified_state!}`;
     if (unchanged.length === 0) return deferInternationalPublication("selected_changed");
+    if (!(await paidReturnedPublicationUnchanged(scope, event))) return null;
     return writePublishedFee(scope, { ...options, row: actual ?? options.row });
   });
   if (guarded.kind === "deferred") { options.onInternationalDeferred?.(guarded.detail); return null; }
@@ -762,6 +767,13 @@ async function writePublishedFee(db: SqlTag, options: PublishedInsertOptions): P
   // Hamilton no longer mints a stand-in id for an adversarial step that never ran.
   const publishEventId = options.row.verified_by_agent_event_id;
   const feeName = publishedFeeName(options.row.fee_name, options.row.canonical_fee_key);
+  // Current raw applicability survives a stale verified selection or a direct insertion.
+  if (options.row.fee_raw_id != null) {
+    const heldEvent = await db`SELECT fee_raw_id FROM raw_fee_observations
+      WHERE fee_raw_id=${Number(options.row.fee_raw_id)}
+        AND COALESCE(outlier_flags,'[]'::jsonb) ? ${PAID_RETURNED_ELIGIBILITY_FLAG}`;
+    if (heldEvent.length > 0) return null;
+  }
   // An operator's hold (H03, #978) stays held: a re-read of the same page never publishes a
   // fresh copy of the held line under a new id, even after an agent also closed the held row.
   // The line is the institution, category, charge basis, variant, frequency, overlapping
@@ -868,6 +880,60 @@ async function withSelectedInternationalPublication<T>(db: SqlTag, row: Verified
   if (!row.canonical_fee_key.startsWith("wire_intl_")) return { kind: "written", value: await work(db, null, row, null) };
   return withInternationalPublicationWrite(db, { feeVerifiedId: Number(row.fee_verified_id),
     expectedVerifiedState: row.selected_verified_state, expectedCategory: row.canonical_fee_key }, work);
+}
+
+// A bounded PostgreSQL-selected tuple preserves exact NUMERIC/timestamp representations.
+const PAID_EVENT_RAW_STATE = `CASE WHEN
+  octet_length(COALESCE(fr.extraction_note,''))<=65536 AND octet_length(COALESCE(fr.conditions,''))<=16384
+  AND octet_length(fr.fee_name)<=512 AND octet_length(fr.outlier_flags::text)<=8192
+  AND octet_length(COALESCE(fr.product_name,''))<=256 AND octet_length(COALESCE(fr.frequency,''))<=80
+  AND octet_length(COALESCE(fr.source_url,''))<=2048 AND octet_length(COALESCE(fr.document_r2_key,''))<=2048
+  AND octet_length(COALESCE(fr.waiver_text,''))<=2048 AND octet_length(COALESCE(fr.rate_basis,''))<=160
+  AND octet_length(COALESCE(fr.audience_evidence,''))<=2048 AND octet_length(COALESCE(fr.line_share,''))<=128
+  THEN jsonb_build_array(fr.fee_raw_id,fr.created_at,fr.institution_id,fr.source_document_id,fr.document_r2_key,
+    fr.source_url,fr.extraction_confidence,fr.agent_event_id,fr.fee_name,fr.amount,fr.frequency,fr.extraction_note,
+    fr.conditions,fr.outlier_flags,fr.source,fr.product_name,fr.min_balance_to_avoid,fr.min_opening_deposit,
+    fr.waiver_text,fr.amount_kind,fr.rate_percent,fr.rate_min_amount,fr.rate_max_amount,fr.rate_basis,
+    fr.fee_audience,fr.audience_evidence,fr.fee_treatment,fr.line_share)::text END`;
+interface PaidEventPublicationRaw {
+  fee_raw_id: number | string; institution_id: number | string; source_document_id: number | string | null;
+  fee_name: string; amount: number | string | null; frequency: string | null; fee_audience: string;
+  product_name: string | null; line_share: string; extraction_note: string | null; conditions: string | null;
+  raw_state: string | null;
+}
+interface PaidEventPublicationSelection { rawId: number; rawState: string }
+
+/** Source prefix first, before the existing published→verified→raw suffix. No new global lock abstraction. */
+async function preparePaidReturnedPublication(db: SqlTag, row: VerifiedFeeRow): Promise<PaidEventPublicationSelection | false | null> {
+  if (!parseFlags(row.outlier_flags).includes(PAID_RETURNED_EVENT_FLAG)) return false;
+  const [raw] = await db<PaidEventPublicationRaw[]>`
+    SELECT fr.fee_raw_id,fr.institution_id,fr.source_document_id,fr.fee_name,fr.amount,fr.frequency,fr.fee_audience,
+      fr.product_name,fr.line_share,
+      CASE WHEN octet_length(fr.extraction_note)<=65536 THEN fr.extraction_note END AS extraction_note,
+      CASE WHEN octet_length(fr.conditions)<=16384 THEN fr.conditions END AS conditions,
+      ${db.unsafe(PAID_EVENT_RAW_STATE)} AS raw_state
+    FROM raw_fee_observations fr WHERE fr.fee_raw_id=${Number(row.fee_raw_id)}
+      AND COALESCE(fr.outlier_flags,'[]'::jsonb) ? ${PAID_RETURNED_EVENT_FLAG}
+      AND NOT COALESCE(fr.outlier_flags,'[]'::jsonb) ? ${PAID_RETURNED_ELIGIBILITY_FLAG}`;
+  if (!raw?.raw_state || Number(raw.institution_id) !== Number(row.institution_id)
+    || raw.fee_name !== row.fee_name || raw.amount == null || normalizedAmount(raw.amount) !== normalizedAmount(row.amount)
+    || raw.frequency !== row.frequency || raw.fee_audience !== row.fee_audience || !sameProduct(raw.product_name, row.product_name)
+    || raw.source_document_id == null) return null;
+  const prefix = await withLockedSourcePrefix(db, [{ documentId: Number(raw.source_document_id), institutionId: Number(raw.institution_id) }]);
+  if (prefix.kind !== "bound") return null;
+  const source = prefix.sources.get(Number(raw.source_document_id));
+  if (!source || matchOriginalRawSource(raw, source).kind !== "matched") return null;
+  const proof = paidReturnedCandidateProof(source.normalizedText, raw.fee_name, Number(raw.amount), row.canonical_fee_key, raw.line_share);
+  if (!proof || proof.unit.eligibility !== "admit" || proof.unit.frequency !== raw.frequency) return null;
+  return { rawId: Number(raw.fee_raw_id), rawState: raw.raw_state };
+}
+
+async function paidReturnedPublicationUnchanged(db: SqlTag, selection: PaidEventPublicationSelection | false): Promise<boolean> {
+  if (selection === false) return true;
+  const rows = await db`SELECT fr.fee_raw_id FROM raw_fee_observations fr
+    WHERE fr.fee_raw_id=${selection.rawId} AND ${db.unsafe(PAID_EVENT_RAW_STATE)}=${selection.rawState}
+      AND NOT COALESCE(fr.outlier_flags,'[]'::jsonb) ? ${PAID_RETURNED_ELIGIBILITY_FLAG}`;
+  return rows.length === 1;
 }
 
 /** Live rows for the same fee (institution, canonical key, variant, frequency), newest first. */
@@ -2356,10 +2422,16 @@ export async function runHamiltonPublish(
         evidenceDeferred: true,
       };
     } else if (dryRun) {
-      const guarded = await withSelectedInternationalPublication(db, row, async () => true);
+      const guarded = await withSelectedInternationalPublication(db, row, async (scope, actual) => {
+        const event = await preparePaidReturnedPublication(scope, actual ?? row);
+        return event !== null && await paidReturnedPublicationUnchanged(scope, event);
+      });
       result = guarded.kind === "deferred" ? {
         ...base, status: "skipped", reason: "International wire evidence or identity is unresolved; left pending",
         feePublishedId: null, ...NO_MOVEMENT, internationalDeferred: guarded.detail,
+      } : !guarded.value ? {
+        ...base, status: "skipped", reason: "Selected event evidence or identity changed; left pending",
+        feePublishedId: null, ...NO_MOVEMENT, identityDeferred: true,
       } : {
         ...base,
         status: "published",
@@ -2382,6 +2454,8 @@ export async function runHamiltonPublish(
           await recordIdentitySkips(scope, options.runId, "publish", 1);
           return { feePublishedId: null, superseded: false, changeRecorded: false, identityChanged: true };
         };
+        const event = await preparePaidReturnedPublication(scope, actual ?? row);
+        if (event === null) return defer();
         // Real selectors carry product ownership even when unassigned. Legacy pure/test rows
         // omit the field; they keep their established contract. Lock before validating the
         // selected raw lineage so product metadata cannot change under this insertion.
@@ -2399,6 +2473,7 @@ export async function runHamiltonPublish(
             return defer();
           }
         }
+        if (!(await paidReturnedPublicationUnchanged(scope, event))) return defer();
         const feePublishedId = await writePublishedFee(scope, {
           runId: options.runId,
           batchId,

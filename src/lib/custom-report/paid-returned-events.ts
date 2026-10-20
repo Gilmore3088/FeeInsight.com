@@ -1,0 +1,178 @@
+import { createHash } from "node:crypto";
+
+/** Source proof only. This version does not select or reopen historical rows. */
+export const PAID_RETURNED_EVENT_VERSION = 1;
+export const PAID_RETURNED_EVENT_FLAG = "knox_owned_event:v1";
+export const PAID_RETURNED_ELIGIBILITY_FLAG = "knox_eligibility:paid_returned";
+const KEY_PREFIX = "paired_event:v1:";
+const MAX_TEXT_BYTES = 1_000_000;
+const MAX_UNIT_CHARS = 1_200;
+const MAX_SECTION_LINES = 512;
+const MONEY = /\$\s*(\d[\d,]*(?:\.\d{1,2})?)(?![\d.])/g;
+const BASE = String.raw`(?:NSF|non[-\s]?sufficient funds?|insufficient funds?)`;
+const ACTIONS = String.raw`(?:paid\s*(?:\/|\bor\b|\band\b|&)\s*return(?:ed)?|return(?:ed)?\s*(?:\/|\bor\b|\band\b|&)\s*paid)`;
+const LABEL = new RegExp(String.raw`^(${BASE})\s+${ACTIONS}(?:\s+items?(?:\s+fees?)?)?$`, "i");
+const START = new RegExp(String.raw`^\s*(?:[•●▪‣*-]\s*)?${BASE}\s+(?:paid|return(?:ed)?)\b`, "i");
+const PROJECTED = new RegExp(String.raw`^${BASE}\s+-\s+(?:paid|returned)$`, "i");
+const COMPRESSED_TEXT = new RegExp(String.raw`^\s*(?:[•●▪‣*-]\s*)?${BASE}\s+${ACTIONS}`, "im");
+const TAIL = /^\s*(?:(?:per\s+(?:presentment|item)|each)\s*)?[.|\s]*$/i;
+const SCOPE = /\b(?:accounts?|checking|savings|fees?|schedule)\b/i;
+// A consumer prefix cannot establish general applicability for a named or qualified account.
+const CONSUMER = /^(?:consumer|personal)(?:\s+(?:checking|savings)(?:\s+accounts?)?|\s+accounts?)\s+(?:fees?|fee schedule)\s*:?$/i;
+const SEPARATE_EVENT = new RegExp(String.raw`^(?:${BASE}(?:\s+(?:paid|returned?|return)(?:\s+items?)?)?(?:\s+(?:fees?|charges?))?|overdraft(?:\s+(?:item|fee|charge))?|courtesy pay|paid item fee|returned? item fee)$`, "i");
+const flat = (text: string) => text.replace(/\s+/g, " ").trim();
+const cleanLabel = (text: string) => flat(text.replace(/^\s*[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/\|\s*$/, ""));
+
+/** A separate label | price cell is a structural boundary, not a list of qualifier keywords. */
+function nextPricedRow(line: string): boolean {
+  return /^[•●▪‣*-]?\s*[A-Za-z][^$|]{1,119}\|\s*\$\s*\d/.test(line)
+    && [...line.matchAll(MONEY)].length === 1;
+}
+
+export interface PaidReturnedUnit {
+  originalLabel: string;
+  ownText: string;
+  /** Literal following physical context; its relation to the price is unresolved and held. */
+  followingContext: string | null;
+  heading: string | null;
+  amount: number;
+  frequency: "per_item" | null;
+  lineStart: number;
+  lineEnd: number;
+  unitKey: string;
+  audience: "consumer" | "business" | "unknown";
+  eligibility: "admit" | "hold";
+  events: Array<{ action: "paid" | "returned"; canonicalKey: "overdraft" | "nsf"; name: string; lineShare: string }>;
+}
+
+function scopeHeader(line: string): boolean {
+  return line.length <= 160 && SCOPE.test(line) && !/\$|\d\s*%|\b(?:no charge|free)\b/i.test(line)
+    && !START.test(line) && !SEPARATE_EVENT.test(cleanLabel(line))
+    && !/\b(?:stop payment|deposited item|origination|transfer)\b/i.test(line);
+}
+
+function headerAt(lines: string[], at: number): { text: string | null; index: number } {
+  for (let i = at - 1; i >= 0; i--) {
+    const line = flat(lines[i]);
+    if (scopeHeader(line)) return { text: line, index: i };
+  }
+  return { text: null, index: -1 };
+}
+
+/** No bounded prefix can certify the absence of another price farther down the same section. */
+function sectionEnd(lines: string[], end: number, heading: number): number | null {
+  for (let i = end + 1; i < lines.length; i++) {
+    if (i - heading > MAX_SECTION_LINES) return null;
+    if (scopeHeader(flat(lines[i]))) return i;
+  }
+  return lines.length - heading <= MAX_SECTION_LINES ? lines.length : null;
+}
+
+/** Another separately priced event is contradictory ownership, even at the same dollar value. */
+function separateEvent(lines: string[], start: number, end: number, heading: number, boundary: number): boolean {
+  for (let i = heading + 1; i < boundary; i++) {
+    if (i >= start && i <= end) continue;
+    for (let last = i; last <= Math.min(i + 2, boundary - 1); last++) {
+      if (last >= start && last <= end) break;
+      if (last > i && (!lines[last].trim() || scopeHeader(flat(lines[last])))) break;
+      const row = flat(lines.slice(i, last + 1).join(" "));
+      const price = /\$\s*\d/.exec(row);
+      if (!price) continue;
+      if (SEPARATE_EVENT.test(cleanLabel(row.slice(0, price.index)))) return true;
+      break;
+    }
+  }
+  return false;
+}
+
+/**
+ * Only a complete literal own row supplies two events. Unknown applicability remains held;
+ * another row/column, a repeated owner or a different event price cannot supply the proof.
+ */
+export function paidReturnedUnits(text: string): PaidReturnedUnit[] {
+  if (Buffer.byteLength(text, "utf8") > MAX_TEXT_BYTES || !COMPRESSED_TEXT.test(text)) return [];
+  const lines = text.split(/\r?\n/);
+  const units: PaidReturnedUnit[] = [];
+  for (let at = 0; at < lines.length; at++) {
+    if (!START.test(lines[at])) continue;
+    for (let end = at; end <= Math.min(at + 2, lines.length - 1); end++) {
+      if (end > at && (!lines[end].trim() || /^[•●▪‣*-]\s/.test(lines[end].trim()) || scopeHeader(flat(lines[end])))) break;
+      const ownText = flat(lines.slice(at, end + 1).join(" "));
+      if (ownText.length > MAX_UNIT_CHARS) break;
+      const prices = [...ownText.matchAll(MONEY)];
+      if (prices.length === 0) continue;
+      if (prices.length !== 1) break;
+      const price = prices[0];
+      const label = cleanLabel(ownText.slice(0, price.index));
+      const labelMatch = LABEL.exec(label);
+      const tail = ownText.slice(price.index! + price[0].length);
+      if (!labelMatch || !TAIL.test(tail)) break;
+      const continuation = lines[end + 1]?.trim() ?? "";
+      if (/^(?:per\s+(?:presentment|item)|each)\s*[.]?$/i.test(continuation)) {
+        // An explicit wrapped charging unit belongs to the price, without borrowing a cap.
+        if (end < at + 2) continue;
+        break;
+      }
+      let ownedEnd = end, uncertainContinuation = false, incomplete = false;
+      while (ownedEnd + 1 < lines.length && lines[ownedEnd + 1].trim()
+        && !nextPricedRow(lines[ownedEnd + 1].trim())) {
+        // An arbitrary following line may qualify the charge. Preserve the whole bounded
+        // physical context and hold it; headings, bullets and numeric caps are not silently
+        // treated as permission to drop that context. Over-budget context is unavailable.
+        if (ownedEnd + 1 > at + 2) { incomplete = true; break; }
+        ownedEnd++;
+        if (flat(lines.slice(at, ownedEnd + 1).join(" ")).length > MAX_UNIT_CHARS) { incomplete = true; break; }
+        uncertainContinuation = true;
+      }
+      if (incomplete) break;
+      const followingContext = uncertainContinuation ? lines.slice(end + 1, ownedEnd + 1).join("\n") : null;
+      const amount = Number(price[1].replace(/,/g, ""));
+      if (!(amount > 0) || !Number.isFinite(amount)) break;
+      const heading = headerAt(lines, at);
+      const boundary = sectionEnd(lines, ownedEnd, heading.index);
+      if (boundary === null || separateEvent(lines, at, end, heading.index, boundary)) break;
+      const interveningOwner = lines.slice(heading.index + 1, at).some(line => {
+        const text = flat(line);
+        return text && !/\$|\b(?:free|no charge)\b/i.test(text);
+      });
+      const audience = heading.text && CONSUMER.test(heading.text) && !interveningOwner
+        ? "consumer" : heading.text && /^business\b/i.test(heading.text) ? "business" : "unknown";
+      const unitKey = createHash("sha256").update(JSON.stringify([label, ownText, followingContext, heading.text, at, ownedEnd])).digest("hex").slice(0, 24);
+      const base = labelMatch[1];
+      units.push({ originalLabel: label, ownText, followingContext, heading: heading.text, amount,
+        frequency: /\b(?:per\s+(?:presentment|item)|each)\b/i.test(tail) ? "per_item" : null,
+        lineStart: at, lineEnd: ownedEnd, unitKey, audience,
+        eligibility: audience === "consumer" && !uncertainContinuation ? "admit" : "hold",
+        events: [
+          { action: "paid", canonicalKey: "overdraft", name: `${base} - Paid`, lineShare: `${KEY_PREFIX}${unitKey}:paid` },
+          { action: "returned", canonicalKey: "nsf", name: `${base} - Returned`, lineShare: `${KEY_PREFIX}${unitKey}:returned` },
+        ] });
+      at = ownedEnd;
+      break;
+    }
+  }
+  // This proof format has no multi-owner table contract. Repeated event units, including
+  // unequal prices or reversed action order, cannot establish a single applicable price.
+  if (units.length > 1) for (const unit of units) unit.eligibility = "hold";
+  return units;
+}
+
+export function isPaidReturnedCandidate(name: string, lineShare?: string | null): boolean {
+  return PROJECTED.test(flat(name)) || LABEL.test(cleanLabel(name)) || Boolean(lineShare?.startsWith(KEY_PREFIX));
+}
+
+export const hasCompressedPaidReturnedText = (text: string): boolean => COMPRESSED_TEXT.test(text);
+
+/** A caller claim identifies a candidate only; the complete source is recomputed before any write. */
+export function paidReturnedCandidateProof(text: string, name: string, amount: number, canonicalKey: string, lineShare?: string | null) {
+  const units = paidReturnedUnits(text);
+  const matches = units.flatMap(unit => unit.events.filter(event => event.name.toLowerCase() === flat(name).toLowerCase()
+    && event.canonicalKey === canonicalKey && unit.amount === amount && (!lineShare || event.lineShare === lineShare))
+    .map(event => ({ unit, event })));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+export function belongsToPaidReturnedUnit(unit: PaidReturnedUnit, name: string, amount: number, excerpt: string): boolean {
+  return amount === unit.amount && (flat(name).toLowerCase() === unit.originalLabel.toLowerCase()
+    || (flat(excerpt) === unit.ownText && unit.ownText.toLowerCase().includes(flat(name).toLowerCase())));
+}

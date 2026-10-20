@@ -12,7 +12,11 @@ import { confidenceFor, type DroppedLineReason, type ExtractedFeeCandidate, type
 import type { RateFeeCandidate } from "@/lib/agents/knox/percent";
 import { ACCOUNT_PRODUCT_CATEGORIES, groundLineup, LINEUP_CATEGORY, withLineupFromText } from "@/lib/agents/knox/lineup";
 import { ownCells } from "@/lib/agents/knox/own-cells";
-import { ANCILLARY_PRODUCT_FLAG } from "./ancillary-product";
+import { ANCILLARY_PRODUCT_FLAG, withAncillaryProduct } from "./ancillary-product";
+import {
+  hasCompressedPaidReturnedText, isPaidReturnedCandidate, paidReturnedCandidateProof,
+  PAID_RETURNED_EVENT_FLAG, PAID_RETURNED_ELIGIBILITY_FLAG, type PaidReturnedUnit,
+} from "@/lib/custom-report/paid-returned-events";
 import { KNOX_RULES_STRATEGY, runFreeSpecialists, type SpecialistRun } from "@/lib/agents/knox/specialists";
 import { applyKnoxLesson, loadKnoxLessons } from "@/lib/agents/knox/lessons";
 import { emptyTakedownLessons, loadTakedownLessons, TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag, takedownLessonsFor, withCurrentTakedownLesson, type TakedownLessons } from "@/lib/agents/knox/takedown-lessons";
@@ -686,6 +690,9 @@ async function writeCandidate(
   db: SqlTag,
   options: CandidateInsertOptions & { takenDownBy?:string|null },
 ): Promise<CandidateWriteResult> {
+  const event = await preparePaidReturnedCandidate(db, options);
+  if (event.kind === "decline") return { inserted: false, flags: [] };
+  if (event.kind === "event") return writePaidReturnedCandidate(db, event.options, event.unit, options.takenDownBy);
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   const institutionId = Number(options.row.institution_id);
@@ -702,7 +709,7 @@ async function writeCandidate(
   if (options.candidate.strategy && options.candidate.strategy !== KNOX_RULES_STRATEGY.strategy) {
     flags.push(`knox_specialist:${options.candidate.strategy}`);
   }
-  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag!==INTERNATIONAL_WIRE_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
+  flags.push(...(options.extraFlags ?? []).filter(flag=>flag!==PAID_RETURNED_EVENT_FLAG && flag!==PAID_RETURNED_ELIGIBILITY_FLAG && flag!==CAP_FIRST_ELIGIBILITY_FLAG && flag!==SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag!==INTERNATIONAL_WIRE_ELIGIBILITY_FLAG && flag!==TAKEN_DOWN_REVIEW_FLAG
     && !flag.startsWith("knox_lesson:taken_down:") && (!options.takenDownBy || flag!=="needs_darwin_verification")));
   // v73: this read records the account, so a later read keeps it (`ACCOUNT_PRODUCT_FLAG`).
   if (ACCOUNT_PRODUCT_CATEGORIES.has(options.candidate.canonicalHint) && options.candidate.lineup?.productName) flags.push(ACCOUNT_PRODUCT_FLAG);
@@ -888,6 +895,15 @@ export interface CandidateLearningReceipt { inserted:boolean; takenDownBy:string
 
 /** One learning/write path for extraction and re-read feedback, with actual RETURNING receipts. */
 export async function insertCandidateWithLearning(db:SqlTag,options:CandidateInsertOptions,lessons:TakedownLessons):Promise<CandidateLearningReceipt> {
+  const event = await preparePaidReturnedCandidate(db, options);
+  if (event.kind === "decline") return { inserted: false, takenDownBy: null, declinedReason: "paired_event_source_unavailable" };
+  if (event.kind === "event") {
+    options = event.options;
+    if (event.unit.eligibility === "hold") {
+      const written = await writePaidReturnedCandidate(db, options, event.unit);
+      return { inserted: written.inserted, takenDownBy: null, declinedReason: written.inserted ? null : "paired_event_existing_or_changed" };
+    }
+  }
   const internationalHeld = await holdInternationalWireCandidate(db, options);
   if (internationalHeld !== null) return {inserted:internationalHeld,takenDownBy:null,declinedReason:internationalHeld?null:"international_scope_declined"};
   const symbolicHeld = await holdSymbolicLesserCandidate(db, options);
@@ -957,6 +973,140 @@ async function eligibilitySourceRow(db: SqlTag, row: KnoxTextRow): Promise<KnoxT
       AND st.status='completed' AND st.normalized_text IS NOT NULL`;
   if (!source?.normalized_text.trim() || createHash("sha256").update(source.normalized_text).digest("hex") !== row.text_hash) return null;
   return { ...row, normalized_text: source.normalized_text };
+}
+
+const PAID_SOURCE_SELECTION = Symbol("paidReturnedSourceSelection");
+type OwnedPaidOptions = CandidateInsertOptions & { [PAID_SOURCE_SELECTION]?: string };
+type PreparedPaidReturned = { kind: "ordinary" } | { kind: "decline" }
+  | { kind: "event"; options: CandidateInsertOptions; unit: PaidReturnedUnit };
+
+/** Recompute future event identity before learning and again at the actual insert. */
+async function preparePaidReturnedCandidate(db: SqlTag, options: OwnedPaidOptions): Promise<PreparedPaidReturned> {
+  const supplied = options.candidate;
+  if (!isPaidReturnedCandidate(supplied.feeName, supplied.lineShare)) return { kind: "ordinary" };
+  const source = await eligibilitySourceRow(db, options.row);
+  if (!source?.normalized_text) return { kind: "decline" };
+  const proof = paidReturnedCandidateProof(source.normalized_text, supplied.feeName, supplied.amount, supplied.canonicalHint, supplied.lineShare);
+  if (!proof) return hasCompressedPaidReturnedText(source.normalized_text) || supplied.lineShare?.startsWith("paired_event:")
+    ? { kind: "decline" } : { kind: "ordinary" };
+  const [selected] = await db<Array<{ source_state: string; source_url: string }>>`
+    SELECT COALESCE(st.source_url,d.document_url) AS source_url,
+      jsonb_build_array(st.id,st.source_document_id,st.institution_id,st.status,st.text_hash,st.source_hash,st.source_url,
+      st.created_at,st.updated_at,d.id,d.institution_id,d.content_hash,d.document_url,d.status,d.superseded_by_id,d.duplicate_of_id)::text AS source_state
+    FROM agent_source_texts st JOIN source_documents d ON d.id=st.source_document_id AND d.institution_id=st.institution_id
+    WHERE st.id=${Number(source.document_text_id)} AND st.source_document_id=${Number(source.source_document_id)}
+      AND st.institution_id=${Number(source.institution_id)} AND st.status='completed' AND st.text_hash=${source.text_hash}
+      AND st.source_hash ~ '^[a-f0-9]{64}$' AND st.source_hash=d.content_hash
+      AND d.status='success' AND d.superseded_by_id IS NULL AND d.duplicate_of_id IS NULL
+      AND octet_length(d.document_url)<=2048 AND octet_length(COALESCE(st.source_url,d.document_url))<=2048`;
+  if (!selected?.source_state || (options[PAID_SOURCE_SELECTION] && options[PAID_SOURCE_SELECTION] !== selected.source_state)) return { kind: "decline" };
+  const candidate = withAncillaryProduct({ ...supplied, feeName: proof.event.name, canonicalHint: proof.event.canonicalKey,
+    amount: proof.unit.amount, frequency: proof.unit.frequency, lineShare: proof.event.lineShare,
+    // The scope remains literal evidence, never an account/product inferred from the projected name.
+    excerpt: [proof.unit.heading, proof.unit.ownText, proof.unit.followingContext].filter(Boolean).join("\n"),
+    ownedPolicy: true as const, ownedBullet: undefined, ownUnit: undefined, ownCondition: undefined,
+    linkedConditions: undefined, ancillaryProduct: undefined, lineup: undefined, waivable: false,
+  }, source.normalized_text, source.institution_name);
+  const prepared: OwnedPaidOptions = { ...options, row: { ...source, source_url: selected.source_url }, candidate, [PAID_SOURCE_SELECTION]: selected.source_state };
+  return { kind: "event", unit: proof.unit, options: prepared };
+}
+
+/**
+ * Fresh lineage only. Source/document locks precede raw locks and never wait. A legacy own-unit
+ * observation, existing target, changed proof or held/judged counterpart defers without enrichment.
+ * SQL/write failures propagate; only actual lock contention is a nonsettling decline.
+ */
+async function writePaidReturnedCandidate(
+  db: SqlTag, options: CandidateInsertOptions, selectedUnit: PaidReturnedUnit, takenDownBy?: string | null,
+): Promise<CandidateWriteResult> {
+  if (typeof (db as unknown as { savepoint?: unknown }).savepoint !== "function"
+    && typeof (db as unknown as { begin?: unknown }).begin !== "function") return { inserted: false, flags: [] };
+  try {
+    return await withPublishedIdentityWrite(db, async scope => {
+      const documentId = Number(options.row.source_document_id), artifactId = Number(options.row.document_text_id);
+      const institutionId = Number(options.row.institution_id);
+      const docs = await scope`SELECT id FROM source_documents
+        WHERE id=${documentId} AND institution_id=${institutionId}
+          AND status='success' AND superseded_by_id IS NULL AND duplicate_of_id IS NULL FOR UPDATE NOWAIT`;
+      if (docs.length !== 1) return { inserted: false, flags: [] };
+      const [source] = await scope<Array<{ normalized_text: string; text_hash: string }>>`
+        SELECT normalized_text,text_hash FROM agent_source_texts
+         WHERE id=${artifactId} AND source_document_id=${documentId} AND institution_id=${institutionId}
+           AND status='completed' AND text_hash=${options.row.text_hash}
+           AND octet_length(normalized_text)<=1000000 FOR UPDATE NOWAIT`;
+      if (!source || createHash("sha256").update(source.normalized_text).digest("hex") !== options.row.text_hash) return { inserted: false, flags: [] };
+      const current = await preparePaidReturnedCandidate(scope, { ...options, row: { ...options.row, normalized_text: source.normalized_text } });
+      if (current.kind !== "event" || current.unit.unitKey !== selectedUnit.unitKey
+        || current.unit.eligibility !== selectedUnit.eligibility) return { inserted: false, flags: [] };
+      const candidate = current.options.candidate, unit = current.unit;
+      const { owner, applicability, lineup, sourceConditions } = candidateWriteFacts(candidate);
+      const audience = unit.audience;
+      const names = [unit.originalLabel, ...unit.events.map(event => event.name)].map(name => name.toLowerCase());
+      const pairKeys = unit.events.map(event => event.lineShare);
+      const existing = await scope<Array<{ fee_raw_id: number | string; line_share: string; reusable_partner: boolean }>>`
+        SELECT fr.fee_raw_id,fr.line_share,
+          (fr.source='knox' AND fr.line_share=ANY(${pairKeys}::text[])
+            AND fr.line_share<>${candidate.lineShare!}
+            AND fr.amount=${candidate.amount} AND fr.frequency IS NOT DISTINCT FROM ${candidate.frequency}::text
+            AND fr.fee_audience=${audience}
+            AND fr.fee_treatment='charged' AND fr.amount_kind='flat'
+            AND fr.rate_percent IS NULL AND fr.rate_min_amount IS NULL AND fr.rate_max_amount IS NULL AND fr.rate_basis IS NULL
+            AND fr.min_balance_to_avoid IS NULL AND fr.min_opening_deposit IS NULL AND fr.waiver_text IS NULL
+            AND fr.audience_evidence IS NOT DISTINCT FROM ${unit.heading}::text
+            AND fr.product_name IS NOT DISTINCT FROM ${lineup?.productName ?? null}::text
+            AND fr.conditions IS NOT DISTINCT FROM ${sourceConditions}::text
+            AND position(${`Rosetta artifact #${artifactId}.`} IN COALESCE(fr.extraction_note,fr.conditions,''))>0
+            AND position(${`text_hash=${options.row.text_hash};`} IN COALESCE(fr.extraction_note,fr.conditions,''))>0
+            AND COALESCE(fr.outlier_flags,'[]'::jsonb) ? ${PAID_RETURNED_EVENT_FLAG}
+            AND ((fr.line_share=${unit.events[0].lineShare} AND fr.fee_name=${unit.events[0].name}
+                AND COALESCE(fr.outlier_flags,'[]'::jsonb) ? 'canonical_hint:overdraft')
+              OR (fr.line_share=${unit.events[1].lineShare} AND fr.fee_name=${unit.events[1].name}
+                AND COALESCE(fr.outlier_flags,'[]'::jsonb) ? 'canonical_hint:nsf'))
+            AND (CASE WHEN ${unit.eligibility === "hold"} THEN
+              COALESCE(fr.outlier_flags,'[]'::jsonb) ? ${PAID_RETURNED_ELIGIBILITY_FLAG}
+                AND COALESCE(fr.outlier_flags,'[]'::jsonb) ? 'knox_review:eligibility'
+                AND NOT COALESCE(fr.outlier_flags,'[]'::jsonb) ? 'needs_darwin_verification'
+              ELSE COALESCE(fr.outlier_flags,'[]'::jsonb) ? 'needs_darwin_verification' END)
+            AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags,'[]'::jsonb)) flag
+              WHERE flag LIKE 'knox_review:%' AND NOT (${unit.eligibility === "hold"} AND flag='knox_review:eligibility'))
+            AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements_text(COALESCE(fr.outlier_flags,'[]'::jsonb)) flag
+              WHERE flag NOT IN (${PAID_RETURNED_EVENT_FLAG},${PAID_RETURNED_ELIGIBILITY_FLAG},
+                'canonical_hint:overdraft','canonical_hint:nsf','knox_review:eligibility','needs_darwin_verification',
+                'knox_specialist:extract.paid_returned','knox_paid_extraction',${ANCILLARY_PRODUCT_FLAG}))
+            AND NOT EXISTS(SELECT 1 FROM verified_fee_observations fv WHERE fv.fee_raw_id=fr.fee_raw_id)
+            AND NOT EXISTS(SELECT 1 FROM pipeline_attempts pa WHERE pa.input_fingerprint='raw:'||fr.fee_raw_id::text)) AS reusable_partner
+        FROM raw_fee_observations fr WHERE fr.source_document_id=${documentId}
+          AND (lower(fr.fee_name)=ANY(${names}::text[])
+            OR CASE WHEN octet_length(COALESCE(fr.extraction_note,fr.conditions,''))<=65536
+               THEN position(${unit.ownText} IN COALESCE(fr.extraction_note,fr.conditions,''))>0 ELSE TRUE END)
+        ORDER BY fr.fee_raw_id LIMIT 17 FOR UPDATE OF fr NOWAIT`;
+      if (existing.length > 16 || existing.some(row => row.line_share === candidate.lineShare || !row.reusable_partner)) return { inserted: false, flags: [] };
+      const flags = [PAID_RETURNED_EVENT_FLAG, `canonical_hint:${candidate.canonicalHint}`];
+      if (candidate.strategy && candidate.strategy !== KNOX_RULES_STRATEGY.strategy) flags.push(`knox_specialist:${candidate.strategy}`);
+      if (unit.eligibility === "hold") flags.push("knox_review:eligibility", PAID_RETURNED_ELIGIBILITY_FLAG);
+      else if (takenDownBy) flags.push(TAKEN_DOWN_REVIEW_FLAG, takedownLessonFlag(takenDownBy));
+      else flags.push("needs_darwin_verification");
+      if (owner) flags.push(ANCILLARY_PRODUCT_FLAG);
+      flags.push(...(options.extraFlags ?? []).filter(flag => !flag.startsWith("canonical_hint:") && !flag.startsWith("knox_eligibility:")
+        && !flag.startsWith("knox_owned_event:") && !flag.startsWith("knox_lesson:") && !flag.startsWith("knox_review:") && flag !== "needs_darwin_verification"));
+      const note = `Knox ${options.method ?? "deterministic extraction"} from Rosetta artifact #${artifactId}. `
+        + `canonical_hint=${candidate.canonicalHint}; text_hash=${options.row.text_hash}; `
+        + (options.calibratedConfidence === undefined ? "" : `calibrated_confidence=${options.calibratedConfidence.toFixed(2)}; `)
+        + `excerpt="${candidate.excerpt}"`;
+      const rows = await scope<Array<{ outlier_flags: string[] }>>`
+        INSERT INTO raw_fee_observations(institution_id,source_document_id,source_url,extraction_confidence,agent_event_id,
+          fee_name,amount,frequency,extraction_note,conditions,outlier_flags,source,product_name,fee_audience,audience_evidence,fee_treatment,line_share)
+        VALUES(${institutionId},${documentId},${options.row.source_url},${candidate.confidence},
+          ${stableUuid(`knox:${options.runId}:${artifactId}:${candidate.lineShare}`)}::uuid,
+          ${candidate.feeName},${candidate.amount},${candidate.frequency},${note},${sourceConditions},${JSON.stringify(flags)}::jsonb,
+          'knox',${lineup?.productName ?? null},${audience},${unit.heading},${applicability.feeTreatment},${candidate.lineShare!})
+        ON CONFLICT DO NOTHING RETURNING outlier_flags`;
+      return { inserted: rows.length === 1, flags: rows[0]?.outlier_flags ?? [] };
+    });
+  } catch (error) {
+    if ((error as { code?: string }).code === "55P03") return { inserted: false, flags: [] };
+    throw error;
+  }
 }
 
 /** Domestic unresolved rows keep their existing contract; positive own international facts do not. */
@@ -1044,6 +1194,14 @@ export async function insertHeldCandidate(
     assignedMonthlyProduct?: string | null;
   },
 ): Promise<boolean> {
+  if (options.held.amount !== null && options.held.canonicalHint
+    && isPaidReturnedCandidate(options.held.feeName, options.held.lineShare)) {
+    const prepared = await preparePaidReturnedCandidate(db, { runId: options.runId, row: options.row, extraFlags: options.extraFlags,
+      candidate: { ...options.held, amount: options.held.amount, canonicalHint: options.held.canonicalHint,
+        confidence: .94, waivable: false } });
+    if (prepared.kind === "decline") return false;
+    if (prepared.kind === "event") return (await writePaidReturnedCandidate(db, prepared.options, prepared.unit)).inserted;
+  }
   const documentTextId = Number(options.row.document_text_id);
   const sourceDocumentId = Number(options.row.source_document_id);
   let { held } = options;
@@ -1099,7 +1257,7 @@ export async function insertHeldCandidate(
   if (held.canonicalHint) flags.push(`canonical_hint:${held.canonicalHint}`);
   if (held.amountMax != null) flags.push(`amount_max:${held.amountMax}`);
   if (held.percent != null) flags.push(`percent:${held.percent}`);
-  flags.push(...(options.extraFlags ?? []).filter(flag => flag !== CAP_FIRST_ELIGIBILITY_FLAG
+  flags.push(...(options.extraFlags ?? []).filter(flag => flag !== PAID_RETURNED_EVENT_FLAG && flag !== PAID_RETURNED_ELIGIBILITY_FLAG && flag !== CAP_FIRST_ELIGIBILITY_FLAG
     && flag !== SYMBOLIC_LESSER_ELIGIBILITY_FLAG && flag !== INTERNATIONAL_WIRE_ELIGIBILITY_FLAG
     && ((!symbolicOwner && !internationalOwner) || flag !== "needs_darwin_verification")));
   const protectedEligibility = held.shape === "eligibility" && Boolean(monthlyOwners || capOwner || symbolicOwner || internationalOwner);

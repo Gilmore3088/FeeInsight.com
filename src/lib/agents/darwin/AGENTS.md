@@ -1,5 +1,15 @@
 # Darwin Agent Guide
 
+## Prospective source-owned paid/returned events (#1918)
+
+The two faithful action names retain the literal compressed row as evidence and pass ordinary
+category/name/source/unit rules. The source-derived `knox_eligibility:paid_returned` hold is
+respected on current raw lineage, including stale caller categories. A v1 event also requires
+its locked original artifact/hash and the same positive own-row/scope proof at settlement;
+changed/unavailable proof defers without a terminal judgment. Only the actual raw provenance
+can carry `knox_owned_event:v1` into verification. No existing hold, legacy judgment, rules
+version, recheck selector or historical recovery is reopened.
+
 ## Paid collection before locked settlement (#2285; shared boundary #1915)
 
 Release-review and adjudication collect every allowed model response before acquiring
