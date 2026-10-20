@@ -849,7 +849,7 @@ export const GUARDED_CATEGORIES: readonly string[] = [...new Set([...Object.keys
 // in the PR (#1026 ledger).
 // v77 (Oct 19, W43 live check): a card that draws only on credit (`CREDIT_CARD_ONLY`) fails the
 // replacement and rushed card rules; a credit card is a lending product. Counts in the PR.
-// v78 (Oct 20, category-guard gap): account verification is guarded by name. Research re-files to
+// v78 (Oct 20, #2449): account verification is guarded by name. Research re-files to
 // account research and a domestic wire to the outgoing wire fee; a signature guarantee (unmapped in
 // the answer keys), a checking or spending account or a positive pay name fails and goes to the
 // second look. Counts in the PR.

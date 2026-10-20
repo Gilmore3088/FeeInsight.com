@@ -1538,7 +1538,7 @@ Existing settled decisions and legacy receipts are not reopened or relabeled. Th
 - Guard v36 (2026-10-08) changes no rule: PRs 665 and 668 both shipped v35, so rows rejected between their deploys are re-checked under both.
 - Guard v42 (2026-10-08; v40 and v41 are Accuracy's, PR 682) files an NSF item marked paid after a dash or in brackets ("NSF Fee Charge - Paid (per item)", "Nonsufficient Funds Fee-Paid", "Insufficient Funds Charge (Check Paid, Per Item)") as the overdraft fee and re-files it there from NSF; "per non-paid item", "Paid from other ... account" and "We will not assess ..." stay out. "Overdraft Privilege Standard or Extended Coverage" names the program, not an extended overdraft fee.
 - The guard is at v78 (`CATEGORY_GUARD_VERSION` in `src/lib/fee-category-guard.ts`). v78 (Oct 20,
-  category-guard gap): account verification is guarded by name. Research or reconciling without a
+  #2449, category-guard gap): account verification is guarded by name. Research or reconciling without a
   verification re-files to account research and a domestic wire to the outgoing wire fee; a
   medallion stamp or signature guarantee (unmapped in the answer keys), a checking or spending
   account or a positive pay name fails and goes to the second look. v77 (Oct 19,

@@ -92,7 +92,7 @@ export const DARWIN_LESSONS: AgentLesson[] = [
     stage: "category check",
     lesson: "Every category needs a name test before a fee in it is verified: a category with no rule passes any name, so a checking account, a positive pay service or a signature guarantee can publish as an account verification. Confirm the name says what the category is; re-file it where its name places it, and send it to the second look when no category holds it.",
     why: "Account verification had no category rule, so 14 of its 692 live fees (Oct 20) were other fees: 8 signature guarantees, a domestic wire, two checking or spending accounts, a positive pay service, and a no-charge verification merged with a $20 wire row.",
-    evidence: { issues: [], prs: [], files: ["src/lib/fee-category-guard.ts"] },
+    evidence: { issues: [], prs: [2449], files: ["src/lib/fee-category-guard.ts"] },
     appliesTo: "all",
     since: "2026-10-20",
   },
