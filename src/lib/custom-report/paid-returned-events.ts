@@ -22,6 +22,14 @@ const SCOPE = /\b(?:accounts?|checking|savings|fees?|schedule)\b/i;
 // A consumer prefix cannot establish general applicability for a named or qualified account.
 const CONSUMER = /^(?:consumer|personal)(?:\s+(?:checking|savings)(?:\s+accounts?)?|\s+accounts?)\s+(?:fees?|fee schedule)\s*:?$/i;
 const SEPARATE_EVENT = new RegExp(String.raw`^(?:${BASE}(?:\s+(?:paid|returned?|return)(?:\s+items?)?)?(?:\s+(?:fees?|charges?))?|overdraft(?:\s+(?:item|fee|charge))?|courtesy pay|paid item fee|returned? item fee)$`, "i");
+/**
+ * A priced label naming an overdraft, paid-item or returned-item charge in any wording ("Overdraft
+ * Item Fee", "Return Item Fee", "Courtesy Pay Fee", "OD Fee") is a separate event price, not only
+ * the exact names above.
+ */
+// An overdraft protection transfer, sweep or line is another service, not an overdraft item charge.
+const SEPARATE_TOKEN = new RegExp(String.raw`\b(?:(?:overdrafts?|o\/?d)\b(?!\s+(?:protection|transfers?|sweeps?|lines?\b|limits?))`
+  + String.raw`|courtesy\s+pay\b|paid\s+items?\b|return(?:ed)?\s+(?:items?|checks?)\b)`, "i");
 const flat = (text: string) => text.replace(/\s+/g, " ").trim();
 const cleanLabel = (text: string) => flat(text.replace(/^\s*[•●▪‣*-]\s*/, "").replace(/[.…]{2,}/g, " ").replace(/\|\s*$/, ""));
 
@@ -63,10 +71,17 @@ function headerAt(lines: string[], at: number): { text: string | null; index: nu
 
 type HeadingAudience = "consumer" | "business" | null;
 
+/**
+ * Only a heading that opens with one audience names that audience. A mixed heading ("Personal and
+ * Business Checking Fees") or one that only mentions the word ("Fees are assessed each business
+ * day", "Business Day Account Fees") is not another audience's section.
+ */
 function headingAudience(line: string | null): HeadingAudience {
   if (!line) return null;
-  if (/\b(?:business|commercial)\b/i.test(line)) return "business";
-  return /\b(?:consumer|personal)\b/i.test(line) ? "consumer" : null;
+  const business = /\b(?:business|commercial)\b/i.test(line), consumer = /\b(?:consumer|personal)\b/i.test(line);
+  if (business && consumer) return null;
+  if (/^(?:business|commercial)\b/i.test(line) && !/^business\s+days?\b/i.test(line)) return "business";
+  return /^(?:consumer|personal)\b/i.test(line) ? "consumer" : null;
 }
 
 /**
@@ -108,7 +123,9 @@ function separateEvent(lines: string[], start: number, end: number, from: number
       const row = flat(lines.slice(i, last + 1).join(" "));
       const price = /\$\s*\d/.exec(row);
       if (!price) continue;
-      if (SEPARATE_EVENT.test(cleanLabel(row.slice(0, price.index)))) return true;
+      const label = cleanLabel(row.slice(0, price.index));
+      // Another compressed paid/returned row is a repeated owner, held by the unit count, not here.
+      if (SEPARATE_EVENT.test(label) || (!START.test(lines[i]) && SEPARATE_TOKEN.test(label))) return true;
       break;
     }
   }

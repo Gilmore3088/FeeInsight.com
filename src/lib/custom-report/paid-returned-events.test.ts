@@ -58,6 +58,20 @@ describe("complete source-owned paid/returned unit", () => {
       }
     });
 
+  it.each(["Overdraft Item Fee", "Overdraft Fee per item", "Overdraft Paid Item Fee", "Overdraft/Paid Item Fee",
+    "Return Item Fee", "Courtesy Pay Fee", "OD Fee", "Returned Check Fee"])
+    ("refuses a separately priced %s for the same accounts", label => {
+      expect(paidReturnedUnits(source(row, "Stop Payment | $30.00", `${label} | $35.00`))).toEqual([]);
+      expect(paidReturnedUnits(source(`${label} | $35.00`, row))).toEqual([]);
+    });
+
+  it.each(["Fees are assessed each business day", "Personal and Business Checking Fees", "Business Day Account Fees"])
+    ("does not treat %s as another audience's section", heading => {
+      expect(paidReturnedUnits(source(row, heading, "Overdraft Fee | $35.00"))).toEqual([]);
+      expect(paidReturnedUnits(["Account Fee Schedule", "Overdraft Fee | $35.00", heading, "Consumer Checking Fees", row].join("\n")))
+        .toEqual([]);
+    });
+
   it("checks beyond the previous seventeen-line prefix and proves a section boundary", () => {
     const filler = Array.from({ length: 30 }, (_, index) => `Statement Copy ${index + 1} | $2.00`);
     expect(paidReturnedUnits(source(row, ...filler, "NSF Paid Item Fee | $37.00"))).toEqual([]);
