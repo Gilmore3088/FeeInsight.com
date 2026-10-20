@@ -1271,6 +1271,32 @@ export function sizeMismatch(feeName: string, sourceLine: string): boolean {
   return printed.length > 0 && !printed.some((size) => wanted.includes(size));
 }
 
+/**
+ * #1827: does a line that prints the fee's own size also print its amount for that size? The
+ * shared match can land on a neighbour of the same price ("4×5 Box | $16.00" for "5×5 Box" at
+ * $16), which is no reason to refuse when the fee's own row ("5×5 Box | $16.00") says the same.
+ * A line with one size speaks for that size; on a line listing several ("Box Size 2” x 5” $20.00
+ * annually Box Size 2” x 10” $30.00 annually") only the words after the size, up to the next
+ * size, are its price.
+ */
+export function ownSizePrintsAmount(text: string, feeName: string, amount: number): boolean {
+  const wanted = rowSizes(feeName);
+  if (wanted.length === 0) return false;
+  const rounded = Math.round(amount * 100) / 100;
+  const printsAmount = (segment: string) =>
+    moneyTokens(segment).some((token) => Math.round(token.value * 100) / 100 === rounded);
+  return text.split("\n").some((line) => {
+    const sizes = [...line.matchAll(ROW_SIZE)];
+    if (sizes.length === 1) return wanted.includes(`${Number(sizes[0][1])}x${Number(sizes[0][2])}`) && printsAmount(line);
+    return sizes.some((match, i) => {
+      if (!wanted.includes(`${Number(match[1])}x${Number(match[2])}`)) return false;
+      const start = (match.index ?? 0) + match[0].length;
+      const end = i + 1 < sizes.length ? sizes[i + 1].index ?? line.length : line.length;
+      return printsAmount(line.slice(start, end));
+    });
+  });
+}
+
 export function checkFeeAgainstSource(
   rawText: string | null | undefined,
   feeName: string,
@@ -1283,7 +1309,9 @@ export function checkFeeAgainstSource(
   if (!result.ok || !rawText) return result;
   // #1827: a match on a neighbouring row of another size, or while the fee's own row prints
   // another price, is the fee taking its neighbour's price.
-  if (sizeMismatch(feeName, result.sourceLine)) return { ok: false, reason: "amount_not_the_fee" };
+  if (sizeMismatch(feeName, result.sourceLine) && !ownSizePrintsAmount(rawText, feeName, amount)) {
+    return { ok: false, reason: "amount_not_the_fee" };
+  }
   if (ownRowRefusal(rawText, feeName, amount)) return { ok: false, reason: "amount_not_the_fee" };
   return result;
 }

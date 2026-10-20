@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkFeeAgainstSource, joinLabeledFeeCards, ownRowRefusal, sizeMismatch, stripPriceFootnoteMarks } from "./source-check";
+import { checkFeeAgainstSource, joinLabeledFeeCards, ownRowRefusal, ownSizePrintsAmount, sizeMismatch, stripPriceFootnoteMarks } from "./source-check";
 
 describe("checkFeeAgainstSource layouts", () => {
   it("reads an opening deposit under an account heading as the account's, not the heading's price (#1810)", () => {
@@ -1047,6 +1047,24 @@ describe("a fee never traces to its neighbour's price (#1827)", () => {
     expect(ownRowRefusal("\uF0B7 Stop Payment | $30.00\n\uF0B7 Wire Transfer | $25.00", "Stop Payment", 25)).not.toBeNull();
     // A marked own row still refuses a neighbour's price.
     expect(ownRowRefusal("Stop Payment* | $30.00\nWire Transfer | $25.00", "Stop Payment", 25)).not.toBeNull();
+  });
+
+  it("traces a sized fee whose own size prints its price, even when a neighbour shares it (dry run of #2465)", () => {
+    // Doc 36899 (live 107021-107023): 4×5 and 5×5 both cost $16; 5×9.5, 5×10 and 6×9.5 cost $30.
+    const boxes = ["4×5 Box | $16.00 per year", "5×5 Box | $16.00 per year", "5×9.5 Box | $30.00 per year", "5×10 Box | $30.00 per year", "6×9.5 Box | $30.00 per year"].join("\n");
+    expect(checkFeeAgainstSource(boxes, "5×5 Box", 16, ".", "safe_deposit_box").ok).toBe(true);
+    expect(checkFeeAgainstSource(boxes, "6×9.5 Box", 30, ".", "safe_deposit_box").ok).toBe(true);
+    expect(checkFeeAgainstSource(boxes, "5×5 Box", 30, ".", "safe_deposit_box").ok).toBe(false);
+    // Doc 38326 (live 117103-117105): the same price on two sizes, size before the price.
+    const rental = ["Safe deposit box rental (annual) – 3×5 | $20.00", "Safe deposit box rental (annual) – 4×5 | $20.00", "Safe deposit box rental (annual) – 5×5 | $25.00"].join("\n");
+    expect(checkFeeAgainstSource(rental, "Safe deposit box rental (annual) – 4×5", 20, ".", "safe_deposit_box").ok).toBe(true);
+    // Doc 16929 (live 99531): every size on one line; only the price after a size is its own.
+    const oneLine = "Safety Deposit Boxes | Box Size 3” x 5” $20.00 annually Box Size 10” x 10” $90.00 annually Box Size 10” x 20” $120.00 annually";
+    expect(ownSizePrintsAmount(oneLine, "Box Size 10” x 10”", 90)).toBe(true);
+    expect(ownSizePrintsAmount(oneLine, "Box Size 10” x 10”", 20)).toBe(false);
+    expect(ownSizePrintsAmount(oneLine, "Box Size 10” x 20”", 90)).toBe(false);
+    // Colby's own line still prints another price, so the shifted read stays refused.
+    expect(checkFeeAgainstSource(colby, "Safe Deposit Box 3”x5”x22”/Year", 19, ".", "safe_deposit_box")).toEqual(refused);
   });
 
   it("lets sentences and other accounts' price-first lines decide nothing", () => {
