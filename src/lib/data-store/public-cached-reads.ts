@@ -30,8 +30,12 @@ import {
   peerFiltersForRule,
   peerGroupValuesFrom,
   peerRankFromGroupValues,
+  pickPeerSet,
   type InstitutionPeerRank,
+  type InstitutionPeerSets,
 } from "./peer-fee-rank";
+import { getInstitutionPeerChoices, getStatePeerSetIndexes } from "./public-peer-sets";
+import { getPeerExplorerSet } from "./peer-explorer";
 import { getMarketBranchFootprint } from "./branches";
 import { getMarketPosition } from "./market-position";
 import { getBranchCityForZip } from "./branch-cities";
@@ -218,7 +222,8 @@ const getHeadlineCoverageRowsCached = cachedPublicRead("headline-coverage-rows",
  * refresh of the public cache: about 300 catalog reads an hour at ~460 ms on Oct 9. Like the
  * coverage rows, it is read beside the other cache, never inside it.
  */
-const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values", getAllPeerRankValues);
+// v2: each value carries its asset-size tier, so a size peer set filters the same list.
+const getAllPeerRankValuesCached = cachedPublicRead("peer-rank-values-v3", getAllPeerRankValues);
 export async function getInstitutionPeerRankCached(institutionId: number): Promise<InstitutionPeerRank | null> {
   const rule = reportRuleCheckFromRows(institutionId, await getHeadlineCoverageRowsCached());
   const filters = peerFiltersForRule(rule);
@@ -226,6 +231,39 @@ export async function getInstitutionPeerRankCached(institutionId: number): Promi
   const values = peerGroupValuesFrom(await getAllPeerRankValuesCached(), filters);
   return peerRankFromGroupValues(institutionId, rule, filters, values);
 }
+/** The institution page's peer-set choices, resolved once per institution between publishes. */
+// v2: closest in assets is listed first, so it is the default set.
+// v3: wrapped, so an id with no choices (no such institution) is cached too: the explorer's server
+// action takes any id from the address, and an empty list would otherwise reach the database on
+// every request. A failed read throws and is not cached.
+const getInstitutionPeerChoicesEntryCached = cachedPublicRead(
+  "institution-peer-sets-v3",
+  async (institutionId: number) => ({ choices: await getInstitutionPeerChoices(institutionId) }),
+  () => false,
+);
+const getInstitutionPeerChoicesCached = async (institutionId: number) => (await getInstitutionPeerChoicesEntryCached(institutionId)).choices;
+/**
+ * The peer sets an institution page offers and the one it shows (pickPeerSet): the choices
+ * resolve per institution, the values filter the shared national list in code.
+ */
+export async function getInstitutionPeerSetsCached(institutionId: number, requested?: string | null): Promise<InstitutionPeerSets | null> {
+  const [rows, choices, all] = await Promise.all([
+    getHeadlineCoverageRowsCached(),
+    getInstitutionPeerChoicesCached(institutionId),
+    getAllPeerRankValuesCached(),
+  ]);
+  return pickPeerSet(institutionId, reportRuleCheckFromRows(institutionId, rows), choices, all, requested);
+}
+/**
+ * One peer set for the institution page's explorer: its institutions with names, assets,
+ * headquarters and five fees. One entry per institution and set; the set's filters are part of
+ * the key, so a set that resolves to new members is read again.
+ */
+// v3: fees carry their source link and date; a home metro set carries branch cities and deposit presence.
+// v6: peers the regulator marks inactive are left out (#2190).
+export const getPeerExplorerSetCached = cachedPublicRead("peer-explorer-set-v6", getPeerExplorerSet);
+/** The state page's peer sets (size, regulator, credit union charter) with their fee medians. */
+export const getStatePeerSetIndexesCached = cachedPublicRead("state-peer-sets-v1", getStatePeerSetIndexes);
 /**
  * Headline categories live for each of `ids`, from the shared coverage entry the institution
  * pages already read (0 for an id with none), so the directory adds no per-request read.
