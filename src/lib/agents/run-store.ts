@@ -21,7 +21,7 @@ import { repairSourceLinks, resourceSourceLinks, SOURCE_LINK_VERSION } from "@/l
 import { requeueGuardRejectedFees } from "@/lib/agents/hamilton/guard-requeue";
 import { rollBackRetiredCompanionFees } from "@/lib/agents/hamilton/companion-retire";
 import { rollBackUnreproducedFees } from "@/lib/agents/hamilton/rules-recheck";
-import { takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
+import { sourceCheckReceiptNote, takeDownUntraceableFees } from "@/lib/agents/hamilton/source-check";
 import { reviewKnoxBatches } from "@/lib/agents/knox/batch-review";
 import { newerCopyReceiptNote, retireFeesDroppedFromNewerCopy } from "@/lib/agents/hamilton/newer-copy-retire";
 import { refreshFeesFromCurrentCopy } from "@/lib/agents/hamilton/refresh-copy";
@@ -1428,6 +1428,7 @@ async function executeAgenticStep(
       // are checked too.
       const sourceCheck = await timedSweep(sweepMs, "sourceCheck", () => takeDownUntraceableFees(tx, {
         runId: run.id,
+        stepId: step.id,
         batchId: `agentic-run-${run.id}`,
         dryRun: run.runKind === "dry_run",
         institutionId,
@@ -1605,10 +1606,7 @@ async function executeAgenticStep(
         (recheckRestores > 0
           ? ` ${published.dryRun ? "Would restore" : "Restored"} ${recheckRestores.toLocaleString()} earlier re-check takedown(s) today's Knox rules read again.`
           : "");
-      const sourceNote =
-        sourceTakedowns > 0 || (sourceCheck?.relinked ?? 0) > 0 || (sourceCheck?.restored ?? 0) > 0
-          ? ` Source check: ${published.dryRun ? "would take down" : "took down"} ${sourceTakedowns.toLocaleString()} live fee(s) not stated in the bank's stored schedule${sourceCheck?.relinked ? `, relinked ${sourceCheck.relinked.toLocaleString()} to a stored schedule` : ""}${sourceCheck?.restored ? `, ${published.dryRun ? "would restore" : "restored"} ${sourceCheck.restored.toLocaleString()} earlier takedown(s) that now trace` : ""}.`
-          : "";
+      const sourceNote = sourceCheckReceiptNote(sourceCheck, published.dryRun);
       const newerCopyNote = newerCopyReceiptNote(newerCopy, published.dryRun);
       const refreshNote =
         refreshCopy.refreshed > 0
@@ -1983,6 +1981,9 @@ async function executeAgenticStep(
                 relabeled: feedbackSync.relabeled,
               }
             : false,
+          source_check_status: sourceCheck?.status ?? null,
+          source_check_failed_phase: sourceCheck?.failedPhase ?? null,
+          source_check_error: sourceCheck?.error ?? null,
           source_check_institutions: sourceCheck?.institutionsChecked ?? 0,
           source_check_fees: sourceCheck?.liveFeesChecked ?? 0,
           source_check_traced: sourceCheck?.traced ?? 0,
