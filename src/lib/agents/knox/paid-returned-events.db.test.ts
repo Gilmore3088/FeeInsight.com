@@ -12,6 +12,8 @@ vi.mock("@/lib/agents/fee-source-fetch", async original => ({
 }));
 const connection = process.env.E2E_DATABASE_URL;
 type Db = typeof import("@/lib/data-store/connection").sql;
+/** The fixture runs inside db.begin, so a savepoint is available on the transaction it passes. */
+const asTransaction = (tx: Db) => tx as unknown as postgres.TransactionSql;
 const SOURCE_URL = "https://paired-events.example.invalid/fees";
 const OWN = "NSF Paid/Returned | $29.00 per presentment";
 const CONSUMER = `Account Fee Schedule\nConsumer Checking Fees\n${OWN}\nStop Payment Fee | $25.00 per item`;
@@ -111,10 +113,10 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
   }
   async function oldRaw(tx: Db, f: Fixture, producer = "knox", flags = ["canonical_hint:nsf", "needs_darwin_verification"]) {
     const [{ fee_raw_id: rawId }] = await tx`INSERT INTO raw_fee_observations
-      (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,conditions,extraction_note,outlier_flags,fee_audience)
+      (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,conditions,extraction_note,outlier_flags,fee_audience,audience_evidence)
       VALUES (${f.institutionId},${f.documentId},${SOURCE_URL},${producer},gen_random_uuid(),'NSF Paid/Returned',29,'per_item',
         ${OWN},${`Knox deterministic extraction from Rosetta artifact #${f.textId}. canonical_hint=nsf; text_hash=${f.hash}; excerpt="${OWN}"`},
-        ${JSON.stringify(flags)}::jsonb,'consumer') RETURNING fee_raw_id`;
+        ${JSON.stringify(flags)}::jsonb,'consumer','Consumer Checking Fees') RETURNING fee_raw_id`;
     return Number(rawId);
   }
 
@@ -154,9 +156,9 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
       expect(rows.every(item => item.conditions.includes(OWN) && item.conditions.includes("Consumer Checking Fees")
         && Number(item.source_document_id) === f.documentId && item.extraction_note.includes(`text_hash=${f.hash};`))).toBe(true);
       const rules = await (await import("../hamilton/rules-recheck")).rollBackUnreproducedFees(tx,
-        { runId: f.runId, stepId: f.stepId, institutionId: f.institutionId, batchId: "paired-rules", dryRun: false });
+        { runId: f.runId, institutionId: f.institutionId, batchId: "paired-rules", dryRun: false });
       const source = await (await import("../hamilton/source-check")).takeDownUntraceableFees(tx,
-        { runId: f.runId, stepId: f.stepId, institutionId: f.institutionId, batchId: "paired-source", dryRun: false });
+        { runId: f.runId, institutionId: f.institutionId, batchId: "paired-source", dryRun: false });
       expect(rules.liveFeesChecked).toBeGreaterThanOrEqual(2);
       expect(rules.rollbacks).toEqual([]);
       expect(source.liveFeesChecked).toBeGreaterThanOrEqual(2);
@@ -218,7 +220,7 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
         const verifiedId = await darwin.insertVerifiedFee(tx, { runId: f.runId, row: { ...item, conditions: item.extraction_note ?? item.conditions } as unknown as import("../darwin/verify").RawFeeRow, canonicalFeeKey: "overdraft" });
         expect(verifiedId).not.toBeNull();
         if (state !== "verified") {
-          const [verified] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,fr.product_name,fr.source_document_id
+          const [verified] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,fr.product_name,fr.source_document_id,fr.agent_event_id AS raw_agent_event_id
             FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id WHERE fv.fee_verified_id=${verifiedId!}`;
           const id = await publish.insertPublishedFee(tx, { runId: f.runId, batchId: "paired-history", row: verified as unknown as import("../hamilton/publish").VerifiedFeeRow });
           expect(id).not.toBeNull();
@@ -245,7 +247,7 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
         if (state === "failed_document") await tx`UPDATE source_documents SET status='failed' WHERE id=${f.documentId}`;
         if (state === "superseded_document" || state === "duplicate_document") {
           const [{ id }] = await tx`INSERT INTO source_documents(institution_id,status,document_url,content_hash)
-            VALUES (${f.institutionId},'success','https://paired-events.example.invalid/new',${f.hash}) RETURNING id`;
+            VALUES (${f.institutionId},'success','https://paired-events.example.invalid/new',${digest(`${f.text}\nnewer copy`)}) RETURNING id`;
           if (state === "superseded_document") await tx`UPDATE source_documents SET superseded_by_id=${id} WHERE id=${f.documentId}`;
           else await tx`UPDATE source_documents SET duplicate_of_id=${id} WHERE id=${f.documentId}`;
         }
@@ -280,7 +282,7 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
   it("rolls back the new insert on a later writer error and retries without phantom inserted counts", async () => {
     await rollback(async tx => {
       const f = await seed(tx); const stop = new Error("controlled failure after RETURNING");
-      await expect(tx.savepoint(async scope => {
+      await expect(asTransaction(tx).savepoint(async scope => {
         expect(await insert(scope as unknown as Db, f)).toBe(true); throw stop;
       })).rejects.toBe(stop);
       expect(await raw(tx, f)).toHaveLength(0);
@@ -326,17 +328,17 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
       const verifiedId = await darwin.insertVerifiedFee(tx, { runId: f.runId,
         row: { ...item, conditions: item.extraction_note } as unknown as import("../darwin/verify").RawFeeRow,
         canonicalFeeKey: "overdraft" });
-      const [verified] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,fr.product_name,fr.source_document_id
+      const [verified] = await tx`SELECT fv.*,to_jsonb(fv)::text AS selected_verified_state,fr.product_name,fr.source_document_id,fr.agent_event_id AS raw_agent_event_id
         FROM verified_fee_observations fv JOIN raw_fee_observations fr ON fr.fee_raw_id=fv.fee_raw_id WHERE fv.fee_verified_id=${verifiedId!}`;
       const options = { runId: f.runId, batchId: "paired-direct", row: verified as unknown as import("../hamilton/publish").VerifiedFeeRow };
       const stop = new Error("rollback changed original source");
-      await tx.savepoint(async scope => {
+      await asTransaction(tx).savepoint(async scope => {
         const inner = scope as unknown as Db;
         const changed = f.text.replace("Consumer Checking Fees", "Premium Checking Fees");
         await inner`UPDATE agent_source_texts SET normalized_text=${changed},text_hash=${digest(changed)} WHERE id=${f.textId}`;
         expect(await publish.insertPublishedFee(inner, options)).toBeNull();
         throw stop;
-      }).catch(error => { if (error !== stop) throw error; });
+      }).catch((error: unknown) => { if (error !== stop) throw error; });
       expect(await publish.insertPublishedFee(tx, options)).not.toBeNull();
       expect(await tx`SELECT 1 FROM published_fee_records WHERE institution_id=${f.institutionId}`).toHaveLength(1);
     });
@@ -413,9 +415,9 @@ describe.skipIf(!connection)("Prospective owned paid/returned events in actual P
         if (change === "lineage") {
           await tx`SELECT fee_verified_id FROM verified_fee_observations WHERE fee_verified_id=${selected.verifiedId} FOR UPDATE`;
           const [{ fee_raw_id }] = await tx`INSERT INTO raw_fee_observations
-            (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,outlier_flags,fee_audience,line_share)
+            (institution_id,source_document_id,source_url,source,agent_event_id,fee_name,amount,frequency,outlier_flags,fee_audience,audience_evidence,line_share)
             VALUES (${f.institutionId},${f.documentId},${SOURCE_URL},'manual_import',gen_random_uuid(),
-              'Different fee lineage',29,'per_item','[]'::jsonb,'consumer','fixture-replacement') RETURNING fee_raw_id`;
+              'Different fee lineage',29,'per_item','[]'::jsonb,'consumer','Consumer Checking Fees','fixture-replacement') RETURNING fee_raw_id`;
           await tx`UPDATE verified_fee_observations SET fee_raw_id=${fee_raw_id} WHERE fee_verified_id=${selected.verifiedId}`;
         } else {
           await tx`SELECT fee_raw_id FROM raw_fee_observations WHERE fee_raw_id=${selected.rawId} FOR UPDATE`;
