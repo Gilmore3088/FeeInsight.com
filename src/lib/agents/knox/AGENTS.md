@@ -1264,7 +1264,8 @@ After the extract itself, each extract step runs these passes in order (`run-sto
   states 761 / 41 (744 / 41). To reverse it, switch off with another version bump:
   `recheckPromotedRows` puts unverified promotions back on hold, and the rules re-check
   takes down the live ones it no longer reproduces.
-- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, off until James switches it on): a held
+- `setAsideRangeBands` (#1102, `RANGE_BAND_SET_ASIDE_LIVE`, on since Oct 20 under James's sampled-clean rule, #2442: the dry run
+  set aside 4,091 lines at 482 banks and a 20-line sample was 20 rate bands): a held
   range line with no category that is a deposit or loan rate band ("Tier 3 | $25,000.00 –
   $49,999.99 | 0.75%", "$3,500 to $20,000 | 11.25% | 48 months"). It asks for positive evidence,
   since two reviews found fees a negative test missed. A line is a band only when:

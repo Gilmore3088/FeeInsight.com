@@ -56,7 +56,8 @@ export const KNOX_TAKEOVER_FROM_PREFIX = "knox_takeover_from:";
  * proves join the re-judge above, and judging them again can publish fees; each verify step still
  * counts and samples them in its ledger detail (`category_change_rejudge.takeover_proof`).
  *
- * On since Oct 20 under James's sampled-clean rule (DECISIONS, Oct 20): the global dry run found 3
+ * On since Oct 20 under James's sampled-clean rule (his decision card, 01:54 UTC, "all eight with
+ * rules"): the global dry run found 3
  * rows (raw 129981 "Return Mail" $3, 143924 "Fax" $5, 152419 "Image copy" $2), each rejected as a
  * too-cheap account research fee and now filed under the category its line names; all 3 pass the
  * shared source check and the category guard against the bank's stored schedule (#1295).
