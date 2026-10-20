@@ -135,4 +135,14 @@ export const KNOX_LESSONS: AgentLesson[] = [
     appliesTo: ["extract"],
     since: "2026-10-20",
   },
+  {
+    id: "price-first-rows",
+    agent: "knox",
+    stage: "extract",
+    lesson: "When a table prints the price before the name (\"$10 Non-Member Check Cashing Fee\"), check which row each price belongs to before pairing them, and keep member and non-member prices in their own columns.",
+    why: "Reading price-first rows bound each price to the wrong name: Prospera's rush card got the next row's $25 instead of its $30, and Workers FCU's non-member check cashing got $10 where the bank charges $5.",
+    evidence: { issues: [978], prs: [], files: ["src/lib/agents/knox/rules.ts"] },
+    appliesTo: "all",
+    since: "2026-10-20",
+  },
 ];
