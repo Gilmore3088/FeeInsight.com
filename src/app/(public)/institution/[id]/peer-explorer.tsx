@@ -38,7 +38,7 @@ import {
   linearScale,
   locationGapLegend,
   locationGroups,
-  locationMarker,
+  locationMarkers,
   matrixSummary,
   publishingPeers,
   peerSnapshot,
@@ -1113,6 +1113,7 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
   const shown = all ? groups : groups.slice(0, GROUPS_SHOWN);
   const median = set.medians[fee]?.median;
   const sizes = locationGapLegend(set, fee);
+  const markerFor = locationMarkers(set, fee);
   const where =
     by === "branch"
       ? `Grouped by the cities in the ${set.market?.name ?? "home"} metro where each institution has a branch, so one can appear in several.`
@@ -1131,7 +1132,7 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
           const hasSubject = group.members.some((m) => m.id === set.subject.id);
           const visible = group.members.slice(0, CIRCLES_PER_GROUP);
           const pointedInst = pointed?.group === group.key ? group.members.find((m) => m.id === pointed.id) : undefined;
-          const named = pointedInst ? markerWords(pointedInst, fee, locationMarker(set, fee, pointedInst)) : null;
+          const named = pointedInst ? markerWords(pointedInst, fee, markerFor(pointedInst)) : null;
           return (
             <li key={group.key} className={`min-w-0 rounded-[18px] border p-3 ${hasSubject && by !== "branch" ? "border-ink/30 bg-ink/[0.04]" : "border-border bg-paper"}`}>
               <p className="flex items-baseline justify-between gap-2">
@@ -1140,7 +1141,7 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1">
                 {visible.map((inst) => {
-                  const marker = locationMarker(set, fee, inst);
+                  const marker = markerFor(inst);
                   const words = markerWords(inst, fee, marker);
                   const isSubject = inst.id === set.subject.id;
                   const isSelected = inst.id === selectedId;
@@ -1197,7 +1198,8 @@ function Locations({ set, fee, selectedId, highlight, onSelect }: ViewProps) {
                   <span className="text-[12px] text-ink-muted">+{(group.members.length - visible.length).toLocaleString("en-US")} more</span>
                 )}
               </div>
-              <p data-readout aria-live="polite" className="mt-2 min-h-[1.25rem] text-[12px] leading-snug text-ink-soft">
+              {/* No aria-live: a focused marker's own label already names it, so a reader hears it once. */}
+              <p data-readout aria-hidden={named ? true : undefined} className="mt-2 min-h-[1.25rem] text-[12px] leading-snug text-ink-soft">
                 {named ? (
                   <>
                     <span className="font-semibold text-ink">{named.name}</span>: <span className={named.fee.startsWith("$") ? "tabular-nums" : undefined}>{named.fee}</span>

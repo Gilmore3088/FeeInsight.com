@@ -468,6 +468,17 @@ describe("PeerExplorerSection", () => {
       expect(readout(firstUs)).toContain("First US Bank");
     });
 
+    it("should_announce_a_focused_marker_once_through_its_own_label", () => {
+      openLocations();
+      const pine = screen.getByRole("button", { name: /^Pine State Bank, \$14\.50/ });
+      const readout = pine.closest("li")?.querySelector("[data-readout]") as HTMLElement;
+      expect(readout.getAttribute("aria-live")).toBeNull();
+      fireEvent.focus(pine);
+      // The button's label already says this; the readout is for sighted pointer users only.
+      expect(readout.textContent).toContain("Pine State Bank");
+      expect(readout.getAttribute("aria-hidden")).toBe("true");
+    });
+
     it("should_show_a_size_legend_in_dollars_and_the_colour_pair", () => {
       openLocations();
       const legend = screen.getByRole("list", { name: "Locations legend" });

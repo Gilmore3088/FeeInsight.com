@@ -44,6 +44,7 @@ import {
   isPeerSetVariant,
   gapRadius,
   locationMarker,
+  locationMarkers,
   locationGapLegend,
   LOCATION_RADIUS,
   type ExplorerInstitution,
@@ -278,6 +279,16 @@ describe("locations", () => {
       expect(gapRadius(5, 5)).toBe(max);
       // Every gap the same size (all at the median): one size, the smallest, never NaN.
       expect(gapRadius(0, 0)).toBe(min);
+    });
+
+    it("should_find_the_largest_gap_once_for_every_marker_in_a_view", () => {
+      let reads = 0;
+      const counted = { ...alike, get peers() { reads += 1; return alike.peers; } };
+      const markerFor = locationMarkers(counted, "monthly_maintenance");
+      const before = reads;
+      const all = [alike.subject, ...alike.peers].map((i) => markerFor(i));
+      expect(reads).toBe(before);
+      expect(all).toEqual([1, 2, 3, 4, 5, 6].map(marker));
     });
 
     it("should_keep_one_neutral_size_when_there_is_no_median", () => {

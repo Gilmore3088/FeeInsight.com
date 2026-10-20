@@ -419,13 +419,21 @@ function largestGap(set: PeerExplorerSet, fee: ExplorerFeeKey): number {
  * set has too few publishing peers for a median.
  */
 export function locationMarker(set: PeerExplorerSet, fee: ExplorerFeeKey, inst: ExplorerInstitution): LocationMarker {
-  const value = inst.fees[fee]?.amount;
-  if (value === undefined) return { kind: "not-published", r: LOCATION_RADIUS.empty };
+  return locationMarkers(set, fee)(inst);
+}
+
+/** Every marker of one view, scaled to the set's largest gap, which is found once, not per marker. */
+export function locationMarkers(set: PeerExplorerSet, fee: ExplorerFeeKey): (inst: ExplorerInstitution) => LocationMarker {
   const median = set.medians[fee]?.median;
-  if (median === undefined) return { kind: "no-median", r: LOCATION_RADIUS.min };
-  const band = matrixBand(value, median) as "above" | "below" | "same";
-  const gap = Math.round((value - median) * 100) / 100;
-  return { kind: "gap", band, gap, r: gapRadius(Math.abs(gap), largestGap(set, fee)) };
+  const maxGap = largestGap(set, fee);
+  return (inst) => {
+    const value = inst.fees[fee]?.amount;
+    if (value === undefined) return { kind: "not-published", r: LOCATION_RADIUS.empty };
+    if (median === undefined) return { kind: "no-median", r: LOCATION_RADIUS.min };
+    const band = matrixBand(value, median) as "above" | "below" | "same";
+    const gap = Math.round((value - median) * 100) / 100;
+    return { kind: "gap", band, gap, r: gapRadius(Math.abs(gap), maxGap) };
+  };
 }
 
 /** The size legend: the largest gap on the page and half of it, in dollars. Empty with no gap to show. */
